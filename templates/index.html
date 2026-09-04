@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; text-align: center;">
+    
+    <h2>1. Registrar Autorizado</h2>
+    <form action="/register" method="POST" enctype="multipart/form-data" style="margin-bottom: 20px;">
+        <input type="text" name="name" placeholder="Nombre de la persona" required>
+        <!-- Para registro, mantenemos la subida de archivo normal -->
+        <input type="file" name="file" accept="image/*" required>
+        <button type="submit">Guardar Rostro</button>
+    </form>
+
+    <hr>
+
+    <h2>2. Escáner de Acceso (Webcam)</h2>
+    <!-- Visor de la cámara -->
+    <video id="video" width="100%" style="max-width: 400px; border: 3px solid #ccc; border-radius: 10px;" autoplay></video>
+    <br><br>
+    <button id="escanearBtn" style="padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer;">
+        📸 Tomar Foto y Escanear
+    </button>
+    
+    <canvas id="canvas" style="display:none;"></canvas>
+    <h1 id="resultado" style="color: blue; margin-top: 20px;"></h1>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const escanearBtn = document.getElementById('escanearBtn');
+        const resultado = document.getElementById('resultado');
+
+        // 1. Encender la cámara del PC
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => { video.srcObject = stream; })
+            .catch(err => { 
+                resultado.innerText = "Error: Da permisos de cámara en tu navegador.";
+                resultado.style.color = "red";
+            });
+
+        // 2. Capturar y enviar al presionar el botón
+        escanearBtn.addEventListener('click', () => {
+            resultado.innerText = "Procesando biometría...";
+            resultado.style.color = "orange";
+
+            // Tomar la foto en el canvas invisible
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convertir la foto a un archivo y enviarlo al backend de Python
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'foto_webcam.jpg');
+                
+                try {
+                    const res = await fetch('/recognize', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    
+                    resultado.innerText = data.result;
+                    resultado.style.color = data.result.includes('SÍ') ? "green" : "red";
+                } catch (error) {
+                    resultado.innerText = "Error de conexión";
+                }
+            }, 'image/jpeg');
+        });
+    </script>
+</body>
+</html>docker compose up --build
