@@ -1,68 +1,125 @@
 <!DOCTYPE html>
-<html>
-<body style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; text-align: center;">
-    
-    <h2>1. Registrar Autorizado</h2>
-    <form action="/register" method="POST" enctype="multipart/form-data" style="margin-bottom: 20px;">
-        <input type="text" name="name" placeholder="Nombre de la persona" required>
-        <!-- Para registro, mantenemos la subida de archivo normal -->
-        <input type="file" name="file" accept="image/*" required>
-        <button type="submit">Guardar Rostro</button>
-    </form>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometría | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
 
-    <hr>
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="#" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav class="golden-nav">
+      <div class="golden-anniversary-badge">
+        SISTEMA BIOMÉTRICO 360°
+      </div>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
 
-    <h2>2. Escáner de Acceso (Webcam)</h2>
-    <!-- Visor de la cámara -->
-    <video id="video" width="100%" style="max-width: 400px; border: 3px solid #ccc; border-radius: 10px;" autoplay></video>
-    <br><br>
-    <button id="escanearBtn" style="padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer;">
-        📸 Tomar Foto y Escanear
-    </button>
-    
-    <canvas id="canvas" style="display:none;"></canvas>
-    <h1 id="resultado" style="color: blue; margin-top: 20px;"></h1>
+<main class="golden-main">
+  <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2>Control de Acceso <span class="gradient-text">Facial Inteligente</span></h2>
+      </div>
 
-    <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const escanearBtn = document.getElementById('escanearBtn');
-        const resultado = document.getElementById('resultado');
+      <div class="tabs">
+        <div class="tab active" data-tab="scanner">1. Escáner de Acceso</div>
+        <div class="tab" data-tab="manual">2. Registro Individual</div>
+        <div class="tab" data-tab="masivo">3. Carga Masiva</div>
+      </div>
 
-        // 1. Encender la cámara del PC
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => { video.srcObject = stream; })
-            .catch(err => { 
-                resultado.innerText = "Error: Da permisos de cámara en tu navegador.";
-                resultado.style.color = "red";
-            });
+      <div class="app-container">
+        <!-- PESTAÑA 1: ESCÁNER -->
+        <div id="scanner" class="section active">
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
+                <div class="camera-wrapper">
+                    <video id="video" autoplay playsinline></video>
+                    <canvas id="canvas" style="display:none;"></canvas>
+                    <button id="escanearBtn" class="golden-btn golden-btn-primary full-width">📸 Escanear Rostro</button>
+                    <h3 id="resultadoTexto" style="text-align:center; margin-top: 15px; height: 30px;"></h3>
+                </div>
 
-        // 2. Capturar y enviar al presionar el botón
-        escanearBtn.addEventListener('click', () => {
-            resultado.innerText = "Procesando biometría...";
-            resultado.style.color = "orange";
+                <div class="badge-preview-area" id="profileCard" style="display: none;">
+                    <div class="badge-clip"></div>
+                    <div class="badge-card">
+                      <div class="badge-header">
+                        <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Logo">
+                      </div>
+                      <div class="badge-body">
+                        <h4 id="p_nombre">Nombre</h4>
+                        <p id="p_empresa">Empresa</p>
+                        <div style="margin-top:15px; font-size: 0.85rem; color: #666;">
+                            <strong>ID:</strong> <span id="p_id"></span><br>
+                            <strong>Cargo:</strong> <span id="p_cargo"></span>
+                        </div>
+                      </div>
+                      <div class="badge-bottom-bar" style="background: linear-gradient(135deg, #28a745, #1e7e34); color: white;">ACCESO AUTORIZADO</div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-            // Tomar la foto en el canvas invisible
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Convertir la foto a un archivo y enviarlo al backend de Python
-            canvas.toBlob(async (blob) => {
-                const formData = new FormData();
-                formData.append('file', blob, 'foto_webcam.jpg');
-                
-                try {
-                    const res = await fetch('/recognize', { method: 'POST', body: formData });
-                    const data = await res.json();
-                    
-                    resultado.innerText = data.result;
-                    resultado.style.color = data.result.includes('SÍ') ? "green" : "red";
-                } catch (error) {
-                    resultado.innerText = "Error de conexión";
-                }
-            }, 'image/jpeg');
-        });
-    </script>
+        <!-- PESTAÑA 2: REGISTRO -->
+        <div id="manual" class="section">
+            <form id="regForm" class="golden-badge-builder">
+                <div class="badge-form-title">Registro de Nuevo Personal</div>
+                <div class="badge-input-row">
+                    <div class="badge-input-group">
+                        <label>Nombre Completo</label>
+                        <input type="text" name="nombre" required>
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Número de ID (Cédula)</label>
+                        <input type="text" name="id" required>
+                    </div>
+                </div>
+                <div class="badge-input-row">
+                    <div class="badge-input-group">
+                        <label>Cargo</label>
+                        <input type="text" name="cargo">
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Empresa</label>
+                        <input type="text" name="empresa">
+                    </div>
+                </div>
+                <div class="badge-input-group">
+                    <label>Fotografía Oficial</label>
+                    <input type="file" name="file" accept="image/*" required>
+                </div>
+                <button type="submit" class="golden-btn golden-btn-primary">Guardar Perfil Biométrico</button>
+            </form>
+        </div>
+
+        <!-- PESTAÑA 3: CARGA MASIVA -->
+        <div id="masivo" class="section">
+            <form id="bulkForm" class="golden-badge-builder">
+                <div class="badge-form-title">Sincronización Masiva (Tenant)</div>
+                <p style="text-align: center; color: #666; margin-bottom: 20px;">1. Sube el archivo .csv tabulado<br>2. Sube el archivo .zip con las fotos renombradas por ID</p>
+                <div class="badge-input-group">
+                    <label>Base de Datos (.csv)</label>
+                    <input type="file" name="csv_file" accept=".csv" required>
+                </div>
+                <div class="badge-input-group">
+                    <label>Lote de Fotografías (.zip)</label>
+                    <input type="file" name="zip_file" accept=".zip" required>
+                </div>
+                <button type="submit" class="golden-btn golden-btn-primary">Sincronizar Lote Masivo</button>
+            </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
-</html>docker compose up --build
+</html>
