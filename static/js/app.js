@@ -1,6 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
     
-    // 1. Lógica de Pestañas (Tabs)
     const tabs = document.querySelectorAll('.tab');
     const sections = document.querySelectorAll('.section');
     
@@ -14,7 +13,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // 2. Inicializar Cámara
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     if(video) {
@@ -23,16 +21,15 @@ document.addEventListener("DOMContentLoaded", () => {
             .catch(err => console.error("Sin acceso a cámara", err));
     }
 
-    // 3. Biometría en Vivo
     const escanearBtn = document.getElementById('escanearBtn');
-    const profileCard = document.getElementById('profileCard');
+    const profileCard = document.getElementById('profileCard'); 
     const resTexto = document.getElementById('resultadoTexto');
 
     if(escanearBtn) {
         escanearBtn.addEventListener('click', () => {
             resTexto.innerText = "Analizando geometría facial...";
             resTexto.style.color = "#D4AF37"; 
-            profileCard.style.display = 'none';
+            if(profileCard) profileCard.style.display = 'none';
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -43,32 +40,80 @@ document.addEventListener("DOMContentLoaded", () => {
                 formData.append('file', blob, 'webcam.jpg');
                 
                 try {
-                    const res = await fetch('/recognize', { method: 'POST', body: formData });
+                    const res = await fetch('/api/recognize', { method: 'POST', body: formData });
                     const data = await res.json();
                     
                     if(data.result === 'SÍ') {
                         resTexto.innerText = "✅ IDENTIDAD VALIDADA";
                         resTexto.style.color = "#28a745";
                         
-                        document.getElementById('p_nombre').innerText = data.data.nombre || "N/A";
-                        document.getElementById('p_empresa').innerText = data.data.empresa || "Golden Logísticas";
-                        document.getElementById('p_id').innerText = data.data.id || "N/A";
-                        document.getElementById('p_cargo').innerText = data.data.cargo || "N/A";
+                        document.getElementById('edit_id').value = data.data.id || "";
+                        document.getElementById('edit_nombre').value = data.data.nombre || "";
+                        document.getElementById('edit_empresa').value = data.data.empresa || "";
+                        document.getElementById('edit_telefono').value = data.data.telefono || "";
                         
-                        profileCard.style.display = 'flex';
+                        if(profileCard) profileCard.style.display = 'flex';
                     } else {
                         resTexto.innerText = "❌ " + data.details;
                         resTexto.style.color = "#dc3545";
                     }
                 } catch (e) {
-                    resTexto.innerText = "❌ Error de conexión al servidor SaaS";
+                    resTexto.innerText = "❌ Error de conexión al servidor FastAPI";
                     resTexto.style.color = "#dc3545";
                 }
             }, 'image/jpeg');
         });
     }
 
-    // 4. Formulario de Registro Individual
+    const liveEditForm = document.getElementById('liveEditForm');
+    if(liveEditForm) {
+        liveEditForm.onsubmit = async (e) => {
+            e.preventDefault();
+
+            const autorizacion = confirm("⚠️ ATENCIÓN: Esta persona ya se encuentra registrada en el sistema.\n\n¿Estás completamente seguro de que deseas sobrescribir sus datos?");
+            if (!autorizacion) {
+                return; 
+            }
+
+            const btn = e.target.querySelector('button');
+            btn.innerText = "Guardando..."; 
+            btn.disabled = true;
+
+            const formData = new FormData(e.target);
+            const payload = Object.fromEntries(formData.entries());
+            
+            try {
+                const res = await fetch(`/api/users/${payload.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if(res.ok) {
+                    alert("✅ Perfil actualizado y log registrado en SQL.");
+                    profileCard.style.display = 'none';
+                    resTexto.innerText = "✅ ACCESO AUTORIZADO Y GUARDADO";
+                    resTexto.style.color = "#28a745";
+                } else {
+                    const errorData = await res.json();
+                    alert("❌ Error: " + (errorData.error || "No se pudo actualizar"));
+                }
+            } catch (err) {
+                alert("❌ Error de red al comunicar con SQL.");
+            }
+            
+            btn.innerText = "Guardar y Autorizar Acceso"; 
+            btn.disabled = false;
+        };
+    }
+
+    const exportBtn = document.getElementById('exportBtn');
+    if(exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            window.location.href = '/api/report';
+        });
+    }
+
     const regForm = document.getElementById('regForm');
     if(regForm) {
         regForm.onsubmit = async (e) => {
@@ -76,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const btn = e.target.querySelector('button');
             btn.innerText = "Guardando..."; btn.disabled = true;
             try {
-                const res = await fetch('/register', { method: 'POST', body: new FormData(e.target) });
+                const res = await fetch('/api/register', { method: 'POST', body: new FormData(e.target) });
                 const data = await res.json();
                 alert(data.message || data.error);
                 e.target.reset();
@@ -85,15 +130,14 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    // 5. Formulario de Carga Masiva
     const bulkForm = document.getElementById('bulkForm');
     if(bulkForm) {
         bulkForm.onsubmit = async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector('button');
-            btn.innerText = "Sincronizando Tenant..."; btn.disabled = true;
+            btn.innerText = "Sincronizando Tenant a SQL..."; btn.disabled = true;
             try {
-                const res = await fetch('/bulk_register', { method: 'POST', body: new FormData(e.target) });
+                const res = await fetch('/api/bulk_register', { method: 'POST', body: new FormData(e.target) });
                 const data = await res.json();
                 alert(data.message || data.error);
                 e.target.reset();
