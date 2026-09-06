@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biometría | Golden Logísticas</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
 </head>
 <body>
 
@@ -34,6 +34,7 @@
         <div class="tab active" data-tab="scanner">1. Escáner de Acceso</div>
         <div class="tab" data-tab="manual">2. Registro Individual</div>
         <div class="tab" data-tab="masivo">3. Carga Masiva</div>
+        <div class="tab" data-tab="exportar">4. Exportar Reporte</div>
       </div>
 
       <div class="app-container">
@@ -48,20 +49,29 @@
                 </div>
 
                 <div class="badge-preview-area" id="profileCard" style="display: none;">
-                    <div class="badge-clip"></div>
-                    <div class="badge-card">
-                      <div class="badge-header">
-                        <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Logo">
-                      </div>
-                      <div class="badge-body">
-                        <h4 id="p_nombre">Nombre</h4>
-                        <p id="p_empresa">Empresa</p>
-                        <div style="margin-top:15px; font-size: 0.85rem; color: #666;">
-                            <strong>ID:</strong> <span id="p_id"></span><br>
-                            <strong>Cargo:</strong> <span id="p_cargo"></span>
-                        </div>
-                      </div>
-                      <div class="badge-bottom-bar" style="background: linear-gradient(135deg, #28a745, #1e7e34); color: white;">ACCESO AUTORIZADO</div>
+                    <div class="badge-card" style="padding: 20px; width: 100%;">
+                        <h4 style="text-align:center; color: var(--golden-primary);">Actualización de Asistente</h4>
+                        <form id="liveEditForm">
+                            <input type="hidden" id="edit_id" name="id">
+                            
+                            <div class="badge-input-group">
+                                <label>Nombre</label>
+                                <input type="text" id="edit_nombre" name="nombre" required>
+                            </div>
+                            
+                            <div class="badge-input-row">
+                                <div class="badge-input-group">
+                                    <label>Empresa</label>
+                                    <input type="text" id="edit_empresa" name="empresa">
+                                </div>
+                                <div class="badge-input-group">
+                                    <label>Teléfono</label>
+                                    <input type="text" id="edit_telefono" name="telefono" placeholder="Completar en vivo">
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="golden-btn golden-btn-primary">Guardar y Autorizar Acceso</button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -115,11 +125,22 @@
                 <button type="submit" class="golden-btn golden-btn-primary">Sincronizar Lote Masivo</button>
             </form>
         </div>
+
+        <!-- PESTAÑA 4: EXPORTAR REPORTE -->
+        <div id="exportar" class="section">
+            <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
+                <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Base de Datos Oficial</h3>
+                <p style="color: #666; margin-bottom: 30px;">Genera y descarga el reporte unificado en Excel con los campos corporativos estándar.</p>
+                <button id="exportBtn" class="golden-btn golden-btn-primary" style="background: #28a745; color: white; width: auto; padding: 1rem 3rem; margin: 0 auto;">
+                    📥 Exportar Base de Datos (Excel)
+                </button>
+            </div>
+        </div>
       </div>
     </div>
   </section>
 </main>
 
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', path='js/app.js') }}"></script>
 </body>
 </html>

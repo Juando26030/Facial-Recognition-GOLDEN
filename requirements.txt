@@ -1,2 +1,11 @@
-Flask
-face_recognition
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+face-recognition
+Pillow
+python-multipart
+pandas
+openpyxl
+python-dotenv
+jinja2
