@@ -17,7 +17,8 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(String, primary_key=True) 
     tenant_id = Column(String, ForeignKey('tenants.id'), primary_key=True)
-    name = Column(String)
+    first_name = Column(String)
+    last_name = Column(String)
     role = Column(String)
     company = Column(String)
     phone = Column(String)

@@ -5,6 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biometría | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <style>
+        .btn-table-delete {
+            background: #dc3545;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.75rem;
+            margin-left: 5px;
+            border: none;
+            transition: 0.3s;
+        }
+        .btn-table-delete:hover { background: #c82333; }
+        .action-cell { display: flex; align-items: center; }
+    </style>
 </head>
 <body>
 
@@ -35,10 +51,11 @@
         <div class="tab" data-tab="manual">2. Registro Individual</div>
         <div class="tab" data-tab="masivo">3. Carga Masiva</div>
         <div class="tab" data-tab="exportar">4. Exportar Reporte</div>
+        <div class="tab" data-tab="directorio">5. Directorio en Vivo</div>
       </div>
 
       <div class="app-container">
-        <!-- PESTAÑA 1: ESCÁNER -->
+        <!-- PESTAÑA 1: ESCÁNER Y EDICIÓN EN VIVO -->
         <div id="scanner" class="section active">
             <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
                 <div class="camera-wrapper">
@@ -50,61 +67,111 @@
 
                 <div class="badge-preview-area" id="profileCard" style="display: none;">
                     <div class="badge-card" style="padding: 20px; width: 100%;">
-                        <h4 style="text-align:center; color: var(--golden-primary);">Actualización de Asistente</h4>
+                        <h4 style="text-align:center; color: var(--golden-primary); margin-bottom: 15px;">Actualización de Asistente</h4>
                         <form id="liveEditForm">
                             <input type="hidden" id="edit_id" name="id">
                             
-                            <div class="badge-input-group">
-                                <label>Nombre</label>
-                                <input type="text" id="edit_nombre" name="nombre" required>
+                            <div class="badge-input-row">
+                                <div class="badge-input-group">
+                                    <label>Nombres</label>
+                                    <input type="text" id="edit_first_name" name="first_name" required>
+                                </div>
+                                <div class="badge-input-group">
+                                    <label>Apellidos</label>
+                                    <input type="text" id="edit_last_name" name="last_name" required>
+                                </div>
+                            </div>
+
+                            <div class="badge-input-row">
+                                <div class="badge-input-group">
+                                    <label>Cargo</label>
+                                    <input type="text" id="edit_role" name="role">
+                                </div>
+                                <div class="badge-input-group">
+                                    <label>Empresa</label>
+                                    <input type="text" id="edit_company" name="company">
+                                </div>
                             </div>
                             
                             <div class="badge-input-row">
                                 <div class="badge-input-group">
-                                    <label>Empresa</label>
-                                    <input type="text" id="edit_empresa" name="empresa">
+                                    <label>Teléfono</label>
+                                    <input type="text" id="edit_phone" name="phone">
                                 </div>
                                 <div class="badge-input-group">
-                                    <label>Teléfono</label>
-                                    <input type="text" id="edit_telefono" name="telefono" placeholder="Completar en vivo">
+                                    <label>Correo Electrónico</label>
+                                    <input type="email" id="edit_email" name="email">
+                                </div>
+                            </div>
+
+                            <div class="badge-input-row">
+                                <div class="badge-input-group">
+                                    <label>Tipo de Empresa</label>
+                                    <input type="text" id="edit_opt_1" name="opt_1">
+                                </div>
+                                <div class="badge-input-group">
+                                    <label>Tamaño/Empleados</label>
+                                    <input type="text" id="edit_opt_2" name="opt_2">
                                 </div>
                             </div>
                             
-                            <button type="submit" class="golden-btn golden-btn-primary">Guardar y Autorizar Acceso</button>
+                            <button type="submit" class="golden-btn golden-btn-primary" style="margin-top: 10px;">Guardar y Autorizar Acceso</button>
                         </form>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- PESTAÑA 2: REGISTRO -->
+        <!-- PESTAÑA 2: REGISTRO MANUAL -->
         <div id="manual" class="section">
             <form id="regForm" class="golden-badge-builder">
                 <div class="badge-form-title">Registro de Nuevo Personal</div>
+                
                 <div class="badge-input-row">
                     <div class="badge-input-group">
-                        <label>Nombre Completo</label>
-                        <input type="text" name="nombre" required>
+                        <label>Nombres</label>
+                        <input type="text" name="first_name" required placeholder="Ej. Juan David">
                     </div>
+                    <div class="badge-input-group">
+                        <label>Apellidos</label>
+                        <input type="text" name="last_name" required placeholder="Ej. Pérez Gómez">
+                    </div>
+                </div>
+                
+                <div class="badge-input-row">
                     <div class="badge-input-group">
                         <label>Número de ID (Cédula)</label>
                         <input type="text" name="id" required>
                     </div>
-                </div>
-                <div class="badge-input-row">
                     <div class="badge-input-group">
                         <label>Cargo</label>
-                        <input type="text" name="cargo">
-                    </div>
-                    <div class="badge-input-group">
-                        <label>Empresa</label>
-                        <input type="text" name="empresa">
+                        <input type="text" name="role">
                     </div>
                 </div>
+                
+                <div class="badge-input-row">
+                    <div class="badge-input-group">
+                        <label>Empresa</label>
+                        <input type="text" name="company">
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Teléfono</label>
+                        <input type="text" name="phone">
+                    </div>
+                </div>
+                
+                <div class="badge-input-row">
+                    <div class="badge-input-group" style="min-width: 100%;">
+                        <label>Correo Electrónico</label>
+                        <input type="email" name="email">
+                    </div>
+                </div>
+                
                 <div class="badge-input-group">
                     <label>Fotografía Oficial</label>
                     <input type="file" name="file" accept="image/*" required>
                 </div>
+                
                 <button type="submit" class="golden-btn golden-btn-primary">Guardar Perfil Biométrico</button>
             </form>
         </div>
@@ -136,6 +203,36 @@
                 </button>
             </div>
         </div>
+
+        <!-- PESTAÑA 5: DIRECTORIO EN VIVO -->
+        <div id="directorio" class="section" style="max-width: 100%;">
+            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+                <div class="badge-form-title" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>Directorio y Control en Vivo</span>
+                </div>
+                <table class="golden-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nombres</th>
+                            <th>Apellidos</th>
+                            <th>Cargo</th>
+                            <th>Empresa</th>
+                            <th>Teléfono</th>
+                            <th>Correo</th>
+                            <th>T. Empresa</th>
+                            <th>Tamaño</th>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="directoryTableBody">
+                        <!-- Las filas se inyectan por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
       </div>
     </div>
   </section>
