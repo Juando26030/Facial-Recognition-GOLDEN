@@ -10,8 +10,154 @@ document.addEventListener("DOMContentLoaded", () => {
             
             tab.classList.add('active');
             document.getElementById(tab.dataset.tab).classList.add('active');
+
+            if (tab.dataset.tab === 'directorio') {
+                loadLiveDirectory();
+            }
         });
     });
+
+    async function loadLiveDirectory() {
+        const tbody = document.getElementById('directoryTableBody');
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">Cargando base de datos...</td></tr>';
+        
+        try {
+            const res = await fetch('/api/users');
+            const users = await res.json();
+            
+            tbody.innerHTML = '';
+            users.forEach(user => {
+                const tr = document.createElement('tr');
+                
+                if (user.status === 'Registrado') {
+                    tr.classList.add('row-registrado');
+                } else if (user.status === 'Nuevo') {
+                    tr.classList.add('row-nuevo');
+                } else {
+                    tr.classList.add('row-noregistrado');
+                }
+                
+                const tds = {}; 
+                
+                // Mapeo estructurado independiente en celdas
+                const fieldsOrder = ['id', 'first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1', 'opt_2'];
+                
+                fieldsOrder.forEach(field => {
+                    const td = document.createElement('td');
+                    td.innerText = user[field] || '';
+                    tr.appendChild(td);
+                    tds[field] = td;
+                });
+                
+                const statusTd = document.createElement('td');
+                statusTd.innerText = user.status;
+                statusTd.style.fontWeight = "bold";
+                tr.appendChild(statusTd);
+
+                const actionTd = document.createElement('td');
+                actionTd.className = "action-cell";
+
+                const actionBtn = document.createElement('button');
+                actionBtn.innerText = "Editar";
+                actionBtn.className = "golden-btn btn-table-action";
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerText = "Eliminar";
+                deleteBtn.className = "btn-table-delete";
+                deleteBtn.style.display = "none"; 
+                
+                let isEditing = false;
+                
+                actionBtn.addEventListener('click', async () => {
+                    const editableFields = ['first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1', 'opt_2'];
+
+                    if (!isEditing) {
+                        isEditing = true;
+                        actionBtn.innerText = "Guardar";
+                        actionBtn.classList.add('btn-save'); 
+                        deleteBtn.style.display = "inline-block"; 
+                        
+                        editableFields.forEach(field => {
+                            tds[field].contentEditable = "true";
+                            tds[field].classList.add('editable-cell-active');
+                        });
+                        tds['first_name'].focus();
+                    } else {
+                        actionBtn.innerText = "Guardando...";
+                        actionBtn.disabled = true;
+                        deleteBtn.style.display = "none";
+                        
+                        const payload = {};
+                        editableFields.forEach(field => {
+                            payload[field] = tds[field].innerText.trim();
+                            tds[field].contentEditable = "false";
+                            tds[field].classList.remove('editable-cell-active');
+                        });
+                        
+                        try {
+                            const updateRes = await fetch(`/api/users/${user.id}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+                            
+                            if(updateRes.ok) {
+                                actionBtn.innerText = "Editar";
+                                actionBtn.classList.remove('btn-save');
+                                isEditing = false;
+                            } else {
+                                alert("Error al guardar cambios en SQL");
+                                actionBtn.innerText = "Guardar";
+                            }
+                        } catch (error) {
+                            alert("Error de red");
+                            actionBtn.innerText = "Guardar";
+                        }
+                        actionBtn.disabled = false;
+                    }
+                });
+
+                deleteBtn.addEventListener('click', async () => {
+                    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+                    const isConfirmed = confirm(`⚠️ CUIDADO: Estás a punto de borrar el registro de asistencia de ${fullName}.\n\nEsto devolverá a la persona al estado "No registrado" y borrará sus logs de hoy, pero NO lo eliminará de la base de datos principal.`);
+                    
+                    if (isConfirmed) {
+                        try {
+                            const delRes = await fetch(`/api/users/${user.id}/logs`, { method: 'DELETE' });
+                            if (delRes.ok) {
+                                alert("Registro de asistencia eliminado.");
+                                
+                                tr.className = 'row-noregistrado';
+                                statusTd.innerText = "No registrado";
+                                
+                                actionBtn.innerText = "Editar";
+                                actionBtn.classList.remove('btn-save');
+                                deleteBtn.style.display = "none";
+                                isEditing = false;
+                                
+                                const editableFields = ['first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1', 'opt_2'];
+                                editableFields.forEach(field => {
+                                    tds[field].contentEditable = "false";
+                                    tds[field].classList.remove('editable-cell-active');
+                                });
+                            } else {
+                                alert("Error al eliminar el registro.");
+                            }
+                        } catch (e) {
+                            alert("Error de red al intentar borrar.");
+                        }
+                    }
+                });
+                
+                actionTd.appendChild(actionBtn);
+                actionTd.appendChild(deleteBtn);
+                tr.appendChild(actionTd);
+                tbody.appendChild(tr);
+            });
+        } catch (err) {
+            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+        }
+    }
 
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -48,9 +194,14 @@ document.addEventListener("DOMContentLoaded", () => {
                         resTexto.style.color = "#28a745";
                         
                         document.getElementById('edit_id').value = data.data.id || "";
-                        document.getElementById('edit_nombre').value = data.data.nombre || "";
-                        document.getElementById('edit_empresa').value = data.data.empresa || "";
-                        document.getElementById('edit_telefono').value = data.data.telefono || "";
+                        document.getElementById('edit_first_name').value = data.data.first_name || "";
+                        document.getElementById('edit_last_name').value = data.data.last_name || "";
+                        document.getElementById('edit_role').value = data.data.role || "";
+                        document.getElementById('edit_company').value = data.data.company || "";
+                        document.getElementById('edit_phone').value = data.data.phone || "";
+                        document.getElementById('edit_email').value = data.data.email || "";
+                        document.getElementById('edit_opt_1').value = data.data.opt_1 || "";
+                        document.getElementById('edit_opt_2').value = data.data.opt_2 || "";
                         
                         if(profileCard) profileCard.style.display = 'flex';
                     } else {
@@ -69,18 +220,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if(liveEditForm) {
         liveEditForm.onsubmit = async (e) => {
             e.preventDefault();
-
             const autorizacion = confirm("⚠️ ATENCIÓN: Esta persona ya se encuentra registrada en el sistema.\n\n¿Estás completamente seguro de que deseas sobrescribir sus datos?");
-            if (!autorizacion) {
-                return; 
-            }
+            if (!autorizacion) return; 
 
             const btn = e.target.querySelector('button');
-            btn.innerText = "Guardando..."; 
-            btn.disabled = true;
+            btn.innerText = "Guardando..."; btn.disabled = true;
 
-            const formData = new FormData(e.target);
-            const payload = Object.fromEntries(formData.entries());
+            const payload = Object.fromEntries(new FormData(e.target).entries());
             
             try {
                 const res = await fetch(`/api/users/${payload.id}`, {
@@ -98,20 +244,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     const errorData = await res.json();
                     alert("❌ Error: " + (errorData.error || "No se pudo actualizar"));
                 }
-            } catch (err) {
-                alert("❌ Error de red al comunicar con SQL.");
-            }
-            
-            btn.innerText = "Guardar y Autorizar Acceso"; 
-            btn.disabled = false;
+            } catch (err) { alert("❌ Error de red."); }
+            btn.innerText = "Guardar y Autorizar Acceso"; btn.disabled = false;
         };
     }
 
     const exportBtn = document.getElementById('exportBtn');
     if(exportBtn) {
-        exportBtn.addEventListener('click', () => {
-            window.location.href = '/api/report';
-        });
+        exportBtn.addEventListener('click', () => window.location.href = '/api/report' );
     }
 
     const regForm = document.getElementById('regForm');
