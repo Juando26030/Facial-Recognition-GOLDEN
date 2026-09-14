@@ -26,7 +26,7 @@
       <h2>Usuarios de staff</h2>
     </div>
 
-    <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">Los usuarios <strong>digitador (temporales)</strong> ya no se crean aquí — se crean desde dentro de cada evento (pestaña "Usuarios temporales" en el kiosko de ese evento), donde quedan asociados automáticamente.</p>
+    <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">Aquí solo se crean cuentas <strong>Coordinador</strong>{% if staff_role == "super_admin" %} y <strong>Admin</strong>{% endif %}. Los usuarios <strong>digitador (temporal)</strong> y <strong>cliente</strong> se crean y se asignan desde dentro de cada evento (pestaña "Usuarios del evento" en el kiosko de ese evento) — quedan asociados a ese evento en el mismo paso, sin necesidad de un formulario aparte aquí.</p>
 
     <div class="golden-badge-builder" style="margin-bottom: 2rem;">
       <div class="badge-form-title">Nueva cuenta</div>
@@ -50,7 +50,6 @@
             <label>Rol</label>
             <select name="role" id="roleSelect" required>
               <option value="coordinador">Coordinador</option>
-              <option value="cliente">Cliente</option>
             </select>
           </div>
         </div>
@@ -58,31 +57,13 @@
       </form>
     </div>
 
-    <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto; margin-bottom: 2rem;">
+    <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
       <table class="golden-table">
         <thead>
           <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
         </thead>
         <tbody id="staffBody"></tbody>
       </table>
-    </div>
-
-    <div class="golden-badge-builder">
-      <div class="badge-form-title">Autorizar digitador o cliente para un evento</div>
-      <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Para reusar una cuenta temporal en un evento nuevo, o asignar un usuario cliente a su evento. Ambos solo pueden entrar a eventos activos para los que tengan autorización.</p>
-      <form id="authorizeForm">
-        <div class="badge-input-row">
-          <div class="badge-input-group">
-            <label>Usuario</label>
-            <select name="staff_id" id="digitadorSelect" required></select>
-          </div>
-          <div class="badge-input-group">
-            <label>Evento</label>
-            <select name="event_id" id="eventSelect" required></select>
-          </div>
-        </div>
-        <button type="submit" class="golden-btn golden-btn-primary">Autorizar</button>
-      </form>
     </div>
   </div>
 </main>
@@ -91,7 +72,7 @@
 const staffRole = "{{ staff_role }}";
 const staffUsername = "{{ staff_username }}";
 if (staffRole === "super_admin") {
-  document.getElementById("roleSelect").insertAdjacentHTML("afterbegin", '<option value="admin">Admin</option>');
+  document.getElementById("roleSelect").insertAdjacentHTML("beforeend", '<option value="admin">Admin</option>');
 }
 
 // Debe reflejar DELETABLE_ROLES_BY en app/routers/staff.py — solo para no mostrar un botón que
@@ -146,28 +127,7 @@ async function toggleStaff(id, activate) {
   loadStaff();
 }
 
-async function loadDropdowns() {
-  const [staffRes, eventsRes] = await Promise.all([fetch("/api/staff/assignable"), fetch("/api/events")]);
-  const staffList = await staffRes.json();
-  const events = await eventsRes.json();
-  document.getElementById("digitadorSelect").innerHTML = staffList
-    .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""} (${s.role})</option>`).join("");
-  document.getElementById("eventSelect").innerHTML = events
-    .map(e => `<option value="${e.id}">${e.name}${e.status !== "activo" ? " (cerrado)" : ""}</option>`).join("");
-}
-
-document.getElementById("authorizeForm").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const form = new FormData(ev.target);
-  const staffId = form.get("staff_id");
-  const eventId = form.get("event_id");
-  const res = await fetch(`/api/staff/${staffId}/authorize-event/${eventId}`, {method: "POST"});
-  const data = await res.json();
-  alert(data.message || "Listo");
-});
-
 loadStaff();
-loadDropdowns();
 </script>
 </body>
 </html>

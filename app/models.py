@@ -1,5 +1,5 @@
 import json
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -92,9 +92,9 @@ class Event(Base):
     address = Column(String)
     country = Column(String)
     city = Column(String)
-    start_date = Column(DateTime)
-    end_date = Column(DateTime)
-    setup_date = Column(DateTime)  # fecha de montaje
+    start_date = Column(Date)
+    end_date = Column(Date)
+    setup_date = Column(Date)  # fecha de montaje
     event_time_start = Column(String)  # "HH:MM", desde <input type="time">
     event_time_end = Column(String)
     setup_time_start = Column(String)

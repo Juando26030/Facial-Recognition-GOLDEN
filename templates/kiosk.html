@@ -70,7 +70,7 @@
         {% endif %}
         <div class="tab" data-tab="directorio">5. Directorio en Vivo</div>
         {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <div class="tab" data-tab="temporales">6. Usuarios Temporales</div>
+        <div class="tab" data-tab="temporales">6. Usuarios del Evento</div>
         {% endif %}
         {% endif %}
       </div>
@@ -267,14 +267,14 @@
         </div>
 
         {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <!-- PESTAÑA 6: USUARIOS TEMPORALES -->
+        <!-- PESTAÑA 6: USUARIOS DEL EVENTO (digitador + cliente) -->
         <div id="temporales" class="section">
             <div class="golden-badge-builder" style="margin-bottom: 2rem;">
-                <div class="badge-form-title">Nuevo usuario temporal para este evento</div>
+                <div class="badge-form-title">Nueva cuenta para este evento</div>
                 <form id="tempUserForm">
                     <div class="badge-input-row">
                         <div class="badge-input-group">
-                            <label>Cédula (usuario)</label>
+                            <label>Usuario (para digitador, la cédula)</label>
                             <input type="text" name="username" required>
                         </div>
                         <div class="badge-input-group">
@@ -282,17 +282,43 @@
                             <input type="text" name="full_name">
                         </div>
                     </div>
-                    <div class="badge-input-group">
-                        <label>Contraseña temporal</label>
-                        <input type="text" name="password" required>
+                    <div class="badge-input-row">
+                        <div class="badge-input-group">
+                            <label>Contraseña temporal</label>
+                            <input type="text" name="password" required>
+                        </div>
+                        <div class="badge-input-group">
+                            <label>Rol</label>
+                            <select name="role" id="eventRoleSelect" required>
+                                <option value="digitador">Digitador (temporal)</option>
+                                {% if staff_role in ["admin", "super_admin"] %}
+                                <option value="cliente">Cliente</option>
+                                {% endif %}
+                            </select>
+                        </div>
                     </div>
                     <button type="submit" class="golden-btn golden-btn-primary">Crear y asignar a este evento</button>
                 </form>
             </div>
+
+            {% if staff_role in ["admin", "super_admin"] %}
+            <div class="golden-badge-builder" style="margin-bottom: 2rem;">
+                <div class="badge-form-title">Asignar cuenta ya existente a este evento</div>
+                <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Para reusar un digitador o cliente que ya existe de otro evento, en vez de crear uno nuevo.</p>
+                <form id="assignExistingForm">
+                    <div class="badge-input-group">
+                        <label>Usuario existente</label>
+                        <select name="staff_id" id="assignableSelect" required></select>
+                    </div>
+                    <button type="submit" class="golden-btn golden-btn-primary">Asignar a este evento</button>
+                </form>
+            </div>
+            {% endif %}
+
             <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
-                <div class="badge-form-title">Temporales asignados a este evento</div>
+                <div class="badge-form-title">Cuentas asignadas a este evento</div>
                 <table class="golden-table">
-                    <thead><tr><th>Cédula</th><th>Nombre</th><th>Estado</th><th>Acción</th></tr></thead>
+                    <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead>
                     <tbody id="tempUsersBody"></tbody>
                 </table>
             </div>
@@ -310,12 +336,14 @@
     const tempForm = document.getElementById("tempUserForm");
     if (!tempForm) return;
 
+    const assignForm = document.getElementById("assignExistingForm");
+
     async function loadTempUsers() {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/temp-users`);
+        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users`);
         const list = await res.json();
         document.getElementById("tempUsersBody").innerHTML = list.map(u => `
             <tr>
-                <td>${u.username}</td><td>${u.full_name || "-"}</td>
+                <td>${u.username}</td><td>${u.full_name || "-"}</td><td>${u.role}</td>
                 <td>${u.is_active ? "Activo" : "Inactivo"}</td>
                 <td>
                     <button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button>
@@ -325,19 +353,39 @@
         `).join("");
     }
 
+    async function loadAssignableOptions() {
+        if (!assignForm) return;
+        const res = await fetch("/api/staff/assignable");
+        const list = await res.json();
+        document.getElementById("assignableSelect").innerHTML = list
+            .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""} (${s.role})</option>`).join("");
+    }
+
     tempForm.addEventListener("submit", async (ev) => {
         ev.preventDefault();
         const payload = Object.fromEntries(new FormData(ev.target).entries());
-        const res = await fetch(`/api/events/${window.EVENT_ID}/temp-users`, {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users`, {
             method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
         });
         if (res.ok) { ev.target.reset(); loadTempUsers(); }
-        else { const err = await res.json(); alert(err.detail || "No se pudo crear el usuario temporal"); }
+        else { const err = await res.json(); alert(err.detail || "No se pudo crear la cuenta"); }
     });
+
+    if (assignForm) {
+        assignForm.addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            const staffId = new FormData(ev.target).get("staff_id");
+            const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/assign-existing`, {
+                method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({staff_id: Number(staffId)}),
+            });
+            if (res.ok) { loadTempUsers(); }
+            else { const err = await res.json(); alert(err.detail || "No se pudo asignar"); }
+        });
+    }
 
     window.revokeTempUser = async (staffId) => {
         if (!confirm("¿Quitar el acceso de este usuario a este evento?")) return;
-        await fetch(`/api/events/${window.EVENT_ID}/temp-users/${staffId}`, {method: "DELETE"});
+        await fetch(`/api/events/${window.EVENT_ID}/staff-users/${staffId}`, {method: "DELETE"});
         loadTempUsers();
     };
 
@@ -348,6 +396,7 @@
     };
 
     loadTempUsers();
+    loadAssignableOptions();
 })();
 </script>
 </body>

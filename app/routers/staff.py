@@ -10,10 +10,10 @@ from app.auth import hash_password, require_role
 
 router = APIRouter()
 
-# Roles creables desde /admin/staff. "digitador" NO está aquí a propósito: los usuarios
-# temporales se crean desde dentro de un evento (ver app/routers/events.py, POST
-# /events/{id}/temp-users), donde quedan asociados a ese evento en el mismo paso.
-ROLES_CREATABLE_BY_ADMIN = ("coordinador", "cliente")
+# Roles creables/visibles desde /admin/staff. "digitador" y "cliente" NO están aquí a propósito:
+# ambos se crean desde dentro de un evento (ver app/routers/events.py, POST
+# /events/{id}/staff-users), donde quedan asociados a ese evento en el mismo paso.
+ROLES_CREATABLE_BY_ADMIN = ("coordinador",)
 
 # Qué roles puede BORRAR PERMANENTEMENTE cada rol (siempre "todo lo que está por debajo de mí").
 # coordinador es el caso especial: solo temporales (digitador), nada más.
@@ -73,10 +73,10 @@ async def create_staff(
         raise HTTPException(status_code=400, detail="Rol inválido")
     if data.role == "super_admin":
         raise HTTPException(status_code=403, detail="No se puede crear otro Super Admin desde la app")
-    if data.role == "digitador":
+    if data.role in ("digitador", "cliente"):
         raise HTTPException(
             status_code=400,
-            detail="Los usuarios temporales (digitador) se crean desde dentro de un evento, no aquí",
+            detail=f"Las cuentas '{data.role}' se crean desde dentro de un evento (pestaña Usuarios del Evento), no aquí",
         )
     if data.role == "admin" and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede crear cuentas Admin")
@@ -161,30 +161,7 @@ async def delete_staff(
     return {"message": f"{username} eliminado permanentemente de la base de datos"}
 
 
-@router.post("/staff/{staff_id}/authorize-event/{event_id}")
-async def authorize_for_event(
-    staff_id: int, event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
-):
-    """Autoriza a un digitador o cliente (ambos requieren EventStaffAuthorization, ver
-    app/auth.get_event_for_staff) a acceder a un evento puntual. Para digitador normalmente se usa
-    en cambio POST /api/events/{id}/temp-users (crea + autoriza en un paso); este endpoint es para
-    reautorizar uno ya existente en otro evento, o para asignar un usuario cliente."""
-    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
-    event = db.query(Event).filter(Event.id == event_id).first()
-    if not target or not event:
-        raise HTTPException(status_code=404, detail="Usuario o evento no encontrado")
-    existing = db.query(EventStaffAuthorization).filter_by(staff_user_id=staff_id, event_id=event_id).first()
-    if existing:
-        return {"message": "Ya estaba autorizado"}
-    db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=staff_id, authorized_by_id=staff.id))
-    db.commit()
-    return {"message": f"{target.username} autorizado para '{event.name}'"}
 
-
-@router.delete("/staff/{staff_id}/authorize-event/{event_id}")
-async def revoke_event_authorization(
-    staff_id: int, event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
-):
-    db.query(EventStaffAuthorization).filter_by(staff_user_id=staff_id, event_id=event_id).delete()
-    db.commit()
-    return {"message": "Autorización revocada"}
+# Nota: la autorización de un digitador/cliente EXISTENTE a un evento ya no vive aquí — se movió
+# a app/routers/events.py (POST/DELETE /events/{id}/staff-users, /assign-existing), porque todo
+# lo relacionado a "quién puede operar en este evento" se gestiona desde dentro del evento.

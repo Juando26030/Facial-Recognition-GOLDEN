@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,18 +9,31 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.auth import get_current_staff, hash_password, require_role
+from app.cities_data import COUNTRY_CITIES
 
 router = APIRouter()
 
 
-class TempUserIn(BaseModel):
-    username: str  # cédula
+@router.get("/cities")
+async def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinador"))):
+    """Sugerencias de ciudad para el país dado (ver app/cities_data.py — lista curada, no
+    exhaustiva). El campo de ciudad en el formulario siempre acepta texto libre también."""
+    return COUNTRY_CITIES.get(country, [])
+
+
+class EventStaffIn(BaseModel):
+    username: str  # cédula, para digitador
     password: str
     full_name: Optional[str] = None
+    role: str = "digitador"  # "digitador" (coordinador+) o "cliente" (admin+ únicamente)
+
+
+class AssignExistingIn(BaseModel):
+    staff_id: int
 
 
 def _serialize_staff(s: StaffUser) -> dict:
-    return {"id": s.id, "username": s.username, "full_name": s.full_name, "is_active": s.is_active}
+    return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active}
 
 
 class EventIn(BaseModel):
@@ -33,9 +46,9 @@ class EventIn(BaseModel):
     address: str
     country: str
     city: str
-    start_date: datetime
-    end_date: datetime
-    setup_date: datetime
+    start_date: date
+    end_date: date
+    setup_date: date
     event_time_start: str
     event_time_end: str
     setup_time_start: str
@@ -51,9 +64,9 @@ class EventUpdate(BaseModel):
     address: Optional[str] = None
     country: Optional[str] = None
     city: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    setup_date: Optional[datetime] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    setup_date: Optional[date] = None
     event_time_start: Optional[str] = None
     event_time_end: Optional[str] = None
     setup_time_start: Optional[str] = None
@@ -170,46 +183,72 @@ async def update_event(
     return _serialize(event)
 
 
-@router.get("/events/{event_id}/temp-users")
-async def list_temp_users(
+@router.get("/events/{event_id}/staff-users")
+async def list_event_staff(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
-    """Digitadores autorizados para ESTE evento (creados aquí o reautorizados desde /admin/staff)."""
+    """digitador + cliente autorizados para ESTE evento."""
     staff_list = (
         db.query(StaffUser)
         .join(EventStaffAuthorization, EventStaffAuthorization.staff_user_id == StaffUser.id)
-        .filter(EventStaffAuthorization.event_id == event_id, StaffUser.role == "digitador")
+        .filter(EventStaffAuthorization.event_id == event_id, StaffUser.role.in_(("digitador", "cliente")))
         .all()
     )
     return [_serialize_staff(s) for s in staff_list]
 
 
-@router.post("/events/{event_id}/temp-users")
-async def create_temp_user(
-    event_id: int, data: TempUserIn, db: Session = Depends(get_db),
+@router.post("/events/{event_id}/staff-users")
+async def create_event_staff(
+    event_id: int, data: EventStaffIn, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
-    """Crea un usuario digitador (temporal) y lo autoriza para ESTE evento en un solo paso —
-    no queda visible en /admin/staff como cuenta 'suelta' sin asociar."""
+    """Crea una cuenta digitador o cliente y la autoriza para ESTE evento en un solo paso — no
+    queda visible en /admin/staff como cuenta 'suelta' sin asociar. 'cliente' exige admin+
+    (un coordinador solo puede crear digitador)."""
+    if data.role not in ("digitador", "cliente"):
+        raise HTTPException(status_code=400, detail="Rol inválido (debe ser 'digitador' o 'cliente')")
+    if data.role == "cliente" and staff.role not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Solo un Admin puede crear cuentas cliente")
+
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
-        raise HTTPException(status_code=400, detail="Ya existe una cuenta con esa cédula/usuario")
+        raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
 
-    temp_user = StaffUser(
+    new_user = StaffUser(
         username=data.username, password_hash=hash_password(data.password),
-        full_name=data.full_name, role="digitador", tenant_id=event.tenant_id, created_by_id=staff.id,
+        full_name=data.full_name, role=data.role, tenant_id=event.tenant_id, created_by_id=staff.id,
     )
-    db.add(temp_user)
-    db.flush()  # para obtener temp_user.id antes de commitear
-    db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=temp_user.id, authorized_by_id=staff.id))
+    db.add(new_user)
+    db.flush()  # para obtener new_user.id antes de commitear
+    db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=new_user.id, authorized_by_id=staff.id))
     db.commit()
-    return _serialize_staff(temp_user)
+    return _serialize_staff(new_user)
 
 
-@router.delete("/events/{event_id}/temp-users/{staff_id}")
-async def revoke_temp_user(
+@router.post("/events/{event_id}/staff-users/assign-existing")
+async def assign_existing_staff(
+    event_id: int, data: AssignExistingIn, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("admin")),
+):
+    """Autoriza una cuenta digitador/cliente YA existente (de otro evento) para ESTE evento —
+    admin+ únicamente. Para crear una cuenta nueva usar POST .../staff-users en su lugar."""
+    target = db.query(StaffUser).filter(
+        StaffUser.id == data.staff_id, StaffUser.role.in_(("digitador", "cliente"))
+    ).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    existing = db.query(EventStaffAuthorization).filter_by(staff_user_id=target.id, event_id=event_id).first()
+    if existing:
+        return {"message": "Ya estaba autorizado para este evento"}
+    db.add(EventStaffAuthorization(event_id=event_id, staff_user_id=target.id, authorized_by_id=staff.id))
+    db.commit()
+    return _serialize_staff(target)
+
+
+@router.delete("/events/{event_id}/staff-users/{staff_id}")
+async def revoke_event_staff(
     event_id: int, staff_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):

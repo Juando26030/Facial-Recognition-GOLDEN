@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <style>
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
@@ -195,22 +196,23 @@ async function loadTenants() {
             <div class="badge-input-group"><label>Nombre del evento *</label><input type="text" name="name" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>Fecha inicio *</label><input type="datetime-local" name="start_date" required></div>
-            <div class="badge-input-group"><label>Fecha fin *</label><input type="datetime-local" name="end_date" required></div>
-            <div class="badge-input-group"><label>Fecha montaje *</label><input type="datetime-local" name="setup_date" required></div>
+            <div class="badge-input-group"><label>Fecha inicio *</label><input type="date" name="start_date" required></div>
+            <div class="badge-input-group"><label>Fecha fin *</label><input type="date" name="end_date" required></div>
+            <div class="badge-input-group"><label>Fecha montaje *</label><input type="date" name="setup_date" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>Hora inicio evento *</label><input type="time" name="event_time_start" required></div>
-            <div class="badge-input-group"><label>Hora fin evento *</label><input type="time" name="event_time_end" required></div>
+            <div class="badge-input-group"><label>Hora inicio evento *</label><input type="text" class="clock-time" name="event_time_start" required></div>
+            <div class="badge-input-group"><label>Hora fin evento *</label><input type="text" class="clock-time" name="event_time_end" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>Hora inicio montaje *</label><input type="time" name="setup_time_start" required></div>
-            <div class="badge-input-group"><label>Hora fin montaje *</label><input type="time" name="setup_time_end" required></div>
+            <div class="badge-input-group"><label>Hora inicio montaje *</label><input type="text" class="clock-time" name="setup_time_start" required></div>
+            <div class="badge-input-group"><label>Hora fin montaje *</label><input type="text" class="clock-time" name="setup_time_end" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>País *</label><input type="text" name="country" list="countryList" required autocomplete="off"></div>
-            <div class="badge-input-group"><label>Ciudad *</label><input type="text" name="city" required></div>
+            <div class="badge-input-group"><label>País *</label><input type="text" class="country-field" name="country" list="countryList" required autocomplete="off"></div>
+            <div class="badge-input-group"><label>Ciudad *</label><input type="text" class="city-field" name="city" list="cityList-${t.id}" required autocomplete="off"></div>
           </div>
+          <datalist id="cityList-${t.id}"></datalist>
           <div class="badge-input-row">
             <div class="badge-input-group"><label>Lugar *</label><input type="text" name="location" required></div>
             <div class="badge-input-group"><label>Dirección *</label><input type="text" name="address" required></div>
@@ -230,6 +232,21 @@ async function loadTenants() {
       </div>
     </div>
   `).join("");
+
+  el.querySelectorAll(".clock-time").forEach((input) => attachClockPicker(input));
+  el.querySelectorAll(".country-field").forEach((input) => {
+    input.addEventListener("change", () => updateCityOptions(input));
+  });
+}
+
+async function updateCityOptions(countryInput) {
+  const form = countryInput.closest("form");
+  const cityDatalist = form.querySelector("datalist");
+  const country = countryInput.value.trim();
+  if (!country) { cityDatalist.innerHTML = ""; return; }
+  const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
+  const cities = res.ok ? await res.json() : [];
+  cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join("");
 }
 
 async function toggleTenant(tenantId, card) {
