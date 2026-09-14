@@ -153,6 +153,11 @@ async def kiosk_cedula(event_id: int, request: Request, db: Session = Depends(ge
     return _resolve_kiosk_page(event_id, request, db, "kiosk_cedula.html")
 
 
+@app.get("/kiosk/{event_id}/roster")
+async def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db)):
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html")
+
+
 @app.get("/admin/staff")
 async def staff_page(request: Request):
     redirect = _require_page_role(request, "admin")

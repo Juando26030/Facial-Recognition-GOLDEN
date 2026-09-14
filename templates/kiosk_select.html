@@ -58,7 +58,7 @@
       <a href="/kiosk/{{ event.id }}/facial" class="mode-card enabled">
         <div class="mode-icon">📸</div>
         <div class="mode-title">Reconocimiento Facial</div>
-        <div class="mode-sub">Escáner, registro individual, carga masiva</div>
+        <div class="mode-sub">Escáner, registro individual y directorio</div>
       </a>
       <a href="/kiosk/{{ event.id }}/cedula" class="mode-card enabled">
         <div class="mode-icon">🪪</div>
@@ -70,6 +70,13 @@
         <div class="mode-title">Código QR</div>
         <div class="mode-sub">Próximamente</div>
       </div>
+      {% if staff_role != "digitador" %}
+      <a href="/kiosk/{{ event.id }}/roster" class="mode-card enabled">
+        <div class="mode-icon">📎</div>
+        <div class="mode-title">Adjuntar Base de Datos</div>
+        <div class="mode-sub">Carga masiva desde Excel/CSV, para cualquier método de registro</div>
+      </a>
+      {% endif %}
     </div>
 
     {% if event.status != "en_proceso" %}

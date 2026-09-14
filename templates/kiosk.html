@@ -75,12 +75,11 @@
         <div class="tab active" data-tab="scanner">1. Escáner de Acceso</div>
         <div class="tab" data-tab="manual">2. Registro Individual</div>
         {% if staff_role != "digitador" %}
-        <div class="tab" data-tab="masivo">3. Carga Masiva</div>
-        <div class="tab" data-tab="exportar">4. Exportar Reporte</div>
+        <div class="tab" data-tab="exportar">3. Exportar Reporte</div>
         {% endif %}
-        <div class="tab" data-tab="directorio">5. Directorio en Vivo</div>
+        <div class="tab" data-tab="directorio">4. Directorio en Vivo</div>
         {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <div class="tab" data-tab="temporales">6. Usuarios del Evento</div>
+        <div class="tab" data-tab="temporales">5. Usuarios del Evento</div>
         {% endif %}
         {% endif %}
       </div>
@@ -221,24 +220,7 @@
         {% endif %}
 
         {% if staff_role not in ["digitador", "cliente"] %}
-        <!-- PESTAÑA 3: CARGA MASIVA -->
-        <div id="masivo" class="section">
-            <form id="bulkForm" class="golden-badge-builder">
-                <div class="badge-form-title">Cargar base de asistentes del evento</div>
-                <p style="text-align: center; color: #666; margin-bottom: 20px;">Sirve para cualquier método de registro (cédula, facial, QR). Sube el Excel/.csv con los asistentes esperados.<br>El .zip de fotos es <strong>opcional</strong> — solo hace falta si además quieres que se puedan reconocer por cara (fotos nombradas &lt;cédula&gt;.jpg).</p>
-                <div class="badge-input-group">
-                    <label>Base de asistentes (.xlsx o .csv)</label>
-                    <input type="file" name="roster_file" accept=".xlsx,.csv" required>
-                </div>
-                <div class="badge-input-group">
-                    <label>Lote de Fotografías (.zip) — opcional, solo para facial</label>
-                    <input type="file" name="zip_file" accept=".zip">
-                </div>
-                <button type="submit" class="golden-btn golden-btn-primary">Cargar base</button>
-            </form>
-        </div>
-
-        <!-- PESTAÑA 4: EXPORTAR REPORTE -->
+        <!-- PESTAÑA 3: EXPORTAR REPORTE -->
         <div id="exportar" class="section">
             <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
                 <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Base de Datos Oficial</h3>
@@ -250,7 +232,7 @@
         </div>
         {% endif %}
 
-        <!-- PESTAÑA 5: DIRECTORIO EN VIVO -->
+        <!-- PESTAÑA 4: DIRECTORIO EN VIVO -->
         <div id="directorio" class="section{% if staff_role == 'cliente' %} active{% endif %}" style="max-width: 100%;">
             <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
                 <div class="badge-form-title" style="display:flex; justify-content:space-between; align-items:center;">
@@ -280,7 +262,7 @@
         </div>
 
         {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <!-- PESTAÑA 6: USUARIOS DEL EVENTO (digitador + cliente) -->
+        <!-- PESTAÑA 5: USUARIOS DEL EVENTO (digitador + cliente) -->
         <div id="temporales" class="section">
             <div class="golden-badge-builder" style="margin-bottom: 2rem;">
                 <div class="badge-form-title">Nueva cuenta para este evento</div>
@@ -343,6 +325,7 @@
   </section>
 </main>
 
+<script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
 (function() {
