@@ -10,9 +10,10 @@ from fastapi import APIRouter, Depends, File, UploadFile, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, AccessLog, Tenant
+from app.models import User, AccessLog, Tenant, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
+from app.auth import require_role
 
 router = APIRouter()
 
@@ -29,7 +30,7 @@ def get_tenant(db: Session):
     return tenant
 
 @router.get("/users")
-async def get_all_users(db: Session = Depends(get_db)):
+async def get_all_users(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     users = db.query(User).filter(User.tenant_id == CURRENT_TENANT).all()
     result = []
     
@@ -51,11 +52,14 @@ async def get_all_users(db: Session = Depends(get_db)):
     return result
 
 @router.post("/recognize")
-async def recognize(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def recognize(
+    file: UploadFile = File(...), db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("digitador")),
+):
     get_tenant(db)
     img_array = BiometricEngine.process_image_stream(await file.read())
     unknown_enc = BiometricEngine.extract_encoding(img_array)
-    
+
     if not unknown_enc:
         return {"result": "NO", "details": "Rostro no detectado"}
 
@@ -63,7 +67,7 @@ async def recognize(file: UploadFile = File(...), db: Session = Depends(get_db))
     for user in users:
         known_enc = user.get_encoding()
         if known_enc and BiometricEngine.compare(known_enc, unknown_enc):
-            log = AccessLog(tenant_id=CURRENT_TENANT, user_id=user.id, record_type="Existente")
+            log = AccessLog(tenant_id=CURRENT_TENANT, user_id=user.id, record_type="Existente", registered_by_staff_id=staff.id)
             db.add(log)
             db.commit()
             return {"result": "SÍ", "data": {
@@ -75,7 +79,10 @@ async def recognize(file: UploadFile = File(...), db: Session = Depends(get_db))
     return {"result": "NO", "details": "Denegado"}
 
 @router.patch("/users/{user_id}")
-async def update_user(user_id: str, data: dict, db: Session = Depends(get_db)):
+async def update_user(
+    user_id: str, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("coordinador")),
+):
     user = db.query(User).filter(User.id == user_id, User.tenant_id == CURRENT_TENANT).first()
     if user:
         for key, value in data.items():
@@ -88,37 +95,41 @@ async def update_user(user_id: str, data: dict, db: Session = Depends(get_db)):
     return {"error": "Usuario no encontrado"}
 
 @router.delete("/users/{user_id}/logs")
-async def delete_user_logs(user_id: str, db: Session = Depends(get_db)):
+async def delete_user_logs(
+    user_id: str, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("admin")),
+):
     db.query(AccessLog).filter(AccessLog.user_id == user_id, AccessLog.tenant_id == CURRENT_TENANT).delete()
     db.commit()
     return {"message": "Registros eliminados. Estado regresado a No Registrado."}
 
 @router.post("/register")
 async def manual_register(
-    id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...), 
-    role: str = Form(""), company: str = Form(""), phone: str = Form(""), 
-    email: str = Form(""), file: UploadFile = File(...), db: Session = Depends(get_db)
+    id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
+    role: str = Form(""), company: str = Form(""), phone: str = Form(""),
+    email: str = Form(""), file: UploadFile = File(...), db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("digitador")),
 ):
     get_tenant(db)
     existing = db.query(User).filter(User.id == id, User.tenant_id == CURRENT_TENANT).first()
     if existing:
         return {"error": "El usuario ya está registrado en la base de datos."}
-        
+
     img_array = BiometricEngine.process_image_stream(await file.read())
     encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
-    
+
     if not encodings:
         return {"error": "No se detectó un rostro en la fotografía."}
-        
+
     face_enc_json = json.dumps(encodings)
-    
+
     user = User(
-        id=id, tenant_id=CURRENT_TENANT, first_name=first_name.strip(), last_name=last_name.strip(), 
+        id=id, tenant_id=CURRENT_TENANT, first_name=first_name.strip(), last_name=last_name.strip(),
         role=role, company=company, phone=phone, email=email, face_encoding=face_enc_json
     )
     db.add(user)
-    
-    log = AccessLog(tenant_id=CURRENT_TENANT, user_id=id, record_type="Nuevo")
+
+    log = AccessLog(tenant_id=CURRENT_TENANT, user_id=id, record_type="Nuevo", registered_by_staff_id=staff.id)
     db.add(log)
     db.commit()
     
@@ -128,7 +139,10 @@ async def manual_register(
     return {"message": "Usuario registrado exitosamente como Nuevo."}
 
 @router.post("/bulk_register")
-async def bulk_register(zip_file: UploadFile = File(...), csv_file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def bulk_register(
+    zip_file: UploadFile = File(...), csv_file: UploadFile = File(...), db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("coordinador")),
+):
     get_tenant(db)
     
     zip_path = os.path.join(KNOWN_FACES_DIR, 'temp.zip')
@@ -188,7 +202,7 @@ async def bulk_register(zip_file: UploadFile = File(...), csv_file: UploadFile =
     return {"message": f"Sincronización masiva exitosa: {count} perfiles cargados."}
 
 @router.get("/report")
-async def download_report(db: Session = Depends(get_db)):
+async def download_report(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     ReportManager.generate_excel_report(db, CURRENT_TENANT, temp_file.name)
     return FileResponse(temp_file.name, filename="Golden_Reporte_Eventos.xlsx")

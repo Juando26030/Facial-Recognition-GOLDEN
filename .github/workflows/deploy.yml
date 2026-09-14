@@ -9,12 +9,29 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      - name: Pull latest main and restart service
+      - name: Pull latest main
         run: |
           set -e
           cd ~/Facial-Recognition
           git fetch origin main
           git reset --hard origin/main
+
+      - name: Install dependencies
+        run: |
+          set -e
+          cd ~/Facial-Recognition
+          venv/bin/pip install -q -r requirements.txt
+
+      - name: Run database migrations
+        run: |
+          set -e
+          cd ~/Facial-Recognition
+          venv/bin/alembic upgrade head
+
+      - name: Restart service
+        run: |
+          set -e
           sudo systemctl restart facial-recognition
-          sleep 2
+          sleep 5
           sudo systemctl is-active facial-recognition
+          curl -s -o /dev/null -w "app respondiendo: %{http_code}\n" http://localhost:8000/login

@@ -9,3 +9,6 @@ pandas
 openpyxl
 python-dotenv
 jinja2
+bcrypt
+itsdangerous
+alembic

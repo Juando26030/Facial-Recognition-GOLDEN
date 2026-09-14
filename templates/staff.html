@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+</head>
+<body>
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Kiosko</a>
+      <a href="/admin/events" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Eventos</a>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:2rem;">
+      <span>GESTIÓN</span>
+      <h2>Usuarios de staff</h2>
+    </div>
+
+    <div class="golden-badge-builder" style="margin-bottom: 2rem;">
+      <div class="badge-form-title">Nueva cuenta</div>
+      <form id="newStaffForm">
+        <div class="badge-input-row">
+          <div class="badge-input-group">
+            <label>Usuario (para digitador, usa la cédula)</label>
+            <input type="text" name="username" required>
+          </div>
+          <div class="badge-input-group">
+            <label>Nombre completo</label>
+            <input type="text" name="full_name">
+          </div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group">
+            <label>Contraseña temporal</label>
+            <input type="text" name="password" required>
+          </div>
+          <div class="badge-input-group">
+            <label>Rol</label>
+            <select name="role" id="roleSelect" required>
+              <option value="coordinador">Coordinador</option>
+              <option value="digitador">Digitador (temporal)</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="golden-btn golden-btn-primary">Crear cuenta</button>
+      </form>
+    </div>
+
+    <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto; margin-bottom: 2rem;">
+      <table class="golden-table">
+        <thead>
+          <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
+        </thead>
+        <tbody id="staffBody"></tbody>
+      </table>
+    </div>
+
+    <div class="golden-badge-builder">
+      <div class="badge-form-title">Autorizar digitador para un evento</div>
+      <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Un digitador solo debería poder registrar/reconocer en eventos para los que está autorizado aquí. (Nota: esta autorización todavía no está conectada al flujo del kiosko — ver CLAUDE.md.)</p>
+      <form id="authorizeForm">
+        <div class="badge-input-row">
+          <div class="badge-input-group">
+            <label>Digitador</label>
+            <select name="staff_id" id="digitadorSelect" required></select>
+          </div>
+          <div class="badge-input-group">
+            <label>Evento</label>
+            <select name="event_id" id="eventSelect" required></select>
+          </div>
+        </div>
+        <button type="submit" class="golden-btn golden-btn-primary">Autorizar</button>
+      </form>
+    </div>
+  </div>
+</main>
+
+<script>
+const staffRole = "{{ staff_role }}";
+if (staffRole === "super_admin") {
+  document.getElementById("roleSelect").insertAdjacentHTML("afterbegin", '<option value="admin">Admin</option>');
+}
+
+async function loadStaff() {
+  const res = await fetch("/api/staff");
+  const list = await res.json();
+  document.getElementById("staffBody").innerHTML = list.map(s => `
+    <tr>
+      <td>${s.username}</td>
+      <td>${s.full_name || "-"}</td>
+      <td>${s.role}</td>
+      <td>${s.is_active ? "Activo" : "Inactivo"}</td>
+      <td>
+        ${s.is_active
+          ? `<button class="btn-table-action" style="background:#dc3545;" onclick="toggleStaff(${s.id}, false)">Desactivar</button>`
+          : `<button class="btn-table-action btn-save" onclick="toggleStaff(${s.id}, true)">Reactivar</button>`}
+      </td>
+    </tr>
+  `).join("");
+}
+
+document.getElementById("newStaffForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = new FormData(ev.target);
+  const payload = Object.fromEntries(form.entries());
+  const res = await fetch("/api/staff", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+  });
+  if (res.ok) { ev.target.reset(); loadStaff(); } else { const err = await res.json(); alert(err.detail || "No se pudo crear la cuenta"); }
+});
+
+async function toggleStaff(id, activate) {
+  await fetch(`/api/staff/${id}/${activate ? "activate" : "deactivate"}`, {method: "PATCH"});
+  loadStaff();
+}
+
+async function loadDropdowns() {
+  const [staffRes, eventsRes] = await Promise.all([fetch("/api/staff"), fetch("/api/events")]);
+  const staffList = await staffRes.json();
+  const events = await eventsRes.json();
+  document.getElementById("digitadorSelect").innerHTML = staffList
+    .filter(s => s.role === "digitador" && s.is_active)
+    .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""}</option>`).join("");
+  document.getElementById("eventSelect").innerHTML = events
+    .map(e => `<option value="${e.id}">${e.name}${e.status !== "activo" ? " (cerrado)" : ""}</option>`).join("");
+}
+
+document.getElementById("authorizeForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = new FormData(ev.target);
+  const staffId = form.get("staff_id");
+  const eventId = form.get("event_id");
+  const res = await fetch(`/api/staff/${staffId}/authorize-event/${eventId}`, {method: "POST"});
+  const data = await res.json();
+  alert(data.message || "Listo");
+});
+
+loadStaff();
+loadDropdowns();
+</script>
+</body>
+</html>

@@ -1,9 +1,12 @@
 import json
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, ForeignKeyConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
 Base = declarative_base()
+
+# Roles de staff, de menor a mayor privilegio. Ver app/auth.py (ROLE_HIERARCHY).
+STAFF_ROLES = ("digitador", "coordinador", "admin", "super_admin")
 
 class Tenant(Base):
     __tablename__ = 'tenants'
@@ -39,14 +42,68 @@ class AccessLog(Base):
     tenant_id = Column(String, ForeignKey('tenants.id'))
     user_id = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    record_type = Column(String) 
-    
+    record_type = Column(String)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
+    registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
     __table_args__ = (
         ForeignKeyConstraint(
             ['user_id', 'tenant_id'],
             ['users.id', 'users.tenant_id']
         ),
     )
-    
+
     tenant = relationship("Tenant", back_populates="logs", overlaps="tenant,users,logs")
     user = relationship("User", back_populates="logs", overlaps="tenant,users,logs")
+    event = relationship("Event")
+    registered_by = relationship("StaffUser")
+
+
+class StaffUser(Base):
+    """Cuenta de staff interno (no la persona biométrica registrada, eso es `User`)."""
+    __tablename__ = 'staff_users'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, unique=True, nullable=False)  # para digitadores, la cédula
+    password_hash = Column(String, nullable=False)
+    full_name = Column(String)
+    role = Column(String, nullable=False)  # uno de STAFF_ROLES
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=True)  # null = alcance global (super_admin)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant")
+    created_by = relationship("StaffUser", remote_side=[id])
+
+
+class Event(Base):
+    __tablename__ = 'events'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
+    name = Column(String, nullable=False)
+    location = Column(String)
+    start_date = Column(DateTime)
+    end_date = Column(DateTime)
+    status = Column(String, default='activo', nullable=False)  # activo | cerrado
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    tenant = relationship("Tenant")
+    created_by = relationship("StaffUser")
+
+
+class EventStaffAuthorization(Base):
+    """Qué staff_user puede operar en qué evento. Obligatorio para digitadores (acceso temporal);
+    para coordinador/admin/super_admin no se exige (tienen alcance de tenant/global)."""
+    __tablename__ = 'event_staff_authorizations'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
+    authorized_by_id = Column(Integer, ForeignKey('staff_users.id'))
+    authorized_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_event_staff'),)
+
+    event = relationship("Event")
+    staff_user = relationship("StaffUser", foreign_keys=[staff_user_id])
+    authorized_by = relationship("StaffUser", foreign_keys=[authorized_by_id])

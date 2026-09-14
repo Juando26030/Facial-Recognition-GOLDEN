@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingresar | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+</head>
+<body style="background: var(--golden-dark); min-height:100vh; display:flex; align-items:center; justify-content:center;">
+    <div style="background:white; padding:2.5rem; border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.3); width:100%; max-width:380px;">
+        <h2 style="font-family: var(--font-heading-primary); color: var(--golden-dark); text-align:center; margin-bottom: 1.5rem;">Golden <span class="gradient-text">Biometrics</span></h2>
+        {% if error %}
+        <div style="background:#f8d7da; color:#842029; padding:10px 15px; border-radius:8px; margin-bottom:1rem; font-size:0.9rem;">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="/login">
+            <div class="badge-input-group">
+                <label>Usuario</label>
+                <input type="text" name="username" required autofocus>
+            </div>
+            <div class="badge-input-group">
+                <label>Contraseña</label>
+                <input type="password" name="password" required>
+            </div>
+            <button type="submit" class="golden-btn golden-btn-primary" style="margin-top:0.5rem;">Ingresar</button>
+        </form>
+    </div>
+</body>
+</html>

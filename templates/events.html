@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eventos | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+</head>
+<body>
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Kiosko</a>
+      {% if staff_role in ["admin", "super_admin"] %}<a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>{% endif %}
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:2rem;">
+      <span>GESTIÓN</span>
+      <h2>Eventos</h2>
+    </div>
+
+    <div class="golden-badge-builder" style="margin-bottom: 2rem;">
+      <div class="badge-form-title">Nuevo evento</div>
+      <form id="newEventForm">
+        <div class="badge-input-row">
+          <div class="badge-input-group">
+            <label>Nombre</label>
+            <input type="text" name="name" required>
+          </div>
+          <div class="badge-input-group">
+            <label>Lugar</label>
+            <input type="text" name="location">
+          </div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group">
+            <label>Inicio</label>
+            <input type="datetime-local" name="start_date">
+          </div>
+          <div class="badge-input-group">
+            <label>Fin</label>
+            <input type="datetime-local" name="end_date">
+          </div>
+        </div>
+        <button type="submit" class="golden-btn golden-btn-primary">Crear evento</button>
+      </form>
+    </div>
+
+    <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+      <table class="golden-table">
+        <thead>
+          <tr><th>Nombre</th><th>Lugar</th><th>Estado</th><th>Inicio</th><th>Fin</th><th>Acciones</th></tr>
+        </thead>
+        <tbody id="eventsBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+const staffRole = "{{ staff_role }}";
+const isAdmin = staffRole === "admin" || staffRole === "super_admin";
+
+async function loadEvents() {
+  const res = await fetch("/api/events");
+  const events = await res.json();
+  const body = document.getElementById("eventsBody");
+  body.innerHTML = events.map(e => `
+    <tr>
+      <td>${e.name}</td>
+      <td>${e.location || "-"}</td>
+      <td>${e.status}</td>
+      <td>${e.start_date ? new Date(e.start_date).toLocaleString() : "-"}</td>
+      <td>${e.end_date ? new Date(e.end_date).toLocaleString() : "-"}</td>
+      <td>
+        ${e.status === "activo"
+          ? `<button class="btn-table-action" onclick="closeEvent(${e.id})">Cerrar</button>`
+          : `<button class="btn-table-action btn-save" onclick="reopenEvent(${e.id})">Reabrir</button>`}
+        ${isAdmin ? `<button class="btn-table-action" style="background:#dc3545;" onclick="deleteEvent(${e.id}, '${e.name.replace(/'/g, "\\'")}')">Eliminar</button>` : ""}
+      </td>
+    </tr>
+  `).join("");
+}
+
+document.getElementById("newEventForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = new FormData(ev.target);
+  const payload = Object.fromEntries(form.entries());
+  if (!payload.start_date) delete payload.start_date;
+  if (!payload.end_date) delete payload.end_date;
+  const res = await fetch("/api/events", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+  });
+  if (res.ok) { ev.target.reset(); loadEvents(); } else { alert("No se pudo crear el evento"); }
+});
+
+async function closeEvent(id) {
+  await fetch(`/api/events/${id}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({status: "cerrado"})});
+  loadEvents();
+}
+async function reopenEvent(id) {
+  await fetch(`/api/events/${id}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({status: "activo"})});
+  loadEvents();
+}
+async function deleteEvent(id, name) {
+  if (!confirm(`¿Eliminar permanentemente "${name}"? Esta acción no se puede deshacer.`)) return;
+  await fetch(`/api/events/${id}`, {method: "DELETE"});
+  loadEvents();
+}
+
+loadEvents();
+</script>
+</body>
+</html>

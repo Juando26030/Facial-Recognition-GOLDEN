@@ -29,10 +29,20 @@
     <a href="#" class="golden-logo">
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
-    <nav class="golden-nav">
+    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
       <div class="golden-anniversary-badge">
         SISTEMA BIOMÉTRICO 360°
       </div>
+      {% if staff_role in ["coordinador", "admin", "super_admin"] %}
+      <a href="/admin/events" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Eventos</a>
+      {% endif %}
+      {% if staff_role in ["admin", "super_admin"] %}
+      <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
+      {% endif %}
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
     </nav>
   </div>
 </header>
