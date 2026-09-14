@@ -30,7 +30,7 @@ class Tenant(Base):
 
 class User(Base):
     __tablename__ = 'users'
-    id = Column(String, primary_key=True) 
+    id = Column(String, primary_key=True)
     tenant_id = Column(String, ForeignKey('tenants.id'), primary_key=True)
     first_name = Column(String)
     last_name = Column(String)
@@ -38,15 +38,22 @@ class User(Base):
     company = Column(String)
     phone = Column(String)
     email = Column(String)
-    opt_1 = Column(String)
-    opt_2 = Column(String)
+    opt_1 = Column(String)  # "Tipo de asistente" (2026-09-20; antes "tipo de empresa") — único campo opcional fijo, el resto son extra_fields
+    opt_2 = Column(String)  # deprecado (2026-09-20, era "cantidad de empl") — ya no se escribe, reemplazado por extra_fields. Se deja la columna para no perder datos históricos.
+    extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
     face_encoding = Column(Text)
-    
+
     tenant = relationship("Tenant", back_populates="users", overlaps="tenant,users,logs")
     logs = relationship("AccessLog", back_populates="user", cascade="all, delete", overlaps="tenant,users,logs")
-    
+
     def get_encoding(self):
         return json.loads(self.face_encoding) if self.face_encoding else None
+
+    def get_extras(self) -> dict:
+        return json.loads(self.extra_fields) if self.extra_fields else {}
+
+    def set_extras(self, data: dict) -> None:
+        self.extra_fields = json.dumps(data) if data else None
 
 class EventAttendee(Base):
     """Lista de personas esperadas/asociadas a UN evento — separada de User a propósito (ver
@@ -130,10 +137,17 @@ class Event(Base):
     coordinator_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'))
     created_at = Column(DateTime, default=datetime.utcnow)
+    optional_field_labels = Column(Text)  # JSON {"opcional_1": "Talla de camisa", ...} — nombres que el cliente le dio a las columnas "opcional_N" de SU roster (2026-09-20, ver bulk_register)
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
+
+    def get_optional_labels(self) -> dict:
+        return json.loads(self.optional_field_labels) if self.optional_field_labels else {}
+
+    def set_optional_labels(self, data: dict) -> None:
+        self.optional_field_labels = json.dumps(data) if data else None
 
 
 class EventStaffAuthorization(Base):

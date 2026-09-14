@@ -79,7 +79,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById('edit_phone').value = data.data.phone || "";
                 document.getElementById('edit_email').value = data.data.email || "";
                 document.getElementById('edit_opt_1').value = data.data.opt_1 || "";
-                document.getElementById('edit_opt_2').value = data.data.opt_2 || "";
 
                 if(profileCard) profileCard.style.display = 'flex';
             } else {

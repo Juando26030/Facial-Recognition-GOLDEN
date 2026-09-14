@@ -6,8 +6,11 @@
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
   }
 
-  const FIELDS_ORDER = ['id', 'first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1', 'opt_2'];
-  const EDITABLE_FIELDS = ['first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1', 'opt_2'];
+  /* opt_2 (antes "cantidad de empl") quedó deprecado el 2026-09-20 — la carga de base ahora usa
+     hasta 30 campos "opcional_N" dinámicos (ver bulk_register/CLAUDE.md) en vez de dos fijos. Se
+     deja de mostrar/editar aquí; el campo sigue existiendo en la base por compatibilidad. */
+  const FIELDS_ORDER = ['id', 'first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1'];
+  const EDITABLE_FIELDS = ['first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1'];
 
   function buildRow(user, opts) {
     const tr = document.createElement('tr');
@@ -165,7 +168,7 @@
       const tbody = document.getElementById(tbodyId);
       tbody.innerHTML = '';
       if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
         return;
       }
       users.forEach(user => tbody.appendChild(buildRow(user, opts)));
@@ -174,14 +177,14 @@
     async load(tbodyId, opts) {
       opts = opts || {};
       const tbody = document.getElementById(tbodyId);
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">Cargando base de datos...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Cargando base de datos...</td></tr>';
       try {
         const res = await fetch(withEvent('/api/users'));
         const users = await res.json();
         this.render(tbodyId, users, opts);
         return users;
       } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
         return [];
       }
     },

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import zipfile
 import tempfile
@@ -39,6 +40,24 @@ def _read_roster_rows(filename: str, content: bytes):
         delimiter = ";" if ";" in decoded.split("\n", 1)[0] else ","
         for row in csv.DictReader(io.StringIO(decoded), delimiter=delimiter):
             yield {k.strip().lower() if k else "": (v or "").strip() for k, v in row.items() if k}
+
+MAX_OPTIONAL_FIELDS = 30
+_OPTIONAL_FIELD_RE = re.compile(r"^opcional[\s_]*([0-9]{1,2})$")
+
+
+def _normalize_optional_key(raw_key: str):
+    """Reconoce cualquier variante de encabezado 'opcional 1'..'opcional 30' (con espacio, guion
+    bajo, o pegado — 'opcional1') y la normaliza a la forma canónica 'opcional_N' que usamos para
+    guardar en User.extra_fields y Event.optional_field_labels. None si no matchea o el número
+    está fuera de rango."""
+    if not raw_key:
+        return None
+    match = _OPTIONAL_FIELD_RE.match(raw_key.strip())
+    if not match:
+        return None
+    n = int(match.group(1))
+    return f"opcional_{n}" if 1 <= n <= MAX_OPTIONAL_FIELDS else None
+
 
 router = APIRouter()
 
@@ -272,6 +291,7 @@ async def manual_register(
 @router.post("/bulk_register")
 async def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(...), zip_file: UploadFile = File(None),
+    field_labels: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
@@ -281,10 +301,52 @@ async def bulk_register(
     <cédula>.jpg, se procesan a encoding biométrico). Sin zip, solo se cargan datos de identidad +
     se asocian al evento (EventAttendee) — suficiente para acreditar por cédula. Los errores de
     fila no abortan la carga completa, se reportan al final. No se permite cargar sobre un evento
-    ya 'finalizado' (sí sobre 'creado' o 'en_proceso' — es preparación previa al evento)."""
+    ya 'finalizado' (sí sobre 'creado' o 'en_proceso' — es preparación previa al evento).
+
+    Campos dinámicos "opcional_1".."opcional_30" (2026-09-20): además de las columnas fijas
+    (id, nombres, apellidos, cargo, empresa, telefono, correo, "tipo de asistente"), el roster
+    puede traer hasta 30 columnas "opcional_N" — se interpretan las que de verdad vengan usadas
+    (con al menos un valor no vacío en alguna fila), el resto se ignoran. Si el archivo trae
+    columnas opcionales que este evento todavía no tiene rotuladas (Event.optional_field_labels),
+    se devuelve {"result": "NEEDS_LABELS", "fields": [...]} SIN procesar nada — el frontend debe
+    preguntarle al operador a qué corresponde cada una y reenviar la misma petición con
+    field_labels (JSON, ej. {"opcional_1": "Talla de camisa"}) para que se guarden y se continúe
+    con la carga."""
     event = get_event_for_staff(event_id, db, staff)
     if event.status == "finalizado":
         raise HTTPException(status_code=400, detail="No se puede cargar la base de un evento finalizado")
+
+    content = await roster_file.read()
+    rows = list(_read_roster_rows(roster_file.filename, content))
+
+    used_optional_keys = set()
+    for row in rows:
+        for raw_key, value in row.items():
+            norm = _normalize_optional_key(raw_key)
+            if norm and (value or "").strip():
+                used_optional_keys.add(norm)
+
+    existing_labels = event.get_optional_labels()
+    missing = used_optional_keys - set(existing_labels.keys())
+
+    if missing and not field_labels:
+        return {"result": "NEEDS_LABELS", "fields": sorted(missing, key=lambda k: int(k.split("_")[1]))}
+
+    if field_labels:
+        try:
+            provided = json.loads(field_labels)
+        except (json.JSONDecodeError, TypeError):
+            provided = {}
+        merged = dict(existing_labels)
+        for raw_key, label in (provided or {}).items():
+            norm = _normalize_optional_key(raw_key)
+            if norm and label and str(label).strip():
+                merged[norm] = str(label).strip()
+        for key in used_optional_keys - set(merged.keys()):
+            merged[key] = f"Opcional {key.split('_')[1]}"
+        event.set_optional_labels(merged)
+        db.commit()
+
     known_faces_dir = _known_faces_dir(event.tenant_id)
 
     if zip_file is not None and zip_file.filename:
@@ -303,9 +365,6 @@ async def bulk_register(
                         Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
                     except: pass
         if os.path.exists(zip_path): os.remove(zip_path)
-
-    content = await roster_file.read()
-    rows = _read_roster_rows(roster_file.filename, content)
 
     count = 0
     errors = []
@@ -336,8 +395,15 @@ async def bulk_register(
             user.company = clean_row.get('empresa', '')
             user.phone = clean_row.get('telefono', '') or clean_row.get('tel. celular', '')
             user.email = clean_row.get('correo', '') or clean_row.get('e-mail corporativo', '')
-            user.opt_1 = clean_row.get('opcional_1', '') or clean_row.get('tipo de empresa', '')
-            user.opt_2 = clean_row.get('opcional_2', '') or clean_row.get('cantidad de empl', '')
+            user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
+
+            extras = {}
+            for raw_key, value in clean_row.items():
+                norm = _normalize_optional_key(raw_key)
+                val = (value or "").strip()
+                if norm and val:
+                    extras[norm] = val
+            user.set_extras(extras)
 
             if face_enc_json:
                 user.face_encoding = face_enc_json
@@ -351,7 +417,7 @@ async def bulk_register(
     message = f"Carga completa: {count} perfiles cargados."
     if errors:
         message += f" {len(errors)} fila(s) con error."
-    return {"message": message, "count": count, "errors": errors}
+    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels()}
 
 @router.get("/report")
 async def download_report(
