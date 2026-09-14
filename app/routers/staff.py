@@ -13,7 +13,7 @@ router = APIRouter()
 # Roles creables desde /admin/staff. "digitador" NO está aquí a propósito: los usuarios
 # temporales se crean desde dentro de un evento (ver app/routers/events.py, POST
 # /events/{id}/temp-users), donde quedan asociados a ese evento en el mismo paso.
-ROLES_CREATABLE_BY_ADMIN = ("coordinador",)
+ROLES_CREATABLE_BY_ADMIN = ("coordinador", "cliente")
 
 
 class StaffIn(BaseModel):
@@ -36,6 +36,17 @@ async def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = De
     poblar el selector de 'coordinador asignado' al crear/editar un evento."""
     coords = db.query(StaffUser).filter(StaffUser.role == "coordinador", StaffUser.is_active == True).all()
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in coords]
+
+
+@router.get("/staff/assignable")
+async def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """digitador + cliente activos, para el desplegable de 'autorizar/reautorizar para un evento'
+    en /admin/staff — independiente del filtro de ROLES_CREATABLE_BY_ADMIN de /staff (que oculta
+    digitador/cliente de la tabla general a propósito, pero aquí sí hacen falta)."""
+    staff_list = db.query(StaffUser).filter(
+        StaffUser.role.in_(("digitador", "cliente")), StaffUser.is_active == True
+    ).all()
+    return [_serialize(s) for s in staff_list]
 
 
 @router.get("/staff")
@@ -110,9 +121,10 @@ async def activate_staff(
 async def authorize_for_event(
     staff_id: int, event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
-    """Autoriza (típicamente) a un digitador a operar en un evento puntual. Sin esta fila, un
-    digitador no debería poder registrar/reconocer en ese evento (falta conectar esto al flujo
-    del kiosko todavía — ver CLAUDE.md)."""
+    """Autoriza a un digitador o cliente (ambos requieren EventStaffAuthorization, ver
+    app/auth.get_event_for_staff) a acceder a un evento puntual. Para digitador normalmente se usa
+    en cambio POST /api/events/{id}/temp-users (crea + autoriza en un paso); este endpoint es para
+    reautorizar uno ya existente en otro evento, o para asignar un usuario cliente."""
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     event = db.query(Event).filter(Event.id == event_id).first()
     if not target or not event:

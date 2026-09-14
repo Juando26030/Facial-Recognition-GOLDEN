@@ -5,8 +5,10 @@ from datetime import datetime
 
 Base = declarative_base()
 
-# Roles de staff, de menor a mayor privilegio. Ver app/auth.py (ROLE_HIERARCHY).
-STAFF_ROLES = ("digitador", "coordinador", "admin", "super_admin")
+# Roles de staff. "cliente" NO es parte de la jerarquía de permisos habitual (no puede
+# registrar/reconocer aunque esté "debajo" de digitador aquí) — ver la nota en
+# app/auth.get_event_for_staff y app/routers/staff.py sobre quién puede crear cada rol.
+STAFF_ROLES = ("cliente", "digitador", "coordinador", "admin", "super_admin")
 
 class Tenant(Base):
     """Un cliente de Golden (la empresa para la que se hacen los eventos), no un usuario de staff."""

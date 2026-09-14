@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models import User, AccessLog, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app.auth import get_event_for_staff, require_role
+from app.auth import get_current_staff, get_event_for_staff, require_role
 
 router = APIRouter()
 
@@ -26,8 +26,10 @@ def _known_faces_dir(tenant_id: str) -> str:
 
 @router.get("/users")
 async def get_all_users(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)
 ):
+    """Cualquier staff autenticado con acceso al evento puede VER el directorio (digitador y
+    cliente incluidos) — get_event_for_staff abajo hace el chequeo real de autorización."""
     event = get_event_for_staff(event_id, db, staff)
     users = db.query(User).filter(User.tenant_id == event.tenant_id).all()
     result = []

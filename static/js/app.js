@@ -22,6 +22,13 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    // Si "directorio" ya viene activo al cargar la página (ej. rol cliente, que no tiene
+    // pestaña de escáner), no hay clic que dispare la carga — hay que hacerlo aquí.
+    const directorioSection = document.getElementById('directorio');
+    if (directorioSection && directorioSection.classList.contains('active')) {
+        loadLiveDirectory();
+    }
+
     async function loadLiveDirectory() {
         const tbody = document.getElementById('directoryTableBody');
         tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">Cargando base de datos...</td></tr>';

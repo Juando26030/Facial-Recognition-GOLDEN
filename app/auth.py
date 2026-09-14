@@ -56,7 +56,7 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
-    if staff.role == "digitador":
+    if staff.role in ("digitador", "cliente"):
         authorized = db.query(EventStaffAuthorization).filter_by(
             event_id=event_id, staff_user_id=staff.id
         ).first()

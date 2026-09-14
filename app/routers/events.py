@@ -1,14 +1,14 @@
+import re
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.auth import hash_password, require_role
+from app.auth import get_current_staff, hash_password, require_role
 
 router = APIRouter()
 
@@ -81,11 +81,11 @@ def _serialize(e: Event) -> dict:
 
 
 @router.get("/my-events")
-async def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
-    """Para el dashboard: eventos a los que este staff puede entrar directo a registrar.
-    digitador -> solo eventos activos con autorización explícita. coordinador+ -> todos los activos."""
+async def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+    """Para el dashboard: eventos a los que este staff puede entrar directo. digitador/cliente ->
+    solo eventos activos con autorización explícita. coordinador+ -> todos los activos."""
     query = db.query(Event).filter(Event.status == "activo")
-    if staff.role == "digitador":
+    if staff.role in ("digitador", "cliente"):
         query = query.join(
             EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id
         ).filter(EventStaffAuthorization.staff_user_id == staff.id)
@@ -93,24 +93,37 @@ async def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(re
     return [_serialize(e) for e in events]
 
 
+def _words(text: Optional[str]) -> list:
+    return re.findall(r"\w+", (text or "").lower())
+
+
+def _matches_by_word_prefix(haystack: str, query: str) -> bool:
+    """True si CADA palabra de `query` es prefijo de ALGUNA palabra de `haystack`
+    (ej. 'c' o 'cor' matchean 'Corferias', pero 'ferias' no) — como cualquier buscador
+    "empieza por", no una coincidencia de substring en cualquier posición."""
+    query_words = _words(query)
+    if not query_words:
+        return False
+    haystack_words = _words(haystack)
+    return all(any(hw.startswith(qw) for hw in haystack_words) for qw in query_words)
+
+
 @router.get("/events/search")
 async def search_events(
     q: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
     """Búsqueda libre entre todos los clientes/eventos: por código, nombre, país o ciudad del
-    evento, o por nombre del cliente (tenant)."""
-    like = f"%{q}%"
-    events = (
-        db.query(Event)
-        .join(Tenant, Tenant.id == Event.tenant_id)
-        .filter(or_(
-            Event.name.ilike(like), Event.event_code.ilike(like),
-            Event.country.ilike(like), Event.city.ilike(like), Tenant.name.ilike(like),
-        ))
-        .order_by(Event.created_at.desc())
-        .all()
-    )
-    return [_serialize(e) for e in events]
+    evento, o por nombre del cliente (tenant). Filtrado en Python (no SQL LIKE) para que la
+    coincidencia sea por inicio de palabra y no por substring en medio de una palabra."""
+    all_events = db.query(Event).order_by(Event.created_at.desc()).all()
+    matches = []
+    for e in all_events:
+        haystack = " ".join(filter(None, [
+            e.name, e.event_code, e.country, e.city, e.tenant.name if e.tenant else None,
+        ]))
+        if _matches_by_word_prefix(haystack, q):
+            matches.append(e)
+    return [_serialize(e) for e in matches]
 
 
 @router.get("/events")

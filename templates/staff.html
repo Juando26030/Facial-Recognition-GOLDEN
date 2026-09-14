@@ -50,6 +50,7 @@
             <label>Rol</label>
             <select name="role" id="roleSelect" required>
               <option value="coordinador">Coordinador</option>
+              <option value="cliente">Cliente</option>
             </select>
           </div>
         </div>
@@ -67,12 +68,12 @@
     </div>
 
     <div class="golden-badge-builder">
-      <div class="badge-form-title">Reautorizar un digitador existente para otro evento</div>
-      <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Para reusar una cuenta temporal ya creada en un evento nuevo. Un digitador solo puede registrar/reconocer en eventos activos para los que tenga autorización.</p>
+      <div class="badge-form-title">Autorizar digitador o cliente para un evento</div>
+      <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Para reusar una cuenta temporal en un evento nuevo, o asignar un usuario cliente a su evento. Ambos solo pueden entrar a eventos activos para los que tengan autorización.</p>
       <form id="authorizeForm">
         <div class="badge-input-row">
           <div class="badge-input-group">
-            <label>Digitador</label>
+            <label>Usuario</label>
             <select name="staff_id" id="digitadorSelect" required></select>
           </div>
           <div class="badge-input-group">
@@ -126,12 +127,11 @@ async function toggleStaff(id, activate) {
 }
 
 async function loadDropdowns() {
-  const [staffRes, eventsRes] = await Promise.all([fetch("/api/staff"), fetch("/api/events")]);
+  const [staffRes, eventsRes] = await Promise.all([fetch("/api/staff/assignable"), fetch("/api/events")]);
   const staffList = await staffRes.json();
   const events = await eventsRes.json();
   document.getElementById("digitadorSelect").innerHTML = staffList
-    .filter(s => s.role === "digitador" && s.is_active)
-    .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""}</option>`).join("");
+    .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""} (${s.role})</option>`).join("");
   document.getElementById("eventSelect").innerHTML = events
     .map(e => `<option value="${e.id}">${e.name}${e.status !== "activo" ? " (cerrado)" : ""}</option>`).join("");
 }

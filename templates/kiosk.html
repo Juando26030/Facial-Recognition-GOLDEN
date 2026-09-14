@@ -33,7 +33,7 @@
       <div class="golden-anniversary-badge">
         {{ event.name }}
       </div>
-      {% if staff_role != "digitador" %}
+      {% if staff_role not in ["digitador", "cliente"] %}
       <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
       {% endif %}
       {% if staff_role in ["admin", "super_admin"] %}
@@ -58,17 +58,33 @@
       </div>
 
       <div class="tabs">
+        {% if staff_role == "cliente" %}
+        <div class="tab active" data-tab="estadisticas">Estadísticas</div>
+        <div class="tab" data-tab="directorio">Directorio en Vivo</div>
+        {% else %}
         <div class="tab active" data-tab="scanner">1. Escáner de Acceso</div>
         <div class="tab" data-tab="manual">2. Registro Individual</div>
+        {% if staff_role != "digitador" %}
         <div class="tab" data-tab="masivo">3. Carga Masiva</div>
         <div class="tab" data-tab="exportar">4. Exportar Reporte</div>
+        {% endif %}
         <div class="tab" data-tab="directorio">5. Directorio en Vivo</div>
         {% if staff_role in ["coordinador", "admin", "super_admin"] %}
         <div class="tab" data-tab="temporales">6. Usuarios Temporales</div>
         {% endif %}
+        {% endif %}
       </div>
 
       <div class="app-container">
+        {% if staff_role == "cliente" %}
+        <!-- PESTAÑA: ESTADÍSTICAS (mockeada, pendiente de diseño real) -->
+        <div id="estadisticas" class="section active">
+            <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
+                <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Estadísticas del evento</h3>
+                <p style="color: #888;">Próximamente. Esta sección todavía no está diseñada — placeholder mientras se define qué métricas mostrar.</p>
+            </div>
+        </div>
+        {% else %}
         <!-- PESTAÑA 1: ESCÁNER Y EDICIÓN EN VIVO -->
         <div id="scanner" class="section active">
             <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
@@ -189,7 +205,9 @@
                 <button type="submit" class="golden-btn golden-btn-primary">Guardar Perfil Biométrico</button>
             </form>
         </div>
+        {% endif %}
 
+        {% if staff_role not in ["digitador", "cliente"] %}
         <!-- PESTAÑA 3: CARGA MASIVA -->
         <div id="masivo" class="section">
             <form id="bulkForm" class="golden-badge-builder">
@@ -217,9 +235,10 @@
                 </button>
             </div>
         </div>
+        {% endif %}
 
         <!-- PESTAÑA 5: DIRECTORIO EN VIVO -->
-        <div id="directorio" class="section" style="max-width: 100%;">
+        <div id="directorio" class="section{% if staff_role == 'cliente' %} active{% endif %}" style="max-width: 100%;">
             <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
                 <div class="badge-form-title" style="display:flex; justify-content:space-between; align-items:center;">
                     <span>Directorio y Control en Vivo</span>

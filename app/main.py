@@ -66,9 +66,9 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     if not staff_user:
         return RedirectResponse("/login", status_code=302)
 
-    if staff_user.role == "digitador":
-        # Un digitador no tiene panel: si tiene exactamente un evento activo autorizado, entra
-        # derecho ahí. Con 0 o >1 se le muestra la lista mínima (dashboard.html ya la maneja).
+    if staff_user.role in ("digitador", "cliente"):
+        # Ninguno de los dos tiene panel: si tiene exactamente un evento activo autorizado,
+        # entra derecho ahí. Con 0 o >1 se le muestra la lista mínima (dashboard.html la maneja).
         authorized_events = (
             db.query(Event)
             .join(EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id)
