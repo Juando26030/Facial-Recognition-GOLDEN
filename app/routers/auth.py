@@ -35,6 +35,7 @@ async def login_submit(
     request.session["staff_user_id"] = staff.id
     request.session["staff_role"] = staff.role
     request.session["staff_name"] = staff.full_name or staff.username
+    request.session["staff_username"] = staff.username
     return RedirectResponse("/", status_code=302)
 
 

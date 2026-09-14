@@ -105,4 +105,7 @@ async def staff_page(request: Request):
     redirect = _require_page_role(request, "admin")
     if redirect:
         return redirect
-    return templates.TemplateResponse(request=request, name="staff.html", context={"staff_role": request.session.get("staff_role")})
+    return templates.TemplateResponse(request=request, name="staff.html", context={
+        "staff_role": request.session.get("staff_role"),
+        "staff_username": request.session.get("staff_username"),
+    })

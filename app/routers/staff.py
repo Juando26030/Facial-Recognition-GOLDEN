@@ -104,7 +104,11 @@ async def deactivate_staff(
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    if target.role in ("admin", "super_admin") and staff.role != "super_admin":
+    if target.role == "super_admin":
+        raise HTTPException(status_code=403, detail="Un Super Admin no se puede desactivar")
+    if target.id == staff.id:
+        raise HTTPException(status_code=400, detail="No puedes desactivar tu propia cuenta")
+    if target.role == "admin" and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="No autorizado")
     target.is_active = False
     db.commit()
