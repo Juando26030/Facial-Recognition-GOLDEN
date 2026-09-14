@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
+from app.models import AccessLog, Event, EventStaffAuthorization, StaffUser, Tenant
 from app.auth import get_current_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
@@ -263,10 +263,16 @@ async def revoke_event_staff(
 async def delete_event(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
-    """Borrado permanente — solo admin+ (coordinador puede cerrar un evento vía PATCH status='cerrado')."""
+    """Borrado permanente — solo admin+ (coordinador puede cerrar un evento vía PATCH status='cerrado').
+    Antes de borrar el Event hay que soltar lo que le apunta por FK: las EventStaffAuthorization de
+    este evento no tienen sentido sin él (se borran), y los AccessLog ya generados son historial
+    real (se conservan, solo se les quita la referencia al evento)."""
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+
+    db.query(EventStaffAuthorization).filter(EventStaffAuthorization.event_id == event_id).delete()
+    db.query(AccessLog).filter(AccessLog.event_id == event_id).update({"event_id": None})
     db.delete(event)
     db.commit()
     return {"message": "Evento eliminado permanentemente"}
