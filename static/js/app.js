@@ -301,16 +301,21 @@ document.addEventListener("DOMContentLoaded", () => {
         bulkForm.onsubmit = async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector('button');
-            btn.innerText = "Sincronizando Tenant a SQL..."; btn.disabled = true;
+            btn.innerText = "Cargando..."; btn.disabled = true;
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);
             try {
                 const res = await fetch('/api/bulk_register', { method: 'POST', body: formData });
                 const data = await res.json();
-                showToast(data.message || data.error, data.error ? "error" : "success");
-                e.target.reset();
+                if (!res.ok) {
+                    showToast(data.detail || "No se pudo cargar la base", "error");
+                } else {
+                    showToast(data.message || data.error, (data.errors && data.errors.length) ? "error" : "success");
+                    if (data.errors && data.errors.length) console.warn("Errores en la carga:", data.errors);
+                    e.target.reset();
+                }
             } catch(err) { showToast("Error de red", "error"); }
-            btn.innerText = "Sincronizar Lote Masivo"; btn.disabled = false;
+            btn.innerText = "Cargar base"; btn.disabled = false;
         };
     }
 });

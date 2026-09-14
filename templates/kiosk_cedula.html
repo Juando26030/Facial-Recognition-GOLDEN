@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ event.name }} — Cédula | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <style>
+        .cedula-wrapper { max-width: 480px; margin: 3rem auto; text-align: center; }
+        .cedula-input {
+            width: 100%; font-size: 2rem; text-align: center; padding: 1.2rem;
+            border: 3px solid var(--golden-primary); border-radius: 16px; letter-spacing: 2px;
+        }
+        .cedula-input:disabled { background: #f0f0f0; border-color: #ccc; cursor: not-allowed; }
+        .cedula-result { margin-top: 1.5rem; min-height: 90px; }
+        .cedula-result.ok { color: #1e7e34; }
+        .cedula-result.fail { color: #dc3545; }
+        .cedula-name { font-size: 1.4rem; font-weight: 700; }
+    </style>
+</head>
+<body>
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
+      <div class="golden-anniversary-badge">{{ event.name }}</div>
+      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
+      {% if staff_role not in ["digitador", "cliente"] %}
+      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
+      {% endif %}
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<script>window.EVENT_ID = {{ event.id }};</script>
+
+<main class="golden-main">
+  <div class="golden-container">
+    <div class="golden-section-title">
+      <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+      <h2>Acreditación por <span class="gradient-text">Cédula</span></h2>
+    </div>
+
+    {% if event.status != "en_proceso" %}
+    <div style="max-width:480px; margin:0 auto; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.85rem; text-align:center;">
+      ⚠️ Este evento está <strong>{{ "Creado (todavía no ha comenzado)" if event.status == "creado" else "Finalizado" }}</strong> — la acreditación no va a funcionar hasta que esté "En Proceso".
+    </div>
+    {% endif %}
+
+    <div class="cedula-wrapper">
+      <form id="cedulaForm">
+        <input type="text" id="cedulaInput" class="cedula-input" placeholder="Escanea o escribe la cédula" autocomplete="off" inputmode="numeric"
+               {% if event.status != "en_proceso" %}disabled{% endif %}>
+      </form>
+      <div id="cedulaResult" class="cedula-result"></div>
+
+      <!-- Alta manual si la cédula no está en la base -->
+      <div id="manualCard" class="badge-card" style="display:none; text-align:left; padding: 20px; margin-top: 1.5rem;">
+        <h4 style="text-align:center; color: var(--golden-primary); margin-bottom: 15px;">Cédula no encontrada — dar de alta</h4>
+        <form id="manualCedulaForm">
+          <input type="hidden" id="manual_id" name="id">
+          <div class="badge-input-row">
+            <div class="badge-input-group">
+              <label>Nombres</label>
+              <input type="text" name="first_name" required>
+            </div>
+            <div class="badge-input-group">
+              <label>Apellidos</label>
+              <input type="text" name="last_name" required>
+            </div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group">
+              <label>Cargo</label>
+              <input type="text" name="role">
+            </div>
+            <div class="badge-input-group">
+              <label>Empresa</label>
+              <input type="text" name="company">
+            </div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group">
+              <label>Teléfono</label>
+              <input type="text" name="phone">
+            </div>
+            <div class="badge-input-group">
+              <label>Correo</label>
+              <input type="email" name="email">
+            </div>
+          </div>
+          <button type="submit" class="golden-btn golden-btn-primary" style="margin-top:10px;">Dar de alta y acreditar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const input = document.getElementById("cedulaInput");
+const resultEl = document.getElementById("cedulaResult");
+const manualCard = document.getElementById("manualCard");
+const manualForm = document.getElementById("manualCedulaForm");
+
+if (input) input.focus();
+
+function showResult(html, cls) {
+  resultEl.className = "cedula-result " + cls;
+  resultEl.innerHTML = html;
+}
+
+async function checkin(cedula) {
+  const formData = new FormData();
+  formData.append("event_id", window.EVENT_ID);
+  formData.append("cedula", cedula);
+  try {
+    const res = await fetch("/api/checkin-cedula", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.detail || "No se pudo acreditar", "error");
+      showResult("", "");
+      return;
+    }
+    if (data.result === "SÍ") {
+      showResult(`✅ <div class="cedula-name">${data.data.first_name} ${data.data.last_name}</div>${data.data.company || ""}`, "ok");
+      manualCard.style.display = "none";
+      showToast("Acreditado", "success");
+    } else {
+      showResult(`❌ ${data.details}`, "fail");
+      document.getElementById("manual_id").value = cedula;
+      manualCard.style.display = "block";
+    }
+  } catch (e) {
+    showToast("Error de red", "error");
+  }
+  input.value = "";
+  input.focus();
+}
+
+if (input) {
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const cedula = input.value.trim();
+      if (cedula) checkin(cedula);
+    }
+  });
+}
+
+if (manualForm) {
+  manualForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    formData.append("event_id", window.EVENT_ID);
+    try {
+      const res = await fetch("/api/register", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.detail || "No se pudo registrar", "error");
+        return;
+      }
+      if (data.error) {
+        showToast(data.error, "error");
+      } else {
+        showToast(data.message || "Registrado", "success");
+        manualCard.style.display = "none";
+        e.target.reset();
+        showResult("✅ Dado de alta y acreditado", "ok");
+      }
+    } catch (err) {
+      showToast("Error de red", "error");
+    }
+  });
+}
+</script>
+</body>
+</html>

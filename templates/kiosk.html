@@ -224,17 +224,17 @@
         <!-- PESTAÑA 3: CARGA MASIVA -->
         <div id="masivo" class="section">
             <form id="bulkForm" class="golden-badge-builder">
-                <div class="badge-form-title">Sincronización Masiva (Tenant)</div>
-                <p style="text-align: center; color: #666; margin-bottom: 20px;">1. Sube el archivo .csv tabulado<br>2. Sube el archivo .zip con las fotos renombradas por ID</p>
+                <div class="badge-form-title">Cargar base de asistentes del evento</div>
+                <p style="text-align: center; color: #666; margin-bottom: 20px;">Sirve para cualquier método de registro (cédula, facial, QR). Sube el .csv con los asistentes esperados.<br>El .zip de fotos es <strong>opcional</strong> — solo hace falta si además quieres que se puedan reconocer por cara (fotos nombradas &lt;cédula&gt;.jpg).</p>
                 <div class="badge-input-group">
                     <label>Base de Datos (.csv)</label>
                     <input type="file" name="csv_file" accept=".csv" required>
                 </div>
                 <div class="badge-input-group">
-                    <label>Lote de Fotografías (.zip)</label>
-                    <input type="file" name="zip_file" accept=".zip" required>
+                    <label>Lote de Fotografías (.zip) — opcional, solo para facial</label>
+                    <input type="file" name="zip_file" accept=".zip">
                 </div>
-                <button type="submit" class="golden-btn golden-btn-primary">Sincronizar Lote Masivo</button>
+                <button type="submit" class="golden-btn golden-btn-primary">Cargar base</button>
             </form>
         </div>
 

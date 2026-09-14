@@ -48,6 +48,26 @@ class User(Base):
     def get_encoding(self):
         return json.loads(self.face_encoding) if self.face_encoding else None
 
+class EventAttendee(Base):
+    """Lista de personas esperadas/asociadas a UN evento — separada de User a propósito (ver
+    CLAUDE.md, 'decisión de modelado 2026-09-19'): agnóstica al método de registro. Se crea al
+    cargar el roster del evento, y también se upsertea sobre la marcha cuando alguien se
+    registra/reconoce sin haber estado precargado."""
+    __tablename__ = 'event_attendees'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    user_id = Column(String, nullable=False)
+    tenant_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),
+        UniqueConstraint('event_id', 'user_id', name='uq_event_attendee'),
+    )
+
+    event = relationship("Event")
+
+
 class AccessLog(Base):
     __tablename__ = 'access_logs'
     id = Column(Integer, primary_key=True, autoincrement=True)

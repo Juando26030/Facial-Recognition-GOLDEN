@@ -125,8 +125,10 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
     })
 
 
-@app.get("/kiosk/{event_id}/facial")
-async def kiosk_facial(event_id: int, request: Request, db: Session = Depends(get_db)):
+def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_name: str):
+    """Boilerplate compartido por cada método de registro: mismo chequeo de acceso
+    (get_event_for_staff), mismo contexto de template. Cada método solo elige su propio
+    template_name."""
     staff_user = _page_staff(request, db)
     if not staff_user:
         return RedirectResponse("/login", status_code=302)
@@ -134,11 +136,21 @@ async def kiosk_facial(event_id: int, request: Request, db: Session = Depends(ge
         event = get_event_for_staff(event_id, db, staff_user)
     except HTTPException:
         return RedirectResponse("/", status_code=302)
-    return templates.TemplateResponse(request=request, name="kiosk.html", context={
+    return templates.TemplateResponse(request=request, name=template_name, context={
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": staff_user.role,
         "event": event,
     })
+
+
+@app.get("/kiosk/{event_id}/facial")
+async def kiosk_facial(event_id: int, request: Request, db: Session = Depends(get_db)):
+    return _resolve_kiosk_page(event_id, request, db, "kiosk.html")
+
+
+@app.get("/kiosk/{event_id}/cedula")
+async def kiosk_cedula(event_id: int, request: Request, db: Session = Depends(get_db)):
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_cedula.html")
 
 
 @app.get("/admin/staff")
