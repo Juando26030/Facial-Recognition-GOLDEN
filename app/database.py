@@ -5,11 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Forzamos PostgreSQL. Si el .env falla, usa la cadena directa por defecto.
-SQLALCHEMY_DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql://postgres:REDACTED@localhost:5432/golden_db"
-)
+# Forzamos PostgreSQL. La cadena de conexión debe venir del .env (ver .env.example).
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+if not SQLALCHEMY_DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL no está definida. Copia .env.example a .env y configura la cadena de conexión."
+    )
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

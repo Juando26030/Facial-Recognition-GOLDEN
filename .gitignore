@@ -1,3 +1,5 @@
-known_people/ 
-__pycache__/ 
-"data/" 
+known_people/
+__pycache__/
+data/
+.env
+static/.env
