@@ -49,7 +49,8 @@ Se encontró y corrigió una exposición de credenciales real en producción:
 - **Sin autenticación/autorización en ningún endpoint.** `/api/register`, `/api/recognize`, `/api/users/{id}` (PATCH/DELETE de logs), `/api/bulk_register` están completamente abiertos. Cualquiera que llegue a la URL puede registrar, borrar logs o descargar el reporte de eventos. Es el hueco más grande antes de exponer esto a internet en serio.
 - **Sin tests.** No hay carpeta `tests/` ni configuración de pytest.
 - **Sin migraciones.** `Base.metadata.create_all(bind=engine)` en `main.py:9` crea tablas al vuelo; no hay Alembic. Cualquier cambio de esquema en producción es manual.
-- **Sin CI/CD.** No hay `.github/workflows/`. El objetivo es: push a `main` → GitHub Actions se conecta por SSH a la VM de GCP → `git pull` + restart de los servicios systemd. Pendiente de datos concretos de la VM (IP, usuario SSH, si ya existe llave de despliegue) para armarlo.
+- ~~Sin CI/CD~~ **Resuelto (2026-09-14):** `.github/workflows/deploy.yml` corre en un runner self-hosted instalado directo en la VM (`golden-biometrics-prod`). Se eligió self-hosted y no SSH-desde-GitHub porque el proyecto tiene **OS Login activado** en GCP, que bloquea el acceso SSH por llave externa — el runner evita ese problema porque corre dentro de la VM, no entra desde afuera. En cada push a `main`: `git fetch` + `git reset --hard origin/main` + `systemctl restart facial-recognition`. También soporta disparo manual (`workflow_dispatch`).
+  - **Nota de seguridad:** el repo es público. El workflow solo se dispara con `push` a `main` (requiere permiso de escritura al repo), nunca con `pull_request`, así que un PR externo no puede ejecutar código en el runner de producción. Si en algún momento se agrega un trigger de `pull_request` o `pull_request_target`, hay que exigir aprobación manual para colaboradores externos — de lo contrario cualquiera podría correr código arbitrario en la VM de producción a través de un PR.
 - **Multi-tenant no explotado** (ver arriba) — hoy es de un solo tenant en la práctica.
 - **`bulk_register` no valida CSV/ZIP de forma robusta**: `except: pass` silencioso al procesar imágenes del zip (`api.py:147`), puede ocultar errores reales de registros que no se cargaron.
 - **README ausente** — no hay instrucciones de instalación/arranque para alguien nuevo en el proyecto.
@@ -68,4 +69,4 @@ Requiere PostgreSQL corriendo y accesible con la URL de `.env`. `face_recognitio
 - Nginx como reverse proxy + terminación TLS (certificados gestionados ahí).
 - Cloudflare delante como proxy/DNS.
 - Systemd para mantener vivos PostgreSQL, la app FastAPI (uvicorn/gunicorn) y reiniciarlos si caen.
-- Nada de esto está automatizado todavía desde este repo (no hay `Dockerfile`, ni unit files de systemd versionados, ni el workflow de GitHub Actions). Es el siguiente paso natural del backlog de CI/CD.
+- El deploy automático ya está resuelto vía runner self-hosted (ver backlog arriba). Sigue faltando: `Dockerfile` y los unit files de systemd versionados en el repo (hoy `facial-recognition.service` solo existe en `/etc/systemd/system/` de la VM, no en git).

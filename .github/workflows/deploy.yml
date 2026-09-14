@@ -1,0 +1,20 @@
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest main and restart service
+        run: |
+          set -e
+          cd ~/Facial-Recognition
+          git fetch origin main
+          git reset --hard origin/main
+          sudo systemctl restart facial-recognition
+          sleep 2
+          sudo systemctl is-active facial-recognition
