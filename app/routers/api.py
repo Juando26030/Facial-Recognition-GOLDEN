@@ -369,13 +369,13 @@ async def bulk_register(
     count = 0
     errors = []
     for row_num, clean_row in enumerate(rows, start=2):  # fila 1 es el encabezado
+        identificador = clean_row.get('id', '') or clean_row.get('identificación', '') or clean_row.get('cedula', '') or clean_row.get('cédula', '')
+
+        if not identificador:
+            errors.append(f"Fila {row_num}: sin ID/cédula, se omitió")
+            continue
+
         try:
-            identificador = clean_row.get('id', '') or clean_row.get('identificación', '') or clean_row.get('cedula', '') or clean_row.get('cédula', '')
-
-            if not identificador:
-                errors.append(f"Fila {row_num}: sin ID/cédula, se omitió")
-                continue
-
             face_enc_json = None
             img_path = os.path.join(known_faces_dir, f"{identificador}.jpg")
             if os.path.exists(img_path):
@@ -384,31 +384,43 @@ async def bulk_register(
                 if encodings:
                     face_enc_json = json.dumps(encodings[0].tolist())
 
-            user = db.query(User).filter(User.id == identificador, User.tenant_id == event.tenant_id).first()
-            if not user:
-                user = User(id=identificador, tenant_id=event.tenant_id)
-                db.add(user)
+            # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
+            # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
+            # transacción completa "abortada" para Postgres, y el error solo aparecía hasta el
+            # db.commit() final — tumbando TODA la carga con un 500, incluidas las filas que sí
+            # habían "funcionado" en Python pero nunca llegaron a guardarse. Con begin_nested(),
+            # si esta fila falla se revierte solo su savepoint (la transacción de afuera sigue
+            # sana) y el flush() intermedio asegura que el INSERT de User ya se mandó a Postgres
+            # antes del de EventAttendee (que depende de él por llave foránea).
+            with db.begin_nested():
+                user = db.query(User).filter(User.id == identificador, User.tenant_id == event.tenant_id).first()
+                if not user:
+                    user = User(id=identificador, tenant_id=event.tenant_id)
+                    db.add(user)
 
-            user.first_name = clean_row.get('nombres', '') or clean_row.get('nombre', '')
-            user.last_name = clean_row.get('apellidos', '') or clean_row.get('apellido', '')
-            user.role = clean_row.get('cargo', '')
-            user.company = clean_row.get('empresa', '')
-            user.phone = clean_row.get('telefono', '') or clean_row.get('tel. celular', '')
-            user.email = clean_row.get('correo', '') or clean_row.get('e-mail corporativo', '')
-            user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
+                user.first_name = clean_row.get('nombres', '') or clean_row.get('nombre', '')
+                user.last_name = clean_row.get('apellidos', '') or clean_row.get('apellido', '')
+                user.role = clean_row.get('cargo', '')
+                user.company = clean_row.get('empresa', '')
+                user.phone = clean_row.get('telefono', '') or clean_row.get('tel. celular', '')
+                user.email = clean_row.get('correo', '') or clean_row.get('e-mail corporativo', '')
+                user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
 
-            extras = {}
-            for raw_key, value in clean_row.items():
-                norm = _normalize_optional_key(raw_key)
-                val = (value or "").strip()
-                if norm and val:
-                    extras[norm] = val
-            user.set_extras(extras)
+                extras = {}
+                for raw_key, value in clean_row.items():
+                    norm = _normalize_optional_key(raw_key)
+                    val = (value or "").strip()
+                    if norm and val:
+                        extras[norm] = val
+                user.set_extras(extras)
 
-            if face_enc_json:
-                user.face_encoding = face_enc_json
+                if face_enc_json:
+                    user.face_encoding = face_enc_json
 
-            _upsert_attendee(db, event.id, identificador, event.tenant_id)
+                db.flush()
+                _upsert_attendee(db, event.id, identificador, event.tenant_id)
+                db.flush()
+
             count += 1
         except Exception as e:
             errors.append(f"Fila {row_num}: {e}")
