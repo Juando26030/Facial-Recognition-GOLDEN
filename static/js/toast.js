@@ -43,7 +43,18 @@
     }, 3200);
   };
 
-  window.showConfirm = function (message) {
+  /* opts.variant: "danger" (default, blanco + botón rojo, para borrar/sobrescribir) o
+     "warning" (amarillo pastel, para advertir sin necesariamente ser destructivo — ej. "esta
+     persona ya se había registrado, ¿seguro quieres registrarla de nuevo?"). opts.confirmLabel
+     permite personalizar el texto del botón de confirmar. */
+  window.showConfirm = function (message, opts) {
+    opts = opts || {};
+    const isWarning = opts.variant === "warning";
+    const palette = isWarning
+      ? { boxBg: "#fff8e1", border: "3px solid #f0ad4e", text: "#7a5b00", btnBg: "#f0ad4e", btnText: "#3a2a00" }
+      : { boxBg: "white", border: "none", text: "#333", btnBg: "#dc3545", btnText: "white" };
+    const confirmLabel = opts.confirmLabel || "Confirmar";
+
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
       overlay.style.cssText = `
@@ -52,14 +63,14 @@
       `;
       const box = document.createElement("div");
       box.style.cssText = `
-        background: white; border-radius: 16px; padding: 1.8rem; max-width: 380px;
+        background: ${palette.boxBg}; border: ${palette.border}; border-radius: 16px; padding: 1.8rem; max-width: 420px;
         box-shadow: 0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);
       `;
       box.innerHTML = `
-        <p style="color:#333; margin-bottom:1.4rem; line-height:1.4;">${message}</p>
+        <p style="color:${palette.text}; margin-bottom:1.4rem; line-height:1.4; font-size:${isWarning ? "1.05rem" : "1rem"}; ${isWarning ? "font-weight:600;" : ""}">${message}</p>
         <div style="display:flex; justify-content:flex-end; gap:10px;">
           <button id="toastConfirmCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-          <button id="toastConfirmOk" style="border:none; background:#dc3545; color:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Confirmar</button>
+          <button id="toastConfirmOk" style="border:none; background:${palette.btnBg}; color:${palette.btnText}; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${confirmLabel}</button>
         </div>
       `;
       overlay.appendChild(box);
@@ -68,5 +79,16 @@
       box.querySelector("#toastConfirmOk").addEventListener("click", () => { overlay.remove(); resolve(true); });
       overlay.addEventListener("click", (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
     });
+  };
+
+  /* Confirmación estándar de "esta persona ya se había registrado" — usada por recognize,
+     checkin-cedula y el registro manual (mismo texto/estilo en los tres, para no duplicarlo). */
+  window.confirmDuplicateRegistration = function (data) {
+    const name = data ? `${data.first_name || ""} ${data.last_name || ""}`.trim() : "";
+    return window.showConfirm(
+      `⚠️ ${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento.<br><br>` +
+      `¿Seguro que deseas registrarla de nuevo? Hazlo solo si fue un error o realmente necesitas repetir el ingreso.`,
+      { variant: "warning", confirmLabel: "Sí, registrar de nuevo" }
+    );
   };
 })();

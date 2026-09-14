@@ -57,6 +57,23 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str) -
         db.add(EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id))
 
 
+def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
+    """True si esta persona ya tiene al menos un AccessLog para ESTE evento — o sea, ya se
+    acreditó hoy por cualquier método (facial, cédula o alta manual). Se usa para pedir
+    confirmación antes de dejarla entrar una segunda vez por error/duplicado."""
+    return db.query(AccessLog).filter(
+        AccessLog.event_id == event_id, AccessLog.user_id == user_id
+    ).first() is not None
+
+
+def _duplicate_warning(user: "User") -> dict:
+    return {"result": "DUPLICADO", "details": "Esta persona ya había sido registrada en este evento", "data": {
+        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+        "role": user.role, "company": user.company, "phone": user.phone,
+        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+    }}
+
+
 @router.get("/users")
 async def get_all_users(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)
@@ -97,8 +114,8 @@ async def get_all_users(
 
 @router.post("/recognize")
 async def recognize(
-    event_id: int = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("digitador")),
+    event_id: int = Form(...), file: UploadFile = File(...), force: bool = Form(False),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
@@ -112,6 +129,8 @@ async def recognize(
     for user in users:
         known_enc = user.get_encoding()
         if known_enc and BiometricEngine.compare(known_enc, unknown_enc):
+            if not force and _already_checked_in(db, event.id, user.id):
+                return _duplicate_warning(user)
             log = AccessLog(
                 tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
                 event_id=event.id, registered_by_staff_id=staff.id,
@@ -129,14 +148,16 @@ async def recognize(
 
 @router.post("/checkin-cedula")
 async def checkin_cedula(
-    event_id: int = Form(...), cedula: str = Form(...), db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("digitador")),
+    event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Acreditación por cédula (lector de código de barras) — mismo shape de respuesta que
     /recognize (result SÍ/NO + data), para reusar el mismo patrón de frontend. Si la persona ya
     es conocida en el tenant (estuviera o no precargada para este evento puntual), se acredita
     directo como 'Existente' y de paso queda asociada a este evento. Si la cédula no existe en
-    absoluto, el frontend debe ofrecer el alta manual (POST /register, sin foto)."""
+    absoluto, el frontend debe ofrecer el alta manual (POST /register, sin foto). Si ya tiene un
+    AccessLog para este evento, se avisa (result: DUPLICADO) en vez de acreditar de nuevo, salvo
+    que venga force=true (el operador ya confirmó que sí quiere repetirlo)."""
     cedula = cedula.strip()
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
@@ -144,6 +165,9 @@ async def checkin_cedula(
     user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
     if not user:
         return {"result": "NO", "details": "Cédula no encontrada"}
+
+    if not force and _already_checked_in(db, event.id, user.id):
+        return _duplicate_warning(user)
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
@@ -192,16 +216,29 @@ async def delete_user_logs(
 async def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
     role: str = Form(""), company: str = Form(""), phone: str = Form(""),
-    email: str = Form(""), file: UploadFile = File(None), db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("digitador")),
+    email: str = Form(""), file: UploadFile = File(None), force: bool = Form(False),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
-    poder reconocer a esta persona después) como el de cédula (sin foto, solo identidad)."""
+    poder reconocer a esta persona después) como el de cédula (sin foto, solo identidad).
+    Si la cédula ya existe como User en el tenant (de este evento o de uno anterior — User vive
+    a nivel de tenant, no de evento) no se rechaza de plano: si todavía no tiene AccessLog para
+    ESTE evento, simplemente se le agrega (reutilizar a alguien de un evento pasado es válido);
+    si ya lo tiene, se avisa (DUPLICADO) igual que recognize/checkin-cedula, salvo force=true."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
-        return {"error": "El usuario ya está registrado en la base de datos."}
+        if not force and _already_checked_in(db, event.id, existing.id):
+            return _duplicate_warning(existing)
+        log = AccessLog(
+            tenant_id=event.tenant_id, user_id=existing.id, record_type="Existente",
+            event_id=event.id, registered_by_staff_id=staff.id,
+        )
+        db.add(log)
+        _upsert_attendee(db, event.id, existing.id, event.tenant_id)
+        db.commit()
+        return {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
 
     face_enc_json = None
     img_array = None

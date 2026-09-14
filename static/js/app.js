@@ -45,6 +45,53 @@ document.addEventListener("DOMContentLoaded", () => {
     const profileCard = document.getElementById('profileCard');
     const resTexto = document.getElementById('resultadoTexto');
 
+    async function submitRecognize(formData) {
+        try {
+            const res = await fetch('/api/recognize', { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (!res.ok) {
+                resTexto.innerText = "❌ " + (data.detail || "No se pudo procesar");
+                resTexto.style.color = "#dc3545";
+                return;
+            }
+
+            if (data.result === 'DUPLICADO') {
+                resTexto.innerText = "⚠️ Ya registrado(a) en este evento";
+                resTexto.style.color = "#f0ad4e";
+                const confirmado = await confirmDuplicateRegistration(data.data);
+                if (confirmado) {
+                    formData.set('force', 'true');
+                    await submitRecognize(formData);
+                }
+                return;
+            }
+
+            if(data.result === 'SÍ') {
+                resTexto.innerText = "✅ IDENTIDAD VALIDADA";
+                resTexto.style.color = "#28a745";
+
+                document.getElementById('edit_id').value = data.data.id || "";
+                document.getElementById('edit_first_name').value = data.data.first_name || "";
+                document.getElementById('edit_last_name').value = data.data.last_name || "";
+                document.getElementById('edit_role').value = data.data.role || "";
+                document.getElementById('edit_company').value = data.data.company || "";
+                document.getElementById('edit_phone').value = data.data.phone || "";
+                document.getElementById('edit_email').value = data.data.email || "";
+                document.getElementById('edit_opt_1').value = data.data.opt_1 || "";
+                document.getElementById('edit_opt_2').value = data.data.opt_2 || "";
+
+                if(profileCard) profileCard.style.display = 'flex';
+            } else {
+                resTexto.innerText = "❌ " + data.details;
+                resTexto.style.color = "#dc3545";
+            }
+        } catch (e) {
+            resTexto.innerText = "❌ Error de conexión al servidor FastAPI";
+            resTexto.style.color = "#dc3545";
+        }
+    }
+
     if(escanearBtn) {
         escanearBtn.addEventListener('click', () => {
             resTexto.innerText = "Analizando geometría facial...";
@@ -55,44 +102,11 @@ document.addEventListener("DOMContentLoaded", () => {
             canvas.height = video.videoHeight;
             canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            canvas.toBlob(async (blob) => {
+            canvas.toBlob((blob) => {
                 const formData = new FormData();
                 formData.append('file', blob, 'webcam.jpg');
                 formData.append('event_id', EVENT_ID);
-
-                try {
-                    const res = await fetch('/api/recognize', { method: 'POST', body: formData });
-                    const data = await res.json();
-
-                    if (!res.ok) {
-                        resTexto.innerText = "❌ " + (data.detail || "No se pudo procesar");
-                        resTexto.style.color = "#dc3545";
-                        return;
-                    }
-
-                    if(data.result === 'SÍ') {
-                        resTexto.innerText = "✅ IDENTIDAD VALIDADA";
-                        resTexto.style.color = "#28a745";
-
-                        document.getElementById('edit_id').value = data.data.id || "";
-                        document.getElementById('edit_first_name').value = data.data.first_name || "";
-                        document.getElementById('edit_last_name').value = data.data.last_name || "";
-                        document.getElementById('edit_role').value = data.data.role || "";
-                        document.getElementById('edit_company').value = data.data.company || "";
-                        document.getElementById('edit_phone').value = data.data.phone || "";
-                        document.getElementById('edit_email').value = data.data.email || "";
-                        document.getElementById('edit_opt_1').value = data.data.opt_1 || "";
-                        document.getElementById('edit_opt_2').value = data.data.opt_2 || "";
-
-                        if(profileCard) profileCard.style.display = 'flex';
-                    } else {
-                        resTexto.innerText = "❌ " + data.details;
-                        resTexto.style.color = "#dc3545";
-                    }
-                } catch (e) {
-                    resTexto.innerText = "❌ Error de conexión al servidor FastAPI";
-                    resTexto.style.color = "#dc3545";
-                }
+                submitRecognize(formData);
             }, 'image/jpeg');
         });
     }
@@ -137,22 +151,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const regForm = document.getElementById('regForm');
     if(regForm) {
+        async function submitManualRegister(formData, btn) {
+            try {
+                const res = await fetch('/api/register', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast(data.detail || "No se pudo registrar", "error");
+                    return;
+                }
+                if (data.result === 'DUPLICADO') {
+                    const confirmado = await confirmDuplicateRegistration(data.data);
+                    if (confirmado) {
+                        formData.set('force', 'true');
+                        await submitManualRegister(formData, btn);
+                    }
+                    return;
+                }
+                showToast(data.message || data.error, data.error ? "error" : "success");
+                if (!data.error) regForm.reset();
+            } catch(err) { showToast("Error de red", "error"); }
+        }
+
         regForm.onsubmit = async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector('button');
             btn.innerText = "Guardando..."; btn.disabled = true;
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);
-            try {
-                const res = await fetch('/api/register', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (!res.ok) {
-                    showToast(data.detail || "No se pudo registrar", "error");
-                } else {
-                    showToast(data.message || data.error, data.error ? "error" : "success");
-                    if (!data.error) e.target.reset();
-                }
-            } catch(err) { showToast("Error de red", "error"); }
+            await submitManualRegister(formData, btn);
             btn.innerText = "Guardar Perfil Biométrico"; btn.disabled = false;
         };
     }

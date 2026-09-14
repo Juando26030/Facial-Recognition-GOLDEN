@@ -53,6 +53,9 @@
         <div class="badge-input-group">
           <label>Archivo de base (.xlsx o .csv)</label>
           <input type="file" name="roster_file" accept=".xlsx,.csv" required>
+          <p style="font-size:0.8rem; margin-top:0.4rem;">
+            ¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download style="color: var(--golden-primary); font-weight:600;">Descarga la plantilla de Excel</a>.
+          </p>
         </div>
 
         <div class="badge-input-group" style="display:flex; align-items:center; gap:10px; margin-top:1.2rem;">

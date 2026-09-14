@@ -33,15 +33,23 @@
       const accreditBtn = document.createElement('button');
       accreditBtn.innerText = 'Acreditar';
       accreditBtn.className = 'golden-btn btn-table-action btn-save';
-      accreditBtn.addEventListener('click', async () => {
+      async function doAccredit(force) {
         accreditBtn.disabled = true;
         accreditBtn.innerText = 'Acreditando...';
         try {
           const formData = new FormData();
           formData.append('event_id', window.EVENT_ID);
           formData.append('cedula', user.id);
+          if (force) formData.append('force', 'true');
           const res = await fetch('/api/checkin-cedula', { method: 'POST', body: formData });
           const data = await res.json();
+          if (res.ok && data.result === 'DUPLICADO') {
+            const confirmado = await confirmDuplicateRegistration(data.data);
+            if (confirmado) { await doAccredit(true); return; }
+            accreditBtn.disabled = false;
+            accreditBtn.innerText = 'Acreditar';
+            return;
+          }
           if (res.ok && data.result === 'SÍ') {
             showToast('Acreditado', 'success');
             tr.className = 'row-registrado';
@@ -58,7 +66,8 @@
           accreditBtn.disabled = false;
           accreditBtn.innerText = 'Acreditar';
         }
-      });
+      }
+      accreditBtn.addEventListener('click', () => doAccredit(false));
       actionTd.appendChild(accreditBtn);
     }
 

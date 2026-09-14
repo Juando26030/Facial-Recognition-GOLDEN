@@ -178,15 +178,21 @@ async function loadDirectory() {
     input.addEventListener("input", applyFilters);
 });
 
-async function fastCheckin(cedula) {
+async function fastCheckin(cedula, force) {
     const formData = new FormData();
     formData.append("event_id", window.EVENT_ID);
     formData.append("cedula", cedula);
+    if (force) formData.append("force", "true");
     try {
         const res = await fetch("/api/checkin-cedula", { method: "POST", body: formData });
         const data = await res.json();
         if (!res.ok) {
             showToast(data.detail || "No se pudo acreditar", "error");
+            return;
+        }
+        if (data.result === "DUPLICADO") {
+            const confirmado = await confirmDuplicateRegistration(data.data);
+            if (confirmado) await fastCheckin(cedula, true);
             return;
         }
         if (data.result === "SÍ") {
@@ -209,12 +215,6 @@ if (searchCedula) {
             e.preventDefault();
             const cedula = searchCedula.value.trim();
             if (!cedula) return;
-            const exact = allDirectoryUsers.find(u => String(u.id) === cedula);
-            if (exact && exact.status !== "No registrado") {
-                showToast("Esta cédula ya está acreditada", "error");
-                searchCedula.value = "";
-                return;
-            }
             fastCheckin(cedula);
             searchCedula.value = "";
         }
@@ -222,10 +222,7 @@ if (searchCedula) {
 }
 
 if (manualForm) {
-    manualForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        formData.append("event_id", window.EVENT_ID);
+    async function submitManualCedula(formData) {
         try {
             const res = await fetch("/api/register", { method: "POST", body: formData });
             const data = await res.json();
@@ -233,17 +230,32 @@ if (manualForm) {
                 showToast(data.detail || "No se pudo registrar", "error");
                 return;
             }
+            if (data.result === "DUPLICADO") {
+                const confirmado = await confirmDuplicateRegistration(data.data);
+                if (confirmado) {
+                    formData.set("force", "true");
+                    await submitManualCedula(formData);
+                }
+                return;
+            }
             if (data.error) {
                 showToast(data.error, "error");
             } else {
                 showToast(data.message || "Registrado", "success");
                 manualCard.style.display = "none";
-                e.target.reset();
+                manualForm.reset();
                 loadDirectory();
             }
         } catch (err) {
             showToast("Error de red", "error");
         }
+    }
+
+    manualForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        formData.append("event_id", window.EVENT_ID);
+        await submitManualCedula(formData);
     });
 }
 
