@@ -101,7 +101,7 @@
                 <div class="camera-wrapper">
                     <video id="video" autoplay playsinline></video>
                     <canvas id="canvas" style="display:none;"></canvas>
-                    <button id="escanearBtn" class="golden-btn golden-btn-primary full-width">📸 Escanear Rostro</button>
+                    <button id="escanearBtn" class="golden-btn golden-btn-primary full-width" {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>📸 Escanear Rostro</button>
                     <h3 id="resultadoTexto" style="text-align:center; margin-top: 15px; height: 30px;"></h3>
                 </div>
 
@@ -165,8 +165,10 @@
         <!-- PESTAÑA 2: REGISTRO MANUAL -->
         <div id="manual" class="section">
             <form id="regForm" class="golden-badge-builder">
+                <fieldset {% if event.status != "en_proceso" %}disabled{% endif %} style="border:none; padding:0; margin:0;">
                 <div class="badge-form-title">Registro de Nuevo Personal</div>
-                
+                {% if event.status != "en_proceso" %}<p style="text-align:center; color:#a66; font-size:0.85rem; margin-bottom:1rem;">Deshabilitado: el evento no está en proceso.</p>{% endif %}
+
                 <div class="badge-input-row">
                     <div class="badge-input-group">
                         <label>Nombres</label>
@@ -213,6 +215,7 @@
                 </div>
                 
                 <button type="submit" class="golden-btn golden-btn-primary">Guardar Perfil Biométrico</button>
+                </fieldset>
             </form>
         </div>
         {% endif %}

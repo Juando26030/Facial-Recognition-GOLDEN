@@ -187,7 +187,7 @@ async function loadTenants() {
     <div class="tenant-card" data-tenant-id="${t.id}">
       <div class="tenant-head" data-action="toggle-tenant">
         <div>
-          <h3>${t.name}</h3>
+          <h3>${t.name} <span style="color:#bbb; font-weight:400; font-size:0.75rem;">#${t.client_code}</span></h3>
           <div class="meta">${t.contact_name || "Sin contacto"} ${t.contact_phone ? "· " + t.contact_phone : ""}</div>
         </div>
         <span class="small-btn">Ver eventos</span>
@@ -276,10 +276,18 @@ if (tenantsListEl) {
       toggleNewEvent.closest(".tenant-body").querySelector("[data-new-event-form]").classList.toggle("open");
       return;
     }
-    const statusBtn = e.target.closest("[data-set-status]");
-    if (statusBtn) { setEventStatus(statusBtn.dataset.eventId, statusBtn.dataset.setStatus, statusBtn); return; }
     const deleteBtn = e.target.closest("[data-delete-event]");
     if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
+  });
+
+  tenantsListEl.addEventListener("change", async (e) => {
+    const select = e.target.closest("[data-status-select]");
+    if (!select) return;
+    const newStatus = select.value;
+    const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
+    const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
+    if (!confirmed) { select.value = previousStatus; return; }
+    await setEventStatus(select.dataset.eventId, newStatus, select);
   });
 
   tenantsListEl.addEventListener("submit", (e) => {
@@ -302,11 +310,13 @@ async function loadEventsForTenant(tenantId, card) {
         <div class="event-name">${e.name} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${e.event_code})</span>` : ""}</div>
         <div class="event-meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)} · Coordinador: ${e.coordinator_name || "-"} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
       </div>
-      <div style="display:flex; gap:6px;">
+      <div style="display:flex; gap:6px; align-items:center;">
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
-        ${e.status === "creado" ? `<button type="button" class="small-btn" data-set-status="en_proceso" data-event-id="${e.id}">Iniciar evento</button>` : ""}
-        ${e.status === "en_proceso" ? `<button type="button" class="small-btn" data-set-status="finalizado" data-event-id="${e.id}">Finalizar evento</button>` : ""}
-        ${e.status === "finalizado" && isAdmin ? `<button type="button" class="small-btn" data-set-status="en_proceso" data-event-id="${e.id}">Reabrir</button>` : ""}
+        <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
+          ${Object.entries(STATUS_LABELS).map(([value, label]) =>
+            `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
+          ).join("")}
+        </select>
         ${isAdmin ? `<button type="button" class="small-btn danger" data-delete-event="${e.id}" data-event-name="${e.name.replace(/"/g, "&quot;")}" data-event-status="${e.status}">Eliminar</button>` : ""}
       </div>
     </div>

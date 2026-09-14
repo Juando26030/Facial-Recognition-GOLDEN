@@ -19,6 +19,7 @@ class Tenant(Base):
     """Un cliente de Golden (la empresa para la que se hacen los eventos), no un usuario de staff."""
     __tablename__ = 'tenants'
     id = Column(String, primary_key=True)
+    client_code = Column(String, unique=True, nullable=False)  # generado al azar al crear, ver routers/tenants.py
     name = Column(String, nullable=False)
     contact_name = Column(String)
     contact_phone = Column(String)
@@ -91,7 +92,7 @@ class Event(Base):
     __tablename__ = 'events'
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
-    event_code = Column(String)  # código interno, libre (no es la PK)
+    event_code = Column(String, unique=True, nullable=False)  # único en todo el sistema, no solo por tenant
     name = Column(String, nullable=False)
     location = Column(String)  # nombre del lugar/venue
     address = Column(String)

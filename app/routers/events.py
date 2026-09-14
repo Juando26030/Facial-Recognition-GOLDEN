@@ -152,6 +152,13 @@ async def list_events(
     return [_serialize(e) for e in query.order_by(Event.created_at.desc()).all()]
 
 
+def _validate_event_dates(start_date, end_date, setup_date):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="La fecha de inicio no puede ser después de la fecha de fin")
+    if setup_date and start_date and setup_date > start_date:
+        raise HTTPException(status_code=400, detail="La fecha de montaje debe ser el día del inicio o antes")
+
+
 @router.post("/events")
 async def create_event(
     data: EventIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
@@ -163,6 +170,9 @@ async def create_event(
     ).first()
     if not coordinator:
         raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
+    if db.query(Event).filter(Event.event_code == data.event_code).first():
+        raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
+    _validate_event_dates(data.start_date, data.end_date, data.setup_date)
 
     event = Event(**data.dict(), created_by_id=staff.id)
     db.add(event)
@@ -181,6 +191,15 @@ async def update_event(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     if data.status is not None and data.status not in EVENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Estado inválido (debe ser uno de: {', '.join(EVENT_STATUSES)})")
+    if data.event_code is not None and data.event_code != event.event_code:
+        if db.query(Event).filter(Event.event_code == data.event_code, Event.id != event_id).first():
+            raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
+
+    effective_start = data.start_date if data.start_date is not None else event.start_date
+    effective_end = data.end_date if data.end_date is not None else event.end_date
+    effective_setup = data.setup_date if data.setup_date is not None else event.setup_date
+    _validate_event_dates(effective_start, effective_end, effective_setup)
+
     for field, value in data.dict(exclude_unset=True).items():
         setattr(event, field, value)
     db.commit()

@@ -1,4 +1,5 @@
 import re
+import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,9 +32,16 @@ def _slugify(name: str) -> str:
     return slug or "cliente"
 
 
+def _generate_client_code(db: Session) -> str:
+    code = secrets.token_hex(4).upper()
+    while db.query(Tenant).filter(Tenant.client_code == code).first():
+        code = secrets.token_hex(4).upper()
+    return code
+
+
 def _serialize(t: Tenant) -> dict:
     return {
-        "id": t.id, "name": t.name,
+        "id": t.id, "client_code": t.client_code, "name": t.name,
         "contact_name": t.contact_name, "contact_phone": t.contact_phone, "contact_email": t.contact_email,
     }
 
@@ -55,7 +63,7 @@ async def create_tenant(
         tenant_id = f"{base_id}_{suffix}"
 
     tenant = Tenant(
-        id=tenant_id, name=data.name,
+        id=tenant_id, client_code=_generate_client_code(db), name=data.name,
         contact_name=data.contact_name, contact_phone=data.contact_phone, contact_email=data.contact_email,
     )
     db.add(tenant)
