@@ -5,8 +5,9 @@ import tempfile
 import csv
 import io
 import face_recognition
+from openpyxl import load_workbook
 from PIL import Image
-from fastapi import APIRouter, Depends, File, UploadFile, Form
+from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -14,6 +15,30 @@ from app.models import User, AccessLog, EventAttendee, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role
+
+
+def _read_roster_rows(filename: str, content: bytes):
+    """Lee un roster en .csv o .xlsx y devuelve filas normalizadas (claves en minúscula, sin
+    espacios), sin importar el formato de origen — el resto de bulk_register no necesita saber
+    cuál era."""
+    filename = (filename or "").lower()
+    if filename.endswith(".xlsx"):
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        rows_iter = ws.iter_rows(values_only=True)
+        headers = [str(h).strip().lower() if h is not None else "" for h in next(rows_iter, [])]
+        for row in rows_iter:
+            if row is None or all(cell is None for cell in row):
+                continue
+            yield {
+                headers[i]: (str(cell).strip() if cell is not None else "")
+                for i, cell in enumerate(row) if i < len(headers) and headers[i]
+            }
+    else:
+        decoded = content.decode("utf-8-sig")
+        delimiter = ";" if ";" in decoded.split("\n", 1)[0] else ","
+        for row in csv.DictReader(io.StringIO(decoded), delimiter=delimiter):
+            yield {k.strip().lower() if k else "": (v or "").strip() for k, v in row.items() if k}
 
 router = APIRouter()
 
@@ -209,16 +234,20 @@ async def manual_register(
 
 @router.post("/bulk_register")
 async def bulk_register(
-    event_id: int = Form(...), csv_file: UploadFile = File(...), zip_file: UploadFile = File(None),
+    event_id: int = Form(...), roster_file: UploadFile = File(...), zip_file: UploadFile = File(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
-    registro (cédula, facial, QR futuro), no es exclusiva de facial. zip_file es OPCIONAL: solo
-    hace falta si además quieres que estas personas se puedan reconocer por cara (las fotos del
-    zip, nombradas <cédula>.jpg, se procesan a encoding biométrico). Sin zip, solo se cargan datos
-    de identidad + se asocian al evento (EventAttendee) — suficiente para acreditar por cédula.
-    Los errores de fila no abortan la carga completa, se reportan al final."""
+    registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
+    .xlsx (Historia 1.1: el negocio manda Excel). zip_file es OPCIONAL: solo hace falta si además
+    quieres que estas personas se puedan reconocer por cara (las fotos del zip, nombradas
+    <cédula>.jpg, se procesan a encoding biométrico). Sin zip, solo se cargan datos de identidad +
+    se asocian al evento (EventAttendee) — suficiente para acreditar por cédula. Los errores de
+    fila no abortan la carga completa, se reportan al final. No se permite cargar sobre un evento
+    ya 'finalizado' (sí sobre 'creado' o 'en_proceso' — es preparación previa al evento)."""
     event = get_event_for_staff(event_id, db, staff)
+    if event.status == "finalizado":
+        raise HTTPException(status_code=400, detail="No se puede cargar la base de un evento finalizado")
     known_faces_dir = _known_faces_dir(event.tenant_id)
 
     if zip_file is not None and zip_file.filename:
@@ -238,16 +267,13 @@ async def bulk_register(
                     except: pass
         if os.path.exists(zip_path): os.remove(zip_path)
 
-    content = await csv_file.read()
-    decoded_content = content.decode('utf-8-sig')
-    delimiter = ';' if ';' in decoded_content else ','
-    reader = csv.DictReader(io.StringIO(decoded_content), delimiter=delimiter)
+    content = await roster_file.read()
+    rows = _read_roster_rows(roster_file.filename, content)
 
     count = 0
     errors = []
-    for row_num, row in enumerate(reader, start=2):  # fila 1 es el encabezado
+    for row_num, clean_row in enumerate(rows, start=2):  # fila 1 es el encabezado
         try:
-            clean_row = {k.strip().lower() if k else '': (v or '').strip() for k, v in row.items() if k}
             identificador = clean_row.get('id', '') or clean_row.get('identificación', '') or clean_row.get('cedula', '') or clean_row.get('cédula', '')
 
             if not identificador:
