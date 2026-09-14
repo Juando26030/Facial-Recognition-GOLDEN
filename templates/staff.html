@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Staff | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
 </head>
 <body>
 <header class="golden-header">
@@ -107,9 +108,10 @@ async function loadStaff() {
 }
 
 async function deleteStaff(id, username) {
-  if (!confirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es desactivar — se elimina de la base de datos y no se puede deshacer.`)) return;
+  if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es desactivar — se elimina de la base de datos y no se puede deshacer.`))) return;
   const res = await fetch(`/api/staff/${id}`, {method: "DELETE"});
-  if (res.ok) { loadStaff(); } else { const err = await res.json(); alert(err.detail || "No se pudo borrar"); }
+  if (res.ok) { loadStaff(); showToast("Cuenta eliminada", "success"); }
+  else { const err = await res.json(); showToast(err.detail || "No se pudo borrar", "error"); }
 }
 
 document.getElementById("newStaffForm").addEventListener("submit", async (ev) => {
@@ -119,12 +121,14 @@ document.getElementById("newStaffForm").addEventListener("submit", async (ev) =>
   const res = await fetch("/api/staff", {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
   });
-  if (res.ok) { ev.target.reset(); loadStaff(); } else { const err = await res.json(); alert(err.detail || "No se pudo crear la cuenta"); }
+  if (res.ok) { ev.target.reset(); loadStaff(); showToast("Cuenta creada", "success"); }
+  else { const err = await res.json(); showToast(err.detail || "No se pudo crear la cuenta", "error"); }
 });
 
 async function toggleStaff(id, activate) {
-  await fetch(`/api/staff/${id}/${activate ? "activate" : "deactivate"}`, {method: "PATCH"});
+  const res = await fetch(`/api/staff/${id}/${activate ? "activate" : "deactivate"}`, {method: "PATCH"});
   loadStaff();
+  showToast(res.ok ? (activate ? "Cuenta reactivada" : "Cuenta desactivada") : "No se pudo actualizar", res.ok ? "success" : "error");
 }
 
 loadStaff();

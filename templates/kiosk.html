@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biometría | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <style>
         .btn-table-delete {
             background: #dc3545;
@@ -33,6 +34,9 @@
       <div class="golden-anniversary-badge">
         {{ event.name }}
       </div>
+      {% if staff_role != "cliente" %}
+      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
+      {% endif %}
       {% if staff_role not in ["digitador", "cliente"] %}
       <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
       {% endif %}
@@ -367,8 +371,8 @@
         const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users`, {
             method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
         });
-        if (res.ok) { ev.target.reset(); loadTempUsers(); }
-        else { const err = await res.json(); alert(err.detail || "No se pudo crear la cuenta"); }
+        if (res.ok) { ev.target.reset(); loadTempUsers(); showToast("Cuenta creada y asignada al evento", "success"); }
+        else { const err = await res.json(); showToast(err.detail || "No se pudo crear la cuenta", "error"); }
     });
 
     if (assignForm) {
@@ -378,21 +382,23 @@
             const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/assign-existing`, {
                 method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({staff_id: Number(staffId)}),
             });
-            if (res.ok) { loadTempUsers(); }
-            else { const err = await res.json(); alert(err.detail || "No se pudo asignar"); }
+            if (res.ok) { loadTempUsers(); showToast("Cuenta asignada al evento", "success"); }
+            else { const err = await res.json(); showToast(err.detail || "No se pudo asignar", "error"); }
         });
     }
 
     window.revokeTempUser = async (staffId) => {
-        if (!confirm("¿Quitar el acceso de este usuario a este evento?")) return;
-        await fetch(`/api/events/${window.EVENT_ID}/staff-users/${staffId}`, {method: "DELETE"});
+        if (!(await showConfirm("¿Quitar el acceso de este usuario a este evento?"))) return;
+        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/${staffId}`, {method: "DELETE"});
         loadTempUsers();
+        showToast(res.ok ? "Acceso revocado" : "No se pudo revocar el acceso", res.ok ? "success" : "error");
     };
 
     window.deleteTempUser = async (staffId, username) => {
-        if (!confirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`)) return;
+        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`))) return;
         const res = await fetch(`/api/staff/${staffId}`, {method: "DELETE"});
-        if (res.ok) { loadTempUsers(); } else { const err = await res.json(); alert(err.detail || "No se pudo borrar"); }
+        if (res.ok) { loadTempUsers(); showToast("Cuenta eliminada", "success"); }
+        else { const err = await res.json(); showToast(err.detail || "No se pudo borrar", "error"); }
     };
 
     loadTempUsers();

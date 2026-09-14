@@ -41,6 +41,7 @@
     `;
     document.body.appendChild(el);
 
+    el.addEventListener("click", (e) => e.stopPropagation());
     el.querySelector("#cpHourLabel").addEventListener("click", () => { state.mode = "hour"; renderFace(); });
     el.querySelector("#cpMinuteLabel").addEventListener("click", () => { state.mode = "minute"; renderFace(); });
     el.querySelector("#cpAM").addEventListener("click", () => { state.period = "AM"; renderFace(); });
@@ -90,7 +91,10 @@
       circle.setAttribute("cx", p.x); circle.setAttribute("cy", p.y); circle.setAttribute("r", 16);
       circle.setAttribute("fill", isSelected ? "var(--golden-primary, #D4AF37)" : "transparent");
       circle.style.cursor = "pointer";
-      circle.addEventListener("click", () => selectValue(value));
+      circle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectValue(value);
+      });
       svg.appendChild(circle);
 
       const text = document.createElementNS(NS, "text");

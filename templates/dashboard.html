@@ -6,6 +6,7 @@
     <title>Panel | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <style>
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
@@ -318,7 +319,7 @@ async function createEvent(form, tenantId) {
 
   const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
   if (!coordinatorId) {
-    alert("Selecciona un coordinador válido de la lista.");
+    showToast("Selecciona un coordinador válido de la lista.", "error");
     return;
   }
   payload.coordinator_staff_id = coordinatorId;
@@ -332,23 +333,26 @@ async function createEvent(form, tenantId) {
     form.classList.remove("open");
     const card = form.closest(".tenant-card");
     loadEventsForTenant(tenantId, card);
+    showToast("Evento creado", "success");
   } else {
     const err = await res.json();
-    alert(err.detail || "No se pudo crear el evento");
+    showToast(err.detail || "No se pudo crear el evento", "error");
   }
 }
 
 async function setEventStatus(eventId, status, btn) {
-  await fetch(`/api/events/${eventId}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({status})});
+  const res = await fetch(`/api/events/${eventId}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({status})});
   const card = btn.closest(".tenant-card");
   loadEventsForTenant(card.dataset.tenantId, card);
+  showToast(res.ok ? `Evento ${status === "cerrado" ? "cerrado" : "reabierto"}` : "No se pudo actualizar el evento", res.ok ? "success" : "error");
 }
 
 async function deleteEvent(eventId, name, btn) {
-  if (!confirm(`¿Eliminar permanentemente "${name}"? Esta acción no se puede deshacer.`)) return;
-  await fetch(`/api/events/${eventId}`, {method: "DELETE"});
+  if (!(await showConfirm(`¿Eliminar permanentemente "${name}"? Esta acción no se puede deshacer.`))) return;
+  const res = await fetch(`/api/events/${eventId}`, {method: "DELETE"});
   const card = btn.closest(".tenant-card");
   loadEventsForTenant(card.dataset.tenantId, card);
+  showToast(res.ok ? "Evento eliminado" : "No se pudo eliminar el evento", res.ok ? "success" : "error");
 }
 
 const newTenantForm = document.getElementById("newTenantForm");
@@ -359,8 +363,8 @@ if (newTenantForm) {
     const res = await fetch("/api/tenants", {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
     });
-    if (res.ok) { ev.target.reset(); ev.target.classList.remove("open"); loadTenants(); }
-    else { alert("No se pudo crear el cliente"); }
+    if (res.ok) { ev.target.reset(); ev.target.classList.remove("open"); loadTenants(); showToast("Cliente creado", "success"); }
+    else { showToast("No se pudo crear el cliente", "error"); }
   });
 }
 

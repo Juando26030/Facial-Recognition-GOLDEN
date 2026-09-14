@@ -16,9 +16,11 @@ router = APIRouter()
 
 @router.get("/cities")
 async def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinador"))):
-    """Sugerencias de ciudad para el país dado (ver app/cities_data.py — lista curada, no
-    exhaustiva). El campo de ciudad en el formulario siempre acepta texto libre también."""
-    return COUNTRY_CITIES.get(country, [])
+    """Sugerencias de ciudad para el país dado (dataset GeoNames, ver app/cities_data.py),
+    ordenadas por población — se recorta a las primeras 300 para no mandar un <datalist> gigante
+    al navegador en países con miles de ciudades. El campo de ciudad siempre acepta texto libre
+    también, por si la ciudad buscada no queda entre esas 300."""
+    return COUNTRY_CITIES.get(country, [])[:300]
 
 
 class EventStaffIn(BaseModel):

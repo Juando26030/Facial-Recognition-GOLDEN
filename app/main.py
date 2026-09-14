@@ -85,7 +85,35 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/kiosk/{event_id}")
-async def kiosk_page(event_id: int, request: Request, db: Session = Depends(get_db)):
+async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Punto de entrada al evento. 'cliente' no registra nada (solo ve estadísticas/directorio),
+    así que va directo a kiosk.html. Todos los demás roles eligen primero CÓMO van a registrar
+    (facial, QR, ...) — varios métodos pueden convivir en el mismo evento, cada quien entra al
+    que le toque; ver /kiosk/{event_id}/facial."""
+    staff_user = _page_staff(request, db)
+    if not staff_user:
+        return RedirectResponse("/login", status_code=302)
+    try:
+        event = get_event_for_staff(event_id, db, staff_user)
+    except HTTPException:
+        return RedirectResponse("/", status_code=302)
+
+    if staff_user.role == "cliente":
+        return templates.TemplateResponse(request=request, name="kiosk.html", context={
+            "staff_name": staff_user.full_name or staff_user.username,
+            "staff_role": staff_user.role,
+            "event": event,
+        })
+
+    return templates.TemplateResponse(request=request, name="kiosk_select.html", context={
+        "staff_name": staff_user.full_name or staff_user.username,
+        "staff_role": staff_user.role,
+        "event": event,
+    })
+
+
+@app.get("/kiosk/{event_id}/facial")
+async def kiosk_facial(event_id: int, request: Request, db: Session = Depends(get_db)):
     staff_user = _page_staff(request, db)
     if not staff_user:
         return RedirectResponse("/login", status_code=302)

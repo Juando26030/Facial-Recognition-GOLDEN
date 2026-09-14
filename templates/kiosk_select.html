@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ event.name }} | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <style>
+        .mode-grid { display:flex; gap:1.5rem; flex-wrap:wrap; justify-content:center; margin-top:2rem; }
+        .mode-card {
+            background:white; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); padding:2.5rem 2rem;
+            width:260px; text-align:center; text-decoration:none; color:inherit; transition:0.25s;
+            border: 2px solid transparent;
+        }
+        .mode-card.enabled:hover { transform:translateY(-4px); box-shadow:0 16px 50px rgba(212,175,55,0.25); border-color: var(--golden-primary); }
+        .mode-card.disabled { opacity:0.5; cursor:not-allowed; }
+        .mode-icon { font-size:3rem; margin-bottom:1rem; }
+        .mode-title { font-family: var(--font-heading-secondary); font-weight:700; color: var(--golden-dark); font-size:1.1rem; margin-bottom:0.4rem; }
+        .mode-sub { font-size:0.8rem; color:#888; }
+    </style>
+</head>
+<body>
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      {% if staff_role not in ["digitador", "cliente"] %}
+      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
+      {% endif %}
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 4rem 2rem; text-align:center;">
+    <span style="color: var(--golden-primary); font-weight:600; text-transform:uppercase; letter-spacing:2px; font-size:0.85rem;">{{ event.name }}</span>
+    <h2 style="font-family: var(--font-heading-primary); font-size:2rem; color: var(--golden-dark); margin-top:10px;">¿Cómo vas a registrar hoy?</h2>
+    <p style="color:#888; margin-top:0.5rem;">Distintas personas pueden usar métodos distintos en el mismo evento, al mismo tiempo.</p>
+
+    <div class="mode-grid">
+      <a href="/kiosk/{{ event.id }}/facial" class="mode-card enabled">
+        <div class="mode-icon">📸</div>
+        <div class="mode-title">Reconocimiento Facial</div>
+        <div class="mode-sub">Escáner, registro individual, carga masiva</div>
+      </a>
+      <div class="mode-card disabled">
+        <div class="mode-icon">🔳</div>
+        <div class="mode-title">Código QR</div>
+        <div class="mode-sub">Próximamente</div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

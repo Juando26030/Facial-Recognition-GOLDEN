@@ -117,12 +117,13 @@ document.addEventListener("DOMContentLoaded", () => {
                                 actionBtn.innerText = "Editar";
                                 actionBtn.classList.remove('btn-save');
                                 isEditing = false;
+                                showToast("Cambios guardados", "success");
                             } else {
-                                alert("Error al guardar cambios en SQL");
+                                showToast("Error al guardar cambios en SQL", "error");
                                 actionBtn.innerText = "Guardar";
                             }
                         } catch (error) {
-                            alert("Error de red");
+                            showToast("Error de red", "error");
                             actionBtn.innerText = "Guardar";
                         }
                         actionBtn.disabled = false;
@@ -131,32 +132,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 deleteBtn.addEventListener('click', async () => {
                     const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-                    const isConfirmed = confirm(`⚠️ CUIDADO: Estás a punto de borrar el registro de asistencia de ${fullName}.\n\nEsto devolverá a la persona al estado "No registrado" y borrará sus logs de hoy, pero NO lo eliminará de la base de datos principal.`);
-                    
+                    const isConfirmed = await showConfirm(`⚠️ CUIDADO: Estás a punto de borrar el registro de asistencia de ${fullName}.<br><br>Esto devolverá a la persona al estado "No registrado" y borrará sus logs de hoy, pero NO lo eliminará de la base de datos principal.`);
+
                     if (isConfirmed) {
                         try {
                             const delRes = await fetch(withEvent(`/api/users/${user.id}/logs`), { method: 'DELETE' });
                             if (delRes.ok) {
-                                alert("Registro de asistencia eliminado.");
-                                
+                                showToast("Registro de asistencia eliminado", "success");
+
                                 tr.className = 'row-noregistrado';
                                 statusTd.innerText = "No registrado";
-                                
+
                                 actionBtn.innerText = "Editar";
                                 actionBtn.classList.remove('btn-save');
                                 deleteBtn.style.display = "none";
                                 isEditing = false;
-                                
+
                                 const editableFields = ['first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1', 'opt_2'];
                                 editableFields.forEach(field => {
                                     tds[field].contentEditable = "false";
                                     tds[field].classList.remove('editable-cell-active');
                                 });
                             } else {
-                                alert("Error al eliminar el registro.");
+                                showToast("Error al eliminar el registro", "error");
                             }
                         } catch (e) {
-                            alert("Error de red al intentar borrar.");
+                            showToast("Error de red al intentar borrar", "error");
                         }
                     }
                 });
@@ -233,31 +234,31 @@ document.addEventListener("DOMContentLoaded", () => {
     if(liveEditForm) {
         liveEditForm.onsubmit = async (e) => {
             e.preventDefault();
-            const autorizacion = confirm("⚠️ ATENCIÓN: Esta persona ya se encuentra registrada en el sistema.\n\n¿Estás completamente seguro de que deseas sobrescribir sus datos?");
-            if (!autorizacion) return; 
+            const autorizacion = await showConfirm("⚠️ ATENCIÓN: Esta persona ya se encuentra registrada en el sistema.<br><br>¿Estás completamente seguro de que deseas sobrescribir sus datos?");
+            if (!autorizacion) return;
 
             const btn = e.target.querySelector('button');
             btn.innerText = "Guardando..."; btn.disabled = true;
 
             const payload = Object.fromEntries(new FormData(e.target).entries());
-            
+
             try {
                 const res = await fetch(withEvent(`/api/users/${payload.id}`), {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                
+
                 if(res.ok) {
-                    alert("✅ Perfil actualizado y log registrado en SQL.");
+                    showToast("Perfil actualizado y log registrado", "success");
                     profileCard.style.display = 'none';
                     resTexto.innerText = "✅ ACCESO AUTORIZADO Y GUARDADO";
                     resTexto.style.color = "#28a745";
                 } else {
                     const errorData = await res.json();
-                    alert("❌ Error: " + (errorData.error || "No se pudo actualizar"));
+                    showToast(errorData.error || "No se pudo actualizar", "error");
                 }
-            } catch (err) { alert("❌ Error de red."); }
+            } catch (err) { showToast("Error de red", "error"); }
             btn.innerText = "Guardar y Autorizar Acceso"; btn.disabled = false;
         };
     }
@@ -278,9 +279,9 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 const res = await fetch('/api/register', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(data.message || data.error);
+                showToast(data.message || data.error, data.error ? "error" : "success");
                 e.target.reset();
-            } catch(err) { alert("Error de red"); }
+            } catch(err) { showToast("Error de red", "error"); }
             btn.innerText = "Guardar Perfil Biométrico"; btn.disabled = false;
         };
     }
@@ -296,9 +297,9 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 const res = await fetch('/api/bulk_register', { method: 'POST', body: formData });
                 const data = await res.json();
-                alert(data.message || data.error);
+                showToast(data.message || data.error, data.error ? "error" : "success");
                 e.target.reset();
-            } catch(err) { alert("Error de red"); }
+            } catch(err) { showToast("Error de red", "error"); }
             btn.innerText = "Sincronizar Lote Masivo"; btn.disabled = false;
         };
     }
