@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AccessLog, Event, EventStaffAuthorization, StaffUser, Tenant
+from app.models import AccessLog, EVENT_STATUSES, Event, EventStaffAuthorization, StaffUser, Tenant
 from app.auth import get_current_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
@@ -98,8 +98,8 @@ def _serialize(e: Event) -> dict:
 @router.get("/my-events")
 async def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
     """Para el dashboard: eventos a los que este staff puede entrar directo. digitador/cliente ->
-    solo eventos activos con autorización explícita. coordinador+ -> todos los activos."""
-    query = db.query(Event).filter(Event.status == "activo")
+    solo eventos en_proceso con autorización explícita. coordinador+ -> todos los en_proceso."""
+    query = db.query(Event).filter(Event.status == "en_proceso")
     if staff.role in ("digitador", "cliente"):
         query = query.join(
             EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id
@@ -179,6 +179,8 @@ async def update_event(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    if data.status is not None and data.status not in EVENT_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Estado inválido (debe ser uno de: {', '.join(EVENT_STATUSES)})")
     for field, value in data.dict(exclude_unset=True).items():
         setattr(event, field, value)
     db.commit()
@@ -263,7 +265,8 @@ async def revoke_event_staff(
 async def delete_event(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
-    """Borrado permanente — solo admin+ (coordinador puede cerrar un evento vía PATCH status='cerrado').
+    """Borrado permanente — solo admin+ (coordinador+ avanza el estado del evento vía PATCH status,
+    ver EVENT_STATUSES en models.py: creado -> en_proceso -> finalizado).
     Antes de borrar el Event hay que soltar lo que le apunta por FK: las EventStaffAuthorization de
     este evento no tienen sentido sin él (se borran), y los AccessLog ya generados son historial
     real (se conservan, solo se les quita la referencia al evento)."""

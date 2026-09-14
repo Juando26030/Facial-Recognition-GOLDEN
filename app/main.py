@@ -72,7 +72,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         authorized_events = (
             db.query(Event)
             .join(EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id)
-            .filter(EventStaffAuthorization.staff_user_id == staff_user.id, Event.status == "activo")
+            .filter(EventStaffAuthorization.staff_user_id == staff_user.id, Event.status == "en_proceso")
             .all()
         )
         if len(authorized_events) == 1:

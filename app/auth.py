@@ -50,8 +50,8 @@ def require_super_admin(staff: StaffUser = Depends(get_current_staff)) -> StaffU
 
 def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     """Resuelve el evento y valida acceso. coordinador+ tiene alcance de tenant (acceso a
-    cualquier evento); digitador necesita una EventStaffAuthorization activa para ESE evento
-    puntual, y el evento debe seguir 'activo'."""
+    cualquier evento); digitador/cliente necesitan una EventStaffAuthorization para ESE evento
+    puntual, y el evento debe estar en estado 'en_proceso' (ver EVENT_STATUSES en models.py)."""
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
@@ -62,7 +62,8 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
         ).first()
         if not authorized:
             raise HTTPException(status_code=403, detail="No estás autorizado para este evento")
-        if event.status != "activo":
-            raise HTTPException(status_code=403, detail="Este evento ya está cerrado")
+        if event.status != "en_proceso":
+            label = "todavía no ha comenzado" if event.status == "creado" else "ya está finalizado"
+            raise HTTPException(status_code=403, detail=f"Este evento {label}")
 
     return event

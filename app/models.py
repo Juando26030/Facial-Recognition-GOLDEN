@@ -10,6 +10,11 @@ Base = declarative_base()
 # app/auth.get_event_for_staff y app/routers/staff.py sobre quién puede crear cada rol.
 STAFF_ROLES = ("cliente", "digitador", "coordinador", "admin", "super_admin")
 
+# Ciclo de vida de un Event, en orden. "en_proceso" es el único estado en el que digitador/cliente
+# pueden entrar a registrar (ver app/auth.get_event_for_staff) — "creado" es antes de empezar,
+# "finalizado" es después de cerrar.
+EVENT_STATUSES = ("creado", "en_proceso", "finalizado")
+
 class Tenant(Base):
     """Un cliente de Golden (la empresa para la que se hacen los eventos), no un usuario de staff."""
     __tablename__ = 'tenants'
@@ -100,7 +105,7 @@ class Event(Base):
     setup_time_start = Column(String)
     setup_time_end = Column(String)
     notes = Column(Text)
-    status = Column(String, default='activo', nullable=False)  # activo | cerrado
+    status = Column(String, default='creado', nullable=False)  # creado | en_proceso | finalizado
     coordinator_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'))
     created_at = Column(DateTime, default=datetime.utcnow)

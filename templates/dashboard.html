@@ -19,8 +19,9 @@
         .event-name { font-weight:700; color: var(--golden-dark); }
         .event-meta { font-size: 0.78rem; color:#888; }
         .status-pill { font-size:0.7rem; font-weight:700; padding: 3px 10px; border-radius: 12px; text-transform:uppercase; }
-        .status-activo { background: rgba(40,167,69,0.15); color:#1e7e34; }
-        .status-cerrado { background: #eee; color:#777; }
+        .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
+        .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
+        .status-finalizado { background: #eee; color:#777; }
         .inline-form { background:#fafafa; border-radius:12px; padding:1rem; margin-top:1rem; display:none; }
         .inline-form.open { display:block; }
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
@@ -97,6 +98,8 @@ const simpleEventListRole = ["digitador", "cliente"].includes(staffRole);
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
 
+const STATUS_LABELS = { creado: "Creado", en_proceso: "En Proceso", finalizado: "Finalizado" };
+
 // ---------- Datos de apoyo para los selectores ----------
 const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
 document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
@@ -141,7 +144,7 @@ function eventResultCard(e) {
     <div class="tenant-card"><div class="tenant-head" style="cursor:default;">
       <div>
         <h3>${e.name} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${e.event_code})</span>` : ""}</h3>
-        <div class="meta">${e.tenant_name} · ${e.city || ""} ${e.country ? ", " + e.country : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${e.status}</span></div>
+        <div class="meta">${e.tenant_name} · ${e.city || ""} ${e.country ? ", " + e.country : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
       </div>
       <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
     </div></div>
@@ -273,12 +276,10 @@ if (tenantsListEl) {
       toggleNewEvent.closest(".tenant-body").querySelector("[data-new-event-form]").classList.toggle("open");
       return;
     }
-    const closeBtn = e.target.closest("[data-close-event]");
-    if (closeBtn) { setEventStatus(closeBtn.dataset.closeEvent, "cerrado", closeBtn); return; }
-    const reopenBtn = e.target.closest("[data-reopen-event]");
-    if (reopenBtn) { setEventStatus(reopenBtn.dataset.reopenEvent, "activo", reopenBtn); return; }
+    const statusBtn = e.target.closest("[data-set-status]");
+    if (statusBtn) { setEventStatus(statusBtn.dataset.eventId, statusBtn.dataset.setStatus, statusBtn); return; }
     const deleteBtn = e.target.closest("[data-delete-event]");
-    if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn); return; }
+    if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
   });
 
   tenantsListEl.addEventListener("submit", (e) => {
@@ -299,14 +300,14 @@ async function loadEventsForTenant(tenantId, card) {
     <div class="event-row">
       <div>
         <div class="event-name">${e.name} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${e.event_code})</span>` : ""}</div>
-        <div class="event-meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)} · Coordinador: ${e.coordinator_name || "-"} <span class="status-pill status-${e.status}">${e.status}</span></div>
+        <div class="event-meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)} · Coordinador: ${e.coordinator_name || "-"} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
       </div>
       <div style="display:flex; gap:6px;">
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
-        ${e.status === "activo"
-          ? `<button type="button" class="small-btn" data-close-event="${e.id}">Cerrar</button>`
-          : `<button type="button" class="small-btn" data-reopen-event="${e.id}">Reabrir</button>`}
-        ${isAdmin ? `<button type="button" class="small-btn danger" data-delete-event="${e.id}" data-event-name="${e.name.replace(/"/g, "&quot;")}">Eliminar</button>` : ""}
+        ${e.status === "creado" ? `<button type="button" class="small-btn" data-set-status="en_proceso" data-event-id="${e.id}">Iniciar evento</button>` : ""}
+        ${e.status === "en_proceso" ? `<button type="button" class="small-btn" data-set-status="finalizado" data-event-id="${e.id}">Finalizar evento</button>` : ""}
+        ${e.status === "finalizado" && isAdmin ? `<button type="button" class="small-btn" data-set-status="en_proceso" data-event-id="${e.id}">Reabrir</button>` : ""}
+        ${isAdmin ? `<button type="button" class="small-btn danger" data-delete-event="${e.id}" data-event-name="${e.name.replace(/"/g, "&quot;")}" data-event-status="${e.status}">Eliminar</button>` : ""}
       </div>
     </div>
   `).join("");
@@ -344,11 +345,16 @@ async function setEventStatus(eventId, status, btn) {
   const res = await fetch(`/api/events/${eventId}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({status})});
   const card = btn.closest(".tenant-card");
   loadEventsForTenant(card.dataset.tenantId, card);
-  showToast(res.ok ? `Evento ${status === "cerrado" ? "cerrado" : "reabierto"}` : "No se pudo actualizar el evento", res.ok ? "success" : "error");
+  showToast(res.ok ? `Evento pasó a "${STATUS_LABELS[status]}"` : "No se pudo actualizar el evento", res.ok ? "success" : "error");
 }
 
-async function deleteEvent(eventId, name, btn) {
-  if (!(await showConfirm(`¿Eliminar permanentemente "${name}"? Esta acción no se puede deshacer.`))) return;
+async function deleteEvent(eventId, name, status, btn) {
+  const confirmed = await showConfirm(
+    `¿Está seguro que quiere eliminar el evento "${name}"?<br><br>` +
+    `Recuerde que este evento está en estado <strong>${STATUS_LABELS[status] || status}</strong>. ` +
+    `Esta acción es permanente y no se puede deshacer.`
+  );
+  if (!confirmed) return;
   const res = await fetch(`/api/events/${eventId}`, {method: "DELETE"});
   const card = btn.closest(".tenant-card");
   loadEventsForTenant(card.dataset.tenantId, card);
