@@ -9,10 +9,14 @@ Base = declarative_base()
 STAFF_ROLES = ("digitador", "coordinador", "admin", "super_admin")
 
 class Tenant(Base):
+    """Un cliente de Golden (la empresa para la que se hacen los eventos), no un usuario de staff."""
     __tablename__ = 'tenants'
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
-    
+    contact_name = Column(String)
+    contact_phone = Column(String)
+    contact_email = Column(String)
+
     users = relationship("User", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
     logs = relationship("AccessLog", back_populates="tenant", cascade="all, delete", overlaps="tenant,users,logs")
 
@@ -80,10 +84,18 @@ class Event(Base):
     __tablename__ = 'events'
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
+    event_code = Column(String)  # código interno, libre (no es la PK)
     name = Column(String, nullable=False)
-    location = Column(String)
+    location = Column(String)  # nombre del lugar/venue
+    address = Column(String)
+    country = Column(String)
+    city = Column(String)
     start_date = Column(DateTime)
     end_date = Column(DateTime)
+    setup_date = Column(DateTime)  # fecha de montaje
+    event_schedule = Column(String)  # horario del evento, texto libre (ej. "8:00am - 6:00pm")
+    setup_schedule = Column(String)  # horario de montaje
+    notes = Column(Text)
     status = Column(String, default='activo', nullable=False)  # activo | cerrado
     created_by_id = Column(Integer, ForeignKey('staff_users.id'))
     created_at = Column(DateTime, default=datetime.utcnow)

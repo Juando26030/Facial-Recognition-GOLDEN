@@ -8,46 +8,52 @@ Repo: https://github.com/Juando26030/Facial-Recognition-GOLDEN
 ## Arquitectura
 ```
 app/
-  main.py           FastAPI app: SessionMiddleware, monta /static y templates, incluye routers
+  main.py           FastAPI app: SessionMiddleware, /  (dashboard) y /kiosk/{event_id}, incluye routers
   database.py       Engine SQLAlchemy, lee DATABASE_URL desde .env (obligatorio, sin fallback)
   models.py         Tenant, User, AccessLog, StaffUser, Event, EventStaffAuthorization
-  auth.py           Hashing (bcrypt), get_current_staff, require_role(minimum) — jerarquía de roles
+  auth.py           Hashing (bcrypt), get_current_staff, require_role(minimum), get_event_for_staff
   biometrics.py     BiometricEngine: extracción y comparación de encodings faciales
   reports.py        ReportManager: genera reporte Excel (pandas + openpyxl)
   routers/
-    api.py            Endpoints biométricos (recognize/register/users/report) bajo /api, protegidos por rol
+    api.py            Endpoints biométricos (recognize/register/users/report) bajo /api, event-scoped
     auth.py            /login, /logout
-    events.py          CRUD de eventos bajo /api/events
+    tenants.py          CRUD de clientes (tenants) bajo /api/tenants
+    events.py          CRUD de eventos bajo /api/events (+ /api/my-events)
     staff.py            Gestión de cuentas de staff y autorización por evento bajo /api/staff
 alembic/            Migraciones versionadas (ver sección Migraciones) — reemplaza Base.metadata.create_all
 scripts/create_staff_user.py   Bootstrap del primer Super Admin (o cualquier cuenta) desde la terminal
 static/             CSS/JS + (antes) el .env real — YA CORREGIDO, ver sección Seguridad
-templates/          index.html (kiosko), login.html, events.html, staff.html
+templates/          dashboard.html (`/`), kiosk.html (`/kiosk/{event_id}`), login.html, staff.html
 data/<tenant>/known_people/   Fotos de registro por tenant (gitignored)
 ```
 
+### Navegación (2026-09-15)
+`/` ya NO es el escáner — es un dashboard según rol:
+- `coordinador`/`admin`/`super_admin`: lista de **Tenants (clientes)**, expandible a sus **Eventos**, con formularios inline para crear cliente/evento. Cada evento tiene un botón "Ingresar" que lleva a `/kiosk/{event_id}`.
+- `digitador`: lista plana de sus eventos autorizados y activos (`GET /api/my-events`), mismo botón "Ingresar".
+
+`/kiosk/{event_id}` es la pantalla de escaneo/registro/directorio/reporte (el viejo `index.html`, ahora `kiosk.html`), **atada a un evento concreto**: `app/main.py` valida el acceso con `get_event_for_staff` antes de renderizarla (404/403 → redirige a `/`), y le inyecta `window.EVENT_ID` al JS. Todas las llamadas de `static/js/app.js` a `/api/recognize`, `/api/register`, `/api/users*`, `/api/bulk_register`, `/api/report` ahora mandan `event_id` (query param o campo del FormData) — el backend resuelve el `tenant_id` a partir del evento, ya no hay tenant fijo.
+
 ### Modelo de datos
-- `Tenant(id, name)` — soporte multi-tenant a nivel de esquema.
-- `User(id, tenant_id)` — la **persona biométrica** registrada (empleado/visitante). Clave primaria compuesta. Guarda `face_encoding` como JSON en un `Text`. No confundir con `StaffUser`.
-- `AccessLog(id, tenant_id, user_id, timestamp, record_type, event_id, registered_by_staff_id)` — bitácora de eventos de reconocimiento/registro ("Nuevo", "Existente", "Actualizado"). Las dos últimas columnas (auditoría: qué evento, qué cuenta de staff) existen en el esquema pero **todavía no se llenan desde el flujo del kiosko** — ver backlog.
-- `StaffUser(id, username, password_hash, full_name, role, tenant_id, is_active, created_by_id)` — cuenta de staff interno (quien opera el sistema, no quien es registrado). `role` es uno de `STAFF_ROLES` en `models.py`. Para digitadores, `username` es la cédula.
-- `Event(id, tenant_id, name, location, start_date, end_date, status, created_by_id)` — una sesión de registro puntual dentro de un tenant (`status`: `activo`/`cerrado`).
-- `EventStaffAuthorization(event_id, staff_user_id, authorized_by_id)` — qué cuenta de staff puede operar en qué evento. Obligatorio en el diseño para `digitador` (acceso temporal, se revoca dejando de reautorizar); no se exige para `coordinador`/`admin`/`super_admin` (alcance de tenant/global).
+- `Tenant(id, name, contact_name, contact_phone, contact_email)` — un **cliente** de Golden (empresa para la que se hace el evento), con su contacto. No confundir con `StaffUser` (cuentas de staff interno).
+- `User(id, tenant_id)` — la **persona biométrica** registrada (empleado/visitante/asistente). Clave primaria compuesta. Guarda `face_encoding` como JSON en un `Text`.
+- `AccessLog(id, tenant_id, user_id, timestamp, record_type, event_id, registered_by_staff_id)` — bitácora de reconocimiento/registro ("Nuevo", "Existente", "Actualizado"). `event_id` y `registered_by_staff_id` **ya se llenan** desde `routers/api.py` en cada acción — la auditoría de "quién registró a quién en qué evento" está conectada de punta a punta.
+- `StaffUser(id, username, password_hash, full_name, role, tenant_id, is_active, created_by_id)` — cuenta de staff interno. `role` es uno de `STAFF_ROLES` en `models.py`. Para digitadores, `username` es la cédula.
+- `Event(id, tenant_id, event_code, name, location, address, country, city, start_date, end_date, setup_date, event_schedule, setup_schedule, notes, status, created_by_id)` — una sesión de registro puntual dentro de un tenant (`status`: `activo`/`cerrado`).
+- `EventStaffAuthorization(event_id, staff_user_id, authorized_by_id)` — qué cuenta de staff puede operar en qué evento. **Ya se aplica en la práctica**: `app/auth.get_event_for_staff()` la exige para `digitador` (403 si no está autorizado, o si el evento ya está `cerrado`) en `/kiosk/{event_id}` y en cada endpoint de `/api` que recibe `event_id`. `coordinador`/`admin`/`super_admin` no la necesitan (alcance global sobre todos los tenants/eventos).
 
 ### Roles y permisos (`app/auth.py`)
-Jerarquía fija en `STAFF_ROLES` (`models.py`), de menor a mayor: `digitador < coordinador < admin < super_admin`. `require_role("x")` exige ese rol o superior — la jerarquía funciona porque cada rol es superset del anterior en este sistema (no hay permisos "cruzados" que un rol tenga y otro no salvo los casos explícitos de abajo).
+Jerarquía fija en `STAFF_ROLES` (`models.py`), de menor a mayor: `digitador < coordinador < admin < super_admin`. `require_role("x")` exige ese rol o superior.
 
 | Acción | Rol mínimo |
 |---|---|
-| Reconocer / registrar persona (`/api/recognize`, `/api/register`) | `digitador` |
-| Ver directorio, editar perfil, carga masiva, descargar reporte, crear/editar evento | `coordinador` |
-| Borrado permanente (logs de un usuario, eliminar evento), crear/desactivar cuentas `coordinador`/`digitador`, autorizar digitador para un evento | `admin` |
-| Crear cuentas `admin` | `super_admin` (único caso que no es "jerarquía", está hardcodeado en `routers/staff.py`) |
+| Reconocer / registrar persona en SU evento autorizado (`/api/recognize`, `/api/register`) | `digitador` |
+| Ver directorio, editar perfil, carga masiva, descargar reporte, crear/editar cliente y evento | `coordinador` |
+| Borrado permanente (logs de un usuario, eliminar evento/cliente), crear/desactivar cuentas `coordinador`/`digitador`, autorizar digitador para un evento | `admin` |
+| Crear cuentas `admin` | `super_admin` (único caso que no es "jerarquía", hardcodeado en `routers/staff.py`) |
 
-**Pendiente de conectar:** hoy cualquier cuenta autenticada (incluido un `digitador`) puede llamar `/api/recognize` y `/api/register` sin que se valide `EventStaffAuthorization` — la tabla y el endpoint para autorizar existen (`POST /api/staff/{id}/authorize-event/{id}`, con UI en `/admin/staff`), pero el flujo del kiosko (`index.html`/`app.js`) todavía no pide "elegir evento activo" antes de escanear. Falta decidir la UX de eso (¿selector de evento al iniciar sesión? ¿un evento activo por dispositivo?) antes de cablearlo.
-
-### Multi-tenant: real pero no explotado
-El modelo soporta múltiples tenants, pero `app/routers/api.py` tiene **hardcodeado** `CURRENT_TENANT = "golden_hq"` (línea 19). Todos los endpoints filtran por ese tenant fijo. Para servir más de un cliente hay que sacar el tenant del request (subdominio, header, JWT, etc.), no solo de la constante.
+### Multi-tenant: ahora sí explotado
+Ya no hay `CURRENT_TENANT` hardcodeado en ningún router. El tenant de cada operación se resuelve siempre a partir del `Event` (`event.tenant_id`), y los tenants se crean/administran de verdad desde `/` (coordinador+) vía `/api/tenants`.
 
 ### Motor biométrico (`app/biometrics.py`)
 - `num_jitters=25` en registro inicial, `10` en reconocimiento — más remuestreo al registrar para un encoding más estable.
@@ -68,18 +74,19 @@ Se encontró y corrigió una exposición de credenciales real en producción:
 5. **El historial de git fue reescrito** (`git filter-repo`, force-push a `main`) para eliminar tanto el archivo `static/.env` como cualquier commit anterior de `app/database.py` que contuviera la credencial vieja como texto plano. Si tienes un clon local anterior a esta fecha, su historial ya no coincide con `origin/main` — no hagas `git pull` normal sobre él, hay que resincronizar (`git fetch origin && git reset --hard origin/main`, perdiendo cualquier commit local no pusheado) o volver a clonar.
 
 ## Qué falta (backlog real, no aspiracional)
-- ~~Sin autenticación~~ **Resuelto (2026-09-14):** login + 4 roles (ver sección Roles y permisos). Lo que sigue faltando de esto: conectar `EventStaffAuthorization` al flujo real de recognize/register (ver nota arriba), CSRF explícito (mitigado parcial por `SameSite=Lax`), rate limiting de intentos de login, y una UI de "olvidé mi contraseña" (hoy solo un admin puede resetear, manualmente, no hay endpoint para eso todavía).
+- ~~Sin autenticación~~ **Resuelto (2026-09-14):** login + 4 roles. ~~Sin conectar EventStaffAuthorization~~ **Resuelto (2026-09-15):** ver `get_event_for_staff` y sección Navegación. Sigue faltando: CSRF explícito (mitigado parcial por `SameSite=Lax`), rate limiting de intentos de login, y una UI de "olvidé mi contraseña" (hoy solo un admin puede resetear, manualmente).
 - **Sin tests.** No hay carpeta `tests/` ni configuración de pytest.
 - ~~Sin migraciones~~ **Resuelto (2026-09-14):** Alembic (ver sección Migraciones abajo). `Base.metadata.create_all` ya no se llama desde `main.py`.
-- ~~Sin CI/CD~~ **Resuelto (2026-09-14):** `.github/workflows/deploy.yml` corre en un runner self-hosted instalado directo en la VM (`golden-biometrics-prod`). Se eligió self-hosted y no SSH-desde-GitHub porque el proyecto tiene **OS Login activado** en GCP, que bloquea el acceso SSH por llave externa — el runner evita ese problema porque corre dentro de la VM, no entra desde afuera. En cada push a `main`: `git fetch` + `git reset --hard origin/main` + `systemctl restart facial-recognition`. También soporta disparo manual (`workflow_dispatch`).
-  - **Nota de seguridad:** el repo es público. El workflow solo se dispara con `push` a `main` (requiere permiso de escritura al repo), nunca con `pull_request`, así que un PR externo no puede ejecutar código en el runner de producción. Si en algún momento se agrega un trigger de `pull_request` o `pull_request_target`, hay que exigir aprobación manual para colaboradores externos — de lo contrario cualquiera podría correr código arbitrario en la VM de producción a través de un PR.
-- **Multi-tenant no explotado** (ver arriba) — hoy es de un solo tenant en la práctica.
-- **`bulk_register` no valida CSV/ZIP de forma robusta**: `except: pass` silencioso al procesar imágenes del zip (`api.py:147`), puede ocultar errores reales de registros que no se cargaron.
+- ~~Sin CI/CD~~ **Resuelto (2026-09-14):** `.github/workflows/deploy.yml` corre en un runner self-hosted instalado directo en la VM (`golden-biometrics-prod`). Se eligió self-hosted y no SSH-desde-GitHub porque el proyecto tiene **OS Login activado** en GCP, que bloquea el acceso SSH por llave externa — el runner evita ese problema porque corre dentro de la VM, no entra desde afuera. En cada push a `main`: instala deps, `alembic upgrade head`, `systemctl restart facial-recognition`. También soporta disparo manual (`workflow_dispatch`).
+  - **Nota de seguridad:** el repo es público. El workflow solo se dispara con `push` a `main` (requiere permiso de escritura al repo), nunca con `pull_request`, así que un PR externo no puede ejecutar código en el runner de producción. Si en algún momento se agrega un trigger de `pull_request` o `pull_request_target`, hay que exigir aprobación manual para colaboradores externos.
+- ~~Multi-tenant no explotado~~ **Resuelto (2026-09-15)** (ver arriba).
+- **`bulk_register` no valida CSV/ZIP de forma robusta**: `except: pass` silencioso al procesar imágenes del zip (`api.py`), puede ocultar errores reales de registros que no se cargaron. Tampoco pide `event_id` desde la UI del formulario CSV todavía más allá de lo ya cableado en `app.js`.
 - **README ausente** — no hay instrucciones de instalación/arranque para alguien nuevo en el proyecto.
 - **`requirements.txt` sin versiones fijadas** — riesgo de que una actualización de `face_recognition`/`dlib` rompa el build en un entorno nuevo.
-- **Sin roles/permisos granulares por usuario individual** — se decidió a propósito quedarse con 4 roles fijos en código por ahora (más simple, no hay todavía un catálogo real de "acciones" del sistema grande para armar un checklist granular). Si hace falta más adelante, revisar esta decisión.
+- **Sin roles/permisos granulares por usuario individual** — 4 roles fijos en código a propósito (más simple; no hay todavía un catálogo real de "acciones" del sistema grande para armar un checklist granular).
+- **Sin edición/eliminación de `StaffUser` más allá de activar/desactivar** — no hay endpoint para cambiar contraseña de otra cuenta o editar su rol una vez creada; hay que desactivarla y crear una nueva si algo queda mal.
 - **Backup solo local** (`~/backups` en la VM, cron diario, rotación 7 días vía `pg_dump`). Backup offsite (bucket GCS) no está armado.
-- **Monorepo:** el repo hoy sigue siendo solo este módulo en la raíz. Ya se decidió la estrategia (monorepo, `apps/<módulo>/`) pero la reestructuración física (mover esto a `apps/facial-recognition/`) todavía no se ejecutó — es la próxima rama.
+- **Monorepo:** el repo hoy sigue siendo solo este módulo en la raíz. Ya se decidió la estrategia (monorepo, `apps/<módulo>/`) pero la reestructuración física todavía no se ejecutó — es la próxima rama.
 
 ## Migraciones (Alembic)
 El esquema ya no se crea con `Base.metadata.create_all` — vive como migraciones versionadas en `alembic/versions/`.

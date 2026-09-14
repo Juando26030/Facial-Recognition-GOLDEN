@@ -31,11 +31,9 @@
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
       <div class="golden-anniversary-badge">
-        SISTEMA BIOMÉTRICO 360°
+        {{ event.name }}
       </div>
-      {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-      <a href="/admin/events" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Eventos</a>
-      {% endif %}
+      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
       {% if staff_role in ["admin", "super_admin"] %}
       <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
       {% endif %}
@@ -47,6 +45,7 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
+<script>window.EVENT_ID = {{ event.id }};</script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">

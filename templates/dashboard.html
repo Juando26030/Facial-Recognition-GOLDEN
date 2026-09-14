@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <style>
+        .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
+        .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
+        .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
+        .tenant-head .meta { font-size: 0.8rem; color: #888; }
+        .tenant-body { display:none; padding: 0 1.5rem 1.5rem; border-top: 1px solid #f0f0f0; }
+        .tenant-body.open { display:block; }
+        .event-row { display:flex; justify-content:space-between; align-items:center; padding: 0.8rem 0; border-bottom: 1px solid #f4f4f4; flex-wrap: wrap; gap: 8px; }
+        .event-row:last-child { border-bottom:none; }
+        .event-name { font-weight:700; color: var(--golden-dark); }
+        .event-meta { font-size: 0.78rem; color:#888; }
+        .status-pill { font-size:0.7rem; font-weight:700; padding: 3px 10px; border-radius: 12px; text-transform:uppercase; }
+        .status-activo { background: rgba(40,167,69,0.15); color:#1e7e34; }
+        .status-cerrado { background: #eee; color:#777; }
+        .inline-form { background:#fafafa; border-radius:12px; padding:1rem; margin-top:1rem; display:none; }
+        .inline-form.open { display:block; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+        .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
+        .small-btn.danger { background:#dc3545; border-color:#dc3545; color:white; }
+    </style>
+</head>
+<body>
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      {% if staff_role in ["admin", "super_admin"] %}<a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>{% endif %}
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" class="small-btn">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
+
+    {% if staff_role == "digitador" %}
+    <div class="golden-section-title" style="text-align:left; margin-bottom:2rem;">
+      <span>TUS EVENTOS</span>
+      <h2>Eventos autorizados</h2>
+    </div>
+    <div id="myEventsList"></div>
+    {% else %}
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:flex-end;">
+      <div>
+        <span>PANEL</span>
+        <h2>Clientes y eventos</h2>
+      </div>
+      <button class="small-btn primary" onclick="document.getElementById('newTenantForm').classList.toggle('open')">+ Nuevo cliente</button>
+    </div>
+
+    <form id="newTenantForm" class="inline-form">
+      <div class="badge-input-row">
+        <div class="badge-input-group"><label>Nombre del cliente</label><input type="text" name="name" required></div>
+      </div>
+      <div class="badge-input-row">
+        <div class="badge-input-group"><label>Contacto - Nombre</label><input type="text" name="contact_name"></div>
+        <div class="badge-input-group"><label>Contacto - Teléfono</label><input type="text" name="contact_phone"></div>
+        <div class="badge-input-group"><label>Contacto - Correo</label><input type="email" name="contact_email"></div>
+      </div>
+      <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Crear cliente</button>
+    </form>
+
+    <div id="tenantsList" style="margin-top: 1.5rem;"></div>
+    {% endif %}
+
+  </div>
+</main>
+
+<script>
+const staffRole = "{{ staff_role }}";
+const isAdmin = staffRole === "admin" || staffRole === "super_admin";
+const canManageTenants = ["coordinador", "admin", "super_admin"].includes(staffRole);
+
+function fmtDate(d) { return d ? new Date(d).toLocaleString() : "-"; }
+
+// ---------- Vista digitador ----------
+async function loadMyEvents() {
+  const res = await fetch("/api/my-events");
+  const events = await res.json();
+  const el = document.getElementById("myEventsList");
+  if (!el) return;
+  if (events.length === 0) {
+    el.innerHTML = '<p style="color:#888;">No tienes eventos autorizados todavía. Pide a un Admin que te autorice.</p>';
+    return;
+  }
+  el.innerHTML = events.map(e => `
+    <div class="tenant-card"><div class="tenant-head" style="cursor:default;">
+      <div>
+        <h3>${e.name}</h3>
+        <div class="meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)}</div>
+      </div>
+      <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
+    </div></div>
+  `).join("");
+}
+
+// ---------- Vista coordinador/admin/super_admin ----------
+async function loadTenants() {
+  if (!canManageTenants) return;
+  const res = await fetch("/api/tenants");
+  const tenantsData = await res.json();
+  const el = document.getElementById("tenantsList");
+  el.innerHTML = tenantsData.map(t => `
+    <div class="tenant-card" id="tenant-${t.id}">
+      <div class="tenant-head" onclick="toggleTenant('${t.id}')">
+        <div>
+          <h3>${t.name}</h3>
+          <div class="meta">${t.contact_name || "Sin contacto"} ${t.contact_phone ? "· " + t.contact_phone : ""}</div>
+        </div>
+        <span class="small-btn">Ver eventos</span>
+      </div>
+      <div class="tenant-body" id="tenant-body-${t.id}">
+        <button class="small-btn primary" style="margin:1rem 0;" onclick="document.getElementById('newEventForm-${t.id}').classList.toggle('open')">+ Nuevo evento</button>
+        <form class="inline-form" id="newEventForm-${t.id}" onsubmit="createEvent(event, '${t.id}')">
+          <div class="badge-input-row">
+            <div class="badge-input-group"><label>Código interno</label><input type="text" name="event_code"></div>
+            <div class="badge-input-group"><label>Nombre del evento</label><input type="text" name="name" required></div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group"><label>Fecha inicio</label><input type="datetime-local" name="start_date"></div>
+            <div class="badge-input-group"><label>Fecha fin</label><input type="datetime-local" name="end_date"></div>
+            <div class="badge-input-group"><label>Fecha montaje</label><input type="datetime-local" name="setup_date"></div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group"><label>Horario del evento</label><input type="text" name="event_schedule" placeholder="Ej. 8:00am - 6:00pm"></div>
+            <div class="badge-input-group"><label>Horario de montaje</label><input type="text" name="setup_schedule"></div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group"><label>País</label><input type="text" name="country"></div>
+            <div class="badge-input-group"><label>Ciudad</label><input type="text" name="city"></div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group"><label>Lugar</label><input type="text" name="location"></div>
+            <div class="badge-input-group"><label>Dirección</label><input type="text" name="address"></div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
+          </div>
+          <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.8rem;">Crear evento</button>
+        </form>
+        <div id="events-${t.id}"></div>
+      </div>
+    </div>
+  `).join("");
+}
+
+async function toggleTenant(tenantId) {
+  const body = document.getElementById(`tenant-body-${tenantId}`);
+  body.classList.toggle("open");
+  if (body.classList.contains("open")) loadEventsForTenant(tenantId);
+}
+
+async function loadEventsForTenant(tenantId) {
+  const res = await fetch(`/api/events?tenant_id=${tenantId}`);
+  const events = await res.json();
+  const el = document.getElementById(`events-${tenantId}`);
+  if (events.length === 0) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin eventos todavía.</p>'; return; }
+  el.innerHTML = events.map(e => `
+    <div class="event-row">
+      <div>
+        <div class="event-name">${e.name} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${e.event_code})</span>` : ""}</div>
+        <div class="event-meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${e.status}</span></div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
+        ${e.status === "activo"
+          ? `<button class="small-btn" onclick="setEventStatus('${tenantId}', ${e.id}, 'cerrado')">Cerrar</button>`
+          : `<button class="small-btn" onclick="setEventStatus('${tenantId}', ${e.id}, 'activo')">Reabrir</button>`}
+        ${isAdmin ? `<button class="small-btn danger" onclick="deleteEvent('${tenantId}', ${e.id}, '${e.name.replace(/'/g, "\\'")}')">Eliminar</button>` : ""}
+      </div>
+    </div>
+  `).join("");
+}
+
+async function createEvent(ev, tenantId) {
+  ev.preventDefault();
+  const form = new FormData(ev.target);
+  const payload = Object.fromEntries(form.entries());
+  payload.tenant_id = tenantId;
+  ["start_date", "end_date", "setup_date"].forEach(f => { if (!payload[f]) delete payload[f]; });
+  const res = await fetch("/api/events", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+  });
+  if (res.ok) { ev.target.reset(); ev.target.classList.remove("open"); loadEventsForTenant(tenantId); }
+  else { const err = await res.json(); alert(err.detail || "No se pudo crear el evento"); }
+}
+
+async function setEventStatus(tenantId, eventId, status) {
+  await fetch(`/api/events/${eventId}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({status})});
+  loadEventsForTenant(tenantId);
+}
+
+async function deleteEvent(tenantId, eventId, name) {
+  if (!confirm(`¿Eliminar permanentemente "${name}"? Esta acción no se puede deshacer.`)) return;
+  await fetch(`/api/events/${eventId}`, {method: "DELETE"});
+  loadEventsForTenant(tenantId);
+}
+
+const newTenantForm = document.getElementById("newTenantForm");
+if (newTenantForm) {
+  newTenantForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const payload = Object.fromEntries(new FormData(ev.target).entries());
+    const res = await fetch("/api/tenants", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+    });
+    if (res.ok) { ev.target.reset(); ev.target.classList.remove("open"); loadTenants(); }
+    else { alert("No se pudo crear el cliente"); }
+  });
+}
+
+if (staffRole === "digitador") loadMyEvents();
+else loadTenants();
+</script>
+</body>
+</html>

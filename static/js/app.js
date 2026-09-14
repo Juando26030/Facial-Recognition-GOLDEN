@@ -1,5 +1,10 @@
 document.addEventListener("DOMContentLoaded", () => {
-    
+
+    const EVENT_ID = window.EVENT_ID;
+    function withEvent(url) {
+        return url + (url.includes('?') ? '&' : '?') + 'event_id=' + EVENT_ID;
+    }
+
     const tabs = document.querySelectorAll('.tab');
     const sections = document.querySelectorAll('.section');
     
@@ -22,7 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
         tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">Cargando base de datos...</td></tr>';
         
         try {
-            const res = await fetch('/api/users');
+            const res = await fetch(withEvent('/api/users'));
             const users = await res.json();
             
             tbody.innerHTML = '';
@@ -95,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         });
                         
                         try {
-                            const updateRes = await fetch(`/api/users/${user.id}`, {
+                            const updateRes = await fetch(withEvent(`/api/users/${user.id}`), {
                                 method: 'PATCH',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(payload)
@@ -123,7 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     
                     if (isConfirmed) {
                         try {
-                            const delRes = await fetch(`/api/users/${user.id}/logs`, { method: 'DELETE' });
+                            const delRes = await fetch(withEvent(`/api/users/${user.id}/logs`), { method: 'DELETE' });
                             if (delRes.ok) {
                                 alert("Registro de asistencia eliminado.");
                                 
@@ -184,7 +189,8 @@ document.addEventListener("DOMContentLoaded", () => {
             canvas.toBlob(async (blob) => {
                 const formData = new FormData();
                 formData.append('file', blob, 'webcam.jpg');
-                
+                formData.append('event_id', EVENT_ID);
+
                 try {
                     const res = await fetch('/api/recognize', { method: 'POST', body: formData });
                     const data = await res.json();
@@ -229,7 +235,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const payload = Object.fromEntries(new FormData(e.target).entries());
             
             try {
-                const res = await fetch(`/api/users/${payload.id}`, {
+                const res = await fetch(withEvent(`/api/users/${payload.id}`), {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -251,7 +257,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const exportBtn = document.getElementById('exportBtn');
     if(exportBtn) {
-        exportBtn.addEventListener('click', () => window.location.href = '/api/report' );
+        exportBtn.addEventListener('click', () => window.location.href = withEvent('/api/report') );
     }
 
     const regForm = document.getElementById('regForm');
@@ -260,8 +266,10 @@ document.addEventListener("DOMContentLoaded", () => {
             e.preventDefault();
             const btn = e.target.querySelector('button');
             btn.innerText = "Guardando..."; btn.disabled = true;
+            const formData = new FormData(e.target);
+            formData.append('event_id', EVENT_ID);
             try {
-                const res = await fetch('/api/register', { method: 'POST', body: new FormData(e.target) });
+                const res = await fetch('/api/register', { method: 'POST', body: formData });
                 const data = await res.json();
                 alert(data.message || data.error);
                 e.target.reset();
@@ -276,8 +284,10 @@ document.addEventListener("DOMContentLoaded", () => {
             e.preventDefault();
             const btn = e.target.querySelector('button');
             btn.innerText = "Sincronizando Tenant a SQL..."; btn.disabled = true;
+            const formData = new FormData(e.target);
+            formData.append('event_id', EVENT_ID);
             try {
-                const res = await fetch('/api/bulk_register', { method: 'POST', body: new FormData(e.target) });
+                const res = await fetch('/api/bulk_register', { method: 'POST', body: formData });
                 const data = await res.json();
                 alert(data.message || data.error);
                 e.target.reset();
