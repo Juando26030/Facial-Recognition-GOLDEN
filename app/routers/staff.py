@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
+from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
 from app.auth import hash_password, require_role
 
 router = APIRouter()
@@ -14,6 +14,14 @@ router = APIRouter()
 # temporales se crean desde dentro de un evento (ver app/routers/events.py, POST
 # /events/{id}/temp-users), donde quedan asociados a ese evento en el mismo paso.
 ROLES_CREATABLE_BY_ADMIN = ("coordinador", "cliente")
+
+# Qué roles puede BORRAR PERMANENTEMENTE cada rol (siempre "todo lo que está por debajo de mí").
+# coordinador es el caso especial: solo temporales (digitador), nada más.
+DELETABLE_ROLES_BY = {
+    "coordinador": ("digitador",),
+    "admin": ("coordinador", "digitador", "cliente"),
+    "super_admin": ("admin", "coordinador", "digitador", "cliente"),
+}
 
 
 class StaffIn(BaseModel):
@@ -115,6 +123,38 @@ async def activate_staff(
     target.is_active = True
     db.commit()
     return {"message": f"{target.username} reactivado"}
+
+
+@router.delete("/staff/{staff_id}")
+async def delete_staff(
+    staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+):
+    """Borrado PERMANENTE (no desactivación) — cada rol solo puede borrar lo que tiene
+    directamente debajo en DELETABLE_ROLES_BY. No borra Eventos ni AccessLogs asociados (son
+    datos de negocio reales, no cuentas de staff): las referencias a este staff se desvinculan
+    (quedan en NULL) en vez de arrastrar un borrado en cascada."""
+    if staff.role not in DELETABLE_ROLES_BY:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if target.id == staff.id:
+        raise HTTPException(status_code=400, detail="No puedes borrar tu propia cuenta")
+    if target.role not in DELETABLE_ROLES_BY[staff.role]:
+        raise HTTPException(status_code=403, detail=f"Un {staff.role} no puede borrar cuentas de rol '{target.role}'")
+
+    db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == target.id).delete()
+    db.query(EventStaffAuthorization).filter(EventStaffAuthorization.authorized_by_id == target.id).update({"authorized_by_id": None})
+    db.query(Event).filter(Event.coordinator_staff_id == target.id).update({"coordinator_staff_id": None})
+    db.query(Event).filter(Event.created_by_id == target.id).update({"created_by_id": None})
+    db.query(AccessLog).filter(AccessLog.registered_by_staff_id == target.id).update({"registered_by_staff_id": None})
+    db.query(StaffUser).filter(StaffUser.created_by_id == target.id).update({"created_by_id": None})
+
+    username = target.username
+    db.delete(target)
+    db.commit()
+    return {"message": f"{username} eliminado permanentemente de la base de datos"}
 
 
 @router.post("/staff/{staff_id}/authorize-event/{event_id}")

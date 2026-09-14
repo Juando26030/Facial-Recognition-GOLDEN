@@ -93,6 +93,14 @@ if (staffRole === "super_admin") {
   document.getElementById("roleSelect").insertAdjacentHTML("afterbegin", '<option value="admin">Admin</option>');
 }
 
+// Debe reflejar DELETABLE_ROLES_BY en app/routers/staff.py — solo para no mostrar un botón que
+// el backend va a rechazar; el permiso real siempre lo valida el servidor.
+const DELETABLE_ROLES = {
+  coordinador: ["digitador"],
+  admin: ["coordinador", "digitador", "cliente"],
+  super_admin: ["admin", "coordinador", "digitador", "cliente"],
+}[staffRole] || [];
+
 async function loadStaff() {
   const res = await fetch("/api/staff");
   const list = await res.json();
@@ -106,9 +114,18 @@ async function loadStaff() {
         ${s.is_active
           ? `<button class="btn-table-action" style="background:#dc3545;" onclick="toggleStaff(${s.id}, false)">Desactivar</button>`
           : `<button class="btn-table-action btn-save" onclick="toggleStaff(${s.id}, true)">Reactivar</button>`}
+        ${DELETABLE_ROLES.includes(s.role)
+          ? `<button class="btn-table-action" style="background:#6c1c1c;" onclick="deleteStaff(${s.id}, '${s.username}')">Borrar permanente</button>`
+          : ""}
       </td>
     </tr>
   `).join("");
+}
+
+async function deleteStaff(id, username) {
+  if (!confirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es desactivar — se elimina de la base de datos y no se puede deshacer.`)) return;
+  const res = await fetch(`/api/staff/${id}`, {method: "DELETE"});
+  if (res.ok) { loadStaff(); } else { const err = await res.json(); alert(err.detail || "No se pudo borrar"); }
 }
 
 document.getElementById("newStaffForm").addEventListener("submit", async (ev) => {

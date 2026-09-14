@@ -317,7 +317,10 @@
             <tr>
                 <td>${u.username}</td><td>${u.full_name || "-"}</td>
                 <td>${u.is_active ? "Activo" : "Inactivo"}</td>
-                <td><button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button></td>
+                <td>
+                    <button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button>
+                    <button class="btn-table-delete" style="background:#6c1c1c;" onclick="deleteTempUser(${u.id}, '${u.username}')">Borrar permanente</button>
+                </td>
             </tr>
         `).join("");
     }
@@ -336,6 +339,12 @@
         if (!confirm("¿Quitar el acceso de este usuario a este evento?")) return;
         await fetch(`/api/events/${window.EVENT_ID}/temp-users/${staffId}`, {method: "DELETE"});
         loadTempUsers();
+    };
+
+    window.deleteTempUser = async (staffId, username) => {
+        if (!confirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`)) return;
+        const res = await fetch(`/api/staff/${staffId}`, {method: "DELETE"});
+        if (res.ok) { loadTempUsers(); } else { const err = await res.json(); alert(err.detail || "No se pudo borrar"); }
     };
 
     loadTempUsers();
