@@ -17,6 +17,19 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 if IS_PRODUCTION and not SECRET_KEY:
     raise RuntimeError("SECRET_KEY no está definida. Requerida en producción para firmar la sesión.")
 
+
+class StaticFilesNoCacheInDev(StaticFiles):
+    """El navegador cacheaba static/js/*.js entre reinicios de uvicorn --reload mientras
+    íbamos cambiando app.js, causando bugs fantasma (el código viejo seguía corriendo aunque
+    el archivo en disco ya tuviera el fix). En development desactiva el caché del navegador
+    para /static/*; en producción se comporta como StaticFiles normal (sí cachea)."""
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if not IS_PRODUCTION:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 app = FastAPI(
     title="Golden Biometrics SaaS",
     docs_url=None if IS_PRODUCTION else "/docs",
@@ -31,7 +44,7 @@ app.add_middleware(
     https_only=IS_PRODUCTION,
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 app.include_router(auth_router.router)
