@@ -24,6 +24,8 @@
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
         .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
         .small-btn.danger { background:#dc3545; border-color:#dc3545; color:white; }
+        .search-box { width:100%; padding:1rem 1.2rem; border-radius:30px; border:1px solid #ddd; font-size:0.95rem; margin-bottom:1.5rem; }
+        .search-box:focus { outline:none; border-color: var(--golden-primary); }
     </style>
 </head>
 <body>
@@ -61,6 +63,8 @@
       <button class="small-btn primary" onclick="document.getElementById('newTenantForm').classList.toggle('open')">+ Nuevo cliente</button>
     </div>
 
+    <input type="text" id="searchBox" class="search-box" placeholder="Buscar por código, nombre de evento, país, ciudad o cliente...">
+
     <form id="newTenantForm" class="inline-form">
       <div class="badge-input-row">
         <div class="badge-input-group"><label>Nombre del cliente</label><input type="text" name="name" required></div>
@@ -73,18 +77,39 @@
       <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Crear cliente</button>
     </form>
 
+    <div id="searchResults"></div>
     <div id="tenantsList" style="margin-top: 1.5rem;"></div>
     {% endif %}
 
   </div>
 </main>
 
+<datalist id="countryList"></datalist>
+<datalist id="coordinatorList"></datalist>
+
 <script>
 const staffRole = "{{ staff_role }}";
 const isAdmin = staffRole === "admin" || staffRole === "super_admin";
 const canManageTenants = ["coordinador", "admin", "super_admin"].includes(staffRole);
 
-function fmtDate(d) { return d ? new Date(d).toLocaleString() : "-"; }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
+
+// ---------- Datos de apoyo para los selectores ----------
+const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
+document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
+
+let coordinatorsByLabel = {};
+async function loadCoordinatorOptions() {
+  if (!canManageTenants) return;
+  const res = await fetch("/api/staff/coordinators");
+  const coords = await res.json();
+  coordinatorsByLabel = {};
+  document.getElementById("coordinatorList").innerHTML = coords.map(c => {
+    const label = `${c.full_name || c.username} (${c.username})`;
+    coordinatorsByLabel[label] = c.id;
+    return `<option value="${label}">`;
+  }).join("");
+}
 
 // ---------- Vista digitador ----------
 async function loadMyEvents() {
@@ -93,7 +118,7 @@ async function loadMyEvents() {
   const el = document.getElementById("myEventsList");
   if (!el) return;
   if (events.length === 0) {
-    el.innerHTML = '<p style="color:#888;">No tienes eventos autorizados todavía. Pide a un Admin que te autorice.</p>';
+    el.innerHTML = '<p style="color:#888;">No tienes eventos autorizados todavía. Pide a un coordinador que te asigne desde el evento.</p>';
     return;
   }
   el.innerHTML = events.map(e => `
@@ -105,6 +130,45 @@ async function loadMyEvents() {
       <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
     </div></div>
   `).join("");
+}
+
+// ---------- Búsqueda general ----------
+function eventResultCard(e) {
+  return `
+    <div class="tenant-card"><div class="tenant-head" style="cursor:default;">
+      <div>
+        <h3>${e.name} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${e.event_code})</span>` : ""}</h3>
+        <div class="meta">${e.tenant_name} · ${e.city || ""} ${e.country ? ", " + e.country : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${e.status}</span></div>
+      </div>
+      <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
+    </div></div>
+  `;
+}
+
+let searchTimer = null;
+const searchBox = document.getElementById("searchBox");
+if (searchBox) {
+  searchBox.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, 250);
+  });
+}
+async function runSearch() {
+  const q = searchBox.value.trim();
+  const resultsEl = document.getElementById("searchResults");
+  const treeEl = document.getElementById("tenantsList");
+  const tenantFormBtn = document.querySelector('[onclick*="newTenantForm"]');
+  if (!q) {
+    resultsEl.innerHTML = "";
+    treeEl.style.display = "";
+    return;
+  }
+  treeEl.style.display = "none";
+  const res = await fetch(`/api/events/search?q=${encodeURIComponent(q)}`);
+  const events = await res.json();
+  resultsEl.innerHTML = events.length
+    ? events.map(eventResultCard).join("")
+    : '<p style="color:#888;">Sin resultados.</p>';
 }
 
 // ---------- Vista coordinador/admin/super_admin ----------
@@ -126,25 +190,35 @@ async function loadTenants() {
         <button class="small-btn primary" style="margin:1rem 0;" onclick="document.getElementById('newEventForm-${t.id}').classList.toggle('open')">+ Nuevo evento</button>
         <form class="inline-form" id="newEventForm-${t.id}" onsubmit="createEvent(event, '${t.id}')">
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>Código interno</label><input type="text" name="event_code"></div>
-            <div class="badge-input-group"><label>Nombre del evento</label><input type="text" name="name" required></div>
+            <div class="badge-input-group"><label>Código interno *</label><input type="text" name="event_code" required></div>
+            <div class="badge-input-group"><label>Nombre del evento *</label><input type="text" name="name" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>Fecha inicio</label><input type="datetime-local" name="start_date"></div>
-            <div class="badge-input-group"><label>Fecha fin</label><input type="datetime-local" name="end_date"></div>
-            <div class="badge-input-group"><label>Fecha montaje</label><input type="datetime-local" name="setup_date"></div>
+            <div class="badge-input-group"><label>Fecha inicio *</label><input type="datetime-local" name="start_date" required></div>
+            <div class="badge-input-group"><label>Fecha fin *</label><input type="datetime-local" name="end_date" required></div>
+            <div class="badge-input-group"><label>Fecha montaje *</label><input type="datetime-local" name="setup_date" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>Horario del evento</label><input type="text" name="event_schedule" placeholder="Ej. 8:00am - 6:00pm"></div>
-            <div class="badge-input-group"><label>Horario de montaje</label><input type="text" name="setup_schedule"></div>
+            <div class="badge-input-group"><label>Hora inicio evento *</label><input type="time" name="event_time_start" required></div>
+            <div class="badge-input-group"><label>Hora fin evento *</label><input type="time" name="event_time_end" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>País</label><input type="text" name="country"></div>
-            <div class="badge-input-group"><label>Ciudad</label><input type="text" name="city"></div>
+            <div class="badge-input-group"><label>Hora inicio montaje *</label><input type="time" name="setup_time_start" required></div>
+            <div class="badge-input-group"><label>Hora fin montaje *</label><input type="time" name="setup_time_end" required></div>
           </div>
           <div class="badge-input-row">
-            <div class="badge-input-group"><label>Lugar</label><input type="text" name="location"></div>
-            <div class="badge-input-group"><label>Dirección</label><input type="text" name="address"></div>
+            <div class="badge-input-group"><label>País *</label><input type="text" name="country" list="countryList" required autocomplete="off"></div>
+            <div class="badge-input-group"><label>Ciudad *</label><input type="text" name="city" required></div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group"><label>Lugar *</label><input type="text" name="location" required></div>
+            <div class="badge-input-group"><label>Dirección *</label><input type="text" name="address" required></div>
+          </div>
+          <div class="badge-input-row">
+            <div class="badge-input-group" style="min-width:100%;">
+              <label>Coordinador asignado *</label>
+              <input type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar...">
+            </div>
           </div>
           <div class="badge-input-row">
             <div class="badge-input-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
@@ -172,7 +246,7 @@ async function loadEventsForTenant(tenantId) {
     <div class="event-row">
       <div>
         <div class="event-name">${e.name} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${e.event_code})</span>` : ""}</div>
-        <div class="event-meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${e.status}</span></div>
+        <div class="event-meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)} · Coordinador: ${e.coordinator_name || "-"} <span class="status-pill status-${e.status}">${e.status}</span></div>
       </div>
       <div style="display:flex; gap:6px;">
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
@@ -190,7 +264,15 @@ async function createEvent(ev, tenantId) {
   const form = new FormData(ev.target);
   const payload = Object.fromEntries(form.entries());
   payload.tenant_id = tenantId;
-  ["start_date", "end_date", "setup_date"].forEach(f => { if (!payload[f]) delete payload[f]; });
+
+  const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
+  if (!coordinatorId) {
+    alert("Selecciona un coordinador válido de la lista.");
+    return;
+  }
+  payload.coordinator_staff_id = coordinatorId;
+  delete payload.coordinator_label;
+
   const res = await fetch("/api/events", {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
   });
@@ -222,8 +304,12 @@ if (newTenantForm) {
   });
 }
 
-if (staffRole === "digitador") loadMyEvents();
-else loadTenants();
+if (staffRole === "digitador") {
+  loadMyEvents();
+} else {
+  loadCoordinatorOptions();
+  loadTenants();
+}
 </script>
 </body>
 </html>

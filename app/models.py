@@ -93,15 +93,19 @@ class Event(Base):
     start_date = Column(DateTime)
     end_date = Column(DateTime)
     setup_date = Column(DateTime)  # fecha de montaje
-    event_schedule = Column(String)  # horario del evento, texto libre (ej. "8:00am - 6:00pm")
-    setup_schedule = Column(String)  # horario de montaje
+    event_time_start = Column(String)  # "HH:MM", desde <input type="time">
+    event_time_end = Column(String)
+    setup_time_start = Column(String)
+    setup_time_end = Column(String)
     notes = Column(Text)
     status = Column(String, default='activo', nullable=False)  # activo | cerrado
+    coordinator_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'))
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tenant = relationship("Tenant")
-    created_by = relationship("StaffUser")
+    created_by = relationship("StaffUser", foreign_keys=[created_by_id])
+    coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
 
 
 class EventStaffAuthorization(Base):

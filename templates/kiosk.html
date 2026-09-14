@@ -33,7 +33,9 @@
       <div class="golden-anniversary-badge">
         {{ event.name }}
       </div>
+      {% if staff_role != "digitador" %}
       <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
+      {% endif %}
       {% if staff_role in ["admin", "super_admin"] %}
       <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
       {% endif %}
@@ -61,6 +63,9 @@
         <div class="tab" data-tab="masivo">3. Carga Masiva</div>
         <div class="tab" data-tab="exportar">4. Exportar Reporte</div>
         <div class="tab" data-tab="directorio">5. Directorio en Vivo</div>
+        {% if staff_role in ["coordinador", "admin", "super_admin"] %}
+        <div class="tab" data-tab="temporales">6. Usuarios Temporales</div>
+        {% endif %}
       </div>
 
       <div class="app-container">
@@ -242,11 +247,80 @@
             </div>
         </div>
 
+        {% if staff_role in ["coordinador", "admin", "super_admin"] %}
+        <!-- PESTAÑA 6: USUARIOS TEMPORALES -->
+        <div id="temporales" class="section">
+            <div class="golden-badge-builder" style="margin-bottom: 2rem;">
+                <div class="badge-form-title">Nuevo usuario temporal para este evento</div>
+                <form id="tempUserForm">
+                    <div class="badge-input-row">
+                        <div class="badge-input-group">
+                            <label>Cédula (usuario)</label>
+                            <input type="text" name="username" required>
+                        </div>
+                        <div class="badge-input-group">
+                            <label>Nombre completo</label>
+                            <input type="text" name="full_name">
+                        </div>
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Contraseña temporal</label>
+                        <input type="text" name="password" required>
+                    </div>
+                    <button type="submit" class="golden-btn golden-btn-primary">Crear y asignar a este evento</button>
+                </form>
+            </div>
+            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+                <div class="badge-form-title">Temporales asignados a este evento</div>
+                <table class="golden-table">
+                    <thead><tr><th>Cédula</th><th>Nombre</th><th>Estado</th><th>Acción</th></tr></thead>
+                    <tbody id="tempUsersBody"></tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
       </div>
     </div>
   </section>
 </main>
 
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
+<script>
+(function() {
+    const tempForm = document.getElementById("tempUserForm");
+    if (!tempForm) return;
+
+    async function loadTempUsers() {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/temp-users`);
+        const list = await res.json();
+        document.getElementById("tempUsersBody").innerHTML = list.map(u => `
+            <tr>
+                <td>${u.username}</td><td>${u.full_name || "-"}</td>
+                <td>${u.is_active ? "Activo" : "Inactivo"}</td>
+                <td><button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button></td>
+            </tr>
+        `).join("");
+    }
+
+    tempForm.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const payload = Object.fromEntries(new FormData(ev.target).entries());
+        const res = await fetch(`/api/events/${window.EVENT_ID}/temp-users`, {
+            method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+        });
+        if (res.ok) { ev.target.reset(); loadTempUsers(); }
+        else { const err = await res.json(); alert(err.detail || "No se pudo crear el usuario temporal"); }
+    });
+
+    window.revokeTempUser = async (staffId) => {
+        if (!confirm("¿Quitar el acceso de este usuario a este evento?")) return;
+        await fetch(`/api/events/${window.EVENT_ID}/temp-users/${staffId}`, {method: "DELETE"});
+        loadTempUsers();
+    };
+
+    loadTempUsers();
+})();
+</script>
 </body>
 </html>

@@ -39,7 +39,7 @@ data/<tenant>/known_people/   Fotos de registro por tenant (gitignored)
 - `User(id, tenant_id)` — la **persona biométrica** registrada (empleado/visitante/asistente). Clave primaria compuesta. Guarda `face_encoding` como JSON en un `Text`.
 - `AccessLog(id, tenant_id, user_id, timestamp, record_type, event_id, registered_by_staff_id)` — bitácora de reconocimiento/registro ("Nuevo", "Existente", "Actualizado"). `event_id` y `registered_by_staff_id` **ya se llenan** desde `routers/api.py` en cada acción — la auditoría de "quién registró a quién en qué evento" está conectada de punta a punta.
 - `StaffUser(id, username, password_hash, full_name, role, tenant_id, is_active, created_by_id)` — cuenta de staff interno. `role` es uno de `STAFF_ROLES` en `models.py`. Para digitadores, `username` es la cédula.
-- `Event(id, tenant_id, event_code, name, location, address, country, city, start_date, end_date, setup_date, event_schedule, setup_schedule, notes, status, created_by_id)` — una sesión de registro puntual dentro de un tenant (`status`: `activo`/`cerrado`).
+- `Event(id, tenant_id, event_code, name, location, address, country, city, start_date, end_date, setup_date, event_time_start/end, setup_time_start/end, coordinator_staff_id, notes, status, created_by_id)` — una sesión de registro puntual dentro de un tenant (`status`: `activo`/`cerrado`). `coordinator_staff_id` apunta a un `StaffUser` con `role='coordinador'` (validado en `routers/events.py`). Todos los campos son obligatorios al crear un evento (`EventIn` en `routers/events.py`) salvo `notes`.
 - `EventStaffAuthorization(event_id, staff_user_id, authorized_by_id)` — qué cuenta de staff puede operar en qué evento. **Ya se aplica en la práctica**: `app/auth.get_event_for_staff()` la exige para `digitador` (403 si no está autorizado, o si el evento ya está `cerrado`) en `/kiosk/{event_id}` y en cada endpoint de `/api` que recibe `event_id`. `coordinador`/`admin`/`super_admin` no la necesitan (alcance global sobre todos los tenants/eventos).
 
 ### Roles y permisos (`app/auth.py`)
@@ -48,9 +48,11 @@ Jerarquía fija en `STAFF_ROLES` (`models.py`), de menor a mayor: `digitador < c
 | Acción | Rol mínimo |
 |---|---|
 | Reconocer / registrar persona en SU evento autorizado (`/api/recognize`, `/api/register`) | `digitador` |
-| Ver directorio, editar perfil, carga masiva, descargar reporte, crear/editar cliente y evento | `coordinador` |
-| Borrado permanente (logs de un usuario, eliminar evento/cliente), crear/desactivar cuentas `coordinador`/`digitador`, autorizar digitador para un evento | `admin` |
+| Ver directorio, editar perfil, carga masiva, descargar reporte, crear/editar cliente y evento, **crear/quitar usuarios temporales (digitador) de un evento** | `coordinador` |
+| Borrado permanente (logs de un usuario, eliminar evento/cliente), crear/desactivar cuentas `coordinador`, reautorizar un digitador existente para un evento distinto | `admin` |
 | Crear cuentas `admin` | `super_admin` (único caso que no es "jerarquía", hardcodeado en `routers/staff.py`) |
+
+**Usuarios temporales (digitador) — flujo real (2026-09-16):** ya NO se crean desde `/admin/staff` (esa opción se quitó del formulario a propósito). Se crean desde dentro del evento (`/kiosk/{event_id}`, pestaña "Usuarios Temporales", visible para `coordinador`+), vía `POST /api/events/{event_id}/temp-users` — crea el `StaffUser` y la `EventStaffAuthorization` en la misma transacción, así que quedan asociados al evento desde el primer momento, nunca "sueltos". `/admin/staff` conserva un formulario aparte para **reautorizar** (no crear) un digitador ya existente en un evento distinto — eso sigue siendo `admin`+.
 
 ### Multi-tenant: ahora sí explotado
 Ya no hay `CURRENT_TENANT` hardcodeado en ningún router. El tenant de cada operación se resuelve siempre a partir del `Event` (`event.tenant_id`), y los tenants se crean/administran de verdad desde `/` (coordinador+) vía `/api/tenants`.
@@ -85,6 +87,7 @@ Se encontró y corrigió una exposición de credenciales real en producción:
 - **`requirements.txt` sin versiones fijadas** — riesgo de que una actualización de `face_recognition`/`dlib` rompa el build en un entorno nuevo.
 - **Sin roles/permisos granulares por usuario individual** — 4 roles fijos en código a propósito (más simple; no hay todavía un catálogo real de "acciones" del sistema grande para armar un checklist granular).
 - **Sin edición/eliminación de `StaffUser` más allá de activar/desactivar** — no hay endpoint para cambiar contraseña de otra cuenta o editar su rol una vez creada; hay que desactivarla y crear una nueva si algo queda mal.
+- **Pendiente (siguiente push en esta misma rama): archivos adjuntos por evento, cifrados en la base de datos.** Pedido explícito del usuario — subir varios archivos (xlsx/pdf/docx/txt/imágenes) asociados a un evento, guardados cifrados, descargables después por cualquier usuario con acceso al evento. Todavía no implementado. Decisión pendiente de documentar cuando se haga: esquema de cifrado (probable: `cryptography.Fernet` con una `FILE_ENCRYPTION_KEY` nueva en `.env`, cifrado simétrico servidor-side — no hay pedido de cifrado end-to-end donde el servidor no pueda leer el archivo).
 - **Backup solo local** (`~/backups` en la VM, cron diario, rotación 7 días vía `pg_dump`). Backup offsite (bucket GCS) no está armado.
 - **Monorepo:** el repo hoy sigue siendo solo este módulo en la raíz. Ya se decidió la estrategia (monorepo, `apps/<módulo>/`) pero la reestructuración física todavía no se ejecutó — es la próxima rama.
 

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
-from app.models import StaffUser
+from app.models import Event, EventStaffAuthorization, StaffUser
 from app.routers import api, auth as auth_router, events, staff, tenants
 from app.auth import ROLE_HIERARCHY, get_event_for_staff
 
@@ -65,6 +65,19 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     staff_user = _page_staff(request, db)
     if not staff_user:
         return RedirectResponse("/login", status_code=302)
+
+    if staff_user.role == "digitador":
+        # Un digitador no tiene panel: si tiene exactamente un evento activo autorizado, entra
+        # derecho ahí. Con 0 o >1 se le muestra la lista mínima (dashboard.html ya la maneja).
+        authorized_events = (
+            db.query(Event)
+            .join(EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id)
+            .filter(EventStaffAuthorization.staff_user_id == staff_user.id, Event.status == "activo")
+            .all()
+        )
+        if len(authorized_events) == 1:
+            return RedirectResponse(f"/kiosk/{authorized_events[0].id}", status_code=302)
+
     return templates.TemplateResponse(request=request, name="dashboard.html", context={
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": staff_user.role,

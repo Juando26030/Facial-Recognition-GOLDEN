@@ -13,7 +13,6 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav style="display:flex; gap:14px; align-items:center;">
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Kiosko</a>
       <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
     </nav>
   </div>
@@ -27,12 +26,14 @@
       <h2>Usuarios de staff</h2>
     </div>
 
+    <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">Los usuarios <strong>digitador (temporales)</strong> ya no se crean aquí — se crean desde dentro de cada evento (pestaña "Usuarios temporales" en el kiosko de ese evento), donde quedan asociados automáticamente.</p>
+
     <div class="golden-badge-builder" style="margin-bottom: 2rem;">
       <div class="badge-form-title">Nueva cuenta</div>
       <form id="newStaffForm">
         <div class="badge-input-row">
           <div class="badge-input-group">
-            <label>Usuario (para digitador, usa la cédula)</label>
+            <label>Usuario</label>
             <input type="text" name="username" required>
           </div>
           <div class="badge-input-group">
@@ -49,7 +50,6 @@
             <label>Rol</label>
             <select name="role" id="roleSelect" required>
               <option value="coordinador">Coordinador</option>
-              <option value="digitador">Digitador (temporal)</option>
             </select>
           </div>
         </div>
@@ -67,8 +67,8 @@
     </div>
 
     <div class="golden-badge-builder">
-      <div class="badge-form-title">Autorizar digitador para un evento</div>
-      <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Un digitador solo debería poder registrar/reconocer en eventos para los que está autorizado aquí. (Nota: esta autorización todavía no está conectada al flujo del kiosko — ver CLAUDE.md.)</p>
+      <div class="badge-form-title">Reautorizar un digitador existente para otro evento</div>
+      <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Para reusar una cuenta temporal ya creada en un evento nuevo. Un digitador solo puede registrar/reconocer en eventos activos para los que tenga autorización.</p>
       <form id="authorizeForm">
         <div class="badge-input-row">
           <div class="badge-input-group">

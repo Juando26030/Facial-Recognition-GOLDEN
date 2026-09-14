@@ -10,8 +10,10 @@ from app.auth import hash_password, require_role
 
 router = APIRouter()
 
-# Roles que un Admin (no Super Admin) puede crear/gestionar.
-ROLES_CREATABLE_BY_ADMIN = ("coordinador", "digitador")
+# Roles creables desde /admin/staff. "digitador" NO está aquí a propósito: los usuarios
+# temporales se crean desde dentro de un evento (ver app/routers/events.py, POST
+# /events/{id}/temp-users), donde quedan asociados a ese evento en el mismo paso.
+ROLES_CREATABLE_BY_ADMIN = ("coordinador",)
 
 
 class StaffIn(BaseModel):
@@ -26,6 +28,14 @@ def _serialize(s: StaffUser) -> dict:
         "id": s.id, "username": s.username, "full_name": s.full_name,
         "role": s.role, "is_active": s.is_active,
     }
+
+
+@router.get("/staff/coordinators")
+async def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Liviano y accesible desde coordinador+ (a diferencia de /staff, que es admin+) — para
+    poblar el selector de 'coordinador asignado' al crear/editar un evento."""
+    coords = db.query(StaffUser).filter(StaffUser.role == "coordinador", StaffUser.is_active == True).all()
+    return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in coords]
 
 
 @router.get("/staff")
@@ -44,6 +54,11 @@ async def create_staff(
         raise HTTPException(status_code=400, detail="Rol inválido")
     if data.role == "super_admin":
         raise HTTPException(status_code=403, detail="No se puede crear otro Super Admin desde la app")
+    if data.role == "digitador":
+        raise HTTPException(
+            status_code=400,
+            detail="Los usuarios temporales (digitador) se crean desde dentro de un evento, no aquí",
+        )
     if data.role == "admin" and staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede crear cuentas Admin")
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
