@@ -61,6 +61,12 @@
         <h2>Control de Acceso <span class="gradient-text">Facial Inteligente</span></h2>
       </div>
 
+      {% if event.status != "en_proceso" and staff_role != "cliente" %}
+      <div style="max-width:700px; margin:0 auto 1.5rem; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.85rem; text-align:center;">
+        ⚠️ Este evento está <strong>{{ "Creado (todavía no ha comenzado)" if event.status == "creado" else "Finalizado" }}</strong> — el escáner y el registro no van a funcionar hasta que esté "En Proceso". Un coordinador puede activarlo desde el panel.
+      </div>
+      {% endif %}
+
       <div class="tabs">
         {% if staff_role == "cliente" %}
         <div class="tab active" data-tab="estadisticas">Estadísticas</div>

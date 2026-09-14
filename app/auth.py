@@ -67,3 +67,13 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
             raise HTTPException(status_code=403, detail=f"Este evento {label}")
 
     return event
+
+
+def require_event_in_progress(event: Event) -> None:
+    """Gate aparte de get_event_for_staff, para las acciones de REGISTRAR en sí
+    (recognize/register/bulk_register) — a diferencia del acceso general al evento, esto aplica a
+    TODOS los roles por igual, incluido admin/super_admin: si el evento no está 'en_proceso', nadie
+    registra, solo se puede ver/editar el evento y gestionar sus usuarios."""
+    if event.status != "en_proceso":
+        label = "todavía no ha comenzado" if event.status == "creado" else "ya está finalizado"
+        raise HTTPException(status_code=403, detail=f"No se puede registrar: este evento {label}")

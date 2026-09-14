@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models import User, AccessLog, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app.auth import get_current_staff, get_event_for_staff, require_role
+from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role
 
 router = APIRouter()
 
@@ -57,6 +57,7 @@ async def recognize(
     staff: StaffUser = Depends(require_role("digitador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
+    require_event_in_progress(event)
     img_array = BiometricEngine.process_image_stream(await file.read())
     unknown_enc = BiometricEngine.extract_encoding(img_array)
 
@@ -119,6 +120,7 @@ async def manual_register(
     staff: StaffUser = Depends(require_role("digitador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
+    require_event_in_progress(event)
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
         return {"error": "El usuario ya está registrado en la base de datos."}

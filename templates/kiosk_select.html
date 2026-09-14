@@ -17,6 +17,11 @@
         .mode-icon { font-size:3rem; margin-bottom:1rem; }
         .mode-title { font-family: var(--font-heading-secondary); font-weight:700; color: var(--golden-dark); font-size:1.1rem; margin-bottom:0.4rem; }
         .mode-sub { font-size:0.8rem; color:#888; }
+        .status-pill { display:inline-block; font-size:0.75rem; font-weight:700; padding: 4px 14px; border-radius: 14px; text-transform:uppercase; margin-top:0.6rem; }
+        .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
+        .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
+        .status-finalizado { background: #eee; color:#777; }
+        .status-note { font-size:0.8rem; color:#a66; margin-top:1.5rem; max-width:420px; margin-left:auto; margin-right:auto; }
     </style>
 </head>
 <body>
@@ -43,6 +48,11 @@
     <span style="color: var(--golden-primary); font-weight:600; text-transform:uppercase; letter-spacing:2px; font-size:0.85rem;">{{ event.name }}</span>
     <h2 style="font-family: var(--font-heading-primary); font-size:2rem; color: var(--golden-dark); margin-top:10px;">¿Cómo vas a registrar hoy?</h2>
     <p style="color:#888; margin-top:0.5rem;">Distintas personas pueden usar métodos distintos en el mismo evento, al mismo tiempo.</p>
+    <div>
+      <span class="status-pill status-{{ event.status }}">
+        {{ {"creado": "Creado", "en_proceso": "En Proceso", "finalizado": "Finalizado"}.get(event.status, event.status) }}
+      </span>
+    </div>
 
     <div class="mode-grid">
       <a href="/kiosk/{{ event.id }}/facial" class="mode-card enabled">
@@ -56,6 +66,10 @@
         <div class="mode-sub">Próximamente</div>
       </div>
     </div>
+
+    {% if event.status != "en_proceso" %}
+    <p class="status-note">⚠️ El evento no está "En Proceso" — puedes entrar a ver el directorio y gestionar usuarios, pero el escáner y el registro no van a funcionar hasta que un coordinador lo active.</p>
+    {% endif %}
   </div>
 </main>
 </body>

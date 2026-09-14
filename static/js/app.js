@@ -202,7 +202,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 try {
                     const res = await fetch('/api/recognize', { method: 'POST', body: formData });
                     const data = await res.json();
-                    
+
+                    if (!res.ok) {
+                        resTexto.innerText = "❌ " + (data.detail || "No se pudo procesar");
+                        resTexto.style.color = "#dc3545";
+                        return;
+                    }
+
                     if(data.result === 'SÍ') {
                         resTexto.innerText = "✅ IDENTIDAD VALIDADA";
                         resTexto.style.color = "#28a745";
@@ -279,8 +285,12 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 const res = await fetch('/api/register', { method: 'POST', body: formData });
                 const data = await res.json();
-                showToast(data.message || data.error, data.error ? "error" : "success");
-                e.target.reset();
+                if (!res.ok) {
+                    showToast(data.detail || "No se pudo registrar", "error");
+                } else {
+                    showToast(data.message || data.error, data.error ? "error" : "success");
+                    if (!data.error) e.target.reset();
+                }
             } catch(err) { showToast("Error de red", "error"); }
             btn.innerText = "Guardar Perfil Biométrico"; btn.disabled = false;
         };
