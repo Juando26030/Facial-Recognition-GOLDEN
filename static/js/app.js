@@ -192,7 +192,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         regForm.onsubmit = async (e) => {
             e.preventDefault();
-            const btn = e.target.querySelector('button');
+            // OJO: 'button' a secas agarra el PRIMER <button> del form en orden del DOM — desde
+            // que existe "+ Agregar campo opcional" (type="button", va ANTES del submit real en
+            // el HTML), ese selector genérico apuntaba al botón equivocado: el submit real nunca
+            // se tocaba, y "+ Agregar campo opcional" terminaba heredando el texto "Guardando..."
+            // / "Guardar Perfil Biométrico" después de cada alta exitosa (bug real, encontrado en
+            // testing de producción 2026-09-15). Hay que pedir el submit explícitamente.
+            const btn = e.target.querySelector('button[type="submit"]');
+            const originalLabel = btn.innerText;
             btn.innerText = "Guardando..."; btn.disabled = true;
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);
@@ -214,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (Object.keys(pending).length) formData.append('field_labels', JSON.stringify(pending));
 
             await submitManualRegister(formData, btn);
-            btn.innerText = "Guardar Perfil Biométrico"; btn.disabled = false;
+            btn.innerText = originalLabel; btn.disabled = false;
         };
     }
 });
