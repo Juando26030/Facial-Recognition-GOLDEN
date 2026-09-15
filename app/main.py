@@ -125,10 +125,14 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
     })
 
 
-def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_name: str):
+def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_name: str, min_role: str = None):
     """Boilerplate compartido por cada método de registro: mismo chequeo de acceso
     (get_event_for_staff), mismo contexto de template. Cada método solo elige su propio
-    template_name."""
+    template_name. `min_role` es un segundo chequeo opcional para páginas que además exigen un
+    rol mínimo más allá del acceso al evento (ej. la carga de base es coordinador+, mismo mínimo
+    que ya exigía POST /api/bulk_register — bug real encontrado en testing, SELECT-03 2026-09-21:
+    la página GET no tenía este chequeo, un digitador podía abrirla directo por URL aunque el
+    botón de submit le fallara con 403)."""
     staff_user = _page_staff(request, db)
     if not staff_user:
         return RedirectResponse("/login", status_code=302)
@@ -136,6 +140,8 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         event = get_event_for_staff(event_id, db, staff_user)
     except HTTPException:
         return RedirectResponse("/", status_code=302)
+    if min_role and ROLE_HIERARCHY.get(staff_user.role, -1) < ROLE_HIERARCHY[min_role]:
+        return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
     return templates.TemplateResponse(request=request, name=template_name, context={
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": staff_user.role,
@@ -155,7 +161,7 @@ async def kiosk_cedula(event_id: int, request: Request, db: Session = Depends(ge
 
 @app.get("/kiosk/{event_id}/roster")
 async def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db)):
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html")
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador")
 
 
 @app.get("/admin/staff")

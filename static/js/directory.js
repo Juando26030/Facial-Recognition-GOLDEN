@@ -12,6 +12,16 @@
   const FIELDS_ORDER = ['id', 'first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1'];
   const EDITABLE_FIELDS = ['first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1'];
 
+  /* Mismos mínimos que el backend exige de verdad (PATCH /api/users/{id} = coordinador+, DELETE
+     .../logs = admin+, ver tabla de "Roles y permisos" en CLAUDE.md) — bug real encontrado en
+     testing (DIR-06, 2026-09-21): el botón "Editar" se mostraba para digitador/cliente aunque el
+     PATCH les fuera a dar 403 igual. Ocultar el botón entero es más claro que dejar que el
+     usuario lo intente y falle. */
+  const EDIT_ROLES = ['coordinador', 'admin', 'super_admin'];
+  const DELETE_ROLES = ['admin', 'super_admin'];
+  const canEdit = EDIT_ROLES.includes(window.STAFF_ROLE);
+  const canDelete = DELETE_ROLES.includes(window.STAFF_ROLE);
+
   function buildRow(user, opts) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
@@ -74,6 +84,11 @@
       actionTd.appendChild(accreditBtn);
     }
 
+    if (!canEdit) {
+      tr.appendChild(actionTd);
+      return tr;
+    }
+
     const actionBtn = document.createElement('button');
     actionBtn.innerText = 'Editar';
     actionBtn.className = 'golden-btn btn-table-action';
@@ -90,7 +105,7 @@
         isEditing = true;
         actionBtn.innerText = 'Guardar';
         actionBtn.classList.add('btn-save');
-        deleteBtn.style.display = 'inline-block';
+        if (canDelete) deleteBtn.style.display = 'inline-block';
         EDITABLE_FIELDS.forEach(field => {
           tds[field].contentEditable = 'true';
           tds[field].classList.add('editable-cell-active');

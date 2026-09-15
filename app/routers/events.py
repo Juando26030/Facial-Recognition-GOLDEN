@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AccessLog, EVENT_STATUSES, Event, EventStaffAuthorization, StaffUser, Tenant
+from app.models import AccessLog, EVENT_STATUSES, Event, EventAttendee, EventStaffAuthorization, StaffUser, Tenant
 from app.auth import get_current_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
@@ -287,13 +287,19 @@ async def delete_event(
     """Borrado permanente — solo admin+ (coordinador+ avanza el estado del evento vía PATCH status,
     ver EVENT_STATUSES en models.py: creado -> en_proceso -> finalizado).
     Antes de borrar el Event hay que soltar lo que le apunta por FK: las EventStaffAuthorization de
-    este evento no tienen sentido sin él (se borran), y los AccessLog ya generados son historial
-    real (se conservan, solo se les quita la referencia al evento)."""
+    este evento no tienen sentido sin él (se borran), los AccessLog ya generados son historial
+    real (se conservan, solo se les quita la referencia al evento), y los EventAttendee tampoco
+    tienen sentido sin el evento — a diferencia de AccessLog, `EventAttendee.event_id` es NOT
+    NULL (no se puede dejar en NULL), así que se borran directamente (bug real encontrado en
+    testing 2026-09-21: EventAttendee se agregó en la migración 0008 después de escribir este
+    endpoint y nunca se actualizó aquí, causaba ForeignKeyViolation/500 en cualquier evento con
+    al menos una persona registrada/precargada)."""
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.event_id == event_id).delete()
+    db.query(EventAttendee).filter(EventAttendee.event_id == event_id).delete()
     db.query(AccessLog).filter(AccessLog.event_id == event_id).update({"event_id": None})
     db.delete(event)
     db.commit()

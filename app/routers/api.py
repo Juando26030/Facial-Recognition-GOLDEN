@@ -312,7 +312,11 @@ async def manual_register(
 
     face_enc_json = None
     img_array = None
-    if file is not None:
+    # OJO: un <input type="file"> vacío igual manda una parte multipart (con filename=""), así
+    # que `file is not None` es cierto incluso sin archivo real — hay que revisar `file.filename`
+    # también, si no, `file.read()` da bytes vacíos y `Image.open()` truena (500) en vez de
+    # tratarlo como "no se adjuntó foto" (CEDULA-08, bug real encontrado en testing 2026-09-21).
+    if file is not None and file.filename:
         img_array = BiometricEngine.process_image_stream(await file.read())
         encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
         if not encodings:
