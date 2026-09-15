@@ -132,14 +132,36 @@ function promptOptionalLabels(fields) {
     });
 }
 
+/* El backend prefija cada mensaje con ❌ (fila omitida por completo), ⚠️ (se guardó igual, pero
+   revisa el dato) o ℹ️ (corrección automática, ej. Excel volvió número una cédula) — los
+   separamos en cajas de color distinto para que de un vistazo se sepa la gravedad de cada uno. */
 function renderRosterResult(data) {
     rosterResult.innerHTML = "";
-    if (data.errors && data.errors.length) {
-        rosterResult.innerHTML = `<div style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem;">
-            <strong>${data.errors.length} fila(s) con problemas:</strong>
-            <ul style="margin:0.5rem 0 0; padding-left:1.2rem;">${data.errors.map(err => `<li>${err}</li>`).join("")}</ul>
+    if (!data.errors || !data.errors.length) return;
+
+    const groups = [
+        { prefix: "❌", bg: "#fbe9ea", border: "#dc3545", text: "#a12631", title: "Filas omitidas" },
+        { prefix: "⚠️", bg: "#fff3cd", border: "#ffe69c", text: "#664d03", title: "Revisa estos datos (se guardaron igual)" },
+        { prefix: "ℹ️", bg: "#e7f1ff", border: "#b6d4fe", text: "#084298", title: "Correcciones automáticas" },
+    ];
+
+    let html = "";
+    groups.forEach(g => {
+        const items = data.errors.filter(e => e.startsWith(g.prefix));
+        if (!items.length) return;
+        html += `<div style="background:${g.bg}; border:1px solid ${g.border}; color:${g.text}; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
+            <strong>${g.title} (${items.length}):</strong>
+            <ul style="margin:0.5rem 0 0; padding-left:1.2rem;">${items.map(err => `<li>${err.replace(g.prefix, "").trim()}</li>`).join("")}</ul>
+        </div>`;
+    });
+    // cualquier mensaje que no traiga uno de los prefijos conocidos (por compatibilidad)
+    const unprefixed = data.errors.filter(e => !groups.some(g => e.startsWith(g.prefix)));
+    if (unprefixed.length) {
+        html += `<div style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
+            <ul style="margin:0; padding-left:1.2rem;">${unprefixed.map(err => `<li>${err}</li>`).join("")}</ul>
         </div>`;
     }
+    rosterResult.innerHTML = html;
 }
 
 async function submitRoster(formData) {

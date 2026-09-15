@@ -7,6 +7,7 @@ import csv
 import io
 import face_recognition
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from PIL import Image
 from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse
@@ -19,27 +20,37 @@ from app.auth import get_current_staff, get_event_for_staff, require_event_in_pr
 
 
 def _read_roster_rows(filename: str, content: bytes):
-    """Lee un roster en .csv o .xlsx y devuelve filas normalizadas (claves en minúscula, sin
-    espacios), sin importar el formato de origen — el resto de bulk_register no necesita saber
-    cuál era."""
+    """Lee un roster en .csv o .xlsx y devuelve (header_columns, rows): filas normalizadas
+    (claves en minúscula, sin espacios) sin importar el formato de origen, y un mapeo
+    {header: 'A'|'B'|...} de en qué columna venía cada campo — así bulk_register puede señalar
+    la celda exacta (ej. "B7") de un error, sea el archivo .xlsx o .csv."""
     filename = (filename or "").lower()
     if filename.endswith(".xlsx"):
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         ws = wb.active
         rows_iter = ws.iter_rows(values_only=True)
         headers = [str(h).strip().lower() if h is not None else "" for h in next(rows_iter, [])]
+        header_columns = {h: get_column_letter(i + 1) for i, h in enumerate(headers) if h}
+        rows = []
         for row in rows_iter:
             if row is None or all(cell is None for cell in row):
                 continue
-            yield {
+            rows.append({
                 headers[i]: (str(cell).strip() if cell is not None else "")
                 for i, cell in enumerate(row) if i < len(headers) and headers[i]
-            }
+            })
+        return header_columns, rows
     else:
         decoded = content.decode("utf-8-sig")
         delimiter = ";" if ";" in decoded.split("\n", 1)[0] else ","
-        for row in csv.DictReader(io.StringIO(decoded), delimiter=delimiter):
-            yield {k.strip().lower() if k else "": (v or "").strip() for k, v in row.items() if k}
+        reader = csv.DictReader(io.StringIO(decoded), delimiter=delimiter)
+        headers = [h.strip().lower() if h else "" for h in (reader.fieldnames or [])]
+        header_columns = {h: get_column_letter(i + 1) for i, h in enumerate(headers) if h}
+        rows = [
+            {k.strip().lower() if k else "": (v or "").strip() for k, v in row.items() if k}
+            for row in reader
+        ]
+        return header_columns, rows
 
 MAX_OPTIONAL_FIELDS = 30
 _OPTIONAL_FIELD_RE = re.compile(r"^opcional[\s_]*([0-9]{1,2})$")
@@ -57,6 +68,46 @@ def _normalize_optional_key(raw_key: str):
         return None
     n = int(match.group(1))
     return f"opcional_{n}" if 1 <= n <= MAX_OPTIONAL_FIELDS else None
+
+
+_ID_KEYS = ('id', 'identificación', 'cedula', 'cédula')
+_FLOAT_LOOKING_ID_RE = re.compile(r'^(\d+)\.0+$')
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+_PHONE_RE = re.compile(r'^[\d\s+()\-]+$')
+
+
+def _field_lookup(clean_row: dict, header_columns: dict, row_num: int, *keys: str):
+    """Busca el primer valor no vacío entre varios encabezados alternativos (ej. 'nombres' o
+    'nombre') y devuelve (valor, referencia_de_celda) — ej. ('Juan', 'B7'). Si ninguno tiene
+    valor pero al menos uno de esos encabezados sí vino en el archivo, igual devuelve su celda
+    (útil para señalar dónde falta el dato); si el archivo ni siquiera trae esa columna, la
+    referencia es None y quien llama debe caer de vuelta a "fila N"."""
+    for key in keys:
+        val = clean_row.get(key, '')
+        if val:
+            col = header_columns.get(key)
+            return val, (f"{col}{row_num}" if col else None)
+    for key in keys:
+        if key in header_columns:
+            return '', f"{header_columns[key]}{row_num}"
+    return '', None
+
+
+def _extract_identificador(clean_row: dict, header_columns: dict, row_num: int):
+    """Saca la cédula/ID de la fila (probando los encabezados alternativos de siempre) y de paso
+    corrige el problema clásico de Excel de convertir una columna de cédulas en números, que
+    entonces llegan como '1020304050.0' en vez de '1020304050'. Devuelve (identificador_limpio,
+    celda, nota_o_None) — la nota, si existe, se le muestra al usuario explicando la corrección."""
+    raw_val, cell_ref = _field_lookup(clean_row, header_columns, row_num, *_ID_KEYS)
+    val = raw_val.strip()
+    note = None
+    match = _FLOAT_LOOKING_ID_RE.match(val)
+    if match:
+        corrected = match.group(1)
+        where = cell_ref or f"fila {row_num}"
+        note = f"ℹ️ Fila {row_num} ({where}): la cédula venía como '{val}' — Excel la convirtió a número. Se corrigió automáticamente a '{corrected}'."
+        val = corrected
+    return val, cell_ref, note
 
 
 router = APIRouter()
@@ -317,7 +368,7 @@ async def bulk_register(
         raise HTTPException(status_code=400, detail="No se puede cargar la base de un evento finalizado")
 
     content = await roster_file.read()
-    rows = list(_read_roster_rows(roster_file.filename, content))
+    header_columns, rows = _read_roster_rows(roster_file.filename, content)
 
     used_optional_keys = set()
     for row in rows:
@@ -366,14 +417,56 @@ async def bulk_register(
                     except: pass
         if os.path.exists(zip_path): os.remove(zip_path)
 
-    count = 0
-    errors = []
+    # --- Pre-escaneo: identificar cédulas (con corrección del "Excel las volvió número"),
+    # detectar cédulas repetidas dentro del mismo archivo, ANTES de tocar la base de datos.
+    # Esto es lo que le permite al operador ver de una vez, con celda exacta, qué está mal en su
+    # archivo en vez de enterarse fila por fila o con un error genérico. ---
+    row_infos = []
+    seen_rows_by_id = {}
     for row_num, clean_row in enumerate(rows, start=2):  # fila 1 es el encabezado
-        identificador = clean_row.get('id', '') or clean_row.get('identificación', '') or clean_row.get('cedula', '') or clean_row.get('cédula', '')
+        identificador, id_cell, id_note = _extract_identificador(clean_row, header_columns, row_num)
+        notes = [id_note] if id_note else []
+        row_infos.append({
+            "row_num": row_num, "clean_row": clean_row,
+            "identificador": identificador, "id_cell": id_cell, "notes": notes,
+        })
+        if identificador:
+            seen_rows_by_id.setdefault(identificador, []).append(row_num)
+
+    id_col = next((header_columns[k] for k in _ID_KEYS if k in header_columns), None)
+    errors = []
+    for id_val, row_nums in seen_rows_by_id.items():
+        if len(row_nums) > 1:
+            cells = ", ".join(f"{id_col}{n}" if id_col else f"fila {n}" for n in row_nums)
+            errors.append(
+                f"⚠️ La cédula '{id_val}' aparece repetida en {len(row_nums)} filas ({cells}) — "
+                f"se combinaron los datos y quedó lo de la última fila."
+            )
+
+    count = 0
+    for info in row_infos:
+        row_num, clean_row, identificador = info["row_num"], info["clean_row"], info["identificador"]
+        errors.extend(info["notes"])
 
         if not identificador:
-            errors.append(f"Fila {row_num}: sin ID/cédula, se omitió")
+            where = info["id_cell"] or f"fila {row_num}"
+            errors.append(f"❌ Fila {row_num} ({where}): sin ID/cédula, se omitió esta fila.")
             continue
+
+        # Validaciones de calidad de dato — no bloquean la fila (se guarda igual), solo avisan
+        # exactamente en qué celda está el problema para que el operador lo revise si quiere.
+        nombres, nombres_cell = _field_lookup(clean_row, header_columns, row_num, 'nombres', 'nombre')
+        if not nombres:
+            errors.append(f"⚠️ Fila {row_num} ({nombres_cell or 'sin columna de nombres'}): falta el nombre.")
+        apellidos, apellidos_cell = _field_lookup(clean_row, header_columns, row_num, 'apellidos', 'apellido')
+        if not apellidos:
+            errors.append(f"⚠️ Fila {row_num} ({apellidos_cell or 'sin columna de apellidos'}): falta el apellido.")
+        correo, correo_cell = _field_lookup(clean_row, header_columns, row_num, 'correo', 'e-mail corporativo')
+        if correo and not _EMAIL_RE.match(correo):
+            errors.append(f"⚠️ Fila {row_num} ({correo_cell}): el correo '{correo}' no parece válido — se guardó igual, revísalo.")
+        telefono, telefono_cell = _field_lookup(clean_row, header_columns, row_num, 'telefono', 'tel. celular')
+        if telefono and not _PHONE_RE.match(telefono):
+            errors.append(f"⚠️ Fila {row_num} ({telefono_cell}): el teléfono '{telefono}' tiene caracteres raros — se guardó igual, revísalo.")
 
         try:
             face_enc_json = None
@@ -398,12 +491,12 @@ async def bulk_register(
                     user = User(id=identificador, tenant_id=event.tenant_id)
                     db.add(user)
 
-                user.first_name = clean_row.get('nombres', '') or clean_row.get('nombre', '')
-                user.last_name = clean_row.get('apellidos', '') or clean_row.get('apellido', '')
+                user.first_name = nombres
+                user.last_name = apellidos
                 user.role = clean_row.get('cargo', '')
                 user.company = clean_row.get('empresa', '')
-                user.phone = clean_row.get('telefono', '') or clean_row.get('tel. celular', '')
-                user.email = clean_row.get('correo', '') or clean_row.get('e-mail corporativo', '')
+                user.phone = telefono
+                user.email = correo
                 user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
 
                 extras = {}
@@ -423,12 +516,13 @@ async def bulk_register(
 
             count += 1
         except Exception as e:
-            errors.append(f"Fila {row_num}: {e}")
+            where = info["id_cell"] or f"fila {row_num}"
+            errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {e}")
 
     db.commit()
     message = f"Carga completa: {count} perfiles cargados."
     if errors:
-        message += f" {len(errors)} fila(s) con error."
+        message += f" {len(errors)} observación(es) — revisa el detalle."
     return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels()}
 
 @router.get("/report")
