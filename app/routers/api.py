@@ -70,6 +70,48 @@ def _normalize_optional_key(raw_key: str):
     return f"opcional_{n}" if 1 <= n <= MAX_OPTIONAL_FIELDS else None
 
 
+def _parse_extra_fields(raw: str) -> dict:
+    """Parsea el JSON de extra_fields que manda el frontend (bulk_register por fila, o
+    manual_register para una sola persona) y devuelve solo las claves 'opcional_N' válidas con
+    valor no vacío, normalizadas."""
+    if not raw:
+        return {}
+    try:
+        provided = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    extras = {}
+    for raw_key, value in (provided or {}).items():
+        norm = _normalize_optional_key(raw_key)
+        val = str(value or "").strip()
+        if norm and val:
+            extras[norm] = val
+    return extras
+
+
+def _apply_optional_labels(event, used_keys: set, field_labels_raw: str) -> dict:
+    """Fusiona field_labels_raw (JSON, ej. {"opcional_1": "Talla de camisa"}) dentro de
+    Event.optional_field_labels — cualquier clave de used_keys que quede sin nombre después del
+    merge recibe un rótulo por defecto ("Opcional N") para no dejar el diccionario incompleto.
+    Compartido por bulk_register (carga de Excel) y manual_register (alta individual) para no
+    duplicar el flujo de 'pregúntame a qué corresponde cada opcional'. No hace commit — quien
+    llama decide cuándo."""
+    existing = event.get_optional_labels()
+    merged = dict(existing)
+    try:
+        provided = json.loads(field_labels_raw) if field_labels_raw else {}
+    except (json.JSONDecodeError, TypeError):
+        provided = {}
+    for raw_key, label in (provided or {}).items():
+        norm = _normalize_optional_key(raw_key)
+        if norm and label and str(label).strip():
+            merged[norm] = str(label).strip()
+    for key in used_keys - set(merged.keys()):
+        merged[key] = f"Opcional {key.split('_')[1]}"
+    event.set_optional_labels(merged)
+    return merged
+
+
 _ID_KEYS = ('id', 'identificación', 'cedula', 'cédula')
 _FLOAT_LOOKING_ID_RE = re.compile(r'^(\d+)\.0+$')
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
@@ -286,7 +328,8 @@ async def delete_user_logs(
 async def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
     role: str = Form(""), company: str = Form(""), phone: str = Form(""),
-    email: str = Form(""), file: UploadFile = File(None), force: bool = Form(False),
+    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None),
+    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -294,9 +337,27 @@ async def manual_register(
     Si la cédula ya existe como User en el tenant (de este evento o de uno anterior — User vive
     a nivel de tenant, no de evento) no se rechaza de plano: si todavía no tiene AccessLog para
     ESTE evento, simplemente se le agrega (reutilizar a alguien de un evento pasado es válido);
-    si ya lo tiene, se avisa (DUPLICADO) igual que recognize/checkin-cedula, salvo force=true."""
+    si ya lo tiene, se avisa (DUPLICADO) igual que recognize/checkin-cedula, salvo force=true.
+
+    Campos opcionales (2026-09-22, mismo esquema que bulk_register): `extra_fields` es un JSON
+    {"opcional_1": "valor", ...} armado por el frontend (kiosk_registro.html deja agregar hasta
+    30 campos opcionales al formulario de alta individual, con los mismos nombres que el roster
+    original si lo hay). Si alguna clave usada todavía no tiene rótulo para este evento, se
+    devuelve {"result": "NEEDS_LABELS", "fields": [...]} igual que bulk_register — el frontend
+    normalmente ya manda `field_labels` de una vez porque él mismo preguntó el nombre al agregar
+    el campo, así que este camino solo se ejerce en casos raros/defensivos."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
+
+    extras = _parse_extra_fields(extra_fields)
+    used_optional_keys = set(extras.keys())
+    missing = used_optional_keys - set(event.get_optional_labels().keys())
+    if missing and not field_labels:
+        return {"result": "NEEDS_LABELS", "fields": sorted(missing, key=lambda k: int(k.split("_")[1]))}
+    if field_labels:
+        _apply_optional_labels(event, used_optional_keys, field_labels)
+        db.commit()
+
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
         if not force and _already_checked_in(db, event.id, existing.id):
@@ -325,8 +386,9 @@ async def manual_register(
 
     user = User(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
-        role=role, company=company, phone=phone, email=email, face_encoding=face_enc_json
+        role=role, company=company, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json
     )
+    user.set_extras(extras)
     db.add(user)
 
     log = AccessLog(
@@ -370,6 +432,20 @@ async def bulk_register(
     event = get_event_for_staff(event_id, db, staff)
     if event.status == "finalizado":
         raise HTTPException(status_code=400, detail="No se puede cargar la base de un evento finalizado")
+    # Bloqueo real (no solo el aviso que ya hace el frontend antes de mandar la petición, ver
+    # kiosk_roster.html) — un evento en_proceso que YA tuvo una carga exitosa antes no puede
+    # recibir otra: es casi siempre alguien resubiendo por error, y pisaría/duplicaría registros
+    # de gente que ya se acreditó en vivo. Si de verdad necesitan cargar otra base, la salida es
+    # crear un evento nuevo, no reintentar sobre este (2026-09-22, pedido explícito del usuario).
+    if event.status == "en_proceso" and event.roster_uploaded:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Este evento ya tiene una base cargada y está EN PROCESO. Para evitar conflictos "
+                "con los registros que ya se hicieron en vivo, no se puede volver a cargar otra "
+                "base sobre este evento — si necesitas cargar una base distinta, crea un evento nuevo."
+            ),
+        )
 
     content = await roster_file.read()
     header_columns, rows = _read_roster_rows(roster_file.filename, content)
@@ -381,25 +457,12 @@ async def bulk_register(
             if norm and (value or "").strip():
                 used_optional_keys.add(norm)
 
-    existing_labels = event.get_optional_labels()
-    missing = used_optional_keys - set(existing_labels.keys())
-
+    missing = used_optional_keys - set(event.get_optional_labels().keys())
     if missing and not field_labels:
         return {"result": "NEEDS_LABELS", "fields": sorted(missing, key=lambda k: int(k.split("_")[1]))}
 
     if field_labels:
-        try:
-            provided = json.loads(field_labels)
-        except (json.JSONDecodeError, TypeError):
-            provided = {}
-        merged = dict(existing_labels)
-        for raw_key, label in (provided or {}).items():
-            norm = _normalize_optional_key(raw_key)
-            if norm and label and str(label).strip():
-                merged[norm] = str(label).strip()
-        for key in used_optional_keys - set(merged.keys()):
-            merged[key] = f"Opcional {key.split('_')[1]}"
-        event.set_optional_labels(merged)
+        _apply_optional_labels(event, used_optional_keys, field_labels)
         db.commit()
 
     known_faces_dir = _known_faces_dir(event.tenant_id)
@@ -529,6 +592,9 @@ async def bulk_register(
         except Exception as e:
             where = info["id_cell"] or f"fila {row_num}"
             errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {e}")
+
+    if count > 0 and not event.roster_uploaded:
+        event.roster_uploaded = True
 
     db.commit()
     message = f"Carga completa: {count} perfiles cargados."

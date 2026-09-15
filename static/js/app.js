@@ -163,6 +163,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     showToast(data.detail || "No se pudo registrar", "error");
                     return;
                 }
+                if (data.result === 'NEEDS_LABELS') {
+                    // Camino defensivo: normalmente ya mandamos field_labels de una vez (el botón
+                    // "+ Agregar campo opcional" pregunta el nombre en el momento), esto solo se
+                    // ejerce si algo quedó sin rotular por alguna otra vía.
+                    const labels = await window.promptOptionalLabels(data.fields);
+                    if (!labels) return;
+                    formData.set('field_labels', JSON.stringify(labels));
+                    await submitManualRegister(formData, btn);
+                    return;
+                }
                 if (data.result === 'DUPLICADO') {
                     const confirmado = await confirmDuplicateRegistration(data.data);
                     if (confirmado) {
@@ -174,6 +184,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast(data.message || data.error, data.error ? "error" : "success");
                 if (!data.error) {
                     regForm.reset();
+                    if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
                     if (window.directorySearch) window.directorySearch.reload();
                 }
             } catch(err) { showToast("Error de red", "error"); }
@@ -185,6 +196,23 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.innerText = "Guardando..."; btn.disabled = true;
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);
+
+            // Los campos opcionales dinámicos (opcional_1..opcional_30, ver "+ Agregar campo
+            // opcional") viven como inputs sueltos en el <form> — el backend espera un solo JSON
+            // en 'extra_fields', igual que bulk_register por fila.
+            const extras = {};
+            for (const key of Array.from(formData.keys())) {
+                if (/^opcional_\d+$/.test(key)) {
+                    const val = (formData.get(key) || '').trim();
+                    if (val) extras[key] = val;
+                    formData.delete(key);
+                }
+            }
+            if (Object.keys(extras).length) formData.append('extra_fields', JSON.stringify(extras));
+
+            const pending = window.getPendingOptionalLabels ? window.getPendingOptionalLabels() : {};
+            if (Object.keys(pending).length) formData.append('field_labels', JSON.stringify(pending));
+
             await submitManualRegister(formData, btn);
             btn.innerText = "Guardar Perfil Biométrico"; btn.disabled = false;
         };

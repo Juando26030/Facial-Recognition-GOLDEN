@@ -117,6 +117,7 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
             "staff_name": staff_user.full_name or staff_user.username,
             "staff_role": staff_user.role,
             "event": event,
+            "optional_labels": [],  # cliente no ve "Registro Individual", no hace falta calcularlos
         })
 
     return templates.TemplateResponse(request=request, name="kiosk_select.html", context={
@@ -143,10 +144,16 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         return RedirectResponse("/", status_code=302)
     if min_role and ROLE_HIERARCHY.get(staff_user.role, -1) < ROLE_HIERARCHY[min_role]:
         return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
+    # Lista (clave, rótulo) ordenada numéricamente (no alfabéticamente — "opcional_10" antes que
+    # "opcional_2" si se ordenara como texto) de los campos opcionales que este evento ya tiene
+    # nombrados — usada por kiosk_registro.html para mostrar esos campos en el alta manual con su
+    # nombre real en vez de "Opcional N" (2026-09-22).
+    optional_labels = sorted(event.get_optional_labels().items(), key=lambda kv: int(kv[0].split("_")[1]))
     return templates.TemplateResponse(request=request, name=template_name, context={
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": staff_user.role,
         "event": event,
+        "optional_labels": optional_labels,
     })
 
 

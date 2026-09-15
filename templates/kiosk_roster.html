@@ -85,52 +85,7 @@ enableFacial.addEventListener("change", () => {
 
 const rosterForm = document.getElementById("rosterForm");
 const rosterResult = document.getElementById("rosterResult");
-
-/* Modal para preguntar a qué corresponde cada columna "opcional_N" nueva que trajo el archivo
-   (hasta 30 posibles, pero solo se pregunta por las que de verdad vienen usadas y todavía no
-   tienen un nombre guardado para este evento). Devuelve {opcional_1: "Talla de camisa", ...}
-   o null si el operador cancela. */
-function promptOptionalLabels(fields) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement("div");
-        overlay.style.cssText = `position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9998; display:flex; align-items:center; justify-content:center; padding:1rem;`;
-        const box = document.createElement("div");
-        box.style.cssText = `background:white; border-radius:16px; padding:1.8rem; max-width:460px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif); max-height:80vh; overflow-y:auto;`;
-
-        const rowsHtml = fields.map(f => {
-            const n = f.split("_")[1];
-            return `<div class="badge-input-group" style="margin-top:0.8rem;">
-                <label>¿A qué corresponde "Opcional ${n}"?</label>
-                <input type="text" data-field="${f}" placeholder="Ej. Talla de camisa, Grupo, Restricción alimentaria...">
-            </div>`;
-        }).join("");
-
-        box.innerHTML = `
-            <p style="color:#333; margin-bottom:0.5rem; line-height:1.4;">
-                <strong>Encontramos ${fields.length} columna(s) opcional(es) nueva(s)</strong> en el archivo.
-                Dinos a qué corresponde cada una para poder identificarlas más adelante.
-            </p>
-            ${rowsHtml}
-            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1.5rem;">
-                <button id="optLabelsCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-                <button id="optLabelsOk" style="border:none; background: var(--golden-primary); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar y continuar</button>
-            </div>
-        `;
-        overlay.appendChild(box);
-        document.body.appendChild(overlay);
-
-        box.querySelector("#optLabelsCancel").addEventListener("click", () => { overlay.remove(); resolve(null); });
-        box.querySelector("#optLabelsOk").addEventListener("click", () => {
-            const labels = {};
-            box.querySelectorAll("input[data-field]").forEach(input => {
-                const val = input.value.trim();
-                if (val) labels[input.dataset.field] = val;
-            });
-            overlay.remove();
-            resolve(labels);
-        });
-    });
-}
+const EVENT_STATUS = "{{ event.status }}";
 
 /* El backend prefija cada mensaje con ❌ (fila omitida por completo), ⚠️ (se guardó igual, pero
    revisa el dato) o ℹ️ (corrección automática, ej. Excel volvió número una cédula) — los
@@ -186,6 +141,21 @@ async function submitRoster(formData) {
 
 rosterForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+
+    // El evento ya arrancó — cargar (o volver a cargar) la base aquí puede pisar registros que
+    // ya se hicieron en vivo. Avisamos SIEMPRE antes de intentarlo; si de verdad es un re-upload
+    // (el evento ya tuvo una carga exitosa antes), el backend lo rechaza de plano sin importar
+    // esta confirmación (ver bulk_register, "no te deje" — pedido explícito del usuario 2026-09-22).
+    if (EVENT_STATUS === "en_proceso") {
+        const seguro = await showConfirm(
+            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>¿Estás seguro de que quieres cargar la base de datos? " +
+            "Si el evento ya tenía una base cargada, esto puede significar que la estás subiendo por error — revisa antes de continuar. " +
+            "Si necesitas otra base para el mismo evento, mejor crea un evento nuevo en vez de recargar este.",
+            { variant: "warning", confirmLabel: "Sí, cargar de todas formas" }
+        );
+        if (!seguro) return;
+    }
+
     const btn = e.target.querySelector("button");
     btn.innerText = "Cargando...";
     btn.disabled = true;

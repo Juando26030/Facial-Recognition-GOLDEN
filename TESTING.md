@@ -15,7 +15,7 @@ comportamiento esperado y por qué) antes de asumir que es un bug nuevo.
 
 ## 0. Preparación del entorno de prueba
 
-1. `alembic upgrade head` (asegura que las migraciones `0001`–`0010` estén aplicadas).
+1. `alembic upgrade head` (asegura que las migraciones `0001`–`0011` estén aplicadas).
 2. Si no existe ninguna cuenta todavía: `python scripts/create_staff_user.py --username super --role super_admin --full-name "Super Admin"` (pide contraseña la primera vez que se usa, ver `scripts/create_staff_user.py`).
 3. `uvicorn app.main:app --reload --port 5000`.
 4. Con la sesión de `super_admin`, crear al menos:
@@ -164,6 +164,19 @@ Jerarquía: `cliente` (fuera de la jerarquía real, ver `CLAUDE.md`) < `digitado
 | REG-23 ❌ | `digitador` no ve "Exportar Reporte" | Loguear como `digitador` | La pestaña no aparece |
 | REG-24 ✅ | `cliente` ve Directorio de solo lectura | Loguear como `cliente` | Ve el Directorio con búsqueda, pero SIN botón "Acreditar" y SIN el atajo de Enter (`canAccredit = STAFF_ROLE !== "cliente"`) |
 
+### 6.4 Campos opcionales en "Registro Individual" (2026-09-22)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| REG-25 ✅ | Campo "Tipo de Asistente" presente | Abrir "Registro Individual" | Existe el campo (antes faltaba en el alta manual aunque sí estaba en el roster) |
+| REG-26 ✅ | Campos opcionales ya rotulados aparecen solos | Evento que YA tiene `optional_field_labels` (ej. de una carga de Excel previa) | Cada `opcional_N` rotulado aparece como input con su nombre real (no "Opcional N") |
+| REG-27 ✅ | Agregar un campo opcional nuevo | Clic en "+ Agregar campo opcional" | Pide el nombre (modal `promptOptionalLabels`), al confirmar aparece el input nuevo en el formulario |
+| REG-28 ❌ | Cancelar al agregar | Clic en "+ Agregar campo opcional", cancelar el modal | No se agrega ningún campo |
+| REG-29 ✅ | Guardar con un campo opcional agregado | Completar REG-27, llenar el nuevo campo, guardar el registro | Se crea el `User` con ese valor en `extra_fields`; `Event.optional_field_labels` queda con el nombre elegido — visible en la siguiente carga de la página sin volver a preguntarlo |
+| REG-30 ✅ | Reusar un campo agregado para la siguiente persona | Tras REG-29, sin recargar la página, registrar a alguien más | El campo agregado sigue en el formulario (no desaparece), se puede llenar de nuevo sin preguntar el nombre otra vez |
+| REG-31 ❌ | Agotar los 30 campos opcionales | Agregar 30 campos opcionales en el mismo formulario/evento | Al intentar un 31º, toast de error "Ya se usaron los 30 campos opcionales disponibles" — no se agrega |
+| REG-32 ✅ | Evento sin ningún Excel cargado | Evento nuevo, sin roster nunca subido, `optional_field_labels={}` | El formulario arranca sin campos opcionales, pero "+ Agregar campo opcional" funciona igual — mismo mecanismo que un evento con Excel |
+
 ---
 
 ## 7. Adjuntar Base de Datos (`/kiosk/{event_id}/roster`, `POST /api/bulk_register`)
@@ -222,6 +235,16 @@ Jerarquía: `cliente` (fuera de la jerarquía real, ver `CLAUDE.md`) < `digitado
 | ROSTER-28 ✅ | Primera carga con zip enciende `facial_enabled` | Evento nuevo (`facial_enabled=False` por default) → subir roster marcando el checkbox + zip de fotos | `event.facial_enabled` pasa a `True`; entrar a `/kiosk/{event_id}/registro` ya muestra la pestaña de escáner (ver REG-01) |
 | ROSTER-29 ✅ | Subida posterior SIN zip no lo apaga | En el MISMO evento de ROSTER-28 (ya con `facial_enabled=True`), subir otro roster sin marcar el checkbox | `facial_enabled` sigue en `True` — no se apaga solo |
 | ROSTER-30 ✅ | Evento sin ninguna carga con fotos | Evento nuevo, subir solo roster sin zip (o no subir nada todavía) | `facial_enabled=False`, Registro se comporta como cédula tradicional (ver REG-10/11) |
+
+### 7.6 Bloqueo de re-carga con el evento EN PROCESO (2026-09-22)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| ROSTER-31 ✅ | Aviso al cargar con el evento en proceso (primera vez) | Evento `en_proceso`, `roster_uploaded=False` (nunca se le cargó nada), subir un roster | Aparece `showConfirm` amarillo preguntando si está seguro; al confirmar, la carga procede normal y `roster_uploaded` pasa a `True` |
+| ROSTER-32 ❌ | Cancelar el aviso | Repetir ROSTER-31 pero cancelar el modal | No se manda la petición al backend, no pasa nada |
+| ROSTER-33 ❌ | Re-carga bloqueada | En el MISMO evento de ROSTER-31 (ya `en_proceso` + `roster_uploaded=True`), intentar subir OTRO roster | Tras confirmar el aviso, el backend responde 400: "Este evento ya tiene una base cargada y está EN PROCESO... crea un evento nuevo" — no se procesa ninguna fila |
+| ROSTER-34 ✅ | Re-carga permitida si el evento NO está en proceso | Evento en `creado` con `roster_uploaded=True` (se le cargó algo antes de arrancar), subir otro roster | Se permite sin bloqueo ni aviso especial — es preparación normal antes de que empiece |
+| ROSTER-35 ✅ | Evento que arranca sin base nunca se ve afectado | Evento `en_proceso` que jamás tuvo un roster (`roster_uploaded=False`), todo el registro fue manual | No hay ningún bloqueo — el aviso de ROSTER-31 es solo una confirmación, no impide seguir operando 100% manual |
 
 ---
 
@@ -288,12 +311,12 @@ Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vige
 | Clientes (Tenants) | 6 |
 | Eventos (CRUD + ciclo de vida) | 15 |
 | Selección (`/kiosk/{event_id}`) | 7 |
-| Registro unificado (con/sin cámara + Directorio compartido) | 24 |
-| Roster (formato, facial opcional, opcionales dinámicos, validación, `facial_enabled`) | 30 |
+| Registro unificado (con/sin cámara + Directorio compartido + opcionales en alta manual) | 32 |
+| Roster (formato, facial opcional, opcionales dinámicos, validación, `facial_enabled`, bloqueo de re-carga) | 35 |
 | Doble registro | 7 |
 | Directorio en Vivo | 7 |
 | Reporte | 2 |
 | Seguridad | 6 |
-| **Total** | **129** |
+| **Total** | **142** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

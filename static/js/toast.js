@@ -91,4 +91,50 @@
       { variant: "warning", confirmLabel: "Sí, registrar de nuevo" }
     );
   };
+
+  /* Modal para preguntar a qué corresponde cada campo "opcional_N" nuevo (hasta 30 posibles) —
+     compartido entre kiosk_roster.html (carga de Excel/CSV) y kiosk_registro.html (alta manual
+     individual, botón "+ Agregar campo opcional"), 2026-09-22. Devuelve {opcional_1: "Talla de
+     camisa", ...} o null si el operador cancela. */
+  window.promptOptionalLabels = function (fields) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = `position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9998; display:flex; align-items:center; justify-content:center; padding:1rem;`;
+      const box = document.createElement("div");
+      box.style.cssText = `background:white; border-radius:16px; padding:1.8rem; max-width:460px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif); max-height:80vh; overflow-y:auto;`;
+
+      const rowsHtml = fields.map(f => {
+        const n = f.split("_")[1];
+        return `<div class="badge-input-group" style="margin-top:0.8rem;">
+                <label>¿A qué corresponde "Opcional ${n}"?</label>
+                <input type="text" data-field="${f}" placeholder="Ej. Talla de camisa, Grupo, Restricción alimentaria...">
+            </div>`;
+      }).join("");
+
+      box.innerHTML = `
+            <p style="color:#333; margin-bottom:0.5rem; line-height:1.4;">
+                <strong>Encontramos ${fields.length} campo(s) opcional(es) nuevo(s)</strong>.
+                Dinos a qué corresponde cada uno para poder identificarlos más adelante (en reportes, etc.).
+            </p>
+            ${rowsHtml}
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1.5rem;">
+                <button id="optLabelsCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
+                <button id="optLabelsOk" style="border:none; background: var(--golden-primary); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar y continuar</button>
+            </div>
+        `;
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      box.querySelector("#optLabelsCancel").addEventListener("click", () => { overlay.remove(); resolve(null); });
+      box.querySelector("#optLabelsOk").addEventListener("click", () => {
+        const labels = {};
+        box.querySelectorAll("input[data-field]").forEach(input => {
+          const val = input.value.trim();
+          if (val) labels[input.dataset.field] = val;
+        });
+        overlay.remove();
+        resolve(labels);
+      });
+    });
+  };
 })();
