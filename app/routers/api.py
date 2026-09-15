@@ -390,6 +390,15 @@ async def manual_register(
     )
     user.set_extras(extras)
     db.add(user)
+    # Mismo bug que ya se había arreglado en bulk_register (ver ese comentario) pero nunca se
+    # replicó aquí: con autoflush=False, el INSERT de User quedaba pendiente sin mandarse a la
+    # base todavía cuando AccessLog/EventAttendee (que dependen de él por llave foránea) se
+    # intentaban insertar en el mismo flush — Postgres (y SQLite con PRAGMA foreign_keys=ON)
+    # rechazan el INSERT de event_attendees con ForeignKeyViolation porque el User referenciado
+    # técnicamente "no existe todavía" en ese punto. Un flush() explícito aquí garantiza que el
+    # INSERT de User ya se mandó antes de crear las filas que dependen de él (reproducido y
+    # confirmado con un test end-to-end vía FastAPI TestClient + SQLite con FK activas, 2026-09-23).
+    db.flush()
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",
