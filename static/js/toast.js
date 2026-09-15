@@ -81,6 +81,55 @@
     });
   };
 
+  /* Reemplazo de prompt() nativo (bug real de Sprint 2, QA local 2026-09-15: badge_editor.html
+     usaba prompt() para "Guardar como plantilla" y el navegador lo rechazaba — "prompt() is not
+     supported" — rompiendo la convención del proyecto de no usar diálogos nativos). Mismo patrón
+     visual que showConfirm, pero con un campo de texto. Devuelve una Promise<string|null> (null
+     si cancela o si el campo queda vacío). opts: { defaultValue, placeholder, confirmLabel }. */
+  window.showPrompt = function (message, opts) {
+    opts = opts || {};
+    const defaultValue = opts.defaultValue || "";
+    const confirmLabel = opts.confirmLabel || "Guardar";
+    const placeholder = opts.placeholder || "";
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = `
+        position: fixed; inset: 0; background: rgba(10,14,46,0.45); z-index: 9998;
+        display: flex; align-items: center; justify-content: center;
+      `;
+      const box = document.createElement("div");
+      box.style.cssText = `
+        background: white; border-radius: 16px; padding: 1.8rem; max-width: 420px; width: 90%;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);
+      `;
+      const escapedDefault = String(defaultValue).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+      const escapedPlaceholder = String(placeholder).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+      box.innerHTML = `
+        <p style="color:#333; margin-bottom:1rem; line-height:1.4;">${message}</p>
+        <input id="toastPromptInput" type="text" value="${escapedDefault}" placeholder="${escapedPlaceholder}"
+               style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:10px; padding:10px 12px; font-size:1rem; margin-bottom:1.4rem;">
+        <div style="display:flex; justify-content:flex-end; gap:10px;">
+          <button id="toastPromptCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
+          <button id="toastPromptOk" style="border:none; background:var(--golden-primary, #D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${confirmLabel}</button>
+        </div>
+      `;
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      const input = box.querySelector("#toastPromptInput");
+      input.focus();
+      input.select();
+      function finish(value) { overlay.remove(); resolve(value); }
+      box.querySelector("#toastPromptCancel").addEventListener("click", () => finish(null));
+      box.querySelector("#toastPromptOk").addEventListener("click", () => finish(input.value.trim() || null));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); finish(input.value.trim() || null); }
+        else if (e.key === "Escape") { finish(null); }
+      });
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(null); });
+    });
+  };
+
   /* Confirmación estándar de "esta persona ya se había registrado" — usada por recognize,
      checkin-cedula y el registro manual (mismo texto/estilo en los tres, para no duplicarlo). */
   window.confirmDuplicateRegistration = function (data) {

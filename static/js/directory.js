@@ -28,6 +28,23 @@
     return queryWords.every(qw => haystackWords.some(hw => hw.startsWith(qw)));
   }
 
+  /* Cédula vieja (código de barras) — Sprint 2 Parte 2, 2.1: el lector manda un CSV plano
+     "cedula,nombre1,nombre2,apellido1,apellido2,fecha_nacimiento(AAAAMMDD)" en vez de solo el
+     número suelto (muestra real confirmada: "1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206").
+     Si el texto no calza con este patrón (no tiene comas, o el primer segmento no es numérico),
+     se sigue tratando como hoy: un ID suelto. Devuelve null en ese caso. */
+  function parseOldCedulaBarcode(raw) {
+    const text = String(raw || '').trim();
+    if (!text.includes(',')) return null;
+    const parts = text.split(',');
+    if (parts.length < 5) return null;
+    const cedula = parts[0].trim();
+    if (!/^\d+$/.test(cedula)) return null;
+    const nombres = [parts[1], parts[2]].map(p => (p || '').trim()).filter(Boolean).join(' ');
+    const apellidos = [parts[3], parts[4]].map(p => (p || '').trim()).filter(Boolean).join(' ');
+    return { cedula, nombres, apellidos };
+  }
+
   /* opt_2 (antes "cantidad de empl") quedó deprecado el 2026-09-20 — la carga de base ahora usa
      hasta 30 campos "opcional_N" dinámicos (ver bulk_register/CLAUDE.md) en vez de dos fijos. Se
      deja de mostrar/editar aquí; el campo sigue existiendo en la base por compatibilidad. */
@@ -315,7 +332,14 @@
       if (input) input.addEventListener('input', applyFilters);
     });
 
-    async function fastCheckin(cedula, force) {
+    /* nameInfo (Sprint 2 Parte 2, 2.1): {nombres, apellidos} cuando el escaneo trajo un nombre
+       completo además de la cédula (CSV de la cédula vieja, o el OCR de la MRZ de la nueva) —
+       null si solo se tiene un ID suelto (búsqueda de siempre). Búsqueda en dos pasos: primero
+       coincidencia exacta por cédula; si no hay match Y sí hay nombre, se intenta un segundo
+       paso buscando ese nombre completo entre los ya cargados en el Directorio, reutilizando el
+       mismo criterio de prefijo por palabra + insensible a tildes de arriba — recién si ninguno
+       de los dos encuentra nada se cae al comportamiento de "no encontrado" de siempre. */
+    async function fastCheckin(cedula, force, nameInfo) {
       const formData = new FormData();
       formData.append('event_id', window.EVENT_ID);
       formData.append('cedula', cedula);
@@ -326,15 +350,23 @@
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {
           const confirmado = await confirmDuplicateRegistration(data.data);
-          if (confirmado) await fastCheckin(cedula, true);
+          if (confirmado) await fastCheckin(cedula, true, nameInfo);
           return;
         }
         if (data.result === 'SÍ') {
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
           if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id);
           reload();
+          return;
+        }
+        const fullName = nameInfo ? `${nameInfo.nombres || ''} ${nameInfo.apellidos || ''}`.trim() : '';
+        const nameMatch = fullName
+          ? allUsers.find(u => matchesWordPrefix(`${u.first_name || ''} ${u.last_name || ''}`, fullName))
+          : null;
+        if (nameMatch) {
+          await fastCheckin(nameMatch.id, force, null);
         } else if (opts.onNotFound) {
-          opts.onNotFound(cedula);
+          opts.onNotFound(cedula, nameInfo);
         } else {
           showToast(data.details || 'Cédula no encontrada', 'error');
         }
@@ -345,18 +377,36 @@
 
     if (opts.fastCheckin && cedulaInput) {
       cedulaInput.addEventListener('keydown', (e) => {
+        /* Blindaje contra atajos del navegador (Sprint 2 Parte 2, 2.2): la cédula nueva trae un
+           QR encriptado por la Registraduría que, si el lector igual lo entrega como si fuera
+           texto, puede incluir caracteres que el navegador interpreta como una combinación de
+           teclas (confirmado en QA: abrió sola una pestaña/buscador) — un lector legítimo nunca
+           necesita una tecla modificadora para escribir texto + Enter, así que se bloquean todas
+           mientras el foco esté en este campo. Aplica en general, no solo para este caso puntual. */
+        if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); return; }
         if (e.key === 'Enter') {
           e.preventDefault();
-          const cedula = cedulaInput.value.trim();
-          if (!cedula) return;
-          fastCheckin(cedula);
+          const raw = cedulaInput.value.trim();
+          if (!raw) return;
+          const parsed = parseOldCedulaBarcode(raw);
+          if (parsed) {
+            fastCheckin(parsed.cedula, false, { nombres: parsed.nombres, apellidos: parsed.apellidos });
+          } else {
+            fastCheckin(raw, false, null);
+          }
           cedulaInput.value = '';
         }
       });
     }
 
     reload();
-    return { reload };
+    return {
+      reload,
+      /* Punto de entrada compartido para cualquier OTRO método que resuelva una cédula+nombre
+         fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —
+         reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
+      submitScannedCedula: (cedula, nameInfo) => fastCheckin(cedula, false, nameInfo || null),
+    };
   }
 
   window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch };

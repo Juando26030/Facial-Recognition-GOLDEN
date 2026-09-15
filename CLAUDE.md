@@ -26,6 +26,11 @@ app/
     staff.py            Cuentas coordinador/admin (no digitador/cliente, ver Roles y permisos)
     badges.py           Escarapelas: editor de plantilla por evento, librería reusable por
                         tenant, datos/foto para imprimir (ver sección Escarapelas)
+    cedula.py           Lectura por foto de la MRZ de la cédula nueva (ver sección Lector de cédula)
+  mrz_parser.py     Parseo + validación (checksum ICAO 9303) de las 3 líneas MRZ ya extraídas —
+                    puro texto, sin imágenes, se puede probar sin OCR real (ver sección Lector de cédula)
+  mrz_ocr.py        OCR (pytesseract) de la foto del reverso de la cédula nueva — necesita el
+                    binario de Tesseract instalado en el sistema, ver esa misma sección
   cities_data.py    Carga app/cities_by_country.json (dataset real GeoNames) — ver sección de ciudades
   cities_by_country.json   ~20,300 ciudades reales (GeoNames), generado offline una vez
 alembic/            Migraciones versionadas (ver sección Migraciones) — reemplaza Base.metadata.create_all
@@ -150,8 +155,45 @@ Mismo mínimo de rol que "Adjuntar Base de Datos" (`coordinador`+) para TODO lo 
 - `badge_print.html` pide en paralelo la plantilla (`GET .../badge-template`) y los datos reales de la persona (`GET .../badge-print-data`), inyecta un `<style>@page{size: <width_mm>mm <height_mm>mm; margin:0}</style>` dinámico con el tamaño REAL de la plantilla (pensado para la Brother QL-800, no la hoja carta por defecto del navegador), espera a que las imágenes (logo/foto) terminen de cargar (con timeout de 2.5s por si alguna falla) y recién ahí llama a `window.print()` — enfoque deliberadamente simple (HTML/canvas + impresión nativa del navegador) en vez de un motor de PDF pesado, suficiente para Chrome/Edge.
 - Mínimo de rol para disparar/ver la impresión: `digitador`+ (lo necesita quien opera el registro) — distinto del editor de diseño, que es `coordinador`+.
 
+### QA local (2026-09-15) — 4 bugs reales encontrados con clics/drag reales, los 4 corregidos
+Antes de cerrar el épico, Juan David probó Parte 1 en local (`http://localhost:5000/`) con interacción real (no solo lectura de código) y encontró 4 problemas:
+1. **[Alto] Código de barras no se renderizaba.** El `<script>` de `JsBarcode` apuntaba a `https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/...` — ese slug (mayúsculas) y esa versión no existen en cdnjs (404 confirmado); el nombre real es en minúsculas, `jsbarcode`, y la última versión publicada es la `3.12.3`. Arreglado en `badge_editor.html` y `badge_print.html`.
+2. **[Alto] "Guardar como plantilla" usaba `prompt()` nativo** (`saveAsTemplate()` en `badge_editor.html`), que el navegador rechaza (`prompt() is not supported`) — rompe la convención del proyecto de no usar diálogos nativos (`toast.js`). Arreglo: se agregó `window.showPrompt(message, opts)` a `toast.js` (mismo patrón visual que `showConfirm`, pero con un `<input>` de texto, devuelve `Promise<string|null>`) y `saveAsTemplate()` ahora lo usa.
+3. **[Alto] Un `digitador` no podía imprimir** — `GET /api/events/{id}/badge-template` exigía `coordinador`+, pero `badge_print.html` depende de ese mismo GET para cargar la plantilla antes de imprimir, y `digitador` es justo el rol que más imprime el día del evento. Arreglo en `app/routers/badges.py`: se separó el gate — **lectura** (este `GET`) ahora es `digitador`+ (cualquier staff autorizado al evento), **escritura** (`PUT`, editar el diseño) sigue siendo `coordinador`+ sin cambios.
+4. **[Alto] `bulk_register` descartaba en silencio una foto sin rostro detectable (o directamente ilegible) del zip**, sin avisarle a nadie — la persona quedaba creada igual, pero sin foto biométrica funcional y sin ningún indicio de por qué. `/api/register` (alta individual) ya validaba esto (`extract_encoding` + rechazo claro) pero nunca se había replicado en el bloque de extracción del zip de `bulk_register` (antes: `try: ... except: pass` mudo). Arreglo en `app/routers/api.py`: cada imagen del zip ahora pasa por la MISMA validación de rostro antes de guardarse — si no decodifica, o si decodifica pero no tiene rostro, NO se guarda el archivo y se agrega un `⚠️` a `errors[]` (mismo array/convención de prefijos que ya usa el resto de la carga, sin inventar un campo nuevo que el frontend no supiera mostrar).
+
 ### Cómo probar localmente
 `alembic upgrade head` (trae la migración `0012_badge_templates`), entrar a un evento como `coordinador`+ → tarjeta "Escarapelas" → el editor arranca con una plantilla por defecto. Ver `TESTING.md` sección 12 para el checklist completo (31 casos).
+
+## Sprint 2 (2026-09-15) — Lector de cédula (Épico M1-7, Parte 2 del brief)
+
+Antes en stand-by (sin muestras reales); se activó el mismo sprint al llegar muestras confirmadas de ambos tipos de cédula colombiana. El campo de "cédula" del Directorio en Vivo (`#searchCedula`, ya funcionaba como "teclado" con cualquier lector desde Historia 1.2) ahora interpreta lo que llega según el tipo de documento, en vez de asumir siempre un ID suelto.
+
+### 2.1 — Cédula vieja (código de barras): CSV con nombre completo
+El lector de la cédula vieja entrega un CSV plano, no solo el número: `cedula,nombre1,nombre2,apellido1,apellido2,fecha_nacimiento(AAAAMMDD)` (muestra real confirmada: `1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206`).
+- `static/js/directory.js: parseOldCedulaBarcode(raw)` detecta este formato (tiene comas, el primer segmento es solo dígitos, ≥5 columnas) y separa cédula/nombres/apellidos; si el texto no calza con el patrón, se sigue tratando como un ID suelto (comportamiento de siempre, no cambia).
+- **Búsqueda en dos pasos**, dentro de `mountSearch()`'s `fastCheckin(cedula, force, nameInfo)`: primero coincidencia exacta por cédula vía `POST /api/checkin-cedula` (sin cambios en el backend); si no hay match Y el escaneo trajo nombre, se busca ese nombre completo entre los usuarios YA CARGADOS en el Directorio (`allUsers`), reutilizando `matchesWordPrefix`/`stripAccents` — el mismo criterio de prefijo por palabra + insensible a tildes del Fix 1 de la Parte 0. Si ninguno de los dos encuentra nada, se cae al comportamiento de siempre: saltar a "Registro Individual" con la cédula (y ahora también nombres/apellidos, si se extrajeron) precargados — `goToManualWithCedula(cedula, nameInfo)` en `kiosk_registro.html`.
+- Todo esto es 100% frontend — no hizo falta ningún endpoint nuevo, reutiliza `checkin-cedula` tal cual ya existía.
+
+### 2.2 — Cédula nueva: el QR no se intenta leer + blindaje contra atajos del navegador
+El QR de la cédula nueva está **encriptado por la Registraduría Nacional** — no es un QR estándar, y no es viable decodificarlo sin integración oficial de pago. **No se intenta.** Además, en QA se confirmó que ese QR mal leído puede disparar atajos del navegador (una pestaña de búsqueda se abrió sola) porque el lector se comporta como teclado. Mitigación, aplicada en general (no solo para este caso puntual) en los dos campos donde se puede escanear directo — `#searchCedula` en `directory.js` y `#manualIdField` en `kiosk_registro.html`: en `keydown`, si `e.ctrlKey || e.altKey || e.metaKey`, se llama `preventDefault()`/`stopPropagation()` — un lector legítimo nunca necesita una tecla modificadora para escribir texto + Enter.
+
+### 2.3 — Cédula nueva: lectura por FOTO de la zona MRZ (módulo nuevo)
+La cédula nueva trae en el reverso una **zona MRZ** (Machine Readable Zone, ICAO 9303, formato TD1 — igual que un pasaporte): 3 líneas de texto de ancho fijo pensadas para OCR, no para lector de barras/QR. El módulo correcto es una FOTO del reverso + OCR, no un escaneo.
+- **`app/mrz_parser.py`** — `parse_mrz_td1(line1, line2, line3)`, función PURA (solo texto, sin imágenes ni OCR) para poder probarla sin depender de Tesseract ni de una foto real. Usa la librería `mrz` (PyPI) en vez de reinventar el parseo TD1 y el checksum ICAO a mano — decisión de Juan David tras confirmar que la librería reproduce EXACTO los datos reales del brief (cédula `1013259208`, nombres "JUAN DAVID", apellidos "RAMIREZ JUZGA") y además detecta un dígito verificador corrupto (`checker.fields()` es un namedtuple; `bool(checker)` es la validación de checksum completa). El número de cédula real vive en `optional_data_2` de la línea 2 (no en la línea 1, que trae el número de documento físico de la tarjeta — un dato distinto, ver el brief). Antes de aceptar la lectura, `valid` exige que el checksum ICAO cuadre Y que se haya extraído una cédula no vacía — si no, el endpoint le pide al operador repetir la foto en vez de acreditar con un dato mal leído.
+- **`app/mrz_ocr.py`** — `extract_mrz_lines(image_array)`, el único punto que de verdad necesita el binario de **Tesseract instalado en el sistema** (no viene con `pip install pytesseract` — esa librería solo es el "puente" de Python hacia el binario). Preprocesa con Pillow (escala de grises + umbral fijo, sin sumar OpenCV) y restringe el alfabeto reconocido a `A-Z0-9<` (el único que existe en un MRZ real) para mejorar precisión.
+- **`app/routers/cedula.py`** — `POST /api/events/{event_id}/cedula-mrz-scan` (mínimo `digitador`+, mismo nivel que `checkin-cedula`/imprimir escarapela): recibe una foto, la pasa por `extract_mrz_lines` + `parse_mrz_td1`, y devuelve `{id, first_name, last_name}` o un 422 pidiendo repetir la foto (MRZ no detectada, o checksum inválido). Si Tesseract no está instalado en el servidor, devuelve 503 con un mensaje claro en vez de un 500 críptico — capturado explícitamente porque es un problema de infraestructura, no de la foto.
+- **Frontend** (`kiosk_registro.html`): botón "📷 Escanear foto" junto al buscador de cédula del Directorio, usa `<input type="file" accept="image/*" capture="environment">` (abre la cámara trasera del dispositivo directo, sin tener que armar un `<video>`/`<canvas>` propios como el escáner facial) — al subir la foto, llama al endpoint y pasa el resultado a `window.directorySearch.submitScannedCedula(id, {nombres, apellidos})`, un nuevo método expuesto por `mountSearch()` que reutiliza EXACTO el mismo flujo de dos pasos + `DUPLICADO`/`force` que 2.1, sin duplicar lógica.
+- **Dato guardado, no persistido:** `birth_date`/`sex`/`expiry_date` quedan disponibles en el resultado del parser (gratis, ya vienen del mismo parseo) pero no se guardan en ningún lado — no hay columna para eso en `User` hoy y el brief no lo pidió como requisito, solo como "por si se quieren guardar o mostrar también".
+
+### Requisito de infraestructura nuevo: Tesseract OCR
+`requirements.txt` ganó `mrz` y `pytesseract` — pero **`pytesseract` NO instala el motor de OCR en sí**, solo llama al binario `tesseract` que debe existir en el sistema:
+- **VM de producción (Ubuntu):** `sudo apt install tesseract-ocr` — pendiente de ejecutar antes de que esta función funcione en producción (agregado al backlog de despliegue).
+- **Desarrollo local (Windows):** instalar el build de Tesseract de UB Mannheim (`https://github.com/UB-Mannheim/tesseract/wiki`) y asegurarse de que `tesseract.exe` quede en el `PATH`, o configurar `pytesseract.pytesseract.tesseract_cmd` con la ruta exacta si no se agrega al PATH durante la instalación.
+- Sin el binario instalado, el endpoint responde 503 con un mensaje claro (no un 500) — así que el resto de la app sigue funcionando igual aunque esta función puntual no esté lista todavía en un entorno dado.
+
+### Cómo probar localmente
+El parser (`app/mrz_parser.py`) se puede probar SIN Tesseract instalado — es texto puro. El flujo completo (foto → OCR → parseo) sí necesita el binario instalado (ver arriba) y una foto real del reverso de una cédula nueva. Ver `TESTING.md` sección 13 para el checklist completo.
 
 ## Bugs encontrados en testing manual (`TESTING.md`) y arreglados (2026-09-21)
 
@@ -220,6 +262,8 @@ Se encontró y corrigió una exposición de credenciales real en producción:
 5. **El historial de git fue reescrito** (`git filter-repo`, force-push a `main`) para eliminar tanto el archivo `static/.env` como cualquier commit anterior de `app/database.py` que contuviera la credencial vieja como texto plano. Si tienes un clon local anterior a esta fecha, su historial ya no coincide con `origin/main` — no hagas `git pull` normal sobre él, hay que resincronizar (`git fetch origin && git reset --hard origin/main`, perdiendo cualquier commit local no pusheado) o volver a clonar.
 
 ## Qué falta (backlog real, no aspiracional)
+- **Instalar Tesseract OCR en la VM de producción** (`sudo apt install tesseract-ocr`) — pendiente antes de que el escaneo de cédula por foto (Sprint 2 Parte 2) funcione ahí; `deploy.yml` no lo instala solo (no es un paquete de Python, `pip install` no alcanza). Sin esto instalado, ese endpoint puntual responde 503 con un mensaje claro — el resto de la app no se ve afectado.
+- **Parser MRZ validado con una sola muestra real.** El brief lo marca explícitamente: antes de darlo por definitivo conviene confirmarlo con 2-3 cédulas nuevas más (personas distintas) para asegurar que el largo/posición de cada campo no cambia entre documentos — la librería `mrz` ya valida el checksum de cada lectura individual, pero eso no reemplaza probar con más muestras reales.
 - ~~Sin autenticación~~ **Resuelto (2026-09-14):** login + 4 roles. ~~Sin conectar EventStaffAuthorization~~ **Resuelto (2026-09-15):** ver `get_event_for_staff` y sección Navegación. Sigue faltando: CSRF explícito (mitigado parcial por `SameSite=Lax`), rate limiting de intentos de login, y una UI de "olvidé mi contraseña" (hoy solo un admin puede resetear, manualmente).
 - **Sin tests.** No hay carpeta `tests/` ni configuración de pytest.
 - ~~Sin migraciones~~ **Resuelto (2026-09-14):** Alembic (ver sección Migraciones abajo). `Base.metadata.create_all` ya no se llama desde `main.py`.
@@ -261,7 +305,7 @@ alembic upgrade head   # crea/actualiza el esquema (ver sección Migraciones si 
 python scripts/create_staff_user.py --username admin --role super_admin   # si no tienes cuenta todavía
 uvicorn app.main:app --reload --port 5000
 ```
-Requiere PostgreSQL corriendo y accesible con la URL de `.env`. `face_recognition` depende de `dlib`, que en Windows suele requerir Visual C++ Build Tools o usar un wheel precompilado.
+Requiere PostgreSQL corriendo y accesible con la URL de `.env`. `face_recognition` depende de `dlib`, que en Windows suele requerir Visual C++ Build Tools o usar un wheel precompilado. El módulo de lectura de cédula por foto (Sprint 2 Parte 2, `app/mrz_ocr.py`) necesita además el binario de **Tesseract OCR** instalado en el sistema — sin él, el resto de la app funciona normal, solo ese endpoint puntual responde 503 (ver sección "Lector de cédula").
 
 ## Infraestructura (producción)
 - VM Google Cloud (`golden-biometrics-prod`, Ubuntu), IP pública estática, **OS Login activado** (bloquea SSH por llave externa/metadata — por eso el runner de CI/CD es self-hosted y no SSH-desde-afuera).

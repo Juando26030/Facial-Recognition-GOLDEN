@@ -74,11 +74,14 @@ def _get_or_create_template(event, db: Session) -> BadgeTemplate:
 
 @router.get("/events/{event_id}/badge-template")
 async def get_badge_template(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))
 ):
     """La plantilla ACTIVA del evento — se crea sola con un diseño mínimo por defecto (nombre +
     apellido + empresa) la primera vez que se pide, así el editor nunca arranca en blanco del
-    todo."""
+    todo. Mínimo `digitador`+ (bug real, QA local 2026-09-15): este GET también lo usa
+    badge_print.html para cargar la plantilla antes de imprimir, y un digitador (el rol que más
+    imprime el día del evento) recibía 403 — la escritura (`PUT` abajo) sigue exigiendo
+    `coordinador`+, solo se separó el gate de lectura."""
     event = get_event_for_staff(event_id, db, staff)
     tpl = _get_or_create_template(event, db)
     return _serialize_template(tpl)

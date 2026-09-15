@@ -475,6 +475,10 @@ async def bulk_register(
         db.commit()
 
     known_faces_dir = _known_faces_dir(event.tenant_id)
+    # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
+    # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
+    # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
+    errors = []
 
     if zip_file is not None and zip_file.filename:
         zip_path = os.path.join(known_faces_dir, 'temp.zip')
@@ -489,8 +493,19 @@ async def bulk_register(
                 with zip_ref.open(filename) as source:
                     try:
                         img_array = BiometricEngine.process_image_stream(source.read())
-                        Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
-                    except: pass
+                    except Exception:
+                        errors.append(f"⚠️ La foto '{basename}' del zip no se pudo leer (formato no soportado o archivo dañado) — no quedó asociada a nadie.")
+                        continue
+                    # Misma validación que ya hace /api/register (manual_register) para altas
+                    # individuales: una foto sin rostro detectable no debe quedar guardada como si
+                    # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
+                    # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
+                    # persona quedó sin reconocimiento facial funcional).
+                    encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
+                    if not encodings:
+                        errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
+                        continue
+                    Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
         if os.path.exists(zip_path): os.remove(zip_path)
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
@@ -517,7 +532,6 @@ async def bulk_register(
             seen_rows_by_id.setdefault(identificador, []).append(row_num)
 
     id_col = next((header_columns[k] for k in _ID_KEYS if k in header_columns), None)
-    errors = []
     for id_val, row_nums in seen_rows_by_id.items():
         if len(row_nums) > 1:
             cells = ", ".join(f"{id_col}{n}" if id_col else f"fila {n}" for n in row_nums)

@@ -347,6 +347,32 @@ Requiere `alembic upgrade head` con la migración `0012_badge_templates` aplicad
 | BADGE-29 ❌ | `digitador`/`cliente` no editan el diseño | Forzar la URL `/kiosk/{event_id}/escarapela` como `digitador` | Redirige — puede disparar impresión (botones en Registro/Directorio) pero no editar la plantilla |
 | BADGE-30 ✅ | `digitador` sí puede imprimir | Como `digitador`, usar el botón "Imprimir Escarapela" tras un registro | Funciona (mínimo real del endpoint de impresión es `digitador`+, distinto del editor que es `coordinador`+) |
 | BADGE-31 ❌ | `cliente` no ve botones de impresión | Como `cliente` en el Directorio (vista de solo lectura) | No aparece ningún botón "Acreditar" ni 🖨️ en las filas |
+| BADGE-32 ✅ | Código de barras se renderiza (QA fix #1) | Agregar un elemento "Código de barras" en el editor, ligarlo a `id` | Se ve un barcode real y escaneable, no un espacio vacío (el CDN de `JsBarcode` estaba roto: URL/versión incorrecta) |
+| BADGE-33 ✅ | "Guardar como plantilla" no truena (QA fix #2) | Clic en "💾 Guardar como plantilla" | Aparece un modal propio (no el `prompt()` nativo del navegador) pidiendo el nombre; al confirmar, queda guardada en la librería |
+| BADGE-34 ✅ | `digitador` autorizado puede cargar la plantilla vía API (QA fix #3) | Como `digitador` autorizado al evento, `GET /api/events/{id}/badge-template` directo | 200 (antes daba 403) — necesario para que `badge_print.html` funcione para este rol; `PUT` al mismo endpoint sigue dando 403 (la escritura sigue siendo `coordinador`+) |
+| BADGE-35 ✅ | Foto sin rostro en `bulk_register` se avisa, no se descarta en silencio (QA fix #4) | Cargar un roster + zip con una foto de alguien sin rostro detectable (o un archivo de imagen dañado) | La persona se crea igual (identidad), pero SIN foto biométrica asociada (`has_photo:false` vía `badge-print-data`) y aparece un `⚠️` en `errors[]` de la respuesta explicando cuál fue y por qué |
+
+---
+
+## 13. Lector de cédula (Épico M1-7, Parte 2 del brief de Sprint 2)
+
+Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fastCheckin`), `kiosk_registro.html` (blindaje de teclado, botón "Escanear foto"), `app/mrz_parser.py`, `app/mrz_ocr.py` y `app/routers/cedula.py`. Los casos de OCR real (CED-08 en adelante) necesitan Tesseract instalado (ver `CLAUDE.md`) y una foto real del reverso de una cédula nueva — sin eso, se puede validar igual todo lo anterior (2.1 y 2.2 no dependen de OCR).
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| CED-01 ✅ | Cédula vieja: CSV se interpreta correctamente | En el campo de cédula del Directorio, escribir/escanear `1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206` y Enter | Se intenta acreditar por la cédula `1016100329` (no el texto completo tal cual) |
+| CED-02 ✅ | ID suelto sigue funcionando igual | Escribir solo un número de cédula (sin comas) y Enter | Comportamiento idéntico a antes — el parser de CSV no interfiere con el caso de siempre |
+| CED-03 ✅ | Segundo paso: fallback por nombre | Cargar a alguien en el Directorio con un nombre ligeramente distinto al que traería el CSV pero que igual cumple prefijo por palabra; escanear un CSV con una cédula que NO coincide con la de esa persona pero sí su nombre completo | Al fallar la búsqueda exacta por cédula, se reintenta por nombre y encuentra/acredita a esa persona |
+| CED-04 ✅ | Ni cédula ni nombre encontrados → alta manual precargada | Escanear un CSV cuya cédula y nombre no existen en el Directorio | Salta a "Registro Individual" con cédula, nombres Y apellidos ya precargados (antes solo la cédula) |
+| CED-05 ❌ | Blindaje contra atajos del navegador | Con el foco en el campo de cédula (o en el ID del alta manual), simular una tecla con `ctrlKey`/`altKey`/`metaKey` presionada | Se bloquea (`preventDefault`/`stopPropagation`) — no debe disparar ningún atajo del navegador |
+| CED-06 ✅ | QR de la cédula nueva no se intenta decodificar | Intentar escanear el QR de una cédula nueva con el lector en el campo de cédula | El texto corrupto que llegue se trata como un ID suelto normal (probablemente "no encontrado") — en ningún punto del código se intenta interpretar como un formato conocido |
+| CED-07 ✅ | Botón "Escanear foto" visible y gateado por `en_proceso` | Ver el Directorio con el evento en distintos estados | El botón "📷 Escanear foto" aparece deshabilitado si el evento no está `en_proceso`, igual que el campo de cédula |
+| CED-08 ✅ | Parser MRZ (sin necesitar OCR real) | Con Python, llamar `parse_mrz_td1()` con las 3 líneas de muestra reales del brief (`ICCOL085334524815001<<<<<<<<<`, `0503268M3512023COL1013259208<2`, `RAMIREZ<JUZGA<<JUAN<DAVID<<<<<`) | Devuelve `valid=True`, `id="1013259208"`, `first_name="JUAN DAVID"`, `last_name="RAMIREZ JUZGA"` — coincide exacto con los datos reales confirmados |
+| CED-09 ❌ | Parser rechaza un checksum corrupto | Repetir CED-08 alterando un solo dígito del final de la línea 2 | Devuelve `valid=False` — no se debe aceptar como buena una lectura que no cuadra |
+| CED-10 ✅ | Escaneo de foto completo (necesita Tesseract + foto real) | Con Tesseract instalado, tomar una foto real del reverso de una cédula nueva vía "📷 Escanear foto" | Se extrae la cédula/nombre correctos y sigue el mismo flujo de dos pasos que CED-01/03/04 |
+| CED-11 ❌ | Foto ilegible pide repetir, no acredita con datos malos | Subir una foto borrosa/mal encuadrada del reverso, o una foto que no es una cédula | 422 con mensaje pidiendo repetir la foto — nunca se acredita con datos no confiables |
+| CED-12 ❌ | Servidor sin Tesseract instalado da un error claro | En un entorno sin el binario de Tesseract, usar "Escanear foto" | 503 con mensaje explicando que falta el motor de OCR — no un 500 críptico |
+| CED-13 ❌ | Rol mínimo del escaneo por foto | Como `cliente` (o sin sesión), llamar `POST /api/events/{id}/cedula-mrz-scan` directo | 403 — mismo mínimo `digitador`+ que `checkin-cedula` |
 
 ---
 
@@ -365,7 +391,8 @@ Requiere `alembic upgrade head` con la migración `0012_badge_templates` aplicad
 | Directorio en Vivo | 14 |
 | Reporte | 2 |
 | Seguridad | 6 |
-| Escarapelas (editor, librería, impresión) | 31 |
-| **Total** | **181** |
+| Escarapelas (editor, librería, impresión + 4 fixes de QA) | 35 |
+| Lector de cédula (CSV vieja, blindaje, OCR MRZ nueva) | 13 |
+| **Total** | **198** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

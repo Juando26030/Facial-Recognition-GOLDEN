@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser
-from app.routers import api, auth as auth_router, badges, events, staff, tenants
+from app.routers import api, auth as auth_router, badges, cedula, events, staff, tenants
 from app.auth import ROLE_HIERARCHY, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -54,6 +54,7 @@ app.include_router(events.router, prefix="/api")
 app.include_router(staff.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")
 app.include_router(badges.router, prefix="/api")
+app.include_router(cedula.router, prefix="/api")
 
 
 def _page_staff(request: Request, db: Session):

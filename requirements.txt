@@ -12,3 +12,5 @@ jinja2
 bcrypt
 itsdangerous
 alembic
+mrz
+pytesseract

@@ -225,7 +225,7 @@
                 <div class="badge-input-row">
                     <div class="badge-input-group">
                         <label>Número de ID (Cédula)</label>
-                        <input type="text" name="id" required>
+                        <input type="text" name="id" id="manualIdField" required>
                     </div>
                     <div class="badge-input-group">
                         <label>Cargo</label>
@@ -315,8 +315,14 @@
                         <label>Buscar por empresa</label>
                         <input type="text" id="searchEmpresa" placeholder="Empresa" autocomplete="off">
                     </div>
+                    <div class="badge-input-group">
+                        <label>Cédula nueva (reverso)</label>
+                        <button type="button" id="scanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;"
+                                {% if event.status != "en_proceso" %}disabled{% endif %}>📷 Escanear foto</button>
+                        <input type="file" id="scanMrzInput" accept="image/*" capture="environment" style="display:none;">
+                    </div>
                 </div>
-                <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se acredita al instante sin necesidad de buscarla en la tabla.</div>
+                <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se acredita al instante sin necesidad de buscarla en la tabla. La cédula nueva no se puede leer con el lector (su QR viene encriptado) — usa "Escanear foto" para tomarle una foto al reverso.</div>
                 <table class="golden-table">
                     <thead>
                         <tr>
@@ -406,12 +412,19 @@
        precargada — un solo formulario de alta manual, no dos. */
     const canAccredit = window.STAFF_ROLE !== "cliente";
 
-    function goToManualWithCedula(cedula) {
+    /* nameInfo (Sprint 2 Parte 2, opcional): {nombres, apellidos} cuando el escaneo (CSV de la
+       cédula vieja, u OCR de la MRZ de la nueva) ya trajo un nombre y no solo la cédula — se
+       precargan también esos campos en vez de dejarlos vacíos, aunque la persona no se haya
+       encontrado en el Directorio. */
+    function goToManualWithCedula(cedula, nameInfo) {
         const manualTab = document.querySelector('.tab[data-tab="manual"]');
         if (manualTab) manualTab.click();
         const idField = document.querySelector('#regForm input[name="id"]');
         if (idField) idField.value = cedula;
         const firstNameField = document.querySelector('#regForm input[name="first_name"]');
+        const lastNameField = document.querySelector('#regForm input[name="last_name"]');
+        if (nameInfo && nameInfo.nombres && firstNameField) firstNameField.value = nameInfo.nombres;
+        if (nameInfo && nameInfo.apellidos && lastNameField) lastNameField.value = nameInfo.apellidos;
         if (firstNameField) firstNameField.focus();
         showToast('Cédula no encontrada — completa el registro', 'error');
     }
@@ -423,6 +436,50 @@
         fastCheckin: canAccredit,
         onNotFound: canAccredit ? goToManualWithCedula : null,
     });
+
+    /* Blindaje contra atajos del navegador (Sprint 2 Parte 2, 2.2) — mismo criterio que el campo
+       de búsqueda por cédula de directory.js, aplicado también acá porque un lector se puede usar
+       para escribir directo en el alta manual (ej. si "Escanear foto" cayó en "no encontrado" y el
+       operador prefiere escanear el código de barras viejo en vez de escribir a mano). */
+    const manualIdField = document.getElementById('manualIdField');
+    if (manualIdField) {
+        manualIdField.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); }
+        });
+    }
+
+    /* Escaneo por foto de la MRZ de la cédula nueva (Sprint 2 Parte 2, 2.3) — el QR de esa cédula
+       viene encriptado por la Registraduría (ver 2.2, no se intenta decodificar), así que el
+       módulo correcto es una FOTO del reverso + OCR en el backend (zona MRZ, estándar ICAO 9303).
+       "capture=environment" en el <input type="file"> abre la cámara trasera directo en
+       tablet/celular sin tener que armar un <video>/<canvas> propios para esto. */
+    const scanMrzBtn = document.getElementById('scanMrzBtn');
+    const scanMrzInput = document.getElementById('scanMrzInput');
+    if (scanMrzBtn && scanMrzInput && canAccredit) {
+        scanMrzBtn.addEventListener('click', () => scanMrzInput.click());
+        scanMrzInput.addEventListener('change', async () => {
+            const file = scanMrzInput.files[0];
+            scanMrzInput.value = '';
+            if (!file) return;
+            scanMrzBtn.disabled = true;
+            scanMrzBtn.innerText = 'Leyendo…';
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
+                } else if (window.directorySearch) {
+                    window.directorySearch.submitScannedCedula(data.id, { nombres: data.first_name, apellidos: data.last_name });
+                }
+            } catch (e) {
+                showToast('Error de red', 'error');
+            }
+            scanMrzBtn.disabled = false;
+            scanMrzBtn.innerText = '📷 Escanear foto';
+        });
+    }
 })();
 </script>
 <script>

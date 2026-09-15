@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap" rel="stylesheet">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
     <style>
         .badge-toolbar {
@@ -308,7 +308,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   }
 
   async function saveAsTemplate() {
-    const name = prompt('¿Cómo quieres llamar esta plantilla en tu librería?', template.name || 'Mi plantilla');
+    const name = await showPrompt('¿Cómo quieres llamar esta plantilla en tu librería?', { defaultValue: template.name || 'Mi plantilla', confirmLabel: 'Guardar' });
     if (!name) return;
     await saveTemplate();
     try {
