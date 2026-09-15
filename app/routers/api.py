@@ -421,6 +421,13 @@ async def bulk_register(
                     except: pass
         if os.path.exists(zip_path): os.remove(zip_path)
 
+        # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
+        # quitarle a un evento la capacidad de reconocimiento facial que ya tenía. Decide si
+        # /kiosk/{event_id}/registro muestra el escáner de cámara (2026-09-21, ver CLAUDE.md).
+        if not event.facial_enabled:
+            event.facial_enabled = True
+            db.commit()
+
     # --- Pre-escaneo: identificar cédulas (con corrección del "Excel las volvió número"),
     # detectar cédulas repetidas dentro del mismo archivo, ANTES de tocar la base de datos.
     # Esto es lo que le permite al operador ver de una vez, con celda exacta, qué está mal en su

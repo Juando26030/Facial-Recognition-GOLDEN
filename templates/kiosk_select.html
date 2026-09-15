@@ -46,8 +46,8 @@
 <main class="golden-main">
   <div class="golden-container" style="padding: 4rem 2rem; text-align:center;">
     <span style="color: var(--golden-primary); font-weight:600; text-transform:uppercase; letter-spacing:2px; font-size:0.85rem;">{{ event.name }}</span>
-    <h2 style="font-family: var(--font-heading-primary); font-size:2rem; color: var(--golden-dark); margin-top:10px;">¿Cómo vas a registrar hoy?</h2>
-    <p style="color:#888; margin-top:0.5rem;">Distintas personas pueden usar métodos distintos en el mismo evento, al mismo tiempo.</p>
+    <h2 style="font-family: var(--font-heading-primary); font-size:2rem; color: var(--golden-dark); margin-top:10px;">¿Qué vas a hacer hoy?</h2>
+    <p style="color:#888; margin-top:0.5rem;">Distintas personas pueden operar al mismo tiempo en el mismo evento.</p>
     <div>
       <span class="status-pill status-{{ event.status }}">
         {{ {"creado": "Creado", "en_proceso": "En Proceso", "finalizado": "Finalizado"}.get(event.status, event.status) }}
@@ -55,15 +55,16 @@
     </div>
 
     <div class="mode-grid">
-      <a href="/kiosk/{{ event.id }}/facial" class="mode-card enabled">
-        <div class="mode-icon">📸</div>
-        <div class="mode-title">Reconocimiento Facial</div>
-        <div class="mode-sub">Escáner, registro individual y directorio</div>
-      </a>
-      <a href="/kiosk/{{ event.id }}/cedula" class="mode-card enabled">
-        <div class="mode-icon">🪪</div>
-        <div class="mode-title">Cédula</div>
-        <div class="mode-sub">Lector de código de barras o digitación manual</div>
+      <a href="/kiosk/{{ event.id }}/registro" class="mode-card enabled">
+        <div class="mode-icon">{{ "📸" if event.facial_enabled else "🪪" }}</div>
+        <div class="mode-title">Registro</div>
+        <div class="mode-sub">
+          {% if event.facial_enabled %}
+          Escáner facial, cédula y directorio en vivo
+          {% else %}
+          Cédula (lector o manual) y directorio en vivo
+          {% endif %}
+        </div>
       </a>
       <div class="mode-card disabled">
         <div class="mode-icon">🔳</div>
@@ -74,7 +75,7 @@
       <a href="/kiosk/{{ event.id }}/roster" class="mode-card enabled">
         <div class="mode-icon">📎</div>
         <div class="mode-title">Adjuntar Base de Datos</div>
-        <div class="mode-sub">Carga masiva desde Excel/CSV, para cualquier método de registro</div>
+        <div class="mode-sub">Carga masiva desde Excel/CSV — marca la casilla de reconocimiento facial si quieres activar la cámara</div>
       </a>
       {% endif %}
     </div>

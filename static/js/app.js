@@ -23,6 +23,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function loadLiveDirectory() {
+        // La vista de Registro unificada (2026-09-21) monta la búsqueda con GoldenDirectory.mountSearch
+        // y guarda la referencia en window.directorySearch — reusamos ese reload() en vez de
+        // volver a cargar la tabla "a secas" (perdería los filtros ya escritos por el operador).
+        if (window.directorySearch) return window.directorySearch.reload();
         return GoldenDirectory.load('directoryTableBody', { showAccredit: false });
     }
 
@@ -134,6 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     profileCard.style.display = 'none';
                     resTexto.innerText = "✅ ACCESO AUTORIZADO Y GUARDADO";
                     resTexto.style.color = "#28a745";
+                    if (window.directorySearch) window.directorySearch.reload();
                 } else {
                     const errorData = await res.json();
                     showToast(errorData.error || "No se pudo actualizar", "error");
@@ -167,7 +172,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
                 showToast(data.message || data.error, data.error ? "error" : "success");
-                if (!data.error) regForm.reset();
+                if (!data.error) {
+                    regForm.reset();
+                    if (window.directorySearch) window.directorySearch.reload();
+                }
             } catch(err) { showToast("Error de red", "error"); }
         }
 

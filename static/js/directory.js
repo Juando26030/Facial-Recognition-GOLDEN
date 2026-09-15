@@ -1,6 +1,8 @@
-/* Directorio en vivo, compartido entre kiosk.html (Facial) y kiosk_cedula.html (Cédula) — mismo
-   patrón de Editar/Guardar/Eliminar en ambos, más un botón "Acreditar" opcional para el flujo de
-   cédula (marca a alguien como Registrado sin necesidad de entrar por Facial). */
+/* Directorio en vivo, usado por kiosk_registro.html (vista de Registro unificada, 2026-09-21 —
+   antes eran dos templates separados, kiosk.html "Facial" y kiosk_cedula.html "Cédula", con esta
+   lógica de tabla duplicada entre ambos). Patrón Editar/Guardar/Eliminar + botón "Acreditar"
+   opcional (marca a alguien como Registrado sin pasar por el escáner) + mountSearch() para los
+   3 campos de búsqueda en vivo y el atajo de lector de código de barras. */
 (function () {
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
@@ -177,31 +179,115 @@
     return tr;
   }
 
-  window.GoldenDirectory = {
-    render(tbodyId, users, opts) {
-      opts = opts || {};
-      const tbody = document.getElementById(tbodyId);
-      tbody.innerHTML = '';
-      if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
-        return;
-      }
-      users.forEach(user => tbody.appendChild(buildRow(user, opts)));
-    },
+  function renderRows(tbodyId, users, opts) {
+    opts = opts || {};
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = '';
+    if (users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+      return;
+    }
+    users.forEach(user => tbody.appendChild(buildRow(user, opts)));
+  }
 
-    async load(tbodyId, opts) {
-      opts = opts || {};
-      const tbody = document.getElementById(tbodyId);
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Cargando base de datos...</td></tr>';
+  async function loadRows(tbodyId, opts) {
+    opts = opts || {};
+    const tbody = document.getElementById(tbodyId);
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Cargando base de datos...</td></tr>';
+    try {
+      const res = await fetch(withEvent('/api/users'));
+      const users = await res.json();
+      renderRows(tbodyId, users, opts);
+      return users;
+    } catch (err) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+      return [];
+    }
+  }
+
+  /* Unifica en un solo componente lo que antes vivía duplicado inline en kiosk_cedula.html:
+     los 3 campos de búsqueda independientes (cédula/nombre/empresa) que filtran en vivo sobre
+     los datos ya cargados, más el atajo de lector de código de barras (Enter con cédula exacta
+     = acreditar al instante, con el mismo flujo DUPLICADO/force de siempre). Reusado ahora por
+     la vista de Registro unificada (2026-09-21) esté o no el modo cámara activo — la búsqueda
+     no depende de si el evento tiene reconocimiento facial o no.
+     opts: { tbodyId, searchIds: {cedula, nombre, empresa}, showAccredit, fastCheckin, onNotFound }
+     Devuelve { reload() } para que la página pueda refrescar manualmente (ej. al volver a la
+     pestaña, o tras registrar a alguien nuevo desde otra pestaña). */
+  function mountSearch(opts) {
+    let allUsers = [];
+    const ids = opts.searchIds || {};
+    const cedulaInput = ids.cedula ? document.getElementById(ids.cedula) : null;
+    const nombreInput = ids.nombre ? document.getElementById(ids.nombre) : null;
+    const empresaInput = ids.empresa ? document.getElementById(ids.empresa) : null;
+
+    function applyFilters() {
+      const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
+      const nombre = (nombreInput && nombreInput.value || '').trim().toLowerCase();
+      const empresa = (empresaInput && empresaInput.value || '').trim().toLowerCase();
+      const filtered = allUsers.filter(u => {
+        if (cedula && !String(u.id || '').toLowerCase().includes(cedula)) return false;
+        if (nombre) {
+          const fullName = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
+          if (!fullName.includes(nombre)) return false;
+        }
+        if (empresa && !String(u.company || '').toLowerCase().includes(empresa)) return false;
+        return true;
+      });
+      renderRows(opts.tbodyId, filtered, { showAccredit: opts.showAccredit });
+    }
+
+    async function reload() {
+      allUsers = await loadRows(opts.tbodyId, { showAccredit: opts.showAccredit });
+      applyFilters();
+    }
+
+    [cedulaInput, nombreInput, empresaInput].forEach(input => {
+      if (input) input.addEventListener('input', applyFilters);
+    });
+
+    async function fastCheckin(cedula, force) {
+      const formData = new FormData();
+      formData.append('event_id', window.EVENT_ID);
+      formData.append('cedula', cedula);
+      if (force) formData.append('force', 'true');
       try {
-        const res = await fetch(withEvent('/api/users'));
-        const users = await res.json();
-        this.render(tbodyId, users, opts);
-        return users;
-      } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
-        return [];
+        const res = await fetch('/api/checkin-cedula', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
+        if (data.result === 'DUPLICADO') {
+          const confirmado = await confirmDuplicateRegistration(data.data);
+          if (confirmado) await fastCheckin(cedula, true);
+          return;
+        }
+        if (data.result === 'SÍ') {
+          showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          reload();
+        } else if (opts.onNotFound) {
+          opts.onNotFound(cedula);
+        } else {
+          showToast(data.details || 'Cédula no encontrada', 'error');
+        }
+      } catch (e) {
+        showToast('Error de red', 'error');
       }
-    },
-  };
+    }
+
+    if (opts.fastCheckin && cedulaInput) {
+      cedulaInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const cedula = cedulaInput.value.trim();
+          if (!cedula) return;
+          fastCheckin(cedula);
+          cedulaInput.value = '';
+        }
+      });
+    }
+
+    reload();
+    return { reload };
+  }
+
+  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch };
 })();

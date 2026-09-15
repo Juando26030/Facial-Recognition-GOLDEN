@@ -100,9 +100,10 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 @app.get("/kiosk/{event_id}")
 async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Punto de entrada al evento. 'cliente' no registra nada (solo ve estadísticas/directorio),
-    así que va directo a kiosk.html. Todos los demás roles eligen primero CÓMO van a registrar
-    (facial, QR, ...) — varios métodos pueden convivir en el mismo evento, cada quien entra al
-    que le toque; ver /kiosk/{event_id}/facial."""
+    así que va directo a kiosk_registro.html. Todos los demás roles eligen primero entre Registro
+    (unificado, ver /kiosk/{event_id}/registro) y Adjuntar Base de Datos — varios operadores
+    pueden convivir en el mismo evento (unos con cámara, otros solo con lector de cédula), cada
+    quien entra a Registro y ve lo que corresponda según Event.facial_enabled."""
     staff_user = _page_staff(request, db)
     if not staff_user:
         return RedirectResponse("/login", status_code=302)
@@ -112,7 +113,7 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
         return RedirectResponse("/", status_code=302)
 
     if staff_user.role == "cliente":
-        return templates.TemplateResponse(request=request, name="kiosk.html", context={
+        return templates.TemplateResponse(request=request, name="kiosk_registro.html", context={
             "staff_name": staff_user.full_name or staff_user.username,
             "staff_role": staff_user.role,
             "event": event,
@@ -149,14 +150,23 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     })
 
 
+@app.get("/kiosk/{event_id}/registro")
+async def kiosk_registro(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Pantalla única de registro (2026-09-21, reemplaza los antiguos /facial y /cedula
+    separados) — un solo Directorio en Vivo con búsqueda por cédula/nombre/empresa, y el escáner
+    de cámara aparece o no según `event.facial_enabled` (se enciende solo al subir un roster con
+    fotos, ver bulk_register). Se dejaron de exponer dos "métodos" distintos porque ambos
+    compartían exactamente el mismo directorio y la diferencia real era una sola cosa: si hay
+    fotos cargadas o no."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_registro.html")
+
+
 @app.get("/kiosk/{event_id}/facial")
-async def kiosk_facial(event_id: int, request: Request, db: Session = Depends(get_db)):
-    return _resolve_kiosk_page(event_id, request, db, "kiosk.html")
-
-
 @app.get("/kiosk/{event_id}/cedula")
-async def kiosk_cedula(event_id: int, request: Request, db: Session = Depends(get_db)):
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_cedula.html")
+async def kiosk_registro_legacy_redirect(event_id: int):
+    """Rutas viejas (antes de la unificación Facial/Cédula) — quien tenga un enlace guardado cae
+    igual a la pantalla de Registro unificada en vez de un 404."""
+    return RedirectResponse(f"/kiosk/{event_id}/registro", status_code=302)
 
 
 @app.get("/kiosk/{event_id}/roster")

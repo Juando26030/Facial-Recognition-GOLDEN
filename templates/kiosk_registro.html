@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Biometría | Golden Logísticas</title>
+    <title>Registro | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <style>
@@ -21,6 +21,9 @@
         }
         .btn-table-delete:hover { background: #c82333; }
         .action-cell { display: flex; align-items: center; }
+        .directory-search-bar { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; }
+        .directory-search-bar .badge-input-group { flex:1; min-width:200px; margin-bottom:0; }
+        .directory-scan-hint { font-size:0.78rem; color:#888; margin-bottom:1rem; }
     </style>
 </head>
 <body>
@@ -51,14 +54,14 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}";</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }};</script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
     <div class="golden-container">
       <div class="golden-section-title">
         <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
-        <h2>Control de Acceso <span class="gradient-text">Facial Inteligente</span></h2>
+        <h2>Control de Acceso <span class="gradient-text">{{ "Facial Inteligente" if event.facial_enabled else "por Cédula" }}</span></h2>
       </div>
 
       {% if event.status != "en_proceso" and staff_role != "cliente" %}
@@ -67,19 +70,27 @@
       </div>
       {% endif %}
 
+      {% set ns = namespace(n=0) %}
       <div class="tabs">
         {% if staff_role == "cliente" %}
         <div class="tab active" data-tab="estadisticas">Estadísticas</div>
         <div class="tab" data-tab="directorio">Directorio en Vivo</div>
         {% else %}
-        <div class="tab active" data-tab="scanner">1. Escáner de Acceso</div>
-        <div class="tab" data-tab="manual">2. Registro Individual</div>
-        {% if staff_role != "digitador" %}
-        <div class="tab" data-tab="exportar">3. Exportar Reporte</div>
+        {% if event.facial_enabled %}
+        {% set ns.n = ns.n + 1 %}
+        <div class="tab active" data-tab="scanner">{{ ns.n }}. Escáner de Acceso</div>
         {% endif %}
-        <div class="tab" data-tab="directorio">4. Directorio en Vivo</div>
+        {% set ns.n = ns.n + 1 %}
+        <div class="tab{% if not event.facial_enabled %} active{% endif %}" data-tab="manual">{{ ns.n }}. Registro Individual</div>
+        {% if staff_role != "digitador" %}
+        {% set ns.n = ns.n + 1 %}
+        <div class="tab" data-tab="exportar">{{ ns.n }}. Exportar Reporte</div>
+        {% endif %}
+        {% set ns.n = ns.n + 1 %}
+        <div class="tab" data-tab="directorio">{{ ns.n }}. Directorio en Vivo</div>
         {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <div class="tab" data-tab="temporales">5. Usuarios del Evento</div>
+        {% set ns.n = ns.n + 1 %}
+        <div class="tab" data-tab="temporales">{{ ns.n }}. Usuarios del Evento</div>
         {% endif %}
         {% endif %}
       </div>
@@ -93,8 +104,40 @@
                 <p style="color: #888;">Próximamente. Esta sección todavía no está diseñada — placeholder mientras se define qué métricas mostrar.</p>
             </div>
         </div>
+
+        <!-- DIRECTORIO (cliente: solo lectura, sin acreditar) -->
+        <div id="directorio" class="section active" style="max-width: 100%;">
+            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+                <div class="badge-form-title">Directorio en Vivo</div>
+                <div class="directory-search-bar">
+                    <div class="badge-input-group">
+                        <label>Buscar por cédula</label>
+                        <input type="text" id="searchCedula" placeholder="Cédula" autocomplete="off" inputmode="numeric">
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Buscar por nombre</label>
+                        <input type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off">
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Buscar por empresa</label>
+                        <input type="text" id="searchEmpresa" placeholder="Empresa" autocomplete="off">
+                    </div>
+                </div>
+                <table class="golden-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Cargo</th><th>Empresa</th>
+                            <th>Teléfono</th><th>Correo</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="directoryTableBody"></tbody>
+                </table>
+            </div>
+        </div>
         {% else %}
-        <!-- PESTAÑA 1: ESCÁNER Y EDICIÓN EN VIVO -->
+
+        {% if event.facial_enabled %}
+        <!-- PESTAÑA: ESCÁNER Y EDICIÓN EN VIVO (solo si el evento tiene reconocimiento facial activo) -->
         <div id="scanner" class="section active">
             <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
                 <div class="camera-wrapper">
@@ -109,7 +152,7 @@
                         <h4 style="text-align:center; color: var(--golden-primary); margin-bottom: 15px;">Actualización de Asistente</h4>
                         <form id="liveEditForm">
                             <input type="hidden" id="edit_id" name="id">
-                            
+
                             <div class="badge-input-row">
                                 <div class="badge-input-group">
                                     <label>Nombres</label>
@@ -131,7 +174,7 @@
                                     <input type="text" id="edit_company" name="company">
                                 </div>
                             </div>
-                            
+
                             <div class="badge-input-row">
                                 <div class="badge-input-group">
                                     <label>Teléfono</label>
@@ -156,9 +199,12 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
-        <!-- PESTAÑA 2: REGISTRO MANUAL -->
-        <div id="manual" class="section">
+        <!-- PESTAÑA: REGISTRO MANUAL — la foto solo se pide si el evento tiene reconocimiento
+             facial activo (ver Event.facial_enabled); si no, es exactamente el alta tradicional
+             por cédula (identidad, sin foto). -->
+        <div id="manual" class="section{% if not event.facial_enabled %} active{% endif %}">
             <form id="regForm" class="golden-badge-builder">
                 <fieldset {% if event.status != "en_proceso" %}disabled{% endif %} style="border:none; padding:0; margin:0;">
                 <div class="badge-form-title">Registro de Nuevo Personal</div>
@@ -174,7 +220,7 @@
                         <input type="text" name="last_name" required placeholder="Ej. Pérez Gómez">
                     </div>
                 </div>
-                
+
                 <div class="badge-input-row">
                     <div class="badge-input-group">
                         <label>Número de ID (Cédula)</label>
@@ -185,7 +231,7 @@
                         <input type="text" name="role">
                     </div>
                 </div>
-                
+
                 <div class="badge-input-row">
                     <div class="badge-input-group">
                         <label>Empresa</label>
@@ -196,27 +242,28 @@
                         <input type="text" name="phone">
                     </div>
                 </div>
-                
+
                 <div class="badge-input-row">
                     <div class="badge-input-group" style="min-width: 100%;">
                         <label>Correo Electrónico</label>
                         <input type="email" name="email">
                     </div>
                 </div>
-                
+
+                {% if event.facial_enabled %}
                 <div class="badge-input-group">
                     <label>Fotografía Oficial</label>
                     <input type="file" name="file" accept="image/*" required>
                 </div>
-                
-                <button type="submit" class="golden-btn golden-btn-primary">Guardar Perfil Biométrico</button>
+                {% endif %}
+
+                <button type="submit" class="golden-btn golden-btn-primary">Guardar Perfil{{ " Biométrico" if event.facial_enabled else "" }}</button>
                 </fieldset>
             </form>
         </div>
-        {% endif %}
 
-        {% if staff_role not in ["digitador", "cliente"] %}
-        <!-- PESTAÑA 3: EXPORTAR REPORTE -->
+        {% if staff_role != "digitador" %}
+        <!-- PESTAÑA: EXPORTAR REPORTE -->
         <div id="exportar" class="section">
             <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
                 <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Base de Datos Oficial</h3>
@@ -228,36 +275,41 @@
         </div>
         {% endif %}
 
-        <!-- PESTAÑA 4: DIRECTORIO EN VIVO -->
-        <div id="directorio" class="section{% if staff_role == 'cliente' %} active{% endif %}" style="max-width: 100%;">
+        <!-- PESTAÑA: DIRECTORIO EN VIVO — búsqueda por cédula/nombre/empresa + Acreditar, igual
+             tenga o no el evento reconocimiento facial activo. -->
+        <div id="directorio" class="section" style="max-width: 100%;">
             <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
-                <div class="badge-form-title" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span>Directorio y Control en Vivo</span>
+                <div class="badge-form-title">Directorio en Vivo</div>
+                <div class="directory-search-bar">
+                    <div class="badge-input-group">
+                        <label>Buscar por cédula</label>
+                        <input type="text" id="searchCedula" placeholder="Escanea o escribe la cédula" autocomplete="off" inputmode="numeric"
+                               {% if event.status != "en_proceso" %}disabled{% endif %}>
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Buscar por nombre</label>
+                        <input type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off">
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Buscar por empresa</label>
+                        <input type="text" id="searchEmpresa" placeholder="Empresa" autocomplete="off">
+                    </div>
                 </div>
+                <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se acredita al instante sin necesidad de buscarla en la tabla.</div>
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>ID</th>
-                            <th>Nombres</th>
-                            <th>Apellidos</th>
-                            <th>Cargo</th>
-                            <th>Empresa</th>
-                            <th>Teléfono</th>
-                            <th>Correo</th>
-                            <th>Tipo Asistente</th>
-                            <th>Estado</th>
-                            <th>Acción</th>
+                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Cargo</th><th>Empresa</th>
+                            <th>Teléfono</th><th>Correo</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
                         </tr>
                     </thead>
-                    <tbody id="directoryTableBody">
-                        <!-- Las filas se inyectan por JS -->
-                    </tbody>
+                    <tbody id="directoryTableBody"></tbody>
                 </table>
             </div>
         </div>
 
         {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <!-- PESTAÑA 5: USUARIOS DEL EVENTO (digitador + cliente) -->
+        <!-- PESTAÑA: USUARIOS DEL EVENTO (digitador + cliente) -->
         <div id="temporales" class="section">
             <div class="golden-badge-builder" style="margin-bottom: 2rem;">
                 <div class="badge-form-title">Nueva cuenta para este evento</div>
@@ -314,6 +366,7 @@
             </div>
         </div>
         {% endif %}
+        {% endif %}
 
       </div>
     </div>
@@ -322,6 +375,35 @@
 
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
+<script>
+(function() {
+    /* Monta la búsqueda del Directorio (compartida por cliente y el resto de roles). El atajo de
+       lector de código de barras (Enter -> acredita al instante) solo tiene sentido para quien
+       puede acreditar (digitador+, no cliente). Si no encuentra la cédula, en vez de un mini-form
+       aparte (como antes en kiosk_cedula.html) saltamos a "Registro Individual" con la cédula
+       precargada — un solo formulario de alta manual, no dos. */
+    const canAccredit = window.STAFF_ROLE !== "cliente";
+
+    function goToManualWithCedula(cedula) {
+        const manualTab = document.querySelector('.tab[data-tab="manual"]');
+        if (manualTab) manualTab.click();
+        const idField = document.querySelector('#regForm input[name="id"]');
+        if (idField) idField.value = cedula;
+        const firstNameField = document.querySelector('#regForm input[name="first_name"]');
+        if (firstNameField) firstNameField.focus();
+        showToast('Cédula no encontrada — completa el registro', 'error');
+    }
+
+    window.directorySearch = GoldenDirectory.mountSearch({
+        tbodyId: 'directoryTableBody',
+        searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', empresa: 'searchEmpresa' },
+        showAccredit: canAccredit,
+        fastCheckin: canAccredit,
+        onNotFound: canAccredit ? goToManualWithCedula : null,
+    });
+})();
+</script>
+{% if staff_role in ["coordinador", "admin", "super_admin"] %}
 <script>
 (function() {
     const tempForm = document.getElementById("tempUserForm");
@@ -392,5 +474,6 @@
     loadAssignableOptions();
 })();
 </script>
+{% endif %}
 </body>
 </html>
