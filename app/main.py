@@ -1,4 +1,5 @@
 import os
+import json
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -9,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser
-from app.routers import api, auth as auth_router, events, staff, tenants
+from app.routers import api, auth as auth_router, badges, events, staff, tenants
 from app.auth import ROLE_HIERARCHY, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -52,6 +53,7 @@ app.include_router(api.router, prefix="/api")
 app.include_router(events.router, prefix="/api")
 app.include_router(staff.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")
+app.include_router(badges.router, prefix="/api")
 
 
 def _page_staff(request: Request, db: Session):
@@ -127,7 +129,7 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
     })
 
 
-def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_name: str, min_role: str = None):
+def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_name: str, min_role: str = None, extra_context: dict = None):
     """Boilerplate compartido por cada método de registro: mismo chequeo de acceso
     (get_event_for_staff), mismo contexto de template. Cada método solo elige su propio
     template_name. `min_role` es un segundo chequeo opcional para páginas que además exigen un
@@ -149,12 +151,21 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     # nombrados — usada por kiosk_registro.html para mostrar esos campos en el alta manual con su
     # nombre real en vez de "Opcional N" (2026-09-22).
     optional_labels = sorted(event.get_optional_labels().items(), key=lambda kv: int(kv[0].split("_")[1]))
-    return templates.TemplateResponse(request=request, name=template_name, context={
+    # Versión ya serializada a JSON, lista para inyectar en un <script> con `| safe` (Jinja2Templates
+    # de Starlette no trae el filtro `tojson` de Flask) — el `.replace` evita que una etiqueta se
+    # rompa si algún rótulo llegara a contener literalmente "</script>" (2026-09-15, Sprint 2: lo
+    # necesita badge_editor.html para poblar el selector de variables con los opcionales reales).
+    optional_labels_json = json.dumps(optional_labels).replace("</", "<\\/")
+    context = {
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": staff_user.role,
         "event": event,
         "optional_labels": optional_labels,
-    })
+        "optional_labels_json": optional_labels_json,
+    }
+    if extra_context:
+        context.update(extra_context)
+    return templates.TemplateResponse(request=request, name=template_name, context=context)
 
 
 @app.get("/kiosk/{event_id}/registro")
@@ -179,6 +190,25 @@ async def kiosk_registro_legacy_redirect(event_id: int):
 @app.get("/kiosk/{event_id}/roster")
 async def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db)):
     return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/escarapela")
+async def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Editor visual de la escarapela del evento (Sprint 2, Épico 2) — mismo mínimo de rol que
+    Adjuntar Base de Datos (coordinador+); la impresión en sí (no el diseño) se dispara desde
+    /kiosk/{event_id}/registro, disponible para digitador+."""
+    return _resolve_kiosk_page(event_id, request, db, "badge_editor.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
+async def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: Session = Depends(get_db)):
+    """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en
+    una pestaña/ventana aparte desde el botón "Imprimir Escarapela" (o sola, si el evento tiene
+    auto_print_badge activo) sin sacar al digitador de la pantalla de Registro."""
+    return _resolve_kiosk_page(event_id, request, db, "badge_print.html", extra_context={
+        "print_user_id": user_id,
+        "print_user_id_json": json.dumps(user_id).replace("</", "<\\/"),
+    })
 
 
 @app.get("/admin/staff")

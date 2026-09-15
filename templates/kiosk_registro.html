@@ -54,7 +54,7 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }};</script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
@@ -145,6 +145,7 @@
                     <canvas id="canvas" style="display:none;"></canvas>
                     <button id="escanearBtn" class="golden-btn golden-btn-primary full-width" {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>📸 Escanear Rostro</button>
                     <h3 id="resultadoTexto" style="text-align:center; margin-top: 15px; height: 30px;"></h3>
+                    <button id="printScanBtn" class="golden-btn" style="display:none; width:100%; background:#f0f0f0; color:var(--golden-dark); margin-top:0.5rem;">🖨️ Imprimir Escarapela</button>
                 </div>
 
                 <div class="badge-preview-area" id="profileCard" style="display: none;">
@@ -279,6 +280,7 @@
                 <button type="submit" class="golden-btn golden-btn-primary" style="margin-top:1.2rem;">Guardar Perfil{{ " Biométrico" if event.facial_enabled else "" }}</button>
                 </fieldset>
             </form>
+            <button id="printManualBtn" class="golden-btn" style="display:none; width:100%; background:#f0f0f0; color:var(--golden-dark); margin-top:0.8rem;">🖨️ Imprimir Escarapela</button>
         </div>
 
         {% if staff_role != "digitador" %}
@@ -392,6 +394,7 @@
   </section>
 </main>
 
+<script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>

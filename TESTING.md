@@ -15,7 +15,7 @@ comportamiento esperado y por qué) antes de asumir que es un bug nuevo.
 
 ## 0. Preparación del entorno de prueba
 
-1. `alembic upgrade head` (asegura que las migraciones `0001`–`0011` estén aplicadas).
+1. `alembic upgrade head` (asegura que las migraciones `0001`–`0012` estén aplicadas).
 2. Si no existe ninguna cuenta todavía: `python scripts/create_staff_user.py --username super --role super_admin --full-name "Super Admin"` (pide contraseña la primera vez que se usa, ver `scripts/create_staff_user.py`).
 3. `uvicorn app.main:app --reload --port 5000`.
 4. Con la sesión de `super_admin`, crear al menos:
@@ -310,6 +310,46 @@ Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vige
 
 ---
 
+## 12. Escarapelas (Épico 2 — editor visual, librería reusable, impresión) — Sprint 2
+
+Requiere `alembic upgrade head` con la migración `0012_badge_templates` aplicada. Cubre `templates/badge_editor.html`, `templates/badge_print.html`, `app/routers/badges.py`, `static/js/badge-render.js` y los 4 puntos de disparo de impresión (escáner facial, alta manual, "Acreditar" del Directorio, atajo de lector de cédula).
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| BADGE-01 ✅ | Acceso al editor | Como `coordinador`+, entrar a un evento → tarjeta "Escarapelas" | Abre `/kiosk/{event_id}/escarapela` |
+| BADGE-02 ❌ | `digitador`/`cliente` sin acceso al editor | Como `digitador`, entrar a `/kiosk/{event_id}` | No aparece la tarjeta "Escarapelas"; si se fuerza la URL directo, redirige (mismo mínimo `coordinador`+ que "Adjuntar Base de Datos") |
+| BADGE-03 ✅ | Plantilla por defecto al abrir por primera vez | Abrir el editor de un evento que nunca tuvo escarapela | Se crea sola una plantilla 62×100mm vertical con 3 campos (`text_variable`: nombre, apellido, empresa) — no aparece vacío |
+| BADGE-04 ✅ | Orientación vertical/horizontal | Cambiar el selector de orientación | El canvas intercambia `width_mm`/`height_mm`; el mensaje deja claro que **vertical es el formato para la Brother QL-800** |
+| BADGE-05 ✅ | Guardar plantilla persiste | Modificar algo, "Guardar", recargar la página del editor | Los cambios siguen ahí (`PUT /api/events/{id}/badge-template`) |
+| BADGE-06 ✅ | Agregar texto fijo | "+ Texto fijo", escribir contenido | Aparece en el canvas con el texto literal |
+| BADGE-07 ✅ | Agregar texto variable con campos reales | "+ Texto variable", abrir el selector de variable | Lista los campos reales de `User` (nombre, apellido, empresa, teléfono, correo, tipo de asistente) MÁS los opcionales que este evento ya tiene rotulados (`Event.optional_field_labels`) |
+| BADGE-08 ✅ | Imagen estática (logo) | "+ Imagen", subir un archivo | Se sube a `data/<tenant>/badge_assets/`, aparece en el canvas vía `GET /api/badge-assets/{tenant}/{filename}` |
+| BADGE-09 ❌ | Foto bloqueada sin biometría | En un evento con `facial_enabled=False`, intentar "+ Foto del asistente" | Error claro, no se agrega el elemento (`image_variable` requiere `facial_enabled=True`) |
+| BADGE-10 ✅ | Foto permitida con biometría | Repetir BADGE-09 en un evento con `facial_enabled=True` | Se agrega correctamente, en el editor se ve una foto de muestra o el placeholder de "Foto" |
+| BADGE-11 ✅ | Código QR | "+ QR", elegir 1+ variables a codificar (ej. cédula) | Se renderiza un QR real y escaneable en el canvas del editor, no solo texto "QR" |
+| BADGE-12 ✅ | Código de barras | "+ Código de barras", elegir variable y formato (`code128`/`code39`) | Se renderiza un barcode real y escaneable |
+| BADGE-13 ✅ | Arrastrar un elemento | Clic y arrastrar cualquier elemento del canvas | Se mueve visualmente; al guardar, el `x`/`y` persistido está en mm reales, no en píxeles de pantalla escalados |
+| BADGE-14 ✅ | Redimensionar un elemento | Arrastrar el handle de una esquina | Cambia `width`/`height` en mm reales, proporcional al tamaño mostrado |
+| BADGE-15 ✅ | Panel de propiedades de texto | Seleccionar un texto, cambiar fuente/tamaño/color/negrita/alineación | Se refleja al instante en el canvas (mismo look que tendrá al imprimir) |
+| BADGE-16 ✅ | Fondo color vs imagen | Cambiar "Fondo" de color sólido a imagen subida | El canvas cambia de fondo en consecuencia |
+| BADGE-17 ✅ | Guardar en la librería del tenant | "Guardar como", darle un nombre | Aparece en `GET /api/events/{id}/saved-badge-templates`, visible para CUALQUIER evento del mismo tenant |
+| BADGE-18 ✅ | Importar desde la librería | En OTRO evento del mismo tenant, "Importar" → elegir la plantilla guardada | Se copia el diseño completo como punto de partida; editar la plantilla del evento después NO modifica la guardada en la librería (no es un vínculo vivo) |
+| BADGE-19 ✅ | Borrar de la librería una plantilla ya importada | Borrar de la librería una plantilla que un evento ya importó antes | Se borra sin error 500; la plantilla de ESE evento (ya copiada) sigue intacta — solo se pierde la trazabilidad de "de dónde vino" |
+| BADGE-20 ✅ | Switch "Auto impresión" persiste | Activar/desactivar el switch en el editor, recargar | El estado sigue ahí (`Event.auto_print_badge` vía `PATCH /api/events/{id}`) |
+| BADGE-21 ✅ | Impresión NO automática por defecto (escáner) | Con `auto_print_badge=False`, reconocer a alguien por cámara con match exitoso | Aparece el botón "Imprimir Escarapela" habilitado, pero NINGUNA ventana se abre sola |
+| BADGE-22 ✅ | Auto impresión activa (escáner) | Repetir BADGE-21 con `auto_print_badge=True` | Además del botón, se abre sola una ventana con la vista de impresión |
+| BADGE-23 ✅ | Botón de impresión en alta manual | Registrar a alguien por "Registro Individual" con éxito | Aparece "Imprimir Escarapela" junto al formulario (mismo criterio `auto_print_badge` que BADGE-21/22) |
+| BADGE-24 ✅ | Botón de impresión en "Acreditar" del Directorio | Clic en "Acreditar" sobre alguien "No registrado" | Al acreditar con éxito, se dispara el mismo criterio de auto-impresión (sin botón dedicado ahí, pero si `auto_print_badge=True` se abre sola la ventana) |
+| BADGE-25 ✅ | Botón de impresión en el atajo de lector (Enter con cédula) | En el campo de cédula del Directorio, escanear/escribir una cédula exacta y Enter | Mismo comportamiento que BADGE-24 tras el `checkin-cedula` exitoso |
+| BADGE-26 ✅ | Botón 🖨️ persistente por fila | En cualquier fila del Directorio (esté "Registrado" o no, no solo recién acreditada) | Hay un botón de impresión que reabre la escarapela de esa persona en cualquier momento, sin depender de un registro fresco |
+| BADGE-27 ✅ | Tamaño real de página al imprimir | Abrir la vista de impresión de alguien y ver la vista previa de impresión del navegador | El tamaño de página coincide con `width_mm`×`height_mm` de la plantilla (ej. 62×100mm para el formato Brother QL-800 vertical), no aparece como carta/A4 por defecto |
+| BADGE-28 ✅ | Datos reales en la impresión | Comparar la vista de impresión con el perfil real de la persona | Muestra sus datos reales (no placeholders `{variable}`) y su foto real si el evento es biométrico y la tiene |
+| BADGE-29 ❌ | `digitador`/`cliente` no editan el diseño | Forzar la URL `/kiosk/{event_id}/escarapela` como `digitador` | Redirige — puede disparar impresión (botones en Registro/Directorio) pero no editar la plantilla |
+| BADGE-30 ✅ | `digitador` sí puede imprimir | Como `digitador`, usar el botón "Imprimir Escarapela" tras un registro | Funciona (mínimo real del endpoint de impresión es `digitador`+, distinto del editor que es `coordinador`+) |
+| BADGE-31 ❌ | `cliente` no ve botones de impresión | Como `cliente` en el Directorio (vista de solo lectura) | No aparece ningún botón "Acreditar" ni 🖨️ en las filas |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -325,6 +365,7 @@ Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vige
 | Directorio en Vivo | 14 |
 | Reporte | 2 |
 | Seguridad | 6 |
-| **Total** | **150** |
+| Escarapelas (editor, librería, impresión) | 31 |
+| **Total** | **181** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

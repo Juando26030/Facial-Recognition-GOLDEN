@@ -24,6 +24,8 @@ app/
                         /api/cities) + cuentas digitador/cliente atadas a un evento
                         (/api/events/{id}/staff-users, .../assign-existing)
     staff.py            Cuentas coordinador/admin (no digitador/cliente, ver Roles y permisos)
+    badges.py           Escarapelas: editor de plantilla por evento, librería reusable por
+                        tenant, datos/foto para imprimir (ver sección Escarapelas)
   cities_data.py    Carga app/cities_by_country.json (dataset real GeoNames) — ver sección de ciudades
   cities_by_country.json   ~20,300 ciudades reales (GeoNames), generado offline una vez
 alembic/            Migraciones versionadas (ver sección Migraciones) — reemplaza Base.metadata.create_all
@@ -33,10 +35,14 @@ static/
   js/toast.js         showToast()/showConfirm() — reemplazo no-bloqueante de alert()/confirm()
   js/app.js           Lógica del kiosko (escáner, registro, tab switching, etc.)
   js/directory.js     GoldenDirectory.render()/load()/mountSearch() — Directorio en Vivo + búsqueda, usado por la vista de Registro unificada
+  js/badge-render.js  BadgeRender.renderBadge()/renderElement() (compartido por editor e impresión, mismo código en los dos lados a propósito) + BadgePrint.openPrintWindow()/maybeAutoPrint() (ver sección Escarapelas)
 templates/          dashboard.html (`/`), kiosk_select.html (`/kiosk/{event_id}`),
                     kiosk_registro.html (`/kiosk/{event_id}/registro`, Registro unificado — ver sección abajo),
                     kiosk_roster.html (`/kiosk/{event_id}/roster`),
+                    badge_editor.html (`/kiosk/{event_id}/escarapela`, editor visual — ver sección Escarapelas),
+                    badge_print.html (`/kiosk/{event_id}/escarapela/imprimir/{user_id}`, vista de impresión),
                     login.html, staff.html
+data/<tenant>/badge_assets/   Imágenes de fondo/logo de escarapelas por tenant (gitignored, mismo patrón que known_people/)
 data/<tenant>/known_people/   Fotos de registro por tenant (gitignored, no confundir con app/cities_by_country.json — ese NO está en la carpeta "data/")
 ```
 
@@ -106,6 +112,46 @@ Antes de arrancar Épico 2 (escarapelas), el brief de Sprint 2 (`07_BRIEF_SPRINT
 - Verificado con los casos exactos del brief en ambos lados (Python y Node): `"maria jose"`/`"MARIA JOSE"` encuentran "María José Ñúñez Gómez", `"perez"` encuentra "Andrés Pérez López", `"compania"` encuentra "Compañía Ñañez", y `"Ma"` encuentra "María" pero NO "Amaya".
 
 **Fix 2 — Contador/botón "N sin registrar" en el Directorio en Vivo (no existía).** `GoldenDirectory.mountSearch()` ahora crea solo un botón (insertado justo antes de la tabla, no hay que tocar cada template) que muestra cuántas filas están en estado `"No registrado"` — ese estado ya se calculaba bien desde antes (`routers/api.py: get_all_users` — alguien precargado por roster que todavía no se presentó, distinto de `"Nuevo"` que es alguien que se registró por primera vez ahí mismo; se confirmó esto ANTES de construir el contador, tal como pedía el brief). Clic en el botón activa/desactiva un filtro adicional que se COMBINA con los 3 campos de búsqueda existentes (no los reemplaza) — el botón se oculta solo si el conteo es 0 y no está activo el filtro.
+
+## Sprint 2 (2026-09-15) — Escarapelas (Épico 2, Historias 2.1/2.2)
+
+Segunda mitad del brief de Sprint 2, tras las 2 reverificaciones de arriba. Pedido explícito de Juan David: un editor visual de escarapelas mucho más flexible que "fondo + campos de texto" (fuentes reales, colores, imágenes, QR, código de barras, foto del asistente), con una plantilla propia POR EVENTO pero una librería reusable POR TENANT, pensado para imprimirse en una impresora térmica de etiquetas **Brother QL-800** — y la impresión nunca es automática por defecto, el digitador decide.
+
+### Modelo de datos (migración `0012_badge_templates`)
+- **`BadgeTemplate`** — la plantilla ACTIVA de un evento. `event_id` es **único y obligatorio** (relación 1:1 con `Event`, no hay "varias plantillas por evento"). `width_mm`/`height_mm` (default 62×100, formato QL-800 vertical), `orientation` (`vertical`/`horizontal`), `background_type` (`color`/`image`) + `background_value`, `elements_json` (lista ordenada por `z_index`, ver abajo), `imported_from_saved_template_id` (FK a `SavedBadgeTemplate`, nullable — **solo trazabilidad, no vínculo vivo**: si se borra la plantilla guardada de origen, este campo se pone en `NULL` y la plantilla del evento sigue intacta, ver el bug encontrado abajo).
+- **`SavedBadgeTemplate`** — la librería reusable, a nivel de **tenant** (no de evento): un diseño que gustó se puede guardar aquí y luego importarse como punto de partida en OTRO evento del mismo cliente. Importar **copia** el `elements_json`/tamaño/fondo — editar uno después no afecta al otro, a propósito (si fuera un vínculo vivo, cambiar la plantilla guardada rompería escarapelas ya impresas de otros eventos).
+- Ambas usan el mismo patrón `elements_json` (Text/JSON manual, `get_elements()`/`set_elements()`) que el resto del proyecto (`User.extra_fields`, `Event.optional_field_labels`). Cada elemento tiene `{id, type, x, y, width, height, rotation, z_index}` (todo en **mm reales**, no píxeles) más campos según `type`:
+  - `text_static` — `content`, `font_family`, `font_size`, `font_color`, `font_weight`, `align`.
+  - `text_variable` — igual que arriba + `variable` (un campo real de `User` o una clave `opcional_N` de `Event.optional_field_labels`).
+  - `image_static` — `storage_path` (ej. el logo del cliente).
+  - `image_variable` — `source: "photo"`; **solo se puede agregar si `Event.facial_enabled=True`** (no tiene sentido pedir una foto que el evento nunca capturó).
+  - `qr` — `variables: [lista]` (se concatenan con `|`), `size`.
+  - `barcode` — `variable`, `format` (`code128`/`code39`), `size`.
+- `Event.auto_print_badge` (`Boolean`, default `False`, misma migración) — el switch de auto-impresión, ver Historia 2.2 abajo.
+
+### Backend (`app/routers/badges.py`)
+Mismo mínimo de rol que "Adjuntar Base de Datos" (`coordinador`+) para TODO lo que edita el diseño: `GET/PUT /api/events/{id}/badge-template` (el `GET` crea sola la plantilla con 3 campos por defecto — nombre, apellido, empresa — la primera vez que se abre un evento sin escarapela todavía, así el editor nunca arranca vacío), `GET /api/events/{id}/saved-badge-templates` (filtrado por `tenant_id`), `POST .../badge-template/save-as`, `POST .../badge-template/import/{saved_id}` (scoped al mismo tenant), `DELETE /api/saved-badge-templates/{saved_id}`, `POST .../badge-template/upload-image` (valida extensión, guarda como `<uuid4>.<ext>` en `data/<tenant>/badge_assets/`, mismo patrón que las fotos biométricas). Dos endpoints con mínimo **`digitador`+** (los necesita quien opera el registro, no solo quien diseña): `GET /api/users/{id}/badge-print-data` (todos los campos + `extra_fields` + si tiene foto) y `GET /api/users/{id}/photo` (la foto real). Las imágenes de escarapela se sirven autenticadas vía `GET /api/badge-assets/{tenant_id}/{filename}` (no por `/static`, mismo criterio de "el login es la barrera real" del resto del proyecto).
+
+**Bug real encontrado y arreglado antes de commitear (verificado con `TestClient` + SQLite `PRAGMA foreign_keys=ON`, mismo método que atrapó los bugs de `autoflush` documentados arriba):** `DELETE /api/saved-badge-templates/{id}` tumbaba con `ForeignKeyViolation` si algún `BadgeTemplate` la había importado antes (quedaba referenciada por `imported_from_saved_template_id`). Arreglo: poner ese campo en `NULL` en todos los `BadgeTemplate` que la referencien, justo antes del `DELETE` — coherente con que ese campo es "solo trazabilidad", tolera quedar obsoleto.
+
+### Editor visual (`templates/badge_editor.html`, `/kiosk/{event_id}/escarapela`)
+- **Canvas a escala real:** se renderiza a `EDITOR_SCALE=5` — una copia escalada de la plantilla (mm, tamaño de fuente en pt, todo se multiplica por el mismo factor, válido porque ambas son unidades físicas absolutas) para tener un lienzo cómodo de editar, pero lo que se GUARDA sigue siendo en mm reales. Arrastre/redimensión convierten píxeles de pantalla a mm reales dividiendo por el `width_mm` SIN escalar — funciona sin importar el `EDITOR_SCALE` elegido.
+- **Mismo módulo de renderizado que la impresión real** (`static/js/badge-render.js`, `BadgeRender.renderBadge`) — a propósito: el editor nunca "miente" sobre cómo va a quedar impreso, solo le agrega arrastre/selección encima.
+- **Orientación explícita horizontal/vertical al crear**, con la aclaración de que **vertical es el formato pensado para la Brother QL-800** — determina el canvas y (en `badge_print.html`) el `@page { size: <mm> }` real, no una hoja carta por defecto.
+- Catálogo de ~40 fuentes de Google Fonts (cargadas vía `<link>` en el editor Y en la vista de impresión, para que el tipo de letra se vea igual en ambos lados), color/tamaño/peso/alineación por campo de texto.
+- Selector de variable para `text_variable`/`qr`/`barcode` poblado con los campos reales de `User` + los opcionales que ESE evento ya tiene rotulados (`window.OPTIONAL_VARIABLES`, inyectado desde `optional_labels_json` — mismo patrón de "serializar a mano con `json.dumps().replace('</','<\\/')`" que ya usaban los demás kiosks, porque Starlette no trae el filtro `tojson` de Jinja2/Flask).
+- `image_variable` (foto) bloqueado en el botón "+ Agregar" si `!window.EVENT_FACIAL_ENABLED`, con un toast explicando por qué.
+- QR real vía `qrcode-generator` (CDN `cdnjs`, global `qrcode(...)`) y código de barras real vía `JsBarcode` (CDN `cdnjs`) — ambas cargadas en `badge_editor.html` y `badge_print.html`; `badge-render.js` cae a un placeholder de texto si por algún motivo no cargaron, para no romper el resto del editor.
+- Guardar (`PUT`), "Guardar como" en la librería (`POST save-as`), Importar desde la librería con confirmación (`POST import/{id}`, reemplaza el diseño actual del evento), switch "Auto impresión" (visible `coordinador`+, PATCHea `Event.auto_print_badge` vía el `PATCH /api/events/{id}` genérico que ya existía).
+
+### Impresión (`templates/badge_print.html`, `/kiosk/{event_id}/escarapela/imprimir/{user_id}`) — Historia 2.2
+**La impresión NO es automática por defecto** — pedido explícito del brief. Tras CUALQUIER registro exitoso (escáner facial, alta manual, "Acreditar" del Directorio, atajo de lector de cédula — los 4 puntos donde antes ya se manejaba el flujo `DUPLICADO`/`force`) se ofrece un botón **"Imprimir Escarapela"** (o, en el Directorio, el botón 🖨️ persistente por fila que además sirve para reimprimir en cualquier momento, no solo justo después de registrar) — el digitador decide si lo pulsa. Si el evento tiene `Event.auto_print_badge=True` (switch del editor), la ventana de impresión se abre SOLA además de dejar el botón disponible — nunca al revés (nunca se apaga el botón manual).
+- `static/js/badge-render.js`'s `BadgePrint.openPrintWindow(userId)`/`maybeAutoPrint(userId)` son el punto único compartido por los 4 disparadores — abre `/kiosk/{event_id}/escarapela/imprimir/{user_id}` en una ventana aparte (`window.open(..., 'noopener')`) para no sacar al digitador de la pantalla de Registro.
+- `badge_print.html` pide en paralelo la plantilla (`GET .../badge-template`) y los datos reales de la persona (`GET .../badge-print-data`), inyecta un `<style>@page{size: <width_mm>mm <height_mm>mm; margin:0}</style>` dinámico con el tamaño REAL de la plantilla (pensado para la Brother QL-800, no la hoja carta por defecto del navegador), espera a que las imágenes (logo/foto) terminen de cargar (con timeout de 2.5s por si alguna falla) y recién ahí llama a `window.print()` — enfoque deliberadamente simple (HTML/canvas + impresión nativa del navegador) en vez de un motor de PDF pesado, suficiente para Chrome/Edge.
+- Mínimo de rol para disparar/ver la impresión: `digitador`+ (lo necesita quien opera el registro) — distinto del editor de diseño, que es `coordinador`+.
+
+### Cómo probar localmente
+`alembic upgrade head` (trae la migración `0012_badge_templates`), entrar a un evento como `coordinador`+ → tarjeta "Escarapelas" → el editor arranca con una plantilla por defecto. Ver `TESTING.md` sección 12 para el checklist completo (31 casos).
 
 ## Bugs encontrados en testing manual (`TESTING.md`) y arreglados (2026-09-21)
 

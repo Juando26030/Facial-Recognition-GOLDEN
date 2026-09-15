@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Imprimir escarapela</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+    <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <style>
+        html, body { margin:0; padding:0; background:#ddd; }
+        .print-toolbar {
+            display:flex; gap:10px; align-items:center; justify-content:center; padding:14px;
+            background:#0A0E2E; color:white; font-family: sans-serif; font-size:0.85rem;
+        }
+        .print-toolbar button {
+            border:none; border-radius:20px; padding:8px 18px; font-weight:700; cursor:pointer; font-size:0.85rem;
+        }
+        .btn-print { background:#D4AF37; color:#1a1200; }
+        .btn-close { background:#444; color:white; }
+        #badgeWrapper { display:flex; align-items:center; justify-content:center; padding:2rem 0; }
+        #badgePrint { background:white; box-shadow:0 10px 30px rgba(0,0,0,0.3); }
+        #printStatus { text-align:center; color:#666; font-family:sans-serif; font-size:0.85rem; }
+
+        @media print {
+            .print-toolbar, #printStatus { display:none !important; }
+            html, body { background:white; }
+            #badgeWrapper { padding:0; }
+            #badgePrint { box-shadow:none; }
+        }
+    </style>
+</head>
+<body>
+<div class="print-toolbar">
+    <span>Escarapela — {{ event.name }}</span>
+    <button type="button" class="btn-print" id="printBtn">🖨️ Imprimir</button>
+    <button type="button" class="btn-close" onclick="window.close()">Cerrar</button>
+</div>
+<p id="printStatus">Cargando…</p>
+<div id="badgeWrapper">
+    <div id="badgePrint"></div>
+</div>
+
+<script>
+(function () {
+    const EVENT_ID = {{ event.id }};
+    const USER_ID = {{ print_user_id_json | safe }};
+    window.EVENT_ID = EVENT_ID;
+
+    const statusEl = document.getElementById('printStatus');
+    const badgeEl = document.getElementById('badgePrint');
+    const pageStyle = document.createElement('style');
+    document.head.appendChild(pageStyle);
+
+    function waitForImages(container, timeoutMs) {
+        const imgs = Array.from(container.querySelectorAll('img'));
+        if (!imgs.length) return Promise.resolve();
+        const promises = imgs.map(img => new Promise(resolve => {
+            if (img.complete) { resolve(); return; }
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+        }));
+        const timeout = new Promise(resolve => setTimeout(resolve, timeoutMs));
+        return Promise.race([Promise.all(promises), timeout]);
+    }
+
+    async function load() {
+        try {
+            const [tplRes, dataRes] = await Promise.all([
+                fetch(`/api/events/${EVENT_ID}/badge-template`),
+                fetch(`/api/users/${encodeURIComponent(USER_ID)}/badge-print-data?event_id=${EVENT_ID}`),
+            ]);
+            if (!tplRes.ok || !dataRes.ok) {
+                statusEl.innerText = 'No se pudo cargar la escarapela (revisa que la persona exista en este evento).';
+                return;
+            }
+            const template = await tplRes.json();
+            const data = await dataRes.json();
+
+            // @page con el tamaño REAL de la plantilla — así la impresora (ej. Brother QL-800)
+            // recibe el tamaño de etiqueta correcto en vez del tamaño carta por defecto del navegador.
+            pageStyle.innerHTML = `@page { size: ${template.width_mm}mm ${template.height_mm}mm; margin: 0; }`;
+
+            BadgeRender.renderBadge(badgeEl, template, data, { eventId: EVENT_ID });
+            statusEl.style.display = 'none';
+
+            await waitForImages(badgeEl, 2500);
+            window.print();
+        } catch (e) {
+            statusEl.innerText = 'Error de red cargando la escarapela.';
+        }
+    }
+
+    document.getElementById('printBtn').addEventListener('click', () => window.print());
+    load();
+})();
+</script>
+</body>
+</html>

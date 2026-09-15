@@ -77,6 +77,7 @@ class EventUpdate(BaseModel):
     coordinator_staff_id: Optional[int] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    auto_print_badge: Optional[bool] = None
 
 
 def _serialize(e: Event) -> dict:
@@ -93,6 +94,8 @@ def _serialize(e: Event) -> dict:
         "coordinator_staff_id": e.coordinator_staff_id,
         "coordinator_name": (e.coordinator.full_name or e.coordinator.username) if e.coordinator else None,
         "created_at": e.created_at.isoformat() if e.created_at else None,
+        "facial_enabled": e.facial_enabled,
+        "auto_print_badge": e.auto_print_badge,
     }
 
 

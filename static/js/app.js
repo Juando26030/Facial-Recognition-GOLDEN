@@ -48,6 +48,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const escanearBtn = document.getElementById('escanearBtn');
     const profileCard = document.getElementById('profileCard');
     const resTexto = document.getElementById('resultadoTexto');
+    const printScanBtn = document.getElementById('printScanBtn');
+
+    // Botón "Imprimir Escarapela" (Historia 2.2) — NUNCA se dispara solo por defecto, el
+    // digitador decide si lo pulsa; si el evento tiene la auto-impresión activada
+    // (window.EVENT_AUTO_PRINT, switch en el editor de escarapelas), además se abre sola.
+    function offerPrint(btn, userId) {
+        if (!btn) return;
+        btn.style.display = 'block';
+        btn.onclick = () => BadgePrint.openPrintWindow(userId);
+        if (window.BadgePrint) BadgePrint.maybeAutoPrint(userId);
+    }
 
     async function submitRecognize(formData) {
         try {
@@ -85,7 +96,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById('edit_opt_1').value = data.data.opt_1 || "";
 
                 if(profileCard) profileCard.style.display = 'flex';
+                offerPrint(printScanBtn, data.data.id);
             } else {
+                if (printScanBtn) printScanBtn.style.display = 'none';
                 resTexto.innerText = "❌ " + data.details;
                 resTexto.style.color = "#dc3545";
             }
@@ -100,6 +113,7 @@ document.addEventListener("DOMContentLoaded", () => {
             resTexto.innerText = "Analizando geometría facial...";
             resTexto.style.color = "#D4AF37";
             if(profileCard) profileCard.style.display = 'none';
+            if(printScanBtn) printScanBtn.style.display = 'none';
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -183,9 +197,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 showToast(data.message || data.error, data.error ? "error" : "success");
                 if (!data.error) {
+                    const registeredId = formData.get('id');
                     regForm.reset();
                     if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
                     if (window.directorySearch) window.directorySearch.reload();
+                    offerPrint(printManualBtn, registeredId);
                 }
             } catch(err) { showToast("Error de red", "error"); }
         }

@@ -91,6 +91,7 @@
             statusTd.innerText = 'Registrado';
             user.status = 'Registrado';
             accreditBtn.remove();
+            if (window.BadgePrint) BadgePrint.maybeAutoPrint(user.id);
           } else {
             showToast((data && (data.detail || data.details)) || 'No se pudo acreditar', 'error');
             accreditBtn.disabled = false;
@@ -104,6 +105,23 @@
       }
       accreditBtn.addEventListener('click', () => doAccredit(false));
       actionTd.appendChild(accreditBtn);
+    }
+
+    /* Botón de impresión persistente por fila (Historia 2.2) — a diferencia del botón que
+       aparece justo después de un registro fresco (app.js/escáner, "Acreditar" de arriba), este
+       vive siempre en la fila para poder reimprimir a cualquiera en cualquier momento, no solo
+       recién registrado. Mismo criterio de visibilidad que el resto de acciones: cliente es de
+       solo lectura, no ve ningún botón de acción. */
+    if (window.STAFF_ROLE !== 'cliente') {
+      const printBtn = document.createElement('button');
+      printBtn.type = 'button';
+      printBtn.innerText = '🖨️';
+      printBtn.title = 'Imprimir escarapela';
+      printBtn.className = 'golden-btn btn-table-action';
+      printBtn.addEventListener('click', () => {
+        if (window.BadgePrint) BadgePrint.openPrintWindow(user.id);
+      });
+      actionTd.appendChild(printBtn);
     }
 
     if (!canEdit) {
@@ -313,6 +331,7 @@
         }
         if (data.result === 'SÍ') {
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id);
           reload();
         } else if (opts.onNotFound) {
           opts.onNotFound(cedula);

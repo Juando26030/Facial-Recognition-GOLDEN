@@ -1,5 +1,5 @@
 import json
-from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -140,6 +140,7 @@ class Event(Base):
     optional_field_labels = Column(Text)  # JSON {"opcional_1": "Talla de camisa", ...} — nombres que el cliente le dio a las columnas "opcional_N" de SU roster (2026-09-20, ver bulk_register)
     facial_enabled = Column(Boolean, default=False, nullable=False)  # 2026-09-21: se enciende solo (nunca se apaga solo) la primera vez que se sube un roster con zip de fotos para este evento — ver bulk_register. Decide si /kiosk/{id}/registro muestra el escáner de cámara o se comporta como cédula tradicional.
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
+    auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
@@ -167,3 +168,62 @@ class EventStaffAuthorization(Base):
     event = relationship("Event")
     staff_user = relationship("StaffUser", foreign_keys=[staff_user_id])
     authorized_by = relationship("StaffUser", foreign_keys=[authorized_by_id])
+
+
+class BadgeTemplate(Base):
+    """La plantilla de escarapela ACTIVA de un evento — siempre por evento, uno a uno (Sprint 2,
+    Épico 2, decisión de Juan David que reemplaza el borrador de docs/05_MODELO_DATOS.md §3.2:
+    'event_id' deja de ser nullable). No es lo mismo que SavedBadgeTemplate (la librería reusable
+    por tenant, ver abajo) — importar una plantilla guardada COPIA su diseño acá, no la referencia
+    en vivo (editar después una no afecta a la otra)."""
+    __tablename__ = 'badge_templates'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False, unique=True)
+    name = Column(String, nullable=False, default='Escarapela')
+    width_mm = Column(Float, nullable=False, default=62.0)
+    height_mm = Column(Float, nullable=False, default=100.0)
+    orientation = Column(String, nullable=False, default='vertical')  # 'vertical' (pensado para Brother QL-800) | 'horizontal'
+    background_type = Column(String, nullable=False, default='color')  # 'color' | 'image'
+    background_value = Column(String)  # color hex (#RRGGBB), o el path que devuelve /api/badge-assets al subir una imagen
+    elements_json = Column(Text)  # JSON: lista ordenada (por z_index) de elementos — ver CLAUDE.md para el shape de cada tipo
+    imported_from_saved_template_id = Column(Integer, ForeignKey('saved_badge_templates.id'), nullable=True)  # solo trazabilidad ("de dónde vino"), no un vínculo vivo
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant")
+    event = relationship("Event")
+    imported_from = relationship("SavedBadgeTemplate", foreign_keys=[imported_from_saved_template_id])
+
+    def get_elements(self) -> list:
+        return json.loads(self.elements_json) if self.elements_json else []
+
+    def set_elements(self, data: list) -> None:
+        self.elements_json = json.dumps(data) if data else None
+
+
+class SavedBadgeTemplate(Base):
+    """Librería de plantillas reusables, por TENANT (no por evento) — para guardar un diseño que
+    gustó y poder importarlo como punto de partida en otro evento del mismo cliente. Importar
+    COPIA los campos a un BadgeTemplate nuevo/existente; esta fila no se modifica ni se referencia
+    después (ver BadgeTemplate.imported_from_saved_template_id, que es solo trazabilidad)."""
+    __tablename__ = 'saved_badge_templates'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
+    name = Column(String, nullable=False)
+    width_mm = Column(Float, nullable=False)
+    height_mm = Column(Float, nullable=False)
+    orientation = Column(String, nullable=False, default='vertical')
+    background_type = Column(String, nullable=False, default='color')
+    background_value = Column(String)
+    elements_json = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant")
+
+    def get_elements(self) -> list:
+        return json.loads(self.elements_json) if self.elements_json else []
+
+    def set_elements(self, data: list) -> None:
+        self.elements_json = json.dumps(data) if data else None
