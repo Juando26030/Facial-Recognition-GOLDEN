@@ -15,7 +15,7 @@ comportamiento esperado y por qué) antes de asumir que es un bug nuevo.
 
 ## 0. Preparación del entorno de prueba
 
-1. `alembic upgrade head` (asegura que las migraciones `0001`–`0009` estén aplicadas).
+1. `alembic upgrade head` (asegura que las migraciones `0001`–`0010` estén aplicadas).
 2. Si no existe ninguna cuenta todavía: `python scripts/create_staff_user.py --username super --role super_admin --full-name "Super Admin"` (pide contraseña la primera vez que se usa, ver `scripts/create_staff_user.py`).
 3. `uvicorn app.main:app --reload --port 5000`.
 4. Con la sesión de `super_admin`, crear al menos:
@@ -105,56 +105,70 @@ Jerarquía: `cliente` (fuera de la jerarquía real, ver `CLAUDE.md`) < `digitado
 
 ---
 
-## 5. Selección de método de registro (`/kiosk/{event_id}`)
+## 5. Selección — `/kiosk/{event_id}` (`kiosk_select.html`)
+
+**Cambio 2026-09-21:** Facial y Cédula se unificaron en una sola vista de Registro (`/kiosk/{event_id}/registro`) — ya no son dos tarjetas separadas. Ver sección 6.
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| SELECT-01 ✅ | `cliente` va directo al kiosko | Loguear como `cliente` con un evento `en_proceso` autorizado, entrar | Va derecho a `kiosk.html` (Estadísticas + Directorio), sin ver la pantalla de selección |
-| SELECT-02 ✅ | Otros roles ven las 4 tarjetas | Loguear como `digitador`/`coordinador`/`admin`, entrar a un evento | Ve `kiosk_select.html`: Facial, Cédula, QR (deshabilitada), Adjuntar Base de Datos |
-| SELECT-03 ❌ | `digitador` no ve "Adjuntar Base de Datos" | Loguear como `digitador`, ir a `/kiosk/{event_id}` | La tarjeta "Adjuntar Base de Datos" NO aparece (o si se fuerza la URL `/kiosk/{id}/roster` directo, 403 por `require_role("coordinador")` del backend) |
+| SELECT-01 ✅ | `cliente` va directo a su vista | Loguear como `cliente` con un evento `en_proceso` autorizado, entrar | Va derecho a `kiosk_registro.html` en su variante reducida (Estadísticas + Directorio de solo lectura), sin ver la pantalla de selección |
+| SELECT-02 ✅ | Otros roles ven las tarjetas | Loguear como `digitador`/`coordinador`/`admin`, entrar a un evento | Ve `kiosk_select.html`: **Registro** (una sola tarjeta), QR (deshabilitada), Adjuntar Base de Datos |
+| SELECT-03 ❌ | `digitador` no ve "Adjuntar Base de Datos" | Loguear como `digitador`, ir a `/kiosk/{event_id}` | La tarjeta "Adjuntar Base de Datos" NO aparece; forzando la URL `/kiosk/{id}/roster` directo también redirige (fix 2026-09-21, `_resolve_kiosk_page(min_role="coordinador")`) |
 | SELECT-04 ✅ | Pill de estado visible | Evento en cualquier estado | La pill muestra "Creado"/"En Proceso"/"Finalizado" correctamente |
 | SELECT-05 ✅ | Aviso cuando no está en proceso | Evento en `creado` o `finalizado` | Aparece el aviso amarillo "el escáner y el registro no van a funcionar..." |
+| SELECT-06 ✅ | El ícono/subtítulo de "Registro" refleja `facial_enabled` | Comparar la tarjeta en un evento con `facial_enabled=True` vs uno con `False` | Ícono y texto distinto (📸 "Escáner facial, cédula y directorio" vs 🪪 "Cédula (lector o manual) y directorio") |
+| SELECT-07 ❌ | Rutas viejas redirigen | Ir directo a `/kiosk/{event_id}/facial` o `/kiosk/{event_id}/cedula` (enlaces guardados de antes de la unificación) | 302 a `/kiosk/{event_id}/registro`, no 404 |
 
 ---
 
-## 6. Reconocimiento Facial (`/kiosk/{event_id}/facial`)
+## 6. Registro unificado (`/kiosk/{event_id}/registro`, `kiosk_registro.html`)
 
-Requiere evento en `en_proceso` para las acciones de escaneo/registro (no para navegar a la página).
+**Reemplaza las viejas secciones "Facial" y "Cédula"** (unificadas 2026-09-21 — ver `CLAUDE.md`). El contenido de esta pantalla depende de `Event.facial_enabled`: se enciende solo (nunca se apaga solo) la primera vez que se sube un roster con zip de fotos para ese evento (ver ROSTER-28/29/30 en la sección 7.5). Requiere evento en `en_proceso` para las acciones de escaneo/registro (no para navegar a la página).
+
+### 6.1 Con `facial_enabled = True` (evento con fotos cargadas)
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| FACIAL-01 ✅ | Registro manual con foto | Pestaña "Registro Individual", llenar datos + subir foto con un rostro claro | `POST /api/register` responde éxito, aparece en el Directorio como "Nuevo" |
-| FACIAL-02 ❌ | Foto sin rostro detectable | Subir una imagen sin cara (ej. un paisaje) | `{"error": "No se detectó un rostro en la fotografía."}`, no crea el registro |
-| FACIAL-03 ❌ | Botón de escanear deshabilitado si no está en proceso | Evento en `creado`/`finalizado`, ir a la pestaña Escáner | Botón "Escanear Rostro" deshabilitado de verdad (no solo visualmente) |
-| FACIAL-04 ❌ | Forzar `/api/recognize` con evento no en proceso | Vía API directa (curl), evento `creado` | 403 "todavía no ha comenzado" (`require_event_in_progress`) |
-| FACIAL-05 ✅ | Reconocimiento de rostro ya registrado | Con una persona ya registrada (con foto), escanear su rostro de nuevo | `result: "SÍ"`, se abre el formulario para confirmar/editar y "Guardar y Autorizar Acceso" |
-| FACIAL-06 ❌ | Rostro no coincide con nadie | Escanear un rostro que no está en la base | `result: "NO", details: "Denegado"` |
-| FACIAL-07 ✅ | Editar datos al reconocer | Tras un reconocimiento exitoso, cambiar algún campo y "Guardar" | Pide confirmación ("¿seguro que quieres sobrescribir sus datos?"), al aceptar actualiza y crea `AccessLog record_type="Actualizado"` |
-| FACIAL-08 ✅ | Exportar reporte | Pestaña "Exportar Reporte" (no visible para `digitador`) → botón | Descarga un `.xlsx` con las columnas del formato legacy |
-| FACIAL-09 ❌ | `digitador` no ve "Exportar Reporte" | Loguear como `digitador` | La pestaña no aparece |
+| REG-01 ✅ | Aparece la pestaña de escáner | Entrar a Registro en un evento con `facial_enabled=True` | Pestaña activa por defecto es "Escáner de Acceso"; existe además "Registro Individual" (con campo de foto), "Exportar Reporte", "Directorio en Vivo", "Usuarios del Evento" |
+| REG-02 ✅ | Registro manual con foto | Pestaña "Registro Individual", llenar datos + subir foto con un rostro claro | `POST /api/register` responde éxito, aparece en el Directorio como "Nuevo" |
+| REG-03 ❌ | Foto sin rostro detectable | Subir una imagen sin cara (ej. un paisaje) | `{"error": "No se detectó un rostro en la fotografía."}`, no crea el registro |
+| REG-04 ❌ | Botón de escanear deshabilitado si no está en proceso | Evento en `creado`/`finalizado`, ir a la pestaña Escáner | Botón "Escanear Rostro" deshabilitado de verdad (no solo visualmente) |
+| REG-05 ❌ | Forzar `/api/recognize` con evento no en proceso | Vía API directa (curl), evento `creado` | 403 "todavía no ha comenzado" (`require_event_in_progress`) |
+| REG-06 ✅ | Reconocimiento de rostro ya registrado | Con una persona ya registrada (con foto), escanear su rostro de nuevo | `result: "SÍ"`, se abre el formulario para confirmar/editar y "Guardar y Autorizar Acceso" |
+| REG-07 ❌ | Rostro no coincide con nadie | Escanear un rostro que no está en la base | `result: "NO", details: "Denegado"` |
+| REG-08 ✅ | Editar datos al reconocer | Tras un reconocimiento exitoso, cambiar algún campo y "Guardar" | Pide confirmación ("¿seguro que quieres sobrescribir sus datos?"), al aceptar actualiza, crea `AccessLog record_type="Actualizado"` y refresca el Directorio |
+| REG-09 ❌ | Alta manual sin adjuntar foto (aunque el evento sí tenga `facial_enabled`) | El campo de foto es `required` en el HTML — verificar que también esté protegido si se salta esa validación (API directa sin `file`) | Con `facial_enabled=True` el campo es obligatorio en la UI; por API directa sin `file`, ver REG-16 (el backend trata `file` ausente/vacío igual en los dos modos) |
 
----
-
-## 7. Cédula (`/kiosk/{event_id}/cedula`)
+### 6.2 Con `facial_enabled = False` (evento sin fotos, "cédula tradicional")
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| CEDULA-01 ✅ | Búsqueda en vivo por cédula | Escribir parte de una cédula en el campo correspondiente | La tabla filtra en vivo, sin llamar al backend en cada tecla |
-| CEDULA-02 ✅ | Búsqueda en vivo por nombre | Escribir parte de un nombre/apellido | Filtra correctamente (combina nombre+apellido) |
-| CEDULA-03 ✅ | Búsqueda en vivo por empresa | Escribir parte de una empresa | Filtra correctamente |
-| CEDULA-04 ✅ | Combinar los 3 filtros | Llenar cédula + nombre + empresa a la vez | Solo muestra filas que cumplen los TRES simultáneamente |
-| CEDULA-05 ✅ | Acreditar desde la tabla | Sobre una fila "No registrado", clic en "Acreditar" | Cambia a "Registrado", desaparece el botón, llama `POST /api/checkin-cedula` |
-| CEDULA-06 ✅ | Atajo de lector de código de barras | Escribir una cédula EXACTA existente en el campo de búsqueda y presionar Enter | Acredita al instante sin pasar por la tabla |
-| CEDULA-07 ❌ | Cédula no encontrada | Escribir una cédula que no existe y Enter | Aparece el formulario de "dar de alta" con esa cédula precargada |
-| CEDULA-08 ✅ | Alta manual desde cédula no encontrada | Completar el formulario de alta (sin foto) y guardar | Se crea el `User` y queda acreditado, sin pedir fotografía |
-| CEDULA-09 ✅ | Editar/Guardar/Eliminar (patrón compartido) | Sobre cualquier fila, "Editar" → cambiar un campo → "Guardar"; luego "Eliminar" | Igual que en Facial: edita perfil vía PATCH, "Eliminar" pide confirmación y borra solo el log de asistencia (no el `User`) |
-| CEDULA-10 ❌ | Evento no en proceso | Evento `creado`/`finalizado`, campo de cédula | Input deshabilitado, aviso amarillo visible |
+| REG-10 ✅ | No aparece la pestaña de escáner | Entrar a Registro en un evento con `facial_enabled=False` | Sin pestaña "Escáner de Acceso"; pestaña activa por defecto es "Directorio en Vivo"; "Registro Individual" NO pide fotografía |
+| REG-11 ✅ | Registro manual sin foto | Pestaña "Registro Individual", llenar datos (sin campo de foto visible) y guardar | Se crea el `User` sin `face_encoding`, aparece en el Directorio |
+
+### 6.3 Directorio en Vivo con búsqueda (aplica en AMBOS modos — 6.1 y 6.2)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| REG-12 ✅ | Búsqueda en vivo por cédula | Escribir parte de una cédula en el campo correspondiente | La tabla filtra en vivo, sin llamar al backend en cada tecla |
+| REG-13 ✅ | Búsqueda en vivo por nombre | Escribir parte de un nombre/apellido | Filtra correctamente (combina nombre+apellido) |
+| REG-14 ✅ | Búsqueda en vivo por empresa | Escribir parte de una empresa | Filtra correctamente |
+| REG-15 ✅ | Combinar los 3 filtros | Llenar cédula + nombre + empresa a la vez | Solo muestra filas que cumplen los TRES simultáneamente |
+| REG-16 ✅ | Acreditar desde la tabla | Sobre una fila "No registrado", clic en "Acreditar" | Cambia a "Registrado", desaparece el botón, llama `POST /api/checkin-cedula` |
+| REG-17 ✅ | Atajo de lector de código de barras | Escribir una cédula EXACTA existente en el campo de búsqueda y presionar Enter | Acredita al instante sin pasar por la tabla |
+| REG-18 ❌ | Cédula no encontrada | Escribir una cédula que no existe y Enter | Salta automáticamente a la pestaña "Registro Individual" con esa cédula precargada en el campo ID (ya NO aparece un mini-formulario aparte dentro del Directorio, como antes) |
+| REG-19 ✅ | Completar el alta tras REG-18 | Llenar nombre/apellido en "Registro Individual" (con la cédula ya precargada) y guardar | Se crea el `User` y queda acreditado; si `facial_enabled=True` puede requerir foto, si es `False` no |
+| REG-20 ✅ | Editar/Guardar/Eliminar (patrón compartido) | Sobre cualquier fila, "Editar" → cambiar un campo → "Guardar"; luego "Eliminar" | Edita perfil vía PATCH; "Eliminar" pide confirmación y borra solo el log de asistencia (no el `User`) — ver también DIR-06 (visibilidad de estos botones según rol) |
+| REG-21 ❌ | Evento no en proceso | Evento `creado`/`finalizado`, campo de cédula del Directorio | Input deshabilitado, aviso amarillo visible |
+| REG-22 ✅ | Exportar reporte (no visible para `digitador`) | Pestaña "Exportar Reporte" → botón | Descarga un `.xlsx` con las columnas del formato legacy |
+| REG-23 ❌ | `digitador` no ve "Exportar Reporte" | Loguear como `digitador` | La pestaña no aparece |
+| REG-24 ✅ | `cliente` ve Directorio de solo lectura | Loguear como `cliente` | Ve el Directorio con búsqueda, pero SIN botón "Acreditar" y SIN el atajo de Enter (`canAccredit = STAFF_ROLE !== "cliente"`) |
 
 ---
 
-## 8. Adjuntar Base de Datos (`/kiosk/{event_id}/roster`, `POST /api/bulk_register`)
+## 7. Adjuntar Base de Datos (`/kiosk/{event_id}/roster`, `POST /api/bulk_register`)
 
-### 8.1 Formato de archivo
+### 7.1 Formato de archivo
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
@@ -165,7 +179,7 @@ Requiere evento en `en_proceso` para las acciones de escaneo/registro (no para n
 | ROSTER-05 ❌ | Evento finalizado | Marcar el evento como `finalizado`, intentar subir la base | 400 "No se puede cargar la base de un evento finalizado" |
 | ROSTER-06 ✅ | Cargar sobre evento `creado` (antes de `en_proceso`) | Evento recién creado, subir el roster | Funciona (es preparación previa, `require_event_in_progress` NO aplica a `bulk_register`) |
 
-### 8.2 Reconocimiento facial opcional
+### 7.2 Reconocimiento facial opcional
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
@@ -174,7 +188,7 @@ Requiere evento en `en_proceso` para las acciones de escaneo/registro (no para n
 | ROSTER-09 ❌ | Checkbox marcado sin subir zip | Marcar el checkbox pero dejar el campo de zip vacío | El frontend quita el campo `zip_file` del envío (`formData.delete`); se procesa igual que ROSTER-07, sin error |
 | ROSTER-10 ❌ | Foto en el zip sin nombre de cédula coincidente | Zip con una foto `random.jpg` que no corresponde a ninguna cédula del roster | Se guarda el archivo en `known_people/` pero no se asocia a nadie (no hay cédula `random` en la base) — no debería romper la carga del resto |
 
-### 8.3 Campos opcionales dinámicos (`opcional_1`..`opcional_30`)
+### 7.3 Campos opcionales dinámicos (`opcional_1`..`opcional_30`)
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
@@ -187,7 +201,7 @@ Requiere evento en `en_proceso` para las acciones de escaneo/registro (no para n
 | ROSTER-17 ❌ | Número fuera de rango | Encabezado `"opcional_31"` o `"opcional_0"` | Se ignora por completo (no es un campo reconocido, `MAX_OPTIONAL_FIELDS=30`) |
 | ROSTER-18 ✅ | Columna "tipo de asistente" | Llenar esa columna (no es parte de los 30 opcionales, es fija) | Se guarda en `User.opt_1`, visible en el Directorio como "Tipo Asistente" |
 
-### 8.4 Validación con referencia de celda
+### 7.4 Validación con referencia de celda
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
@@ -201,9 +215,17 @@ Requiere evento en `en_proceso` para las acciones de escaneo/registro (no para n
 | ROSTER-26 ✅ | Carga con varios problemas a la vez | Combinar en un solo archivo: una fila sin ID, una con nombre vacío, una con correo malo, y una cédula repetida | Todos los mensajes aparecen juntos en `errors[]`, cada uno con su celda; la carga termina con `count` = filas válidas procesadas, sin 500 |
 | ROSTER-27 ✅ | Visualización por severidad | Repetir ROSTER-26 desde el navegador | En pantalla aparecen 3 cajas de color separadas: roja (❌ filas omitidas), amarilla (⚠️ revisar dato), azul (ℹ️ correcciones automáticas) |
 
+### 7.5 `Event.facial_enabled` (2026-09-21 — controla la vista de Registro unificada, ver sección 6)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| ROSTER-28 ✅ | Primera carga con zip enciende `facial_enabled` | Evento nuevo (`facial_enabled=False` por default) → subir roster marcando el checkbox + zip de fotos | `event.facial_enabled` pasa a `True`; entrar a `/kiosk/{event_id}/registro` ya muestra la pestaña de escáner (ver REG-01) |
+| ROSTER-29 ✅ | Subida posterior SIN zip no lo apaga | En el MISMO evento de ROSTER-28 (ya con `facial_enabled=True`), subir otro roster sin marcar el checkbox | `facial_enabled` sigue en `True` — no se apaga solo |
+| ROSTER-30 ✅ | Evento sin ninguna carga con fotos | Evento nuevo, subir solo roster sin zip (o no subir nada todavía) | `facial_enabled=False`, Registro se comporta como cédula tradicional (ver REG-10/11) |
+
 ---
 
-## 9. Advertencia de doble registro (`force`)
+## 8. Advertencia de doble registro (`force`)
 
 Aplica a `POST /api/recognize`, `POST /api/checkin-cedula` y `POST /api/register` (alta manual de alguien ya existente).
 
@@ -219,7 +241,7 @@ Aplica a `POST /api/recognize`, `POST /api/checkin-cedula` y `POST /api/register
 
 ---
 
-## 10. Directorio en Vivo (compartido Facial/Cédula, `static/js/directory.js`)
+## 9. Directorio en Vivo (`static/js/directory.js`, usado desde la vista de Registro unificada)
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
@@ -228,11 +250,12 @@ Aplica a `POST /api/recognize`, `POST /api/checkin-cedula` y `POST /api/register
 | DIR-03 ❌ | Guardar con campo vacío obligatorio | Borrar el nombre por completo en modo edición y "Guardar" | (Verificar: hoy no hay validación de "no vacío" en el PATCH — si se guarda vacío sin avisar, es una mejora pendiente, no necesariamente un bug bloqueante) |
 | DIR-04 ✅ | Eliminar registro de asistencia | "Eliminar" en una fila | Pide confirmación explicando que NO borra al `User`, solo su log de hoy; al confirmar, la fila vuelve a "No registrado" |
 | DIR-05 ✅ | Directorio NO mezcla eventos distintos | Comparar el Directorio de dos eventos distintos del mismo cliente, con personas distintas en cada uno | Cada evento muestra solo lo suyo |
-| DIR-06 ❌ | `digitador`/`cliente` intentan Editar/Eliminar | Verificar permisos reales: `PATCH /api/users/{id}` requiere `coordinador`+, `DELETE .../logs` requiere `admin`+ | Si un `digitador` llama esos endpoints directo (curl), debe dar 403 aunque la UI se lo permita visualmente — **revisar si la UI oculta esos botones para digitador/cliente; si no los oculta, es un hueco de UX a corregir** |
+| DIR-06 ❌ | `digitador`/`cliente` intentan Editar/Eliminar | Como `digitador`, ver la tabla del Directorio | **Arreglado 2026-09-21:** la celda de acción viene vacía desde el principio para `digitador`/`cliente` (sin botón "Editar" siquiera) — `directory.js` compara `window.STAFF_ROLE` contra `EDIT_ROLES`/`DELETE_ROLES` antes de crear los botones, mismos mínimos que exige el backend (`PATCH` = `coordinador`+, `DELETE .../logs` = `admin`+). Verificar además por API directa que ambos siguen dando 403 para roles insuficientes (defensa en profundidad, no solo ocultar en la UI) |
+| DIR-07 ✅ | `coordinador` ve Editar pero no Eliminar | Como `coordinador` (no admin), ver una fila y entrar en modo edición | Aparece "Editar"/"Guardar", pero "Eliminar" nunca se revela (requiere `admin`+) |
 
 ---
 
-## 11. Reporte Excel (`GET /api/report`)
+## 10. Reporte Excel (`GET /api/report`)
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
@@ -241,7 +264,7 @@ Aplica a `POST /api/recognize`, `POST /api/checkin-cedula` y `POST /api/register
 
 ---
 
-## 12. Seguridad / límites de acceso (regresión)
+## 11. Seguridad / límites de acceso (regresión)
 
 Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vigentes — repetir tras cualquier cambio en `auth.py`, `main.py` o los routers.
 
@@ -264,14 +287,13 @@ Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vige
 | Roles y permisos | 17 |
 | Clientes (Tenants) | 6 |
 | Eventos (CRUD + ciclo de vida) | 15 |
-| Selección de método | 5 |
-| Facial | 9 |
-| Cédula | 10 |
-| Roster (formato, facial opcional, opcionales dinámicos, validación) | 27 |
+| Selección (`/kiosk/{event_id}`) | 7 |
+| Registro unificado (con/sin cámara + Directorio compartido) | 24 |
+| Roster (formato, facial opcional, opcionales dinámicos, validación, `facial_enabled`) | 30 |
 | Doble registro | 7 |
-| Directorio en Vivo | 6 |
+| Directorio en Vivo | 7 |
 | Reporte | 2 |
 | Seguridad | 6 |
-| **Total** | **118** |
+| **Total** | **129** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.
