@@ -98,6 +98,7 @@ Jerarquía: `cliente` (fuera de la jerarquía real, ver `CLAUDE.md`) < `digitado
 | EVENT-09 ❌ | Estado inválido por API directa | `PATCH /api/events/{id}` con `status="activo"` (valor viejo, ya no existe) | 400 "Estado inválido" |
 | EVENT-10 ❌ | Cambiar `event_code` a uno ya usado por otro evento | `PATCH` con un código existente de OTRO evento | 400 "Ya existe un evento con el código..." |
 | EVENT-11 ✅ | Búsqueda de eventos | `/` (coordinador+), buscar por parte del nombre/código/ciudad | Filtra por prefijo de palabra (ver `_matches_by_word_prefix`) — "cor" encuentra "Corferias", "ferias" NO |
+| EVENT-11b ✅ | Búsqueda sin tildes (Sprint 2 Fix 1) | Cliente/evento con tilde en el nombre (ej. "Café Central"), buscar `cafe` (sin tilde) | Encuentra el resultado igual — insensible a tildes/ñ, no solo a mayúsculas |
 | EVENT-12 ✅ | Borrar evento con historial | Borrar un evento que ya tiene `AccessLog`/`EventStaffAuthorization` | Se borra sin `ForeignKeyViolation`; los `AccessLog` quedan con `event_id=NULL` (no se borran), las `EventStaffAuthorization` de ese evento sí se borran |
 | EVENT-13 ❌ | `digitador`/`cliente` sin autorización explícita | Crear un evento nuevo y, SIN autorizar a un `digitador` existente, hacer que ese `digitador` intente `/kiosk/{event_id}` | 403/redirige a `/` |
 | EVENT-14 ❌ | `digitador` entra a evento no `en_proceso` | Autorizar a un `digitador` para un evento en estado `creado` o `finalizado`, intentar `/kiosk/{event_id}` | Bloqueado (redirige) — `get_event_for_staff` solo deja pasar `en_proceso` para `digitador`/`cliente` |
@@ -275,6 +276,13 @@ Aplica a `POST /api/recognize`, `POST /api/checkin-cedula` y `POST /api/register
 | DIR-05 ✅ | Directorio NO mezcla eventos distintos | Comparar el Directorio de dos eventos distintos del mismo cliente, con personas distintas en cada uno | Cada evento muestra solo lo suyo |
 | DIR-06 ❌ | `digitador`/`cliente` intentan Editar/Eliminar | Como `digitador`, ver la tabla del Directorio | **Arreglado 2026-09-21:** la celda de acción viene vacía desde el principio para `digitador`/`cliente` (sin botón "Editar" siquiera) — `directory.js` compara `window.STAFF_ROLE` contra `EDIT_ROLES`/`DELETE_ROLES` antes de crear los botones, mismos mínimos que exige el backend (`PATCH` = `coordinador`+, `DELETE .../logs` = `admin`+). Verificar además por API directa que ambos siguen dando 403 para roles insuficientes (defensa en profundidad, no solo ocultar en la UI) |
 | DIR-07 ✅ | `coordinador` ve Editar pero no Eliminar | Como `coordinador` (no admin), ver una fila y entrar en modo edición | Aparece "Editar"/"Guardar", pero "Eliminar" nunca se revela (requiere `admin`+) |
+| DIR-08 ✅ | Búsqueda por nombre/empresa sin tildes (Sprint 2 Fix 1) | Persona cargada como "María José Ñúñez Gómez", buscar `maria jose` (sin tildes, minúsculas) | La encuentra igual — antes daba "Sin resultados" |
+| DIR-09 ✅ | Prefijo por palabra, no substring (Sprint 2 Fix 1) | Con "María" y "Amaya" cargadas en el mismo evento, buscar `Ma` en el campo de nombre | Solo aparece "María" (su nombre EMPIEZA con "Ma"); "Amaya" NO aparece aunque contenga "ma" en medio |
+| DIR-10 ✅ | Cédula sigue siendo substring (sin cambiar) | Buscar por los ÚLTIMOS dígitos de una cédula (no el inicio) | Sigue encontrándola — el campo de cédula no cambió a prefijo, solo nombre/empresa |
+| DIR-11 ✅ | Contador "N sin registrar" (Sprint 2 Fix 2) | Evento con roster precargado, algunas personas sin presentarse todavía | Aparece un botón/badge "⚠️ N sin registrar" arriba de la tabla, con el conteo correcto de filas en estado "No registrado" |
+| DIR-12 ✅ | Clic en el contador filtra la tabla | Clic en el botón de DIR-11 | Solo quedan visibles las filas "No registrado"; el botón queda visualmente "activo" |
+| DIR-13 ✅ | El filtro de "sin registrar" se combina con la búsqueda | Con el filtro de DIR-12 activo, escribir algo en el campo de nombre | Se aplican AMBOS filtros a la vez (no se reemplazan) |
+| DIR-14 ✅ | El contador se oculta si no hace falta | Evento donde TODOS ya se registraron (0 "No registrado") y el filtro no está activo | El botón/badge no aparece |
 
 ---
 
@@ -309,14 +317,14 @@ Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vige
 | Autenticación | 8 |
 | Roles y permisos | 17 |
 | Clientes (Tenants) | 6 |
-| Eventos (CRUD + ciclo de vida) | 15 |
+| Eventos (CRUD + ciclo de vida) | 16 |
 | Selección (`/kiosk/{event_id}`) | 7 |
 | Registro unificado (con/sin cámara + Directorio compartido + opcionales en alta manual) | 32 |
 | Roster (formato, facial opcional, opcionales dinámicos, validación, `facial_enabled`, bloqueo de re-carga) | 35 |
 | Doble registro | 7 |
-| Directorio en Vivo | 7 |
+| Directorio en Vivo | 14 |
 | Reporte | 2 |
 | Seguridad | 6 |
-| **Total** | **142** |
+| **Total** | **150** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

@@ -8,6 +8,26 @@
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
   }
 
+  /* Búsqueda insensible a tildes/ñ + "prefijo por palabra" (no substring en cualquier posición)
+     — Sprint 2 Fix 1, 2026-09-15: buscar "maria"/"MARIA" debía encontrar "María", y buscar "Ma"
+     debía encontrar "María" pero NO "Amaya" (ninguna de sus palabras EMPIEZA con "ma", aunque la
+     contenga en medio). Mismo criterio que `_matches_by_word_prefix` en routers/events.py — se
+     mantiene la misma lógica en los dos lados a propósito. */
+  function stripAccents(text) {
+    return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  function wordsOf(text) {
+    return stripAccents(text).toLowerCase().match(/\w+/g) || [];
+  }
+
+  function matchesWordPrefix(haystack, query) {
+    const queryWords = wordsOf(query);
+    if (!queryWords.length) return false;
+    const haystackWords = wordsOf(haystack);
+    return queryWords.every(qw => haystackWords.some(hw => hw.startsWith(qw)));
+  }
+
   /* opt_2 (antes "cantidad de empl") quedó deprecado el 2026-09-20 — la carga de base ahora usa
      hasta 30 campos "opcional_N" dinámicos (ver bulk_register/CLAUDE.md) en vez de dos fijos. Se
      deja de mostrar/editar aquí; el campo sigue existiendo en la base por compatibilidad. */
@@ -216,24 +236,55 @@
      pestaña, o tras registrar a alguien nuevo desde otra pestaña). */
   function mountSearch(opts) {
     let allUsers = [];
+    let onlyNotRegistered = false;
     const ids = opts.searchIds || {};
     const cedulaInput = ids.cedula ? document.getElementById(ids.cedula) : null;
     const nombreInput = ids.nombre ? document.getElementById(ids.nombre) : null;
     const empresaInput = ids.empresa ? document.getElementById(ids.empresa) : null;
 
+    /* Botón/contador "N sin registrar" (Sprint 2 Fix 2, 2026-09-15) — se crea solo, insertado
+       justo antes de la tabla, así no hay que tocar cada template que use mountSearch. Clic
+       alterna un filtro adicional (combinado con los campos de búsqueda de arriba, no los
+       reemplaza) que deja solo las filas en estado "No registrado". */
+    const tbodyEl = document.getElementById(opts.tbodyId);
+    const tableEl = tbodyEl ? tbodyEl.closest('table') : null;
+    let counterBtn = null;
+    if (tableEl && tableEl.parentNode) {
+      counterBtn = document.createElement('button');
+      counterBtn.type = 'button';
+      counterBtn.className = 'not-registered-counter';
+      counterBtn.style.cssText = 'display:inline-block; margin-bottom:1rem; border:1px solid #dc3545; background:#fbe9ea; color:#a12631; border-radius:20px; padding:6px 16px; font-weight:700; font-size:0.85rem; cursor:pointer;';
+      counterBtn.addEventListener('click', () => {
+        onlyNotRegistered = !onlyNotRegistered;
+        counterBtn.style.background = onlyNotRegistered ? '#dc3545' : '#fbe9ea';
+        counterBtn.style.color = onlyNotRegistered ? 'white' : '#a12631';
+        applyFilters();
+      });
+      tableEl.parentNode.insertBefore(counterBtn, tableEl);
+    }
+
+    function updateCounterLabel() {
+      if (!counterBtn) return;
+      const count = allUsers.filter(u => u.status === 'No registrado').length;
+      counterBtn.innerText = `⚠️ ${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
+      counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : 'inline-block';
+    }
+
     function applyFilters() {
       const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
-      const nombre = (nombreInput && nombreInput.value || '').trim().toLowerCase();
-      const empresa = (empresaInput && empresaInput.value || '').trim().toLowerCase();
+      const nombre = (nombreInput && nombreInput.value || '').trim();
+      const empresa = (empresaInput && empresaInput.value || '').trim();
       const filtered = allUsers.filter(u => {
+        if (onlyNotRegistered && u.status !== 'No registrado') return false;
         if (cedula && !String(u.id || '').toLowerCase().includes(cedula)) return false;
         if (nombre) {
-          const fullName = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
-          if (!fullName.includes(nombre)) return false;
+          const fullName = `${u.first_name || ''} ${u.last_name || ''}`;
+          if (!matchesWordPrefix(fullName, nombre)) return false;
         }
-        if (empresa && !String(u.company || '').toLowerCase().includes(empresa)) return false;
+        if (empresa && !matchesWordPrefix(String(u.company || ''), empresa)) return false;
         return true;
       });
+      updateCounterLabel();
       renderRows(opts.tbodyId, filtered, { showAccredit: opts.showAccredit });
     }
 

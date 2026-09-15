@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from datetime import date
 from typing import Optional
 
@@ -108,8 +109,15 @@ async def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(ge
     return [_serialize(e) for e in events]
 
 
+def _strip_accents(text: str) -> str:
+    """NFD + descarta las marcas diacríticas (categoría Unicode 'Mn') — 'María'/'Compañía' quedan
+    como 'Maria'/'Compania' para poder buscar sin tildes/ñ (2026-09-15, Sprint 2 Fix 1: la
+    búsqueda era insensible a mayúsculas pero NO a tildes, ver CLAUDE.md)."""
+    return "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
+
+
 def _words(text: Optional[str]) -> list:
-    return re.findall(r"\w+", (text or "").lower())
+    return re.findall(r"\w+", _strip_accents(text or "").lower())
 
 
 def _matches_by_word_prefix(haystack: str, query: str) -> bool:
