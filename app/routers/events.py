@@ -296,11 +296,16 @@ async def create_event_staff(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
+    # 'digitador'/'cliente' son las dos excepciones del teléfono obligatorio+único (Sprint 2.4
+    # Fase 4) — acá sigue siendo opcional, pero si se manda uno, igual debe ser único.
+    phone = (data.phone or "").strip() or None
+    if phone and db.query(StaffUser).filter(StaffUser.phone == phone).first():
+        raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese teléfono")
 
     new_user = StaffUser(
         username=data.username, password_hash=hash_password(data.password),
         full_name=data.full_name, role=data.role, tenant_id=event.tenant_id, created_by_id=staff.id,
-        phone=data.phone,
+        phone=phone,
     )
     db.add(new_user)
     db.flush()  # para obtener new_user.id antes de commitear

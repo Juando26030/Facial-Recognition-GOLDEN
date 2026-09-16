@@ -85,6 +85,14 @@ async def create_staff(
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede crear cuentas Admin")
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ese usuario ya existe")
+    # Sprint 2.4 Fase 4 (2026-09-16, pedido explícito): el teléfono es obligatorio y único para
+    # todas las cuentas que se crean por acá (coordinador/comercial/admin) — digitador/cliente,
+    # las dos excepciones, no pasan por este endpoint (ver create_event_staff en events.py).
+    phone = (data.phone or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="El teléfono es obligatorio para esta cuenta")
+    if db.query(StaffUser).filter(StaffUser.phone == phone).first():
+        raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese teléfono")
 
     new_staff = StaffUser(
         username=data.username,
@@ -93,7 +101,7 @@ async def create_staff(
         role=data.role,
         tenant_id=staff.tenant_id,
         created_by_id=staff.id,
-        phone=data.phone,
+        phone=phone,
     )
     db.add(new_staff)
     db.commit()

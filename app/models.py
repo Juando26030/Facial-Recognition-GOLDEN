@@ -136,7 +136,7 @@ class StaffUser(Base):
     full_name = Column(String)
     role = Column(String, nullable=False)  # uno de STAFF_ROLES
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=True)  # null = alcance global (super_admin)
-    phone = Column(String, nullable=True)  # Sprint 2.4, 2026-09-16: para notificaciones por WhatsApp (opcional)
+    phone = Column(String, nullable=True, unique=True)  # Sprint 2.4, 2026-09-16: WhatsApp; Fase 4: obligatorio+único salvo cliente/digitador (ver routers/staff.py, routers/events.py)
     is_active = Column(Boolean, default=True, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

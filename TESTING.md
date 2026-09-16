@@ -600,6 +600,18 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 26. Sprint 2.4 Fase 4: teléfono obligatorio y único para cuentas de staff
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-32 ❌ | Coordinador/comercial/admin sin teléfono | Crear una cuenta desde `/admin/staff` (o `POST /api/staff`) sin teléfono | 400 — el teléfono es obligatorio |
+| S24-33 ❌ | Teléfono duplicado entre cuentas | Crear una cuenta con el mismo teléfono que otra ya existente | 400 — no se puede repetir |
+| S24-34 ✅ | Digitador/cliente sin teléfono | Crear una cuenta digitador o cliente desde "Usuarios del Evento" sin teléfono | Se crea normal — es la excepción explícita del pedido |
+| S24-35 ❌ | Digitador/cliente con teléfono repetido | Crear digitador/cliente indicando un teléfono que ya usa otra cuenta | 400 — si se manda, igual debe ser único |
+| S24-36 ℹ️ | Migración limpia duplicados existentes | `alembic upgrade head` sobre una base con cuentas que ya comparten teléfono | Se conserva el teléfono en la cuenta más antigua, el resto queda en blanco; la migración no falla |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -629,6 +641,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 1 (ajustes de UI/UX) | 9 |
 | Sprint 2.4 Fase 2 (flujo de acreditar por cédula) | 6 |
 | Sprint 2.4 Fase 3 (nombres, modales flotantes, autoregistro en cédula, filtros, avisos de duplicado con conteo) | 8 |
-| **Total** | **337** |
+| Sprint 2.4 Fase 4 (teléfono obligatorio y único para staff) | 5 |
+| **Total** | **342** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.
