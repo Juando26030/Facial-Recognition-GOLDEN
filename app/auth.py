@@ -42,6 +42,24 @@ def require_role(minimum_role: str):
     return checker
 
 
+def require_role_excluding(minimum_role: str, excluded_roles: tuple):
+    """Como require_role, pero además bloquea roles puntuales aunque cumplan la jerarquía — Sprint
+    2.4 Fase 6 (2026-09-16, pedido explícito): 'comercial' queda por ENCIMA de 'coordinador' en
+    STAFF_ROLES (hereda su acceso operativo por diseño, ver Fase 0), pero el usuario pidió que
+    puntualmente NO tenga Adjuntar Base de Datos, Escarapelas ni Parámetros del Evento — un
+    require_role('coordinador') simple no puede excluir un rol que está POR ENCIMA del mínimo."""
+    minimum_level = ROLE_HIERARCHY[minimum_role]
+
+    def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
+        if staff.role in excluded_roles:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+        if ROLE_HIERARCHY[staff.role] < minimum_level:
+            raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+        return staff
+
+    return checker
+
+
 def require_role_or_client(minimum_role: str):
     """Como require_role, pero además deja pasar siempre a 'cliente' aunque quede por debajo del
     mínimo en STAFF_ROLES — pensado para vistas de solo lectura (Estadísticas, 2026-09-16,

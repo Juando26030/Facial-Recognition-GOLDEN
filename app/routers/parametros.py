@@ -14,7 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import get_event_for_staff, require_role
+from app.auth import get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
 
@@ -66,7 +66,7 @@ def field_configs_for_event(db: Session, event: Event) -> list:
 
 @router.post("/events/{event_id}/optional-fields")
 async def add_optional_field(
-    event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+    event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Agrega un campo opcional nuevo directamente desde Parámetros del Evento (2026-09-16,
     pedido explícito) — sin pasar por un alta/carga de roster como hasta ahora (`NEEDS_LABELS` en
@@ -93,7 +93,7 @@ async def add_optional_field(
 
 @router.get("/events/{event_id}/field-configs")
 async def list_field_configs(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
     return field_configs_for_event(db, event)
@@ -102,7 +102,7 @@ async def list_field_configs(
 @router.put("/events/{event_id}/field-configs/{field_key}")
 async def upsert_field_config(
     event_id: int, field_key: str, data: dict, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
     valid_keys = {k for k, _ in _configurable_fields(event)}

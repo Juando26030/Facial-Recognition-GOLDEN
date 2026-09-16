@@ -627,6 +627,20 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 28. Sprint 2.4 Fase 6: ocultar funciones operativas para "comercial"
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-45 ❌ | Comercial no ve "Adjuntar Base de Datos"/"Escarapelas"/"Parámetros del Evento" | Entrar a `/kiosk/{event_id}` con sesión `comercial` | Esas 3 tarjetas no aparecen en la pantalla de selección |
+| S24-46 ✅ | Comercial sigue viendo "Usuarios del Evento" y "Estadísticas" | Mismo `/kiosk/{event_id}` | Ambas tarjetas siguen visibles y funcionando |
+| S24-47 ❌ | URL directa a las 3 páginas bloqueadas | Con sesión `comercial`, entrar por URL directa a `/kiosk/{id}/roster`, `/parametros` o `/escarapela` | Redirige a `/kiosk/{id}` — no basta con ocultar el link, la página también rechaza el acceso |
+| S24-48 ❌ | Comercial no puede imprimir desde el Directorio en Vivo | Con sesión `comercial`, abrir Registro | El botón 🖨️ no aparece en ninguna fila del Directorio |
+| S24-49 ❌ | Endpoints de escarapelas/roster/parámetros rechazan a comercial | Llamar directo `POST /api/bulk_register`, cualquier endpoint de `badge-template`/`badge-print-data`, o `field-configs` con una sesión comercial | 403 en los 7 — el backend bloquea aunque se salte la UI |
+| S24-50 ✅ | Usuarios del Evento sigue limitado a crear solo clientes | Desde "Usuarios del Evento" con sesión comercial, el selector de rol | Solo ofrece "Cliente", no "Digitador" (heredado de Fase 0, sin cambios) |
+| S24-51 ✅ | Coordinador no tiene ninguna regresión | Repetir S24-45 a S24-49 con sesión `coordinador` | Todo sigue accesible exactamente igual que antes de esta fase |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -658,6 +672,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 3 (nombres, modales flotantes, autoregistro en cédula, filtros, avisos de duplicado con conteo) | 8 |
 | Sprint 2.4 Fase 4 (teléfono obligatorio y único para staff) | 5 |
 | Sprint 2.4 Fase 5 (comercial asignada a eventos + filtros de pertenencia) | 8 |
-| **Total** | **350** |
+| Sprint 2.4 Fase 6 (ocultar funciones operativas para comercial) | 7 |
+| **Total** | **357** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

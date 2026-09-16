@@ -16,7 +16,7 @@ from app.database import get_db
 from app.models import User, AccessLog, EventAttendee, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_or_client
+from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app.routers import parametros
 from app.routers.events import _words
 
@@ -697,7 +697,7 @@ async def manual_register(
 async def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(...), zip_file: UploadFile = File(None),
     field_labels: str = Form(None),
-    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o

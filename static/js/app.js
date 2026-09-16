@@ -53,8 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // Botón "Imprimir Escarapela" (Historia 2.2) — NUNCA se dispara solo por defecto, el
     // digitador decide si lo pulsa; si el evento tiene la auto-impresión activada
     // (window.EVENT_AUTO_PRINT, switch en el editor de escarapelas), además se abre sola.
+    // 'comercial' excluido (Sprint 2.4 Fase 6, pedido explícito: "la comercial no debe poder
+    // imprimir") — el backend ya lo bloquea, esto evita ofrecerle un botón que le va a fallar.
     function offerPrint(btn, userId) {
-        if (!btn) return;
+        if (!btn || window.STAFF_ROLE === 'comercial') return;
         btn.style.display = 'block';
         btn.onclick = () => BadgePrint.openPrintWindow(userId);
         if (window.BadgePrint) BadgePrint.maybeAutoPrint(userId);

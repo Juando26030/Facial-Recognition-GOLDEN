@@ -79,6 +79,12 @@
         <div class="mode-sub">Próximamente</div>
       </div>
       {% if staff_role != "digitador" %}
+      {# Sprint 2.4 Fase 6 (2026-09-16, pedido explícito): 'comercial' no debe ver Adjuntar Base
+         de Datos, Escarapelas ni Parámetros del Evento — literal que no aparezcan, no solo que
+         estén bloqueadas al entrar. Usuarios del Evento y Estadísticas SÍ quedan visibles para
+         comercial (Usuarios del Evento queda accesible pero solo para crear cuentas cliente, el
+         propio formulario ya oculta la opción Digitador para ese rol desde la Fase 0). #}
+      {% if staff_role != "comercial" %}
       <a href="/kiosk/{{ event.id }}/roster" class="mode-card enabled">
         <div class="mode-icon">📎</div>
         <div class="mode-title">Adjuntar Base de Datos</div>
@@ -89,6 +95,7 @@
         <div class="mode-title">Escarapelas</div>
         <div class="mode-sub">Diseña la escarapela de este evento e imprímela al registrar</div>
       </a>
+      {% endif %}
       <a href="/kiosk/{{ event.id }}/estadisticas" class="mode-card enabled">
         <div class="mode-icon">📊</div>
         <div class="mode-title">Estadísticas</div>
@@ -99,11 +106,13 @@
         <div class="mode-title">Usuarios del Evento</div>
         <div class="mode-sub">Cuentas temporales de digitador/cliente para este evento</div>
       </a>
+      {% if staff_role != "comercial" %}
       <a href="/kiosk/{{ event.id }}/parametros" class="mode-card enabled">
         <div class="mode-icon">⚙️</div>
         <div class="mode-title">Parámetros del Evento</div>
         <div class="mode-sub">Define qué campos son obligatorios, su tipo, y qué variables generan estadística sola</div>
       </a>
+      {% endif %}
       {% endif %}
     </div>
 

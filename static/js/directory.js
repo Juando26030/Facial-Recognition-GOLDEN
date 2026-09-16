@@ -271,9 +271,12 @@
     actionTd.className = 'action-cell';
 
     /* Botón de impresión persistente por fila (Historia 2.2) — vive siempre en la fila para
-       poder reimprimir a cualquiera en cualquier momento, no solo recién registrado. Mismo
-       criterio de visibilidad que el resto de acciones: cliente es de solo lectura. */
-    if (window.STAFF_ROLE !== 'cliente') {
+       poder reimprimir a cualquiera en cualquier momento, no solo recién registrado. cliente es
+       de solo lectura; 'comercial' excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito:
+       "la comercial no debe poder imprimir en directorio en vivo") — el backend ya lo bloquea
+       (require_role_excluding en badges.py), esto evita mostrarle un botón que le va a fallar. */
+    const PRINT_HIDDEN_ROLES = ['cliente', 'comercial'];
+    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE)) {
       const printBtn = document.createElement('button');
       printBtn.type = 'button';
       printBtn.innerText = '🖨️';

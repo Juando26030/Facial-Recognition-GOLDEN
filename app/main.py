@@ -288,7 +288,11 @@ async def kiosk_registro_legacy_redirect(event_id: int):
 
 @app.get("/kiosk/{event_id}/roster")
 async def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db)):
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador")
+    # exclude_roles (Sprint 2.4 Fase 6, 2026-09-16, pedido explícito): 'comercial' queda por
+    # ENCIMA de 'coordinador' en STAFF_ROLES (hereda su acceso operativo por diseño, Fase 0), pero
+    # explícitamente NO debe ver "Adjuntar Base de Datos" — un min_role jerárquico no alcanza para
+    # excluir un rol que está por encima del mínimo.
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/usuarios")
@@ -321,24 +325,29 @@ async def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depe
 async def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Parámetros del Evento (Sprint 2.2, 2026-09-16, pedido explícito) — coordinador+ define por
     campo si es obligatorio, qué tipo de control usar y si debe generar estadística sola al
-    entrar a Estadísticas. Mismo mínimo de rol que Adjuntar Base de Datos/Usuarios del Evento."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador")
+    entrar a Estadísticas. Mismo mínimo de rol que Adjuntar Base de Datos/Usuarios del Evento.
+    'comercial' excluido explícitamente (Sprint 2.4 Fase 6, 2026-09-16, pedido explícito) — queda
+    por ENCIMA de 'coordinador' en STAFF_ROLES, así que min_role solo no alcanza para bloquearlo."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/escarapela")
 async def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Editor visual de la escarapela del evento (Sprint 2, Épico 2) — mismo mínimo de rol que
     Adjuntar Base de Datos (coordinador+); la impresión en sí (no el diseño) se dispara desde
-    /kiosk/{event_id}/registro, disponible para digitador+."""
-    return _resolve_kiosk_page(event_id, request, db, "badge_editor.html", min_role="coordinador")
+    /kiosk/{event_id}/registro, disponible para digitador+. 'comercial' excluido explícitamente
+    (Sprint 2.4 Fase 6) — no debe diseñar NI imprimir escarapelas."""
+    return _resolve_kiosk_page(event_id, request, db, "badge_editor.html", min_role="coordinador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
 async def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: Session = Depends(get_db)):
     """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en
     una pestaña/ventana aparte desde el botón "Imprimir Escarapela" (o sola, si el evento tiene
-    auto_print_badge activo) sin sacar al digitador de la pantalla de Registro."""
-    return _resolve_kiosk_page(event_id, request, db, "badge_print.html", extra_context={
+    auto_print_badge activo) sin sacar al digitador de la pantalla de Registro. 'comercial'
+    excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito: "la comercial no debe poder
+    imprimir")."""
+    return _resolve_kiosk_page(event_id, request, db, "badge_print.html", exclude_roles=["comercial"], extra_context={
         "print_user_id": user_id,
         "print_user_id_json": json.dumps(user_id).replace("</", "<\\/"),
     })

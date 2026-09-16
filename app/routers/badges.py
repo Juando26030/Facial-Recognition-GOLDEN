@@ -9,7 +9,7 @@ from typing import Optional
 
 from app.database import get_db
 from app.models import BadgeTemplate, SavedBadgeTemplate, StaffUser, User, PrintLog
-from app.auth import get_current_staff, get_event_for_staff, require_role
+from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 
 router = APIRouter()
 
@@ -74,7 +74,7 @@ def _get_or_create_template(event, db: Session) -> BadgeTemplate:
 
 @router.get("/events/{event_id}/badge-template")
 async def get_badge_template(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
 ):
     """La plantilla ACTIVA del evento — se crea sola con un diseño mínimo por defecto (nombre +
     apellido + empresa) la primera vez que se pide, así el editor nunca arranca en blanco del
@@ -90,7 +90,7 @@ async def get_badge_template(
 @router.put("/events/{event_id}/badge-template")
 async def update_badge_template(
     event_id: int, data: BadgeTemplateIn, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
     tpl = _get_or_create_template(event, db)
@@ -107,7 +107,7 @@ async def update_badge_template(
 
 @router.get("/events/{event_id}/saved-badge-templates")
 async def list_saved_badge_templates(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))
 ):
     """Librería reusable — GLOBAL para toda la app (2026-09-16, pedido explícito: antes era por
     tenant, ahora una plantilla guardada desde CUALQUIER evento de CUALQUIER cliente aparece acá
@@ -124,7 +124,7 @@ async def list_saved_badge_templates(
 @router.post("/events/{event_id}/badge-template/save-as")
 async def save_badge_template_as(
     event_id: int, data: SaveAsIn, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """'Guardar como plantilla': copia el diseño actual del evento a una fila nueva de la
     librería reusable. Es una COPIA — editar el evento después no toca esta fila."""
@@ -145,7 +145,7 @@ async def save_badge_template_as(
 @router.post("/events/{event_id}/badge-template/import/{saved_id}")
 async def import_saved_badge_template(
     event_id: int, saved_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """'Importar plantilla': copia el diseño de una SavedBadgeTemplate al BadgeTemplate de ESTE
     evento (sobrescribe lo que tuviera) — punto de partida editable, no una referencia compartida.
@@ -170,7 +170,7 @@ async def import_saved_badge_template(
 
 @router.delete("/saved-badge-templates/{saved_id}")
 async def delete_saved_badge_template(
-    saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))
 ):
     saved = db.query(SavedBadgeTemplate).filter(SavedBadgeTemplate.id == saved_id).first()
     if not saved:
@@ -194,7 +194,7 @@ async def delete_saved_badge_template(
 @router.post("/events/{event_id}/badge-template/upload-image")
 async def upload_badge_image(
     event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Sube una imagen (fondo, o un image_static suelto como un logo) y devuelve el storage_path
     para usar en background_value o en el campo storage_path de un elemento image_static."""
@@ -230,7 +230,7 @@ async def get_badge_asset(
 @router.get("/users/{user_id}/badge-print-data")
 async def get_badge_print_data(
     user_id: str, event_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("digitador")),
+    staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """Datos completos de UNA persona para imprimir su escarapela — incluye extra_fields (los
     campos opcionales) y si tiene foto, que /api/users normal (el Directorio) no manda."""
@@ -251,7 +251,7 @@ async def get_badge_print_data(
 @router.get("/users/{user_id}/photo")
 async def get_user_photo(
     user_id: str, event_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("digitador")),
+    staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """La foto biométrica de la persona (si existe) — para el elemento image_variable
     (source: "photo") de la escarapela."""
@@ -265,7 +265,7 @@ async def get_user_photo(
 @router.get("/users/{user_id}/print-count")
 async def get_print_count(
     user_id: str, event_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("digitador")),
+    staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """Cuántas veces se ha impreso la escarapela de esta persona en ESTE evento — para avisar
     antes de repetir (Sprint 2.4 Fase 3, pedido explícito)."""
@@ -279,7 +279,7 @@ async def get_print_count(
 @router.post("/users/{user_id}/print-log")
 async def log_print(
     user_id: str, event_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("digitador")),
+    staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """Registra una impresión de escarapela — se llama justo antes de abrir la ventana de
     impresión, tras cualquier confirmación necesaria."""
