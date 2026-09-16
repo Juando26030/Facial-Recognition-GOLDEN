@@ -54,7 +54,7 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};</script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
@@ -126,8 +126,7 @@
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Cargo</th><th>Empresa</th>
-                            <th>Teléfono</th><th>Correo</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
+                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -326,8 +325,7 @@
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Cargo</th><th>Empresa</th>
-                            <th>Teléfono</th><th>Correo</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
+                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -432,7 +430,6 @@
     window.directorySearch = GoldenDirectory.mountSearch({
         tbodyId: 'directoryTableBody',
         searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', empresa: 'searchEmpresa' },
-        showAccredit: canAccredit,
         fastCheckin: canAccredit,
         onNotFound: canAccredit ? goToManualWithCedula : null,
     });

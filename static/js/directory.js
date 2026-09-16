@@ -45,32 +45,178 @@
     return { cedula, nombres, apellidos };
   }
 
-  /* opt_2 (antes "cantidad de empl") quedó deprecado el 2026-09-20 — la carga de base ahora usa
-     hasta 30 campos "opcional_N" dinámicos (ver bulk_register/CLAUDE.md) en vez de dos fijos. Se
-     deja de mostrar/editar aquí; el campo sigue existiendo en la base por compatibilidad. */
-  const FIELDS_ORDER = ['id', 'first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1'];
-  const EDITABLE_FIELDS = ['first_name', 'last_name', 'role', 'company', 'phone', 'email', 'opt_1'];
+  /* Columnas visibles en la tabla (2026-09-16, pedido explícito de Juan David: la tabla de antes
+     obligaba a hacer scroll horizontal con 10 columnas — ya no cabía en pantalla). El resto de
+     los datos (cargo, empresa, teléfono, correo, opcionales) se muestran y editan SOLO dentro del
+     modal de "Editar" (ver buildEditModal), no como <td> sueltos en la fila. opt_2 (antes
+     "cantidad de empl") sigue deprecado, ni siquiera vive en el modal. */
+  const FIELDS_ORDER = ['id', 'first_name', 'last_name', 'opt_1'];
 
-  /* Mismos mínimos que el backend exige de verdad (PATCH /api/users/{id} = coordinador+, DELETE
-     .../logs = admin+, ver tabla de "Roles y permisos" en CLAUDE.md) — bug real encontrado en
-     testing (DIR-06, 2026-09-21): el botón "Editar" se mostraba para digitador/cliente aunque el
-     PATCH les fuera a dar 403 igual. Ocultar el botón entero es más claro que dejar que el
-     usuario lo intente y falle. */
+  /* Mismos mínimos que el backend exige de verdad (PATCH /api/users/{id} = coordinador+, ver tabla
+     de "Roles y permisos" en CLAUDE.md) — bug real encontrado en testing (DIR-06, 2026-09-21): el
+     botón "Editar" se mostraba para digitador/cliente aunque el PATCH les fuera a dar 403 igual.
+     Ocultar el botón entero es más claro que dejar que el usuario lo intente y falle.
+     ADMIN_ROLES (2026-09-16): "Eliminar" y "Cambiar estado de registro" son más delicados que un
+     editar de perfil normal — vivos DENTRO del modal de Editar, pero solo visibles/operables para
+     admin+ (mismo mínimo que ya exigía el backend en DELETE /users/{id}/logs desde antes; se
+     mantiene ese mínimo también para los dos endpoints nuevos). */
   const EDIT_ROLES = ['coordinador', 'admin', 'super_admin'];
-  const DELETE_ROLES = ['admin', 'super_admin'];
+  const ADMIN_ROLES = ['admin', 'super_admin'];
   const canEdit = EDIT_ROLES.includes(window.STAFF_ROLE);
-  const canDelete = DELETE_ROLES.includes(window.STAFF_ROLE);
+  const isAdmin = ADMIN_ROLES.includes(window.STAFF_ROLE);
 
-  function buildRow(user, opts) {
+  /* Modal flotante de edición (2026-09-16, reemplaza la edición inline contentEditable de antes —
+     con 10 columnas en pantalla no cabía nada sin scroll horizontal). Mismos campos que el alta
+     manual (incluidos los opcionales dinámicos de este evento, vía window.OPTIONAL_VARIABLES,
+     inyectado igual que en badge_editor.html). "Estado de registro" y "Eliminar" viven ACÁ dentro
+     (no como botones sueltos en la fila) y solo se muestran para admin+ — mismo mínimo que ya
+     exigía el backend en DELETE /users/{id}/logs. Cada una de las dos dispara su propia
+     confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
+     vaya a hacer una de estas dos salga la notificación de confirmación"). */
+  function buildEditModal(user) {
+    const optionalVars = window.OPTIONAL_VARIABLES || [];
+    const extras = user.extra_fields || {};
+
+    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+    function fieldRow(label, name, value, type) {
+      return `<div style="margin-bottom:0.8rem;">
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${label}</label>
+        <input type="${type || 'text'}" name="${name}" value="${esc(value)}" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+      </div>`;
+    }
+
+    const optionalHtml = optionalVars.map(([key, label]) => fieldRow(label, key, extras[key] || '')).join('');
+    const isRegistered = user.status !== 'No registrado';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:white; border-radius:16px; padding:1.8rem; max-width:520px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif); max-height:90vh; overflow:auto;';
+    box.innerHTML = `
+      <h4 style="margin-top:0; color:var(--golden-dark);">Editar persona</h4>
+      <div style="display:flex; gap:0.8rem;">
+        <div style="flex:1;">${fieldRow('Nombres', 'first_name', user.first_name)}</div>
+        <div style="flex:1;">${fieldRow('Apellidos', 'last_name', user.last_name)}</div>
+      </div>
+      <div style="margin-bottom:0.8rem;">
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Cédula</label>
+        <input type="text" value="${esc(user.id)}" disabled style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:0.95rem; background:#f5f5f5; color:#888;">
+      </div>
+      <div style="display:flex; gap:0.8rem;">
+        <div style="flex:1;">${fieldRow('Cargo', 'role', user.role)}</div>
+        <div style="flex:1;">${fieldRow('Empresa', 'company', user.company)}</div>
+      </div>
+      <div style="display:flex; gap:0.8rem;">
+        <div style="flex:1;">${fieldRow('Teléfono', 'phone', user.phone)}</div>
+        <div style="flex:1;">${fieldRow('Correo', 'email', user.email, 'email')}</div>
+      </div>
+      ${fieldRow('Tipo de Asistente', 'opt_1', user.opt_1)}
+      ${optionalHtml}
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+        <button type="button" id="editModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
+        <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar cambios</button>
+      </div>
+      ${isAdmin ? `
+      <hr style="margin:1.2rem 0; border:none; border-top:1px solid #eee;">
+      <div style="margin-bottom:0.8rem;">
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Estado de registro</label>
+        <div style="display:flex; gap:8px;">
+          <select id="editModalStatus" style="flex:1; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+            <option value="no_registrado" ${!isRegistered ? 'selected' : ''}>No registrado</option>
+            <option value="registrado" ${isRegistered ? 'selected' : ''}>Registrado</option>
+          </select>
+          <button type="button" id="editModalApplyStatus" class="golden-btn btn-table-action" style="width:auto; padding:8px 16px;">Aplicar</button>
+        </div>
+      </div>
+      <button type="button" id="editModalDelete" class="btn-table-delete" style="width:100%; padding:10px; font-size:0.85rem;">🗑️ Eliminar de este evento</button>
+      ` : ''}
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function close() { overlay.remove(); }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    box.querySelector('#editModalCancel').addEventListener('click', close);
+
+    box.querySelector('#editModalSave').addEventListener('click', async () => {
+      const saveBtn = box.querySelector('#editModalSave');
+      const val = (name) => box.querySelector(`[name="${name}"]`).value.trim();
+      const payload = {
+        first_name: val('first_name'), last_name: val('last_name'), role: val('role'),
+        company: val('company'), phone: val('phone'), email: val('email'), opt_1: val('opt_1'),
+      };
+      const newExtras = {};
+      optionalVars.forEach(([key]) => { newExtras[key] = val(key); });
+      payload.extra_fields = newExtras;
+
+      saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
+      try {
+        const res = await fetch(withEvent(`/api/users/${user.id}`), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          showToast('Cambios guardados', 'success');
+          close();
+          if (window.directorySearch) window.directorySearch.reload();
+        } else {
+          showToast('Error al guardar cambios', 'error');
+          saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+        }
+      } catch (e) {
+        showToast('Error de red', 'error');
+        saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+      }
+    });
+
+    if (isAdmin) {
+      box.querySelector('#editModalApplyStatus').addEventListener('click', async () => {
+        const select = box.querySelector('#editModalStatus');
+        const newStatus = select.value;
+        const label = newStatus === 'registrado' ? 'Registrado' : 'No registrado';
+        const ok = await showConfirm(`¿Cambiar el estado de registro de esta persona a "${label}"?`, { variant: 'warning', confirmLabel: 'Sí, cambiar' });
+        if (!ok) return;
+        try {
+          const res = await fetch(`/api/events/${window.EVENT_ID}/users/${user.id}/status`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
+          });
+          if (res.ok) {
+            showToast('Estado de registro actualizado', 'success');
+            close();
+            if (window.directorySearch) window.directorySearch.reload();
+          } else {
+            const data = await res.json().catch(() => ({}));
+            showToast(data.detail || 'No se pudo cambiar el estado', 'error');
+          }
+        } catch (e) { showToast('Error de red', 'error'); }
+      });
+
+      box.querySelector('#editModalDelete').addEventListener('click', async () => {
+        const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+        const ok = await showConfirm(`⚠️ Esto elimina COMPLETAMENTE a ${fullName || 'esta persona'} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
+        if (!ok) return;
+        try {
+          const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });
+          if (res.ok) {
+            showToast('Persona eliminada', 'success');
+            close();
+            if (window.directorySearch) window.directorySearch.reload();
+          } else {
+            const data = await res.json().catch(() => ({}));
+            showToast(data.detail || 'No se pudo eliminar', 'error');
+          }
+        } catch (e) { showToast('Error de red', 'error'); }
+      });
+    }
+  }
+
+  function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
 
-    const tds = {};
     FIELDS_ORDER.forEach(field => {
       const td = document.createElement('td');
       td.innerText = user[field] || '';
       tr.appendChild(td);
-      tds[field] = td;
     });
 
     const statusTd = document.createElement('td');
@@ -81,54 +227,9 @@
     const actionTd = document.createElement('td');
     actionTd.className = 'action-cell';
 
-    if (opts.showAccredit && user.status === 'No registrado') {
-      const accreditBtn = document.createElement('button');
-      accreditBtn.innerText = 'Acreditar';
-      accreditBtn.className = 'golden-btn btn-table-action btn-save';
-      async function doAccredit(force) {
-        accreditBtn.disabled = true;
-        accreditBtn.innerText = 'Acreditando...';
-        try {
-          const formData = new FormData();
-          formData.append('event_id', window.EVENT_ID);
-          formData.append('cedula', user.id);
-          if (force) formData.append('force', 'true');
-          const res = await fetch('/api/checkin-cedula', { method: 'POST', body: formData });
-          const data = await res.json();
-          if (res.ok && data.result === 'DUPLICADO') {
-            const confirmado = await confirmDuplicateRegistration(data.data);
-            if (confirmado) { await doAccredit(true); return; }
-            accreditBtn.disabled = false;
-            accreditBtn.innerText = 'Acreditar';
-            return;
-          }
-          if (res.ok && data.result === 'SÍ') {
-            showToast('Acreditado', 'success');
-            tr.className = 'row-registrado';
-            statusTd.innerText = 'Registrado';
-            user.status = 'Registrado';
-            accreditBtn.remove();
-            if (window.BadgePrint) BadgePrint.maybeAutoPrint(user.id);
-          } else {
-            showToast((data && (data.detail || data.details)) || 'No se pudo acreditar', 'error');
-            accreditBtn.disabled = false;
-            accreditBtn.innerText = 'Acreditar';
-          }
-        } catch (e) {
-          showToast('Error de red', 'error');
-          accreditBtn.disabled = false;
-          accreditBtn.innerText = 'Acreditar';
-        }
-      }
-      accreditBtn.addEventListener('click', () => doAccredit(false));
-      actionTd.appendChild(accreditBtn);
-    }
-
-    /* Botón de impresión persistente por fila (Historia 2.2) — a diferencia del botón que
-       aparece justo después de un registro fresco (app.js/escáner, "Acreditar" de arriba), este
-       vive siempre en la fila para poder reimprimir a cualquiera en cualquier momento, no solo
-       recién registrado. Mismo criterio de visibilidad que el resto de acciones: cliente es de
-       solo lectura, no ve ningún botón de acción. */
+    /* Botón de impresión persistente por fila (Historia 2.2) — vive siempre en la fila para
+       poder reimprimir a cualquiera en cualquier momento, no solo recién registrado. Mismo
+       criterio de visibilidad que el resto de acciones: cliente es de solo lectura. */
     if (window.STAFF_ROLE !== 'cliente') {
       const printBtn = document.createElement('button');
       printBtn.type = 'button';
@@ -141,121 +242,42 @@
       actionTd.appendChild(printBtn);
     }
 
-    if (!canEdit) {
-      tr.appendChild(actionTd);
-      return tr;
+    /* Botones que quedan en la fila (2026-09-16): imprimir + editar, y ya — "Acreditar" como
+       botón suelto desaparece (acreditar ahora pasa por el flujo de escaneo/búsqueda con
+       confirmación, o por "Cambiar estado de registro" dentro de Editar para admin+). */
+    if (canEdit) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.innerText = 'Editar';
+      editBtn.className = 'golden-btn btn-table-action';
+      editBtn.addEventListener('click', () => buildEditModal(user));
+      actionTd.appendChild(editBtn);
     }
 
-    const actionBtn = document.createElement('button');
-    actionBtn.innerText = 'Editar';
-    actionBtn.className = 'golden-btn btn-table-action';
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.innerText = 'Eliminar';
-    deleteBtn.className = 'btn-table-delete';
-    deleteBtn.style.display = 'none';
-
-    let isEditing = false;
-
-    actionBtn.addEventListener('click', async () => {
-      if (!isEditing) {
-        isEditing = true;
-        actionBtn.innerText = 'Guardar';
-        actionBtn.classList.add('btn-save');
-        if (canDelete) deleteBtn.style.display = 'inline-block';
-        EDITABLE_FIELDS.forEach(field => {
-          tds[field].contentEditable = 'true';
-          tds[field].classList.add('editable-cell-active');
-        });
-        tds['first_name'].focus();
-      } else {
-        actionBtn.innerText = 'Guardando...';
-        actionBtn.disabled = true;
-        deleteBtn.style.display = 'none';
-
-        const payload = {};
-        EDITABLE_FIELDS.forEach(field => {
-          payload[field] = tds[field].innerText.trim();
-          tds[field].contentEditable = 'false';
-          tds[field].classList.remove('editable-cell-active');
-        });
-
-        try {
-          const updateRes = await fetch(withEvent(`/api/users/${user.id}`), {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-          });
-          if (updateRes.ok) {
-            actionBtn.innerText = 'Editar';
-            actionBtn.classList.remove('btn-save');
-            isEditing = false;
-            showToast('Cambios guardados', 'success');
-          } else {
-            showToast('Error al guardar cambios en SQL', 'error');
-            actionBtn.innerText = 'Guardar';
-          }
-        } catch (error) {
-          showToast('Error de red', 'error');
-          actionBtn.innerText = 'Guardar';
-        }
-        actionBtn.disabled = false;
-      }
-    });
-
-    deleteBtn.addEventListener('click', async () => {
-      const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-      const isConfirmed = await showConfirm(`⚠️ CUIDADO: Estás a punto de borrar el registro de asistencia de ${fullName}.<br><br>Esto devolverá a la persona al estado "No registrado" y borrará sus logs de hoy, pero NO lo eliminará de la base de datos principal.`);
-      if (!isConfirmed) return;
-      try {
-        const delRes = await fetch(withEvent(`/api/users/${user.id}/logs`), { method: 'DELETE' });
-        if (delRes.ok) {
-          showToast('Registro de asistencia eliminado', 'success');
-          tr.className = 'row-noregistrado';
-          statusTd.innerText = 'No registrado';
-          user.status = 'No registrado';
-          actionBtn.innerText = 'Editar';
-          actionBtn.classList.remove('btn-save');
-          deleteBtn.style.display = 'none';
-          isEditing = false;
-          EDITABLE_FIELDS.forEach(field => {
-            tds[field].contentEditable = 'false';
-            tds[field].classList.remove('editable-cell-active');
-          });
-        } else {
-          showToast('Error al eliminar el registro', 'error');
-        }
-      } catch (e) {
-        showToast('Error de red al intentar borrar', 'error');
-      }
-    });
-
-    actionTd.appendChild(actionBtn);
-    actionTd.appendChild(deleteBtn);
     tr.appendChild(actionTd);
     return tr;
   }
 
-  function renderRows(tbodyId, users, opts) {
-    opts = opts || {};
+  function renderRows(tbodyId, users) {
     const tbody = document.getElementById(tbodyId);
     tbody.innerHTML = '';
     if (users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
       return;
     }
-    users.forEach(user => tbody.appendChild(buildRow(user, opts)));
+    users.forEach(user => tbody.appendChild(buildRow(user)));
   }
 
-  async function loadRows(tbodyId, opts) {
-    opts = opts || {};
+  async function loadRows(tbodyId) {
     const tbody = document.getElementById(tbodyId);
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">Cargando base de datos...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
     try {
       const res = await fetch(withEvent('/api/users'));
       const users = await res.json();
-      renderRows(tbodyId, users, opts);
+      renderRows(tbodyId, users);
       return users;
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
       return [];
     }
   }
@@ -266,7 +288,7 @@
      = acreditar al instante, con el mismo flujo DUPLICADO/force de siempre). Reusado ahora por
      la vista de Registro unificada (2026-09-21) esté o no el modo cámara activo — la búsqueda
      no depende de si el evento tiene reconocimiento facial o no.
-     opts: { tbodyId, searchIds: {cedula, nombre, empresa}, showAccredit, fastCheckin, onNotFound }
+     opts: { tbodyId, searchIds: {cedula, nombre, empresa}, fastCheckin, onNotFound }
      Devuelve { reload() } para que la página pueda refrescar manualmente (ej. al volver a la
      pestaña, o tras registrar a alguien nuevo desde otra pestaña). */
   function mountSearch(opts) {
@@ -280,15 +302,18 @@
     /* Botón/contador "N sin registrar" (Sprint 2 Fix 2, 2026-09-15) — se crea solo, insertado
        justo antes de la tabla, así no hay que tocar cada template que use mountSearch. Clic
        alterna un filtro adicional (combinado con los campos de búsqueda de arriba, no los
-       reemplaza) que deja solo las filas en estado "No registrado". */
+       reemplaza) que deja solo las filas en estado "No registrado". Junto a él, un segundo
+       indicador de solo lectura "X registrados de Y" (2026-09-16, pedido explícito) — Y es el
+       total de personas del evento (roster + altas manuales), no solo las visibles tras filtrar. */
     const tbodyEl = document.getElementById(opts.tbodyId);
     const tableEl = tbodyEl ? tbodyEl.closest('table') : null;
     let counterBtn = null;
+    let totalCounterEl = null;
     if (tableEl && tableEl.parentNode) {
       counterBtn = document.createElement('button');
       counterBtn.type = 'button';
       counterBtn.className = 'not-registered-counter';
-      counterBtn.style.cssText = 'display:inline-block; margin-bottom:1rem; border:1px solid #dc3545; background:#fbe9ea; color:#a12631; border-radius:20px; padding:6px 16px; font-weight:700; font-size:0.85rem; cursor:pointer;';
+      counterBtn.style.cssText = 'display:inline-block; margin-bottom:1rem; margin-right:0.6rem; border:1px solid #dc3545; background:#fbe9ea; color:#a12631; border-radius:20px; padding:6px 16px; font-weight:700; font-size:0.85rem; cursor:pointer;';
       counterBtn.addEventListener('click', () => {
         onlyNotRegistered = !onlyNotRegistered;
         counterBtn.style.background = onlyNotRegistered ? '#dc3545' : '#fbe9ea';
@@ -296,13 +321,21 @@
         applyFilters();
       });
       tableEl.parentNode.insertBefore(counterBtn, tableEl);
+
+      totalCounterEl = document.createElement('span');
+      totalCounterEl.className = 'total-registered-counter';
+      totalCounterEl.style.cssText = 'display:inline-block; margin-bottom:1rem; border:1px solid #28a745; background:#eaf6ec; color:#1c7a34; border-radius:20px; padding:6px 16px; font-weight:700; font-size:0.85rem;';
+      tableEl.parentNode.insertBefore(totalCounterEl, tableEl);
     }
 
     function updateCounterLabel() {
       if (!counterBtn) return;
+      const total = allUsers.length;
       const count = allUsers.filter(u => u.status === 'No registrado').length;
+      const registered = total - count;
       counterBtn.innerText = `⚠️ ${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
       counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : 'inline-block';
+      if (totalCounterEl) totalCounterEl.innerText = `✅ ${registered} registrados de ${total}`;
     }
 
     function applyFilters() {
@@ -320,11 +353,11 @@
         return true;
       });
       updateCounterLabel();
-      renderRows(opts.tbodyId, filtered, { showAccredit: opts.showAccredit });
+      renderRows(opts.tbodyId, filtered);
     }
 
     async function reload() {
-      allUsers = await loadRows(opts.tbodyId, { showAccredit: opts.showAccredit });
+      allUsers = await loadRows(opts.tbodyId);
       applyFilters();
     }
 

@@ -27,7 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // y guarda la referencia en window.directorySearch — reusamos ese reload() en vez de
         // volver a cargar la tabla "a secas" (perdería los filtros ya escritos por el operador).
         if (window.directorySearch) return window.directorySearch.reload();
-        return GoldenDirectory.load('directoryTableBody', { showAccredit: false });
+        return GoldenDirectory.load('directoryTableBody');
     }
 
     // Si "directorio" ya viene activo al cargar la página (ej. rol cliente, que no tiene

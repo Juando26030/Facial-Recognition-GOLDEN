@@ -219,7 +219,10 @@ async def get_all_users(
         result.append({
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "company": u.company, "phone": u.phone,
-            "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status
+            "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
+            # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta
+            # persona para poder mostrarlos/editarlos (antes se editaba inline, sin necesitarlos).
+            "extra_fields": u.get_extras(),
         })
 
     return result
@@ -302,6 +305,15 @@ async def update_user(
     event = get_event_for_staff(event_id, db, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if user:
+        # extra_fields llega como un dict {opcional_N: valor} desde el modal de "Editar" del
+        # Directorio (2026-09-16) — no puede pasar por el setattr genérico de abajo: la columna
+        # real (`User.extra_fields`) es un Text con JSON serializado a mano (`get_extras()`/
+        # `set_extras()`), no un dict crudo; asignarlo directo lo corrompería.
+        extra_fields = data.pop("extra_fields", None)
+        if extra_fields is not None:
+            merged = user.get_extras()
+            merged.update(extra_fields)
+            user.set_extras(merged)
         for key, value in data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
@@ -319,10 +331,95 @@ async def delete_user_logs(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("admin")),
 ):
+    """Histórico (2026-09-21 en adelante) — ya NO se usa desde el frontend, quedó reemplazado por
+    `DELETE /users/{id}` (borrado real, ver abajo) y `PATCH /events/{id}/users/{id}/status`
+    (cambio de estado sin borrar nada). Se deja documentado, no se borra el endpoint, por si algún
+    integrador externo llegó a depender de él. Ojo: este SÍ borra por tenant completo, no por
+    evento — bug conocido, no replicar este patrón en código nuevo."""
     event = get_event_for_staff(event_id, db, staff)
     db.query(AccessLog).filter(AccessLog.user_id == user_id, AccessLog.tenant_id == event.tenant_id).delete()
     db.commit()
     return {"message": "Registros eliminados. Estado regresado a No Registrado."}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user_from_event(
+    user_id: str, event_id: int, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("admin")),
+):
+    """Borra a la persona de ESTE evento por completo (2026-09-16, pedido explícito: "Eliminar"
+    debía borrar de verdad, no solo resetear el estado). Scoped al evento — no confundir con el
+    viejo `.../logs` de arriba, que por bug afectaba TODO el tenant. Si tras sacarla de este
+    evento la persona no queda en NINGÚN otro evento del mismo tenant (mismo User se reusa entre
+    eventos, ver CLAUDE.md), se borra también el `User` y su foto física — si sigue en otro
+    evento, ese `User` se conserva intacto, no se puede reventar la base de un evento ajeno."""
+    event = get_event_for_staff(event_id, db, staff)
+    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+
+    db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
+    db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+    db.flush()
+
+    other_attendee = db.query(EventAttendee).filter(
+        EventAttendee.user_id == user_id, EventAttendee.tenant_id == event.tenant_id
+    ).first()
+    other_log = db.query(AccessLog).filter(
+        AccessLog.user_id == user_id, AccessLog.tenant_id == event.tenant_id
+    ).first()
+
+    fully_deleted = False
+    if not other_attendee and not other_log:
+        photo_path = os.path.join(_known_faces_dir(event.tenant_id), f"{user_id}.jpg")
+        if os.path.exists(photo_path):
+            os.remove(photo_path)
+        db.delete(user)
+        fully_deleted = True
+
+    db.commit()
+    return {
+        "message": "Persona eliminada de este evento" + (
+            " y de la base de datos (no pertenecía a ningún otro evento de este cliente)."
+            if fully_deleted else ". Sigue en la base porque pertenece a otro evento del mismo cliente."
+        ),
+        "fully_deleted": fully_deleted,
+    }
+
+
+@router.patch("/events/{event_id}/users/{user_id}/status")
+async def update_registration_status(
+    event_id: int, user_id: str, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("admin")),
+):
+    """Cambia manualmente el estado de registro de una persona en este evento (2026-09-16, nuevo)
+    — antes la única forma de pasar a "Registrado" era un escaneo/búsqueda real, y no existía
+    forma de volver a "No registrado" salvo el viejo borrado-de-logs. Pensado para el caso real
+    que describió Juan David: crear a alguien de antemano (aún no ha llegado) sin que quede
+    "Registrado" de una, y poder marcarlo cuando sí llegue — o al revés, corregir un registro
+    hecho por error. `data: {"status": "registrado" | "no_registrado"}`."""
+    event = get_event_for_staff(event_id, db, staff)
+    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+
+    new_status = data.get("status")
+    if new_status not in ("registrado", "no_registrado"):
+        raise HTTPException(status_code=400, detail="status debe ser 'registrado' o 'no_registrado'")
+
+    if new_status == "registrado":
+        if not _already_checked_in(db, event_id, user_id):
+            log = AccessLog(
+                tenant_id=event.tenant_id, user_id=user_id, record_type="Existente",
+                event_id=event_id, registered_by_staff_id=staff.id,
+            )
+            db.add(log)
+            _upsert_attendee(db, event_id, user_id, event.tenant_id)
+    else:
+        db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+
+    db.commit()
+    return {"message": "Estado de registro actualizado", "status": new_status}
 
 @router.post("/register")
 async def manual_register(

@@ -165,6 +165,29 @@ Antes de cerrar el épico, Juan David probó Parte 1 en local (`http://localhost
 ### Cómo probar localmente
 `alembic upgrade head` (trae la migración `0012_badge_templates`), entrar a un evento como `coordinador`+ → tarjeta "Escarapelas" → el editor arranca con una plantilla por defecto. Ver `TESTING.md` sección 12 para el checklist completo (31 casos).
 
+## Sprint 2.2 (2026-09-16) — Rediseño de Directorio/Registro (Fase A: columnas, modal, borrado real, estado manual)
+
+Tras probar Sprint 2 en local, Juan David pidió un rediseño grande de la UX de Registro/Directorio en un solo mensaje (ver plan completo en la sesión — 4 fases). Esta es la Fase A, ya cerrada.
+
+**Columnas de la tabla reducidas** (`static/js/directory.js: FIELDS_ORDER`): antes 10 columnas obligaban a hacer scroll horizontal. Ahora solo `ID, Nombres, Apellidos, Tipo de Asistente, Estado, Acción` — el resto (`role, company, phone, email` + los `opcional_N`) se ve/edita SOLO dentro del modal de "Editar".
+
+**"Editar" abre un modal flotante** (`buildEditModal()` en `directory.js`) en vez de `contentEditable` en la fila — mismos campos que el alta manual, más los opcionales dinámicos de este evento (vía `window.OPTIONAL_VARIABLES`, inyectado en `kiosk_registro.html` igual que en `badge_editor.html`). `GET /api/users` (`get_all_users`) ahora también devuelve `extra_fields` por persona, necesario para precargar esos campos en el modal. `PATCH /api/users/{id}` acepta un nuevo campo `extra_fields` (dict) en el body y lo mezcla (merge, no reemplaza) con lo que la persona ya tenía — antes ese campo no existía en el contrato del endpoint.
+
+**"Eliminar" ahora sí borra de verdad** (antes solo reseteaba el estado). Nuevo `DELETE /api/users/{user_id}?event_id=...` (**`admin`+**, mismo mínimo que ya exigía el viejo `.../logs`):
+- Borra `EventAttendee`/`AccessLog` de esa persona, pero SCOPED a este evento (`event_id`) — a diferencia del viejo `DELETE /users/{id}/logs`, que por bug afectaba TODO el tenant (ese endpoint se deja documentado/vivo por compatibilidad, pero ya no se llama desde ningún lado del frontend).
+- Si tras eso la persona no queda en NINGÚN otro evento del mismo tenant (`User` se reusa entre eventos, ver más abajo), se borra también el `User` y su foto física (`data/<tenant>/known_people/<id>.jpg`) — queda "eliminada de la base" de verdad. Si sigue en otro evento, el `User` se conserva intacto — no se puede reventar los datos de un evento ajeno solo porque se borró de este.
+- Verificado con `TestClient`: una persona en 1 solo evento se borra completo; una persona en 2 eventos solo desaparece del evento donde se pidió borrar, sigue intacta en el otro.
+
+**Nuevo: "Cambiar estado de registro"** — `PATCH /api/events/{event_id}/users/{user_id}/status` (**`admin`+**), `{"status": "registrado"|"no_registrado"}`, vive dentro del mismo modal de "Editar" (visible solo para `admin`+, ver más abajo). A "registrado" crea un `AccessLog(record_type="Existente")` si no había uno ya para este evento; a "no_registrado" borra los `AccessLog` de esa persona PARA ESTE EVENTO (deja `EventAttendee` intacto — sigue en el directorio). Pensado para el caso real que describió Juan David: cargar a alguien de antemano sin que quede "Registrado" hasta que de verdad llegue.
+
+**Nivel de acceso de "Eliminar"/"Cambiar estado"**: Juan David dijo primero "para administradores y coordinadores" y después "solo para admins" — se resolvió a favor de **`admin`+ únicamente**, porque así ya estaba el backend del viejo `DELETE .../logs` (`require_role("admin")`) desde antes de este cambio — es el precedente real del código, no una decisión nueva. El botón "Editar" en sí sigue siendo `coordinador`+ (`EDIT_ROLES`, sin cambios) — un `coordinador` puede editar el perfil normal, pero dentro del modal NO ve el selector de estado ni el botón Eliminar (esos dos bloques del modal solo se renderizan si `ADMIN_ROLES.includes(window.STAFF_ROLE)`).
+
+**Confirmación antes de aplicar**: tanto "Eliminar" como "Cambiar estado" disparan su propio `showConfirm` independiente del botón "Guardar cambios" del resto del modal (pedido explícito) — no hace falta guardar el perfil para poder aplicar cualquiera de los dos.
+
+**Se quitó el botón "Acreditar" por fila.** Acreditar ahora pasa por el flujo de escaneo/búsqueda (ver Fase B) o por "Cambiar estado de registro" dentro de Editar. Los botones que quedan en cada fila son exactamente: 🖨️ Imprimir + Editar.
+
+**Contador ampliado**: junto al botón "⚠️ N sin registrar" de siempre, ahora hay un segundo indicador de solo lectura "✅ X registrados de Y" (Y = total de personas de este evento, roster + altas manuales — mismo `allUsers.length` que ya se cargaba, sin queries nuevas).
+
 ## Sprint 2 (2026-09-15) — Lector de cédula (Épico M1-7, Parte 2 del brief)
 
 Antes en stand-by (sin muestras reales); se activó el mismo sprint al llegar muestras confirmadas de ambos tipos de cédula colombiana. El campo de "cédula" del Directorio en Vivo (`#searchCedula`, ya funcionaba como "teclado" con cualquier lector desde Historia 1.2) ahora interpreta lo que llega según el tipo de documento, en vez de asumir siempre un ID suelto.
