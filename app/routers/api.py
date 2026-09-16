@@ -18,6 +18,7 @@ from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_or_client
 from app.routers import parametros
+from app.routers.events import _matches_by_word_prefix
 
 
 def _missing_required_fields(field_configs: list, values: dict) -> list:
@@ -315,27 +316,44 @@ async def recognize(
 @router.post("/checkin-cedula")
 async def checkin_cedula(
     event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False),
-    confirm: bool = Form(False),
+    first_name: str = Form(""), last_name: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
-    """Acreditación por cédula (lector de código de barras) — mismo shape de respuesta que
-    /recognize (result SÍ/NO + data), para reusar el mismo patrón de frontend. Si la persona ya
-    es conocida en el tenant (estuviera o no precargada para este evento puntual), se acredita
-    directo como 'Existente' y de paso queda asociada a este evento. Si la cédula no existe en
-    absoluto, el frontend debe ofrecer el alta manual (POST /register, sin foto). Si ya tiene un
-    AccessLog para este evento, se avisa (result: DUPLICADO) en vez de acreditar de nuevo, salvo
-    que venga force=true (el operador ya confirmó que sí quiere repetirlo).
+    """Acreditación por cédula (lector de código de barras o MRZ de la cédula nueva) — mismo
+    shape de respuesta que /recognize (result + data), para reusar el mismo patrón de frontend.
+    Si la persona ya es conocida en el tenant (estuviera o no precargada para este evento
+    puntual), se acredita directo como 'Existente' y de paso queda asociada a este evento. Si ya
+    tiene un AccessLog para este evento, se avisa (result: DUPLICADO) en vez de acreditar de
+    nuevo, salvo que venga force=true (el operador ya confirmó que sí quiere repetirlo).
 
-    Sprint 2.2 Fase B (2026-09-16): mismo cambio que /recognize — un match ya NO acredita solo,
-    salvo `Event.auto_register` o `confirm=true` (ver docstring de /recognize para el detalle del
-    flujo de dos pasos)."""
+    Sprint 2.4, Fase 2 (2026-09-16, pedido explícito): a diferencia de /recognize (facial, que
+    SÍ sigue pidiendo confirmación — ver su docstring), un match EXACTO por cédula acredita de
+    una vez, sin paso de confirmación ni floating modal — es un match cierto (a diferencia de un
+    embedding facial, que puede dar falsos positivos), y el frontend ahora refleja el resultado
+    filtrando el Directorio en Vivo a esa fila en vez de mostrar un popup aparte.
+
+    Si NO hay match exacto por cédula, ya NO se ofrece alta manual automática — se intenta un
+    fallback por nombre (`first_name`/`last_name`, cuando el frontend los tiene: vienen del CSV
+    de la cédula vieja o del OCR de la MRZ de la nueva) buscando por prefijo de palabra
+    (`_matches_by_word_prefix`, mismo criterio que ya usa `/api/events/search`) entre TODOS los
+    `User` de este tenant — se devuelven como candidatos (`name_matches`), NINGUNO se acredita
+    solo, es el operador quien decide desde el Directorio filtrado. Sin nombre (cédula suelta sin
+    match), no hay con qué intentar el fallback."""
     cedula = cedula.strip()
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
 
     user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
     if not user:
-        return {"result": "NO", "details": "Cédula no encontrada"}
+        full_name = f"{first_name} {last_name}".strip()
+        name_matches = []
+        if full_name:
+            candidates = db.query(User).filter(User.tenant_id == event.tenant_id).all()
+            for candidate in candidates:
+                haystack = f"{candidate.first_name or ''} {candidate.last_name or ''}"
+                if _matches_by_word_prefix(haystack, full_name):
+                    name_matches.append({"id": candidate.id, "first_name": candidate.first_name, "last_name": candidate.last_name})
+        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches}
 
     if not force and _already_checked_in(db, event.id, user.id):
         return _duplicate_warning(user)
@@ -345,9 +363,6 @@ async def checkin_cedula(
         "role": user.role, "company": user.company, "phone": user.phone,
         "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
     }
-    if not event.auto_register and not confirm:
-        return {"result": "MATCH_PENDING", "data": data}
-
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,

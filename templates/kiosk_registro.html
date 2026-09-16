@@ -258,6 +258,23 @@
                     <div class="badge-form-title">Registro de Nuevo Personal</div>
                     {% if event.status != "en_proceso" %}<p style="text-align:center; color:#a66; font-size:0.85rem; margin-bottom:1rem;">Deshabilitado: el evento no está en proceso.</p>{% endif %}
 
+                    <!-- "Registrar con cédula" (Sprint 2.4 Fase 2, 2026-09-16, pedido explícito):
+                         opcional, arriba de todo — escanear acá completa ID/Nombres/Apellidos
+                         solos, el operador solo revisa/completa el resto. Funciona con la cédula
+                         vieja (lector = teclado, Enter) y la nueva (foto del reverso + OCR MRZ,
+                         mismo endpoint que ya usa la búsqueda del Directorio). -->
+                    <div style="margin-bottom:1.2rem; padding:1rem; background:#faf8f0; border-radius:12px;">
+                        <div class="badge-input-group" style="margin-bottom:0.6rem;">
+                            <label>Registrar con cédula (opcional)</label>
+                            <input type="text" id="regScanCedulaInput" placeholder="Escanea la cédula (lector) o escribe el número y presiona Enter" autocomplete="off" inputmode="numeric">
+                        </div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <button type="button" id="regScanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📎 Cédula nueva (imagen)</button>
+                            <button type="button" id="regScanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📸 Cédula nueva (cámara)</button>
+                        </div>
+                        <input type="file" id="regScanMrzInput" accept="image/*" style="display:none;">
+                    </div>
+
                     <div class="badge-input-row">
                         <div class="badge-input-group">
                             <label>Nombres</label>
@@ -351,26 +368,13 @@
     if (registerModal) registerModal.addEventListener('click', (e) => { if (e.target === registerModal) closeRegisterModal(); });
     window.closeRegisterModal = closeRegisterModal;
 
-    /* nameInfo (Sprint 2 Parte 2, opcional): {nombres, apellidos} cuando el escaneo (CSV de la
-       cédula vieja, u OCR de la MRZ de la nueva) ya trajo un nombre y no solo la cédula — se
-       precargan también esos campos en vez de dejarlos vacíos, aunque la persona no se haya
-       encontrado en el Directorio. */
-    function goToManualWithCedula(cedula, nameInfo) {
-        openRegisterModal();
-        const idField = document.querySelector('#regForm input[name="id"]');
-        if (idField) idField.value = cedula;
-        const firstNameField = document.querySelector('#regForm input[name="first_name"]');
-        const lastNameField = document.querySelector('#regForm input[name="last_name"]');
-        if (nameInfo && nameInfo.nombres && firstNameField) firstNameField.value = nameInfo.nombres;
-        if (nameInfo && nameInfo.apellidos && lastNameField) lastNameField.value = nameInfo.apellidos;
-        if (firstNameField) firstNameField.focus();
-        showToast('Cédula no encontrada — completa el registro', 'error');
-    }
-
     /* Switch "Modo autoregistro" (Sprint 2.2 Fase B, 2026-09-16) — visible solo coordinador+.
-       Apagado por defecto: un match (facial o cédula, cualquier método) queda "pendiente" hasta
-       que el digitador confirme con "Guardar y autorizar acceso" en vez de acreditar solo. Mismo
-       componente/patrón que el switch de auto-impresión del editor de escarapelas. */
+       Apagado por defecto: un match FACIAL queda "pendiente" hasta que el digitador confirme con
+       "Guardar y autorizar acceso" en vez de acreditar solo. Mismo componente/patrón que el
+       switch de auto-impresión del editor de escarapelas.
+       Sprint 2.4, Fase 2 (2026-09-16): ya NO afecta a la acreditación por cédula — un match
+       exacto de cédula siempre acredita de una vez (ver checkin_cedula en api.py), es un match
+       cierto a diferencia de un embedding facial. Este switch quedó exclusivo de /recognize. */
     const autoRegisterBtn = document.getElementById('autoRegisterBtn');
     if (autoRegisterBtn) {
         window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }};
@@ -427,7 +431,6 @@
         tbodyId: 'directoryTableBody',
         searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', empresa: 'searchEmpresa' },
         fastCheckin: canAccredit,
-        onNotFound: canAccredit ? goToManualWithCedula : null,
     });
 
     /* Blindaje contra atajos del navegador (Sprint 2 Parte 2, 2.2) — mismo criterio que el campo
@@ -482,6 +485,75 @@
     if (scanMrzCameraBtn && canAccredit) {
         scanMrzCameraBtn.addEventListener('click', () => {
             CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processMrzPhoto });
+        });
+    }
+
+    /* "Registrar con cédula" dentro del modal de alta (Sprint 2.4 Fase 2, 2026-09-16) — a
+       diferencia del escaneo de arriba (que busca/acredita en el Directorio), este solo LLENA el
+       formulario de alta manual con lo que se lea, sea cédula vieja (lector) o nueva (foto/MRZ).
+       No acredita nada por sí mismo — el operador sigue completando y guardando como siempre. */
+    const regScanCedulaInput = document.getElementById('regScanCedulaInput');
+    const regScanMrzBtn = document.getElementById('regScanMrzBtn');
+    const regScanMrzCameraBtn = document.getElementById('regScanMrzCameraBtn');
+    const regScanMrzInput = document.getElementById('regScanMrzInput');
+
+    function fillRegFormFromScan(cedula, nameInfo) {
+        const idField = document.querySelector('#regForm input[name="id"]');
+        const firstNameField = document.querySelector('#regForm input[name="first_name"]');
+        const lastNameField = document.querySelector('#regForm input[name="last_name"]');
+        if (idField) idField.value = cedula;
+        if (nameInfo && nameInfo.nombres && firstNameField) firstNameField.value = nameInfo.nombres;
+        if (nameInfo && nameInfo.apellidos && lastNameField) lastNameField.value = nameInfo.apellidos;
+        showToast('Cédula leída — revisa y completa el resto', 'success');
+        if (firstNameField) firstNameField.focus();
+    }
+
+    if (regScanCedulaInput) {
+        regScanCedulaInput.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); return; }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const raw = regScanCedulaInput.value.trim();
+                if (!raw) return;
+                const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
+                if (parsed) fillRegFormFromScan(parsed.cedula, { nombres: parsed.nombres, apellidos: parsed.apellidos });
+                else fillRegFormFromScan(raw, null);
+                regScanCedulaInput.value = '';
+            }
+        });
+    }
+
+    async function processRegScanMrzPhoto(blob) {
+        setButtonLoading(regScanMrzBtn, true, 'Leyendo…');
+        regScanMrzCameraBtn.disabled = true;
+        try {
+            const formData = new FormData();
+            formData.append('file', blob, 'cedula.jpg');
+            const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) {
+                showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
+            } else {
+                fillRegFormFromScan(data.id, { nombres: data.first_name, apellidos: data.last_name });
+            }
+        } catch (e) {
+            showToast('Error de red', 'error');
+        }
+        setButtonLoading(regScanMrzBtn, false);
+        regScanMrzCameraBtn.disabled = false;
+    }
+
+    if (regScanMrzBtn && regScanMrzInput) {
+        regScanMrzBtn.addEventListener('click', () => regScanMrzInput.click());
+        regScanMrzInput.addEventListener('change', () => {
+            const file = regScanMrzInput.files[0];
+            regScanMrzInput.value = '';
+            if (file) processRegScanMrzPhoto(file);
+        });
+    }
+    if (regScanMrzCameraBtn) {
+        regScanMrzCameraBtn.addEventListener('click', () => {
+            CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processRegScanMrzPhoto });
         });
     }
 

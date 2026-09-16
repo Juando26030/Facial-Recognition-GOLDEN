@@ -571,6 +571,19 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 24. Sprint 2.4 Fase 2: flujo de acreditar por cédula
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-18 ✅ | Match exacto acredita sin modal | Escanear/escribir una cédula exacta de alguien no acreditado, Enter | Se acredita de una vez (sin popup) y la fila queda filtrada/visible en el Directorio |
+| S24-19 ❌ | Duplicado sigue pidiendo confirmación | Repetir el escaneo de alguien ya acreditado | Sigue apareciendo el aviso de "ya registrado", con `force` para repetir si se confirma |
+| S24-20 ✅ | Fallback por nombre con cédula mal escrita | Escanear una cédula que no existe pero con un nombre que sí calza por prefijo con alguien de la base (ej. "Sebas Angarita" para "Sebastián Angarita") | El Directorio se filtra a esa persona por nombre — no se acredita sola, el operador decide |
+| S24-21 ❌ | Ya no se ofrece alta automática al no encontrar | Escanear una cédula que no existe y sin nombre disponible | Solo un aviso de "no encontrada" — ya NO se abre el modal de "Registrar nuevo" solo |
+| S24-22 ✅ | "Registrar con cédula" en el alta manual | Abrir "Registrar nuevo", escanear una cédula (vieja o nueva) en el campo de arriba | Completa ID/Nombres/Apellidos del formulario, sin buscar ni acreditar nada por su cuenta |
+| S24-23 ℹ️ | "Modo autoregistro" ya no afecta a cédula | Con el switch apagado, escanear una cédula con match exacto | Igual acredita directo — el switch quedó exclusivo del reconocimiento facial |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -598,6 +611,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.3 (menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract) | 28 |
 | Sprint 2.4 Fase 0 (rol comercial y matriz de permisos) | 8 |
 | Sprint 2.4 Fase 1 (ajustes de UI/UX) | 9 |
-| **Total** | **323** |
+| Sprint 2.4 Fase 2 (flujo de acreditar por cédula) | 6 |
+| **Total** | **329** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.
