@@ -22,7 +22,6 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <div class="golden-anniversary-badge">{{ event.name }}</div>
       <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
       <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
       {% if staff_role in ["admin", "super_admin"] %}
@@ -36,6 +35,13 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
 <script>window.EVENT_ID = {{ event.id }};</script>
 
 <main class="golden-main">

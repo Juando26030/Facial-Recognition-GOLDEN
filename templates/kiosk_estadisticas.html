@@ -23,7 +23,6 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <div class="golden-anniversary-badge">{{ event.name }}</div>
       <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
       <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
@@ -34,6 +33,13 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
 <script>window.EVENT_ID = {{ event.id }};</script>
 
 <main class="golden-main">
@@ -125,9 +131,12 @@
                 labels,
                 datasets: [{
                     data,
-                    backgroundColor: chartType === 'pie' ? colors : '#D4AF37',
-                    borderColor: chartType === 'line' ? '#D4AF37' : undefined,
-                    borderWidth: chartType === 'pie' ? 1 : 2,
+                    // Cada categoría con su propio color (2026-09-16, pedido explícito — antes
+                    // las barras salían todas del mismo color) — solo el gráfico de líneas usa
+                    // un color único, que es lo normal para una sola serie continua.
+                    backgroundColor: chartType === 'line' ? '#D4AF37' : colors,
+                    borderColor: chartType === 'line' ? '#D4AF37' : '#ffffff',
+                    borderWidth: chartType === 'line' ? 2 : 1,
                     fill: chartType === 'line' ? false : undefined,
                     tension: chartType === 'line' ? 0.3 : undefined,
                 }],

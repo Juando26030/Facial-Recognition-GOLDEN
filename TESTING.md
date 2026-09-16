@@ -436,6 +436,22 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 17. Ronda de feedback: librería global, colores de gráficos, responsive, barra de contexto
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| FB-01 ✅ | Librería de escarapelas es global | Guardar una plantilla desde el evento del Cliente A ("Guardar como plantilla"); entrar al editor de un evento del Cliente B y abrir "Importar plantilla" | La plantilla guardada por el Cliente A aparece en la lista y se puede importar sin problema |
+| FB-02 ✅ | Importar entre clientes copia bien (incluidas imágenes) | Repetir FB-01 con una plantilla que tenga un logo/imagen de fondo subida | La imagen se ve igual en el evento del Cliente B (se sirve por `tenant_id` explícito en la ruta, no por el tenant de la sesión) |
+| FB-03 ✅ | Gráfico de barras con colores por categoría | En Estadísticas, agregar una variable categórica con 3+ valores distintos (ej. Empresa) | Cada barra tiene un color distinto (antes todas salían del mismo color dorado) |
+| FB-04 ✅ | Gráfico circular sigue con colores por categoría | Cambiar el tipo de gráfico de FB-03 a "Circular" | Cada porción mantiene su propio color, coherente con las barras |
+| FB-05 ✅ | Gráfico de líneas usa un solo color | Agregar una variable numérica y elegir "Líneas" | La línea es de un solo color (correcto para una serie continua, no aplica lo de "colores distintos por categoría") |
+| FB-06 ✅ | Directorio/Registro usa el ancho completo disponible | Abrir "Registro" en un monitor ancho (≥1440px) | La tabla y los controles ya no quedan apretados en una columna central angosta — usan bastante más ancho de pantalla |
+| FB-07 ✅ | La app es usable en celular sin recortes | Abrir cualquier pantalla de un evento (Registro, Adjuntar Base, Escarapelas, Estadísticas, Usuarios) en un viewport de celular (~375px) | El header se ve completo (sin recortarse ni superponerse con el contenido), los botones se apilan en una columna, la tabla se puede desplazar horizontalmente si hace falta |
+| FB-08 ✅ | Barra "Cliente / Evento / Código" presente en todas las pantallas de un evento | Navegar entre Registro, Adjuntar Base de Datos, Escarapelas, Estadísticas y Usuarios del Evento | En las 5 aparece la misma franja debajo del header con el nombre del cliente, el nombre del evento y su código — siempre visible, no hay que adivinar en qué evento se está trabajando |
+| FB-09 ✅ | La franja de contexto también es responsive | Repetir FB-08 en viewport de celular | El texto se envuelve en 2 líneas en vez de recortarse o desbordar la pantalla |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -456,6 +472,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Registro unificado + Modo autoregistro (Fase B) | 12 |
 | Cámara + OCR robusto a orientación (Fase C) | 7 |
 | Escarapelas (lienzo) + spinners + Estadísticas (Fase D) | 14 |
-| **Total** | **237** |
+| Feedback: librería global, colores de gráficos, responsive, contexto | 9 |
+| **Total** | **246** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

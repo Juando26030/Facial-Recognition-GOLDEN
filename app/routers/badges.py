@@ -109,12 +109,12 @@ async def update_badge_template(
 async def list_saved_badge_templates(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
-    """Librería reusable — por TENANT (el del evento actual), no por evento: cualquier plantilla
-    guardada desde CUALQUIER evento de ese mismo cliente aparece acá."""
-    event = get_event_for_staff(event_id, db, staff)
-    saved = db.query(SavedBadgeTemplate).filter(
-        SavedBadgeTemplate.tenant_id == event.tenant_id
-    ).order_by(SavedBadgeTemplate.name).all()
+    """Librería reusable — GLOBAL para toda la app (2026-09-16, pedido explícito: antes era por
+    tenant, ahora una plantilla guardada desde CUALQUIER evento de CUALQUIER cliente aparece acá
+    y se puede importar en cualquier otro, sin importar el cliente). `tenant_id` se sigue
+    guardando en la fila (trazabilidad de quién la creó) pero ya no filtra qué se lista."""
+    event = get_event_for_staff(event_id, db, staff)  # valida acceso al evento, no se usa para filtrar
+    saved = db.query(SavedBadgeTemplate).order_by(SavedBadgeTemplate.name).all()
     return [{
         "id": s.id, "name": s.name, "width_mm": s.width_mm, "height_mm": s.height_mm,
         "orientation": s.orientation,
@@ -149,11 +149,10 @@ async def import_saved_badge_template(
 ):
     """'Importar plantilla': copia el diseño de una SavedBadgeTemplate al BadgeTemplate de ESTE
     evento (sobrescribe lo que tuviera) — punto de partida editable, no una referencia compartida.
-    Solo dentro del mismo tenant del evento (no se puede importar la librería de otro cliente)."""
+    La librería es global (2026-09-16): se puede importar cualquier plantilla guardada, sin
+    importar en qué cliente/evento se haya guardado originalmente."""
     event = get_event_for_staff(event_id, db, staff)
-    saved = db.query(SavedBadgeTemplate).filter(
-        SavedBadgeTemplate.id == saved_id, SavedBadgeTemplate.tenant_id == event.tenant_id
-    ).first()
+    saved = db.query(SavedBadgeTemplate).filter(SavedBadgeTemplate.id == saved_id).first()
     if not saved:
         raise HTTPException(status_code=404, detail="Plantilla guardada no encontrada")
 

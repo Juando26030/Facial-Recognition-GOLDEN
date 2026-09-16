@@ -13,13 +13,20 @@
 body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
 
 .golden-header { background: rgba(255,255,255,0.98); position: fixed; width: 100%; z-index: 1000; box-shadow: 0 2px 16px rgba(0,0,0,0.08); top: 0; left: 0; }
-.golden-header-container { max-width: 1200px; margin: auto; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; height: 80px; }
+.golden-header-container { max-width: 1600px; margin: auto; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; height: 80px; }
 .golden-logo img { height: 50px; }
 .golden-anniversary-badge { background: var(--golden-primary); color: var(--golden-dark); padding: 0.5rem 1.5rem; border-radius: 20px; font-weight: 700; font-size: 0.85rem; font-family: var(--font-heading-secondary); }
 .golden-content-spacer { height: 80px; }
 
+/* Barra de contexto del evento (2026-09-16, pedido explícito: "para saber siempre donde estoy")
+   — franja fija debajo del header con Cliente/Evento/Código, presente en TODAS las páginas
+   dentro de un evento (Registro, Adjuntar Base, Escarapelas, Estadísticas, Usuarios, selector). */
+.golden-event-strip { background: var(--golden-dark); color: #fff; padding: 0.55rem 2rem; font-size: 0.8rem; font-family: var(--font-heading-secondary); }
+.golden-event-strip-inner { max-width: 1600px; margin: 0 auto; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
+.golden-event-strip strong { color: var(--golden-primary); font-weight: 700; }
+
 .golden-section { padding: 4rem 0; }
-.golden-container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
+.golden-container { max-width: 1600px; margin: 0 auto; padding: 0 2rem; }
 .golden-section-title { text-align: center; margin-bottom: 3rem; }
 .golden-section-title span { color: var(--golden-primary); font-weight: 600; text-transform: uppercase; letter-spacing: 2px; }
 .golden-section-title h2 { font-family: var(--font-heading-primary); font-size: 2.5rem; color: var(--golden-dark); margin-top: 10px; }
@@ -29,7 +36,7 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
 .tab { padding: 12px 25px; cursor: pointer; font-weight: bold; background: white; border-radius: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 2px solid transparent; transition: 0.3s; color: var(--golden-dark); }
 .tab.active, .tab:hover { background: var(--golden-primary); color: white; }
 
-.app-container { max-width: 1000px; margin: auto; }
+.app-container { max-width: 1500px; width: 100%; margin: auto; }
 .section { display: none; animation: fadeIn 0.4s ease; }
 .section.active { display: block; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -84,4 +91,37 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
   border: 1px dashed #D4AF37 !important;
   outline: none;
   cursor: text;
+}
+
+/* ===== Responsive (2026-09-16, pedido explícito: "hazlo responsive para cualquier
+   dispositivo automáticamente") — antes este archivo no tenía ni un solo @media. Dos
+   quiebres: tablet (≤900px, solo reduce paddings/tamaños) y celular (≤640px, además el
+   header deja de ser "fixed" para no arriesgarse a que un header de varias líneas tape
+   contenido — en vez de adivinar su altura para el spacer, se deja fluir normal). ===== */
+@media (max-width: 900px) {
+  .golden-container, .golden-header-container { padding: 0 1.2rem; }
+  .golden-event-strip { padding: 0.5rem 1.2rem; }
+  .golden-section { padding: 2.5rem 0; }
+  .golden-section-title h2 { font-size: 1.9rem; }
+  .golden-badge-builder { padding: 1.5rem; }
+}
+
+@media (max-width: 640px) {
+  .golden-header { position: static; box-shadow: none; }
+  .golden-content-spacer { display: none; }
+  .golden-header-container {
+    flex-wrap: wrap; height: auto; padding: 0.7rem 1rem; row-gap: 8px;
+    justify-content: center; text-align: center;
+  }
+  .golden-nav { flex-wrap: wrap; justify-content: center; gap: 8px !important; }
+  .golden-event-strip-inner { justify-content: center; text-align: center; gap: 0.4rem 1rem; }
+  .golden-section { padding: 1.5rem 0; }
+  .golden-section-title h2 { font-size: 1.5rem; }
+  .badge-input-group { min-width: 100%; }
+  .badge-input-row { gap: 0; }
+  .golden-badge-builder { padding: 1.2rem; }
+  .golden-table { font-size: 0.72rem; }
+  .golden-table th, .golden-table td { padding: 6px 8px; }
+  .tab { padding: 10px 16px; font-size: 0.85rem; }
+  .camera-wrapper { min-width: 100%; max-width: 100%; }
 }

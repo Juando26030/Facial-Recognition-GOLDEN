@@ -34,9 +34,6 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <div class="golden-anniversary-badge">
-        {{ event.name }}
-      </div>
       {% if staff_role != "cliente" %}
       <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
       {% endif %}
@@ -54,6 +51,13 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
 <script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};</script>
 
 <main class="golden-main">
@@ -223,10 +227,10 @@
                     </div>
                     <div class="badge-input-group">
                         <label>Cédula nueva (reverso)</label>
-                        <div style="display:flex; gap:6px;">
-                            <button type="button" id="scanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;"
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <button type="button" id="scanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;"
                                     {% if event.status != "en_proceso" %}disabled{% endif %}>📎 Adjuntar imagen</button>
-                            <button type="button" id="scanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;"
+                            <button type="button" id="scanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;"
                                     {% if event.status != "en_proceso" %}disabled{% endif %}>📸 Usar cámara</button>
                         </div>
                         <input type="file" id="scanMrzInput" accept="image/*" style="display:none;">
@@ -315,9 +319,9 @@
                     {% if event.facial_enabled %}
                     <div class="badge-input-group" style="margin-top:1.2rem;">
                         <label>Fotografía Oficial</label>
-                        <div style="display:flex; gap:6px; align-items:center;">
-                            <input type="file" name="file" id="regPhotoInput" accept="image/*" required style="flex:1;">
-                            <button type="button" id="regPhotoCameraBtn" class="golden-btn" style="width:auto; white-space:nowrap; background:#f0f0f0; color:var(--golden-dark);">📸 Usar cámara</button>
+                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <input type="file" name="file" id="regPhotoInput" accept="image/*" required style="flex:1 1 200px; min-width:0;">
+                            <button type="button" id="regPhotoCameraBtn" class="golden-btn" style="width:auto; white-space:nowrap; background:#f0f0f0; color:var(--golden-dark); flex:0 0 auto;">📸 Usar cámara</button>
                         </div>
                     </div>
                     {% endif %}
