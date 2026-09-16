@@ -143,7 +143,8 @@
     document.body.appendChild(overlay);
 
     function close() { overlay.remove(); }
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
+    // solo con "Cancelar" o guardando, para no perder cambios sin querer.
     box.querySelector('#editModalCancel').addEventListener('click', close);
 
     box.querySelector('#editModalSave').addEventListener('click', async () => {
@@ -261,6 +262,7 @@
   function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
+    tr.dataset.userId = user.id;
 
     /* La columna de Acción va PRIMERO (2026-09-16, pedido explícito: antes al final, obligaba a
        desplazarse hasta el final de la fila para editar/imprimir). El resto de columnas
@@ -425,11 +427,12 @@
        paso buscando ese nombre completo entre los ya cargados en el Directorio, reutilizando el
        mismo criterio de prefijo por palabra + insensible a tildes de arriba — recién si ninguno
        de los dos encuentra nada se cae al comportamiento de "no encontrado" de siempre. */
-    async function fastCheckin(cedula, force, nameInfo) {
+    async function fastCheckin(cedula, force, nameInfo, confirmFlag) {
       const formData = new FormData();
       formData.append('event_id', window.EVENT_ID);
       formData.append('cedula', cedula);
       if (force) formData.append('force', 'true');
+      if (confirmFlag) formData.append('confirm', 'true');
       if (nameInfo) {
         if (nameInfo.nombres) formData.append('first_name', nameInfo.nombres);
         if (nameInfo.apellidos) formData.append('last_name', nameInfo.apellidos);
@@ -439,7 +442,7 @@
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {
-          const confirmado = await confirmDuplicateRegistration(data.data);
+          const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
           if (confirmado) await fastCheckin(cedula, true, nameInfo);
           return;
         }
@@ -451,6 +454,29 @@
           if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id);
           await reload();
           if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
+          return;
+        }
+        if (data.result === 'FOUND_PENDING') {
+          // Match exacto, pero "Modo autoregistro" está apagado (2026-09-16, Fase 3, corrección
+          // real: antes esto acreditaba igual, quedaba "verde" sin querer) — se deja la fila
+          // filtrada y VISIBLE pero SIN acreditar (blanco/"No registrado"); un botón puntual en
+          // esa misma fila confirma con un clic, sin modal aparte.
+          await reload();
+          if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
+          const row = document.querySelector(`#directoryTableBody tr[data-user-id="${CSS.escape(data.data.id)}"]`);
+          const actionTd = row ? row.querySelector('.action-cell') : null;
+          if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
+            const acreditarBtn = document.createElement('button');
+            acreditarBtn.type = 'button';
+            acreditarBtn.innerText = '✅ Acreditar';
+            acreditarBtn.className = 'golden-btn btn-table-action btn-accredit-pending';
+            acreditarBtn.addEventListener('click', async () => {
+              acreditarBtn.disabled = true; acreditarBtn.innerText = 'Acreditando...';
+              await fastCheckin(data.data.id, false, null, true);
+            });
+            actionTd.appendChild(acreditarBtn);
+          }
+          showToast(`${data.data.first_name} ${data.data.last_name} encontrado(a) — confirma con "Acreditar" en la fila`, 'success');
           return;
         }
         // NO_MATCH: ya NO se ofrece alta manual automática (2026-09-16, pedido explícito — para
@@ -508,6 +534,16 @@
          fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
       submitScannedCedula: (cedula, nameInfo) => fastCheckin(cedula, false, nameInfo || null),
+      /* "Limpiar filtros" (2026-09-16, pedido explícito) — vacía los 3 campos de búsqueda + el
+         filtro de "sin registrar" y vuelve a mostrar el Directorio completo. */
+      clearFilters: () => {
+        if (cedulaInput) cedulaInput.value = '';
+        if (nombreInput) nombreInput.value = '';
+        if (empresaInput) empresaInput.value = '';
+        onlyNotRegistered = false;
+        if (counterBtn) { counterBtn.style.background = '#fbe9ea'; counterBtn.style.color = '#a12631'; }
+        applyFilters();
+      },
     };
   }
 

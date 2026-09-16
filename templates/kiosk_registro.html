@@ -203,8 +203,11 @@
             <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
                 <div class="badge-form-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.8rem;">
                     <span>Registro</span>
-                    <button type="button" id="openRegisterModalBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;"
-                            {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>➕ Registrar nuevo</button>
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:flex-end;">
+                        <button type="button" id="openRegisterModalBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;"
+                                {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>➕ Registrar nuevo</button>
+                        <button type="button" id="clearFiltersBtn" class="golden-btn" style="width:auto; padding:0.4rem 1rem; background:#f0f0f0; color:var(--golden-dark); font-size:0.8rem;">🧹 Limpiar filtros</button>
+                    </div>
                 </div>
                 {% if staff_role in ["coordinador", "admin", "super_admin"] %}
                 <div style="margin-bottom:1rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
@@ -365,7 +368,8 @@
 
     if (openRegisterModalBtn) openRegisterModalBtn.addEventListener('click', openRegisterModal);
     if (closeRegisterModalBtn) closeRegisterModalBtn.addEventListener('click', closeRegisterModal);
-    if (registerModal) registerModal.addEventListener('click', (e) => { if (e.target === registerModal) closeRegisterModal(); });
+    // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
+    // solo con "Cancelar" o guardando ("Guardar Perfil"), para no perder lo escrito por error.
     window.closeRegisterModal = closeRegisterModal;
 
     /* Switch "Modo autoregistro" (Sprint 2.2 Fase B, 2026-09-16) — visible solo coordinador+.
@@ -432,6 +436,13 @@
         searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', empresa: 'searchEmpresa' },
         fastCheckin: canAccredit,
     });
+
+    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', () => {
+            if (window.directorySearch) window.directorySearch.clearFilters();
+        });
+    }
 
     /* Blindaje contra atajos del navegador (Sprint 2 Parte 2, 2.2) — mismo criterio que el campo
        de búsqueda por cédula de directory.js, aplicado también acá porque un lector se puede usar

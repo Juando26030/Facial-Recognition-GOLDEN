@@ -126,16 +126,20 @@
         if (e.key === "Enter") { e.preventDefault(); finish(input.value.trim() || null); }
         else if (e.key === "Escape") { finish(null); }
       });
-      overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(null); });
+      // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
+      // solo con "Cancelar" o el botón de confirmar (o Escape, que ya era explícito).
     });
   };
 
   /* Confirmación estándar de "esta persona ya se había registrado" — usada por recognize,
-     checkin-cedula y el registro manual (mismo texto/estilo en los tres, para no duplicarlo). */
-  window.confirmDuplicateRegistration = function (data) {
+     checkin-cedula y el registro manual (mismo texto/estilo en los tres, para no duplicarlo).
+     `times` (2026-09-16, pedido explícito): cuántas veces ya se registró/acreditó en este
+     evento, para que el mensaje sea concreto en vez de un genérico "ya está registrada". */
+  window.confirmDuplicateRegistration = function (data, times) {
     const name = data ? `${data.first_name || ""} ${data.last_name || ""}`.trim() : "";
+    const timesText = times ? ` (ya lo hizo ${times} ${times === 1 ? "vez" : "veces"})` : "";
     return window.showConfirm(
-      `⚠️ ${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento.<br><br>` +
+      `⚠️ ${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento${timesText}.<br><br>` +
       `¿Seguro que deseas registrarla de nuevo? Hazlo solo si fue un error o realmente necesitas repetir el ingreso.`,
       { variant: "warning", confirmLabel: "Sí, registrar de nuevo" }
     );

@@ -18,7 +18,7 @@ from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_or_client
 from app.routers import parametros
-from app.routers.events import _matches_by_word_prefix
+from app.routers.events import _words
 
 
 def _missing_required_fields(field_configs: list, values: dict) -> list:
@@ -218,12 +218,20 @@ def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
     ).first() is not None
 
 
-def _duplicate_warning(user: "User") -> dict:
-    return {"result": "DUPLICADO", "details": "Esta persona ya había sido registrada en este evento", "data": {
-        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-        "role": user.role, "company": user.company, "phone": user.phone,
-        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
-    }}
+def _duplicate_warning(db: Session, event_id: int, user: "User") -> dict:
+    # times_registered (2026-09-16, pedido explícito): cuántas veces YA se acreditó esta persona
+    # en este evento, para que el mensaje diga "ya se registró N veces" en vez de un genérico
+    # "ya está registrada" — el operador decide con ese dato de más.
+    times_registered = db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user.id).count()
+    return {
+        "result": "DUPLICADO", "details": "Esta persona ya había sido registrada en este evento",
+        "times_registered": times_registered,
+        "data": {
+            "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+            "role": user.role, "company": user.company, "phone": user.phone,
+            "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+        },
+    }
 
 
 @router.get("/users")
@@ -294,7 +302,7 @@ async def recognize(
         known_enc = user.get_encoding()
         if known_enc and BiometricEngine.compare(known_enc, unknown_enc):
             if not force and _already_checked_in(db, event.id, user.id):
-                return _duplicate_warning(user)
+                return _duplicate_warning(db, event.id, user)
             data = {
                 "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
                 "role": user.role, "company": user.company, "phone": user.phone,
@@ -313,9 +321,29 @@ async def recognize(
 
     return {"result": "NO", "details": "Denegado"}
 
+def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
+    """Fuzzy-match de identidad (2026-09-16, Sprint 2.4 Fase 3 — corrección real) — distinto de
+    `_matches_by_word_prefix` (que exige que TODAS las palabras de lo que se busca prefijen algo
+    en el texto largo, pensado para búsquedas tipo "escribo un pedazo del nombre de un evento").
+    Acá el caso real es al revés y en ambas direcciones a la vez: la base puede tener el nombre
+    abreviado y lo escaneado el nombre completo real (`JHOAN SEBASTIAN ANGARITA ROJAS` escaneado
+    vs. `Sebas Angarita` en la base), o viceversa (`Sebas Angarita` escaneado vs. `Sebastián
+    Angarita` en la base, el caso original). Por eso se exige que CADA palabra del nombre en BASE
+    (el lado casi siempre más corto/abreviado) tenga alguna palabra en lo escaneado que la
+    prefije O que sea prefijada por ella — no al revés, y no en una sola dirección."""
+    db_words = _words(db_name)
+    scanned_words = _words(scanned_name)
+    if not db_words or not scanned_words:
+        return False
+    return all(
+        any(sw.startswith(dw) or dw.startswith(sw) for sw in scanned_words)
+        for dw in db_words
+    )
+
+
 @router.post("/checkin-cedula")
 async def checkin_cedula(
-    event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False),
+    event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False), confirm: bool = Form(False),
     first_name: str = Form(""), last_name: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
@@ -326,19 +354,22 @@ async def checkin_cedula(
     tiene un AccessLog para este evento, se avisa (result: DUPLICADO) en vez de acreditar de
     nuevo, salvo que venga force=true (el operador ya confirmó que sí quiere repetirlo).
 
-    Sprint 2.4, Fase 2 (2026-09-16, pedido explícito): a diferencia de /recognize (facial, que
-    SÍ sigue pidiendo confirmación — ver su docstring), un match EXACTO por cédula acredita de
-    una vez, sin paso de confirmación ni floating modal — es un match cierto (a diferencia de un
-    embedding facial, que puede dar falsos positivos), y el frontend ahora refleja el resultado
-    filtrando el Directorio en Vivo a esa fila en vez de mostrar un popup aparte.
+    Sprint 2.4, Fase 2/3 (2026-09-16, pedido explícito, corregido en la Fase 3): un match EXACTO
+    por cédula SIEMPRE deja la fila filtrada/visible en el Directorio en Vivo, sin modal — pero
+    solo ACREDITA de una vez (crea el AccessLog, la fila sale "verde") si `Event.auto_register`
+    está prendido. Si está apagado, se devuelve `result: "FOUND_PENDING"` — la persona queda
+    visible pero SIN acreditar (blanco/"No registrado"), y el frontend ofrece un botón puntual
+    "Acreditar" en esa fila para confirmar con un clic (reintenta esta misma petición con
+    `confirm=true`) — sin volver a un modal flotante aparte. El reconocimiento facial
+    (`/recognize`) sigue con su propio flujo de confirmación, sin cambios, no es parte de esto.
 
     Si NO hay match exacto por cédula, ya NO se ofrece alta manual automática — se intenta un
     fallback por nombre (`first_name`/`last_name`, cuando el frontend los tiene: vienen del CSV
-    de la cédula vieja o del OCR de la MRZ de la nueva) buscando por prefijo de palabra
-    (`_matches_by_word_prefix`, mismo criterio que ya usa `/api/events/search`) entre TODOS los
-    `User` de este tenant — se devuelven como candidatos (`name_matches`), NINGUNO se acredita
-    solo, es el operador quien decide desde el Directorio filtrado. Sin nombre (cédula suelta sin
-    match), no hay con qué intentar el fallback."""
+    de la cédula vieja o del OCR de la MRZ de la nueva) contra TODOS los `User` de este tenant,
+    con `_identity_name_matches` (ver arriba — bidireccional, no `_matches_by_word_prefix`) — se
+    devuelven como candidatos (`name_matches`), NINGUNO se acredita solo, es el operador quien
+    decide desde el Directorio filtrado. Sin nombre (cédula suelta sin match), no hay con qué
+    intentar el fallback."""
     cedula = cedula.strip()
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
@@ -350,19 +381,23 @@ async def checkin_cedula(
         if full_name:
             candidates = db.query(User).filter(User.tenant_id == event.tenant_id).all()
             for candidate in candidates:
-                haystack = f"{candidate.first_name or ''} {candidate.last_name or ''}"
-                if _matches_by_word_prefix(haystack, full_name):
+                db_name = f"{candidate.first_name or ''} {candidate.last_name or ''}"
+                if _identity_name_matches(db_name, full_name):
                     name_matches.append({"id": candidate.id, "first_name": candidate.first_name, "last_name": candidate.last_name})
         return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches}
 
     if not force and _already_checked_in(db, event.id, user.id):
-        return _duplicate_warning(user)
+        return _duplicate_warning(db, event.id, user)
 
     data = {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
         "role": user.role, "company": user.company, "phone": user.phone,
         "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
     }
+
+    if not event.auto_register and not confirm:
+        return {"result": "FOUND_PENDING", "data": data}
+
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,
@@ -599,7 +634,7 @@ async def manual_register(
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
         if not force and _already_checked_in(db, event.id, existing.id):
-            return _duplicate_warning(existing)
+            return _duplicate_warning(db, event.id, existing)
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=existing.id, record_type="Existente",
             event_id=event.id, registered_by_staff_id=staff.id,

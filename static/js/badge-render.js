@@ -136,7 +136,29 @@
     return `/kiosk/${window.EVENT_ID}/escarapela/imprimir/${encodeURIComponent(userId)}`;
   }
 
-  function openPrintWindow(userId) {
+  /* Aviso de reimpresión (Sprint 2.4 Fase 3, pedido explícito): antes de abrir la ventana de
+     impresión se consulta cuántas veces se imprimió antes esta escarapela EN ESTE evento — si ya
+     se imprimió, se avisa con el conteo y el operador decide si de todas formas imprime de nuevo.
+     Cada impresión (haya habido aviso o no) se registra vía POST print-log para que el próximo
+     conteo sea correcto. */
+  async function openPrintWindow(userId) {
+    try {
+      const countRes = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${window.EVENT_ID}`);
+      if (countRes.ok) {
+        const countData = await countRes.json();
+        if (countData.times_printed > 0) {
+          const timesText = `${countData.times_printed} ${countData.times_printed === 1 ? 'vez' : 'veces'}`;
+          const proceed = await window.showConfirm(
+            `⚠️ Ya se ha realizado impresión de esta escarapela (${timesText}).<br><br>¿Deseas imprimir de nuevo?`,
+            { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }
+          );
+          if (!proceed) return;
+        }
+      }
+    } catch (e) { /* si falla la consulta del conteo, no bloquea la impresión */ }
+    try {
+      await fetch(`/api/users/${encodeURIComponent(userId)}/print-log?event_id=${window.EVENT_ID}`, { method: 'POST' });
+    } catch (e) { /* no bloquea la impresión si falla el registro del log */ }
     window.open(printWindowUrl(userId), '_blank', 'width=480,height=720,noopener');
   }
 

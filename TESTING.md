@@ -580,7 +580,23 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | S24-20 ✅ | Fallback por nombre con cédula mal escrita | Escanear una cédula que no existe pero con un nombre que sí calza por prefijo con alguien de la base (ej. "Sebas Angarita" para "Sebastián Angarita") | El Directorio se filtra a esa persona por nombre — no se acredita sola, el operador decide |
 | S24-21 ❌ | Ya no se ofrece alta automática al no encontrar | Escanear una cédula que no existe y sin nombre disponible | Solo un aviso de "no encontrada" — ya NO se abre el modal de "Registrar nuevo" solo |
 | S24-22 ✅ | "Registrar con cédula" en el alta manual | Abrir "Registrar nuevo", escanear una cédula (vieja o nueva) en el campo de arriba | Completa ID/Nombres/Apellidos del formulario, sin buscar ni acreditar nada por su cuenta |
-| S24-23 ℹ️ | "Modo autoregistro" ya no afecta a cédula | Con el switch apagado, escanear una cédula con match exacto | Igual acredita directo — el switch quedó exclusivo del reconocimiento facial |
+| S24-23 ⚠️ | ~~"Modo autoregistro" ya no afecta a cédula~~ — **corregido en Fase 3, ver sección 25 (S24-27)** | — | — |
+
+---
+
+## 25. Sprint 2.4 Fase 3: batch de correcciones (nombres, modales flotantes, autoregistro en cédula, filtros, avisos de duplicado con conteo)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-24 ✅ | Matching de nombre bidireccional — escaneo largo, BD corta | Escanear/buscar con nombre "JHOAN SEBASTIAN ANGARITA ROJAS" cuando la BD tiene "Sebas Angarita" | Encuentra el match (antes solo funcionaba en el sentido opuesto: BD larga, escaneo corto) |
+| S24-25 ✅ | Matching de nombre sigue rechazando falsos positivos | Buscar "Ju Perez" contra una BD con "Sebastian Angarita" | No hay match |
+| S24-26 ✅ | Formularios flotantes ya no cierran al hacer clic afuera | Abrir "Registrar nuevo" o "Editar persona", hacer clic fuera del formulario | El formulario permanece abierto — solo cierra con "Guardar"/"Cancelar" (aplica también a `showPrompt` de `toast.js`; `showConfirm` y el modal de cámara quedan igual que antes, a propósito, no son formularios de datos) |
+| S24-27 ✅ | Cédula con autoregistro apagado vuelve a respetar el switch | Con "Modo autoregistro" apagado, escanear una cédula con match exacto | Ya NO acredita sola — la fila queda filtrada en blanco/"No registrado", con un botón "✅ Acreditar" inline en esa fila para confirmar manualmente (corrige la Fase 2, que había quedado acreditando siempre en match exacto) |
+| S24-27b ✅ | Con autoregistro encendido, cédula sigue acreditando directo | Mismo escaneo con el switch prendido | Acredita de una vez, sin botón "Acreditar" |
+| S24-28 ✅ | Botón "🧹 Limpiar filtros" | En la sección Registro, con los 3 campos de búsqueda llenos, clic en "Limpiar filtros" (debajo de "Registrar nuevo") | Limpia los 3 campos y el filtro de "solo sin registrar", vuelve a mostrar todo el Directorio |
+| S24-29 ✅ | Aviso de doble registro incluye el conteo | Registrar/acreditar dos veces a la misma persona (por escáner facial, alta manual o cédula) | El aviso dice cuántas veces se había registrado antes ("ya lo hizo N veces") en los 3 flujos |
+| S24-30 ✅ | Aviso de reimpresión con conteo | Imprimir la escarapela de una persona, luego intentar imprimir de nuevo | Antes de abrir la ventana de impresión, aparece un aviso "ya se ha realizado impresión (N vez/veces)" con opción de cancelar o continuar; cancelar no abre nada ni registra una impresión nueva |
+| S24-31 ✅ | Primera impresión no muestra aviso | Imprimir la escarapela de alguien que nunca se ha impreso en este evento | Abre directo, sin ningún aviso previo |
 
 ---
 
@@ -612,6 +628,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 0 (rol comercial y matriz de permisos) | 8 |
 | Sprint 2.4 Fase 1 (ajustes de UI/UX) | 9 |
 | Sprint 2.4 Fase 2 (flujo de acreditar por cédula) | 6 |
-| **Total** | **329** |
+| Sprint 2.4 Fase 3 (nombres, modales flotantes, autoregistro en cédula, filtros, avisos de duplicado con conteo) | 8 |
+| **Total** | **337** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

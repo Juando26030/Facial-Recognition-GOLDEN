@@ -92,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.result === 'DUPLICADO') {
                 resTexto.innerText = "⚠️ Ya registrado(a) en este evento";
                 resTexto.style.color = "#f0ad4e";
-                const confirmado = await confirmDuplicateRegistration(data.data);
+                const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
                 if (confirmado) {
                     formData.set('force', 'true');
                     await submitRecognize(formData);
@@ -224,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
                 if (data.result === 'DUPLICADO') {
-                    const confirmado = await confirmDuplicateRegistration(data.data);
+                    const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
                     if (confirmado) {
                         formData.set('force', 'true');
                         await submitManualRegister(formData, btn);

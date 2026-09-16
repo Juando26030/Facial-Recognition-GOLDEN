@@ -105,6 +105,28 @@ class AccessLog(Base):
     registered_by = relationship("StaffUser")
 
 
+class PrintLog(Base):
+    """Historial de impresiones de escarapela (Sprint 2.4 Fase 3, 2026-09-16, pedido explícito):
+    antes imprimir no dejaba ningún rastro en la base — no había forma de saber si a alguien ya
+    se le había impreso la escarapela, para avisar antes de repetir. Tabla aparte de AccessLog a
+    propósito: no es un evento de acreditación, mezclarlo ahí rompería el cálculo de estado
+    (Nuevo/Registrado) que ya depende de record_type."""
+    __tablename__ = 'print_logs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
+    user_id = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    printed_at = Column(DateTime, default=datetime.utcnow)
+    printed_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),
+    )
+
+    event = relationship("Event")
+    printed_by = relationship("StaffUser")
+
+
 class StaffUser(Base):
     """Cuenta de staff interno (no la persona biométrica registrada, eso es `User`)."""
     __tablename__ = 'staff_users'

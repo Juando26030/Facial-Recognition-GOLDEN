@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import BadgeTemplate, SavedBadgeTemplate, StaffUser, User
+from app.models import BadgeTemplate, SavedBadgeTemplate, StaffUser, User, PrintLog
 from app.auth import get_current_staff, get_event_for_staff, require_role
 
 router = APIRouter()
@@ -260,3 +260,35 @@ async def get_user_photo(
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
     return FileResponse(path)
+
+
+@router.get("/users/{user_id}/print-count")
+async def get_print_count(
+    user_id: str, event_id: int, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("digitador")),
+):
+    """Cuántas veces se ha impreso la escarapela de esta persona en ESTE evento — para avisar
+    antes de repetir (Sprint 2.4 Fase 3, pedido explícito)."""
+    event = get_event_for_staff(event_id, db, staff)
+    count = db.query(PrintLog).filter(
+        PrintLog.event_id == event.id, PrintLog.user_id == user_id, PrintLog.tenant_id == event.tenant_id
+    ).count()
+    return {"times_printed": count}
+
+
+@router.post("/users/{user_id}/print-log")
+async def log_print(
+    user_id: str, event_id: int, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("digitador")),
+):
+    """Registra una impresión de escarapela — se llama justo antes de abrir la ventana de
+    impresión, tras cualquier confirmación necesaria."""
+    event = get_event_for_staff(event_id, db, staff)
+    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    db.add(PrintLog(
+        tenant_id=event.tenant_id, user_id=user_id, event_id=event.id, printed_by_staff_id=staff.id,
+    ))
+    db.commit()
+    return {"ok": True}
