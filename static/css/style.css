@@ -1,12 +1,34 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Montserrat:wght@400;600;700&family=Raleway:wght@400;500;600&display=swap');
+/* Fuente por defecto de toda la app (Sprint 2.4 Fase 9, 2026-09-16, pedido explícito) — Agrandir,
+   fuente comercial (no está en Google Fonts), provista por Juan David en dos pesos: Thin (texto
+   normal) y Regular (más marcada, para títulos/negrillas). Un solo font-family 'Agrandir' con dos
+   @font-face por font-weight — así los elementos que ya piden font-weight:700 (botones, títulos,
+   .golden-table th, etc., ver el resto del archivo) caen solos en el peso Regular sin tener que
+   tocar cada uno de esos sitios; el texto normal (peso 400, el default del navegador) usa Thin.
+   Reemplaza el @import de Google Fonts (Playfair Display/Montserrat/Raleway) que existía antes —
+   Configuración > Apariencia puede seguir sobreescribiendo esto con cualquiera de las 40 familias
+   de Google Fonts, ver theme.js/configuracion.html, sin tocar nada de acá. */
+@font-face {
+  font-family: 'Agrandir';
+  src: url('/static/fonts/agrandir-thin.ttf') format('truetype');
+  font-weight: 100 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Agrandir';
+  src: url('/static/fonts/agrandir-regular.otf') format('opentype');
+  font-weight: 600 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --golden-primary: #D4AF37;
   --golden-dark: #0a0e2e;
   --golden-white: #fff;
-  --font-heading-primary: 'Playfair Display', serif;
-  --font-heading-secondary: 'Montserrat', sans-serif;
-  --font-body: 'Raleway', sans-serif;
+  --font-heading-primary: 'Agrandir', serif;
+  --font-heading-secondary: 'Agrandir', sans-serif;
+  --font-body: 'Agrandir', sans-serif;
   /* Fondo del menú lateral (Sprint 2.3, ronda 2, 2026-09-16, pedido explícito): variable aparte
      de --golden-dark para que Configuración > Apariencia pueda cambiar el color del menú sin
      tocar el resto de la app (el texto del menú NO se personaliza — ver .golden-sidebar a abajo,

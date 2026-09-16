@@ -669,6 +669,17 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 31. Sprint 2.4 Fase 9: fuente Agrandir por defecto
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-66 ℹ️ | Agrandir es la tipografía por defecto en toda la app | Entrar a cualquier página sin haber tocado Configuración > Apariencia | Los títulos se ven en Agrandir (peso marcado) y el texto de cuerpo en Agrandir Thin |
+| S24-67 ✅ | Configuración sigue pudiendo cambiar la fuente | Elegir cualquiera de las 40 familias de Google Fonts en Configuración > Apariencia y aplicar | La fuente elegida reemplaza a Agrandir en esa página, igual que antes |
+| S24-68 ✅ | "Original" vuelve a Agrandir | Tras haber elegido otra fuente, seleccionar "Original (Agrandir)" y aplicar/restablecer | Vuelve a Agrandir, no a Playfair/Montserrat/Raleway |
+| S24-69 ✅ | Tamaños y negrillas siguen funcionando igual | Comparar títulos/botones (negrilla) contra texto normal en cualquier página | Los elementos que ya pedían `font-weight:700` se ven en el peso Regular (más marcado); el resto en Thin — sin haber tocado esos estilos |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -703,6 +714,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 6 (ocultar funciones operativas para comercial) | 7 |
 | Sprint 2.4 Fase 7 (reforzar unicidad de cédula, validación DB) | 4 |
 | Sprint 2.4 Fase 8 (módulo de Calendario: mes/semana/día, filtros, edición, recordatorios) | 10 |
-| **Total** | **371** |
+| Sprint 2.4 Fase 9 (fuente Agrandir por defecto) | 4 |
+| **Total** | **375** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.
