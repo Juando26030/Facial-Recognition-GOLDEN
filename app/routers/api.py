@@ -230,8 +230,17 @@ async def get_all_users(
 @router.post("/recognize")
 async def recognize(
     event_id: int = Form(...), file: UploadFile = File(...), force: bool = Form(False),
+    confirm: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
+    """Sprint 2.2 Fase B (2026-09-16): un match facial YA NO acredita solo por defecto — antes
+    creaba el AccessLog apenas encontraba la cara, sin que el digitador confirmara nada. Ahora,
+    salvo que `Event.auto_register` esté prendido (switch por evento) o venga `confirm=true` (el
+    digitador ya confirmó en el modal "Guardar y autorizar acceso"), un match devuelve
+    `result: "MATCH_PENDING"` con los datos de la persona SIN crear ningún log todavía — el
+    frontend reenvía la MISMA petición (mismo `file`, vía FormData reusado) con `confirm=true`
+    para recién ahí acreditar de verdad. El flujo DUPLICADO/force sigue exactamente igual, se
+    evalúa ANTES de este chequeo nuevo."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
     img_array = BiometricEngine.process_image_stream(await file.read())
@@ -246,6 +255,13 @@ async def recognize(
         if known_enc and BiometricEngine.compare(known_enc, unknown_enc):
             if not force and _already_checked_in(db, event.id, user.id):
                 return _duplicate_warning(user)
+            data = {
+                "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+                "role": user.role, "company": user.company, "phone": user.phone,
+                "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+            }
+            if not event.auto_register and not confirm:
+                return {"result": "MATCH_PENDING", "data": data}
             log = AccessLog(
                 tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
                 event_id=event.id, registered_by_staff_id=staff.id,
@@ -253,17 +269,14 @@ async def recognize(
             db.add(log)
             _upsert_attendee(db, event.id, user.id, event.tenant_id)
             db.commit()
-            return {"result": "SÍ", "data": {
-                "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-                "role": user.role, "company": user.company, "phone": user.phone,
-                "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
-            }}
+            return {"result": "SÍ", "data": data}
 
     return {"result": "NO", "details": "Denegado"}
 
 @router.post("/checkin-cedula")
 async def checkin_cedula(
     event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False),
+    confirm: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Acreditación por cédula (lector de código de barras) — mismo shape de respuesta que
@@ -272,7 +285,11 @@ async def checkin_cedula(
     directo como 'Existente' y de paso queda asociada a este evento. Si la cédula no existe en
     absoluto, el frontend debe ofrecer el alta manual (POST /register, sin foto). Si ya tiene un
     AccessLog para este evento, se avisa (result: DUPLICADO) en vez de acreditar de nuevo, salvo
-    que venga force=true (el operador ya confirmó que sí quiere repetirlo)."""
+    que venga force=true (el operador ya confirmó que sí quiere repetirlo).
+
+    Sprint 2.2 Fase B (2026-09-16): mismo cambio que /recognize — un match ya NO acredita solo,
+    salvo `Event.auto_register` o `confirm=true` (ver docstring de /recognize para el detalle del
+    flujo de dos pasos)."""
     cedula = cedula.strip()
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
@@ -284,6 +301,14 @@ async def checkin_cedula(
     if not force and _already_checked_in(db, event.id, user.id):
         return _duplicate_warning(user)
 
+    data = {
+        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+        "role": user.role, "company": user.company, "phone": user.phone,
+        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+    }
+    if not event.auto_register and not confirm:
+        return {"result": "MATCH_PENDING", "data": data}
+
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,
@@ -291,11 +316,7 @@ async def checkin_cedula(
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)
     db.commit()
-    return {"result": "SÍ", "data": {
-        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-        "role": user.role, "company": user.company, "phone": user.phone,
-        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
-    }}
+    return {"result": "SÍ", "data": data}
 
 @router.patch("/users/{user_id}")
 async def update_user(

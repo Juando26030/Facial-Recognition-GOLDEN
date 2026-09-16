@@ -188,6 +188,22 @@ Tras probar Sprint 2 en local, Juan David pidió un rediseño grande de la UX de
 
 **Contador ampliado**: junto al botón "⚠️ N sin registrar" de siempre, ahora hay un segundo indicador de solo lectura "✅ X registrados de Y" (Y = total de personas de este evento, roster + altas manuales — mismo `allUsers.length` que ya se cargaba, sin queries nuevas).
 
+## Sprint 2.2 (2026-09-16) — Fase B: unificación de pestañas + modo autoregistro
+
+**"Registro Individual" y "Directorio en Vivo" se unifican en una sola pestaña "Registro"** (`templates/kiosk_registro.html`) — el formulario de alta manual deja de ser una pestaña propia y pasa a vivir en un modal flotante (`#registerModal`), abierto con el nuevo botón "➕ Registrar nuevo" o automáticamente cuando una búsqueda/escaneo de cédula no encuentra a nadie (`goToManualWithCedula`, sin cambios de fondo, solo ahora abre el modal en vez de hacer clic en una pestaña que ya no existe). El botón "🖨️ Imprimir Escarapela" dedicado del alta manual (`printManualBtn`) se quitó — ya no hace falta, el botón 🖨️ persistente por fila del Directorio cubre la misma necesidad de reimprimir.
+
+**"Exportar Reporte" y "Usuarios del Evento" dejan de ser pestañas** dentro de Registro — se mueven a rutas propias: `GET /kiosk/{event_id}/estadisticas` (`kiosk_estadisticas.html`, por ahora solo el botón de exportar de siempre — el módulo de gráficos llega en la Fase D) y `GET /kiosk/{event_id}/usuarios` (`kiosk_usuarios.html`, contenido idéntico al que tenía la pestaña vieja). Ambas con `min_role="coordinador"`, mismo mínimo que exigían las pestañas viejas. Aparecen como tarjetas nuevas en `kiosk_select.html` (📊 Estadísticas, 👥 Usuarios del Evento), mismo patrón que "Escarapelas".
+
+**Modo autoregistro (`Event.auto_register`, migración `0013_event_auto_register`)** — pedido explícito: un match facial o de cédula (por CUALQUIER método: escáner, barcode viejo, foto/MRZ nueva) YA NO acredita solo. `POST /api/recognize` y `POST /api/checkin-cedula` ganan un parámetro `confirm: bool = Form(False)`:
+- Si hay match y (`event.auto_register` está prendido O vino `confirm=true`) → acredita de una, como se comportaba todo antes de este cambio.
+- Si hay match y `event.auto_register` está apagado y no vino `confirm` → responde `result: "MATCH_PENDING"` con los datos de la persona, **sin crear ningún `AccessLog` todavía**.
+- El frontend, al ver `MATCH_PENDING`, muestra la misma tarjeta de confirmación de siempre (`#profileCard`/`#liveEditForm` para el escáner facial; un modal nuevo y liviano, `showMatchConfirmModal()` en `directory.js`, para cédula) con un botón **"Guardar y Autorizar Acceso"** — al hacer clic, se reenvía la MISMA petición (mismo `FormData`, con la foto para `recognize`) agregando `confirm=true`, y recién ahí se crea el log real y se dispara `BadgePrint.maybeAutoPrint()`.
+- El flujo `DUPLICADO`/`force` de siempre no cambió — se evalúa ANTES de este chequeo nuevo, en los dos endpoints.
+- Switch visible como botón "🔓/🔒 Modo autoregistro" en la pestaña "Registro" (coordinador+), mismo patrón que el switch de auto-impresión (PATCHea `Event.auto_register` vía el `PATCH /api/events/{id}` genérico).
+- **Distinto de "Cambiar estado de registro" de la Fase A**: ese es un override manual admin+ sin necesidad de ningún escaneo; esto es sobre qué pasa automáticamente cuando SÍ hay un escaneo/búsqueda con match. El modal de confirmación de cédula (`showMatchConfirmModal`) está disponible para cualquiera que pueda acreditar (digitador+), no solo admin+ — es la forma normal en que un digitador acredita a alguien encontrado por escaneo, ahora con un paso explícito de por medio.
+
+Verificado con `TestClient`: `auto_register=False` → `checkin-cedula` da `MATCH_PENDING` sin tocar la base, y `confirm=true` sí acredita; `auto_register=True` → acredita directo como antes, sin pasar por `MATCH_PENDING`.
+
 ## Sprint 2 (2026-09-15) — Lector de cédula (Épico M1-7, Parte 2 del brief)
 
 Antes en stand-by (sin muestras reales); se activó el mismo sprint al llegar muestras confirmadas de ambos tipos de cédula colombiana. El campo de "cédula" del Directorio en Vivo (`#searchCedula`, ya funcionaba como "teclado" con cualquier lector desde Historia 1.2) ahora interpreta lo que llega según el tipo de documento, en vez de asumir siempre un ID suelto.

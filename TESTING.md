@@ -382,6 +382,25 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 14. Registro unificado + Modo autoregistro (Sprint 2.2 Fase B)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| REGB-01 ✅ | Pestaña única "Registro" | Entrar a `/kiosk/{event_id}/registro` como `digitador`+ | Ya no hay pestañas separadas "Registro Individual"/"Directorio en Vivo" — una sola pestaña "Registro" con la tabla + botón "➕ Registrar nuevo" |
+| REGB-02 ✅ | "Registrar nuevo" abre modal | Clic en "➕ Registrar nuevo" | Se abre un modal flotante con el formulario de alta manual de siempre (mismos campos, foto si `facial_enabled`) |
+| REGB-03 ✅ | Alta manual sigue funcionando igual desde el modal | Completar y enviar el formulario del modal | `POST /api/register` sin cambios; al guardar, el modal se cierra, la tabla se recarga y la persona queda "Registrado" por defecto |
+| REGB-04 ✅ | "Exportar Reporte" y "Usuarios del Evento" ya no están en Registro | Ver las pestañas de `/kiosk/{event_id}/registro` | No aparecen — ahora son tarjetas propias "📊 Estadísticas" y "👥 Usuarios del Evento" en `/kiosk/{event_id}` |
+| REGB-05 ✅ | Las nuevas rutas respetan el mismo rol mínimo | Como `digitador`, intentar `/kiosk/{event_id}/estadisticas` y `/kiosk/{event_id}/usuarios` por URL directa | Redirige — mismo mínimo `coordinador`+ que tenían las pestañas viejas |
+| REGB-06 ✅ | Switch "Modo autoregistro" visible solo coordinador+ | Ver la pestaña "Registro" como `digitador` vs `coordinador` | El botón "🔒/🔓 Modo autoregistro" solo aparece para `coordinador`+ |
+| REGB-07 ✅ | Facial NO acredita solo por defecto | Con `auto_register` apagado, escanear un rostro con match | Aparece la tarjeta de confirmación ("🟡 Coincidencia encontrada") pero NO se crea ningún log todavía — el estado en el Directorio sigue "No registrado" |
+| REGB-08 ✅ | "Guardar y Autorizar Acceso" confirma de verdad | Sobre REGB-07, clic en "Guardar y Autorizar Acceso" | Recién ahí se crea el log, el estado pasa a "Registrado", y si auto-impresión está activa se abre la escarapela |
+| REGB-09 ✅ | Cédula (barcode o foto MRZ) tampoco acredita sola | Con `auto_register` apagado, escanear/buscar una cédula con match | Aparece el modal "Coincidencia encontrada" (no el Directorio directo) — nada se acredita hasta confirmar ahí |
+| REGB-10 ✅ | Modo autoregistro activado restaura el comportamiento de siempre | Prender el switch, repetir REGB-07/09 | El match acredita de una, sin tarjeta/modal de confirmación intermedio — igual que se comportaba todo antes de este cambio |
+| REGB-11 ❌ | El modal de confirmación de cédula no es admin-only | Como `digitador` (no coordinador/admin), repetir REGB-09 | El modal "Coincidencia encontrada" + "Guardar y Autorizar Acceso" SÍ aparece y funciona para `digitador` — es distinto de "Cambiar estado de registro" (Fase A), que sí es admin+ |
+| REGB-12 ✅ | Auto-impresión sigue disparándose solo tras un guardado real | Con auto-impresión Y autoregistro ambos activados, escanear un match | La escarapela se abre sola justo después de que el log se crea (no antes, no en el estado "pendiente") |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -394,11 +413,12 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Registro unificado (con/sin cámara + Directorio compartido + opcionales en alta manual) | 32 |
 | Roster (formato, facial opcional, opcionales dinámicos, validación, `facial_enabled`, bloqueo de re-carga) | 35 |
 | Doble registro | 7 |
-| Directorio en Vivo | 14 |
+| Directorio en Vivo (modal de edición, borrado real, estado manual) | 20 |
 | Reporte | 2 |
 | Seguridad | 6 |
 | Escarapelas (editor, librería, impresión + 4 fixes de QA) | 35 |
 | Lector de cédula (CSV vieja, blindaje, OCR MRZ nueva) | 13 |
-| **Total** | **198** |
+| Registro unificado + Modo autoregistro (Fase B) | 12 |
+| **Total** | **216** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

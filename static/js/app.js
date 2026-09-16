@@ -60,6 +60,24 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.BadgePrint) BadgePrint.maybeAutoPrint(userId);
     }
 
+    function fillProfileCard(data) {
+        document.getElementById('edit_id').value = data.id || "";
+        document.getElementById('edit_first_name').value = data.first_name || "";
+        document.getElementById('edit_last_name').value = data.last_name || "";
+        document.getElementById('edit_role').value = data.role || "";
+        document.getElementById('edit_company').value = data.company || "";
+        document.getElementById('edit_phone').value = data.phone || "";
+        document.getElementById('edit_email').value = data.email || "";
+        document.getElementById('edit_opt_1').value = data.opt_1 || "";
+    }
+
+    // Sprint 2.2 Fase B (2026-09-16): un match facial ya NO acredita solo — salvo que el evento
+    // tenga "Modo autoregistro" activado, /api/recognize devuelve result:"MATCH_PENDING" (sin
+    // crear ningún log todavía) y hay que guardar el MISMO FormData (con la foto) para poder
+    // reenviarlo con confirm=true cuando el digitador de verdad confirme en "Guardar y Autorizar
+    // Acceso" — reconocer de nuevo desde cero exigiría volver a tomar la foto.
+    let pendingRecognizeFormData = null;
+
     async function submitRecognize(formData) {
         try {
             const res = await fetch('/api/recognize', { method: 'POST', body: formData });
@@ -82,21 +100,25 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
-            if(data.result === 'SÍ') {
-                resTexto.innerText = "✅ IDENTIDAD VALIDADA";
-                resTexto.style.color = "#28a745";
+            if (data.result === 'MATCH_PENDING') {
+                resTexto.innerText = "🟡 Coincidencia encontrada — confirma para autorizar el acceso";
+                resTexto.style.color = "#f0ad4e";
+                pendingRecognizeFormData = formData;
+                fillProfileCard(data.data);
+                if (profileCard) profileCard.style.display = 'flex';
+                return;
+            }
 
-                document.getElementById('edit_id').value = data.data.id || "";
-                document.getElementById('edit_first_name').value = data.data.first_name || "";
-                document.getElementById('edit_last_name').value = data.data.last_name || "";
-                document.getElementById('edit_role').value = data.data.role || "";
-                document.getElementById('edit_company').value = data.data.company || "";
-                document.getElementById('edit_phone').value = data.data.phone || "";
-                document.getElementById('edit_email').value = data.data.email || "";
-                document.getElementById('edit_opt_1').value = data.data.opt_1 || "";
+            if(data.result === 'SÍ') {
+                resTexto.innerText = "✅ IDENTIDAD VALIDADA Y ACCESO AUTORIZADO";
+                resTexto.style.color = "#28a745";
+                pendingRecognizeFormData = null;
+
+                fillProfileCard(data.data);
 
                 if(profileCard) profileCard.style.display = 'flex';
                 offerPrint(printScanBtn, data.data.id);
+                if (window.directorySearch) window.directorySearch.reload();
             } else {
                 if (printScanBtn) printScanBtn.style.display = 'none';
                 resTexto.innerText = "❌ " + data.details;
@@ -114,6 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
             resTexto.style.color = "#D4AF37";
             if(profileCard) profileCard.style.display = 'none';
             if(printScanBtn) printScanBtn.style.display = 'none';
+            pendingRecognizeFormData = null;
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
@@ -132,15 +155,33 @@ document.addEventListener("DOMContentLoaded", () => {
     if(liveEditForm) {
         liveEditForm.onsubmit = async (e) => {
             e.preventDefault();
-            const autorizacion = await showConfirm("⚠️ ATENCIÓN: Esta persona ya se encuentra registrada en el sistema.<br><br>¿Estás completamente seguro de que deseas sobrescribir sus datos?");
-            if (!autorizacion) return;
+
+            // El aviso de "sobrescribir datos" solo tiene sentido cuando la persona YA estaba
+            // acreditada de antes (modo autoregistro, o un "SÍ" directo) — si el match está
+            // pendiente, el propio clic en "Guardar y Autorizar Acceso" ES la confirmación.
+            if (!pendingRecognizeFormData) {
+                const autorizacion = await showConfirm("⚠️ ATENCIÓN: Esta persona ya se encuentra registrada en el sistema.<br><br>¿Estás completamente seguro de que deseas sobrescribir sus datos?");
+                if (!autorizacion) return;
+            }
 
             const btn = e.target.querySelector('button');
             btn.innerText = "Guardando..."; btn.disabled = true;
 
-            const payload = Object.fromEntries(new FormData(e.target).entries());
-
             try {
+                if (pendingRecognizeFormData) {
+                    pendingRecognizeFormData.set('confirm', 'true');
+                    const confirmRes = await fetch('/api/recognize', { method: 'POST', body: pendingRecognizeFormData });
+                    const confirmData = await confirmRes.json();
+                    if (!confirmRes.ok || confirmData.result !== 'SÍ') {
+                        showToast(confirmData.detail || confirmData.details || "No se pudo autorizar el acceso", "error");
+                        btn.innerText = "Guardar y Autorizar Acceso"; btn.disabled = false;
+                        return;
+                    }
+                    pendingRecognizeFormData = null;
+                    offerPrint(printScanBtn, confirmData.data.id);
+                }
+
+                const payload = Object.fromEntries(new FormData(e.target).entries());
                 const res = await fetch(withEvent(`/api/users/${payload.id}`), {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -148,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
 
                 if(res.ok) {
-                    showToast("Perfil actualizado y log registrado", "success");
+                    showToast("Perfil actualizado y acceso autorizado", "success");
                     profileCard.style.display = 'none';
                     resTexto.innerText = "✅ ACCESO AUTORIZADO Y GUARDADO";
                     resTexto.style.color = "#28a745";
@@ -160,11 +201,6 @@ document.addEventListener("DOMContentLoaded", () => {
             } catch (err) { showToast("Error de red", "error"); }
             btn.innerText = "Guardar y Autorizar Acceso"; btn.disabled = false;
         };
-    }
-
-    const exportBtn = document.getElementById('exportBtn');
-    if(exportBtn) {
-        exportBtn.addEventListener('click', () => window.location.href = withEvent('/api/report') );
     }
 
     const regForm = document.getElementById('regForm');
@@ -201,7 +237,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     regForm.reset();
                     if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
                     if (window.directorySearch) window.directorySearch.reload();
-                    offerPrint(printManualBtn, registeredId);
+                    if (window.closeRegisterModal) window.closeRegisterModal();
+                    if (window.BadgePrint) BadgePrint.maybeAutoPrint(registeredId);
                 }
             } catch(err) { showToast("Error de red", "error"); }
         }

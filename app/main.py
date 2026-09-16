@@ -193,6 +193,23 @@ async def kiosk_roster(event_id: int, request: Request, db: Session = Depends(ge
     return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador")
 
 
+@app.get("/kiosk/{event_id}/usuarios")
+async def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Gestión de cuentas digitador/cliente de este evento (Sprint 2.2 Fase B, 2026-09-16) — antes
+    vivía como pestaña "Usuarios del Evento" dentro de /kiosk/{event_id}/registro; se mueve a su
+    propia ruta, mismo patrón que "Escarapelas"/"Adjuntar Base de Datos". Mismo mínimo de rol que
+    antes (coordinador+ para crear digitador, admin+ dentro del template para cliente/asignar)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_usuarios.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/estadisticas")
+async def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Reporte + gráficos del evento (Sprint 2.2 Fase B, 2026-09-16) — antes vivía como pestaña
+    "Exportar Reporte" dentro de /kiosk/{event_id}/registro; se mueve a su propia ruta. Por ahora
+    solo trae el export de siempre — el módulo de gráficos por variable llega en la Fase D."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", min_role="coordinador")
+
+
 @app.get("/kiosk/{event_id}/escarapela")
 async def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Editor visual de la escarapela del evento (Sprint 2, Épico 2) — mismo mínimo de rol que

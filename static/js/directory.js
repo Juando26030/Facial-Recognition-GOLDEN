@@ -209,6 +209,42 @@
     }
   }
 
+  /* Confirmación de un match "pendiente" (Sprint 2.2 Fase B, 2026-09-16) — cuando el escaneo de
+     cédula (barcode viejo o foto/MRZ nuevo) encuentra a alguien pero el evento NO tiene "Modo
+     autoregistro" activado, el backend no acredita solo (ver checkin-cedula/recognize) — se
+     muestra a la persona encontrada, "como si se hubiera buscado manualmente", con un botón
+     "Guardar y Autorizar Acceso" que reintenta la misma petición con confirm=true. Disponible
+     para cualquiera que pueda acreditar (digitador+), no solo admin — es un paso distinto de
+     "Cambiar estado de registro" (eso sí es admin+, un override manual sin necesidad de escaneo). */
+  function showMatchConfirmModal(data, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:white; border-radius:16px; padding:1.8rem; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);';
+    box.innerHTML = `
+      <h4 style="margin-top:0; color:var(--golden-dark);">Coincidencia encontrada</h4>
+      <p style="margin-bottom:1.2rem; color:#555; line-height:1.5;">
+        <strong>${(data.first_name || '') + ' ' + (data.last_name || '')}</strong><br>
+        <span style="font-size:0.85rem; color:#888;">Cédula: ${data.id}${data.company ? ' · ' + data.company : ''}</span>
+      </p>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" id="matchModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
+        <button type="button" id="matchModalConfirm" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar y Autorizar Acceso</button>
+      </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    function close() { overlay.remove(); }
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    box.querySelector('#matchModalCancel').addEventListener('click', close);
+    box.querySelector('#matchModalConfirm').addEventListener('click', async () => {
+      const btn = box.querySelector('#matchModalConfirm');
+      btn.disabled = true; btn.innerText = 'Guardando...';
+      await onConfirm();
+      close();
+    });
+  }
+
   function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
@@ -384,6 +420,26 @@
         if (data.result === 'DUPLICADO') {
           const confirmado = await confirmDuplicateRegistration(data.data);
           if (confirmado) await fastCheckin(cedula, true, nameInfo);
+          return;
+        }
+        if (data.result === 'MATCH_PENDING') {
+          showMatchConfirmModal(data.data, async () => {
+            const confirmFormData = new FormData();
+            confirmFormData.append('event_id', window.EVENT_ID);
+            confirmFormData.append('cedula', cedula);
+            confirmFormData.append('confirm', 'true');
+            try {
+              const res2 = await fetch('/api/checkin-cedula', { method: 'POST', body: confirmFormData });
+              const data2 = await res2.json();
+              if (res2.ok && data2.result === 'SÍ') {
+                showToast(`Acreditado: ${data2.data.first_name} ${data2.data.last_name}`, 'success');
+                if (window.BadgePrint) BadgePrint.maybeAutoPrint(data2.data.id);
+                reload();
+              } else {
+                showToast(data2.detail || data2.details || 'No se pudo autorizar el acceso', 'error');
+              }
+            } catch (e) { showToast('Error de red', 'error'); }
+          });
           return;
         }
         if (data.result === 'SÍ') {

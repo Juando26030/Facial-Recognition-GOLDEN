@@ -78,6 +78,7 @@ class EventUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     auto_print_badge: Optional[bool] = None
+    auto_register: Optional[bool] = None
 
 
 def _serialize(e: Event) -> dict:
@@ -96,6 +97,7 @@ def _serialize(e: Event) -> dict:
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
+        "auto_register": e.auto_register,
     }
 
 

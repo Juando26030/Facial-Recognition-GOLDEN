@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usuarios del Evento | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <style>
+        .btn-table-delete {
+            background: #dc3545; color: white; padding: 4px 10px; border-radius: 6px;
+            cursor: pointer; font-weight: 700; font-size: 0.75rem; margin-left: 5px; border: none; transition: 0.3s;
+        }
+        .btn-table-delete:hover { background: #c82333; }
+    </style>
+</head>
+<body>
+
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="#" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
+      <div class="golden-anniversary-badge">{{ event.name }}</div>
+      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
+      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
+      {% if staff_role in ["admin", "super_admin"] %}
+      <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
+      {% endif %}
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<script>window.EVENT_ID = {{ event.id }};</script>
+
+<main class="golden-main">
+  <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2>Usuarios del <span class="gradient-text">Evento</span></h2>
+      </div>
+
+      <div class="app-container">
+        <div class="golden-badge-builder" style="margin-bottom: 2rem;">
+            <div class="badge-form-title">Nueva cuenta para este evento</div>
+            <form id="tempUserForm">
+                <div class="badge-input-row">
+                    <div class="badge-input-group">
+                        <label>Usuario (para digitador, la cédula)</label>
+                        <input type="text" name="username" required>
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Nombre completo</label>
+                        <input type="text" name="full_name">
+                    </div>
+                </div>
+                <div class="badge-input-row">
+                    <div class="badge-input-group">
+                        <label>Contraseña temporal</label>
+                        <input type="text" name="password" required>
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Rol</label>
+                        <select name="role" id="eventRoleSelect" required>
+                            <option value="digitador">Digitador (temporal)</option>
+                            {% if staff_role in ["admin", "super_admin"] %}
+                            <option value="cliente">Cliente</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="golden-btn golden-btn-primary">Crear y asignar a este evento</button>
+            </form>
+        </div>
+
+        {% if staff_role in ["admin", "super_admin"] %}
+        <div class="golden-badge-builder" style="margin-bottom: 2rem;">
+            <div class="badge-form-title">Asignar cuenta ya existente a este evento</div>
+            <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Para reusar un digitador o cliente que ya existe de otro evento, en vez de crear uno nuevo.</p>
+            <form id="assignExistingForm">
+                <div class="badge-input-group">
+                    <label>Usuario existente</label>
+                    <select name="staff_id" id="assignableSelect" required></select>
+                </div>
+                <button type="submit" class="golden-btn golden-btn-primary">Asignar a este evento</button>
+            </form>
+        </div>
+        {% endif %}
+
+        <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+            <div class="badge-form-title">Cuentas asignadas a este evento</div>
+            <table class="golden-table">
+                <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead>
+                <tbody id="tempUsersBody"></tbody>
+            </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function() {
+    const tempForm = document.getElementById("tempUserForm");
+    const assignForm = document.getElementById("assignExistingForm");
+
+    async function loadTempUsers() {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users`);
+        const list = await res.json();
+        document.getElementById("tempUsersBody").innerHTML = list.map(u => `
+            <tr>
+                <td>${u.username}</td><td>${u.full_name || "-"}</td><td>${u.role}</td>
+                <td>${u.is_active ? "Activo" : "Inactivo"}</td>
+                <td>
+                    <button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button>
+                    <button class="btn-table-delete" style="background:#6c1c1c;" onclick="deleteTempUser(${u.id}, '${u.username}')">Borrar permanente</button>
+                </td>
+            </tr>
+        `).join("");
+    }
+
+    async function loadAssignableOptions() {
+        if (!assignForm) return;
+        const res = await fetch("/api/staff/assignable");
+        const list = await res.json();
+        document.getElementById("assignableSelect").innerHTML = list
+            .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""} (${s.role})</option>`).join("");
+    }
+
+    tempForm.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const payload = Object.fromEntries(new FormData(ev.target).entries());
+        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users`, {
+            method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+        });
+        if (res.ok) { ev.target.reset(); loadTempUsers(); showToast("Cuenta creada y asignada al evento", "success"); }
+        else { const err = await res.json(); showToast(err.detail || "No se pudo crear la cuenta", "error"); }
+    });
+
+    if (assignForm) {
+        assignForm.addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            const staffId = new FormData(ev.target).get("staff_id");
+            const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/assign-existing`, {
+                method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({staff_id: Number(staffId)}),
+            });
+            if (res.ok) { loadTempUsers(); showToast("Cuenta asignada al evento", "success"); }
+            else { const err = await res.json(); showToast(err.detail || "No se pudo asignar", "error"); }
+        });
+    }
+
+    window.revokeTempUser = async (staffId) => {
+        if (!(await showConfirm("¿Quitar el acceso de este usuario a este evento?"))) return;
+        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/${staffId}`, {method: "DELETE"});
+        loadTempUsers();
+        showToast(res.ok ? "Acceso revocado" : "No se pudo revocar el acceso", res.ok ? "success" : "error");
+    };
+
+    window.deleteTempUser = async (staffId, username) => {
+        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`))) return;
+        const res = await fetch(`/api/staff/${staffId}`, {method: "DELETE"});
+        if (res.ok) { loadTempUsers(); showToast("Cuenta eliminada", "success"); }
+        else { const err = await res.json(); showToast(err.detail || "No se pudo borrar", "error"); }
+    };
+
+    loadTempUsers();
+    loadAssignableOptions();
+})();
+</script>
+</body>
+</html>

@@ -82,6 +82,16 @@
         <div class="mode-title">Escarapelas</div>
         <div class="mode-sub">Diseña la escarapela de este evento e imprímela al registrar</div>
       </a>
+      <a href="/kiosk/{{ event.id }}/estadisticas" class="mode-card enabled">
+        <div class="mode-icon">📊</div>
+        <div class="mode-title">Estadísticas</div>
+        <div class="mode-sub">Exporta el reporte y consulta gráficos del evento</div>
+      </a>
+      <a href="/kiosk/{{ event.id }}/usuarios" class="mode-card enabled">
+        <div class="mode-icon">👥</div>
+        <div class="mode-title">Usuarios del Evento</div>
+        <div class="mode-sub">Cuentas temporales de digitador/cliente para este evento</div>
+      </a>
       {% endif %}
     </div>
 
