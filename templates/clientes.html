@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clientes | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
@@ -79,9 +78,6 @@
   </div>
 </main>
 
-<datalist id="countryList"></datalist>
-<datalist id="coordinatorList"></datalist>
-
 <script>
 const isAdmin = "{{ staff_role }}" === "admin" || "{{ staff_role }}" === "super_admin";
 // Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes/eventos pasó a ser comercial+ — un
@@ -93,21 +89,6 @@ function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').repla
 function stripAccents(text) { return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 
 const STATUS_LABELS = { creado: "Creado", en_proceso: "En Proceso", finalizado: "Finalizado" };
-
-const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
-document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
-
-let coordinatorsByLabel = {};
-async function loadCoordinatorOptions() {
-  const res = await fetch("/api/staff/coordinators");
-  const coords = await res.json();
-  coordinatorsByLabel = {};
-  document.getElementById("coordinatorList").innerHTML = coords.map(c => {
-    const label = `${c.full_name || c.username} (${c.username})`;
-    coordinatorsByLabel[label] = c.id;
-    return `<option value="${label}">`;
-  }).join("");
-}
 
 // ---------- Lista de clientes + árbol de eventos ----------
 let allTenants = [];
@@ -131,64 +112,11 @@ function renderTenants(tenantsData) {
         <span class="small-btn">Ver eventos</span>
       </div>
       <div class="tenant-body" data-tenant-body>
-        ${canCreate ? '<button type="button" class="small-btn primary" style="margin:1rem 0;" data-action="toggle-new-event">+ Nuevo evento</button>' : ''}
-        <form class="inline-form" data-new-event-form style="${canCreate ? '' : 'display:none;'}">
-          <div class="badge-input-row">
-            <div class="badge-input-group"><label>Código interno *</label><input type="text" name="event_code" required></div>
-            <div class="badge-input-group"><label>Nombre del evento *</label><input type="text" name="name" required></div>
-          </div>
-          <div class="badge-input-row">
-            <div class="badge-input-group"><label>Fecha inicio *</label><input type="date" name="start_date" required></div>
-            <div class="badge-input-group"><label>Fecha fin *</label><input type="date" name="end_date" required></div>
-            <div class="badge-input-group"><label>Fecha montaje *</label><input type="date" name="setup_date" required></div>
-          </div>
-          <div class="badge-input-row">
-            <div class="badge-input-group"><label>Hora inicio evento *</label><input type="text" class="clock-time" name="event_time_start" required></div>
-            <div class="badge-input-group"><label>Hora fin evento *</label><input type="text" class="clock-time" name="event_time_end" required></div>
-          </div>
-          <div class="badge-input-row">
-            <div class="badge-input-group"><label>Hora inicio montaje *</label><input type="text" class="clock-time" name="setup_time_start" required></div>
-            <div class="badge-input-group"><label>Hora fin montaje *</label><input type="text" class="clock-time" name="setup_time_end" required></div>
-          </div>
-          <div class="badge-input-row">
-            <div class="badge-input-group"><label>País *</label><input type="text" class="country-field" name="country" list="countryList" required autocomplete="off"></div>
-            <div class="badge-input-group"><label>Ciudad *</label><input type="text" class="city-field" name="city" list="cityList-${t.id}" required autocomplete="off"></div>
-          </div>
-          <datalist id="cityList-${t.id}"></datalist>
-          <div class="badge-input-row">
-            <div class="badge-input-group"><label>Lugar *</label><input type="text" name="location" required></div>
-            <div class="badge-input-group"><label>Dirección *</label><input type="text" name="address" required></div>
-          </div>
-          <div class="badge-input-row">
-            <div class="badge-input-group" style="min-width:100%;">
-              <label>Coordinador asignado *</label>
-              <input type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar...">
-            </div>
-          </div>
-          <div class="badge-input-row">
-            <div class="badge-input-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
-          </div>
-          <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.8rem;">Crear evento</button>
-        </form>
+        ${canCreate ? `<a href="/clientes/${t.id}/nuevo-evento" class="small-btn primary" style="display:inline-block; margin:1rem 0; text-decoration:none;">+ Nuevo evento</a>` : ''}
         <div data-events-container></div>
       </div>
     </div>
   `).join("");
-
-  el.querySelectorAll(".clock-time").forEach((input) => attachClockPicker(input));
-  el.querySelectorAll(".country-field").forEach((input) => {
-    input.addEventListener("change", () => updateCityOptions(input));
-  });
-}
-
-async function updateCityOptions(countryInput) {
-  const form = countryInput.closest("form");
-  const cityDatalist = form.querySelector("datalist");
-  const country = countryInput.value.trim();
-  if (!country) { cityDatalist.innerHTML = ""; return; }
-  const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
-  const cities = res.ok ? await res.json() : [];
-  cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join("");
 }
 
 async function toggleTenant(tenantId, card) {
@@ -205,11 +133,6 @@ tenantsListEl.addEventListener("click", (e) => {
     toggleTenant(card.dataset.tenantId, card);
     return;
   }
-  const toggleNewEvent = e.target.closest('[data-action="toggle-new-event"]');
-  if (toggleNewEvent) {
-    toggleNewEvent.closest(".tenant-body").querySelector("[data-new-event-form]").classList.toggle("open");
-    return;
-  }
   const deleteBtn = e.target.closest("[data-delete-event]");
   if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
 });
@@ -222,14 +145,6 @@ tenantsListEl.addEventListener("change", async (e) => {
   const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
   if (!confirmed) { select.value = previousStatus; return; }
   await setEventStatus(select.dataset.eventId, newStatus, select);
-});
-
-tenantsListEl.addEventListener("submit", (e) => {
-  const form = e.target.closest("[data-new-event-form]");
-  if (!form) return;
-  e.preventDefault();
-  const tenantId = form.closest(".tenant-card").dataset.tenantId;
-  createEvent(form, tenantId);
 });
 
 async function loadEventsForTenant(tenantId, card) {
@@ -254,34 +169,6 @@ async function loadEventsForTenant(tenantId, card) {
       </div>
     </div>
   `).join("");
-}
-
-async function createEvent(form, tenantId) {
-  const formData = new FormData(form);
-  const payload = Object.fromEntries(formData.entries());
-  payload.tenant_id = tenantId;
-
-  const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
-  if (!coordinatorId) {
-    showToast("Selecciona un coordinador válido de la lista.", "error");
-    return;
-  }
-  payload.coordinator_staff_id = coordinatorId;
-  delete payload.coordinator_label;
-
-  const res = await fetch("/api/events", {
-    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
-  });
-  if (res.ok) {
-    form.reset();
-    form.classList.remove("open");
-    const card = form.closest(".tenant-card");
-    loadEventsForTenant(tenantId, card);
-    showToast("Evento creado", "success");
-  } else {
-    const err = await res.json();
-    showToast(err.detail || "No se pudo crear el evento", "error");
-  }
 }
 
 async function setEventStatus(eventId, status, btn) {
@@ -324,7 +211,6 @@ searchBox.addEventListener("input", () => {
   renderTenants(allTenants.filter(t => stripAccents(t.name || "").toLowerCase().includes(q)));
 });
 
-loadCoordinatorOptions();
 loadTenants();
 </script>
 </body>

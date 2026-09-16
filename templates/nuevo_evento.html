@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nuevo Evento | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" class="small-btn">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 800px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1.5rem;">
+      <span>{{ tenant_name }}</span>
+      <h2>Nuevo evento</h2>
+    </div>
+
+    <div class="golden-badge-builder">
+      <form id="newEventForm">
+        <div class="badge-input-row">
+          <div class="badge-input-group"><label>Código interno *</label><input type="text" name="event_code" required></div>
+          <div class="badge-input-group"><label>Nombre del evento *</label><input type="text" name="name" required></div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group"><label>Fecha inicio *</label><input type="date" name="start_date" required></div>
+          <div class="badge-input-group"><label>Fecha fin *</label><input type="date" name="end_date" required></div>
+          <div class="badge-input-group"><label>Fecha montaje *</label><input type="date" name="setup_date" required></div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group"><label>Hora inicio evento *</label><input type="text" class="clock-time" name="event_time_start" required></div>
+          <div class="badge-input-group"><label>Hora fin evento *</label><input type="text" class="clock-time" name="event_time_end" required></div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group"><label>Hora inicio montaje *</label><input type="text" class="clock-time" name="setup_time_start" required></div>
+          <div class="badge-input-group"><label>Hora fin montaje *</label><input type="text" class="clock-time" name="setup_time_end" required></div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group"><label>País *</label><input type="text" id="countryField" name="country" list="countryList" required autocomplete="off"></div>
+          <div class="badge-input-group"><label>Ciudad *</label><input type="text" name="city" list="cityList" required autocomplete="off"></div>
+        </div>
+        <datalist id="cityList"></datalist>
+        <div class="badge-input-row">
+          <div class="badge-input-group"><label>Lugar *</label><input type="text" name="location" required></div>
+          <div class="badge-input-group"><label>Dirección *</label><input type="text" name="address" required></div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group" style="min-width:100%;">
+            <label>Coordinador asignado *</label>
+            <input type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar...">
+          </div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+          <a href="/clientes" class="small-btn" style="padding:10px 20px;">Cancelar</a>
+          <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Crear evento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</main>
+
+<datalist id="countryList"></datalist>
+<datalist id="coordinatorList"></datalist>
+
+<script>
+const TENANT_ID = "{{ tenant_id }}";
+const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
+document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
+
+document.querySelectorAll(".clock-time").forEach((input) => attachClockPicker(input));
+
+document.getElementById("countryField").addEventListener("change", async (e) => {
+  const country = e.target.value.trim();
+  const cityDatalist = document.getElementById("cityList");
+  if (!country) { cityDatalist.innerHTML = ""; return; }
+  const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
+  const cities = res.ok ? await res.json() : [];
+  cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join("");
+});
+
+let coordinatorsByLabel = {};
+async function loadCoordinatorOptions() {
+  const res = await fetch("/api/staff/coordinators");
+  const coords = await res.json();
+  coordinatorsByLabel = {};
+  document.getElementById("coordinatorList").innerHTML = coords.map(c => {
+    const label = `${c.full_name || c.username} (${c.username})`;
+    coordinatorsByLabel[label] = c.id;
+    return `<option value="${label}">`;
+  }).join("");
+}
+loadCoordinatorOptions();
+
+document.getElementById("newEventForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const formData = new FormData(form);
+  const payload = Object.fromEntries(formData.entries());
+  payload.tenant_id = TENANT_ID;
+
+  const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
+  if (!coordinatorId) {
+    showToast("Selecciona un coordinador válido de la lista.", "error");
+    return;
+  }
+  payload.coordinator_staff_id = coordinatorId;
+  delete payload.coordinator_label;
+
+  const btn = form.querySelector('button[type="submit"]');
+  setButtonLoading(btn, true, "Creando...");
+  const res = await fetch("/api/events", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    showToast("Evento creado", "success");
+    window.location.href = "/clientes";
+  } else {
+    const err = await res.json();
+    showToast(err.detail || "No se pudo crear el evento", "error");
+    setButtonLoading(btn, false);
+  }
+});
+</script>
+</body>
+</html>

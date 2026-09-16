@@ -555,6 +555,22 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 23. Sprint 2.4 Fase 1: ajustes de UI/UX
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-09 ✅ | Crear evento es pantalla dedicada | Como `comercial`/`admin`, dar clic en "+ Nuevo evento" desde `/clientes` | Lleva a `/clientes/{tenant_id}/nuevo-evento`, no un formulario inline |
+| S24-10 ❌ | `coordinador` no accede a esa pantalla | Entrar a `/clientes/{tenant_id}/nuevo-evento` por URL directa como `coordinador` | Redirige — mismo mínimo que crear el evento por API |
+| S24-11 ✅ | Ya no se puede agregar campos desde el alta manual | Abrir "Registrar nuevo" en Registro | No aparece "+ Agregar campo opcional" — solo en Parámetros del Evento |
+| S24-12 ✅ | Ejemplos al cargar un Excel con campos opcionales nuevos | Subir un roster con una columna "opcional_N" no rotulada | El modal que pregunta a qué corresponde muestra hasta 2 valores reales de esa columna |
+| S24-13 ℹ️ | Tesseract en Windows local se autodetecta | Instalar el `.exe` de Tesseract (UB Mannheim) en la ruta por defecto, sin tocar PATH | El escaneo de cédula nueva deja de dar 503 en el entorno local, sin configuración extra |
+| S24-14 ✅ | Apariencia disponible para todos los roles | Iniciar sesión como `digitador`/`cliente`, usar el ícono ⚙️ del header | Entra a `/configuracion` y puede cambiar color/tipografía — no ve la pestaña "Staff y Permisos" |
+| S24-15 ✅ | Selector de tipografía con 40 fuentes | En Apariencia, abrir el selector de tipografía | Ofrece las mismas 40 familias que el editor de escarapelas |
+| S24-16 ✅ | La fuente elegida se aplica sin recargar | Elegir una fuente y dar "Aplicar y guardar" | El cambio se ve de inmediato en esa misma carga de página (no hace falta recargar) |
+| S24-17 ✅ | Cédula editable en el guardado normal | Como admin, abrir "Editar" de una persona, cambiar la cédula y dar "Guardar cambios" (un solo clic) | Pide confirmación, corrige la cédula y guarda el resto de cambios en un solo paso |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -581,6 +597,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Parámetros del Evento (campos configurables, obligatorios, estadísticas por defecto) | 15 |
 | Sprint 2.3 (menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract) | 28 |
 | Sprint 2.4 Fase 0 (rol comercial y matriz de permisos) | 8 |
-| **Total** | **314** |
+| Sprint 2.4 Fase 1 (ajustes de UI/UX) | 9 |
+| **Total** | **323** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

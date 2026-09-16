@@ -10,9 +10,29 @@ OpenCV — el único preprocesamiento que hace falta es convertir a escala de gr
 con un umbral fijo, suficiente para texto MRZ impreso (alto contraste, fuente monoespaciada
 OCR-B) sin necesitar herramientas de visión más pesadas.
 """
+import os
+import shutil
+
 import numpy as np
 import pytesseract
 from PIL import Image
+
+# Auto-detección del binario en Windows (Sprint 2.4, 2026-09-16, ronda 3 del mismo pedido) — en
+# la VM de producción (Linux) ya se instala solo vía deploy.yml, pero en Windows local no hay
+# forma de "instalar al PATH" sin que quien esté probando toque variables de entorno a mano. Si
+# `tesseract` YA resuelve por PATH (shutil.which), no se toca nada — pytesseract usa ese. Si no,
+# se prueban las rutas por defecto del instalador de UB Mannheim (la distribución de Tesseract
+# para Windows más común, ver https://github.com/UB-Mannheim/tesseract/wiki) y se apunta
+# pytesseract directo al .exe si aparece ahí. No falla si no encuentra nada — sigue el mismo 503
+# de siempre en ese caso.
+if os.name == "nt" and not shutil.which("tesseract"):
+    for _candidate in (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ):
+        if os.path.isfile(_candidate):
+            pytesseract.pytesseract.tesseract_cmd = _candidate
+            break
 
 # Alfabeto real de una línea MRZ: A-Z, 0-9 y "<" de relleno — restringir el reconocimiento a
 # esto (en vez de dejar que Tesseract intente puntuación/acentos) mejora bastante la precisión.

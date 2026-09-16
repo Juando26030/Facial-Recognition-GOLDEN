@@ -90,6 +90,25 @@ def _normalize_optional_key(raw_key: str):
     return f"opcional_{n}" if 1 <= n <= MAX_OPTIONAL_FIELDS else None
 
 
+def _optional_field_examples(rows: list, keys) -> dict:
+    """Hasta 2 valores no vacíos (sin repetir) de cada campo opcional en `keys`, tal como vienen
+    en el archivo — 2026-09-16, pedido explícito, para no tener que abrir el Excel a ver qué es
+    'opcional_1'. `rows` ya viene con las claves originales del archivo (no normalizadas), así
+    que hay que normalizar cada `raw_key` para saber a cuál "opcional_N" corresponde."""
+    examples = {key: [] for key in keys}
+    for row in rows:
+        if all(len(v) >= 2 for v in examples.values()):
+            break
+        for raw_key, value in row.items():
+            norm = _normalize_optional_key(raw_key)
+            if norm not in examples:
+                continue
+            val = (value or "").strip()
+            if val and val not in examples[norm] and len(examples[norm]) < 2:
+                examples[norm].append(val)
+    return examples
+
+
 def _parse_extra_fields(raw: str) -> dict:
     """Parsea el JSON de extra_fields que manda el frontend (bulk_register por fila, o
     manual_register para una sola persona) y devuelve solo las claves 'opcional_N' válidas con
@@ -696,7 +715,15 @@ async def bulk_register(
 
     missing = used_optional_keys - set(event.get_optional_labels().keys())
     if missing and not field_labels:
-        return {"result": "NEEDS_LABELS", "fields": sorted(missing, key=lambda k: int(k.split("_")[1]))}
+        # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
+        # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
+        # Excel — ej. si "opcional_1" trae "Talla M"/"Talla L", eso mismo se muestra al preguntar.
+        examples = _optional_field_examples(rows, missing)
+        return {
+            "result": "NEEDS_LABELS",
+            "fields": sorted(missing, key=lambda k: int(k.split("_")[1])),
+            "examples": examples,
+        }
 
     if field_labels:
         _apply_optional_labels(event, used_optional_keys, field_labels)

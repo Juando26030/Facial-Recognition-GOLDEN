@@ -115,7 +115,8 @@
         </div>
         <div style="margin-bottom:0.8rem;">
           <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Cédula</label>
-          <input type="text" value="${esc(user.id)}" disabled style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:0.95rem; background:#f5f5f5; color:#888;">
+          <input type="text" id="editModalCedulaField" value="${esc(user.id)}" ${isAdmin ? '' : 'disabled'} style="width:100%; box-sizing:border-box; border:1px solid ${isAdmin ? '#ccc' : '#ddd'}; border-radius:8px; padding:8px 10px; font-size:0.95rem; ${isAdmin ? '' : 'background:#f5f5f5; color:#888;'}">
+          ${isAdmin ? '<p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>' : ''}
         </div>
         ${configuredHtml}
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
@@ -125,14 +126,6 @@
       </form>
       ${isAdmin ? `
       <hr style="margin:1.2rem 0; border:none; border-top:1px solid #eee;">
-      <div style="margin-bottom:0.8rem;">
-        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Corregir cédula</label>
-        <div style="display:flex; gap:8px;">
-          <input type="text" id="editModalCedula" value="${esc(user.id)}" style="flex:1; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
-          <button type="button" id="editModalApplyCedula" class="golden-btn btn-table-action" style="width:auto; padding:8px 16px;">Aplicar</button>
-        </div>
-        <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>
-      </div>
       <div style="margin-bottom:0.8rem;">
         <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Estado de registro</label>
         <div style="display:flex; gap:8px;">
@@ -164,6 +157,38 @@
         if (el.type === 'checkbox') return el.checked ? 'true' : '';
         return el.value.trim();
       };
+
+      // Cédula editable en el mismo "Guardar cambios" (2026-09-16, pedido explícito) — admin
+      // solamente (ver input #editModalCedulaField, disabled para el resto de roles). Si cambió,
+      // se corrige PRIMERO (PUT .../cedula, con su propia confirmación porque afecta a la
+      // persona en TODOS los eventos de este cliente) y recién después se guarda el resto de
+      // campos con el id ya actualizado.
+      let currentId = user.id;
+      const cedulaInput = box.querySelector('#editModalCedulaField');
+      const newId = cedulaInput ? cedulaInput.value.trim() : user.id;
+
+      if (isAdmin && newId && newId !== user.id) {
+        const ok = await showConfirm(`¿Cambiar la cédula de "${user.id}" a "${newId}"?<br><br>Esto afecta a esta persona en TODOS los eventos de este cliente, no solo en este.`, { variant: 'warning', confirmLabel: 'Sí, corregir y guardar' });
+        if (!ok) return;
+        saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
+        try {
+          const cedulaRes = await fetch(withEvent(`/api/users/${user.id}/cedula`), {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_id: newId }),
+          });
+          if (!cedulaRes.ok) {
+            const data = await cedulaRes.json().catch(() => ({}));
+            showToast(data.detail || 'No se pudo cambiar la cédula', 'error');
+            saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+            return;
+          }
+          currentId = newId;
+        } catch (e) {
+          showToast('Error de red', 'error');
+          saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+          return;
+        }
+      }
+
       const payload = { first_name: val('first_name'), last_name: val('last_name') };
       const newExtras = {};
       fieldConfigs.forEach((cfg) => {
@@ -174,7 +199,7 @@
 
       saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
       try {
-        const res = await fetch(withEvent(`/api/users/${user.id}`), {
+        const res = await fetch(withEvent(`/api/users/${currentId}`), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         if (res.ok) {
@@ -193,33 +218,6 @@
     });
 
     if (isAdmin) {
-      box.querySelector('#editModalApplyCedula').addEventListener('click', async () => {
-        const input = box.querySelector('#editModalCedula');
-        const newId = input.value.trim();
-        if (!newId || newId === user.id) return;
-        const ok = await showConfirm(`¿Cambiar la cédula de "${user.id}" a "${newId}"?<br><br>Esto afecta a esta persona en TODOS los eventos de este cliente, no solo en este.`, { variant: 'warning', confirmLabel: 'Sí, corregir' });
-        if (!ok) return;
-        const btn = box.querySelector('#editModalApplyCedula');
-        btn.disabled = true; btn.innerText = 'Aplicando...';
-        try {
-          const res = await fetch(withEvent(`/api/users/${user.id}/cedula`), {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_id: newId }),
-          });
-          if (res.ok) {
-            showToast('Cédula corregida', 'success');
-            close();
-            if (window.directorySearch) window.directorySearch.reload();
-          } else {
-            const data = await res.json().catch(() => ({}));
-            showToast(data.detail || 'No se pudo cambiar la cédula', 'error');
-            btn.disabled = false; btn.innerText = 'Aplicar';
-          }
-        } catch (e) {
-          showToast('Error de red', 'error');
-          btn.disabled = false; btn.innerText = 'Aplicar';
-        }
-      });
-
       box.querySelector('#editModalApplyStatus').addEventListener('click', async () => {
         const select = box.querySelector('#editModalStatus');
         const newStatus = select.value;

@@ -36,6 +36,9 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
+      {% if staff_role in ["digitador", "cliente"] %}
+      <a href="/configuracion" title="Configuración (Apariencia)" style="text-decoration:none; font-size:1.1rem;">⚙️</a>
+      {% endif %}
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
@@ -298,8 +301,6 @@
                         </div>
                         {% endfor %}
                     </div>
-                    <button type="button" id="addOptionalFieldBtn" class="golden-btn" style="margin-top:0.8rem; background:#f0f0f0; color:var(--golden-dark); width:auto; padding:0.5rem 1.2rem;">+ Agregar campo opcional</button>
-
                     {% if event.facial_enabled %}
                     <div class="badge-input-group" style="margin-top:1.2rem;">
                         <label>Fotografía Oficial</label>
@@ -503,65 +504,6 @@
             });
         });
     }
-})();
-</script>
-<script>
-(function() {
-    /* "+ Agregar campo opcional" en Registro Individual (2026-09-22): deja añadir hasta 30
-       campos libres al formulario de alta manual, iguales a los "opcional_N" del roster — sirve
-       tanto para eventos que sí tuvieron un Excel (ya trae los que ese Excel usó, ver
-       optional_labels en main.py) como para eventos 100% manuales que nunca tuvieron uno. Cada
-       campo nuevo pide su nombre ahí mismo (mismo modal que bulk_register) y ese nombre se manda
-       junto con el registro para que quede guardado en Event.optional_field_labels — no hace
-       falta un viaje NEEDS_LABELS aparte porque ya lo preguntamos al agregar el campo. */
-    const container = document.getElementById('dynamicFieldsContainer');
-    const addBtn = document.getElementById('addOptionalFieldBtn');
-    if (!container || !addBtn) return;
-
-    const pendingLabels = {};  // {opcional_N: "label"} — solo los agregados en ESTA carga del formulario
-
-    function usedSlots() {
-        const used = new Set();
-        container.querySelectorAll('[name^="opcional_"]').forEach(el => used.add(el.name));
-        return used;
-    }
-
-    function nextFreeSlot() {
-        const used = usedSlots();
-        for (let n = 1; n <= 30; n++) {
-            const key = 'opcional_' + n;
-            if (!used.has(key)) return key;
-        }
-        return null;
-    }
-
-    addBtn.addEventListener('click', async () => {
-        const key = nextFreeSlot();
-        if (!key) { showToast('Ya se usaron los 30 campos opcionales disponibles para este evento', 'error'); return; }
-
-        const labels = await window.promptOptionalLabels([key]);
-        const label = labels && labels[key];
-        if (!label) return;
-
-        pendingLabels[key] = label;
-
-        const group = document.createElement('div');
-        group.className = 'badge-input-group';
-        group.dataset.fieldKey = key;
-        group.style.marginTop = '0.8rem';
-        const labelEl = document.createElement('label');
-        labelEl.innerText = label;
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.name = key;
-        group.appendChild(labelEl);
-        group.appendChild(input);
-        container.appendChild(group);
-        input.focus();
-    });
-
-    window.getPendingOptionalLabels = () => Object.assign({}, pendingLabels);
-    window.clearPendingOptionalLabels = () => { Object.keys(pendingLabels).forEach(k => delete pendingLabels[k]); };
 })();
 </script>
 </body>

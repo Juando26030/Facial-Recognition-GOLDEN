@@ -15,8 +15,8 @@
         .theme-select { flex:1; min-width:260px; padding:0.6rem 0.8rem; border:1px solid #ccc; border-radius:8px; font-size:0.9rem; }
     </style>
 </head>
-<body class="has-sidebar">
-{% include "_sidebar.html" %}
+<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+{% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
@@ -41,7 +41,9 @@
 
     <div class="tabs" style="margin-bottom:1.5rem;">
       <div class="tab active" data-tab="apariencia">Apariencia</div>
+      {% if staff_role in ["admin", "super_admin"] %}
       <div class="tab" data-tab="staff">Staff y Permisos</div>
+      {% endif %}
     </div>
 
     <div id="apariencia" class="section active">
@@ -56,10 +58,7 @@
         <div class="theme-row">
           <label for="themeFonts">Tipografía</label>
           <select id="themeFonts" class="theme-select">
-            <option value="original">Original (Playfair + Montserrat + Raleway)</option>
-            <option value="classic">Clásico serif (Georgia)</option>
-            <option value="modern">Moderno sans (sistema)</option>
-            <option value="elegant">Elegante (Times New Roman + Arial)</option>
+            <option value="">Original (Playfair + Montserrat + Raleway)</option>
           </select>
         </div>
         <div style="display:flex; gap:10px; margin-top:1rem;">
@@ -69,30 +68,34 @@
       </div>
     </div>
 
+    {% if staff_role in ["admin", "super_admin"] %}
     <div id="staff" class="section" style="max-width:100%;">
       <iframe src="/admin/staff?embed=1" style="width:100%; min-height:80vh; border:none; border-radius:20px; background:transparent;" title="Staff y Permisos"></iframe>
     </div>
+    {% endif %}
 
   </div>
 </main>
 
 <script>
 (function () {
-  const FONT_PRESETS = {
-    original: null,
-    classic: { heading_primary: "Georgia, serif", heading_secondary: "Georgia, serif", body: "Georgia, serif" },
-    modern: { heading_primary: "'Segoe UI', sans-serif", heading_secondary: "'Segoe UI', sans-serif", body: "'Segoe UI', sans-serif" },
-    elegant: { heading_primary: "'Times New Roman', serif", heading_secondary: "Arial, sans-serif", body: "Arial, sans-serif" },
-  };
-
   const colorInput = document.getElementById('themeColor');
   const fontsSelect = document.getElementById('themeFonts');
+
+  // Mismas 40 familias que el editor de escarapelas — expuestas por theme.js (cargado en <head>,
+  // antes que este script) como window.GOLDEN_FONT_FAMILIES para no duplicar la lista acá.
+  (window.GOLDEN_FONT_FAMILIES || []).forEach((f) => {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.innerText = f;
+    fontsSelect.appendChild(opt);
+  });
 
   try {
     const savedColor = localStorage.getItem('golden_theme_primary');
     if (savedColor) colorInput.value = savedColor;
-    const savedFontsRaw = localStorage.getItem('golden_theme_fonts_key');
-    if (savedFontsRaw) fontsSelect.value = savedFontsRaw;
+    const savedFont = localStorage.getItem('golden_theme_font_family');
+    if (savedFont) fontsSelect.value = savedFont;
   } catch (e) {}
 
   document.getElementById('applyThemeBtn').addEventListener('click', () => {
@@ -103,17 +106,16 @@
       // texto del menú se queda siempre blanco, no se personaliza.
       document.documentElement.style.setProperty('--golden-sidebar-bg', colorInput.value);
 
-      const key = fontsSelect.value;
-      const preset = FONT_PRESETS[key];
-      if (preset) {
-        localStorage.setItem('golden_theme_fonts', JSON.stringify(preset));
-        localStorage.setItem('golden_theme_fonts_key', key);
-        document.documentElement.style.setProperty('--font-heading-primary', preset.heading_primary);
-        document.documentElement.style.setProperty('--font-heading-secondary', preset.heading_secondary);
-        document.documentElement.style.setProperty('--font-body', preset.body);
+      const family = fontsSelect.value;
+      if (family) {
+        localStorage.setItem('golden_theme_font_family', family);
+        if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();
+        const value = `'${family}', sans-serif`;
+        document.documentElement.style.setProperty('--font-heading-primary', value);
+        document.documentElement.style.setProperty('--font-heading-secondary', value);
+        document.documentElement.style.setProperty('--font-body', value);
       } else {
-        localStorage.removeItem('golden_theme_fonts');
-        localStorage.removeItem('golden_theme_fonts_key');
+        localStorage.removeItem('golden_theme_font_family');
         document.documentElement.style.removeProperty('--font-heading-primary');
         document.documentElement.style.removeProperty('--font-heading-secondary');
         document.documentElement.style.removeProperty('--font-body');
@@ -127,8 +129,7 @@
   document.getElementById('resetThemeBtn').addEventListener('click', () => {
     try {
       localStorage.removeItem('golden_theme_primary');
-      localStorage.removeItem('golden_theme_fonts');
-      localStorage.removeItem('golden_theme_fonts_key');
+      localStorage.removeItem('golden_theme_font_family');
     } catch (e) {}
     document.documentElement.style.removeProperty('--golden-primary');
     document.documentElement.style.removeProperty('--golden-sidebar-bg');
@@ -136,7 +137,7 @@
     document.documentElement.style.removeProperty('--font-heading-secondary');
     document.documentElement.style.removeProperty('--font-body');
     colorInput.value = '#D4AF37';
-    fontsSelect.value = 'original';
+    fontsSelect.value = '';
     showToast('Apariencia restablecida', 'success');
   });
 

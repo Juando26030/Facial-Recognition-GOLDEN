@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
-from app.models import Event, EventStaffAuthorization, StaffUser
+from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.routers import api, auth as auth_router, badges, cedula, events, parametros, staff, stats, tenants
 from app.auth import ROLE_HIERARCHY, get_event_for_staff
 
@@ -119,6 +119,27 @@ async def clientes_page(request: Request):
     })
 
 
+@app.get("/clientes/{tenant_id}/nuevo-evento")
+async def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depends(get_db)):
+    """Sprint 2.4 Fase 1 (2026-09-16, pedido explícito): "Crear evento" pasa a ser una pantalla
+    dedicada en vez del formulario inline que aparecía bajo el cliente expandido en /clientes —
+    mismo formulario/JS de siempre (createEvent), reubicado. comercial+ solamente, mismo mínimo
+    que POST /api/events."""
+    redirect = _require_page_role(request, "comercial")
+    if redirect:
+        return redirect
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        return RedirectResponse("/clientes", status_code=302)
+    return templates.TemplateResponse(request=request, name="nuevo_evento.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": request.session.get("staff_role"),
+        "sidebar_active": "clientes",
+        "tenant_id": tenant.id,
+        "tenant_name": tenant.name,
+    })
+
+
 @app.get("/eventos")
 async def eventos_page(request: Request):
     redirect = _require_page_role(request, "coordinador")
@@ -145,10 +166,12 @@ async def calendario_page(request: Request):
 
 @app.get("/configuracion")
 async def configuracion_page(request: Request):
-    """Admin+ solamente (pedido explícito: "donde el admin puede hacer todo lo de configuración
-    relevante"): permisos/staff (reusa /admin/staff embebido) + Apariencia (color/tipografía, ver
-    static/js/theme.js — preferencia local del navegador, no vive en la base de datos)."""
-    redirect = _require_page_role(request, "admin")
+    """Apariencia (color/tipografía, ver static/js/theme.js — preferencia local del navegador, NO
+    vive en la base de datos) está disponible para CUALQUIER staff autenticado (Sprint 2.4,
+    ronda 2, pedido explícito: "por computador" aplica a todos, no solo admin). La pestaña
+    "Staff y Permisos" (gestión real de cuentas) sigue oculta para no-admin dentro del propio
+    template — eso sí sigue siendo admin+ solamente."""
+    redirect = _require_page_role(request, "cliente")  # cliente = el mínimo de STAFF_ROLES, o sea "cualquiera logueado"
     if redirect:
         return redirect
     return templates.TemplateResponse(request=request, name="configuracion.html", context={

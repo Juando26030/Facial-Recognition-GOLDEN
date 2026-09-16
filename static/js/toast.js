@@ -142,10 +142,13 @@
   };
 
   /* Modal para preguntar a qué corresponde cada campo "opcional_N" nuevo (hasta 30 posibles) —
-     compartido entre kiosk_roster.html (carga de Excel/CSV) y kiosk_registro.html (alta manual
-     individual, botón "+ Agregar campo opcional"), 2026-09-22. Devuelve {opcional_1: "Talla de
-     camisa", ...} o null si el operador cancela. */
-  window.promptOptionalLabels = function (fields) {
+     usado por kiosk_roster.html (carga de Excel/CSV), 2026-09-22. Devuelve {opcional_1: "Talla de
+     camisa", ...} o null si el operador cancela.
+     `examples` (2026-09-16, pedido explícito, opcional): {opcional_1: ["Talla M", "Talla L"]} —
+     hasta 2 valores reales de ESE campo tal como vienen en el archivo, para no tener que abrirlo
+     y ubicar a qué corresponde a simple vista. */
+  window.promptOptionalLabels = function (fields, examples) {
+    examples = examples || {};
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
       overlay.style.cssText = `position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9998; display:flex; align-items:center; justify-content:center; padding:1rem;`;
@@ -154,9 +157,14 @@
 
       const rowsHtml = fields.map(f => {
         const n = f.split("_")[1];
+        const ex = examples[f] || [];
+        const exHtml = ex.length
+          ? `<p style="font-size:0.78rem; color:#888; margin:4px 0 0;">Ejemplo${ex.length > 1 ? "s" : ""} en el archivo: <strong>${ex.map(v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")).join(", ")}</strong></p>`
+          : "";
         return `<div class="badge-input-group" style="margin-top:0.8rem;">
                 <label>¿A qué corresponde "Opcional ${n}"?</label>
                 <input type="text" data-field="${f}" placeholder="Ej. Talla de camisa, Grupo, Restricción alimentaria...">
+                ${exHtml}
             </div>`;
       }).join("");
 
