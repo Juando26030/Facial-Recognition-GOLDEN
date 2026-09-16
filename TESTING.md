@@ -540,6 +540,21 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 22. Sprint 2.4 Fase 0: rol "comercial" y matriz de permisos
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-01 ❌ | `coordinador` ya no crea clientes ni eventos | Iniciar sesión como `coordinador`, intentar crear un cliente o un evento nuevo | 403 en ambos, y los botones "+ Nuevo cliente"/"+ Nuevo evento" no aparecen en `/clientes` |
+| S24-02 ✅ | `coordinador` sigue editando lo que ya existe | Cambiar el estado de un evento, editar el contacto de un cliente | Sigue funcionando igual que siempre |
+| S24-03 ✅ | `comercial` crea clientes y eventos | Iniciar sesión como `comercial`, crear un cliente y un evento | Ambos 200 |
+| S24-04 ✅ | `comercial` crea cuentas `cliente` para un evento | Desde "Usuarios del Evento" como `comercial` | El selector de rol solo ofrece "Cliente" (no "Digitador"), y la creación funciona |
+| S24-05 ❌ | `comercial` NO crea cuentas `digitador` | Intentar por API directa con `role: "digitador"` siendo `comercial` | 403 |
+| S24-06 ✅ | `comercial` hereda acceso a Estadísticas/Reporte/cambio de estado | Como `comercial`, ver variables de Estadísticas, descargar el reporte, cambiar el estado de un evento | Los tres funcionan igual que para `coordinador` |
+| S24-07 ✅ | admin+ crea cuentas `comercial` | Desde `/admin/staff`, crear una cuenta con rol "Comercial" | Se crea correctamente, aparece en la tabla |
+| S24-08 ✅ | Teléfono opcional al crear staff | Crear cualquier cuenta de staff con un teléfono | Se guarda (`StaffUser.phone`) — queda listo para notificaciones por WhatsApp de una fase futura |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -565,6 +580,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Feedback 3: pestañas de cliente, formato de roster, transición de estado | 8 |
 | Parámetros del Evento (campos configurables, obligatorios, estadísticas por defecto) | 15 |
 | Sprint 2.3 (menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract) | 28 |
-| **Total** | **306** |
+| Sprint 2.4 Fase 0 (rol comercial y matriz de permisos) | 8 |
+| **Total** | **314** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

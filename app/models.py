@@ -8,7 +8,14 @@ Base = declarative_base()
 # Roles de staff. "cliente" NO es parte de la jerarquía de permisos habitual (no puede
 # registrar/reconocer aunque esté "debajo" de digitador aquí) — ver la nota en
 # app/auth.get_event_for_staff y app/routers/staff.py sobre quién puede crear cada rol.
-STAFF_ROLES = ("cliente", "digitador", "coordinador", "admin", "super_admin")
+# "comercial" (Sprint 2.4, 2026-09-16, pedido explícito) va justo encima de "coordinador": hereda
+# todo lo que un coordinador ya puede hacer (editar evento/tenant, Estadísticas/Reporte, cambiar
+# estado, Parámetros del Evento) vía require_role("coordinador") sin tocar nada — pero además
+# puede crear clientes/eventos (permiso que coordinador PIERDE, ver create_tenant/create_event) y
+# crear cuentas 'cliente' para un evento (antes admin+ solamente). Dos excepciones que NO siguen
+# la jerarquía simple, codificadas a mano en create_event_staff: comercial NO puede crear cuentas
+# 'digitador' (aunque quede "por encima" de coordinador aquí).
+STAFF_ROLES = ("cliente", "digitador", "coordinador", "comercial", "admin", "super_admin")
 
 # Ciclo de vida de un Event, en orden. "en_proceso" es el único estado en el que digitador/cliente
 # pueden entrar a registrar (ver app/auth.get_event_for_staff) — "creado" es antes de empezar,
@@ -107,6 +114,7 @@ class StaffUser(Base):
     full_name = Column(String)
     role = Column(String, nullable=False)  # uno de STAFF_ROLES
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=True)  # null = alcance global (super_admin)
+    phone = Column(String, nullable=True)  # Sprint 2.4, 2026-09-16: para notificaciones por WhatsApp (opcional)
     is_active = Column(Boolean, default=True, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

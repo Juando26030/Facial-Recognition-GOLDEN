@@ -13,14 +13,16 @@ router = APIRouter()
 # Roles creables/visibles desde /admin/staff. "digitador" y "cliente" NO están aquí a propósito:
 # ambos se crean desde dentro de un evento (ver app/routers/events.py, POST
 # /events/{id}/staff-users), donde quedan asociados a ese evento en el mismo paso.
-ROLES_CREATABLE_BY_ADMIN = ("coordinador",)
+# "comercial" (Sprint 2.4, 2026-09-16): mismo flujo que coordinador, admin+ lo crea desde acá.
+ROLES_CREATABLE_BY_ADMIN = ("coordinador", "comercial")
 
 # Qué roles puede BORRAR PERMANENTEMENTE cada rol (siempre "todo lo que está por debajo de mí").
-# coordinador es el caso especial: solo temporales (digitador), nada más.
+# coordinador es el caso especial: solo temporales (digitador), nada más. "comercial" no borra a
+# nadie por ahora (no fue parte del pedido) — solo admin+ puede borrar cuentas comercial.
 DELETABLE_ROLES_BY = {
     "coordinador": ("digitador",),
-    "admin": ("coordinador", "digitador", "cliente"),
-    "super_admin": ("admin", "coordinador", "digitador", "cliente"),
+    "admin": ("comercial", "coordinador", "digitador", "cliente"),
+    "super_admin": ("admin", "comercial", "coordinador", "digitador", "cliente"),
 }
 
 
@@ -29,12 +31,13 @@ class StaffIn(BaseModel):
     password: str
     full_name: Optional[str] = None
     role: str
+    phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
 
 
 def _serialize(s: StaffUser) -> dict:
     return {
         "id": s.id, "username": s.username, "full_name": s.full_name,
-        "role": s.role, "is_active": s.is_active,
+        "role": s.role, "is_active": s.is_active, "phone": s.phone,
     }
 
 
@@ -90,6 +93,7 @@ async def create_staff(
         role=data.role,
         tenant_id=staff.tenant_id,
         created_by_id=staff.id,
+        phone=data.phone,
     )
     db.add(new_staff)
     db.commit()

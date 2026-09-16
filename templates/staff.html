@@ -33,7 +33,7 @@
       <h2>Usuarios de staff</h2>
     </div>
 
-    <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">Aquí solo se crean cuentas <strong>Coordinador</strong>{% if staff_role == "super_admin" %} y <strong>Admin</strong>{% endif %}. Los usuarios <strong>digitador (temporal)</strong> y <strong>cliente</strong> se crean y se asignan desde dentro de cada evento (pestaña "Usuarios del evento" en el kiosko de ese evento) — quedan asociados a ese evento en el mismo paso, sin necesidad de un formulario aparte aquí.</p>
+    <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">Aquí solo se crean cuentas <strong>Coordinador</strong> y <strong>Comercial</strong>{% if staff_role == "super_admin" %} y <strong>Admin</strong>{% endif %}. Los usuarios <strong>digitador (temporal)</strong> y <strong>cliente</strong> se crean y se asignan desde dentro de cada evento (pestaña "Usuarios del evento" en el kiosko de ese evento) — quedan asociados a ese evento en el mismo paso, sin necesidad de un formulario aparte aquí.</p>
 
     <div class="golden-badge-builder" style="margin-bottom: 2rem;">
       <div class="badge-form-title">Nueva cuenta</div>
@@ -57,7 +57,14 @@
             <label>Rol</label>
             <select name="role" id="roleSelect" required>
               <option value="coordinador">Coordinador</option>
+              <option value="comercial">Comercial</option>
             </select>
+          </div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group">
+            <label>Teléfono (opcional, para notificaciones por WhatsApp)</label>
+            <input type="text" name="phone" placeholder="Ej. +57 300 1234567">
           </div>
         </div>
         <button type="submit" class="golden-btn golden-btn-primary">Crear cuenta</button>
@@ -86,8 +93,8 @@ if (staffRole === "super_admin") {
 // el backend va a rechazar; el permiso real siempre lo valida el servidor.
 const DELETABLE_ROLES = {
   coordinador: ["digitador"],
-  admin: ["coordinador", "digitador", "cliente"],
-  super_admin: ["admin", "coordinador", "digitador", "cliente"],
+  admin: ["comercial", "coordinador", "digitador", "cliente"],
+  super_admin: ["admin", "comercial", "coordinador", "digitador", "cliente"],
 }[staffRole] || [];
 
 async function loadStaff() {

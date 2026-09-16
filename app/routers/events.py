@@ -28,7 +28,8 @@ class EventStaffIn(BaseModel):
     username: str  # cédula, para digitador
     password: str
     full_name: Optional[str] = None
-    role: str = "digitador"  # "digitador" (coordinador+) o "cliente" (admin+ únicamente)
+    role: str = "digitador"  # "digitador" (coordinador+, no comercial) o "cliente" (comercial+)
+    phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
 
 
 class AssignExistingIn(BaseModel):
@@ -196,8 +197,12 @@ def _validate_event_dates(start_date, end_date, setup_date):
 
 @router.post("/events")
 async def create_event(
-    data: EventIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    data: EventIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))
 ):
+    """Sprint 2.4, 2026-09-16 (pedido explícito): crear eventos pasó a ser comercial+ — antes era
+    coordinador+, ahora coordinador ya NO puede (solo comercial/admin/super_admin). Editar un
+    evento ya existente (update_event, abajo) sigue en coordinador+, sin cambios — un coordinador
+    sigue pudiendo operar/cambiar estado/gestionar los eventos que ya existen."""
     if not db.query(Tenant).filter(Tenant.id == data.tenant_id).first():
         raise HTTPException(status_code=404, detail="Cliente (tenant) no encontrado")
     coordinator = db.query(StaffUser).filter(
@@ -272,12 +277,19 @@ async def create_event_staff(
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Crea una cuenta digitador o cliente y la autoriza para ESTE evento en un solo paso — no
-    queda visible en /admin/staff como cuenta 'suelta' sin asociar. 'cliente' exige admin+
-    (un coordinador solo puede crear digitador)."""
+    queda visible en /admin/staff como cuenta 'suelta' sin asociar.
+
+    Sprint 2.4 (2026-09-16, pedido explícito): las dos excepciones que NO siguen la jerarquía
+    simple de STAFF_ROLES (ver models.py) se codifican a mano acá:
+    - 'cliente' exige comercial+ (antes admin+ solamente — comercial ahora también puede).
+    - 'digitador' excluye explícitamente a 'comercial', aunque en la jerarquía quede "por encima"
+      de coordinador — comercial gestiona clientes/eventos, no cuentas temporales de operación."""
     if data.role not in ("digitador", "cliente"):
         raise HTTPException(status_code=400, detail="Rol inválido (debe ser 'digitador' o 'cliente')")
-    if data.role == "cliente" and staff.role not in ("admin", "super_admin"):
-        raise HTTPException(status_code=403, detail="Solo un Admin puede crear cuentas cliente")
+    if data.role == "cliente" and staff.role not in ("comercial", "admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Solo un comercial o Admin puede crear cuentas cliente")
+    if data.role == "digitador" and staff.role == "comercial":
+        raise HTTPException(status_code=403, detail="Un comercial no puede crear cuentas digitador")
 
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
@@ -288,6 +300,7 @@ async def create_event_staff(
     new_user = StaffUser(
         username=data.username, password_hash=hash_password(data.password),
         full_name=data.full_name, role=data.role, tenant_id=event.tenant_id, created_by_id=staff.id,
+        phone=data.phone,
     )
     db.add(new_user)
     db.flush()  # para obtener new_user.id antes de commitear

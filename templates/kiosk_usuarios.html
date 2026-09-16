@@ -71,11 +71,19 @@
                     <div class="badge-input-group">
                         <label>Rol</label>
                         <select name="role" id="eventRoleSelect" required>
+                            {% if staff_role != "comercial" %}
                             <option value="digitador">Digitador (temporal)</option>
-                            {% if staff_role in ["admin", "super_admin"] %}
+                            {% endif %}
+                            {% if staff_role in ["comercial", "admin", "super_admin"] %}
                             <option value="cliente">Cliente</option>
                             {% endif %}
                         </select>
+                    </div>
+                </div>
+                <div class="badge-input-row">
+                    <div class="badge-input-group">
+                        <label>Teléfono (opcional, para notificaciones por WhatsApp)</label>
+                        <input type="text" name="phone" placeholder="Ej. +57 300 1234567">
                     </div>
                 </div>
                 <button type="submit" class="golden-btn golden-btn-primary">Crear y asignar a este evento</button>

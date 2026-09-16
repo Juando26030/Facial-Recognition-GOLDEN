@@ -56,7 +56,9 @@
         <span>PANEL</span>
         <h2>Clientes</h2>
       </div>
+      {% if staff_role != "coordinador" %}
       <button class="small-btn primary" onclick="document.getElementById('newTenantForm').classList.toggle('open')">+ Nuevo cliente</button>
+      {% endif %}
     </div>
 
     <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre de cliente...">
@@ -82,6 +84,9 @@
 
 <script>
 const isAdmin = "{{ staff_role }}" === "admin" || "{{ staff_role }}" === "super_admin";
+// Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes/eventos pasó a ser comercial+ — un
+// coordinador ya NO puede (sí puede seguir editando/gestionando los que ya existen).
+const canCreate = "{{ staff_role }}" !== "coordinador";
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
 function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
@@ -126,8 +131,8 @@ function renderTenants(tenantsData) {
         <span class="small-btn">Ver eventos</span>
       </div>
       <div class="tenant-body" data-tenant-body>
-        <button type="button" class="small-btn primary" style="margin:1rem 0;" data-action="toggle-new-event">+ Nuevo evento</button>
-        <form class="inline-form" data-new-event-form>
+        ${canCreate ? '<button type="button" class="small-btn primary" style="margin:1rem 0;" data-action="toggle-new-event">+ Nuevo evento</button>' : ''}
+        <form class="inline-form" data-new-event-form style="${canCreate ? '' : 'display:none;'}">
           <div class="badge-input-row">
             <div class="badge-input-group"><label>Código interno *</label><input type="text" name="event_code" required></div>
             <div class="badge-input-group"><label>Nombre del evento *</label><input type="text" name="name" required></div>
