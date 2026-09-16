@@ -415,6 +415,27 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 16. Escarapelas: lienzo + spinners + Estadísticas (Sprint 2.2 Fase D)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| FD-01 ✅ | Lienzo del editor cabe mejor en pantalla | Abrir el editor de escarapelas en un monitor normal | El lienzo (62×100mm por defecto) se ve casi completo sin tener que hacer scroll horizontal, y con mucho menos scroll vertical que antes |
+| FD-02 ✅ | Arrastrar/redimensionar sigue siendo preciso | Arrastrar un elemento y soltarlo en una posición conocida, ver el valor de X/Y en el panel | Coincide con la posición real en mm — el cambio de escala visual no afectó la precisión |
+| FD-03 ✅ | Selector de variable de un `text_variable` | Seleccionar un texto variable, cambiar la "Variable" del panel de propiedades | El lienzo se actualiza al instante al valor elegido (verificado en vivo — no reproducía el bug reportado) |
+| FD-04 ✅ | Subir imagen a un `image_static` | Agregar "🖼️ Imagen / logo", subir un archivo | Se sube y aparece en el lienzo (verificado en vivo — no reproducía el bug reportado) |
+| FD-05 ℹ️ | "Foto del asistente" no tiene botón de subir (por diseño) | Agregar "🙂 Foto del asistente" | El panel de propiedades explica que este elemento se llena solo al imprimir con la foto real de la persona, y sugiere "Imagen / logo" si lo que se buscaba era subir una imagen — no es un bug |
+| FD-06 ✅ | Spinner de carga en subir roster | Subir una base de datos grande | El botón muestra un círculo girando + "Cargando base de datos..." mientras dura, no solo texto estático |
+| FD-07 ✅ | Spinner de carga en guardar escarapela / subir imagen / escanear MRZ / alta manual | Repetir la acción en cada uno de estos 4 puntos | Mismo círculo girando en cada botón mientras la petición está en curso, se restaura el label original al terminar (éxito o error) |
+| FD-08 ✅ | Nueva tarjeta "📊 Estadísticas" con módulo de gráficos | Entrar a `/kiosk/{event_id}/estadisticas` | Sigue el botón de exportar Excel de siempre, más un selector de variable y "➕ Agregar variable" |
+| FD-09 ✅ | Variable categórica ofrece Barras/Circular | Agregar una variable de texto (ej. "Empresa") | El gráfico se dibuja como barras por defecto; el selector de tipo permite cambiar a "Circular (pie)" y el mismo gráfico se redibuja sin perder los datos |
+| FD-10 ✅ | Variable numérica ofrece Histograma/Líneas | Agregar una variable cuyos valores sean todos números (ej. un opcional de "Edad") | Se detecta como numérica automáticamente y se dibuja un histograma con rangos (bins) reales de los datos |
+| FD-11 ✅ | Variables identificadoras no aparecen en el checklist | Ver el selector de variables | No aparecen `id`, `first_name`, `last_name`, `phone` ni `email` — son casi únicas por persona, no sirven para graficar |
+| FD-12 ✅ | Quitar un gráfico agregado | Clic en "✕" de una tarjeta de gráfico | Se destruye la instancia de Chart.js y desaparece la tarjeta, sin errores en consola |
+| FD-13 ❌ | Rol mínimo del módulo de Estadísticas | Como `digitador`, llamar `/api/events/{id}/stats/variables` o `/stats/data` directo | 403 — mismo mínimo `coordinador`+ que el resto de Estadísticas |
+| FD-14 ✅ | Variable sin datos no rompe la tarjeta | Agregar una variable que ningún asistente tiene todavía cargada | La tarjeta muestra "Sin datos suficientes para graficar esta variable todavía" en vez de un gráfico vacío o un error |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -434,6 +455,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Lector de cédula (CSV vieja, blindaje, OCR MRZ nueva) | 13 |
 | Registro unificado + Modo autoregistro (Fase B) | 12 |
 | Cámara + OCR robusto a orientación (Fase C) | 7 |
-| **Total** | **223** |
+| Escarapelas (lienzo) + spinners + Estadísticas (Fase D) | 14 |
+| **Total** | **237** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

@@ -435,9 +435,8 @@
     const scanMrzInput = document.getElementById('scanMrzInput');
 
     async function processMrzPhoto(blob) {
-        scanMrzBtn.disabled = true;
+        setButtonLoading(scanMrzBtn, true, 'Leyendo…');
         scanMrzCameraBtn.disabled = true;
-        scanMrzBtn.innerText = 'Leyendo…';
         try {
             const formData = new FormData();
             formData.append('file', blob, 'cedula.jpg');
@@ -451,9 +450,8 @@
         } catch (e) {
             showToast('Error de red', 'error');
         }
-        scanMrzBtn.disabled = false;
+        setButtonLoading(scanMrzBtn, false);
         scanMrzCameraBtn.disabled = false;
-        scanMrzBtn.innerText = '📎 Adjuntar imagen';
     }
 
     if (scanMrzBtn && scanMrzInput && canAccredit) {

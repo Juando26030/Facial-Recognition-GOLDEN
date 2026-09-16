@@ -157,8 +157,7 @@ rosterForm.addEventListener("submit", async (e) => {
     }
 
     const btn = e.target.querySelector("button");
-    btn.innerText = "Cargando...";
-    btn.disabled = true;
+    setButtonLoading(btn, true, "Cargando base de datos...");
     rosterResult.innerHTML = "";
 
     const formData = new FormData(e.target);
@@ -170,8 +169,7 @@ rosterForm.addEventListener("submit", async (e) => {
     } catch (err) {
         showToast("Error de red", "error");
     }
-    btn.innerText = "Cargar Base de Datos";
-    btn.disabled = false;
+    setButtonLoading(btn, false);
 });
 </script>
 </body>

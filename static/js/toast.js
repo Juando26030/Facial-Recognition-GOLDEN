@@ -186,4 +186,42 @@
       });
     });
   };
+
+  /* Spinner de carga genérico (Sprint 2.2 Fase D, 2026-09-16) — pedido explícito: si algo se
+     demora (subir un roster, guardar una plantilla, escanear una foto), mostrar un círculo
+     girando en vez de dejar el botón "quieto" sin decir si está funcionando o si se colgó.
+     Uso: setButtonLoading(btn, true, "Cargando...") antes del fetch, setButtonLoading(btn, false)
+     en el finally — restaura el label/HTML original automáticamente. */
+  let spinnerStyleInjected = false;
+  function ensureSpinnerStyle() {
+    if (spinnerStyleInjected) return;
+    spinnerStyleInjected = true;
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes goldenSpin { to { transform: rotate(360deg); } }
+      .golden-btn-spinner {
+        display:inline-block; width:14px; height:14px; border-radius:50%;
+        border:2px solid rgba(0,0,0,0.25); border-top-color: currentColor;
+        animation: goldenSpin 0.7s linear infinite; margin-right:8px; vertical-align:-2px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  ensureSpinnerStyle();  // inyectado al cargar toast.js, no solo la primera vez que se use un botón — así cualquier otro uso directo de .golden-btn-spinner (ej. badge_editor.html) también lo tiene disponible.
+
+  window.setButtonLoading = function (btn, isLoading, loadingText) {
+    if (!btn) return;
+    if (isLoading) {
+      if (btn.dataset.originalHtml === undefined) btn.dataset.originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="golden-btn-spinner"></span>${loadingText || "Cargando..."}`;
+    } else {
+      btn.disabled = false;
+      if (btn.dataset.originalHtml !== undefined) {
+        btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.originalHtml;
+      }
+    }
+  };
 })();

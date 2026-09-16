@@ -165,7 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const btn = e.target.querySelector('button');
-            btn.innerText = "Guardando..."; btn.disabled = true;
+            setButtonLoading(btn, true, "Guardando...");
 
             try {
                 if (pendingRecognizeFormData) {
@@ -174,7 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const confirmData = await confirmRes.json();
                     if (!confirmRes.ok || confirmData.result !== 'SÍ') {
                         showToast(confirmData.detail || confirmData.details || "No se pudo autorizar el acceso", "error");
-                        btn.innerText = "Guardar y Autorizar Acceso"; btn.disabled = false;
+                        setButtonLoading(btn, false);
                         return;
                     }
                     pendingRecognizeFormData = null;
@@ -199,7 +199,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     showToast(errorData.error || "No se pudo actualizar", "error");
                 }
             } catch (err) { showToast("Error de red", "error"); }
-            btn.innerText = "Guardar y Autorizar Acceso"; btn.disabled = false;
+            setButtonLoading(btn, false);
         };
     }
 
@@ -252,8 +252,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // / "Guardar Perfil Biométrico" después de cada alta exitosa (bug real, encontrado en
             // testing de producción 2026-09-15). Hay que pedir el submit explícitamente.
             const btn = e.target.querySelector('button[type="submit"]');
-            const originalLabel = btn.innerText;
-            btn.innerText = "Guardando..."; btn.disabled = true;
+            setButtonLoading(btn, true, "Guardando...");
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);
 
@@ -274,7 +273,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (Object.keys(pending).length) formData.append('field_labels', JSON.stringify(pending));
 
             await submitManualRegister(formData, btn);
-            btn.innerText = originalLabel; btn.disabled = false;
+            setButtonLoading(btn, false);
         };
     }
 });

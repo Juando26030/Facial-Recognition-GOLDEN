@@ -41,7 +41,8 @@
         .badge-editor-body { display:flex; gap:1.5rem; align-items:flex-start; flex-wrap:wrap; }
         .badge-canvas-wrapper {
             flex: 1 1 auto; overflow:auto; background:#e9e9ee; border-radius:16px; padding:2rem;
-            display:flex; align-items:flex-start; justify-content:center; min-height: 400px; max-height: 75vh;
+            display:flex; align-items:flex-start; justify-content:center; min-height: 400px; max-height: 70vh;
+            max-width: 100%;
         }
         .badge-canvas { box-shadow: 0 10px 40px rgba(0,0,0,0.25); flex-shrink:0; }
         .badge-element { cursor: move; }
@@ -199,7 +200,11 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
 <script>
 (function () {
-  const EDITOR_SCALE = 5; // factor visual — el lienzo se dibuja "más grande" en pantalla, los mm reales no cambian
+  const EDITOR_SCALE = 3; // factor visual — el lienzo se dibuja "más grande" en pantalla, los mm reales no cambian.
+  // Bajado de 5 a 3 (2026-09-16, pedido explícito: con 5 el lienzo no cabía en pantalla sin
+  // hacer scroll). El arrastre/redimensión no dependen de este número — derivan el ratio px/mm
+  // de canvasEl.getBoundingClientRect() en cada momento (ver startDrag/startResize más abajo),
+  // así que cualquier valor de EDITOR_SCALE sigue funcionando igual de bien.
   const FONT_FAMILIES = [
     'Roboto','Open Sans','Lato','Montserrat','Oswald','Raleway','Poppins','Merriweather',
     'Playfair Display','Nunito','Ubuntu','PT Sans','Noto Sans','Source Sans Pro','Rubik',
@@ -291,6 +296,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     if (template.background_type === 'color') {
       template.background_value = document.getElementById('bgColor').value;
     }
+    const saveBtn = document.getElementById('saveBtn');
+    setButtonLoading(saveBtn, true, 'Guardando...');
     try {
       const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -305,6 +312,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       renderCanvas();
       showToast('Escarapela guardada', 'success');
     } catch (e) { showToast('Error de red', 'error'); }
+    finally { setButtonLoading(saveBtn, false); }
   }
 
   async function saveAsTemplate() {
@@ -567,7 +575,10 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         <div class="prop-field"><label>Imagen</label><input type="file" id="p_image" accept="image/*"></div>
         ${el.storage_path ? `<img src="/api/badge-assets/${el.storage_path}" style="max-width:100%; border-radius:8px; margin-bottom:0.8rem;">` : '<p style="font-size:0.78rem; color:#999;">Sin imagen todavía</p>'}`;
     } else if (el.type === 'image_variable') {
-      typeSpecificHtml = `<p style="font-size:0.8rem; color:#666;">Se llena sola con la foto de cada persona al momento de imprimir (solo si el evento tiene reconocimiento facial activo).</p>`;
+      // 2026-09-16: aclarado a propósito, tras QA — este elemento NO tiene (ni debe tener) botón
+      // de subir imagen: es la foto real de cada persona, se resuelve sola al momento de
+      // imprimir. Si buscabas subir un logo o una imagen fija, usa "🖼️ Imagen / logo" en su lugar.
+      typeSpecificHtml = `<p style="font-size:0.8rem; color:#666; line-height:1.4;">📌 Este elemento NO se sube a mano — se llena solo con la foto real de cada persona al momento de imprimir (requiere que el evento tenga reconocimiento facial activo). Si querías subir una imagen tuya (ej. un logo), usa "🖼️ Imagen / logo" en vez de este.</p>`;
     } else if (el.type === 'qr') {
       typeSpecificHtml = `
         <div class="prop-field"><label>Variable(s) codificadas</label>
@@ -623,8 +634,16 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       document.getElementById('p_image').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        const input = e.target;
+        input.disabled = true;
+        const status = document.createElement('span');
+        status.innerHTML = '<span class="golden-btn-spinner" style="border-color:rgba(0,0,0,0.15); border-top-color:#888;"></span>Subiendo...';
+        status.style.cssText = 'font-size:0.78rem; color:#888; margin-left:8px;';
+        input.insertAdjacentElement('afterend', status);
         const path = await uploadImage(file);
+        status.remove();
         if (path) { el.storage_path = path; renderCanvas(); renderPropsPanel(); }
+        else { input.disabled = false; }
       });
     } else if (el.type === 'qr') {
       document.getElementById('p_qr_vars').addEventListener('change', (e) => {

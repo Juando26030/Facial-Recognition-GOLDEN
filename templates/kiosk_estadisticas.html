@@ -6,6 +6,14 @@
     <title>Estadísticas | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+    <style>
+        .stats-chart-card {
+            background:white; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,0.06);
+            padding:1.2rem; width:380px; max-width:100%;
+        }
+        .stats-chart-card canvas { max-height:260px; }
+    </style>
 </head>
 <body>
 
@@ -44,7 +52,22 @@
                 📥 Exportar Base de Datos (Excel)
             </button>
         </div>
-        <p style="text-align:center; color:#999; font-size:0.85rem; margin-top:1.5rem;">El módulo de gráficos por variable llega en la siguiente entrega.</p>
+
+        <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;">
+            <div class="badge-form-title">Gráficos por variable</div>
+            <p style="text-align:center; color:#888; font-size:0.85rem; margin-top:-0.5rem; margin-bottom:1.2rem;">
+                Elige una variable de la base de este evento — el sistema detecta si es numérica o por categorías y ofrece los tipos de gráfico que aplican. Una variable a la vez (cruces de 2 variables llegan en una fase futura).
+            </p>
+            <div style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:1.2rem;">
+                <div class="badge-input-group" style="flex:1; min-width:220px; margin-bottom:0;">
+                    <label>Variable</label>
+                    <select id="statsVariableSelect"></select>
+                </div>
+                <button type="button" id="addStatsVarBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;">➕ Agregar variable</button>
+            </div>
+            <p id="statsEmptyMsg" style="text-align:center; color:#999; font-size:0.85rem;">Agrega una variable para ver su gráfico.</p>
+            <div id="statsChartsContainer" style="display:flex; flex-wrap:wrap; gap:1.5rem;"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -55,6 +78,138 @@
     document.getElementById('exportBtn').addEventListener('click', () => {
         window.location.href = `/api/report?event_id=${window.EVENT_ID}`;
     });
+
+    /* Módulo de Estadísticas (Sprint 2.2 Fase D, 2026-09-16) — checklist de variables (en
+       realidad un <select>, "checklist" en el sentido de "ir agregando una por una") + un
+       gráfico por variable elegida. El backend (/api/events/{id}/stats/data) ya devuelve el
+       `type` detectado (numeric/categorical) según los valores reales, así que acá solo hace
+       falta ofrecer los tipos de gráfico válidos para ESE type y dibujar con Chart.js. */
+    const CHART_TYPES_BY_DATA_TYPE = {
+        categorical: [
+            { value: 'bar', label: 'Barras' },
+            { value: 'pie', label: 'Circular (pie)' },
+        ],
+        numeric: [
+            { value: 'bar', label: 'Histograma (barras)' },
+            { value: 'line', label: 'Líneas' },
+        ],
+    };
+    const CHART_PALETTE = ['#D4AF37', '#0A0E2E', '#28a745', '#dc3545', '#6f42c1', '#17a2b8', '#fd7e14', '#20c997', '#e83e8c', '#6c757d'];
+
+    const variableSelect = document.getElementById('statsVariableSelect');
+    const addBtn = document.getElementById('addStatsVarBtn');
+    const container = document.getElementById('statsChartsContainer');
+    const emptyMsg = document.getElementById('statsEmptyMsg');
+    const chartInstances = {};  // key -> Chart.js instance, para poder destruirla si se quita la tarjeta
+
+    function updateEmptyMsg() {
+        emptyMsg.style.display = container.children.length ? 'none' : 'block';
+    }
+
+    async function loadVariables() {
+        try {
+            const res = await fetch(`/api/events/${window.EVENT_ID}/stats/variables`);
+            const list = await res.json();
+            variableSelect.innerHTML = list.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
+        } catch (e) {
+            showToast('No se pudieron cargar las variables', 'error');
+        }
+    }
+
+    function buildChartConfig(chartType, dataType, buckets) {
+        const labels = buckets.map(b => b.label);
+        const data = buckets.map(b => b.count);
+        const colors = labels.map((_, i) => CHART_PALETTE[i % CHART_PALETTE.length]);
+        const common = {
+            data: {
+                labels,
+                datasets: [{
+                    data,
+                    backgroundColor: chartType === 'pie' ? colors : '#D4AF37',
+                    borderColor: chartType === 'line' ? '#D4AF37' : undefined,
+                    borderWidth: chartType === 'pie' ? 1 : 2,
+                    fill: chartType === 'line' ? false : undefined,
+                    tension: chartType === 'line' ? 0.3 : undefined,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: chartType === 'pie' } },
+                scales: chartType === 'pie' ? {} : { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            },
+        };
+        return { type: chartType, ...common };
+    }
+
+    async function addVariableChart(key, label) {
+        if (document.getElementById(`stats-card-${key}`)) {
+            showToast('Esa variable ya está agregada', 'error');
+            return;
+        }
+        const card = document.createElement('div');
+        card.className = 'stats-chart-card';
+        card.id = `stats-card-${key}`;
+        card.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
+                <strong style="color:var(--golden-dark);">${label}</strong>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <select class="chart-type-select" style="font-size:0.78rem; border:1px solid #ccc; border-radius:6px; padding:3px 6px;"></select>
+                    <button type="button" class="remove-chart-btn" style="border:none; background:none; color:#dc3545; font-weight:700; cursor:pointer; font-size:1rem;">✕</button>
+                </div>
+            </div>
+            <p class="chart-loading" style="color:#999; font-size:0.85rem;">Cargando…</p>
+            <canvas style="display:none;"></canvas>
+        `;
+        container.appendChild(card);
+        updateEmptyMsg();
+
+        card.querySelector('.remove-chart-btn').addEventListener('click', () => {
+            if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
+            card.remove();
+            updateEmptyMsg();
+        });
+
+        try {
+            const res = await fetch(`/api/events/${window.EVENT_ID}/stats/data?variable=${encodeURIComponent(key)}`);
+            const result = await res.json();
+            if (!res.ok) { throw new Error(result.detail || 'Error'); }
+
+            const typeSelect = card.querySelector('.chart-type-select');
+            const options = CHART_TYPES_BY_DATA_TYPE[result.type] || CHART_TYPES_BY_DATA_TYPE.categorical;
+            typeSelect.innerHTML = options.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+
+            const canvas = card.querySelector('canvas');
+            const loadingMsg = card.querySelector('.chart-loading');
+
+            if (!result.buckets.length) {
+                loadingMsg.innerText = 'Sin datos suficientes para graficar esta variable todavía.';
+                typeSelect.style.display = 'none';
+                return;
+            }
+
+            function render(chartType) {
+                if (chartInstances[key]) chartInstances[key].destroy();
+                chartInstances[key] = new Chart(canvas, buildChartConfig(chartType, result.type, result.buckets));
+            }
+
+            loadingMsg.style.display = 'none';
+            canvas.style.display = 'block';
+            render(typeSelect.value);
+            typeSelect.addEventListener('change', () => render(typeSelect.value));
+        } catch (e) {
+            card.querySelector('.chart-loading').innerText = 'No se pudo cargar esta variable.';
+        }
+    }
+
+    addBtn.addEventListener('click', () => {
+        const key = variableSelect.value;
+        const label = variableSelect.options[variableSelect.selectedIndex] ? variableSelect.options[variableSelect.selectedIndex].text : key;
+        if (!key) return;
+        addVariableChart(key, label);
+    });
+
+    loadVariables();
+    updateEmptyMsg();
 })();
 </script>
 </body>
