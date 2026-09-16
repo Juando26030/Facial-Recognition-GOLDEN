@@ -56,6 +56,19 @@
         <option value="en_proceso">En Proceso</option>
         <option value="finalizado">Finalizado</option>
       </select>
+      {% if staff_role == "comercial" %}
+      <select id="mineFilter" class="status-filter">
+        <option value="mine">Mis eventos</option>
+        <option value="all">Todos</option>
+      </select>
+      {% elif staff_role in ("admin", "super_admin") %}
+      <select id="commercialFilter" class="status-filter">
+        <option value="">Todas las comerciales</option>
+      </select>
+      <select id="coordinatorFilter" class="status-filter">
+        <option value="">Todos los coordinadores</option>
+      </select>
+      {% endif %}
     </div>
 
     <div id="eventsList"></div>
@@ -74,17 +87,45 @@ function eventCard(e) {
       <div>
         <h3>${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</h3>
         <div class="meta">${esc(e.tenant_name)} · ${esc(e.city) || ""} ${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
+        <div class="meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}</div>
       </div>
       <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
     </div></div>
   `;
 }
 
+const STAFF_ROLE = "{{ staff_role }}";
+const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
+
 let searchTimer = null;
 const searchBox = document.getElementById("searchBox");
 const statusFilter = document.getElementById("statusFilter");
+const mineFilter = document.getElementById("mineFilter");
+const commercialFilter = document.getElementById("commercialFilter");
+const coordinatorFilter = document.getElementById("coordinatorFilter");
 searchBox.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 250); });
 statusFilter.addEventListener("change", runSearch);
+if (mineFilter) mineFilter.addEventListener("change", runSearch);
+if (commercialFilter) commercialFilter.addEventListener("change", runSearch);
+if (coordinatorFilter) coordinatorFilter.addEventListener("change", runSearch);
+
+// Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): admin+ filtra por cualquier comercial o
+// coordinador asignado; comercial filtra por pertenencia propia ("Mis eventos"/"Todos").
+async function loadAdminFilterOptions() {
+  if (commercialFilter) {
+    const res = await fetch("/api/staff/commercials");
+    const list = await res.json();
+    commercialFilter.innerHTML = '<option value="">Todas las comerciales</option>' +
+      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join("");
+  }
+  if (coordinatorFilter) {
+    const res = await fetch("/api/staff/coordinators");
+    const list = await res.json();
+    coordinatorFilter.innerHTML = '<option value="">Todos los coordinadores</option>' +
+      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join("");
+  }
+}
+loadAdminFilterOptions();
 
 async function runSearch() {
   const q = searchBox.value.trim();
@@ -93,6 +134,9 @@ async function runSearch() {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
+  if (mineFilter && mineFilter.value === "mine" && STAFF_ID) params.set("commercial_staff_id", STAFF_ID);
+  if (commercialFilter && commercialFilter.value) params.set("commercial_staff_id", commercialFilter.value);
+  if (coordinatorFilter && coordinatorFilter.value) params.set("coordinator_staff_id", coordinatorFilter.value);
   const res = await fetch(`/api/events/search?${params.toString()}`);
   const events = await res.json();
   resultsEl.innerHTML = events.length ? events.map(eventCard).join("") : '<p style="color:#888;">Sin resultados.</p>';

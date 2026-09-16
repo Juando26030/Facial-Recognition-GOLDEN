@@ -134,6 +134,7 @@ async def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depe
     return templates.TemplateResponse(request=request, name="nuevo_evento.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": request.session.get("staff_role"),
+        "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "clientes",
         "tenant_id": tenant.id,
         "tenant_name": tenant.name,
@@ -148,6 +149,7 @@ async def eventos_page(request: Request):
     return templates.TemplateResponse(request=request, name="eventos.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": request.session.get("staff_role"),
+        "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "eventos",
     })
 

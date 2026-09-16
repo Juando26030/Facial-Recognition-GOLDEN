@@ -58,6 +58,7 @@ class EventIn(BaseModel):
     setup_time_start: str
     setup_time_end: str
     coordinator_staff_id: int
+    commercial_staff_id: Optional[int] = None  # Sprint 2.4 Fase 5: si no viene, se resuelve en create_event (self si el creador es comercial, obligatorio elegir si es admin+)
     notes: Optional[str] = None
 
 
@@ -76,6 +77,7 @@ class EventUpdate(BaseModel):
     setup_time_start: Optional[str] = None
     setup_time_end: Optional[str] = None
     coordinator_staff_id: Optional[int] = None
+    commercial_staff_id: Optional[int] = None
     notes: Optional[str] = None
     status: Optional[str] = None
     auto_print_badge: Optional[bool] = None
@@ -95,6 +97,8 @@ def _serialize(e: Event) -> dict:
         "notes": e.notes,
         "coordinator_staff_id": e.coordinator_staff_id,
         "coordinator_name": (e.coordinator.full_name or e.coordinator.username) if e.coordinator else None,
+        "commercial_staff_id": e.commercial_staff_id,
+        "commercial_name": (e.commercial.full_name or e.commercial.username) if e.commercial else None,
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
@@ -153,19 +157,28 @@ def _matches_by_word_prefix(haystack: str, query: str) -> bool:
 
 @router.get("/events/search")
 async def search_events(
-    q: str = "", status: Optional[str] = None, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    q: str = "", status: Optional[str] = None,
+    commercial_staff_id: Optional[int] = None, coordinator_staff_id: Optional[int] = None,
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Búsqueda libre entre todos los clientes/eventos: por código, nombre, país o ciudad del
     evento, o por nombre del cliente (tenant). Filtrado en Python (no SQL LIKE) para que la
     coincidencia sea por inicio de palabra y no por substring en medio de una palabra.
     `status` (2026-09-16, para /eventos del menú lateral): filtro adicional por estado
     (creado/en_proceso/finalizado), combinable con `q`. `q` pasa a ser opcional — con solo
-    `status` puesto (sin texto de búsqueda) igual debe listar, filtrando nada más por estado."""
+    `status` puesto (sin texto de búsqueda) igual debe listar, filtrando nada más por estado.
+    `commercial_staff_id`/`coordinator_staff_id` (Sprint 2.4 Fase 5, pedido explícito): filtro por
+    pertenencia — una comercial usa `commercial_staff_id=<su propio id>` para "Mis eventos"
+    (omitiéndolo ve "Todos"); admin+ los usa para filtrar por cualquier comercial o coordinador
+    asignado, ambos combinables entre sí y con `q`/`status`."""
     all_events = db.query(Event).order_by(Event.created_at.desc()).all()
     matches = []
     for e in all_events:
         if status and e.status != status:
+            continue
+        if commercial_staff_id is not None and e.commercial_staff_id != commercial_staff_id:
+            continue
+        if coordinator_staff_id is not None and e.coordinator_staff_id != coordinator_staff_id:
             continue
         if q:
             haystack = " ".join(filter(None, [
@@ -214,7 +227,26 @@ async def create_event(
         raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
     _validate_event_dates(data.start_date, data.end_date, data.setup_date)
 
-    event = Event(**data.dict(), created_by_id=staff.id)
+    # Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): "por defecto se asigne una comercial que
+    # es quien crea el evento, a menos de que... lo puede cambiar a otras comerciales... o los
+    # administradores eligen una comercial". Si quien crea es comercial y no manda un id, se
+    # asigna a sí misma; si es admin+ (no es comercial), tiene que elegir explícitamente.
+    commercial_id = data.commercial_staff_id
+    if commercial_id is None:
+        if staff.role == "comercial":
+            commercial_id = staff.id
+        else:
+            raise HTTPException(status_code=400, detail="Debes asignar una comercial para este evento")
+    else:
+        commercial = db.query(StaffUser).filter(
+            StaffUser.id == commercial_id, StaffUser.role == "comercial", StaffUser.is_active == True
+        ).first()
+        if not commercial:
+            raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
+
+    event_data = data.dict()
+    event_data["commercial_staff_id"] = commercial_id
+    event = Event(**event_data, created_by_id=staff.id)
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -245,6 +277,16 @@ async def update_event(
     if data.event_code is not None and data.event_code != event.event_code:
         if db.query(Event).filter(Event.event_code == data.event_code, Event.id != event_id).first():
             raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
+    if data.commercial_staff_id is not None:
+        # Reasignar la comercial es decisión de comercial+ — un coordinador puede editar el
+        # resto del evento (fechas, estado, etc.) pero no a quién pertenece comercialmente.
+        if staff.role not in ("comercial", "admin", "super_admin"):
+            raise HTTPException(status_code=403, detail="Solo una comercial o Admin puede reasignar la comercial del evento")
+        commercial = db.query(StaffUser).filter(
+            StaffUser.id == data.commercial_staff_id, StaffUser.role == "comercial", StaffUser.is_active == True
+        ).first()
+        if not commercial:
+            raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
 
     effective_start = data.start_date if data.start_date is not None else event.start_date
     effective_end = data.end_date if data.end_date is not None else event.end_date

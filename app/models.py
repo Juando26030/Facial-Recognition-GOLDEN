@@ -165,6 +165,7 @@ class Event(Base):
     notes = Column(Text)
     status = Column(String, default='creado', nullable=False)  # creado | en_proceso | finalizado
     coordinator_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    commercial_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)  # Sprint 2.4 Fase 5 (2026-09-16): quién es "el comercial dueño" del evento — nullable porque eventos viejos no tienen uno; para eventos nuevos es obligatorio a nivel de API (ver routers/events.py: create_event), no a nivel de columna, mismo criterio que coordinator_staff_id
     created_by_id = Column(Integer, ForeignKey('staff_users.id'))
     created_at = Column(DateTime, default=datetime.utcnow)
     optional_field_labels = Column(Text)  # JSON {"opcional_1": "Talla de camisa", ...} — nombres que el cliente le dio a las columnas "opcional_N" de SU roster (2026-09-20, ver bulk_register)
@@ -176,6 +177,7 @@ class Event(Base):
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
+    commercial = relationship("StaffUser", foreign_keys=[commercial_staff_id])
 
     def get_optional_labels(self) -> dict:
         return json.loads(self.optional_field_labels) if self.optional_field_labels else {}

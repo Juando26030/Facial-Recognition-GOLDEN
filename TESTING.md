@@ -612,6 +612,21 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 27. Sprint 2.4 Fase 5: comercial asignada a eventos + filtros de pertenencia (Eventos)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-37 ✅ | Comercial se autoasigna al crear | Una cuenta `comercial` crea un evento sin elegir "Comercial asignada" | El evento queda asignado a esa misma comercial |
+| S24-38 ✅ | Comercial elige a otra comercial | Al crear, cambiar el campo "Comercial asignada" a otra cuenta comercial | El evento queda asignado a la comercial elegida, no a quien creó |
+| S24-39 ❌ | Admin sin elegir comercial | Un `admin`/`super_admin` intenta crear un evento sin elegir "Comercial asignada" | 400 — es obligatorio elegir una |
+| S24-40 ✅ | Admin elige una comercial válida | Admin crea el evento eligiendo una comercial de la lista | Se crea con esa comercial asignada |
+| S24-41 ✅ | Reasignar comercial desde editar evento | Admin o comercial cambia la comercial asignada de un evento ya existente | Se actualiza correctamente |
+| S24-42 ❌ | Coordinador no puede reasignar comercial | Un `coordinador` intenta cambiar la comercial asignada (aunque pueda editar el resto del evento) | 403 |
+| S24-43 ✅ | Filtro "Mis eventos" / "Todos" (comercial) | En `/eventos`, con sesión de `comercial`, alternar el selector | "Mis eventos" solo trae los eventos donde esa cuenta es la comercial asignada; "Todos" los trae todos |
+| S24-44 ✅ | Filtros de admin por comercial/coordinador | En `/eventos`, con sesión admin+, elegir una comercial y/o un coordinador específico en los selectores | La lista se filtra combinando ambos criterios (y con la búsqueda de texto/estado si también están activos) |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -642,6 +657,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 2 (flujo de acreditar por cédula) | 6 |
 | Sprint 2.4 Fase 3 (nombres, modales flotantes, autoregistro en cédula, filtros, avisos de duplicado con conteo) | 8 |
 | Sprint 2.4 Fase 4 (teléfono obligatorio y único para staff) | 5 |
-| **Total** | **342** |
+| Sprint 2.4 Fase 5 (comercial asignada a eventos + filtros de pertenencia) | 8 |
+| **Total** | **350** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

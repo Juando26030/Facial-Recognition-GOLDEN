@@ -49,6 +49,14 @@ async def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = De
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in coords]
 
 
+@router.get("/staff/commercials")
+async def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))):
+    """Sprint 2.4 Fase 5 (2026-09-16): mismo patrón que /staff/coordinators — poblar el selector
+    de 'comercial asignada' al crear/editar un evento y el filtro de admin+ en /eventos."""
+    commercials = db.query(StaffUser).filter(StaffUser.role == "comercial", StaffUser.is_active == True).all()
+    return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in commercials]
+
+
 @router.get("/staff/assignable")
 async def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     """digitador + cliente activos, para el desplegable de 'autorizar/reautorizar para un evento'

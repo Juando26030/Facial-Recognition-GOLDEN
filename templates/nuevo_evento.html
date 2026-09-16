@@ -71,6 +71,12 @@
           </div>
         </div>
         <div class="badge-input-row">
+          <div class="badge-input-group" style="min-width:100%;">
+            <label>Comercial asignada *</label>
+            <input type="text" name="commercial_label" list="commercialList" required autocomplete="off" placeholder="Escribe para buscar...">
+          </div>
+        </div>
+        <div class="badge-input-row">
           <div class="badge-input-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
         </div>
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
@@ -84,9 +90,12 @@
 
 <datalist id="countryList"></datalist>
 <datalist id="coordinatorList"></datalist>
+<datalist id="commercialList"></datalist>
 
 <script>
 const TENANT_ID = "{{ tenant_id }}";
+const STAFF_ROLE = "{{ staff_role }}";
+const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
 const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
 document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
 
@@ -114,6 +123,29 @@ async function loadCoordinatorOptions() {
 }
 loadCoordinatorOptions();
 
+// Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): "por defecto aparece quien está creando el
+// evento, si es una comercial... y lo puede cambiar a otras comerciales que haya" — si quien crea
+// es comercial, se preselecciona a sí misma (pero sigue siendo editable); admin+ tiene que elegir.
+let commercialsByLabel = {};
+async function loadCommercialOptions() {
+  const res = await fetch("/api/staff/commercials");
+  const commercials = await res.json();
+  commercialsByLabel = {};
+  document.getElementById("commercialList").innerHTML = commercials.map(c => {
+    const label = `${c.full_name || c.username} (${c.username})`;
+    commercialsByLabel[label] = c.id;
+    return `<option value="${label}">`;
+  }).join("");
+  if (STAFF_ROLE === "comercial") {
+    const self = commercials.find(c => c.id === STAFF_ID);
+    if (self) {
+      const field = document.querySelector('input[name="commercial_label"]');
+      field.value = `${self.full_name || self.username} (${self.username})`;
+    }
+  }
+}
+loadCommercialOptions();
+
 document.getElementById("newEventForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const form = ev.target;
@@ -128,6 +160,14 @@ document.getElementById("newEventForm").addEventListener("submit", async (ev) =>
   }
   payload.coordinator_staff_id = coordinatorId;
   delete payload.coordinator_label;
+
+  const commercialId = commercialsByLabel[payload.commercial_label];
+  if (!commercialId) {
+    showToast("Selecciona una comercial válida de la lista.", "error");
+    return;
+  }
+  payload.commercial_staff_id = commercialId;
+  delete payload.commercial_label;
 
   const btn = form.querySelector('button[type="submit"]');
   setButtonLoading(btn, true, "Creando...");
