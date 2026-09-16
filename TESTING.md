@@ -641,6 +641,17 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 29. Sprint 2.4 Fase 7: reforzar unicidad de cédula (validación DB)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-52 ✅ | Insertar `User` con cédula duplicada rechaza a nivel de DB | Intentar crear dos `User` con el mismo `id`+`tenant_id` directo contra la base | `IntegrityError` — la PK compuesta es el guardrail, independiente de la validación de la app |
+| S24-53 ✅ | `PATCH` genérico ignora un `id` en el body | Editar una persona mandando `id` distinto en el JSON del `PATCH` | Se ignora silenciosamente — el resto de campos se guarda normal, el id no cambia |
+| S24-54 ❌ | `PUT .../cedula` sigue rechazando duplicados | Renombrar la cédula de alguien a una que ya usa otra persona del mismo cliente | 409, sin cambios |
+| S24-55 ✅ | Renombrar cédula de alguien con historial de impresiones | Imprimir la escarapela de alguien 1+ veces y luego corregirle la cédula | Ya NO truena (bug real de la Fase 3, corregido) — `PrintLog`, `AccessLog` y `EventAttendee` quedan todos reapuntados a la cédula nueva |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -673,6 +684,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 4 (teléfono obligatorio y único para staff) | 5 |
 | Sprint 2.4 Fase 5 (comercial asignada a eventos + filtros de pertenencia) | 8 |
 | Sprint 2.4 Fase 6 (ocultar funciones operativas para comercial) | 7 |
-| **Total** | **357** |
+| Sprint 2.4 Fase 7 (reforzar unicidad de cédula, validación DB) | 4 |
+| **Total** | **361** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

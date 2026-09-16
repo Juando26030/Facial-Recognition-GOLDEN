@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, AccessLog, EventAttendee, StaffUser
+from app.models import User, AccessLog, EventAttendee, PrintLog, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
@@ -424,6 +424,15 @@ async def update_user(
             merged = user.get_extras()
             merged.update(extra_fields)
             user.set_extras(merged)
+        # Sprint 2.4 Fase 7 (2026-09-16, pedido explícito: "que no se pueda repetir para nadie el
+        # id"): 'id'/'tenant_id' son la llave primaria compuesta de User, referenciada por FK
+        # desde EventAttendee/AccessLog — un setattr genérico sobre ellas intentaría un UPDATE de
+        # la propia PK, algo que este endpoint nunca tuvo pensado hacer (eso es exactamente lo que
+        # resuelve PUT /users/{user_id}/cedula con su patrón seguro insertar-reapuntar-borrar, ver
+        # abajo) y que solo terminaría en un IntegrityError sin manejar. Se ignoran acá — el único
+        # camino válido para cambiar la cédula es ese otro endpoint.
+        data.pop("id", None)
+        data.pop("tenant_id", None)
         for key, value in data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
@@ -489,6 +498,13 @@ async def update_user_cedula(
     ).update({"user_id": new_id}, synchronize_session=False)
     db.query(AccessLog).filter(
         AccessLog.user_id == old_id, AccessLog.tenant_id == event.tenant_id
+    ).update({"user_id": new_id}, synchronize_session=False)
+    # PrintLog (Sprint 2.4 Fase 3, 2026-09-16) tiene la misma FK compuesta (user_id, tenant_id)
+    # que EventAttendee/AccessLog — bug real encontrado en Fase 7 (2026-09-16): faltaba
+    # reapuntarlo acá también, así que renombrar la cédula de alguien que ya se había impreso
+    # antes tumbaba este endpoint con un ForeignKeyViolation al borrar el User viejo más abajo.
+    db.query(PrintLog).filter(
+        PrintLog.user_id == old_id, PrintLog.tenant_id == event.tenant_id
     ).update({"user_id": new_id}, synchronize_session=False)
     db.flush()
 
