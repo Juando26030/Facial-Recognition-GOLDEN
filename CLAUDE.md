@@ -204,6 +204,14 @@ Tras probar Sprint 2 en local, Juan David pidió un rediseño grande de la UX de
 
 Verificado con `TestClient`: `auto_register=False` → `checkin-cedula` da `MATCH_PENDING` sin tocar la base, y `confirm=true` sí acredita; `auto_register=True` → acredita directo como antes, sin pasar por `MATCH_PENDING`.
 
+## Sprint 2.2 (2026-09-16) — Fase C: captura por cámara + OCR robusto a orientación
+
+**Widget compartido de cámara** (`static/js/camera-capture.js`, nuevo) — `window.CameraCapture.open({title, onCapture(blob)})`: abre un modal propio con `getUserMedia`/`<video>`/`<canvas>`, distinto del `<video>` fijo del escáner facial (`app.js`) porque este se abre y cierra bajo demanda en vez de quedar prendido toda la sesión. Se usa en dos lugares nuevos, sin tocar el escáner facial existente:
+- Junto al escaneo de cédula nueva (`kiosk_registro.html`): ahora hay dos botones, "📎 Adjuntar imagen" (el de siempre, ya no fuerza `capture="environment"`) y "📸 Usar cámara" — ambos terminan en la misma función `processMrzPhoto(blob)` que llama a `POST /api/events/{id}/cedula-mrz-scan`.
+- Junto al campo de foto del alta manual en eventos biométricos: "📸 Usar cámara" captura y llena el `<input type="file" id="regPhotoInput">` vía `DataTransfer` (`dt.items.add(new File([blob], ...)); input.files = dt.files;`) — el resto del formulario (`submitManualRegister` en `app.js`) no se tocó, sigue leyendo `formData` del `<input>` exactamente igual sea que el archivo vino de adjuntar o de la cámara.
+
+**OCR robusto a orientación** (`app/routers/cedula.py: scan_cedula_mrz`) — antes se asumía que la foto venía en una sola orientación; ahora se prueban las 4 rotaciones posibles (`np.rot90(img_array, k)` para `k=0,1,2,3`) y se usa la PRIMERA que produzca una lectura MRZ con checksum válido (`parse_mrz_td1(...).valid`), deteniéndose ahí mismo sin seguir probando las demás. Si NINGUNA rotación detecta siquiera 3 líneas de texto, el mensaje de error es distinto ("no se detectó la zona MRZ") al de "se detectaron líneas pero el checksum no cuadra" — ayuda a saber si el problema es el encuadre/luz o una lectura parcialmente mala. Verificado con un mock de `extract_mrz_lines` que solo "ve" la MRZ en la segunda rotación probada: el endpoint la encuentra igual y se detiene ahí (no sigue probando las rotaciones 3 y 4 de más).
+
 ## Sprint 2 (2026-09-15) — Lector de cédula (Épico M1-7, Parte 2 del brief)
 
 Antes en stand-by (sin muestras reales); se activó el mismo sprint al llegar muestras confirmadas de ambos tipos de cédula colombiana. El campo de "cédula" del Directorio en Vivo (`#searchCedula`, ya funcionaba como "teclado" con cualquier lector desde Historia 1.2) ahora interpreta lo que llega según el tipo de documento, en vez de asumir siempre un ID suelto.

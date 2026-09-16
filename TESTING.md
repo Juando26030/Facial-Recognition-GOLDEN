@@ -401,6 +401,20 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 15. Captura por cámara + OCR robusto a orientación (Sprint 2.2 Fase C)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| CAM-01 ✅ | Botón "Usar cámara" para la cédula nueva | En "Registro", junto a "Adjuntar imagen" | Aparece "📸 Usar cámara" — clic abre un modal con video en vivo y "📸 Tomar foto" |
+| CAM-02 ✅ | Capturar y escanear desde la cámara | Tomar la foto en el modal | Se cierra el modal y se sube la foto capturada a `cedula-mrz-scan` exactamente igual que si se hubiera adjuntado un archivo |
+| CAM-03 ❌ | Sin permiso de cámara | Denegar el permiso del navegador | El modal muestra un mensaje de error claro y sugiere usar "Adjuntar imagen" en su lugar, sin romper el resto de la pantalla |
+| CAM-04 ✅ | "Usar cámara" en el alta manual biométrica | En el modal "Registrar nuevo" de un evento con `facial_enabled=True`, junto al campo de foto | Aparece "📸 Usar cámara"; al capturar, el `<input type="file">` queda con esa foto (verificar que el formulario la manda igual que un archivo adjuntado a mano) |
+| CAM-05 ✅ | Adjuntar archivo sigue funcionando igual | En cualquiera de los dos puntos de arriba, usar el botón/campo de adjuntar en vez de la cámara | Comportamiento idéntico al de antes de esta fase |
+| CAM-06 ✅ | OCR detecta la MRZ sin importar la orientación de la foto | Tomar la foto del reverso en horizontal una vez y en vertical otra vez (misma cédula) | En ambos casos se extrae la cédula/nombre correctamente — el backend prueba las 4 rotaciones posibles |
+| CAM-07 ❌ | Ninguna rotación detecta texto | Foto totalmente borrosa/negra | 422 con el mensaje de "no se detectó la zona MRZ" (distinto del mensaje de checksum inválido) |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -419,6 +433,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Escarapelas (editor, librería, impresión + 4 fixes de QA) | 35 |
 | Lector de cédula (CSV vieja, blindaje, OCR MRZ nueva) | 13 |
 | Registro unificado + Modo autoregistro (Fase B) | 12 |
-| **Total** | **216** |
+| Cámara + OCR robusto a orientación (Fase C) | 7 |
+| **Total** | **223** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

@@ -223,12 +223,16 @@
                     </div>
                     <div class="badge-input-group">
                         <label>Cédula nueva (reverso)</label>
-                        <button type="button" id="scanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;"
-                                {% if event.status != "en_proceso" %}disabled{% endif %}>📷 Escanear foto</button>
-                        <input type="file" id="scanMrzInput" accept="image/*" capture="environment" style="display:none;">
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" id="scanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;"
+                                    {% if event.status != "en_proceso" %}disabled{% endif %}>📎 Adjuntar imagen</button>
+                            <button type="button" id="scanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;"
+                                    {% if event.status != "en_proceso" %}disabled{% endif %}>📸 Usar cámara</button>
+                        </div>
+                        <input type="file" id="scanMrzInput" accept="image/*" style="display:none;">
                     </div>
                 </div>
-                <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se busca al instante sin necesidad de buscarla en la tabla. La cédula nueva no se puede leer con el lector (su QR viene encriptado) — usa "Escanear foto" para tomarle una foto al reverso.</div>
+                <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se busca al instante sin necesidad de buscarla en la tabla. La cédula nueva no se puede leer con el lector (su QR viene encriptado) — usa "Adjuntar imagen" o "Usar cámara" para tomarle una foto al reverso.</div>
                 <table class="golden-table">
                     <thead>
                         <tr>
@@ -311,7 +315,10 @@
                     {% if event.facial_enabled %}
                     <div class="badge-input-group" style="margin-top:1.2rem;">
                         <label>Fotografía Oficial</label>
-                        <input type="file" name="file" accept="image/*" required>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <input type="file" name="file" id="regPhotoInput" accept="image/*" required style="flex:1;">
+                            <button type="button" id="regPhotoCameraBtn" class="golden-btn" style="width:auto; white-space:nowrap; background:#f0f0f0; color:var(--golden-dark);">📸 Usar cámara</button>
+                        </div>
                     </div>
                     {% endif %}
 
@@ -331,6 +338,7 @@
 </main>
 
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+<script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
@@ -419,33 +427,66 @@
     /* Escaneo por foto de la MRZ de la cédula nueva (Sprint 2 Parte 2, 2.3) — el QR de esa cédula
        viene encriptado por la Registraduría (ver 2.2, no se intenta decodificar), así que el
        módulo correcto es una FOTO del reverso + OCR en el backend (zona MRZ, estándar ICAO 9303).
-       "capture=environment" en el <input type="file"> abre la cámara trasera directo en
-       tablet/celular sin tener que armar un <video>/<canvas> propios para esto. */
+       Dos formas de conseguir la foto (Sprint 2.2 Fase C): adjuntar un archivo, o tomarla con la
+       cámara del computador ahí mismo (CameraCapture, static/js/camera-capture.js) — ambas
+       terminan en el mismo processMrzPhoto(blob). */
     const scanMrzBtn = document.getElementById('scanMrzBtn');
+    const scanMrzCameraBtn = document.getElementById('scanMrzCameraBtn');
     const scanMrzInput = document.getElementById('scanMrzInput');
+
+    async function processMrzPhoto(blob) {
+        scanMrzBtn.disabled = true;
+        scanMrzCameraBtn.disabled = true;
+        scanMrzBtn.innerText = 'Leyendo…';
+        try {
+            const formData = new FormData();
+            formData.append('file', blob, 'cedula.jpg');
+            const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) {
+                showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
+            } else if (window.directorySearch) {
+                window.directorySearch.submitScannedCedula(data.id, { nombres: data.first_name, apellidos: data.last_name });
+            }
+        } catch (e) {
+            showToast('Error de red', 'error');
+        }
+        scanMrzBtn.disabled = false;
+        scanMrzCameraBtn.disabled = false;
+        scanMrzBtn.innerText = '📎 Adjuntar imagen';
+    }
+
     if (scanMrzBtn && scanMrzInput && canAccredit) {
         scanMrzBtn.addEventListener('click', () => scanMrzInput.click());
-        scanMrzInput.addEventListener('change', async () => {
+        scanMrzInput.addEventListener('change', () => {
             const file = scanMrzInput.files[0];
             scanMrzInput.value = '';
-            if (!file) return;
-            scanMrzBtn.disabled = true;
-            scanMrzBtn.innerText = 'Leyendo…';
-            try {
-                const formData = new FormData();
-                formData.append('file', file);
-                const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
-                const data = await res.json();
-                if (!res.ok) {
-                    showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
-                } else if (window.directorySearch) {
-                    window.directorySearch.submitScannedCedula(data.id, { nombres: data.first_name, apellidos: data.last_name });
-                }
-            } catch (e) {
-                showToast('Error de red', 'error');
-            }
-            scanMrzBtn.disabled = false;
-            scanMrzBtn.innerText = '📷 Escanear foto';
+            if (file) processMrzPhoto(file);
+        });
+    }
+    if (scanMrzCameraBtn && canAccredit) {
+        scanMrzCameraBtn.addEventListener('click', () => {
+            CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processMrzPhoto });
+        });
+    }
+
+    /* "Usar cámara" para la foto de alta manual en eventos biométricos (Sprint 2.2 Fase C) — el
+       <input type="file"> normal no se puede llenar con un Blob directo; DataTransfer es la forma
+       estándar de simular "el usuario adjuntó este archivo" para que el resto del formulario
+       (incluido submitManualRegister en app.js) funcione exactamente igual sin tocarlo. */
+    const regPhotoInput = document.getElementById('regPhotoInput');
+    const regPhotoCameraBtn = document.getElementById('regPhotoCameraBtn');
+    if (regPhotoInput && regPhotoCameraBtn) {
+        regPhotoCameraBtn.addEventListener('click', () => {
+            CameraCapture.open({
+                title: 'Foto del asistente',
+                onCapture: (blob) => {
+                    const dt = new DataTransfer();
+                    dt.items.add(new File([blob], 'foto.jpg', { type: 'image/jpeg' }));
+                    regPhotoInput.files = dt.files;
+                    showToast('Foto capturada', 'success');
+                },
+            });
         });
     }
 })();
