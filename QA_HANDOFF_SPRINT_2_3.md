@@ -65,3 +65,17 @@ Con Postgres real (recomendado si es posible, para que el flujo sea idéntico a 
 
 - El bug de "subí un Excel con Juan David y Juliana pero solo quedó Juan David" — sigue bloqueado, hace falta que Juan David reenvíe el archivo real que usó (el que mandó antes era solo la plantilla en blanco con un ejemplo).
 - Diseño real de Calendario — queda como placeholder hasta que Juan David defina cómo debe funcionar.
+
+---
+
+## Respuesta a `qa_sprint2_3_local.md` (ronda 2, mismo día)
+
+Gracias por el QA en local — tres cosas de las que reportaron:
+
+1. **Columna "Tipo de Empresa" en vez de "Tipo de Asistente" en el reporte** — confirmado y corregido (`app/reports.py`). Era un nombre de columna que quedó desactualizado desde antes de que `opt_1` se renombrara en el resto de la app. Nueva prueba: `S23-27`.
+
+2. **`cliente` asignado que no ve su evento (`/api/my-events` devuelve vacío)** — **no se pudo reproducir**. Probé el flujo real completo con `TestClient` (crear la cuenta `cliente` vía el mismo endpoint que usa "Usuarios del Evento", login real, `GET /api/my-events`) y el `cliente` sí ve su evento correctamente — el código no distingue `digitador` de `cliente` en ningún punto de ese camino. La hipótesis más probable es que el evento al que asignaron al `cliente` de prueba no estuviera en estado "En Proceso" todavía (los roles temporales solo ven eventos activos, por diseño — mismo comportamiento para `digitador`) y el mensaje genérico no dejaba claro si el problema era "no asignado" o "asignado pero evento no activo". Mejoré el mensaje para distinguir los dos casos de todas formas (`GET /api/my-events` ahora devuelve `has_any_authorization` además de `events`). **Si vuelven a ver el síntoma con un evento confirmado "En Proceso" (no "Creado"), eso sí sería un bug real distinto** — en ese caso lo más útil sería el `event_id` exacto y el `status` del evento en ese momento, para poder reproducirlo con esos datos puntuales.
+
+3. **El color de Apariencia no afectaba el menú, y cambiaba el color del texto** — corregido tal como lo pidieron: el color elegido ahora pinta el FONDO del menú lateral (antes se quedaba fijo en azul oscuro), y el texto del menú se dejó siempre blanco (ya no cambia de color en el link activo). Nuevas pruebas: `S23-25`, `S23-26`.
+
+No se tocó nada relacionado con el entorno/sandbox que describe la nota al inicio de su reporte (el problema de `sandbox-helper` es de la sesión de ese bot, no de este código).

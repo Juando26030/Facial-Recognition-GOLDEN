@@ -533,6 +533,10 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | S23-22 ❌ | Ya no hay botones de "volver" | Revisar el header de cualquier página (Registro, Roster, Escarapelas, Estadísticas, Usuarios, Parámetros, Staff) | No hay `← Métodos` ni `← Panel` — solo el sidebar (si aplica) y el atrás del navegador |
 | S23-23 ✅ | `cliente` con un solo evento ya no rompe el script | Iniciar sesión como `cliente` con exactamente un evento autorizado (auto-redirect desde "/") | La página de Registro carga bien, sin errores de consola — bug real de regresión, corregido |
 | S23-24 ℹ️ | Tesseract se instala solo en el próximo deploy | Revisar `.github/workflows/deploy.yml` | Incluye el paso `apt-get install tesseract-ocr` — se confirma que el 503 desaparece en el primer deploy real a producción (no verificable en este entorno de pruebas) |
+| S23-25 ✅ | El color de Apariencia pinta el menú lateral | En Configuración > Apariencia, cambiar el color de acento | El fondo del menú lateral cambia a ese color (antes se quedaba siempre azul oscuro) |
+| S23-26 ✅ | El texto del menú siempre es blanco | Repetir S23-25 con varios colores, incluidos claros | El texto de los links (incluido el activo) sigue blanco y legible — ya no cambia al color elegido |
+| S23-27 ✅ | Columna del reporte "Tipo de Asistente" con el nombre correcto | Descargar el reporte de un evento con gente que tenga `opt_1` cargado | La columna se llama "Tipo de Asistente" (antes decía "Tipo de Empresa", desactualizado) |
+| S23-28 ✅ | Mensaje distinto si hay asignación pero ningún evento en proceso | Asignar un `digitador`/`cliente` a un evento en estado "Creado" (no "En Proceso"), iniciar sesión con esa cuenta | El panel dice "Ya tienes evento(s) asignado(s), pero ninguno está 'En Proceso' todavía" — ya no el mensaje genérico de "no tienes eventos autorizados" |
 
 ---
 
@@ -560,7 +564,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Feedback 2: fondo del editor, auto-impresión, orden de columnas, Estadísticas | 9 |
 | Feedback 3: pestañas de cliente, formato de roster, transición de estado | 8 |
 | Parámetros del Evento (campos configurables, obligatorios, estadísticas por defecto) | 15 |
-| Sprint 2.3 (menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract) | 24 |
-| **Total** | **302** |
+| Sprint 2.3 (menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract) | 28 |
+| **Total** | **306** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

@@ -7,7 +7,12 @@
 (function () {
   try {
     const primary = localStorage.getItem('golden_theme_primary');
-    if (primary) document.documentElement.style.setProperty('--golden-primary', primary);
+    if (primary) {
+      document.documentElement.style.setProperty('--golden-primary', primary);
+      // El mismo color también pinta el fondo del menú lateral (pedido explícito, 2026-09-16,
+      // ronda 2) — el texto del menú se queda siempre blanco (ver .golden-sidebar a en style.css).
+      document.documentElement.style.setProperty('--golden-sidebar-bg', primary);
+    }
 
     const fontsRaw = localStorage.getItem('golden_theme_fonts');
     if (fontsRaw) {

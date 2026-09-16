@@ -64,7 +64,11 @@ class ReportManager:
                 "Escarapelas": "1",
                 "ListCiudades2": "",
                 "ListDepartamento": "",
-                "Tipo de Empresa": user.opt_1 or "",
+                # "Tipo de Asistente" (2026-09-16, corrección real): esta columna se llamaba
+                # "Tipo de Empresa" desde antes de que opt_1 se renombrara (ver models.py,
+                # 2026-09-20) a "Tipo de Asistente" en el resto de la app (formulario, Parámetros,
+                # Estadísticas) — quedó desincronizada, encontrado por QA en esta ronda.
+                "Tipo de Asistente": user.opt_1 or "",
                 "Cantidad de Empl": user.opt_2 or "",
                 "Pais": "COLOMBIA",
                 "Observaciones": "",

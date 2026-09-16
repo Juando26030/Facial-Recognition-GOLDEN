@@ -104,14 +104,28 @@ def _serialize(e: Event) -> dict:
 @router.get("/my-events")
 async def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
     """Para el dashboard: eventos a los que este staff puede entrar directo. digitador/cliente ->
-    solo eventos en_proceso con autorización explícita. coordinador+ -> todos los en_proceso."""
+    solo eventos en_proceso con autorización explícita. coordinador+ -> todos los en_proceso.
+
+    `has_any_authorization` (2026-09-16, ronda 2 — QA reportó que un `cliente` recién asignado
+    veía "No tienes eventos autorizados todavía. Pide a un coordinador que te asigne", un mensaje
+    que sonaba a que la asignación no existía, cuando en realidad sí existía pero el evento
+    todavía no estaba "En Proceso" — el mensaje no distinguía los dos casos. No se logró
+    reproducir un bug real en la asignación en sí (`EventStaffAuthorization` se crea igual para
+    digitador y cliente, ver create_event_staff) probando el mismo flujo real con TestClient; lo
+    más probable es justamente ese mensaje ambiguo. Este campo nuevo deja que el frontend
+    distinga "no tienes ninguna asignación" de "tienes asignación(es) pero ningún evento está en
+    proceso todavía" sin cambiar la forma de `events` (sigue siendo la lista de siempre)."""
     query = db.query(Event).filter(Event.status == "en_proceso")
+    has_any_authorization = True
     if staff.role in ("digitador", "cliente"):
+        has_any_authorization = db.query(EventStaffAuthorization).filter(
+            EventStaffAuthorization.staff_user_id == staff.id
+        ).first() is not None
         query = query.join(
             EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id
         ).filter(EventStaffAuthorization.staff_user_id == staff.id)
     events = query.order_by(Event.created_at.desc()).all()
-    return [_serialize(e) for e in events]
+    return {"events": [_serialize(e) for e in events], "has_any_authorization": has_any_authorization}
 
 
 def _strip_accents(text: str) -> str:

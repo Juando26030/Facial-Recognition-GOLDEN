@@ -50,7 +50,7 @@
           Esta preferencia es <strong>solo de este computador/navegador</strong> — no se guarda en la base de datos ni se sincroniza con otras sesiones.
         </p>
         <div class="theme-row">
-          <label for="themeColor">Color de acento (dorado)</label>
+          <label for="themeColor">Color de acento y menú lateral</label>
           <input type="color" id="themeColor" class="theme-swatch" value="#D4AF37">
         </div>
         <div class="theme-row">
@@ -99,6 +99,9 @@
     try {
       localStorage.setItem('golden_theme_primary', colorInput.value);
       document.documentElement.style.setProperty('--golden-primary', colorInput.value);
+      // El mismo color también pinta el fondo del menú lateral (pedido explícito, ronda 2) — el
+      // texto del menú se queda siempre blanco, no se personaliza.
+      document.documentElement.style.setProperty('--golden-sidebar-bg', colorInput.value);
 
       const key = fontsSelect.value;
       const preset = FONT_PRESETS[key];
@@ -128,6 +131,7 @@
       localStorage.removeItem('golden_theme_fonts_key');
     } catch (e) {}
     document.documentElement.style.removeProperty('--golden-primary');
+    document.documentElement.style.removeProperty('--golden-sidebar-bg');
     document.documentElement.style.removeProperty('--font-heading-primary');
     document.documentElement.style.removeProperty('--font-heading-secondary');
     document.documentElement.style.removeProperty('--font-body');

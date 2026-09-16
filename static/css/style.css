@@ -7,6 +7,11 @@
   --font-heading-primary: 'Playfair Display', serif;
   --font-heading-secondary: 'Montserrat', sans-serif;
   --font-body: 'Raleway', sans-serif;
+  /* Fondo del menú lateral (Sprint 2.3, ronda 2, 2026-09-16, pedido explícito): variable aparte
+     de --golden-dark para que Configuración > Apariencia pueda cambiar el color del menú sin
+     tocar el resto de la app (el texto del menú NO se personaliza — ver .golden-sidebar a abajo,
+     siempre blanco a propósito, para que se siga leyendo bien sin importar qué color se elija). */
+  --golden-sidebar-bg: var(--golden-dark);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -136,18 +141,22 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
    ☰, para no romper el trabajo responsive que ya existía. ===== */
 .golden-sidebar {
   position: fixed; top: 0; left: 0; width: 220px; height: 100vh; overflow-y: auto;
-  background: var(--golden-dark); z-index: 1002; padding-top: 80px; box-shadow: 2px 0 16px rgba(0,0,0,0.2);
+  background: var(--golden-sidebar-bg); z-index: 1002; padding-top: 80px; box-shadow: 2px 0 16px rgba(0,0,0,0.2);
 }
 .golden-sidebar nav { display: flex; flex-direction: column; padding: 1rem 0; }
+/* Texto del menú siempre blanco (pedido explícito, 2026-09-16): antes el link activo cambiaba a
+   --golden-primary, lo que se veía mal/ilegible según el color elegido en Apariencia — el color
+   personalizable ahora es el FONDO (--golden-sidebar-bg), el texto nunca cambia. El estado activo
+   se marca con el borde izquierdo + un fondo blanco translúcido, no con el color del texto. */
 .golden-sidebar a {
-  color: rgba(255,255,255,0.85); text-decoration: none; padding: 0.9rem 1.5rem; display: flex;
+  color: #fff; text-decoration: none; padding: 0.9rem 1.5rem; display: flex;
   align-items: center; gap: 10px; font-family: var(--font-heading-secondary); font-weight: 600;
   font-size: 0.9rem; border-left: 3px solid transparent; transition: 0.2s;
 }
-.golden-sidebar a:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.golden-sidebar a.active { border-left-color: var(--golden-primary); color: var(--golden-primary); background: rgba(212,175,55,0.1); }
+.golden-sidebar a:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.golden-sidebar a.active { border-left-color: #fff; background: rgba(255,255,255,0.18); color: #fff; font-weight: 800; }
 .golden-sidebar-toggle {
-  display: none; position: fixed; top: 18px; left: 16px; z-index: 1003; background: var(--golden-dark);
+  display: none; position: fixed; top: 18px; left: 16px; z-index: 1003; background: var(--golden-sidebar-bg);
   color: #fff; border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
   box-shadow: 0 2px 10px rgba(0,0,0,0.25);
 }

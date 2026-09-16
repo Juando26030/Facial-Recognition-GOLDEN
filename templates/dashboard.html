@@ -49,10 +49,15 @@ function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
 
 async function loadMyEvents() {
   const res = await fetch("/api/my-events");
-  const events = await res.json();
+  const { events, has_any_authorization } = await res.json();
   const el = document.getElementById("myEventsList");
   if (events.length === 0) {
-    el.innerHTML = '<p style="color:#888;">No tienes eventos autorizados todavía. Pide a un coordinador que te asigne desde el evento.</p>';
+    // has_any_authorization (2026-09-16, ronda 2): distingue "no te han asignado a nada" de
+    // "sí te asignaron, pero ese evento todavía no está En Proceso" — antes el mismo mensaje
+    // ambiguo cubría los dos casos y generaba confusión (reportado por QA).
+    el.innerHTML = has_any_authorization
+      ? '<p style="color:#888;">Ya tienes evento(s) asignado(s), pero ninguno está "En Proceso" todavía — pide a un coordinador que lo active cuando corresponda.</p>'
+      : '<p style="color:#888;">No tienes eventos autorizados todavía. Pide a un coordinador que te asigne desde el evento.</p>';
     return;
   }
   el.innerHTML = events.map(e => `
