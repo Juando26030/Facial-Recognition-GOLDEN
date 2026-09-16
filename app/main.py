@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, auth as auth_router, badges, cedula, events, parametros, staff, stats, tenants
+from app.routers import api, auth as auth_router, badges, calendar as calendar_router, cedula, events, parametros, staff, stats, tenants
 from app.auth import ROLE_HIERARCHY, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -57,6 +57,7 @@ app.include_router(badges.router, prefix="/api")
 app.include_router(cedula.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
 app.include_router(parametros.router, prefix="/api")
+app.include_router(calendar_router.router, prefix="/api")
 
 
 def _page_staff(request: Request, db: Session):
@@ -162,6 +163,7 @@ async def calendario_page(request: Request):
     return templates.TemplateResponse(request=request, name="calendario.html", context={
         "staff_name": request.session.get("staff_name"),
         "staff_role": request.session.get("staff_role"),
+        "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "calendario",
     })
 

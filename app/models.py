@@ -127,6 +127,23 @@ class PrintLog(Base):
     printed_by = relationship("StaffUser")
 
 
+class CalendarNote(Base):
+    """Recordatorio/anotación libre en el Calendario (Sprint 2.4 Fase 8, 2026-09-16, pedido
+    explícito) — NO está atado a un evento en particular (para eso ya está Event.notes), es una
+    nota suelta sobre un día cualquiera (ej. "llamar al cliente X", "confirmar transporte").
+    Compartida entre todo el equipo con acceso al Calendario (coordinador+), no privada por
+    usuario — pensado como un tablero de equipo, no una agenda personal. `created_by_id` sirve
+    para mostrar quién la dejó y para que solo su autor (o admin+) pueda borrarla."""
+    __tablename__ = 'calendar_notes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False)
+    text = Column(String, nullable=False)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    created_by = relationship("StaffUser")
+
+
 class StaffUser(Base):
     """Cuenta de staff interno (no la persona biométrica registrada, eso es `User`)."""
     __tablename__ = 'staff_users'

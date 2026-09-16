@@ -652,6 +652,23 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 30. Sprint 2.4 Fase 8: módulo de Calendario
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-56 ✅ | Vista mensual muestra eventos en el día correcto | Entrar a `/calendario` con un evento que cae dentro del mes visible | La tarjeta del evento aparece en la celda de su `start_date` (y en cada día intermedio si dura varios días) |
+| S24-57 ✅ | Evento multi-día que cruza de mes aparece en ambos | Un evento que empieza el 28 de un mes y termina el 2 del siguiente, viendo el segundo mes | El evento aparece igual en los días 1 y 2 del mes siguiente |
+| S24-58 ✅ | Alternar Mes/Semana/Día | Cambiar el selector de vista | La cuadrícula cambia de tamaño/alcance sin perder los eventos/recordatorios cargados |
+| S24-59 ✅ | Filtro "Mis eventos"/"Todos" (comercial) en Calendario | Con sesión comercial, alternar el filtro | Mismo comportamiento que en Eventos (Fase 5) — solo se filtran los eventos donde esa cuenta es la comercial asignada |
+| S24-60 ✅ | Filtros de admin por comercial/coordinador en Calendario | Con sesión admin+, elegir comercial y/o coordinador | El calendario se filtra igual que en Eventos |
+| S24-61 ✅ | Clic en un evento abre el modal de edición | Clic en cualquier tarjeta de evento | Se abre un modal con los datos precargados; guardar aplica los cambios vía `PATCH /api/events/{id}` |
+| S24-62 ❌ | Coordinador no ve el campo "Comercial asignada" en el modal | Abrir el modal de edición con sesión coordinador | El campo no aparece (coincide con que el backend le daría 403 si lo intentara) |
+| S24-63 ✅ | Agregar un recordatorio a un día | Clic en "+ recordatorio" de cualquier celda, o "📝 Agregar recordatorio" | Aparece un chip con el texto en esa celda para cualquiera que entre al Calendario |
+| S24-64 ❌ | Solo el autor (o admin+) puede borrar un recordatorio | Con una cuenta distinta a quien lo creó, intentar borrarlo | El botón de borrar no aparece para esa cuenta; el backend igual rechaza con 403 si se intenta directo |
+| S24-65 ❌ | Digitador/cliente no acceden a `/calendario` | Entrar con esas sesiones | Redirige — mismo mínimo `coordinador`+ que Eventos/Clientes |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -685,6 +702,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 5 (comercial asignada a eventos + filtros de pertenencia) | 8 |
 | Sprint 2.4 Fase 6 (ocultar funciones operativas para comercial) | 7 |
 | Sprint 2.4 Fase 7 (reforzar unicidad de cédula, validación DB) | 4 |
-| **Total** | **361** |
+| Sprint 2.4 Fase 8 (módulo de Calendario: mes/semana/día, filtros, edición, recordatorios) | 10 |
+| **Total** | **371** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

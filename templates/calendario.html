@@ -7,8 +7,41 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <style>
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+        .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
+        .cal-toolbar { display:flex; flex-wrap:wrap; gap:0.8rem; align-items:center; justify-content:space-between; margin-bottom:1.2rem; }
+        .cal-nav { display:flex; align-items:center; gap:0.6rem; }
+        .cal-nav h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); min-width:200px; text-align:center; text-transform:capitalize; }
+        .cal-view-toggle { display:flex; gap:0.4rem; }
+        .cal-view-toggle button.active { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
+        .cal-filters { display:flex; flex-wrap:wrap; gap:0.6rem; margin-bottom:1.2rem; }
+        .cal-filters select { padding:0 1rem; border-radius:30px; border:1px solid #ddd; font-size:0.85rem; height:36px; }
+        .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+        .cal-daylabel { text-align:center; font-weight:700; color:var(--golden-dark); font-size:0.78rem; padding:6px 0; text-transform:uppercase; }
+        .cal-cell { background:white; border-radius:10px; padding:6px; min-height:112px; display:flex; flex-direction:column; gap:3px; border:1px solid #eee; overflow:hidden; }
+        .cal-cell.week-cell, .cal-cell.day-cell { min-height:320px; }
+        .cal-cell.other-month { opacity:0.42; }
+        .cal-cell.is-today { border-color: var(--golden-primary); box-shadow: 0 0 0 2px rgba(212,175,55,0.3); }
+        .cal-daynum { font-size:0.78rem; font-weight:700; color:#777; display:flex; justify-content:space-between; align-items:center; }
+        .cal-cell-body { display:flex; flex-direction:column; gap:3px; overflow-y:auto; flex:1; }
+        .cal-event-chip { font-size:0.7rem; padding:3px 6px; border-radius:8px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-left:3px solid transparent; }
+        .cal-event-chip.status-creado { background: rgba(0,123,255,0.12); color:#0056b3; border-left-color:#0056b3; }
+        .cal-event-chip.status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; border-left-color:#1e7e34; }
+        .cal-event-chip.status-finalizado { background: #eee; color:#777; border-left-color:#999; }
+        .cal-note-chip { font-size:0.66rem; padding:3px 6px; border-radius:8px; background:#fff8e1; color:#7a5b00; display:flex; justify-content:space-between; align-items:flex-start; gap:4px; }
+        .cal-note-chip .cal-note-del { cursor:pointer; color:#c98; font-weight:700; flex-shrink:0; }
+        .cal-add-note-btn { font-size:0.66rem; color:#bbb; background:none; border:none; cursor:pointer; text-align:left; padding:2px 0; }
+        .cal-add-note-btn:hover { color: var(--golden-primary); }
+        .cal-day-title { font-family: var(--font-heading-secondary); color: var(--golden-dark); text-transform:capitalize; margin-bottom:0.8rem; }
+        .modal-overlay { position:fixed; inset:0; background:rgba(10,14,46,0.5); display:flex; align-items:center; justify-content:center; z-index:9000; padding:1rem; }
+        .modal-box { background:white; border-radius:18px; padding:2rem; max-width:640px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 24px 70px rgba(0,0,0,0.3); }
+        .modal-box h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); margin-bottom:1.2rem; }
+        .modal-row { display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.9rem; }
+        .modal-group { flex:1; min-width:180px; }
+        .modal-group label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
+        .modal-group input, .modal-group textarea { width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem; }
     </style>
 </head>
 <body class="has-sidebar">
@@ -29,17 +62,421 @@
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 800px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:1.5rem;">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1400px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem;">
       <span>PANEL</span>
       <h2>Calendario</h2>
     </div>
-    <div style="background:white; padding:3rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); text-align:center; color:#888;">
-      <p style="font-size:2.5rem; margin-bottom:1rem;">🗓️</p>
-      <p style="font-weight:700; color:var(--golden-dark); margin-bottom:0.5rem;">Calendario — en construcción</p>
-      <p style="font-size:0.9rem;">Todavía no tiene funcionalidad. Se define el diseño en una próxima ronda.</p>
+
+    <div class="cal-toolbar">
+      <div class="cal-nav">
+        <button type="button" class="small-btn" id="prevBtn">←</button>
+        <h3 id="rangeLabel"></h3>
+        <button type="button" class="small-btn" id="nextBtn">→</button>
+        <button type="button" class="small-btn" id="todayBtn">Hoy</button>
+      </div>
+      <div class="cal-view-toggle">
+        <button type="button" class="small-btn" data-view="month">Mes</button>
+        <button type="button" class="small-btn" data-view="week">Semana</button>
+        <button type="button" class="small-btn" data-view="day">Día</button>
+      </div>
     </div>
+
+    <div class="cal-filters">
+      {% if staff_role == "comercial" %}
+      <select id="mineFilter">
+        <option value="mine">Mis eventos</option>
+        <option value="all">Todos</option>
+      </select>
+      {% elif staff_role in ("admin", "super_admin") %}
+      <select id="commercialFilter"><option value="">Todas las comerciales</option></select>
+      <select id="coordinatorFilter"><option value="">Todos los coordinadores</option></select>
+      {% endif %}
+      <button type="button" class="small-btn" id="addNoteTodayBtn">📝 Agregar recordatorio</button>
+    </div>
+
+    <div id="calBody"></div>
   </div>
 </main>
+
+<div class="modal-overlay" id="eventModalOverlay" style="display:none;">
+  <div class="modal-box">
+    <h3>Editar evento</h3>
+    <form id="eventEditForm">
+      <input type="hidden" name="event_id">
+      <div class="modal-row">
+        <div class="modal-group" style="min-width:100%;"><label>Nombre del evento</label><input type="text" name="name" required></div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-group"><label>Fecha inicio</label><input type="date" name="start_date" required></div>
+        <div class="modal-group"><label>Fecha fin</label><input type="date" name="end_date" required></div>
+        <div class="modal-group"><label>Fecha montaje</label><input type="date" name="setup_date" required></div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-group"><label>Hora inicio evento</label><input type="text" class="clock-time" name="event_time_start" required></div>
+        <div class="modal-group"><label>Hora fin evento</label><input type="text" class="clock-time" name="event_time_end" required></div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-group"><label>Hora inicio montaje</label><input type="text" class="clock-time" name="setup_time_start" required></div>
+        <div class="modal-group"><label>Hora fin montaje</label><input type="text" class="clock-time" name="setup_time_end" required></div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-group"><label>País</label><input type="text" id="modalCountryField" name="country" list="modalCountryList" autocomplete="off"></div>
+        <div class="modal-group"><label>Ciudad</label><input type="text" name="city" list="modalCityList" autocomplete="off"></div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-group"><label>Lugar</label><input type="text" name="location"></div>
+        <div class="modal-group"><label>Dirección</label><input type="text" name="address"></div>
+      </div>
+      <div class="modal-row">
+        <div class="modal-group"><label>Coordinador asignado</label><input type="text" name="coordinator_label" list="modalCoordinatorList" autocomplete="off"></div>
+        {% if staff_role in ("comercial", "admin", "super_admin") %}
+        <div class="modal-group"><label>Comercial asignada</label><input type="text" name="commercial_label" list="modalCommercialList" autocomplete="off"></div>
+        {% endif %}
+      </div>
+      <div class="modal-row">
+        <div class="modal-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:0.5rem;">
+        <button type="button" class="small-btn" id="eventModalCancel">Cancelar</button>
+        <button type="submit" class="small-btn primary">Guardar cambios</button>
+      </div>
+    </form>
+  </div>
+</div>
+<datalist id="modalCountryList"></datalist>
+<datalist id="modalCityList"></datalist>
+<datalist id="modalCoordinatorList"></datalist>
+<datalist id="modalCommercialList"></datalist>
+
+<script>
+const STAFF_ROLE = "{{ staff_role }}";
+const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
+const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
+document.getElementById("modalCountryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
+
+const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const DAY_LABELS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toISO(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function fromISO(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function addMonths(d, n) { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; }
+function startOfWeek(d) { const r = new Date(d); const dow = (r.getDay() + 6) % 7; return addDays(r, -dow); } // lunes=0
+function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function isSameDay(a, b) { return toISO(a) === toISO(b); }
+function todayDate() { const t = new Date(); t.setHours(0,0,0,0); return t; }
+
+let currentView = 'month';
+let refDate = todayDate();
+let eventsCache = [];
+let notesCache = [];
+
+const rangeLabel = document.getElementById('rangeLabel');
+const calBody = document.getElementById('calBody');
+const mineFilter = document.getElementById('mineFilter');
+const commercialFilter = document.getElementById('commercialFilter');
+const coordinatorFilter = document.getElementById('coordinatorFilter');
+
+document.querySelectorAll('.cal-view-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => { currentView = btn.dataset.view; updateViewButtons(); loadAndRender(); });
+});
+function updateViewButtons() {
+  document.querySelectorAll('.cal-view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === currentView));
+}
+updateViewButtons();
+
+document.getElementById('prevBtn').addEventListener('click', () => { navigate(-1); });
+document.getElementById('nextBtn').addEventListener('click', () => { navigate(1); });
+document.getElementById('todayBtn').addEventListener('click', () => { refDate = todayDate(); loadAndRender(); });
+function navigate(dir) {
+  if (currentView === 'month') refDate = addMonths(refDate, dir);
+  else if (currentView === 'week') refDate = addDays(refDate, dir * 7);
+  else refDate = addDays(refDate, dir);
+  loadAndRender();
+}
+
+if (mineFilter) mineFilter.addEventListener('change', loadAndRender);
+if (commercialFilter) commercialFilter.addEventListener('change', loadAndRender);
+if (coordinatorFilter) coordinatorFilter.addEventListener('change', loadAndRender);
+
+async function loadAdminFilterOptions() {
+  if (commercialFilter) {
+    const res = await fetch('/api/staff/commercials');
+    const list = res.ok ? await res.json() : [];
+    commercialFilter.innerHTML = '<option value="">Todas las comerciales</option>' +
+      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join('');
+  }
+  if (coordinatorFilter) {
+    const res = await fetch('/api/staff/coordinators');
+    const list = res.ok ? await res.json() : [];
+    coordinatorFilter.innerHTML = '<option value="">Todos los coordinadores</option>' +
+      list.map(c => `<option value="${c.id}">${esc(c.full_name || c.username)}</option>`).join('');
+  }
+}
+loadAdminFilterOptions();
+
+function currentRange() {
+  if (currentView === 'month') {
+    const gridStart = startOfWeek(startOfMonth(refDate));
+    return { start: gridStart, end: addDays(gridStart, 41) };
+  }
+  if (currentView === 'week') {
+    const s = startOfWeek(refDate);
+    return { start: s, end: addDays(s, 6) };
+  }
+  return { start: refDate, end: refDate };
+}
+
+async function loadAndRender() {
+  const { start, end } = currentRange();
+  const params = new URLSearchParams({ start: toISO(start), end: toISO(end) });
+  if (mineFilter && mineFilter.value === 'mine' && STAFF_ID) params.set('commercial_staff_id', STAFF_ID);
+  if (commercialFilter && commercialFilter.value) params.set('commercial_staff_id', commercialFilter.value);
+  if (coordinatorFilter && coordinatorFilter.value) params.set('coordinator_staff_id', coordinatorFilter.value);
+
+  const [evRes, noteRes] = await Promise.all([
+    fetch(`/api/events/calendar?${params.toString()}`),
+    fetch(`/api/calendar/notes?start=${toISO(start)}&end=${toISO(end)}`),
+  ]);
+  eventsCache = evRes.ok ? await evRes.json() : [];
+  notesCache = noteRes.ok ? await noteRes.json() : [];
+  render();
+}
+
+function eventsForDay(iso) {
+  return eventsCache.filter(e => e.start_date && iso >= e.start_date && iso <= (e.end_date || e.start_date));
+}
+function notesForDay(iso) {
+  return notesCache.filter(n => n.date === iso);
+}
+
+function dayCellContent(d, iso, extraClass) {
+  const evs = eventsForDay(iso);
+  const notes = notesForDay(iso);
+  const evChips = evs.map(e => `<div class="cal-event-chip status-${e.status}" data-event-id="${e.id}" title="${esc(e.name)}">${esc(e.name)}</div>`).join('');
+  const noteChips = notes.map(n => `<div class="cal-note-chip" data-note-id="${n.id}"><span>📝 ${esc(n.text)}</span>${(n.created_by_id === STAFF_ID || ['admin','super_admin'].includes(STAFF_ROLE)) ? '<span class="cal-note-del" data-note-del="' + n.id + '">✕</span>' : ''}</span></div>`).join('');
+  return `
+    <div class="cal-cell ${extraClass}" data-date="${iso}">
+      <div class="cal-daynum">${d.getDate()}</div>
+      <div class="cal-cell-body">${evChips}${noteChips}</div>
+      <button type="button" class="cal-add-note-btn" data-add-note="${iso}">+ recordatorio</button>
+    </div>
+  `;
+}
+
+function render() {
+  if (currentView === 'month') renderMonth();
+  else if (currentView === 'week') renderWeek();
+  else renderDay();
+  wireCellEvents();
+}
+
+function renderMonth() {
+  rangeLabel.textContent = `${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`;
+  const gridStart = startOfWeek(startOfMonth(refDate));
+  const today = todayDate();
+  let html = '<div class="cal-grid">';
+  DAY_LABELS.forEach(l => { html += `<div class="cal-daylabel">${l}</div>`; });
+  for (let i = 0; i < 42; i++) {
+    const d = addDays(gridStart, i);
+    const iso = toISO(d);
+    let cls = '';
+    if (d.getMonth() !== refDate.getMonth()) cls += ' other-month';
+    if (isSameDay(d, today)) cls += ' is-today';
+    html += dayCellContent(d, iso, cls);
+  }
+  html += '</div>';
+  calBody.innerHTML = html;
+}
+
+function renderWeek() {
+  const s = startOfWeek(refDate);
+  const e = addDays(s, 6);
+  rangeLabel.textContent = `${s.getDate()} ${MONTH_NAMES[s.getMonth()].slice(0,3)} – ${e.getDate()} ${MONTH_NAMES[e.getMonth()].slice(0,3)} ${e.getFullYear()}`;
+  const today = todayDate();
+  let html = '<div class="cal-grid">';
+  DAY_LABELS.forEach(l => { html += `<div class="cal-daylabel">${l}</div>`; });
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(s, i);
+    const iso = toISO(d);
+    let cls = 'week-cell';
+    if (isSameDay(d, today)) cls += ' is-today';
+    html += dayCellContent(d, iso, cls);
+  }
+  html += '</div>';
+  calBody.innerHTML = html;
+}
+
+function renderDay() {
+  const iso = toISO(refDate);
+  rangeLabel.textContent = `${refDate.getDate()} de ${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`;
+  const evs = eventsForDay(iso);
+  const notes = notesForDay(iso);
+  let html = `<div class="cal-day-title">${DAY_LABELS[(refDate.getDay() + 6) % 7]}</div>`;
+  html += '<div style="display:flex; flex-direction:column; gap:0.6rem; max-width:700px;">';
+  if (!evs.length && !notes.length) {
+    html += '<p style="color:#888;">Sin eventos ni recordatorios este día.</p>';
+  }
+  evs.forEach(e => {
+    html += `
+      <div class="cal-event-chip status-${e.status}" data-event-id="${e.id}" style="padding:0.8rem 1rem; white-space:normal; cursor:pointer;">
+        <strong>${esc(e.name)}</strong><br>
+        <span style="font-size:0.8rem;">${esc(e.tenant_name || '')} · ${esc(e.location || '')} · ${esc(e.event_time_start || '')}–${esc(e.event_time_end || '')}</span><br>
+        <span style="font-size:0.75rem;">Comercial: ${esc(e.commercial_name) || '—'} · Coordinador: ${esc(e.coordinator_name) || '—'}</span>
+      </div>`;
+  });
+  notes.forEach(n => {
+    const canDelete = n.created_by_id === STAFF_ID || ['admin', 'super_admin'].includes(STAFF_ROLE);
+    html += `
+      <div class="cal-note-chip" data-note-id="${n.id}" style="padding:0.7rem 1rem;">
+        <span>📝 ${esc(n.text)} <span style="opacity:0.7;">— ${esc(n.created_by_name || '')}</span></span>
+        ${canDelete ? `<span class="cal-note-del" data-note-del="${n.id}">✕</span>` : ''}
+      </div>`;
+  });
+  html += `<button type="button" class="small-btn" data-add-note="${iso}" style="width:auto; align-self:flex-start;">+ Agregar recordatorio</button>`;
+  html += '</div>';
+  calBody.innerHTML = html;
+}
+
+function wireCellEvents() {
+  calBody.querySelectorAll('[data-event-id]').forEach(el => {
+    el.addEventListener('click', () => openEventModal(el.dataset.eventId));
+  });
+  calBody.querySelectorAll('[data-add-note]').forEach(el => {
+    el.addEventListener('click', (ev) => { ev.stopPropagation(); addNote(el.dataset.addNote); });
+  });
+  calBody.querySelectorAll('[data-note-del]').forEach(el => {
+    el.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const ok = await showConfirm('¿Eliminar este recordatorio?');
+      if (!ok) return;
+      const res = await fetch(`/api/calendar/notes/${el.dataset.noteDel}`, { method: 'DELETE' });
+      if (res.ok) { showToast('Recordatorio eliminado', 'success'); loadAndRender(); }
+      else { const err = await res.json(); showToast(err.detail || 'No se pudo eliminar', 'error'); }
+    });
+  });
+}
+
+async function addNote(iso) {
+  const text = await window.showPrompt(`Recordatorio para el ${iso}:`, { placeholder: 'Ej. Llamar al cliente para confirmar transporte' });
+  if (!text) return;
+  const res = await fetch('/api/calendar/notes', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date: iso, text }),
+  });
+  if (res.ok) { showToast('Recordatorio agregado', 'success'); loadAndRender(); }
+  else { const err = await res.json(); showToast(err.detail || 'No se pudo agregar', 'error'); }
+}
+document.getElementById('addNoteTodayBtn').addEventListener('click', () => addNote(toISO(todayDate())));
+
+/* --- Modal de edición de evento --- */
+const eventModalOverlay = document.getElementById('eventModalOverlay');
+const eventEditForm = document.getElementById('eventEditForm');
+document.getElementById('eventModalCancel').addEventListener('click', () => { eventModalOverlay.style.display = 'none'; });
+
+document.querySelectorAll('.clock-time').forEach((input) => attachClockPicker(input));
+
+document.getElementById('modalCountryField').addEventListener('change', async (e) => {
+  const country = e.target.value.trim();
+  const cityDatalist = document.getElementById('modalCityList');
+  if (!country) { cityDatalist.innerHTML = ''; return; }
+  const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
+  const cities = res.ok ? await res.json() : [];
+  cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join('');
+});
+
+let coordinatorsByLabel = {}, coordinatorsById = {};
+let commercialsByLabel = {}, commercialsById = {};
+async function loadModalStaffOptions() {
+  const res = await fetch('/api/staff/coordinators');
+  const coords = res.ok ? await res.json() : [];
+  coordinatorsByLabel = {}; coordinatorsById = {};
+  document.getElementById('modalCoordinatorList').innerHTML = coords.map(c => {
+    const label = `${c.full_name || c.username} (${c.username})`;
+    coordinatorsByLabel[label] = c.id; coordinatorsById[c.id] = label;
+    return `<option value="${label}">`;
+  }).join('');
+
+  if (['comercial', 'admin', 'super_admin'].includes(STAFF_ROLE)) {
+    const res2 = await fetch('/api/staff/commercials');
+    const commercials = res2.ok ? await res2.json() : [];
+    commercialsByLabel = {}; commercialsById = {};
+    document.getElementById('modalCommercialList').innerHTML = commercials.map(c => {
+      const label = `${c.full_name || c.username} (${c.username})`;
+      commercialsByLabel[label] = c.id; commercialsById[c.id] = label;
+      return `<option value="${label}">`;
+    }).join('');
+  }
+}
+loadModalStaffOptions();
+
+function openEventModal(eventId) {
+  const ev = eventsCache.find(e => String(e.id) === String(eventId));
+  if (!ev) return;
+  const form = eventEditForm;
+  form.event_id.value = ev.id;
+  form.name.value = ev.name || '';
+  form.start_date.value = ev.start_date || '';
+  form.end_date.value = ev.end_date || '';
+  form.setup_date.value = ev.setup_date || '';
+  form.event_time_start.value = ev.event_time_start || '';
+  form.event_time_end.value = ev.event_time_end || '';
+  form.setup_time_start.value = ev.setup_time_start || '';
+  form.setup_time_end.value = ev.setup_time_end || '';
+  form.country.value = ev.country || '';
+  form.city.value = ev.city || '';
+  form.location.value = ev.location || '';
+  form.address.value = ev.address || '';
+  form.notes.value = ev.notes || '';
+  form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
+  if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
+  eventModalOverlay.style.display = 'flex';
+}
+
+eventEditForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const formData = new FormData(form);
+  const payload = Object.fromEntries(formData.entries());
+  const eventId = payload.event_id;
+  delete payload.event_id;
+
+  if (payload.coordinator_label) {
+    const id = coordinatorsByLabel[payload.coordinator_label];
+    if (!id) { showToast('Selecciona un coordinador válido de la lista.', 'error'); return; }
+    payload.coordinator_staff_id = id;
+  }
+  delete payload.coordinator_label;
+
+  if ('commercial_label' in payload) {
+    if (payload.commercial_label) {
+      const id = commercialsByLabel[payload.commercial_label];
+      if (!id) { showToast('Selecciona una comercial válida de la lista.', 'error'); return; }
+      payload.commercial_staff_id = id;
+    }
+    delete payload.commercial_label;
+  }
+
+  const btn = form.querySelector('button[type="submit"]');
+  setButtonLoading(btn, true, 'Guardando...');
+  const res = await fetch(`/api/events/${eventId}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  setButtonLoading(btn, false);
+  if (res.ok) {
+    showToast('Evento actualizado', 'success');
+    eventModalOverlay.style.display = 'none';
+    loadAndRender();
+  } else {
+    const err = await res.json();
+    showToast(err.detail || 'No se pudo actualizar', 'error');
+  }
+});
+
+loadAndRender();
+</script>
 </body>
 </html>
