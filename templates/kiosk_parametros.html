@@ -6,6 +6,7 @@
     <title>Parámetros del Evento | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .params-table { width:100%; border-collapse:collapse; }
         .params-table th, .params-table td { padding:0.7rem 0.6rem; border-bottom:1px solid #eee; vertical-align:top; text-align:left; font-size:0.9rem; }
@@ -15,7 +16,8 @@
         .params-field-name { font-weight:700; color:var(--golden-dark); }
     </style>
 </head>
-<body>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
 
 <header class="golden-header">
   <div class="golden-header-container">
@@ -23,11 +25,6 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
-      {% if staff_role in ["admin", "super_admin"] %}
-      <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
-      {% endif %}
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
@@ -71,6 +68,11 @@
             </thead>
             <tbody id="paramsTableBody"></tbody>
           </table>
+          <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:1.2rem; padding-top:1.2rem; border-top:1px solid #eee;">
+            <input type="text" id="newOptionalFieldName" placeholder="Nombre del campo nuevo (ej. Alergias, Talla de camisa...)" style="flex:1; min-width:240px; border:1px solid #ccc; border-radius:8px; padding:0.6rem 0.8rem; font-size:0.9rem;">
+            <button type="button" id="addOptionalFieldBtn" class="golden-btn" style="width:auto; padding:0.6rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar campo opcional</button>
+          </div>
+          <p style="color:#888; font-size:0.78rem; margin-top:0.5rem;">El campo nuevo queda disponible de una en el formulario de alta manual y, si se configura con estadística, en Estadísticas — y siempre aparece como columna en el reporte Excel.</p>
           <div style="display:flex; justify-content:flex-end; margin-top:1.5rem;">
             <button type="button" id="saveParamsBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Guardar cambios</button>
           </div>
@@ -127,6 +129,30 @@
     }
 
     (window.FIELD_CONFIGS || []).forEach(cfg => tbody.appendChild(buildRow(cfg)));
+
+    document.getElementById('addOptionalFieldBtn').addEventListener('click', async () => {
+        const input = document.getElementById('newOptionalFieldName');
+        const label = input.value.trim();
+        if (!label) { showToast('Escribe un nombre para el campo nuevo', 'error'); return; }
+        const btn = document.getElementById('addOptionalFieldBtn');
+        setButtonLoading(btn, true, 'Agregando...');
+        try {
+            const res = await fetch(`/api/events/${window.EVENT_ID}/optional-fields`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || 'No se pudo agregar el campo');
+            tbody.appendChild(buildRow({
+                key: data.key, label: data.label, required: false, field_type: 'text_short',
+                options: [], default_stat_enabled: false, default_chart_type: null,
+            }));
+            input.value = '';
+            showToast(`Campo "${data.label}" agregado — recuerda "Guardar cambios" si le cambias el tipo/obligatoriedad`, 'success');
+        } catch (e) {
+            showToast(e.message || 'Error de red', 'error');
+        }
+        setButtonLoading(btn, false);
+    });
 
     document.getElementById('saveParamsBtn').addEventListener('click', async () => {
         const btn = document.getElementById('saveParamsBtn');

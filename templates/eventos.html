@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eventos | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
+        .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; }
+        .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
+        .tenant-head .meta { font-size: 0.8rem; color: #888; }
+        .status-pill { font-size:0.7rem; font-weight:700; padding: 3px 10px; border-radius: 12px; text-transform:uppercase; }
+        .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
+        .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
+        .status-finalizado { background: #eee; color:#777; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+        .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
+        .search-row { display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+        .search-box { flex:1; min-width:240px; padding:1rem 1.2rem; border-radius:30px; border:1px solid #ddd; font-size:0.95rem; }
+        .search-box:focus { outline:none; border-color: var(--golden-primary); }
+        .status-filter { padding:0 1.2rem; border-radius:30px; border:1px solid #ddd; font-size:0.9rem; min-width:180px; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" class="small-btn">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem;">
+      <span>PANEL</span>
+      <h2>Eventos</h2>
+    </div>
+
+    <div class="search-row">
+      <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre o código de evento...">
+      <select id="statusFilter" class="status-filter">
+        <option value="">Todos los estados</option>
+        <option value="creado">Creado</option>
+        <option value="en_proceso">En Proceso</option>
+        <option value="finalizado">Finalizado</option>
+      </select>
+    </div>
+
+    <div id="eventsList"></div>
+  </div>
+</main>
+
+<script>
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
+function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+const STATUS_LABELS = { creado: "Creado", en_proceso: "En Proceso", finalizado: "Finalizado" };
+
+function eventCard(e) {
+  return `
+    <div class="tenant-card"><div class="tenant-head">
+      <div>
+        <h3>${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</h3>
+        <div class="meta">${esc(e.tenant_name)} · ${esc(e.city) || ""} ${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
+      </div>
+      <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
+    </div></div>
+  `;
+}
+
+let searchTimer = null;
+const searchBox = document.getElementById("searchBox");
+const statusFilter = document.getElementById("statusFilter");
+searchBox.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 250); });
+statusFilter.addEventListener("change", runSearch);
+
+async function runSearch() {
+  const q = searchBox.value.trim();
+  const status = statusFilter.value;
+  const resultsEl = document.getElementById("eventsList");
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  const res = await fetch(`/api/events/search?${params.toString()}`);
+  const events = await res.json();
+  resultsEl.innerHTML = events.length ? events.map(eventCard).join("") : '<p style="color:#888;">Sin resultados.</p>';
+}
+
+runSearch();
+</script>
+</body>
+</html>

@@ -6,6 +6,7 @@
     <title>Registro | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .btn-table-delete {
             background: #dc3545;
@@ -26,7 +27,8 @@
         .directory-scan-hint { font-size:0.78rem; color:#888; margin-bottom:1rem; }
     </style>
 </head>
-<body>
+<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+{% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 
 <header class="golden-header">
   <div class="golden-header-container">
@@ -34,15 +36,6 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      {% if staff_role != "cliente" %}
-      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
-      {% endif %}
-      {% if staff_role not in ["digitador", "cliente"] %}
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
-      {% endif %}
-      {% if staff_role in ["admin", "super_admin"] %}
-      <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
-      {% endif %}
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
@@ -86,7 +79,7 @@
         <div class="tab active" data-tab="scanner">{{ ns.n }}. Escáner de Acceso</div>
         {% endif %}
         {% set ns.n = ns.n + 1 %}
-        <div class="tab{% if not event.facial_enabled %} active{% endif %}" data-tab="directorio">{{ ns.n }}. Registro</div>
+        <div class="tab{% if not event.facial_enabled %} active{% endif %}" data-tab="directorio">{% if event.facial_enabled %}{{ ns.n }}. {% endif %}Registro</div>
         {% endif %}
       </div>
 

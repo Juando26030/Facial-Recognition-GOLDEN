@@ -128,3 +128,42 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
   .tab { padding: 10px 16px; font-size: 0.85rem; }
   .camera-wrapper { min-width: 100%; max-width: 100%; }
 }
+
+/* ===== Menú lateral (Sprint 2.3, 2026-09-16, pedido explícito) — Clientes/Eventos/Calendario/
+   Configuración, fijo en toda la app para coordinador+ (no para digitador/cliente, cuentas
+   temporales sin panel). El header se corre a la derecha del ancho del sidebar en vez de que el
+   sidebar quede encima tapando el logo. Bajo 900px colapsa a un cajón (off-canvas) con un botón
+   ☰, para no romper el trabajo responsive que ya existía. ===== */
+.golden-sidebar {
+  position: fixed; top: 0; left: 0; width: 220px; height: 100vh; overflow-y: auto;
+  background: var(--golden-dark); z-index: 1002; padding-top: 80px; box-shadow: 2px 0 16px rgba(0,0,0,0.2);
+}
+.golden-sidebar nav { display: flex; flex-direction: column; padding: 1rem 0; }
+.golden-sidebar a {
+  color: rgba(255,255,255,0.85); text-decoration: none; padding: 0.9rem 1.5rem; display: flex;
+  align-items: center; gap: 10px; font-family: var(--font-heading-secondary); font-weight: 600;
+  font-size: 0.9rem; border-left: 3px solid transparent; transition: 0.2s;
+}
+.golden-sidebar a:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.golden-sidebar a.active { border-left-color: var(--golden-primary); color: var(--golden-primary); background: rgba(212,175,55,0.1); }
+.golden-sidebar-toggle {
+  display: none; position: fixed; top: 18px; left: 16px; z-index: 1003; background: var(--golden-dark);
+  color: #fff; border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+}
+.golden-sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1001; }
+
+body.has-sidebar .golden-header { left: 220px; width: calc(100% - 220px); }
+body.has-sidebar .golden-main,
+body.has-sidebar .golden-content-spacer { margin-left: 220px; }
+
+@media (max-width: 900px) {
+  .golden-sidebar { transform: translateX(-100%); transition: transform 0.25s; }
+  body.sidebar-open .golden-sidebar { transform: translateX(0); }
+  .golden-sidebar-toggle { display: block; }
+  body.sidebar-open .golden-sidebar-backdrop { display: block; }
+  body.has-sidebar .golden-header { left: 0; width: 100%; }
+  body.has-sidebar .golden-main,
+  body.has-sidebar .golden-content-spacer { margin-left: 0; }
+  body.has-sidebar .golden-header-container { padding-left: 4.2rem; }
+}

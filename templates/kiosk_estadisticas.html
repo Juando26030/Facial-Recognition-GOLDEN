@@ -6,6 +6,7 @@
     <title>Estadísticas | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
     <style>
         .stats-chart-card {
@@ -15,17 +16,16 @@
         .stats-chart-card canvas { max-height:260px; }
     </style>
 </head>
-<body{% if embed %} style="padding-top:0;"{% endif %}>
+<body{% if embed %} style="padding-top:0;"{% elif staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
 
 {% if not embed %}
+{% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="#" class="golden-logo">
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>

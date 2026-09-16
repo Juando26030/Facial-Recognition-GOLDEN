@@ -96,9 +96,65 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         if len(authorized_events) == 1:
             return RedirectResponse(f"/kiosk/{authorized_events[0].id}", status_code=302)
 
-    return templates.TemplateResponse(request=request, name="dashboard.html", context={
-        "staff_name": staff_user.full_name or staff_user.username,
-        "staff_role": staff_user.role,
+        return templates.TemplateResponse(request=request, name="dashboard.html", context={
+            "staff_name": staff_user.full_name or staff_user.username,
+            "staff_role": staff_user.role,
+        })
+
+    # coordinador/admin/super_admin (Sprint 2.3, 2026-09-16): el panel combinado (árbol
+    # Cliente→Eventos) se partió en secciones del menú lateral nuevo — Clientes es el punto de
+    # entrada por defecto ahora, ver templates/clientes.html.
+    return RedirectResponse("/clientes", status_code=302)
+
+
+@app.get("/clientes")
+async def clientes_page(request: Request):
+    redirect = _require_page_role(request, "coordinador")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="clientes.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": request.session.get("staff_role"),
+        "sidebar_active": "clientes",
+    })
+
+
+@app.get("/eventos")
+async def eventos_page(request: Request):
+    redirect = _require_page_role(request, "coordinador")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="eventos.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": request.session.get("staff_role"),
+        "sidebar_active": "eventos",
+    })
+
+
+@app.get("/calendario")
+async def calendario_page(request: Request):
+    redirect = _require_page_role(request, "coordinador")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="calendario.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": request.session.get("staff_role"),
+        "sidebar_active": "calendario",
+    })
+
+
+@app.get("/configuracion")
+async def configuracion_page(request: Request):
+    """Admin+ solamente (pedido explícito: "donde el admin puede hacer todo lo de configuración
+    relevante"): permisos/staff (reusa /admin/staff embebido) + Apariencia (color/tipografía, ver
+    static/js/theme.js — preferencia local del navegador, no vive en la base de datos)."""
+    redirect = _require_page_role(request, "admin")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="configuracion.html", context={
+        "staff_name": request.session.get("staff_name"),
+        "staff_role": request.session.get("staff_role"),
+        "sidebar_active": "configuracion",
     })
 
 
@@ -118,17 +174,18 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
         return RedirectResponse("/", status_code=302)
 
     if staff_user.role == "cliente":
-        return templates.TemplateResponse(request=request, name="kiosk_registro.html", context={
-            "staff_name": staff_user.full_name or staff_user.username,
-            "staff_role": staff_user.role,
-            "event": event,
-            "optional_labels": [],  # cliente no ve "Registro Individual", no hace falta calcularlos
-        })
+        # Antes esto era un TemplateResponse manual, sin pasar por _resolve_kiosk_page — le
+        # faltaban field_configs_json/optional_labels_json (agregados con Parámetros del Evento),
+        # lo que rompía el <script> de kiosk_registro.html (JS inválido) para cualquier cliente
+        # que cayera acá vía el auto-redirect desde "/" con un solo evento autorizado. Bug real,
+        # encontrado en Sprint 2.3, no reportado por el usuario.
+        return _resolve_kiosk_page(event_id, request, db, "kiosk_registro.html")
 
     return templates.TemplateResponse(request=request, name="kiosk_select.html", context={
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": staff_user.role,
         "event": event,
+        "sidebar_active": "eventos",
     })
 
 
@@ -178,6 +235,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "optional_labels_json": optional_labels_json,
         "field_configs": field_configs,
         "field_configs_json": field_configs_json,
+        "sidebar_active": "eventos",
     }
     if extra_context:
         context.update(extra_context)
@@ -266,7 +324,10 @@ async def staff_page(request: Request):
     redirect = _require_page_role(request, "admin")
     if redirect:
         return redirect
+    embed = request.query_params.get("embed") == "1"
     return templates.TemplateResponse(request=request, name="staff.html", context={
         "staff_role": request.session.get("staff_role"),
         "staff_username": request.session.get("staff_username"),
+        "sidebar_active": "configuracion",
+        "embed": embed,
     })

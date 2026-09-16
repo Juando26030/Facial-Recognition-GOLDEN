@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ event.name }} | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .mode-grid { display:flex; gap:1.5rem; flex-wrap:wrap; justify-content:center; margin-top:2rem; }
         .mode-card {
@@ -24,16 +26,14 @@
         .status-note { font-size:0.8rem; color:#a66; margin-top:1.5rem; max-width:420px; margin-left:auto; margin-right:auto; }
     </style>
 </head>
-<body>
+<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+{% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav style="display:flex; gap:14px; align-items:center;">
-      {% if staff_role not in ["digitador", "cliente"] %}
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
-      {% endif %}
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>

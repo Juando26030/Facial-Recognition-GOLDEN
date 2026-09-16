@@ -6,6 +6,7 @@
     <title>Usuarios del Evento | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .btn-table-delete {
             background: #dc3545; color: white; padding: 4px 10px; border-radius: 6px;
@@ -14,7 +15,8 @@
         .btn-table-delete:hover { background: #c82333; }
     </style>
 </head>
-<body>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
 
 <header class="golden-header">
   <div class="golden-header-container">
@@ -22,11 +24,6 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
-      {% if staff_role in ["admin", "super_admin"] %}
-      <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
-      {% endif %}
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>

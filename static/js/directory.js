@@ -126,6 +126,14 @@
       ${isAdmin ? `
       <hr style="margin:1.2rem 0; border:none; border-top:1px solid #eee;">
       <div style="margin-bottom:0.8rem;">
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Corregir cédula</label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="editModalCedula" value="${esc(user.id)}" style="flex:1; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+          <button type="button" id="editModalApplyCedula" class="golden-btn btn-table-action" style="width:auto; padding:8px 16px;">Aplicar</button>
+        </div>
+        <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>
+      </div>
+      <div style="margin-bottom:0.8rem;">
         <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Estado de registro</label>
         <div style="display:flex; gap:8px;">
           <select id="editModalStatus" style="flex:1; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
@@ -185,6 +193,33 @@
     });
 
     if (isAdmin) {
+      box.querySelector('#editModalApplyCedula').addEventListener('click', async () => {
+        const input = box.querySelector('#editModalCedula');
+        const newId = input.value.trim();
+        if (!newId || newId === user.id) return;
+        const ok = await showConfirm(`¿Cambiar la cédula de "${user.id}" a "${newId}"?<br><br>Esto afecta a esta persona en TODOS los eventos de este cliente, no solo en este.`, { variant: 'warning', confirmLabel: 'Sí, corregir' });
+        if (!ok) return;
+        const btn = box.querySelector('#editModalApplyCedula');
+        btn.disabled = true; btn.innerText = 'Aplicando...';
+        try {
+          const res = await fetch(withEvent(`/api/users/${user.id}/cedula`), {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_id: newId }),
+          });
+          if (res.ok) {
+            showToast('Cédula corregida', 'success');
+            close();
+            if (window.directorySearch) window.directorySearch.reload();
+          } else {
+            const data = await res.json().catch(() => ({}));
+            showToast(data.detail || 'No se pudo cambiar la cédula', 'error');
+            btn.disabled = false; btn.innerText = 'Aplicar';
+          }
+        } catch (e) {
+          showToast('Error de red', 'error');
+          btn.disabled = false; btn.innerText = 'Aplicar';
+        }
+      });
+
       box.querySelector('#editModalApplyStatus').addEventListener('click', async () => {
         const select = box.querySelector('#editModalStatus');
         const newStatus = select.value;

@@ -505,6 +505,37 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 21. Sprint 2.3: menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S23-01 ✅ | Sidebar visible para coordinador+ | Iniciar sesión como `coordinador`/`admin`/`super_admin`, navegar a cualquier página de la app | El menú lateral (Clientes/Eventos/Calendario/[Configuración]) aparece siempre, sin importar la pantalla |
+| S23-02 ❌ | Sidebar ausente para cuentas temporales | Iniciar sesión como `digitador` o `cliente` | No aparece el menú lateral en ninguna pantalla — nunca lo tuvieron |
+| S23-03 ✅ | Se resalta la sección activa | Entrar a `/clientes`, `/eventos`, `/calendario`, `/configuracion` por turnos | El link correspondiente aparece resaltado en cada una |
+| S23-04 ✅ | Colapsa a cajón en móvil | Abrir cualquier página con sidebar en un viewport ≤900px | El sidebar se oculta, aparece un botón ☰ que lo abre como cajón con fondo oscuro detrás |
+| S23-05 ✅ | Clientes: búsqueda solo por nombre | En `/clientes`, escribir parte del nombre de un cliente | Filtra la lista de clientes por ese nombre (insensible a mayúsculas/tildes), sin tocar sus eventos |
+| S23-06 ✅ | Eventos: búsqueda de texto | En `/eventos`, escribir nombre o código de un evento | Filtra a los eventos que calzan, mostrando a qué cliente pertenece cada uno |
+| S23-07 ✅ | Eventos: filtro de estado solo | En `/eventos`, sin escribir texto, elegir un estado del selector | Filtra correctamente solo por ese estado — no hace falta escribir nada en la búsqueda |
+| S23-08 ℹ️ | Calendario es un placeholder | Entrar a `/calendario` | Muestra el aviso "en construcción", sin funcionalidad todavía — es lo esperado en esta entrega |
+| S23-09 ✅ | Configuración: dos pestañas para admin+ | Iniciar sesión como `admin`/`super_admin`, entrar a `/configuracion` | Aparecen "Apariencia" y "Staff y Permisos"; el link "Configuración" solo se ve en el sidebar para estos roles |
+| S23-10 ❌ | `coordinador` no entra a Configuración | Iniciar sesión como `coordinador`, ir a `/configuracion` por URL directa | Redirige — Configuración es admin+ solamente |
+| S23-11 ✅ | Apariencia se aplica y persiste | En "Apariencia", cambiar el color de acento y guardar, luego navegar a otra página | El color nuevo se ve de inmediato y se mantiene al cambiar de página (mismo navegador) |
+| S23-12 ℹ️ | Apariencia no se sincroniza | Cambiar el color en un navegador, abrir la app en otro navegador/computador con la misma cuenta | El otro navegador sigue viendo el tema por defecto — es una preferencia local, no de cuenta (confirmado con Juan David) |
+| S23-13 ✅ | Staff y Permisos sin header duplicado | En Configuración, pestaña "Staff y Permisos" | Se ve la gestión de staff de siempre, embebida, sin un segundo header/menú encima |
+| S23-14 ✅ | Agregar campo opcional desde Parámetros | En Parámetros del Evento, escribir un nombre y dar "+ Agregar campo opcional" | Aparece una fila nueva lista para configurar, sin recargar la página |
+| S23-15 ✅ | El campo opcional nuevo sale en el reporte | Agregar un opcional, cargarle un valor a alguien, descargar el reporte del evento | El Excel trae una columna con ese rótulo y el valor correcto |
+| S23-16 ❌ | El reporte no mezcla eventos distintos | Pedir el reporte de un evento que tiene otro evento hermano (mismo cliente) con gente distinta | Solo aparece la gente de ESE evento, no la del otro |
+| S23-17 ✅ | Cédula editable por admin | Como `admin`, abrir "Editar" de una persona, cambiar su cédula y aplicar | La persona sigue en el Directorio pero con la cédula nueva; su historial de acceso se conserva |
+| S23-18 ❌ | Cédula duplicada se rechaza | Intentar poner una cédula que ya usa otra persona del mismo cliente | Error claro, no se aplica el cambio |
+| S23-19 ❌ | Cédula editable no disponible para no-admin | Iniciar sesión como `coordinador`, intentar el mismo cambio de cédula por API directa | 403 — ese campo ni siquiera se muestra editable para `coordinador`/`digitador`/`cliente` |
+| S23-20 ✅ | Pestaña "Registro" sin numerar si es la única | Entrar a Registro de un evento SIN biometría | Dice "Registro", no "1. Registro" |
+| S23-21 ✅ | Pestaña "Registro" numerada si hay dos | Entrar a Registro de un evento CON biometría | Dice "1. Escáner de Acceso" / "2. Registro" |
+| S23-22 ❌ | Ya no hay botones de "volver" | Revisar el header de cualquier página (Registro, Roster, Escarapelas, Estadísticas, Usuarios, Parámetros, Staff) | No hay `← Métodos` ni `← Panel` — solo el sidebar (si aplica) y el atrás del navegador |
+| S23-23 ✅ | `cliente` con un solo evento ya no rompe el script | Iniciar sesión como `cliente` con exactamente un evento autorizado (auto-redirect desde "/") | La página de Registro carga bien, sin errores de consola — bug real de regresión, corregido |
+| S23-24 ℹ️ | Tesseract se instala solo en el próximo deploy | Revisar `.github/workflows/deploy.yml` | Incluye el paso `apt-get install tesseract-ocr` — se confirma que el 503 desaparece en el primer deploy real a producción (no verificable en este entorno de pruebas) |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -529,6 +560,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Feedback 2: fondo del editor, auto-impresión, orden de columnas, Estadísticas | 9 |
 | Feedback 3: pestañas de cliente, formato de roster, transición de estado | 8 |
 | Parámetros del Evento (campos configurables, obligatorios, estadísticas por defecto) | 15 |
-| **Total** | **278** |
+| Sprint 2.3 (menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract) | 24 |
+| **Total** | **302** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

@@ -64,6 +64,33 @@ def field_configs_for_event(db: Session, event: Event) -> list:
     return [_serialize(key, label, rows.get(key)) for key, label in _configurable_fields(event)]
 
 
+@router.post("/events/{event_id}/optional-fields")
+async def add_optional_field(
+    event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+):
+    """Agrega un campo opcional nuevo directamente desde Parámetros del Evento (2026-09-16,
+    pedido explícito) — sin pasar por un alta/carga de roster como hasta ahora (`NEEDS_LABELS` en
+    manual_register/bulk_register, ver api.py). Busca el primer slot `opcional_N` libre (mismo
+    límite de 30 que ya usa kiosk_registro.html) y lo rotula de una — queda disponible tanto en el
+    formulario de alta como, una vez configurado, en el reporte (ver reports.py)."""
+    event = get_event_for_staff(event_id, db, staff)
+    label = str(data.get("label", "")).strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="El campo necesita un nombre")
+
+    labels = event.get_optional_labels()
+    used_slots = {int(k.split("_")[1]) for k in labels.keys()}
+    new_slot = next((n for n in range(1, 31) if n not in used_slots), None)
+    if new_slot is None:
+        raise HTTPException(status_code=400, detail="Ya se usaron los 30 campos opcionales disponibles para este evento")
+
+    key = f"opcional_{new_slot}"
+    labels[key] = label
+    event.set_optional_labels(labels)
+    db.commit()
+    return {"key": key, "label": label}
+
+
 @router.get("/events/{event_id}/field-configs")
 async def list_field_configs(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),

@@ -377,6 +377,62 @@ async def update_user(
         return {"message": "Actualizado correctamente"}
     return {"error": "Usuario no encontrado"}
 
+@router.put("/users/{user_id}/cedula")
+async def update_user_cedula(
+    user_id: str, event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("admin")),
+):
+    """Corrige la cédula (User.id) de una persona ya registrada (2026-09-16, pedido explícito: a
+    veces se acredita por nombre porque la cédula quedó mal escrita, y no había forma de
+    arreglarla). User.id es parte de la llave primaria compuesta (id, tenant_id) y está referenciada
+    por FK desde EventAttendee/AccessLog — renombrarla in-place violaría esa FK a mitad de camino,
+    así que el patrón seguro es insertar una fila nueva con el id correcto, reapuntar las filas
+    hijas, y recién ahí borrar la vieja, todo en una sola transacción. admin+ solamente: User vive
+    a nivel de tenant (se comparte entre eventos, ver CLAUDE.md), así que este cambio afecta a la
+    persona en TODOS los eventos de este cliente, no solo en este — más sensible que un campo
+    normal del perfil."""
+    event = get_event_for_staff(event_id, db, staff)
+    old_id = user_id
+    new_id = str(data.get("new_id", "")).strip()
+    if not new_id:
+        raise HTTPException(status_code=400, detail="La nueva cédula no puede estar vacía")
+    if new_id == old_id:
+        raise HTTPException(status_code=400, detail="La nueva cédula es igual a la actual")
+
+    user = db.query(User).filter(User.id == old_id, User.tenant_id == event.tenant_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+
+    conflict = db.query(User).filter(User.id == new_id, User.tenant_id == event.tenant_id).first()
+    if conflict:
+        raise HTTPException(status_code=409, detail="Ya existe otra persona con esa cédula en este cliente")
+
+    new_user = User(
+        id=new_id, tenant_id=user.tenant_id, first_name=user.first_name, last_name=user.last_name,
+        role=user.role, company=user.company, phone=user.phone, email=user.email,
+        opt_1=user.opt_1, opt_2=user.opt_2, extra_fields=user.extra_fields, face_encoding=user.face_encoding,
+    )
+    db.add(new_user)
+    db.flush()  # el nuevo User debe existir antes de reapuntar las filas hijas hacia él
+
+    db.query(EventAttendee).filter(
+        EventAttendee.user_id == old_id, EventAttendee.tenant_id == event.tenant_id
+    ).update({"user_id": new_id}, synchronize_session=False)
+    db.query(AccessLog).filter(
+        AccessLog.user_id == old_id, AccessLog.tenant_id == event.tenant_id
+    ).update({"user_id": new_id}, synchronize_session=False)
+    db.flush()
+
+    db.delete(user)
+
+    old_photo = os.path.join(_known_faces_dir(event.tenant_id), f"{old_id}.jpg")
+    if os.path.exists(old_photo):
+        os.rename(old_photo, os.path.join(_known_faces_dir(event.tenant_id), f"{new_id}.jpg"))
+
+    db.commit()
+    return {"message": "Cédula actualizada correctamente", "new_id": new_id}
+
+
 @router.delete("/users/{user_id}/logs")
 async def delete_user_logs(
     user_id: str, event_id: int, db: Session = Depends(get_db),
@@ -803,5 +859,5 @@ async def download_report(
 ):
     event = get_event_for_staff(event_id, db, staff)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    ReportManager.generate_excel_report(db, event.tenant_id, temp_file.name)
+    ReportManager.generate_excel_report(db, event.id, event.tenant_id, temp_file.name)
     return FileResponse(temp_file.name, filename="Golden_Reporte_Eventos.xlsx")

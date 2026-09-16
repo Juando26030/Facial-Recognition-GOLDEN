@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendario | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" class="small-btn">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 800px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1.5rem;">
+      <span>PANEL</span>
+      <h2>Calendario</h2>
+    </div>
+    <div style="background:white; padding:3rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); text-align:center; color:#888;">
+      <p style="font-size:2.5rem; margin-bottom:1rem;">🗓️</p>
+      <p style="font-weight:700; color:var(--golden-dark); margin-bottom:0.5rem;">Calendario — en construcción</p>
+      <p style="font-size:0.9rem;">Todavía no tiene funcionalidad. Se define el diseño en una próxima ronda.</p>
+    </div>
+  </div>
+</main>
+</body>
+</html>

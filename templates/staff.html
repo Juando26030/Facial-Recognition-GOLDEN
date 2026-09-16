@@ -6,19 +6,25 @@
     <title>Staff | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 </head>
-<body>
+<body{% if not embed %} class="has-sidebar"{% endif %}>
+{% if not embed %}{% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav style="display:flex; gap:14px; align-items:center;">
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
+      <span style="color:#666; font-size:0.85rem;">{{ staff_username }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
     </nav>
   </div>
 </header>
 <div class="golden-content-spacer"></div>
+{% endif %}
 
 <main class="golden-main">
   <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">

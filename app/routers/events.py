@@ -138,19 +138,27 @@ def _matches_by_word_prefix(haystack: str, query: str) -> bool:
 
 @router.get("/events/search")
 async def search_events(
-    q: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    q: str = "", status: Optional[str] = None, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Búsqueda libre entre todos los clientes/eventos: por código, nombre, país o ciudad del
     evento, o por nombre del cliente (tenant). Filtrado en Python (no SQL LIKE) para que la
-    coincidencia sea por inicio de palabra y no por substring en medio de una palabra."""
+    coincidencia sea por inicio de palabra y no por substring en medio de una palabra.
+    `status` (2026-09-16, para /eventos del menú lateral): filtro adicional por estado
+    (creado/en_proceso/finalizado), combinable con `q`. `q` pasa a ser opcional — con solo
+    `status` puesto (sin texto de búsqueda) igual debe listar, filtrando nada más por estado."""
     all_events = db.query(Event).order_by(Event.created_at.desc()).all()
     matches = []
     for e in all_events:
-        haystack = " ".join(filter(None, [
-            e.name, e.event_code, e.country, e.city, e.tenant.name if e.tenant else None,
-        ]))
-        if _matches_by_word_prefix(haystack, q):
-            matches.append(e)
+        if status and e.status != status:
+            continue
+        if q:
+            haystack = " ".join(filter(None, [
+                e.name, e.event_code, e.country, e.city, e.tenant.name if e.tenant else None,
+            ]))
+            if not _matches_by_word_prefix(haystack, q):
+                continue
+        matches.append(e)
     return [_serialize(e) for e in matches]
 
 
