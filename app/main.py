@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser
-from app.routers import api, auth as auth_router, badges, cedula, events, staff, stats, tenants
+from app.routers import api, auth as auth_router, badges, cedula, events, parametros, staff, stats, tenants
 from app.auth import ROLE_HIERARCHY, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -56,6 +56,7 @@ app.include_router(tenants.router, prefix="/api")
 app.include_router(badges.router, prefix="/api")
 app.include_router(cedula.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
+app.include_router(parametros.router, prefix="/api")
 
 
 def _page_staff(request: Request, db: Session):
@@ -163,12 +164,20 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     # rompa si algún rótulo llegara a contener literalmente "</script>" (2026-09-15, Sprint 2: lo
     # necesita badge_editor.html para poblar el selector de variables con los opcionales reales).
     optional_labels_json = json.dumps(optional_labels).replace("</", "<\\/")
+    # Parámetros del Evento (2026-09-16): config real (o default) de cada campo configurable de
+    # este evento, calculado acá mismo (no vía fetch aparte) para que el alta manual/edición y el
+    # cálculo de estadísticas por defecto lo tengan disponible sin un viaje de red extra — mismo
+    # patrón que optional_labels_json arriba.
+    field_configs = parametros.field_configs_for_event(db, event)
+    field_configs_json = json.dumps(field_configs).replace("</", "<\\/")
     context = {
         "staff_name": staff_user.full_name or staff_user.username,
         "staff_role": staff_user.role,
         "event": event,
         "optional_labels": optional_labels,
         "optional_labels_json": optional_labels_json,
+        "field_configs": field_configs,
+        "field_configs_json": field_configs_json,
     }
     if extra_context:
         context.update(extra_context)
@@ -223,6 +232,14 @@ async def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depe
     que la contiene) y solo se ve el contenido real."""
     embed = request.query_params.get("embed") == "1"
     return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", exclude_roles=["digitador"], extra_context={"embed": embed})
+
+
+@app.get("/kiosk/{event_id}/parametros")
+async def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Parámetros del Evento (Sprint 2.2, 2026-09-16, pedido explícito) — coordinador+ define por
+    campo si es obligatorio, qué tipo de control usar y si debe generar estadística sola al
+    entrar a Estadísticas. Mismo mínimo de rol que Adjuntar Base de Datos/Usuarios del Evento."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/escarapela")

@@ -483,6 +483,28 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 20. Parámetros del Evento (campos configurables + obligatorios + estadísticas por defecto)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| PARAM-01 ✅ | Tarjeta nueva visible para coordinador+ | Iniciar sesión como `coordinador` o `admin`, entrar a `/kiosk/{event_id}` | Aparece la tarjeta "⚙️ Parámetros del Evento" junto a las demás |
+| PARAM-02 ❌ | `digitador` no puede entrar a la página | Iniciar sesión como `digitador`, ir a `/kiosk/{event_id}/parametros` por URL directa | Redirige (302) a `/kiosk/{event_id}` — mismo mínimo que Adjuntar Base/Usuarios del Evento |
+| PARAM-03 ✅ | `GET field-configs` trae las 5 fijas con valores por defecto | Sin haber guardado nada aún, llamar `GET /api/events/{id}/field-configs` | Devuelve `role/company/phone/email/opt_1` (+ cada `opcional_N` rotulado), todos `required=false`, `field_type="text_short"`, `default_stat_enabled=false` |
+| PARAM-04 ✅ | `PUT field-configs/{key}` guarda una config | Marcar "Cargo" obligatorio, tipo "Lista desplegable", con 2+ opciones, y guardar | 200; una recarga de la página trae esa misma config (obligatorio marcado, tipo y opciones correctas) |
+| PARAM-05 ❌ | Lista desplegable sin opciones se rechaza | `PUT` con `field_type="select"` y `options=[]` | 400, pidiendo al menos una opción |
+| PARAM-06 ❌ | `field_key` que no existe se rechaza | `PUT /api/events/{id}/field-configs/no_existe` | 400 — ese campo no es configurable en este evento |
+| PARAM-07 ❌ | `digitador` no puede leer ni escribir field-configs | Como `digitador`, llamar `GET`/`PUT` sobre `/api/events/{id}/field-configs` directo | 403 en ambos |
+| PARAM-08 ❌ | Alta manual rechaza si falta un campo obligatorio | Con "Cargo" marcado obligatorio, enviar `POST /api/register` sin `role` | 400 listando el campo faltante, no se crea el `User` |
+| PARAM-09 ✅ | Alta manual acepta con el campo completo | Repetir PARAM-08 enviando `role` con un valor válido (una de las opciones configuradas, si es lista desplegable) | 200, persona registrada normal |
+| PARAM-10 ❌ | Editar no puede vaciar un campo obligatorio | `PATCH /api/users/{id}` intentando dejar `role=""` en un campo marcado obligatorio | 400, no se guarda el cambio |
+| PARAM-11 ✅ | `bulk_register` NO exige los obligatorios de Parámetros | Cargar un Excel donde algunas filas no traen valor para un campo marcado obligatorio en Parámetros | Se procesa igual que siempre (tolerante, sin bloquear por esto) — decisión de alcance explícita, ver CLAUDE.md |
+| PARAM-12 ❌ | El modal de alta bloquea guardar con un campo obligatorio vacío | Abrir "Registrar nuevo" con un campo `select` obligatorio configurado, dejarlo sin elegir, dar clic en "Guardar Perfil" | El navegador bloquea el envío (validación nativa), no se manda ninguna petición a `/api/register` |
+| PARAM-13 ❌ | El modal de Editar del Directorio bloquea guardar igual | Abrir "Editar" de una persona, vaciar un campo marcado obligatorio, dar clic en "Guardar cambios" | No se manda el `PATCH` — se bloquea antes, vía `reportValidity()` |
+| PARAM-14 ✅ | Una variable con "Generar estadística" aparece sola en Estadísticas | Marcar una variable con `default_stat_enabled` y un tipo de gráfico, entrar a `/kiosk/{event_id}/estadisticas` | La tarjeta de esa variable aparece de una, sin usar "➕ Agregar variable" |
+| PARAM-15 ✅ | El tipo de gráfico configurado se resuelve o cae a uno válido | Configurar "Circular" para una variable que termina siendo categórica (dato real) | El gráfico se dibuja como circular; si el tipo configurado no aplicara al dato real detectado, cae al primero válido para ese tipo sin romper el gráfico |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -506,6 +528,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Feedback: librería global, colores de gráficos, responsive, contexto | 9 |
 | Feedback 2: fondo del editor, auto-impresión, orden de columnas, Estadísticas | 9 |
 | Feedback 3: pestañas de cliente, formato de roster, transición de estado | 8 |
-| **Total** | **263** |
+| Parámetros del Evento (campos configurables, obligatorios, estadísticas por defecto) | 15 |
+| **Total** | **278** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

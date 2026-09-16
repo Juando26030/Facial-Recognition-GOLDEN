@@ -58,7 +58,8 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+<script src="{{ url_for('static', path='js/field-render.js') }}"></script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
@@ -277,44 +278,30 @@
                             <label>Número de ID (Cédula)</label>
                             <input type="text" name="id" id="manualIdField" required>
                         </div>
-                        <div class="badge-input-group">
-                            <label>Cargo</label>
-                            <input type="text" name="role">
-                        </div>
                     </div>
 
-                    <div class="badge-input-row">
-                        <div class="badge-input-group">
-                            <label>Empresa</label>
-                            <input type="text" name="company">
-                        </div>
-                        <div class="badge-input-group">
-                            <label>Teléfono</label>
-                            <input type="text" name="phone">
-                        </div>
-                    </div>
-
-                    <div class="badge-input-row">
-                        <div class="badge-input-group">
-                            <label>Correo Electrónico</label>
-                            <input type="email" name="email">
-                        </div>
-                        <div class="badge-input-group">
-                            <label>Tipo de Asistente</label>
-                            <input type="text" name="opt_1">
-                        </div>
-                    </div>
-
-                    <!-- Campos opcionales dinámicos (hasta 30, ver CLAUDE.md): uno por cada
-                         "opcional_N" que este evento ya tiene rotulado (Event.optional_field_labels,
-                         ej. porque se subió un Excel con esas columnas), más los que el operador
-                         agregue aquí mismo sobre la marcha con el botón de abajo — mismos campos que
-                         tendría el Excel de este evento, se use o no se use un Excel en absoluto. -->
-                    <div id="optionalFieldsContainer">
-                        {% for key, label in optional_labels %}
-                        <div class="badge-input-group" data-opt-field="{{ key }}" style="margin-top:0.8rem;">
-                            <label>{{ label }}</label>
-                            <input type="text" name="{{ key }}">
+                    <!-- Campos configurables (Parámetros del Evento, 2026-09-16): las 5 variables
+                         fijas (Cargo/Empresa/Teléfono/Correo/Tipo de Asistente) + cada "opcional_N"
+                         ya rotulado (Event.optional_field_labels) — cada uno con el tipo de control,
+                         obligatoriedad y opciones que se hayan definido en
+                         /kiosk/{{ event.id }}/parametros (por defecto: texto corto, opcional). Más
+                         los que el operador agregue aquí mismo sobre la marcha con el botón de abajo. -->
+                    <div id="dynamicFieldsContainer">
+                        {% for cfg in field_configs %}
+                        <div class="badge-input-group" data-field-key="{{ cfg.key }}" style="margin-top:0.8rem;">
+                            <label>{{ cfg.label }}{% if cfg.required %} *{% endif %}</label>
+                            {% if cfg.field_type == "text_long" %}
+                            <textarea name="{{ cfg.key }}" rows="3" {% if cfg.required %}required{% endif %} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem; font-family:inherit;"></textarea>
+                            {% elif cfg.field_type == "select" %}
+                            <select name="{{ cfg.key }}" {% if cfg.required %}required{% endif %}>
+                                <option value="">Selecciona…</option>
+                                {% for opt in cfg.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+                            </select>
+                            {% elif cfg.field_type == "boolean" %}
+                            <input type="checkbox" name="{{ cfg.key }}" value="true" {% if cfg.required %}required{% endif %} style="width:18px; height:18px;">
+                            {% else %}
+                            <input type="{{ 'email' if cfg.key == 'email' else 'text' }}" name="{{ cfg.key }}" {% if cfg.required %}required{% endif %}>
+                            {% endif %}
                         </div>
                         {% endfor %}
                     </div>
@@ -534,7 +521,7 @@
        campo nuevo pide su nombre ahí mismo (mismo modal que bulk_register) y ese nombre se manda
        junto con el registro para que quede guardado en Event.optional_field_labels — no hace
        falta un viaje NEEDS_LABELS aparte porque ya lo preguntamos al agregar el campo. */
-    const container = document.getElementById('optionalFieldsContainer');
+    const container = document.getElementById('dynamicFieldsContainer');
     const addBtn = document.getElementById('addOptionalFieldBtn');
     if (!container || !addBtn) return;
 
@@ -542,7 +529,7 @@
 
     function usedSlots() {
         const used = new Set();
-        container.querySelectorAll('input[name^="opcional_"]').forEach(inp => used.add(inp.name));
+        container.querySelectorAll('[name^="opcional_"]').forEach(el => used.add(el.name));
         return used;
     }
 
@@ -567,7 +554,7 @@
 
         const group = document.createElement('div');
         group.className = 'badge-input-group';
-        group.dataset.optField = key;
+        group.dataset.fieldKey = key;
         group.style.marginTop = '0.8rem';
         const labelEl = document.createElement('label');
         labelEl.innerText = label;

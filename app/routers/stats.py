@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_event_for_staff, require_role_or_client
 from app.database import get_db
 from app.models import AccessLog, EventAttendee, StaffUser, User
+from app.routers.parametros import field_configs_for_event
 
 router = APIRouter()
 
@@ -64,7 +65,19 @@ async def list_stats_variables(
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
         variables.append((key, label))
-    return [{"key": k, "label": label} for k, label in variables]
+
+    # Parámetros del Evento (2026-09-16): "status" no es un campo configurable (no vive en
+    # field_configs_for_event, ver parametros.py) — nunca tiene estadística por defecto.
+    defaults_by_key = {cfg["key"]: cfg for cfg in field_configs_for_event(db, event)}
+    result = []
+    for k, label in variables:
+        cfg = defaults_by_key.get(k)
+        result.append({
+            "key": k, "label": label,
+            "default_stat_enabled": bool(cfg and cfg["default_stat_enabled"]),
+            "default_chart_type": cfg["default_chart_type"] if cfg else None,
+        })
+    return result
 
 
 @router.get("/events/{event_id}/stats/data")

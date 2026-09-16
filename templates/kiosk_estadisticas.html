@@ -116,11 +116,26 @@
         emptyMsg.style.display = container.children.length ? 'none' : 'block';
     }
 
+    /* "histogram" (una de las 4 opciones que ofrece Parámetros del Evento al configurar, ver
+       kiosk_parametros.html) no es un tipo de Chart.js aparte — para datos numéricos, el propio
+       "Barras" YA es el histograma (ver CHART_TYPES_BY_DATA_TYPE.numeric). Si el tipo configurado
+       no aplica al tipo de dato real detectado (ej. se configuró "Circular" pero los datos
+       resultaron numéricos), cae al primero válido para ese tipo — nunca rompe el gráfico. */
+    function resolveChartType(requested, dataType) {
+        const valid = (CHART_TYPES_BY_DATA_TYPE[dataType] || CHART_TYPES_BY_DATA_TYPE.categorical).map(o => o.value);
+        const normalized = requested === 'histogram' ? 'bar' : requested;
+        return valid.includes(normalized) ? normalized : valid[0];
+    }
+
     async function loadVariables() {
         try {
             const res = await fetch(`/api/events/${window.EVENT_ID}/stats/variables`);
             const list = await res.json();
             variableSelect.innerHTML = list.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
+            // Parámetros del Evento (2026-09-16): las variables marcadas "Generar estadística"
+            // aparecen solas acá, sin tener que pedirlas a mano — el selector/botón de arriba
+            // sigue funcionando igual para agregar cualquier otra.
+            list.filter(v => v.default_stat_enabled).forEach(v => addVariableChart(v.key, v.label, v.default_chart_type));
         } catch (e) {
             showToast('No se pudieron cargar las variables', 'error');
         }
@@ -154,7 +169,7 @@
         return { type: chartType, ...common };
     }
 
-    async function addVariableChart(key, label) {
+    async function addVariableChart(key, label, preferredChartType) {
         if (document.getElementById(`stats-card-${key}`)) {
             showToast('Esa variable ya está agregada', 'error');
             return;
@@ -203,6 +218,10 @@
             function render(chartType) {
                 if (chartInstances[key]) chartInstances[key].destroy();
                 chartInstances[key] = new Chart(canvas, buildChartConfig(chartType, result.type, result.buckets));
+            }
+
+            if (preferredChartType) {
+                typeSelect.value = resolveChartType(preferredChartType, result.type);
             }
 
             loadingMsg.style.display = 'none';

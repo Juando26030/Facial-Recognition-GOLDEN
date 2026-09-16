@@ -17,6 +17,26 @@ from app.models import User, AccessLog, EventAttendee, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_or_client
+from app.routers import parametros
+
+
+def _missing_required_fields(field_configs: list, values: dict) -> list:
+    """Nombres (rótulos) de los campos marcados obligatorios en Parámetros del Evento que no
+    vienen con valor en `values` — usado por manual_register y update_user (PATCH) para no dejar
+    guardar un perfil incompleto. NO se usa en bulk_register (ver parametros.py, decisión de
+    alcance). Un campo booleano "obligatorio" exige estar marcado (true), no solo presente."""
+    missing = []
+    for cfg in field_configs:
+        if not cfg["required"]:
+            continue
+        value = values.get(cfg["key"])
+        if cfg["field_type"] == "boolean":
+            ok = str(value).strip().lower() in ("true", "1", "si", "sí")
+        else:
+            ok = value is not None and str(value).strip() != ""
+        if not ok:
+            missing.append(cfg["label"])
+    return missing
 
 
 def _read_roster_rows(filename: str, content: bytes):
@@ -338,6 +358,16 @@ async def update_user(
         for key, value in data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
+
+        field_configs = parametros.field_configs_for_event(db, event)
+        final_values = {
+            "role": user.role, "company": user.company, "phone": user.phone,
+            "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
+        }
+        missing = _missing_required_fields(field_configs, final_values)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
+
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado",
             event_id=event.id, registered_by_staff_id=staff.id,
@@ -488,6 +518,12 @@ async def manual_register(
         _upsert_attendee(db, event.id, existing.id, event.tenant_id)
         db.commit()
         return {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
+
+    field_configs = parametros.field_configs_for_event(db, event)
+    final_values = {"role": role, "company": company, "phone": phone, "email": email, "opt_1": opt_1, **extras}
+    missing = _missing_required_fields(field_configs, final_values)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
 
     face_enc_json = None
     img_array = None

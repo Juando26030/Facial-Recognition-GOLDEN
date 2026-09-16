@@ -203,6 +203,43 @@ class BadgeTemplate(Base):
         self.elements_json = json.dumps(data) if data else None
 
 
+FIELD_TYPES = ("text_short", "text_long", "select", "boolean")
+CHART_TYPES = ("bar", "pie", "histogram", "line")
+
+
+class EventFieldConfig(Base):
+    """Parámetros del Evento (Sprint 2.2, 2026-09-16) — cómo debe comportarse UN campo del alta
+    manual/edición para ESTE evento: si es obligatorio, qué tipo de control usar (texto
+    corto/largo, lista desplegable con sus propias opciones, booleano), y si debe generar
+    estadística sola al entrar a Estadísticas (y con qué tipo de gráfico). `field_key` es
+    `role`/`company`/`phone`/`email`/`opt_1` o un `opcional_N` ya rotulado en
+    `Event.optional_field_labels` — la identidad (`id`/`first_name`/`last_name`) queda afuera a
+    propósito, siempre texto corto obligatorio, no configurable. Sin fila para un campo dado =
+    valores por defecto (no obligatorio, texto corto, sin estadística por defecto) — ver
+    `app/routers/parametros.py: _field_configs_for_event` para el merge con esos defaults."""
+    __tablename__ = 'event_field_configs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    field_key = Column(String, nullable=False)
+    required = Column(Boolean, default=False, nullable=False)
+    field_type = Column(String, nullable=False, default='text_short')
+    options_json = Column(Text)  # solo con sentido si field_type == 'select'
+    default_stat_enabled = Column(Boolean, default=False, nullable=False)
+    default_chart_type = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('event_id', 'field_key', name='uq_event_field_config'),)
+
+    event = relationship("Event")
+
+    def get_options(self) -> list:
+        return json.loads(self.options_json) if self.options_json else []
+
+    def set_options(self, data: list) -> None:
+        self.options_json = json.dumps(data) if data else None
+
+
 class SavedBadgeTemplate(Base):
     """Librería de plantillas reusables, por TENANT (no por evento) — para guardar un diseño que
     gustó y poder importarlo como punto de partida en otro evento del mismo cliente. Importar

@@ -74,7 +74,11 @@
      confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
   function buildEditModal(user) {
-    const optionalVars = window.OPTIONAL_VARIABLES || [];
+    // Parámetros del Evento (2026-09-16): las 5 variables fijas + cada opcional_N ya rotulado,
+    // con el tipo de control/obligatoriedad/opciones que se haya definido en
+    // /kiosk/{event_id}/parametros — mismo FIELD_CONFIGS que usa el alta manual (ver
+    // kiosk_registro.html), para que Editar y Registrar nuevo se comporten igual.
+    const fieldConfigs = window.FIELD_CONFIGS || [];
     const extras = user.extra_fields || {};
 
     function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
@@ -84,8 +88,18 @@
         <input type="${type || 'text'}" name="${name}" value="${esc(value)}" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
       </div>`;
     }
+    function configuredValueOf(key) {
+      return Object.prototype.hasOwnProperty.call(user, key) ? user[key] : extras[key];
+    }
+    function configuredFieldRow(cfg) {
+      const control = window.FieldRender.renderControl(cfg, configuredValueOf(cfg.key));
+      return `<div style="margin-bottom:0.8rem;">
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(cfg.label)}${cfg.required ? ' *' : ''}</label>
+        ${control}
+      </div>`;
+    }
 
-    const optionalHtml = optionalVars.map(([key, label]) => fieldRow(label, key, extras[key] || '')).join('');
+    const configuredHtml = fieldConfigs.map(configuredFieldRow).join('');
     const isRegistered = user.status !== 'No registrado';
 
     const overlay = document.createElement('div');
@@ -94,28 +108,21 @@
     box.style.cssText = 'background:white; border-radius:16px; padding:1.8rem; max-width:520px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif); max-height:90vh; overflow:auto;';
     box.innerHTML = `
       <h4 style="margin-top:0; color:var(--golden-dark);">Editar persona</h4>
-      <div style="display:flex; gap:0.8rem;">
-        <div style="flex:1;">${fieldRow('Nombres', 'first_name', user.first_name)}</div>
-        <div style="flex:1;">${fieldRow('Apellidos', 'last_name', user.last_name)}</div>
-      </div>
-      <div style="margin-bottom:0.8rem;">
-        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Cédula</label>
-        <input type="text" value="${esc(user.id)}" disabled style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:0.95rem; background:#f5f5f5; color:#888;">
-      </div>
-      <div style="display:flex; gap:0.8rem;">
-        <div style="flex:1;">${fieldRow('Cargo', 'role', user.role)}</div>
-        <div style="flex:1;">${fieldRow('Empresa', 'company', user.company)}</div>
-      </div>
-      <div style="display:flex; gap:0.8rem;">
-        <div style="flex:1;">${fieldRow('Teléfono', 'phone', user.phone)}</div>
-        <div style="flex:1;">${fieldRow('Correo', 'email', user.email, 'email')}</div>
-      </div>
-      ${fieldRow('Tipo de Asistente', 'opt_1', user.opt_1)}
-      ${optionalHtml}
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
-        <button type="button" id="editModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-        <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar cambios</button>
-      </div>
+      <form id="editModalForm">
+        <div style="display:flex; gap:0.8rem;">
+          <div style="flex:1;">${fieldRow('Nombres', 'first_name', user.first_name)}</div>
+          <div style="flex:1;">${fieldRow('Apellidos', 'last_name', user.last_name)}</div>
+        </div>
+        <div style="margin-bottom:0.8rem;">
+          <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Cédula</label>
+          <input type="text" value="${esc(user.id)}" disabled style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:0.95rem; background:#f5f5f5; color:#888;">
+        </div>
+        ${configuredHtml}
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+          <button type="button" id="editModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
+          <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar cambios</button>
+        </div>
+      </form>
       ${isAdmin ? `
       <hr style="margin:1.2rem 0; border:none; border-top:1px solid #eee;">
       <div style="margin-bottom:0.8rem;">
@@ -139,14 +146,22 @@
     box.querySelector('#editModalCancel').addEventListener('click', close);
 
     box.querySelector('#editModalSave').addEventListener('click', async () => {
+      const form = box.querySelector('#editModalForm');
+      if (!form.reportValidity()) return;
+
       const saveBtn = box.querySelector('#editModalSave');
-      const val = (name) => box.querySelector(`[name="${name}"]`).value.trim();
-      const payload = {
-        first_name: val('first_name'), last_name: val('last_name'), role: val('role'),
-        company: val('company'), phone: val('phone'), email: val('email'), opt_1: val('opt_1'),
+      const val = (name) => {
+        const el = form.querySelector(`[name="${name}"]`);
+        if (!el) return '';
+        if (el.type === 'checkbox') return el.checked ? 'true' : '';
+        return el.value.trim();
       };
+      const payload = { first_name: val('first_name'), last_name: val('last_name') };
       const newExtras = {};
-      optionalVars.forEach(([key]) => { newExtras[key] = val(key); });
+      fieldConfigs.forEach((cfg) => {
+        if (Object.prototype.hasOwnProperty.call(user, cfg.key)) payload[cfg.key] = val(cfg.key);
+        else newExtras[cfg.key] = val(cfg.key);
+      });
       payload.extra_fields = newExtras;
 
       saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
@@ -159,7 +174,8 @@
           close();
           if (window.directorySearch) window.directorySearch.reload();
         } else {
-          showToast('Error al guardar cambios', 'error');
+          const data = await res.json().catch(() => ({}));
+          showToast(data.detail || 'Error al guardar cambios', 'error');
           saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
         }
       } catch (e) {
