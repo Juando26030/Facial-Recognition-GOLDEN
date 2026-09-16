@@ -109,7 +109,6 @@
 window.EVENT_ID = {{ event.id }};
 window.STAFF_ROLE = "{{ staff_role }}";
 window.EVENT_FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }};
-window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }};
 window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 </script>
 
@@ -164,9 +163,6 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       </div>
 
       <div class="toolbar-actions">
-        {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <button type="button" class="tb-btn ghost" id="autoPrintBtn"></button>
-        {% endif %}
         <button type="button" class="tb-btn ghost" id="importBtn">📥 Importar plantilla</button>
         <button type="button" class="tb-btn ghost" id="saveAsBtn">💾 Guardar como plantilla</button>
         <button type="button" class="tb-btn primary" id="saveBtn">Guardar cambios</button>
@@ -283,8 +279,6 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       document.getElementById('bgColor').value = template.background_value || '#ffffff';
     }
     toggleBgInputs();
-    const autoBtn = document.getElementById('autoPrintBtn');
-    if (autoBtn) updateAutoPrintBtn();
   }
 
   function toggleBgInputs() {
@@ -401,27 +395,6 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     return data.storage_path;
   }
 
-  function updateAutoPrintBtn() {
-    const btn = document.getElementById('autoPrintBtn');
-    if (!btn) return;
-    btn.innerText = window.EVENT_AUTO_PRINT ? '🖨️ Auto-impresión: ACTIVADA' : '🖨️ Auto-impresión: apagada';
-    btn.style.background = window.EVENT_AUTO_PRINT ? '#28a745' : '#f0f0f0';
-    btn.style.color = window.EVENT_AUTO_PRINT ? 'white' : 'var(--golden-dark)';
-  }
-
-  async function toggleAutoPrint() {
-    const next = !window.EVENT_AUTO_PRINT;
-    const patchRes = await fetch(`/api/events/${window.EVENT_ID}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auto_print_badge: next }),
-    });
-    if (patchRes.ok) {
-      window.EVENT_AUTO_PRINT = next;
-      updateAutoPrintBtn();
-      showToast(next ? 'Auto-impresión activada para este evento' : 'Auto-impresión desactivada', 'success');
-    } else {
-      showToast('No se pudo cambiar la auto-impresión', 'error');
-    }
-  }
 
   // ---------- Render del lienzo ----------
 
@@ -706,7 +679,27 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     wEl.value = h; hEl.value = w;
   });
 
-  document.getElementById('bgType').addEventListener('change', toggleBgInputs);
+  /* Bug real (2026-09-16, pedido explícito): elegir "Color sólido" en el desplegable no hacía
+     NADA hasta guardar (solo `toggleBgInputs()` cambiaba qué input se ve, nunca actualizaba
+     `template.background_type/value` ni redibujaba) — así que después de haber puesto una
+     imagen de fondo, volver a "Color sólido" dejaba la imagen visible en el lienzo hasta
+     guardar, y a veces ni con eso porque el color-picker tampoco tenía listener propio. Ahora
+     los tres controles de fondo actualizan el modelo y redibujan al instante, igual que ya
+     hacía la subida de imagen. */
+  document.getElementById('bgType').addEventListener('change', () => {
+    toggleBgInputs();
+    template.background_type = document.getElementById('bgType').value;
+    if (template.background_type === 'color') {
+      template.background_value = document.getElementById('bgColor').value || '#ffffff';
+    }
+    renderCanvas();
+  });
+  document.getElementById('bgColor').addEventListener('input', (e) => {
+    if (template.background_type === 'color') {
+      template.background_value = e.target.value;
+      renderCanvas();
+    }
+  });
   document.getElementById('bgImageInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -724,9 +717,6 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   document.getElementById('saveAsBtn').addEventListener('click', saveAsTemplate);
   document.getElementById('importBtn').addEventListener('click', openImportModal);
   document.getElementById('importCancelBtn').addEventListener('click', () => { document.getElementById('importModal').style.display = 'none'; });
-
-  const autoPrintBtnEl = document.getElementById('autoPrintBtn');
-  if (autoPrintBtnEl) autoPrintBtnEl.addEventListener('click', toggleAutoPrint);
 
   loadTemplate();
 })();

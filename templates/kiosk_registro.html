@@ -91,11 +91,14 @@
 
       <div class="app-container">
         {% if staff_role == "cliente" %}
-        <!-- PESTAÑA: ESTADÍSTICAS (mockeada, pendiente de diseño real) -->
+        <!-- PESTAÑA: ESTADÍSTICAS — habilitada para cliente (2026-09-16, pedido explícito), lleva
+             a la misma página real de Estadísticas que usan coordinador+ (gráficos + exportar
+             reporte), no un placeholder aparte. -->
         <div id="estadisticas" class="section active">
             <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
                 <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Estadísticas del evento</h3>
-                <p style="color: #888;">Próximamente. Esta sección todavía no está diseñada — placeholder mientras se define qué métricas mostrar.</p>
+                <p style="color: #888; margin-bottom: 1.5rem;">Consulta los gráficos por variable y exporta el reporte de este evento.</p>
+                <a href="/kiosk/{{ event.id }}/estadisticas" class="golden-btn golden-btn-primary" style="width:auto; display:inline-block; padding:1rem 2.5rem; text-decoration:none;">📊 Ver Estadísticas</a>
             </div>
         </div>
 
@@ -120,7 +123,7 @@
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
+                            <th>Acción</th><th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -207,8 +210,9 @@
                             {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>➕ Registrar nuevo</button>
                 </div>
                 {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-                <div style="margin-bottom:1rem;">
+                <div style="margin-bottom:1rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
                     <button type="button" id="autoRegisterBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
+                    <button type="button" id="autoPrintBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
                 </div>
                 {% endif %}
                 <div class="directory-search-bar">
@@ -240,7 +244,7 @@
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
+                            <th>Acción</th><th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -406,6 +410,34 @@
                 showToast(next ? 'Modo autoregistro activado para este evento' : 'Modo autoregistro desactivado', 'success');
             } else {
                 showToast('No se pudo cambiar el modo autoregistro', 'error');
+            }
+        });
+    }
+
+    /* Switch "Auto-impresión" (Historia 2.2) — movido acá desde el editor de escarapelas
+       (2026-09-16, pedido explícito: vive mejor junto al de "Modo autoregistro", ambos son
+       comportamiento de Registro, no de diseño de la escarapela). Mismo endpoint/campo de
+       siempre (Event.auto_print_badge vía PATCH /api/events/{id}), solo cambió dónde vive el
+       botón. */
+    const autoPrintBtn = document.getElementById('autoPrintBtn');
+    if (autoPrintBtn) {
+        function updateAutoPrintBtn() {
+            autoPrintBtn.innerText = window.EVENT_AUTO_PRINT ? '🖨️ Auto-impresión: ACTIVADA' : '🖨️ Auto-impresión: apagada';
+            autoPrintBtn.style.background = window.EVENT_AUTO_PRINT ? '#28a745' : '#f0f0f0';
+            autoPrintBtn.style.color = window.EVENT_AUTO_PRINT ? 'white' : 'var(--golden-dark)';
+        }
+        updateAutoPrintBtn();
+        autoPrintBtn.addEventListener('click', async () => {
+            const next = !window.EVENT_AUTO_PRINT;
+            const res = await fetch(`/api/events/${window.EVENT_ID}`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auto_print_badge: next }),
+            });
+            if (res.ok) {
+                window.EVENT_AUTO_PRINT = next;
+                updateAutoPrintBtn();
+                showToast(next ? 'Auto-impresión activada para este evento' : 'Auto-impresión desactivada', 'success');
+            } else {
+                showToast('No se pudo cambiar la auto-impresión', 'error');
             }
         });
     }

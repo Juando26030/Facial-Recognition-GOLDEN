@@ -16,7 +16,7 @@ from app.database import get_db
 from app.models import User, AccessLog, EventAttendee, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role
+from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_or_client
 
 
 def _read_roster_rows(filename: str, content: bytes):
@@ -745,7 +745,7 @@ async def bulk_register(
 
 @router.get("/report")
 async def download_report(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador"))
 ):
     event = get_event_for_staff(event_id, db, staff)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")

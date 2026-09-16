@@ -42,6 +42,22 @@ def require_role(minimum_role: str):
     return checker
 
 
+def require_role_or_client(minimum_role: str):
+    """Como require_role, pero además deja pasar siempre a 'cliente' aunque quede por debajo del
+    mínimo en STAFF_ROLES — pensado para vistas de solo lectura (Estadísticas, 2026-09-16,
+    pedido explícito: el cliente asignado a un evento debe poder ver sus estadísticas) donde
+    'cliente' sí debe entrar pero 'digitador' (que en la jerarquía queda POR ENCIMA de 'cliente')
+    sigue sin poder, porque no le corresponde ver reportes."""
+    minimum_level = ROLE_HIERARCHY[minimum_role]
+
+    def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
+        if staff.role == "cliente" or ROLE_HIERARCHY[staff.role] >= minimum_level:
+            return staff
+        raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
+
+    return checker
+
+
 def require_super_admin(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
     if staff.role != "super_admin":
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede hacer esto")

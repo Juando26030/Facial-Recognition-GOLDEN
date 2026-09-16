@@ -9,7 +9,7 @@ from collections import Counter
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import get_event_for_staff, require_role
+from app.auth import get_event_for_staff, require_role_or_client
 from app.database import get_db
 from app.models import AccessLog, EventAttendee, StaffUser, User
 
@@ -57,7 +57,7 @@ def _value_of(db: Session, event_id: int, user: User, variable: str):
 
 @router.get("/events/{event_id}/stats/variables")
 async def list_stats_variables(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
     variables = list(_FIXED_VARIABLES)
@@ -70,7 +70,7 @@ async def list_stats_variables(
 @router.get("/events/{event_id}/stats/data")
 async def get_stats_data(
     event_id: int, variable: str, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
     valid_keys = {k for k, _ in _FIXED_VARIABLES} | set(event.get_optional_labels().keys())

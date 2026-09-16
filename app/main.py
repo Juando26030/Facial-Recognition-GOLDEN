@@ -131,7 +131,7 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
     })
 
 
-def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_name: str, min_role: str = None, extra_context: dict = None):
+def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_name: str, min_role: str = None, extra_context: dict = None, exclude_roles: list = None):
     """Boilerplate compartido por cada método de registro: mismo chequeo de acceso
     (get_event_for_staff), mismo contexto de template. Cada método solo elige su propio
     template_name. `min_role` es un segundo chequeo opcional para páginas que además exigen un
@@ -147,6 +147,11 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     except HTTPException:
         return RedirectResponse("/", status_code=302)
     if min_role and ROLE_HIERARCHY.get(staff_user.role, -1) < ROLE_HIERARCHY[min_role]:
+        return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
+    # exclude_roles (2026-09-16): para vistas que NO siguen la jerarquía de min_role — ej.
+    # Estadísticas la puede ver 'cliente' (que en STAFF_ROLES queda por debajo de 'digitador')
+    # pero NO 'digitador'; un simple mínimo jerárquico no puede expresar eso.
+    if exclude_roles and staff_user.role in exclude_roles:
         return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
     # Lista (clave, rótulo) ordenada numéricamente (no alfabéticamente — "opcional_10" antes que
     # "opcional_2" si se ordenara como texto) de los campos opcionales que este evento ya tiene
@@ -206,9 +211,13 @@ async def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(
 @app.get("/kiosk/{event_id}/estadisticas")
 async def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Reporte + gráficos del evento (Sprint 2.2 Fase B, 2026-09-16) — antes vivía como pestaña
-    "Exportar Reporte" dentro de /kiosk/{event_id}/registro; se mueve a su propia ruta. Por ahora
-    solo trae el export de siempre — el módulo de gráficos por variable llega en la Fase D."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", min_role="coordinador")
+    "Exportar Reporte" dentro de /kiosk/{event_id}/registro; se mueve a su propia ruta.
+    Habilitado también para 'cliente' (2026-09-16, pedido explícito: el cliente asignado a un
+    evento debe poder ver sus estadísticas) — 'digitador' sigue sin acceso, igual que antes con
+    "Exportar Reporte" (no le corresponde ver reportes, solo operar el registro). No se puede
+    expresar con min_role (jerárquico): 'cliente' queda por debajo de 'digitador' en STAFF_ROLES,
+    así que se excluye a 'digitador' explícitamente en vez de exigir un mínimo."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", exclude_roles=["digitador"])
 
 
 @app.get("/kiosk/{event_id}/escarapela")

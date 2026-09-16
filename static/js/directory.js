@@ -249,17 +249,9 @@
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
 
-    FIELDS_ORDER.forEach(field => {
-      const td = document.createElement('td');
-      td.innerText = user[field] || '';
-      tr.appendChild(td);
-    });
-
-    const statusTd = document.createElement('td');
-    statusTd.innerText = user.status;
-    statusTd.style.fontWeight = 'bold';
-    tr.appendChild(statusTd);
-
+    /* La columna de Acción va PRIMERO (2026-09-16, pedido explícito: antes al final, obligaba a
+       desplazarse hasta el final de la fila para editar/imprimir). El resto de columnas
+       (ID/Nombres/Apellidos/Tipo Asistente/Estado) siguen en el mismo orden de siempre. */
     const actionTd = document.createElement('td');
     actionTd.className = 'action-cell';
 
@@ -291,6 +283,18 @@
     }
 
     tr.appendChild(actionTd);
+
+    FIELDS_ORDER.forEach(field => {
+      const td = document.createElement('td');
+      td.innerText = user[field] || '';
+      tr.appendChild(td);
+    });
+
+    const statusTd = document.createElement('td');
+    statusTd.innerText = user.status;
+    statusTd.style.fontWeight = 'bold';
+    tr.appendChild(statusTd);
+
     return tr;
   }
 
