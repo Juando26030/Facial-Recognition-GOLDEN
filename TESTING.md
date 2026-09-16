@@ -462,9 +462,24 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | FB2-04 ✅ | "Auto-impresión" vive en Registro, no en Escarapelas | Abrir el editor de escarapelas | Ya no aparece el botón de auto-impresión ahí — abrir la pestaña "Registro" en su lugar |
 | FB2-05 ✅ | Auto-impresión y Modo autoregistro juntos | Ver la pestaña "Registro" como `coordinador`+ | Ambos botones aparecen uno junto al otro, cada uno con su propio estado (activado/apagado) y funcionando de forma independiente |
 | FB2-06 ✅ | Columna "Acción" es la primera | Ver la tabla del Directorio | El orden de columnas es Acción, ID, Nombres, Apellidos, Tipo Asistente, Estado |
-| FB2-07 ✅ | Estadísticas accesible para `cliente` | Iniciar sesión como `cliente` asignado a un evento, ir a la pestaña "Estadísticas" | Ya no dice "Próximamente" — aparece un botón "Ver Estadísticas" que lleva a la página real con gráficos y exportar reporte, igual que ve un coordinador |
+| FB2-07 ✅ | Estadísticas accesible para `cliente` | Iniciar sesión como `cliente` asignado a un evento, ir a la pestaña "Estadísticas" | Ya no dice "Próximamente" — muestra los gráficos reales y "Exportar Base de Datos" incrustados ahí mismo (`<iframe>`), igual que ve un coordinador |
 | FB2-08 ❌ | `digitador` sigue sin acceso a Estadísticas | Iniciar sesión como `digitador`, intentar `/kiosk/{event_id}/estadisticas` por URL directa, y los endpoints `/api/events/{id}/stats/*` y `/api/report` directo | Redirige la página (302) y da 403 en los tres endpoints — el acceso de `cliente` no le abrió la puerta a `digitador` |
 | FB2-09 ℹ️ | El 503 al escanear cédula por foto sin Tesseract instalado no es un bug | Usar "Escanear foto"/"Usar cámara" para la cédula nueva en un entorno sin el binario de Tesseract | 503 con el mensaje ya documentado — es el comportamiento esperado (ver CLAUDE.md, sección Tesseract OCR), falta el paso de instalación en ese entorno, no hay nada que arreglar en el código |
+
+---
+
+## 19. Tercera ronda de feedback: pestañas de cliente, formato de roster, transición de estado
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| FB3-01 ✅ | Solo una pestaña activa al entrar como `cliente` | Iniciar sesión como `cliente` | Solo se ve "Estadísticas" (marcada activa) — "Directorio en Vivo" NO se ve superpuesta debajo |
+| FB3-02 ✅ | Estadísticas se ve sin dar clic a ningún botón | Repetir FB3-01 | Los gráficos/exportar aparecen de una en la pestaña, no un botón que lleve a otro lado |
+| FB3-03 ✅ | Alternar entre pestañas funciona en ambos sentidos | Como `cliente`, clic en "Directorio en Vivo" y luego de vuelta en "Estadísticas" varias veces | Cada clic muestra solo el contenido correspondiente, sin quedar ambas visibles ni en blanco |
+| FB3-04 ❌ | Roster con columnas equivocadas se rechaza de una | Subir un Excel/CSV cuyas columnas no se parezcan a `id`/`nombres`/`apellidos` | 400 inmediato pidiendo usar la plantilla oficial — no se procesa ninguna fila ni se reportan 20 "❌ sin ID" |
+| FB3-05 ✅ | Roster con el formato correcto sigue funcionando | Repetir FB3-04 con el archivo de siempre | Se procesa normal, sin cambios de comportamiento |
+| FB3-06 ❌ | No se puede devolver un evento con gente cargada a "Creado" | Evento "En Proceso" con roster o registros en vivo → intentar cambiar su estado a "Creado" | 400 explicando que ya tiene datos, sugiere "Finalizado" o un evento nuevo |
+| FB3-07 ✅ | Sí se puede volver a "Creado" un evento realmente vacío | Evento "En Proceso" sin ningún asistente cargado ni registrado → cambiar a "Creado" | Se permite normal, sin bloqueo |
+| FB3-08 ❌ | El bloqueo también aplica viniendo de "Finalizado" | Evento "Finalizado" con datos → intentar "Creado" | 400, mismo mensaje — no es exclusivo de "En Proceso" |
 
 ---
 
@@ -490,6 +505,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Escarapelas (lienzo) + spinners + Estadísticas (Fase D) | 14 |
 | Feedback: librería global, colores de gráficos, responsive, contexto | 9 |
 | Feedback 2: fondo del editor, auto-impresión, orden de columnas, Estadísticas | 9 |
-| **Total** | **255** |
+| Feedback 3: pestañas de cliente, formato de roster, transición de estado | 8 |
+| **Total** | **263** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

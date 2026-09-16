@@ -577,6 +577,24 @@ async def bulk_register(
     content = await roster_file.read()
     header_columns, rows = _read_roster_rows(roster_file.filename, content)
 
+    # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
+    # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
+    # ninguna columna reconocida traía nada), pero la carga "completaba" con 0 perfiles sin dejar
+    # claro que el problema real era el FORMATO del archivo, no los datos. Ahora se valida de una
+    # que las columnas mínimas de la plantilla estén presentes antes de procesar ninguna fila.
+    has_id_col = any(k in header_columns for k in _ID_KEYS)
+    has_nombres_col = any(k in header_columns for k in ('nombres', 'nombre'))
+    has_apellidos_col = any(k in header_columns for k in ('apellidos', 'apellido'))
+    if not rows or not (has_id_col and has_nombres_col and has_apellidos_col):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Este archivo no tiene el formato esperado — deben venir al menos las columnas "
+                "'id' (o 'cédula'), 'nombres' y 'apellidos'. Descarga y usa la plantilla oficial "
+                "de carga de asistentes en vez de un archivo con otras columnas."
+            ),
+        )
+
     used_optional_keys = set()
     for row in rows:
         for raw_key, value in row.items():

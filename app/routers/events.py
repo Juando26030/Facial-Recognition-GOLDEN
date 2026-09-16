@@ -204,6 +204,17 @@ async def update_event(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     if data.status is not None and data.status not in EVENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Estado inválido (debe ser uno de: {', '.join(EVENT_STATUSES)})")
+    # 2026-09-16, pedido explícito: si el evento ya tiene gente cargada (roster y/o registros en
+    # vivo), no se puede "devolver" a 'creado' — 'creado' es preparación previa al evento, y
+    # volver a ese estado con datos reales adentro presta a confusión (¿el evento no ha empezado,
+    # o ya tiene gente?). No aplica a pasar a 'finalizado', solo a la vuelta específica hacia atrás.
+    if data.status == "creado" and event.status != "creado":
+        tiene_asistentes = db.query(EventAttendee).filter(EventAttendee.event_id == event_id).first() is not None
+        if tiene_asistentes:
+            raise HTTPException(
+                status_code=400,
+                detail="Este evento ya tiene personas cargadas/registradas — no se puede devolver a 'Creado'. Si necesitas pausarlo, usa 'Finalizado', o crea un evento nuevo si de verdad necesitas empezar de cero.",
+            )
     if data.event_code is not None and data.event_code != event.event_code:
         if db.query(Event).filter(Event.event_code == data.event_code, Event.id != event_id).first():
             raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")

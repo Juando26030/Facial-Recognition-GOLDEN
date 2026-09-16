@@ -91,19 +91,19 @@
 
       <div class="app-container">
         {% if staff_role == "cliente" %}
-        <!-- PESTAÑA: ESTADÍSTICAS — habilitada para cliente (2026-09-16, pedido explícito), lleva
-             a la misma página real de Estadísticas que usan coordinador+ (gráficos + exportar
-             reporte), no un placeholder aparte. -->
+        <!-- PESTAÑA: ESTADÍSTICAS — habilitada para cliente (2026-09-16, pedido explícito). Antes
+             era un botón "Ver Estadísticas" que salía a otra página (bug reportado: no dejaba
+             alternar con Directorio sin perder el lugar) — ahora la página real se incrusta con
+             un <iframe> (?embed=1 le pide que omita su propio header) para poder rotar entre las
+             dos pestañas sin navegar afuera. Bug real corregido de paso: esta sección Y la de
+             Directorio de abajo tenían las dos la clase "active" hardcodeada al mismo tiempo —
+             solo debe empezar activa la que coincide con la pestaña marcada "active" arriba. -->
         <div id="estadisticas" class="section active">
-            <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
-                <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Estadísticas del evento</h3>
-                <p style="color: #888; margin-bottom: 1.5rem;">Consulta los gráficos por variable y exporta el reporte de este evento.</p>
-                <a href="/kiosk/{{ event.id }}/estadisticas" class="golden-btn golden-btn-primary" style="width:auto; display:inline-block; padding:1rem 2.5rem; text-decoration:none;">📊 Ver Estadísticas</a>
-            </div>
+            <iframe src="/kiosk/{{ event.id }}/estadisticas?embed=1" style="width:100%; min-height:80vh; border:none; border-radius:20px; background:transparent;" title="Estadísticas del evento"></iframe>
         </div>
 
         <!-- DIRECTORIO (cliente: solo lectura, sin acreditar) -->
-        <div id="directorio" class="section active" style="max-width: 100%;">
+        <div id="directorio" class="section" style="max-width: 100%;">
             <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
                 <div class="badge-form-title">Directorio en Vivo</div>
                 <div class="directory-search-bar">

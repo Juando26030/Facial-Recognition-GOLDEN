@@ -15,8 +15,9 @@
         .stats-chart-card canvas { max-height:260px; }
     </style>
 </head>
-<body>
+<body{% if embed %} style="padding-top:0;"{% endif %}>
 
+{% if not embed %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="#" class="golden-logo">
@@ -40,15 +41,18 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
+{% endif %}
 <script>window.EVENT_ID = {{ event.id }};</script>
 
 <main class="golden-main">
-  <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
+  <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%); {% if embed %}padding: 1.5rem 0;{% endif %}">
     <div class="golden-container">
+      {% if not embed %}
       <div class="golden-section-title">
         <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
         <h2>Estad<span class="gradient-text">ísticas</span></h2>
       </div>
+      {% endif %}
 
       <div class="app-container">
         <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">

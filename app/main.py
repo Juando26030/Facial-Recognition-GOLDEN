@@ -216,8 +216,13 @@ async def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depe
     evento debe poder ver sus estadísticas) — 'digitador' sigue sin acceso, igual que antes con
     "Exportar Reporte" (no le corresponde ver reportes, solo operar el registro). No se puede
     expresar con min_role (jerárquico): 'cliente' queda por debajo de 'digitador' en STAFF_ROLES,
-    así que se excluye a 'digitador' explícitamente en vez de exigir un mínimo."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", exclude_roles=["digitador"])
+    así que se excluye a 'digitador' explícitamente en vez de exigir un mínimo.
+    `?embed=1` (2026-09-16): la pestaña "Estadísticas" de `cliente` en /kiosk/{event_id}/registro
+    la incrusta en un <iframe> para poder alternar con "Directorio en Vivo" sin salir de la
+    página — en ese modo se omite el header/franja de contexto propios (ya los tiene la página
+    que la contiene) y solo se ve el contenido real."""
+    embed = request.query_params.get("embed") == "1"
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_estadisticas.html", exclude_roles=["digitador"], extra_context={"embed": embed})
 
 
 @app.get("/kiosk/{event_id}/escarapela")
