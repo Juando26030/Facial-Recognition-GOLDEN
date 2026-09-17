@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ event.name }} — Escarapela | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap" rel="stylesheet">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+    <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <style>
+        .badge-toolbar {
+            background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06);
+            padding: 1rem 1.2rem; margin-bottom: 1.2rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;
+        }
+        .toolbar-group { display:flex; flex-direction:column; gap:4px; }
+        .toolbar-group label { font-size:0.72rem; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.5px; }
+        .toolbar-group input, .toolbar-group select {
+            border:1px solid #ddd; border-radius:8px; padding:6px 10px; font-size:0.85rem; min-width:90px;
+        }
+        .toolbar-sep { width:1px; align-self:stretch; background:#eee; margin: 0 0.3rem; }
+        .toolbar-actions { display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
+        .tb-btn {
+            border:none; border-radius:20px; padding:8px 16px; font-weight:700; font-size:0.8rem; cursor:pointer;
+        }
+        .tb-btn.primary { background: var(--golden-primary); color:#1a1200; }
+        .tb-btn.ghost { background:#f0f0f0; color: var(--golden-dark); }
+        .tb-btn.danger { background:#fbe9ea; color:#a12631; }
+
+        .add-elements-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1.2rem; }
+        .add-el-btn {
+            background:white; border:1px solid #ddd; border-radius:12px; padding:8px 14px; font-size:0.8rem;
+            cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:600; color: var(--golden-dark);
+        }
+        .add-el-btn:hover { border-color: var(--golden-primary); }
+
+        .badge-editor-body { display:flex; gap:1.5rem; align-items:flex-start; flex-wrap:wrap; }
+        .badge-canvas-wrapper {
+            flex: 1 1 auto; overflow:auto; background:#e9e9ee; border-radius:16px; padding:2rem;
+            display:flex; align-items:flex-start; justify-content:center; min-height: 400px; max-height: 70vh;
+            max-width: 100%;
+        }
+        .badge-canvas { box-shadow: 0 10px 40px rgba(0,0,0,0.25); flex-shrink:0; }
+        .badge-element { cursor: move; }
+        .resize-handle {
+            position:absolute; right:-6px; bottom:-6px; width:14px; height:14px; border-radius:50%;
+            background: var(--golden-primary); border:2px solid white; cursor: nwse-resize; z-index:9999;
+        }
+
+        .badge-props-panel {
+            width:300px; flex-shrink:0; background:white; border-radius:16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06);
+            padding:1.2rem; max-height:75vh; overflow-y:auto;
+        }
+        .badge-props-panel h4 { margin:0 0 1rem; color: var(--golden-dark); font-size:1rem; }
+        .props-empty { color:#999; font-size:0.85rem; text-align:center; margin-top:2rem; }
+        .prop-field { margin-bottom:0.9rem; }
+        .prop-field label { display:block; font-size:0.75rem; font-weight:700; color:#888; margin-bottom:4px; text-transform:uppercase; }
+        .prop-field input, .prop-field select, .prop-field textarea {
+            width:100%; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.85rem; box-sizing:border-box;
+        }
+        .prop-row { display:flex; gap:8px; }
+        .prop-row .prop-field { flex:1; }
+
+        .badge-modal-overlay {
+            position:fixed; inset:0; background:rgba(10,14,46,0.5); z-index:9998; display:flex;
+            align-items:center; justify-content:center; padding:1rem;
+        }
+        .badge-modal-box {
+            background:white; border-radius:16px; padding:1.8rem; max-width:480px; width:100%;
+            max-height:80vh; overflow-y:auto;
+        }
+        .saved-tpl-row {
+            display:flex; justify-content:space-between; align-items:center; padding:0.7rem 0.4rem;
+            border-bottom:1px solid #f0f0f0;
+        }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="#" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+<script>
+window.EVENT_ID = {{ event.id }};
+window.STAFF_ROLE = "{{ staff_role }}";
+window.EVENT_FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }};
+window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
+</script>
+
+<main class="golden-main">
+  <div class="golden-container" style="max-width: 1400px; padding: 1.5rem;">
+    <div class="golden-section-title" style="margin-bottom:1rem;">
+      <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+      <h2>Diseñador de <span class="gradient-text">Escarapela</span></h2>
+    </div>
+
+    <div class="badge-toolbar">
+      <div class="toolbar-group">
+        <label>Nombre de la plantilla</label>
+        <input type="text" id="tplName" style="min-width:180px;">
+      </div>
+      <div class="toolbar-sep"></div>
+      <div class="toolbar-group">
+        <label>Ancho (mm)</label>
+        <input type="number" id="tplWidth" min="10" max="300" step="0.5" style="width:80px;">
+      </div>
+      <div class="toolbar-group">
+        <label>Alto (mm)</label>
+        <input type="number" id="tplHeight" min="10" max="300" step="0.5" style="width:80px;">
+      </div>
+      <div class="toolbar-group">
+        <label>Orientación</label>
+        <select id="tplOrientation">
+          <option value="vertical">Vertical (Brother QL-800)</option>
+          <option value="horizontal">Horizontal</option>
+        </select>
+      </div>
+      <div class="toolbar-sep"></div>
+      <div class="toolbar-group">
+        <label>Fondo</label>
+        <select id="bgType">
+          <option value="color">Color sólido</option>
+          <option value="image">Imagen</option>
+        </select>
+      </div>
+      <div class="toolbar-group" id="bgColorGroup">
+        <label>Color</label>
+        <input type="color" id="bgColor" style="width:60px; padding:2px;">
+      </div>
+      <div class="toolbar-group" id="bgImageGroup" style="display:none;">
+        <label>Imagen de fondo</label>
+        <input type="file" id="bgImageInput" accept="image/*">
+      </div>
+      <div class="toolbar-sep"></div>
+      <div class="toolbar-group">
+        <label>Vista previa</label>
+        <button type="button" class="tb-btn ghost" id="previewToggleBtn">👁 Con datos de muestra</button>
+      </div>
+
+      <div class="toolbar-actions">
+        <button type="button" class="tb-btn ghost" id="importBtn">📥 Importar plantilla</button>
+        <button type="button" class="tb-btn ghost" id="saveAsBtn">💾 Guardar como plantilla</button>
+        <button type="button" class="tb-btn primary" id="saveBtn">Guardar cambios</button>
+      </div>
+    </div>
+
+    <div class="add-elements-row">
+      <button type="button" class="add-el-btn" data-add="text_static">🔤 Texto fijo</button>
+      <button type="button" class="add-el-btn" data-add="text_variable">🏷️ Texto variable</button>
+      <button type="button" class="add-el-btn" data-add="image_static">🖼️ Imagen / logo</button>
+      <button type="button" class="add-el-btn" data-add="image_variable">🙂 Foto del asistente</button>
+      <button type="button" class="add-el-btn" data-add="qr">▦ Código QR</button>
+      <button type="button" class="add-el-btn" data-add="barcode">|||  Código de barras</button>
+    </div>
+
+    <div class="badge-editor-body">
+      <div class="badge-canvas-wrapper">
+        <div id="badgeCanvas" class="badge-canvas"></div>
+      </div>
+      <div class="badge-props-panel" id="propsPanel">
+        <p class="props-empty">Selecciona un elemento del lienzo para editar sus propiedades, o agrega uno nuevo arriba.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="importModal" class="badge-modal-overlay" style="display:none;">
+  <div class="badge-modal-box">
+    <h4 style="margin-top:0; color: var(--golden-dark);">Importar plantilla guardada</h4>
+    <p style="font-size:0.82rem; color:#888;">Copia el diseño de una plantilla de tu librería a este evento — no queda vinculada, puedes seguir editando aquí sin afectar la original.</p>
+    <div id="savedTplList"><p style="color:#999; font-size:0.85rem;">Cargando…</p></div>
+    <div style="text-align:right; margin-top:1rem;">
+      <button type="button" class="tb-btn ghost" id="importCancelBtn">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const EDITOR_SCALE = 3; // factor visual — el lienzo se dibuja "más grande" en pantalla, los mm reales no cambian.
+  // Bajado de 5 a 3 (2026-09-16, pedido explícito: con 5 el lienzo no cabía en pantalla sin
+  // hacer scroll). El arrastre/redimensión no dependen de este número — derivan el ratio px/mm
+  // de canvasEl.getBoundingClientRect() en cada momento (ver startDrag/startResize más abajo),
+  // así que cualquier valor de EDITOR_SCALE sigue funcionando igual de bien.
+  const FONT_FAMILIES = [
+    'Roboto','Open Sans','Lato','Montserrat','Oswald','Raleway','Poppins','Merriweather',
+    'Playfair Display','Nunito','Ubuntu','PT Sans','Noto Sans','Source Sans Pro','Rubik',
+    'Inter','Work Sans','Quicksand','Fira Sans','Barlow','Karla','Mulish','Josefin Sans',
+    'Bebas Neue','Dancing Script','Pacifico','Lobster','Caveat','Anton','Archivo Black',
+    'Cormorant Garamond','Crimson Text','Libre Baskerville','EB Garamond','Abril Fatface',
+    'Comfortaa','DM Sans','Space Grotesk','Manrope','Zilla Slab',
+  ];
+  const FIXED_VARIABLES = [
+    ['first_name', 'Nombres'], ['last_name', 'Apellidos'], ['company', 'Empresa'],
+    ['role', 'Cargo'], ['id', 'Cédula / ID'], ['phone', 'Teléfono'], ['email', 'Correo'],
+    ['opt_1', 'Tipo de Asistente'],
+  ];
+  const ALL_VARIABLES = FIXED_VARIABLES.concat(window.OPTIONAL_VARIABLES || []);
+
+  let template = null;      // {id, name, width_mm, height_mm, orientation, background_type, background_value, elements}
+  let selectedId = null;
+  let previewMode = false;
+  let dragState = null;
+  let elCounter = 0;
+
+  const canvasEl = document.getElementById('badgeCanvas');
+  const propsPanel = document.getElementById('propsPanel');
+
+  function nextElId() { elCounter += 1; return 'el_' + Date.now().toString(36) + '_' + elCounter; }
+
+  function sampleData() {
+    const extras = {};
+    (window.OPTIONAL_VARIABLES || []).forEach(([k]) => { extras[k] = 'Ejemplo'; });
+    return {
+      id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', company: 'Golden Logísticas',
+      role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP',
+      extra_fields: extras, has_photo: false,
+    };
+  }
+
+  function scaledForEditor(tpl) {
+    return Object.assign({}, tpl, {
+      width_mm: tpl.width_mm * EDITOR_SCALE,
+      height_mm: tpl.height_mm * EDITOR_SCALE,
+      elements: (tpl.elements || []).map(el => Object.assign({}, el, {
+        x: el.x * EDITOR_SCALE, y: el.y * EDITOR_SCALE,
+        width: el.width * EDITOR_SCALE, height: el.height * EDITOR_SCALE,
+        font_size: (el.font_size || 12) * EDITOR_SCALE,
+      })),
+    });
+  }
+
+  function selectedElement() {
+    return template.elements.find(e => e.id === selectedId) || null;
+  }
+
+  // ---------- Carga / guardado ----------
+
+  async function loadTemplate() {
+    const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template`);
+    template = await res.json();
+    syncToolbarFromTemplate();
+    renderCanvas();
+    renderPropsPanel();
+  }
+
+  function syncToolbarFromTemplate() {
+    document.getElementById('tplName').value = template.name || '';
+    document.getElementById('tplWidth').value = template.width_mm;
+    document.getElementById('tplHeight').value = template.height_mm;
+    document.getElementById('tplOrientation').value = template.orientation || 'vertical';
+    document.getElementById('bgType').value = template.background_type || 'color';
+    if (template.background_type === 'color') {
+      document.getElementById('bgColor').value = template.background_value || '#ffffff';
+    }
+    toggleBgInputs();
+  }
+
+  function toggleBgInputs() {
+    const isImage = document.getElementById('bgType').value === 'image';
+    document.getElementById('bgColorGroup').style.display = isImage ? 'none' : 'flex';
+    document.getElementById('bgImageGroup').style.display = isImage ? 'flex' : 'none';
+  }
+
+  async function saveTemplate() {
+    template.name = document.getElementById('tplName').value.trim() || 'Escarapela';
+    template.width_mm = parseFloat(document.getElementById('tplWidth').value) || template.width_mm;
+    template.height_mm = parseFloat(document.getElementById('tplHeight').value) || template.height_mm;
+    template.orientation = document.getElementById('tplOrientation').value;
+    template.background_type = document.getElementById('bgType').value;
+    if (template.background_type === 'color') {
+      template.background_value = document.getElementById('bgColor').value;
+    }
+    const saveBtn = document.getElementById('saveBtn');
+    setButtonLoading(saveBtn, true, 'Guardando...');
+    try {
+      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: template.name, width_mm: template.width_mm, height_mm: template.height_mm,
+          orientation: template.orientation, background_type: template.background_type,
+          background_value: template.background_value, elements: template.elements,
+        }),
+      });
+      if (!res.ok) { showToast('No se pudo guardar la escarapela', 'error'); return; }
+      template = await res.json();
+      renderCanvas();
+      showToast('Escarapela guardada', 'success');
+    } catch (e) { showToast('Error de red', 'error'); }
+    finally { setButtonLoading(saveBtn, false); }
+  }
+
+  async function saveAsTemplate() {
+    const name = await showPrompt('¿Cómo quieres llamar esta plantilla en tu librería?', { defaultValue: template.name || 'Mi plantilla', confirmLabel: 'Guardar' });
+    if (!name) return;
+    await saveTemplate();
+    try {
+      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/save-as`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+      });
+      if (res.ok) showToast('Guardada en tu librería de plantillas', 'success');
+      else showToast('No se pudo guardar en la librería', 'error');
+    } catch (e) { showToast('Error de red', 'error'); }
+  }
+
+  async function openImportModal() {
+    document.getElementById('importModal').style.display = 'flex';
+    const listEl = document.getElementById('savedTplList');
+    listEl.innerHTML = '<p style="color:#999; font-size:0.85rem;">Cargando…</p>';
+    try {
+      const res = await fetch(`/api/events/${window.EVENT_ID}/saved-badge-templates`);
+      const list = await res.json();
+      if (!list.length) {
+        listEl.innerHTML = '<p style="color:#999; font-size:0.85rem;">Todavía no hay ninguna plantilla guardada en la librería.</p>';
+        return;
+      }
+      listEl.innerHTML = '';
+      list.forEach(s => {
+        const row = document.createElement('div');
+        row.className = 'saved-tpl-row';
+        row.innerHTML = `<span>${s.name} <small style="color:#999;">(${s.width_mm}×${s.height_mm}mm, ${s.orientation})</small></span>`;
+        const btnGroup = document.createElement('div');
+        const importB = document.createElement('button');
+        importB.className = 'tb-btn primary'; importB.style.padding = '4px 12px'; importB.style.fontSize = '0.75rem';
+        importB.innerText = 'Importar';
+        importB.addEventListener('click', () => importSavedTemplate(s.id));
+        const delB = document.createElement('button');
+        delB.className = 'tb-btn danger'; delB.style.padding = '4px 12px'; delB.style.fontSize = '0.75rem'; delB.style.marginLeft = '6px';
+        delB.innerText = 'Borrar';
+        delB.addEventListener('click', () => deleteSavedTemplate(s.id));
+        btnGroup.appendChild(importB); btnGroup.appendChild(delB);
+        row.appendChild(btnGroup);
+        listEl.appendChild(row);
+      });
+    } catch (e) {
+      listEl.innerHTML = '<p style="color:red; font-size:0.85rem;">Error de red</p>';
+    }
+  }
+
+  async function importSavedTemplate(savedId) {
+    const ok = await showConfirm('Esto reemplaza el diseño actual de este evento por el de la plantilla importada. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, importar' });
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/import/${savedId}`, { method: 'POST' });
+      if (!res.ok) { showToast('No se pudo importar', 'error'); return; }
+      template = await res.json();
+      selectedId = null;
+      syncToolbarFromTemplate();
+      renderCanvas();
+      renderPropsPanel();
+      document.getElementById('importModal').style.display = 'none';
+      showToast('Plantilla importada', 'success');
+    } catch (e) { showToast('Error de red', 'error'); }
+  }
+
+  async function deleteSavedTemplate(savedId) {
+    const ok = await showConfirm('¿Borrar esta plantilla de la librería? No se puede deshacer.', { confirmLabel: 'Borrar' });
+    if (!ok) return;
+    const res = await fetch(`/api/saved-badge-templates/${savedId}`, { method: 'DELETE' });
+    if (res.ok) { showToast('Plantilla borrada', 'success'); openImportModal(); }
+    else showToast('No se pudo borrar', 'error');
+  }
+
+  async function uploadImage(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/upload-image`, { method: 'POST', body: formData });
+    if (!res.ok) { showToast('No se pudo subir la imagen', 'error'); return null; }
+    const data = await res.json();
+    return data.storage_path;
+  }
+
+
+  // ---------- Render del lienzo ----------
+
+  function renderCanvas() {
+    const scaledTpl = scaledForEditor(template);
+    BadgeRender.renderBadge(canvasEl, scaledTpl, previewMode ? sampleData() : null, { eventId: window.EVENT_ID });
+    canvasEl.style.cursor = 'default';
+    Array.from(canvasEl.querySelectorAll('.badge-element')).forEach(div => {
+      const elId = div.dataset.elId;
+      const el = template.elements.find(e => e.id === elId);
+      if (!el) return;
+      div.style.outline = (elId === selectedId) ? '2px dashed #D4AF37' : '1px dashed rgba(0,0,0,0.08)';
+      div.addEventListener('mousedown', (e) => { if (e.target.classList.contains('resize-handle')) return; startDrag(e, el); });
+      div.addEventListener('click', (e) => { e.stopPropagation(); selectElement(elId); });
+      if (elId === selectedId) {
+        const handle = document.createElement('div');
+        handle.className = 'resize-handle';
+        handle.addEventListener('mousedown', (e) => { e.stopPropagation(); startResize(e, el); });
+        div.appendChild(handle);
+      }
+    });
+  }
+
+  canvasEl.addEventListener('click', () => { selectedId = null; renderCanvas(); renderPropsPanel(); });
+
+  function startDrag(e, el) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectElement(el.id);
+    const rect = canvasEl.getBoundingClientRect();
+    const pxPerMmX = rect.width / template.width_mm;
+    const pxPerMmY = rect.height / template.height_mm;
+    const startX = e.clientX, startY = e.clientY;
+    const origX = el.x, origY = el.y;
+    function onMove(ev) {
+      const dxMm = (ev.clientX - startX) / pxPerMmX;
+      const dyMm = (ev.clientY - startY) / pxPerMmY;
+      el.x = Math.max(0, origX + dxMm);
+      el.y = Math.max(0, origY + dyMm);
+      renderCanvas();
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function startResize(e, el) {
+    e.preventDefault();
+    const rect = canvasEl.getBoundingClientRect();
+    const pxPerMmX = rect.width / template.width_mm;
+    const pxPerMmY = rect.height / template.height_mm;
+    const startX = e.clientX, startY = e.clientY;
+    const origW = el.width, origH = el.height;
+    function onMove(ev) {
+      const dwMm = (ev.clientX - startX) / pxPerMmX;
+      const dhMm = (ev.clientY - startY) / pxPerMmY;
+      el.width = Math.max(3, origW + dwMm);
+      el.height = Math.max(3, origH + dhMm);
+      renderCanvas();
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      renderPropsPanel();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function selectElement(id) {
+    selectedId = id;
+    renderCanvas();
+    renderPropsPanel();
+  }
+
+  // ---------- Agregar / borrar elementos ----------
+
+  function addElement(type) {
+    const base = { id: nextElId(), type, x: 5, y: 5, width: 30, height: 10, rotation: 0, z_index: (template.elements.length + 1) };
+    let el;
+    if (type === 'text_static') {
+      el = Object.assign(base, { content: 'Texto', font_family: 'Roboto', font_size: 12, font_color: '#000000', font_weight: 'normal', align: 'left', height: 8 });
+    } else if (type === 'text_variable') {
+      el = Object.assign(base, { variable: 'first_name', font_family: 'Roboto', font_size: 12, font_color: '#000000', font_weight: 'normal', align: 'left', height: 8 });
+    } else if (type === 'image_static') {
+      el = Object.assign(base, { storage_path: null, width: 25, height: 25 });
+    } else if (type === 'image_variable') {
+      if (!window.EVENT_FACIAL_ENABLED) {
+        showToast('Este evento no tiene reconocimiento facial activo — no hay fotos que mostrar', 'error');
+        return;
+      }
+      el = Object.assign(base, { source: 'photo', width: 25, height: 30 });
+    } else if (type === 'qr') {
+      el = Object.assign(base, { variables: ['id'], width: 22, height: 22 });
+    } else if (type === 'barcode') {
+      el = Object.assign(base, { variable: 'id', format: 'code128', width: 40, height: 15 });
+    }
+    template.elements.push(el);
+    selectElement(el.id);
+  }
+
+  function deleteSelectedElement() {
+    if (!selectedId) return;
+    template.elements = template.elements.filter(e => e.id !== selectedId);
+    selectedId = null;
+    renderCanvas();
+    renderPropsPanel();
+  }
+
+  function bringToFront() {
+    const el = selectedElement();
+    if (!el) return;
+    const maxZ = Math.max(0, ...template.elements.map(e => e.z_index || 0));
+    el.z_index = maxZ + 1;
+    renderCanvas();
+  }
+
+  function sendToBack() {
+    const el = selectedElement();
+    if (!el) return;
+    const minZ = Math.min(0, ...template.elements.map(e => e.z_index || 0));
+    el.z_index = minZ - 1;
+    renderCanvas();
+  }
+
+  // ---------- Panel de propiedades ----------
+
+  function fontOptionsHtml(selected) {
+    return FONT_FAMILIES.map(f => `<option value="${f}" ${f === selected ? 'selected' : ''}>${f}</option>`).join('');
+  }
+
+  function variableOptionsHtml(selected) {
+    return ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${k === selected ? 'selected' : ''}>${label}</option>`).join('');
+  }
+
+  function renderPropsPanel() {
+    const el = selectedElement();
+    if (!el) {
+      propsPanel.innerHTML = '<p class="props-empty">Selecciona un elemento del lienzo para editar sus propiedades, o agrega uno nuevo arriba.</p>';
+      return;
+    }
+
+    let typeSpecificHtml = '';
+    if (el.type === 'text_static') {
+      typeSpecificHtml = `
+        <div class="prop-field"><label>Texto</label><textarea id="p_content" rows="2">${el.content || ''}</textarea></div>
+        ${fontFieldsHtml(el)}`;
+    } else if (el.type === 'text_variable') {
+      typeSpecificHtml = `
+        <div class="prop-field"><label>Variable</label><select id="p_variable">${variableOptionsHtml(el.variable)}</select></div>
+        ${fontFieldsHtml(el)}`;
+    } else if (el.type === 'image_static') {
+      typeSpecificHtml = `
+        <div class="prop-field"><label>Imagen</label><input type="file" id="p_image" accept="image/*"></div>
+        ${el.storage_path ? `<img src="/api/badge-assets/${el.storage_path}" style="max-width:100%; border-radius:8px; margin-bottom:0.8rem;">` : '<p style="font-size:0.78rem; color:#999;">Sin imagen todavía</p>'}`;
+    } else if (el.type === 'image_variable') {
+      // 2026-09-16: aclarado a propósito, tras QA — este elemento NO tiene (ni debe tener) botón
+      // de subir imagen: es la foto real de cada persona, se resuelve sola al momento de
+      // imprimir. Si buscabas subir un logo o una imagen fija, usa "🖼️ Imagen / logo" en su lugar.
+      typeSpecificHtml = `<p style="font-size:0.8rem; color:#666; line-height:1.4;">📌 Este elemento NO se sube a mano — se llena solo con la foto real de cada persona al momento de imprimir (requiere que el evento tenga reconocimiento facial activo). Si querías subir una imagen tuya (ej. un logo), usa "🖼️ Imagen / logo" en vez de este.</p>`;
+    } else if (el.type === 'qr') {
+      typeSpecificHtml = `
+        <div class="prop-field"><label>Variable(s) codificadas</label>
+          <select id="p_qr_vars" multiple size="4">${ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${(el.variables || []).includes(k) ? 'selected' : ''}>${label}</option>`).join('')}</select>
+        </div>
+        <p style="font-size:0.72rem; color:#999;">Ctrl/Cmd + clic para elegir varias — se combinan separadas por "|".</p>`;
+    } else if (el.type === 'barcode') {
+      typeSpecificHtml = `
+        <div class="prop-field"><label>Variable</label><select id="p_bvariable">${variableOptionsHtml(el.variable)}</select></div>
+        <div class="prop-field"><label>Formato</label>
+          <select id="p_bformat">
+            <option value="code128" ${el.format === 'code128' ? 'selected' : ''}>Code128</option>
+            <option value="code39" ${el.format === 'code39' ? 'selected' : ''}>Code39</option>
+          </select>
+        </div>`;
+    }
+
+    propsPanel.innerHTML = `
+      <h4>Propiedades</h4>
+      <div class="prop-row">
+        <div class="prop-field"><label>X (mm)</label><input type="number" id="p_x" step="0.5" value="${(el.x).toFixed(1)}"></div>
+        <div class="prop-field"><label>Y (mm)</label><input type="number" id="p_y" step="0.5" value="${(el.y).toFixed(1)}"></div>
+      </div>
+      <div class="prop-row">
+        <div class="prop-field"><label>Ancho (mm)</label><input type="number" id="p_w" step="0.5" value="${(el.width).toFixed(1)}"></div>
+        <div class="prop-field"><label>Alto (mm)</label><input type="number" id="p_h" step="0.5" value="${(el.height).toFixed(1)}"></div>
+      </div>
+      <div class="prop-field"><label>Rotación (grados)</label><input type="number" id="p_rot" value="${el.rotation || 0}"></div>
+      ${typeSpecificHtml}
+      <div style="display:flex; gap:6px; margin-top:1rem;">
+        <button type="button" class="tb-btn ghost" id="p_front" style="flex:1;">Al frente</button>
+        <button type="button" class="tb-btn ghost" id="p_back" style="flex:1;">Atrás</button>
+      </div>
+      <button type="button" class="tb-btn danger" id="p_delete" style="width:100%; margin-top:8px;">Eliminar elemento</button>
+    `;
+
+    document.getElementById('p_x').addEventListener('input', (e) => { el.x = parseFloat(e.target.value) || 0; renderCanvas(); });
+    document.getElementById('p_y').addEventListener('input', (e) => { el.y = parseFloat(e.target.value) || 0; renderCanvas(); });
+    document.getElementById('p_w').addEventListener('input', (e) => { el.width = parseFloat(e.target.value) || 1; renderCanvas(); });
+    document.getElementById('p_h').addEventListener('input', (e) => { el.height = parseFloat(e.target.value) || 1; renderCanvas(); });
+    document.getElementById('p_rot').addEventListener('input', (e) => { el.rotation = parseFloat(e.target.value) || 0; renderCanvas(); });
+    document.getElementById('p_front').addEventListener('click', bringToFront);
+    document.getElementById('p_back').addEventListener('click', sendToBack);
+    document.getElementById('p_delete').addEventListener('click', deleteSelectedElement);
+
+    if (el.type === 'text_static') {
+      document.getElementById('p_content').addEventListener('input', (e) => { el.content = e.target.value; renderCanvas(); });
+      wireFontFields(el);
+    } else if (el.type === 'text_variable') {
+      document.getElementById('p_variable').addEventListener('change', (e) => { el.variable = e.target.value; renderCanvas(); });
+      wireFontFields(el);
+    } else if (el.type === 'image_static') {
+      document.getElementById('p_image').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const input = e.target;
+        input.disabled = true;
+        const status = document.createElement('span');
+        status.innerHTML = '<span class="golden-btn-spinner" style="border-color:rgba(0,0,0,0.15); border-top-color:#888;"></span>Subiendo...';
+        status.style.cssText = 'font-size:0.78rem; color:#888; margin-left:8px;';
+        input.insertAdjacentElement('afterend', status);
+        const path = await uploadImage(file);
+        status.remove();
+        if (path) { el.storage_path = path; renderCanvas(); renderPropsPanel(); }
+        else { input.disabled = false; }
+      });
+    } else if (el.type === 'qr') {
+      document.getElementById('p_qr_vars').addEventListener('change', (e) => {
+        el.variables = Array.from(e.target.selectedOptions).map(o => o.value);
+        renderCanvas();
+      });
+    } else if (el.type === 'barcode') {
+      document.getElementById('p_bvariable').addEventListener('change', (e) => { el.variable = e.target.value; renderCanvas(); });
+      document.getElementById('p_bformat').addEventListener('change', (e) => { el.format = e.target.value; renderCanvas(); });
+    }
+  }
+
+  function fontFieldsHtml(el) {
+    return `
+      <div class="prop-field"><label>Fuente</label><select id="p_font">${fontOptionsHtml(el.font_family)}</select></div>
+      <div class="prop-row">
+        <div class="prop-field"><label>Tamaño (pt)</label><input type="number" id="p_fsize" value="${el.font_size || 12}"></div>
+        <div class="prop-field"><label>Color</label><input type="color" id="p_fcolor" value="${el.font_color || '#000000'}"></div>
+      </div>
+      <div class="prop-row">
+        <div class="prop-field"><label>Peso</label>
+          <select id="p_fweight">
+            <option value="normal" ${el.font_weight === 'normal' ? 'selected' : ''}>Normal</option>
+            <option value="bold" ${el.font_weight === 'bold' ? 'selected' : ''}>Negrita</option>
+          </select>
+        </div>
+        <div class="prop-field"><label>Alinear</label>
+          <select id="p_falign">
+            <option value="left" ${el.align === 'left' ? 'selected' : ''}>Izquierda</option>
+            <option value="center" ${el.align === 'center' ? 'selected' : ''}>Centro</option>
+            <option value="right" ${el.align === 'right' ? 'selected' : ''}>Derecha</option>
+          </select>
+        </div>
+      </div>`;
+  }
+
+  function wireFontFields(el) {
+    document.getElementById('p_font').addEventListener('change', (e) => { el.font_family = e.target.value; renderCanvas(); });
+    document.getElementById('p_fsize').addEventListener('input', (e) => { el.font_size = parseFloat(e.target.value) || 12; renderCanvas(); });
+    document.getElementById('p_fcolor').addEventListener('input', (e) => { el.font_color = e.target.value; renderCanvas(); });
+    document.getElementById('p_fweight').addEventListener('change', (e) => { el.font_weight = e.target.value; renderCanvas(); });
+    document.getElementById('p_falign').addEventListener('change', (e) => { el.align = e.target.value; renderCanvas(); });
+  }
+
+  // ---------- Wiring general ----------
+
+  document.querySelectorAll('.add-el-btn').forEach(btn => {
+    btn.addEventListener('click', () => addElement(btn.dataset.add));
+  });
+
+  document.getElementById('tplOrientation').addEventListener('change', (e) => {
+    const wEl = document.getElementById('tplWidth'), hEl = document.getElementById('tplHeight');
+    const w = parseFloat(wEl.value), h = parseFloat(hEl.value);
+    wEl.value = h; hEl.value = w;
+  });
+
+  /* Bug real (2026-09-16, pedido explícito): elegir "Color sólido" en el desplegable no hacía
+     NADA hasta guardar (solo `toggleBgInputs()` cambiaba qué input se ve, nunca actualizaba
+     `template.background_type/value` ni redibujaba) — así que después de haber puesto una
+     imagen de fondo, volver a "Color sólido" dejaba la imagen visible en el lienzo hasta
+     guardar, y a veces ni con eso porque el color-picker tampoco tenía listener propio. Ahora
+     los tres controles de fondo actualizan el modelo y redibujan al instante, igual que ya
+     hacía la subida de imagen. */
+  document.getElementById('bgType').addEventListener('change', () => {
+    toggleBgInputs();
+    template.background_type = document.getElementById('bgType').value;
+    if (template.background_type === 'color') {
+      template.background_value = document.getElementById('bgColor').value || '#ffffff';
+    }
+    renderCanvas();
+  });
+  document.getElementById('bgColor').addEventListener('input', (e) => {
+    if (template.background_type === 'color') {
+      template.background_value = e.target.value;
+      renderCanvas();
+    }
+  });
+  document.getElementById('bgImageInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const path = await uploadImage(file);
+    if (path) { template.background_value = path; template.background_type = 'image'; renderCanvas(); }
+  });
+
+  document.getElementById('previewToggleBtn').addEventListener('click', (e) => {
+    previewMode = !previewMode;
+    e.target.innerText = previewMode ? '✏️ Volver a edición' : '👁 Con datos de muestra';
+    renderCanvas();
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', saveTemplate);
+  document.getElementById('saveAsBtn').addEventListener('click', saveAsTemplate);
+  document.getElementById('importBtn').addEventListener('click', openImportModal);
+  document.getElementById('importCancelBtn').addEventListener('click', () => { document.getElementById('importModal').style.display = 'none'; });
+
+  loadTemplate();
+})();
+</script>
+</body>
+</html>

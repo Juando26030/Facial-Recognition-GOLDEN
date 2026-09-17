@@ -81,22 +81,78 @@
     });
   };
 
+  /* Reemplazo de prompt() nativo (bug real de Sprint 2, QA local 2026-09-15: badge_editor.html
+     usaba prompt() para "Guardar como plantilla" y el navegador lo rechazaba — "prompt() is not
+     supported" — rompiendo la convención del proyecto de no usar diálogos nativos). Mismo patrón
+     visual que showConfirm, pero con un campo de texto. Devuelve una Promise<string|null> (null
+     si cancela o si el campo queda vacío). opts: { defaultValue, placeholder, confirmLabel }. */
+  window.showPrompt = function (message, opts) {
+    opts = opts || {};
+    const defaultValue = opts.defaultValue || "";
+    const confirmLabel = opts.confirmLabel || "Guardar";
+    const placeholder = opts.placeholder || "";
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = `
+        position: fixed; inset: 0; background: rgba(10,14,46,0.45); z-index: 9998;
+        display: flex; align-items: center; justify-content: center;
+      `;
+      const box = document.createElement("div");
+      box.style.cssText = `
+        background: white; border-radius: 16px; padding: 1.8rem; max-width: 420px; width: 90%;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);
+      `;
+      const escapedDefault = String(defaultValue).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+      const escapedPlaceholder = String(placeholder).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+      box.innerHTML = `
+        <p style="color:#333; margin-bottom:1rem; line-height:1.4;">${message}</p>
+        <input id="toastPromptInput" type="text" value="${escapedDefault}" placeholder="${escapedPlaceholder}"
+               style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:10px; padding:10px 12px; font-size:1rem; margin-bottom:1.4rem;">
+        <div style="display:flex; justify-content:flex-end; gap:10px;">
+          <button id="toastPromptCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
+          <button id="toastPromptOk" style="border:none; background:var(--golden-primary, #D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${confirmLabel}</button>
+        </div>
+      `;
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      const input = box.querySelector("#toastPromptInput");
+      input.focus();
+      input.select();
+      function finish(value) { overlay.remove(); resolve(value); }
+      box.querySelector("#toastPromptCancel").addEventListener("click", () => finish(null));
+      box.querySelector("#toastPromptOk").addEventListener("click", () => finish(input.value.trim() || null));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); finish(input.value.trim() || null); }
+        else if (e.key === "Escape") { finish(null); }
+      });
+      // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
+      // solo con "Cancelar" o el botón de confirmar (o Escape, que ya era explícito).
+    });
+  };
+
   /* Confirmación estándar de "esta persona ya se había registrado" — usada por recognize,
-     checkin-cedula y el registro manual (mismo texto/estilo en los tres, para no duplicarlo). */
-  window.confirmDuplicateRegistration = function (data) {
+     checkin-cedula y el registro manual (mismo texto/estilo en los tres, para no duplicarlo).
+     `times` (2026-09-16, pedido explícito): cuántas veces ya se registró/acreditó en este
+     evento, para que el mensaje sea concreto en vez de un genérico "ya está registrada". */
+  window.confirmDuplicateRegistration = function (data, times) {
     const name = data ? `${data.first_name || ""} ${data.last_name || ""}`.trim() : "";
+    const timesText = times ? ` (ya lo hizo ${times} ${times === 1 ? "vez" : "veces"})` : "";
     return window.showConfirm(
-      `⚠️ ${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento.<br><br>` +
+      `⚠️ ${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento${timesText}.<br><br>` +
       `¿Seguro que deseas registrarla de nuevo? Hazlo solo si fue un error o realmente necesitas repetir el ingreso.`,
       { variant: "warning", confirmLabel: "Sí, registrar de nuevo" }
     );
   };
 
   /* Modal para preguntar a qué corresponde cada campo "opcional_N" nuevo (hasta 30 posibles) —
-     compartido entre kiosk_roster.html (carga de Excel/CSV) y kiosk_registro.html (alta manual
-     individual, botón "+ Agregar campo opcional"), 2026-09-22. Devuelve {opcional_1: "Talla de
-     camisa", ...} o null si el operador cancela. */
-  window.promptOptionalLabels = function (fields) {
+     usado por kiosk_roster.html (carga de Excel/CSV), 2026-09-22. Devuelve {opcional_1: "Talla de
+     camisa", ...} o null si el operador cancela.
+     `examples` (2026-09-16, pedido explícito, opcional): {opcional_1: ["Talla M", "Talla L"]} —
+     hasta 2 valores reales de ESE campo tal como vienen en el archivo, para no tener que abrirlo
+     y ubicar a qué corresponde a simple vista. */
+  window.promptOptionalLabels = function (fields, examples) {
+    examples = examples || {};
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
       overlay.style.cssText = `position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9998; display:flex; align-items:center; justify-content:center; padding:1rem;`;
@@ -105,9 +161,14 @@
 
       const rowsHtml = fields.map(f => {
         const n = f.split("_")[1];
+        const ex = examples[f] || [];
+        const exHtml = ex.length
+          ? `<p style="font-size:0.78rem; color:#888; margin:4px 0 0;">Ejemplo${ex.length > 1 ? "s" : ""} en el archivo: <strong>${ex.map(v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")).join(", ")}</strong></p>`
+          : "";
         return `<div class="badge-input-group" style="margin-top:0.8rem;">
                 <label>¿A qué corresponde "Opcional ${n}"?</label>
                 <input type="text" data-field="${f}" placeholder="Ej. Talla de camisa, Grupo, Restricción alimentaria...">
+                ${exHtml}
             </div>`;
       }).join("");
 
@@ -136,5 +197,43 @@
         resolve(labels);
       });
     });
+  };
+
+  /* Spinner de carga genérico (Sprint 2.2 Fase D, 2026-09-16) — pedido explícito: si algo se
+     demora (subir un roster, guardar una plantilla, escanear una foto), mostrar un círculo
+     girando en vez de dejar el botón "quieto" sin decir si está funcionando o si se colgó.
+     Uso: setButtonLoading(btn, true, "Cargando...") antes del fetch, setButtonLoading(btn, false)
+     en el finally — restaura el label/HTML original automáticamente. */
+  let spinnerStyleInjected = false;
+  function ensureSpinnerStyle() {
+    if (spinnerStyleInjected) return;
+    spinnerStyleInjected = true;
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes goldenSpin { to { transform: rotate(360deg); } }
+      .golden-btn-spinner {
+        display:inline-block; width:14px; height:14px; border-radius:50%;
+        border:2px solid rgba(0,0,0,0.25); border-top-color: currentColor;
+        animation: goldenSpin 0.7s linear infinite; margin-right:8px; vertical-align:-2px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  ensureSpinnerStyle();  // inyectado al cargar toast.js, no solo la primera vez que se use un botón — así cualquier otro uso directo de .golden-btn-spinner (ej. badge_editor.html) también lo tiene disponible.
+
+  window.setButtonLoading = function (btn, isLoading, loadingText) {
+    if (!btn) return;
+    if (isLoading) {
+      if (btn.dataset.originalHtml === undefined) btn.dataset.originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="golden-btn-spinner"></span>${loadingText || "Cargando..."}`;
+    } else {
+      btn.disabled = false;
+      if (btn.dataset.originalHtml !== undefined) {
+        btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.originalHtml;
+      }
+    }
   };
 })();

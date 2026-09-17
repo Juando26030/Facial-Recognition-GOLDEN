@@ -15,7 +15,7 @@ comportamiento esperado y por qué) antes de asumir que es un bug nuevo.
 
 ## 0. Preparación del entorno de prueba
 
-1. `alembic upgrade head` (asegura que las migraciones `0001`–`0011` estén aplicadas).
+1. `alembic upgrade head` (asegura que las migraciones `0001`–`0012` estén aplicadas).
 2. Si no existe ninguna cuenta todavía: `python scripts/create_staff_user.py --username super --role super_admin --full-name "Super Admin"` (pide contraseña la primera vez que se usa, ver `scripts/create_staff_user.py`).
 3. `uvicorn app.main:app --reload --port 5000`.
 4. Con la sesión de `super_admin`, crear al menos:
@@ -98,6 +98,7 @@ Jerarquía: `cliente` (fuera de la jerarquía real, ver `CLAUDE.md`) < `digitado
 | EVENT-09 ❌ | Estado inválido por API directa | `PATCH /api/events/{id}` con `status="activo"` (valor viejo, ya no existe) | 400 "Estado inválido" |
 | EVENT-10 ❌ | Cambiar `event_code` a uno ya usado por otro evento | `PATCH` con un código existente de OTRO evento | 400 "Ya existe un evento con el código..." |
 | EVENT-11 ✅ | Búsqueda de eventos | `/` (coordinador+), buscar por parte del nombre/código/ciudad | Filtra por prefijo de palabra (ver `_matches_by_word_prefix`) — "cor" encuentra "Corferias", "ferias" NO |
+| EVENT-11b ✅ | Búsqueda sin tildes (Sprint 2 Fix 1) | Cliente/evento con tilde en el nombre (ej. "Café Central"), buscar `cafe` (sin tilde) | Encuentra el resultado igual — insensible a tildes/ñ, no solo a mayúsculas |
 | EVENT-12 ✅ | Borrar evento con historial | Borrar un evento que ya tiene `AccessLog`/`EventStaffAuthorization` | Se borra sin `ForeignKeyViolation`; los `AccessLog` quedan con `event_id=NULL` (no se borran), las `EventStaffAuthorization` de ese evento sí se borran |
 | EVENT-13 ❌ | `digitador`/`cliente` sin autorización explícita | Crear un evento nuevo y, SIN autorizar a un `digitador` existente, hacer que ese `digitador` intente `/kiosk/{event_id}` | 403/redirige a `/` |
 | EVENT-14 ❌ | `digitador` entra a evento no `en_proceso` | Autorizar a un `digitador` para un evento en estado `creado` o `finalizado`, intentar `/kiosk/{event_id}` | Bloqueado (redirige) — `get_event_for_staff` solo deja pasar `en_proceso` para `digitador`/`cliente` |
@@ -158,7 +159,7 @@ Jerarquía: `cliente` (fuera de la jerarquía real, ver `CLAUDE.md`) < `digitado
 | REG-17 ✅ | Atajo de lector de código de barras | Escribir una cédula EXACTA existente en el campo de búsqueda y presionar Enter | Acredita al instante sin pasar por la tabla |
 | REG-18 ❌ | Cédula no encontrada | Escribir una cédula que no existe y Enter | Salta automáticamente a la pestaña "Registro Individual" con esa cédula precargada en el campo ID (ya NO aparece un mini-formulario aparte dentro del Directorio, como antes) |
 | REG-19 ✅ | Completar el alta tras REG-18 | Llenar nombre/apellido en "Registro Individual" (con la cédula ya precargada) y guardar | Se crea el `User` y queda acreditado; si `facial_enabled=True` puede requerir foto, si es `False` no |
-| REG-20 ✅ | Editar/Guardar/Eliminar (patrón compartido) | Sobre cualquier fila, "Editar" → cambiar un campo → "Guardar"; luego "Eliminar" | Edita perfil vía PATCH; "Eliminar" pide confirmación y borra solo el log de asistencia (no el `User`) — ver también DIR-06 (visibilidad de estos botones según rol) |
+| REG-20 ✅ | Editar (modal) / Eliminar (modal) — actualizado 2026-09-16 | Sobre cualquier fila, "Editar" → se abre un modal flotante (no edición inline) → cambiar un campo → "Guardar cambios"; como `admin`+, dentro del mismo modal usar "Eliminar de este evento" | El modal PATCHea el perfil vía `/api/users/{id}`; "Eliminar" (solo visible para `admin`+ dentro del modal) borra de verdad a la persona de este evento (y de la base completa si no está en ningún otro evento) — ver DIR-15 en adelante |
 | REG-21 ❌ | Evento no en proceso | Evento `creado`/`finalizado`, campo de cédula del Directorio | Input deshabilitado, aviso amarillo visible |
 | REG-22 ✅ | Exportar reporte (no visible para `digitador`) | Pestaña "Exportar Reporte" → botón | Descarga un `.xlsx` con las columnas del formato legacy |
 | REG-23 ❌ | `digitador` no ve "Exportar Reporte" | Loguear como `digitador` | La pestaña no aparece |
@@ -268,13 +269,26 @@ Aplica a `POST /api/recognize`, `POST /api/checkin-cedula` y `POST /api/register
 
 | # | Caso | Pasos | Resultado esperado |
 |---|---|---|---|
-| DIR-01 ✅ | Ver el directorio del evento | Entrar a la pestaña/pantalla de Directorio | Muestra únicamente personas asociadas a ESTE evento (roster precargado ∪ quien se presentó), no todo el tenant |
-| DIR-02 ✅ | Editar un registro | "Editar" → cambiar campos → "Guardar" | `PATCH /api/users/{id}` actualiza, toast de éxito |
-| DIR-03 ❌ | Guardar con campo vacío obligatorio | Borrar el nombre por completo en modo edición y "Guardar" | (Verificar: hoy no hay validación de "no vacío" en el PATCH — si se guarda vacío sin avisar, es una mejora pendiente, no necesariamente un bug bloqueante) |
-| DIR-04 ✅ | Eliminar registro de asistencia | "Eliminar" en una fila | Pide confirmación explicando que NO borra al `User`, solo su log de hoy; al confirmar, la fila vuelve a "No registrado" |
+| DIR-01 ✅ | Ver el directorio del evento | Entrar a la pestaña/pantalla de Directorio | Muestra únicamente personas asociadas a ESTE evento (roster precargado ∪ quien se presentó), no todo el tenant; solo 6 columnas visibles (ID, Nombres, Apellidos, Tipo Asistente, Estado, Acción) |
+| DIR-02 ✅ | Editar un registro (modal) | "Editar" → se abre el modal flotante → cambiar campos (incluidos opcionales) → "Guardar cambios" | `PATCH /api/users/{id}` actualiza (perfil + `extra_fields` mezclados, no reemplazados), toast de éxito, el modal se cierra y la tabla se recarga |
+| DIR-03 ❌ | Guardar con campo vacío obligatorio | Borrar el nombre por completo en el modal y "Guardar cambios" | (Verificar: hoy no hay validación de "no vacío" en el PATCH — si se guarda vacío sin avisar, es una mejora pendiente, no necesariamente un bug bloqueante) |
+| DIR-04 ✅ | Eliminar de este evento (modal, admin+) — reemplaza el borrado de logs de antes | Como `admin`+, "Editar" → "🗑️ Eliminar de este evento" | Pide confirmación explicando que borra a la persona por completo de este evento (y de la base general si no está en otro evento); al confirmar, desaparece de la tabla |
+| DIR-04b ✅ | Eliminar no afecta a otros eventos del mismo cliente | Persona registrada en 2 eventos del mismo tenant; eliminarla desde el Directorio del Evento A | Desaparece del Evento A; sigue intacta (mismos datos, misma foto) en el Evento B |
+| DIR-04c ❌ | `coordinador` no ve "Eliminar" ni "Cambiar estado" | Como `coordinador` (no admin), abrir el modal de Editar de cualquier persona | Ni el selector "Estado de registro" ni el botón "Eliminar" aparecen en el modal — solo los campos de perfil + "Guardar cambios" |
+| DIR-04d ✅ | Cambiar estado de registro manualmente (modal, admin+) | Como `admin`+, en el modal de Editar de alguien "No registrado", cambiar el selector a "Registrado" y "Aplicar" | Pide confirmación aparte (independiente de "Guardar cambios"); al confirmar, la persona pasa a "Registrado" en la tabla sin haber escaneado/buscado nada |
+| DIR-04e ✅ | Cambiar estado de registro de vuelta a "No registrado" | Repetir DIR-04d en sentido contrario sobre alguien "Registrado" | Pide confirmación aparte; al confirmar, vuelve a "No registrado" (sigue en el directorio, solo sin logs de este evento) |
 | DIR-05 ✅ | Directorio NO mezcla eventos distintos | Comparar el Directorio de dos eventos distintos del mismo cliente, con personas distintas en cada uno | Cada evento muestra solo lo suyo |
-| DIR-06 ❌ | `digitador`/`cliente` intentan Editar/Eliminar | Como `digitador`, ver la tabla del Directorio | **Arreglado 2026-09-21:** la celda de acción viene vacía desde el principio para `digitador`/`cliente` (sin botón "Editar" siquiera) — `directory.js` compara `window.STAFF_ROLE` contra `EDIT_ROLES`/`DELETE_ROLES` antes de crear los botones, mismos mínimos que exige el backend (`PATCH` = `coordinador`+, `DELETE .../logs` = `admin`+). Verificar además por API directa que ambos siguen dando 403 para roles insuficientes (defensa en profundidad, no solo ocultar en la UI) |
-| DIR-07 ✅ | `coordinador` ve Editar pero no Eliminar | Como `coordinador` (no admin), ver una fila y entrar en modo edición | Aparece "Editar"/"Guardar", pero "Eliminar" nunca se revela (requiere `admin`+) |
+| DIR-06 ❌ | `digitador`/`cliente` intentan Editar | Como `digitador`, ver la tabla del Directorio | La celda de acción no muestra "Editar" (solo 🖨️ para `digitador`, nada para `cliente`) — `directory.js` compara `window.STAFF_ROLE` contra `EDIT_ROLES` antes de crear el botón, mismo mínimo que exige el backend (`PATCH` = `coordinador`+). Verificar además por API directa que `PATCH/DELETE` siguen dando 403 para roles insuficientes |
+| DIR-07 ✅ | `coordinador` ve Editar pero no Eliminar/Cambiar estado | Como `coordinador` (no admin), abrir el modal de Editar | Aparece el formulario de perfil + "Guardar cambios", pero NO aparece el selector de estado ni "Eliminar" (ambos requieren `admin`+, ver DIR-04c) |
+| DIR-07b ❌ | Ya no existe botón "Acreditar" por fila | Ver cualquier fila con estado "No registrado" | No hay ningún botón "Acreditar" suelto en la fila — acreditar se hace por escaneo/búsqueda (ver sección de Auto-registro) o por "Cambiar estado de registro" dentro de Editar (admin+) |
+| DIR-08 ✅ | Búsqueda por nombre/empresa sin tildes (Sprint 2 Fix 1) | Persona cargada como "María José Ñúñez Gómez", buscar `maria jose` (sin tildes, minúsculas) | La encuentra igual — antes daba "Sin resultados" |
+| DIR-09 ✅ | Prefijo por palabra, no substring (Sprint 2 Fix 1) | Con "María" y "Amaya" cargadas en el mismo evento, buscar `Ma` en el campo de nombre | Solo aparece "María" (su nombre EMPIEZA con "Ma"); "Amaya" NO aparece aunque contenga "ma" en medio |
+| DIR-10 ✅ | Cédula sigue siendo substring (sin cambiar) | Buscar por los ÚLTIMOS dígitos de una cédula (no el inicio) | Sigue encontrándola — el campo de cédula no cambió a prefijo, solo nombre/empresa |
+| DIR-11 ✅ | Contador "N sin registrar" (Sprint 2 Fix 2) | Evento con roster precargado, algunas personas sin presentarse todavía | Aparece un botón/badge "⚠️ N sin registrar" arriba de la tabla, con el conteo correcto de filas en estado "No registrado" |
+| DIR-12 ✅ | Clic en el contador filtra la tabla | Clic en el botón de DIR-11 | Solo quedan visibles las filas "No registrado"; el botón queda visualmente "activo" |
+| DIR-13 ✅ | El filtro de "sin registrar" se combina con la búsqueda | Con el filtro de DIR-12 activo, escribir algo en el campo de nombre | Se aplican AMBOS filtros a la vez (no se reemplazan) |
+| DIR-14 ✅ | El contador se oculta si no hace falta | Evento donde TODOS ya se registraron (0 "No registrado") y el filtro no está activo | El botón/badge no aparece |
+| DIR-14b ✅ | Contador "X registrados de Y" (2026-09-16) | Evento con roster de 500 personas, 100 ya acreditadas | Aparece un indicador "✅ 100 registrados de 500" junto al de "sin registrar" — Y es el total de personas del evento (roster + altas manuales), no solo las que pasan el filtro de búsqueda actual |
 
 ---
 
@@ -302,6 +316,460 @@ Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vige
 
 ---
 
+## 12. Escarapelas (Épico 2 — editor visual, librería reusable, impresión) — Sprint 2
+
+Requiere `alembic upgrade head` con la migración `0012_badge_templates` aplicada. Cubre `templates/badge_editor.html`, `templates/badge_print.html`, `app/routers/badges.py`, `static/js/badge-render.js` y los 4 puntos de disparo de impresión (escáner facial, alta manual, "Acreditar" del Directorio, atajo de lector de cédula).
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| BADGE-01 ✅ | Acceso al editor | Como `coordinador`+, entrar a un evento → tarjeta "Escarapelas" | Abre `/kiosk/{event_id}/escarapela` |
+| BADGE-02 ❌ | `digitador`/`cliente` sin acceso al editor | Como `digitador`, entrar a `/kiosk/{event_id}` | No aparece la tarjeta "Escarapelas"; si se fuerza la URL directo, redirige (mismo mínimo `coordinador`+ que "Adjuntar Base de Datos") |
+| BADGE-03 ✅ | Plantilla por defecto al abrir por primera vez | Abrir el editor de un evento que nunca tuvo escarapela | Se crea sola una plantilla 62×100mm vertical con 3 campos (`text_variable`: nombre, apellido, empresa) — no aparece vacío |
+| BADGE-04 ✅ | Orientación vertical/horizontal | Cambiar el selector de orientación | El canvas intercambia `width_mm`/`height_mm`; el mensaje deja claro que **vertical es el formato para la Brother QL-800** |
+| BADGE-05 ✅ | Guardar plantilla persiste | Modificar algo, "Guardar", recargar la página del editor | Los cambios siguen ahí (`PUT /api/events/{id}/badge-template`) |
+| BADGE-06 ✅ | Agregar texto fijo | "+ Texto fijo", escribir contenido | Aparece en el canvas con el texto literal |
+| BADGE-07 ✅ | Agregar texto variable con campos reales | "+ Texto variable", abrir el selector de variable | Lista los campos reales de `User` (nombre, apellido, empresa, teléfono, correo, tipo de asistente) MÁS los opcionales que este evento ya tiene rotulados (`Event.optional_field_labels`) |
+| BADGE-08 ✅ | Imagen estática (logo) | "+ Imagen", subir un archivo | Se sube a `data/<tenant>/badge_assets/`, aparece en el canvas vía `GET /api/badge-assets/{tenant}/{filename}` |
+| BADGE-09 ❌ | Foto bloqueada sin biometría | En un evento con `facial_enabled=False`, intentar "+ Foto del asistente" | Error claro, no se agrega el elemento (`image_variable` requiere `facial_enabled=True`) |
+| BADGE-10 ✅ | Foto permitida con biometría | Repetir BADGE-09 en un evento con `facial_enabled=True` | Se agrega correctamente, en el editor se ve una foto de muestra o el placeholder de "Foto" |
+| BADGE-11 ✅ | Código QR | "+ QR", elegir 1+ variables a codificar (ej. cédula) | Se renderiza un QR real y escaneable en el canvas del editor, no solo texto "QR" |
+| BADGE-12 ✅ | Código de barras | "+ Código de barras", elegir variable y formato (`code128`/`code39`) | Se renderiza un barcode real y escaneable |
+| BADGE-13 ✅ | Arrastrar un elemento | Clic y arrastrar cualquier elemento del canvas | Se mueve visualmente; al guardar, el `x`/`y` persistido está en mm reales, no en píxeles de pantalla escalados |
+| BADGE-14 ✅ | Redimensionar un elemento | Arrastrar el handle de una esquina | Cambia `width`/`height` en mm reales, proporcional al tamaño mostrado |
+| BADGE-15 ✅ | Panel de propiedades de texto | Seleccionar un texto, cambiar fuente/tamaño/color/negrita/alineación | Se refleja al instante en el canvas (mismo look que tendrá al imprimir) |
+| BADGE-16 ✅ | Fondo color vs imagen | Cambiar "Fondo" de color sólido a imagen subida | El canvas cambia de fondo en consecuencia |
+| BADGE-17 ✅ | Guardar en la librería del tenant | "Guardar como", darle un nombre | Aparece en `GET /api/events/{id}/saved-badge-templates`, visible para CUALQUIER evento del mismo tenant |
+| BADGE-18 ✅ | Importar desde la librería | En OTRO evento del mismo tenant, "Importar" → elegir la plantilla guardada | Se copia el diseño completo como punto de partida; editar la plantilla del evento después NO modifica la guardada en la librería (no es un vínculo vivo) |
+| BADGE-19 ✅ | Borrar de la librería una plantilla ya importada | Borrar de la librería una plantilla que un evento ya importó antes | Se borra sin error 500; la plantilla de ESE evento (ya copiada) sigue intacta — solo se pierde la trazabilidad de "de dónde vino" |
+| BADGE-20 ✅ | Switch "Auto impresión" persiste | Activar/desactivar el switch en el editor, recargar | El estado sigue ahí (`Event.auto_print_badge` vía `PATCH /api/events/{id}`) |
+| BADGE-21 ✅ | Impresión NO automática por defecto (escáner) | Con `auto_print_badge=False`, reconocer a alguien por cámara con match exitoso | Aparece el botón "Imprimir Escarapela" habilitado, pero NINGUNA ventana se abre sola |
+| BADGE-22 ✅ | Auto impresión activa (escáner) | Repetir BADGE-21 con `auto_print_badge=True` | Además del botón, se abre sola una ventana con la vista de impresión |
+| BADGE-23 ✅ | Botón de impresión en alta manual | Registrar a alguien por "Registro Individual" con éxito | Aparece "Imprimir Escarapela" junto al formulario (mismo criterio `auto_print_badge` que BADGE-21/22) |
+| BADGE-24 ✅ | Botón de impresión en "Acreditar" del Directorio | Clic en "Acreditar" sobre alguien "No registrado" | Al acreditar con éxito, se dispara el mismo criterio de auto-impresión (sin botón dedicado ahí, pero si `auto_print_badge=True` se abre sola la ventana) |
+| BADGE-25 ✅ | Botón de impresión en el atajo de lector (Enter con cédula) | En el campo de cédula del Directorio, escanear/escribir una cédula exacta y Enter | Mismo comportamiento que BADGE-24 tras el `checkin-cedula` exitoso |
+| BADGE-26 ✅ | Botón 🖨️ persistente por fila | En cualquier fila del Directorio (esté "Registrado" o no, no solo recién acreditada) | Hay un botón de impresión que reabre la escarapela de esa persona en cualquier momento, sin depender de un registro fresco |
+| BADGE-27 ✅ | Tamaño real de página al imprimir | Abrir la vista de impresión de alguien y ver la vista previa de impresión del navegador | El tamaño de página coincide con `width_mm`×`height_mm` de la plantilla (ej. 62×100mm para el formato Brother QL-800 vertical), no aparece como carta/A4 por defecto |
+| BADGE-28 ✅ | Datos reales en la impresión | Comparar la vista de impresión con el perfil real de la persona | Muestra sus datos reales (no placeholders `{variable}`) y su foto real si el evento es biométrico y la tiene |
+| BADGE-29 ❌ | `digitador`/`cliente` no editan el diseño | Forzar la URL `/kiosk/{event_id}/escarapela` como `digitador` | Redirige — puede disparar impresión (botones en Registro/Directorio) pero no editar la plantilla |
+| BADGE-30 ✅ | `digitador` sí puede imprimir | Como `digitador`, usar el botón "Imprimir Escarapela" tras un registro | Funciona (mínimo real del endpoint de impresión es `digitador`+, distinto del editor que es `coordinador`+) |
+| BADGE-31 ❌ | `cliente` no ve botones de impresión | Como `cliente` en el Directorio (vista de solo lectura) | No aparece ningún botón "Acreditar" ni 🖨️ en las filas |
+| BADGE-32 ✅ | Código de barras se renderiza (QA fix #1) | Agregar un elemento "Código de barras" en el editor, ligarlo a `id` | Se ve un barcode real y escaneable, no un espacio vacío (el CDN de `JsBarcode` estaba roto: URL/versión incorrecta) |
+| BADGE-33 ✅ | "Guardar como plantilla" no truena (QA fix #2) | Clic en "💾 Guardar como plantilla" | Aparece un modal propio (no el `prompt()` nativo del navegador) pidiendo el nombre; al confirmar, queda guardada en la librería |
+| BADGE-34 ✅ | `digitador` autorizado puede cargar la plantilla vía API (QA fix #3) | Como `digitador` autorizado al evento, `GET /api/events/{id}/badge-template` directo | 200 (antes daba 403) — necesario para que `badge_print.html` funcione para este rol; `PUT` al mismo endpoint sigue dando 403 (la escritura sigue siendo `coordinador`+) |
+| BADGE-35 ✅ | Foto sin rostro en `bulk_register` se avisa, no se descarta en silencio (QA fix #4) | Cargar un roster + zip con una foto de alguien sin rostro detectable (o un archivo de imagen dañado) | La persona se crea igual (identidad), pero SIN foto biométrica asociada (`has_photo:false` vía `badge-print-data`) y aparece un `⚠️` en `errors[]` de la respuesta explicando cuál fue y por qué |
+
+---
+
+## 13. Lector de cédula (Épico M1-7, Parte 2 del brief de Sprint 2)
+
+Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fastCheckin`), `kiosk_registro.html` (blindaje de teclado, botón "Escanear foto"), `app/mrz_parser.py`, `app/mrz_ocr.py` y `app/routers/cedula.py`. Los casos de OCR real (CED-08 en adelante) necesitan Tesseract instalado (ver `CLAUDE.md`) y una foto real del reverso de una cédula nueva — sin eso, se puede validar igual todo lo anterior (2.1 y 2.2 no dependen de OCR).
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| CED-01 ✅ | Cédula vieja: CSV se interpreta correctamente | En el campo de cédula del Directorio, escribir/escanear `1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206` y Enter | Se intenta acreditar por la cédula `1016100329` (no el texto completo tal cual) |
+| CED-02 ✅ | ID suelto sigue funcionando igual | Escribir solo un número de cédula (sin comas) y Enter | Comportamiento idéntico a antes — el parser de CSV no interfiere con el caso de siempre |
+| CED-03 ✅ | Segundo paso: fallback por nombre | Cargar a alguien en el Directorio con un nombre ligeramente distinto al que traería el CSV pero que igual cumple prefijo por palabra; escanear un CSV con una cédula que NO coincide con la de esa persona pero sí su nombre completo | Al fallar la búsqueda exacta por cédula, se reintenta por nombre y encuentra/acredita a esa persona |
+| CED-04 ✅ | Ni cédula ni nombre encontrados → alta manual precargada | Escanear un CSV cuya cédula y nombre no existen en el Directorio | Salta a "Registro Individual" con cédula, nombres Y apellidos ya precargados (antes solo la cédula) |
+| CED-05 ❌ | Blindaje contra atajos del navegador | Con el foco en el campo de cédula (o en el ID del alta manual), simular una tecla con `ctrlKey`/`altKey`/`metaKey` presionada | Se bloquea (`preventDefault`/`stopPropagation`) — no debe disparar ningún atajo del navegador |
+| CED-06 ✅ | QR de la cédula nueva no se intenta decodificar | Intentar escanear el QR de una cédula nueva con el lector en el campo de cédula | El texto corrupto que llegue se trata como un ID suelto normal (probablemente "no encontrado") — en ningún punto del código se intenta interpretar como un formato conocido |
+| CED-07 ✅ | Botón "Escanear foto" visible y gateado por `en_proceso` | Ver el Directorio con el evento en distintos estados | El botón "📷 Escanear foto" aparece deshabilitado si el evento no está `en_proceso`, igual que el campo de cédula |
+| CED-08 ✅ | Parser MRZ (sin necesitar OCR real) | Con Python, llamar `parse_mrz_td1()` con las 3 líneas de muestra reales del brief (`ICCOL085334524815001<<<<<<<<<`, `0503268M3512023COL1013259208<2`, `RAMIREZ<JUZGA<<JUAN<DAVID<<<<<`) | Devuelve `valid=True`, `id="1013259208"`, `first_name="JUAN DAVID"`, `last_name="RAMIREZ JUZGA"` — coincide exacto con los datos reales confirmados |
+| CED-09 ❌ | Parser rechaza un checksum corrupto | Repetir CED-08 alterando un solo dígito del final de la línea 2 | Devuelve `valid=False` — no se debe aceptar como buena una lectura que no cuadra |
+| CED-10 ✅ | Escaneo de foto completo (necesita Tesseract + foto real) | Con Tesseract instalado, tomar una foto real del reverso de una cédula nueva vía "📷 Escanear foto" | Se extrae la cédula/nombre correctos y sigue el mismo flujo de dos pasos que CED-01/03/04 |
+| CED-11 ❌ | Foto ilegible pide repetir, no acredita con datos malos | Subir una foto borrosa/mal encuadrada del reverso, o una foto que no es una cédula | 422 con mensaje pidiendo repetir la foto — nunca se acredita con datos no confiables |
+| CED-12 ❌ | Servidor sin Tesseract instalado da un error claro | En un entorno sin el binario de Tesseract, usar "Escanear foto" | 503 con mensaje explicando que falta el motor de OCR — no un 500 críptico |
+| CED-13 ❌ | Rol mínimo del escaneo por foto | Como `cliente` (o sin sesión), llamar `POST /api/events/{id}/cedula-mrz-scan` directo | 403 — mismo mínimo `digitador`+ que `checkin-cedula` |
+
+---
+
+## 14. Registro unificado + Modo autoregistro (Sprint 2.2 Fase B)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| REGB-01 ✅ | Pestaña única "Registro" | Entrar a `/kiosk/{event_id}/registro` como `digitador`+ | Ya no hay pestañas separadas "Registro Individual"/"Directorio en Vivo" — una sola pestaña "Registro" con la tabla + botón "➕ Registrar nuevo" |
+| REGB-02 ✅ | "Registrar nuevo" abre modal | Clic en "➕ Registrar nuevo" | Se abre un modal flotante con el formulario de alta manual de siempre (mismos campos, foto si `facial_enabled`) |
+| REGB-03 ✅ | Alta manual sigue funcionando igual desde el modal | Completar y enviar el formulario del modal | `POST /api/register` sin cambios; al guardar, el modal se cierra, la tabla se recarga y la persona queda "Registrado" por defecto |
+| REGB-04 ✅ | "Exportar Reporte" y "Usuarios del Evento" ya no están en Registro | Ver las pestañas de `/kiosk/{event_id}/registro` | No aparecen — ahora son tarjetas propias "📊 Estadísticas" y "👥 Usuarios del Evento" en `/kiosk/{event_id}` |
+| REGB-05 ✅ | Las nuevas rutas respetan el mismo rol mínimo | Como `digitador`, intentar `/kiosk/{event_id}/estadisticas` y `/kiosk/{event_id}/usuarios` por URL directa | Redirige — mismo mínimo `coordinador`+ que tenían las pestañas viejas |
+| REGB-06 ✅ | Switch "Modo autoregistro" visible solo coordinador+ | Ver la pestaña "Registro" como `digitador` vs `coordinador` | El botón "🔒/🔓 Modo autoregistro" solo aparece para `coordinador`+ |
+| REGB-07 ✅ | Facial NO acredita solo por defecto | Con `auto_register` apagado, escanear un rostro con match | Aparece la tarjeta de confirmación ("🟡 Coincidencia encontrada") pero NO se crea ningún log todavía — el estado en el Directorio sigue "No registrado" |
+| REGB-08 ✅ | "Guardar y Autorizar Acceso" confirma de verdad | Sobre REGB-07, clic en "Guardar y Autorizar Acceso" | Recién ahí se crea el log, el estado pasa a "Registrado", y si auto-impresión está activa se abre la escarapela |
+| REGB-09 ✅ | Cédula (barcode o foto MRZ) tampoco acredita sola | Con `auto_register` apagado, escanear/buscar una cédula con match | Aparece el modal "Coincidencia encontrada" (no el Directorio directo) — nada se acredita hasta confirmar ahí |
+| REGB-10 ✅ | Modo autoregistro activado restaura el comportamiento de siempre | Prender el switch, repetir REGB-07/09 | El match acredita de una, sin tarjeta/modal de confirmación intermedio — igual que se comportaba todo antes de este cambio |
+| REGB-11 ❌ | El modal de confirmación de cédula no es admin-only | Como `digitador` (no coordinador/admin), repetir REGB-09 | El modal "Coincidencia encontrada" + "Guardar y Autorizar Acceso" SÍ aparece y funciona para `digitador` — es distinto de "Cambiar estado de registro" (Fase A), que sí es admin+ |
+| REGB-12 ✅ | Auto-impresión sigue disparándose solo tras un guardado real | Con auto-impresión Y autoregistro ambos activados, escanear un match | La escarapela se abre sola justo después de que el log se crea (no antes, no en el estado "pendiente") |
+
+---
+
+## 15. Captura por cámara + OCR robusto a orientación (Sprint 2.2 Fase C)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| CAM-01 ✅ | Botón "Usar cámara" para la cédula nueva | En "Registro", junto a "Adjuntar imagen" | Aparece "📸 Usar cámara" — clic abre un modal con video en vivo y "📸 Tomar foto" |
+| CAM-02 ✅ | Capturar y escanear desde la cámara | Tomar la foto en el modal | Se cierra el modal y se sube la foto capturada a `cedula-mrz-scan` exactamente igual que si se hubiera adjuntado un archivo |
+| CAM-03 ❌ | Sin permiso de cámara | Denegar el permiso del navegador | El modal muestra un mensaje de error claro y sugiere usar "Adjuntar imagen" en su lugar, sin romper el resto de la pantalla |
+| CAM-04 ✅ | "Usar cámara" en el alta manual biométrica | En el modal "Registrar nuevo" de un evento con `facial_enabled=True`, junto al campo de foto | Aparece "📸 Usar cámara"; al capturar, el `<input type="file">` queda con esa foto (verificar que el formulario la manda igual que un archivo adjuntado a mano) |
+| CAM-05 ✅ | Adjuntar archivo sigue funcionando igual | En cualquiera de los dos puntos de arriba, usar el botón/campo de adjuntar en vez de la cámara | Comportamiento idéntico al de antes de esta fase |
+| CAM-06 ✅ | OCR detecta la MRZ sin importar la orientación de la foto | Tomar la foto del reverso en horizontal una vez y en vertical otra vez (misma cédula) | En ambos casos se extrae la cédula/nombre correctamente — el backend prueba las 4 rotaciones posibles |
+| CAM-07 ❌ | Ninguna rotación detecta texto | Foto totalmente borrosa/negra | 422 con el mensaje de "no se detectó la zona MRZ" (distinto del mensaje de checksum inválido) |
+
+---
+
+## 16. Escarapelas: lienzo + spinners + Estadísticas (Sprint 2.2 Fase D)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| FD-01 ✅ | Lienzo del editor cabe mejor en pantalla | Abrir el editor de escarapelas en un monitor normal | El lienzo (62×100mm por defecto) se ve casi completo sin tener que hacer scroll horizontal, y con mucho menos scroll vertical que antes |
+| FD-02 ✅ | Arrastrar/redimensionar sigue siendo preciso | Arrastrar un elemento y soltarlo en una posición conocida, ver el valor de X/Y en el panel | Coincide con la posición real en mm — el cambio de escala visual no afectó la precisión |
+| FD-03 ✅ | Selector de variable de un `text_variable` | Seleccionar un texto variable, cambiar la "Variable" del panel de propiedades | El lienzo se actualiza al instante al valor elegido (verificado en vivo — no reproducía el bug reportado) |
+| FD-04 ✅ | Subir imagen a un `image_static` | Agregar "🖼️ Imagen / logo", subir un archivo | Se sube y aparece en el lienzo (verificado en vivo — no reproducía el bug reportado) |
+| FD-05 ℹ️ | "Foto del asistente" no tiene botón de subir (por diseño) | Agregar "🙂 Foto del asistente" | El panel de propiedades explica que este elemento se llena solo al imprimir con la foto real de la persona, y sugiere "Imagen / logo" si lo que se buscaba era subir una imagen — no es un bug |
+| FD-06 ✅ | Spinner de carga en subir roster | Subir una base de datos grande | El botón muestra un círculo girando + "Cargando base de datos..." mientras dura, no solo texto estático |
+| FD-07 ✅ | Spinner de carga en guardar escarapela / subir imagen / escanear MRZ / alta manual | Repetir la acción en cada uno de estos 4 puntos | Mismo círculo girando en cada botón mientras la petición está en curso, se restaura el label original al terminar (éxito o error) |
+| FD-08 ✅ | Nueva tarjeta "📊 Estadísticas" con módulo de gráficos | Entrar a `/kiosk/{event_id}/estadisticas` | Sigue el botón de exportar Excel de siempre, más un selector de variable y "➕ Agregar variable" |
+| FD-09 ✅ | Variable categórica ofrece Barras/Circular | Agregar una variable de texto (ej. "Empresa") | El gráfico se dibuja como barras por defecto; el selector de tipo permite cambiar a "Circular (pie)" y el mismo gráfico se redibuja sin perder los datos |
+| FD-10 ✅ | Variable numérica ofrece Histograma/Líneas | Agregar una variable cuyos valores sean todos números (ej. un opcional de "Edad") | Se detecta como numérica automáticamente y se dibuja un histograma con rangos (bins) reales de los datos |
+| FD-11 ✅ | Variables identificadoras no aparecen en el checklist | Ver el selector de variables | No aparecen `id`, `first_name`, `last_name`, `phone` ni `email` — son casi únicas por persona, no sirven para graficar |
+| FD-12 ✅ | Quitar un gráfico agregado | Clic en "✕" de una tarjeta de gráfico | Se destruye la instancia de Chart.js y desaparece la tarjeta, sin errores en consola |
+| FD-13 ❌ | Rol mínimo del módulo de Estadísticas | Como `digitador`, llamar `/api/events/{id}/stats/variables` o `/stats/data` directo | 403 — mismo mínimo `coordinador`+ que el resto de Estadísticas |
+| FD-14 ✅ | Variable sin datos no rompe la tarjeta | Agregar una variable que ningún asistente tiene todavía cargada | La tarjeta muestra "Sin datos suficientes para graficar esta variable todavía" en vez de un gráfico vacío o un error |
+
+---
+
+## 17. Ronda de feedback: librería global, colores de gráficos, responsive, barra de contexto
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| FB-01 ✅ | Librería de escarapelas es global | Guardar una plantilla desde el evento del Cliente A ("Guardar como plantilla"); entrar al editor de un evento del Cliente B y abrir "Importar plantilla" | La plantilla guardada por el Cliente A aparece en la lista y se puede importar sin problema |
+| FB-02 ✅ | Importar entre clientes copia bien (incluidas imágenes) | Repetir FB-01 con una plantilla que tenga un logo/imagen de fondo subida | La imagen se ve igual en el evento del Cliente B (se sirve por `tenant_id` explícito en la ruta, no por el tenant de la sesión) |
+| FB-03 ✅ | Gráfico de barras con colores por categoría | En Estadísticas, agregar una variable categórica con 3+ valores distintos (ej. Empresa) | Cada barra tiene un color distinto (antes todas salían del mismo color dorado) |
+| FB-04 ✅ | Gráfico circular sigue con colores por categoría | Cambiar el tipo de gráfico de FB-03 a "Circular" | Cada porción mantiene su propio color, coherente con las barras |
+| FB-05 ✅ | Gráfico de líneas usa un solo color | Agregar una variable numérica y elegir "Líneas" | La línea es de un solo color (correcto para una serie continua, no aplica lo de "colores distintos por categoría") |
+| FB-06 ✅ | Directorio/Registro usa el ancho completo disponible | Abrir "Registro" en un monitor ancho (≥1440px) | La tabla y los controles ya no quedan apretados en una columna central angosta — usan bastante más ancho de pantalla |
+| FB-07 ✅ | La app es usable en celular sin recortes | Abrir cualquier pantalla de un evento (Registro, Adjuntar Base, Escarapelas, Estadísticas, Usuarios) en un viewport de celular (~375px) | El header se ve completo (sin recortarse ni superponerse con el contenido), los botones se apilan en una columna, la tabla se puede desplazar horizontalmente si hace falta |
+| FB-08 ✅ | Barra "Cliente / Evento / Código" presente en todas las pantallas de un evento | Navegar entre Registro, Adjuntar Base de Datos, Escarapelas, Estadísticas y Usuarios del Evento | En las 5 aparece la misma franja debajo del header con el nombre del cliente, el nombre del evento y su código — siempre visible, no hay que adivinar en qué evento se está trabajando |
+| FB-09 ✅ | La franja de contexto también es responsive | Repetir FB-08 en viewport de celular | El texto se envuelve en 2 líneas en vez de recortarse o desbordar la pantalla |
+
+---
+
+## 18. Segunda ronda de feedback: fondo del editor, auto-impresión, orden de columnas, Estadísticas para cliente
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| FB2-01 ✅ | Fondo de color sólido se ve al instante | En el editor, cambiar el color con el selector de color | El lienzo cambia de color inmediatamente, sin necesidad de guardar |
+| FB2-02 ✅ | Cambiar de "Imagen" a "Color sólido" quita la imagen | Poner una imagen de fondo, verla en el lienzo, luego cambiar el desplegable "Fondo" a "Color sólido" | El lienzo vuelve a mostrar el color sólido de inmediato — la imagen ya NO se queda pegada |
+| FB2-03 ✅ | Ida y vuelta entre color e imagen varias veces | Alternar el desplegable "Fondo" varias veces seguidas | El lienzo siempre refleja la opción actualmente seleccionada, nunca queda "atascado" en la anterior |
+| FB2-04 ✅ | "Auto-impresión" vive en Registro, no en Escarapelas | Abrir el editor de escarapelas | Ya no aparece el botón de auto-impresión ahí — abrir la pestaña "Registro" en su lugar |
+| FB2-05 ✅ | Auto-impresión y Modo autoregistro juntos | Ver la pestaña "Registro" como `coordinador`+ | Ambos botones aparecen uno junto al otro, cada uno con su propio estado (activado/apagado) y funcionando de forma independiente |
+| FB2-06 ✅ | Columna "Acción" es la primera | Ver la tabla del Directorio | El orden de columnas es Acción, ID, Nombres, Apellidos, Tipo Asistente, Estado |
+| FB2-07 ✅ | Estadísticas accesible para `cliente` | Iniciar sesión como `cliente` asignado a un evento, ir a la pestaña "Estadísticas" | Ya no dice "Próximamente" — muestra los gráficos reales y "Exportar Base de Datos" incrustados ahí mismo (`<iframe>`), igual que ve un coordinador |
+| FB2-08 ❌ | `digitador` sigue sin acceso a Estadísticas | Iniciar sesión como `digitador`, intentar `/kiosk/{event_id}/estadisticas` por URL directa, y los endpoints `/api/events/{id}/stats/*` y `/api/report` directo | Redirige la página (302) y da 403 en los tres endpoints — el acceso de `cliente` no le abrió la puerta a `digitador` |
+| FB2-09 ℹ️ | El 503 al escanear cédula por foto sin Tesseract instalado no es un bug | Usar "Escanear foto"/"Usar cámara" para la cédula nueva en un entorno sin el binario de Tesseract | 503 con el mensaje ya documentado — es el comportamiento esperado (ver CLAUDE.md, sección Tesseract OCR), falta el paso de instalación en ese entorno, no hay nada que arreglar en el código |
+
+---
+
+## 19. Tercera ronda de feedback: pestañas de cliente, formato de roster, transición de estado
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| FB3-01 ✅ | Solo una pestaña activa al entrar como `cliente` | Iniciar sesión como `cliente` | Solo se ve "Estadísticas" (marcada activa) — "Directorio en Vivo" NO se ve superpuesta debajo |
+| FB3-02 ✅ | Estadísticas se ve sin dar clic a ningún botón | Repetir FB3-01 | Los gráficos/exportar aparecen de una en la pestaña, no un botón que lleve a otro lado |
+| FB3-03 ✅ | Alternar entre pestañas funciona en ambos sentidos | Como `cliente`, clic en "Directorio en Vivo" y luego de vuelta en "Estadísticas" varias veces | Cada clic muestra solo el contenido correspondiente, sin quedar ambas visibles ni en blanco |
+| FB3-04 ❌ | Roster con columnas equivocadas se rechaza de una | Subir un Excel/CSV cuyas columnas no se parezcan a `id`/`nombres`/`apellidos` | 400 inmediato pidiendo usar la plantilla oficial — no se procesa ninguna fila ni se reportan 20 "❌ sin ID" |
+| FB3-05 ✅ | Roster con el formato correcto sigue funcionando | Repetir FB3-04 con el archivo de siempre | Se procesa normal, sin cambios de comportamiento |
+| FB3-06 ❌ | No se puede devolver un evento con gente cargada a "Creado" | Evento "En Proceso" con roster o registros en vivo → intentar cambiar su estado a "Creado" | 400 explicando que ya tiene datos, sugiere "Finalizado" o un evento nuevo |
+| FB3-07 ✅ | Sí se puede volver a "Creado" un evento realmente vacío | Evento "En Proceso" sin ningún asistente cargado ni registrado → cambiar a "Creado" | Se permite normal, sin bloqueo |
+| FB3-08 ❌ | El bloqueo también aplica viniendo de "Finalizado" | Evento "Finalizado" con datos → intentar "Creado" | 400, mismo mensaje — no es exclusivo de "En Proceso" |
+
+---
+
+## 20. Parámetros del Evento (campos configurables + obligatorios + estadísticas por defecto)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| PARAM-01 ✅ | Tarjeta nueva visible para coordinador+ | Iniciar sesión como `coordinador` o `admin`, entrar a `/kiosk/{event_id}` | Aparece la tarjeta "⚙️ Parámetros del Evento" junto a las demás |
+| PARAM-02 ❌ | `digitador` no puede entrar a la página | Iniciar sesión como `digitador`, ir a `/kiosk/{event_id}/parametros` por URL directa | Redirige (302) a `/kiosk/{event_id}` — mismo mínimo que Adjuntar Base/Usuarios del Evento |
+| PARAM-03 ✅ | `GET field-configs` trae las 5 fijas con valores por defecto | Sin haber guardado nada aún, llamar `GET /api/events/{id}/field-configs` | Devuelve `role/company/phone/email/opt_1` (+ cada `opcional_N` rotulado), todos `required=false`, `field_type="text_short"`, `default_stat_enabled=false` |
+| PARAM-04 ✅ | `PUT field-configs/{key}` guarda una config | Marcar "Cargo" obligatorio, tipo "Lista desplegable", con 2+ opciones, y guardar | 200; una recarga de la página trae esa misma config (obligatorio marcado, tipo y opciones correctas) |
+| PARAM-05 ❌ | Lista desplegable sin opciones se rechaza | `PUT` con `field_type="select"` y `options=[]` | 400, pidiendo al menos una opción |
+| PARAM-06 ❌ | `field_key` que no existe se rechaza | `PUT /api/events/{id}/field-configs/no_existe` | 400 — ese campo no es configurable en este evento |
+| PARAM-07 ❌ | `digitador` no puede leer ni escribir field-configs | Como `digitador`, llamar `GET`/`PUT` sobre `/api/events/{id}/field-configs` directo | 403 en ambos |
+| PARAM-08 ❌ | Alta manual rechaza si falta un campo obligatorio | Con "Cargo" marcado obligatorio, enviar `POST /api/register` sin `role` | 400 listando el campo faltante, no se crea el `User` |
+| PARAM-09 ✅ | Alta manual acepta con el campo completo | Repetir PARAM-08 enviando `role` con un valor válido (una de las opciones configuradas, si es lista desplegable) | 200, persona registrada normal |
+| PARAM-10 ❌ | Editar no puede vaciar un campo obligatorio | `PATCH /api/users/{id}` intentando dejar `role=""` en un campo marcado obligatorio | 400, no se guarda el cambio |
+| PARAM-11 ✅ | `bulk_register` NO exige los obligatorios de Parámetros | Cargar un Excel donde algunas filas no traen valor para un campo marcado obligatorio en Parámetros | Se procesa igual que siempre (tolerante, sin bloquear por esto) — decisión de alcance explícita, ver CLAUDE.md |
+| PARAM-12 ❌ | El modal de alta bloquea guardar con un campo obligatorio vacío | Abrir "Registrar nuevo" con un campo `select` obligatorio configurado, dejarlo sin elegir, dar clic en "Guardar Perfil" | El navegador bloquea el envío (validación nativa), no se manda ninguna petición a `/api/register` |
+| PARAM-13 ❌ | El modal de Editar del Directorio bloquea guardar igual | Abrir "Editar" de una persona, vaciar un campo marcado obligatorio, dar clic en "Guardar cambios" | No se manda el `PATCH` — se bloquea antes, vía `reportValidity()` |
+| PARAM-14 ✅ | Una variable con "Generar estadística" aparece sola en Estadísticas | Marcar una variable con `default_stat_enabled` y un tipo de gráfico, entrar a `/kiosk/{event_id}/estadisticas` | La tarjeta de esa variable aparece de una, sin usar "➕ Agregar variable" |
+| PARAM-15 ✅ | El tipo de gráfico configurado se resuelve o cae a uno válido | Configurar "Circular" para una variable que termina siendo categórica (dato real) | El gráfico se dibuja como circular; si el tipo configurado no aplicara al dato real detectado, cae al primero válido para ese tipo sin romper el gráfico |
+
+---
+
+## 21. Sprint 2.3: menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S23-01 ✅ | Sidebar visible para coordinador+ | Iniciar sesión como `coordinador`/`admin`/`super_admin`, navegar a cualquier página de la app | El menú lateral (Clientes/Eventos/Calendario/[Configuración]) aparece siempre, sin importar la pantalla |
+| S23-02 ❌ | Sidebar ausente para cuentas temporales | Iniciar sesión como `digitador` o `cliente` | No aparece el menú lateral en ninguna pantalla — nunca lo tuvieron |
+| S23-03 ✅ | Se resalta la sección activa | Entrar a `/clientes`, `/eventos`, `/calendario`, `/configuracion` por turnos | El link correspondiente aparece resaltado en cada una |
+| S23-04 ✅ | Colapsa a cajón en móvil | Abrir cualquier página con sidebar en un viewport ≤900px | El sidebar se oculta, aparece un botón ☰ que lo abre como cajón con fondo oscuro detrás |
+| S23-05 ✅ | Clientes: búsqueda solo por nombre | En `/clientes`, escribir parte del nombre de un cliente | Filtra la lista de clientes por ese nombre (insensible a mayúsculas/tildes), sin tocar sus eventos |
+| S23-06 ✅ | Eventos: búsqueda de texto | En `/eventos`, escribir nombre o código de un evento | Filtra a los eventos que calzan, mostrando a qué cliente pertenece cada uno |
+| S23-07 ✅ | Eventos: filtro de estado solo | En `/eventos`, sin escribir texto, elegir un estado del selector | Filtra correctamente solo por ese estado — no hace falta escribir nada en la búsqueda |
+| S23-08 ℹ️ | Calendario es un placeholder | Entrar a `/calendario` | Muestra el aviso "en construcción", sin funcionalidad todavía — es lo esperado en esta entrega |
+| S23-09 ✅ | Configuración: dos pestañas para admin+ | Iniciar sesión como `admin`/`super_admin`, entrar a `/configuracion` | Aparecen "Apariencia" y "Staff y Permisos"; el link "Configuración" solo se ve en el sidebar para estos roles |
+| S23-10 ❌ | `coordinador` no entra a Configuración | Iniciar sesión como `coordinador`, ir a `/configuracion` por URL directa | Redirige — Configuración es admin+ solamente |
+| S23-11 ✅ | Apariencia se aplica y persiste | En "Apariencia", cambiar el color de acento y guardar, luego navegar a otra página | El color nuevo se ve de inmediato y se mantiene al cambiar de página (mismo navegador) |
+| S23-12 ℹ️ | Apariencia no se sincroniza | Cambiar el color en un navegador, abrir la app en otro navegador/computador con la misma cuenta | El otro navegador sigue viendo el tema por defecto — es una preferencia local, no de cuenta (confirmado con Juan David) |
+| S23-13 ✅ | Staff y Permisos sin header duplicado | En Configuración, pestaña "Staff y Permisos" | Se ve la gestión de staff de siempre, embebida, sin un segundo header/menú encima |
+| S23-14 ✅ | Agregar campo opcional desde Parámetros | En Parámetros del Evento, escribir un nombre y dar "+ Agregar campo opcional" | Aparece una fila nueva lista para configurar, sin recargar la página |
+| S23-15 ✅ | El campo opcional nuevo sale en el reporte | Agregar un opcional, cargarle un valor a alguien, descargar el reporte del evento | El Excel trae una columna con ese rótulo y el valor correcto |
+| S23-16 ❌ | El reporte no mezcla eventos distintos | Pedir el reporte de un evento que tiene otro evento hermano (mismo cliente) con gente distinta | Solo aparece la gente de ESE evento, no la del otro |
+| S23-17 ✅ | Cédula editable por admin | Como `admin`, abrir "Editar" de una persona, cambiar su cédula y aplicar | La persona sigue en el Directorio pero con la cédula nueva; su historial de acceso se conserva |
+| S23-18 ❌ | Cédula duplicada se rechaza | Intentar poner una cédula que ya usa otra persona del mismo cliente | Error claro, no se aplica el cambio |
+| S23-19 ❌ | Cédula editable no disponible para no-admin | Iniciar sesión como `coordinador`, intentar el mismo cambio de cédula por API directa | 403 — ese campo ni siquiera se muestra editable para `coordinador`/`digitador`/`cliente` |
+| S23-20 ✅ | Pestaña "Registro" sin numerar si es la única | Entrar a Registro de un evento SIN biometría | Dice "Registro", no "1. Registro" |
+| S23-21 ✅ | Pestaña "Registro" numerada si hay dos | Entrar a Registro de un evento CON biometría | Dice "1. Escáner de Acceso" / "2. Registro" |
+| S23-22 ❌ | Ya no hay botones de "volver" | Revisar el header de cualquier página (Registro, Roster, Escarapelas, Estadísticas, Usuarios, Parámetros, Staff) | No hay `← Métodos` ni `← Panel` — solo el sidebar (si aplica) y el atrás del navegador |
+| S23-23 ✅ | `cliente` con un solo evento ya no rompe el script | Iniciar sesión como `cliente` con exactamente un evento autorizado (auto-redirect desde "/") | La página de Registro carga bien, sin errores de consola — bug real de regresión, corregido |
+| S23-24 ℹ️ | Tesseract se instala solo en el próximo deploy | Revisar `.github/workflows/deploy.yml` | Incluye el paso `apt-get install tesseract-ocr` — se confirma que el 503 desaparece en el primer deploy real a producción (no verificable en este entorno de pruebas) |
+| S23-25 ✅ | El color de Apariencia pinta el menú lateral | En Configuración > Apariencia, cambiar el color de acento | El fondo del menú lateral cambia a ese color (antes se quedaba siempre azul oscuro) |
+| S23-26 ✅ | El texto del menú siempre es blanco | Repetir S23-25 con varios colores, incluidos claros | El texto de los links (incluido el activo) sigue blanco y legible — ya no cambia al color elegido |
+| S23-27 ✅ | Columna del reporte "Tipo de Asistente" con el nombre correcto | Descargar el reporte de un evento con gente que tenga `opt_1` cargado | La columna se llama "Tipo de Asistente" (antes decía "Tipo de Empresa", desactualizado) |
+| S23-28 ✅ | Mensaje distinto si hay asignación pero ningún evento en proceso | Asignar un `digitador`/`cliente` a un evento en estado "Creado" (no "En Proceso"), iniciar sesión con esa cuenta | El panel dice "Ya tienes evento(s) asignado(s), pero ninguno está 'En Proceso' todavía" — ya no el mensaje genérico de "no tienes eventos autorizados" |
+
+---
+
+## 22. Sprint 2.4 Fase 0: rol "comercial" y matriz de permisos
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-01 ❌ | `coordinador` ya no crea clientes ni eventos | Iniciar sesión como `coordinador`, intentar crear un cliente o un evento nuevo | 403 en ambos, y los botones "+ Nuevo cliente"/"+ Nuevo evento" no aparecen en `/clientes` |
+| S24-02 ✅ | `coordinador` sigue editando lo que ya existe | Cambiar el estado de un evento, editar el contacto de un cliente | Sigue funcionando igual que siempre |
+| S24-03 ✅ | `comercial` crea clientes y eventos | Iniciar sesión como `comercial`, crear un cliente y un evento | Ambos 200 |
+| S24-04 ✅ | `comercial` crea cuentas `cliente` para un evento | Desde "Usuarios del Evento" como `comercial` | El selector de rol solo ofrece "Cliente" (no "Digitador"), y la creación funciona |
+| S24-05 ❌ | `comercial` NO crea cuentas `digitador` | Intentar por API directa con `role: "digitador"` siendo `comercial` | 403 |
+| S24-06 ✅ | `comercial` hereda acceso a Estadísticas/Reporte/cambio de estado | Como `comercial`, ver variables de Estadísticas, descargar el reporte, cambiar el estado de un evento | Los tres funcionan igual que para `coordinador` |
+| S24-07 ✅ | admin+ crea cuentas `comercial` | Desde `/admin/staff`, crear una cuenta con rol "Comercial" | Se crea correctamente, aparece en la tabla |
+| S24-08 ✅ | Teléfono opcional al crear staff | Crear cualquier cuenta de staff con un teléfono | Se guarda (`StaffUser.phone`) — queda listo para notificaciones por WhatsApp de una fase futura |
+
+---
+
+## 23. Sprint 2.4 Fase 1: ajustes de UI/UX
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-09 ✅ | Crear evento es pantalla dedicada | Como `comercial`/`admin`, dar clic en "+ Nuevo evento" desde `/clientes` | Lleva a `/clientes/{tenant_id}/nuevo-evento`, no un formulario inline |
+| S24-10 ❌ | `coordinador` no accede a esa pantalla | Entrar a `/clientes/{tenant_id}/nuevo-evento` por URL directa como `coordinador` | Redirige — mismo mínimo que crear el evento por API |
+| S24-11 ✅ | Ya no se puede agregar campos desde el alta manual | Abrir "Registrar nuevo" en Registro | No aparece "+ Agregar campo opcional" — solo en Parámetros del Evento |
+| S24-12 ✅ | Ejemplos al cargar un Excel con campos opcionales nuevos | Subir un roster con una columna "opcional_N" no rotulada | El modal que pregunta a qué corresponde muestra hasta 2 valores reales de esa columna |
+| S24-13 ℹ️ | Tesseract en Windows local se autodetecta | Instalar el `.exe` de Tesseract (UB Mannheim) en la ruta por defecto, sin tocar PATH | El escaneo de cédula nueva deja de dar 503 en el entorno local, sin configuración extra |
+| S24-14 ✅ | Apariencia disponible para todos los roles | Iniciar sesión como `digitador`/`cliente`, usar el ícono ⚙️ del header | Entra a `/configuracion` y puede cambiar color/tipografía — no ve la pestaña "Staff y Permisos" |
+| S24-15 ✅ | Selector de tipografía con 40 fuentes | En Apariencia, abrir el selector de tipografía | Ofrece las mismas 40 familias que el editor de escarapelas |
+| S24-16 ✅ | La fuente elegida se aplica sin recargar | Elegir una fuente y dar "Aplicar y guardar" | El cambio se ve de inmediato en esa misma carga de página (no hace falta recargar) |
+| S24-17 ✅ | Cédula editable en el guardado normal | Como admin, abrir "Editar" de una persona, cambiar la cédula y dar "Guardar cambios" (un solo clic) | Pide confirmación, corrige la cédula y guarda el resto de cambios en un solo paso |
+
+---
+
+## 24. Sprint 2.4 Fase 2: flujo de acreditar por cédula
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-18 ✅ | Match exacto acredita sin modal | Escanear/escribir una cédula exacta de alguien no acreditado, Enter | Se acredita de una vez (sin popup) y la fila queda filtrada/visible en el Directorio |
+| S24-19 ❌ | Duplicado sigue pidiendo confirmación | Repetir el escaneo de alguien ya acreditado | Sigue apareciendo el aviso de "ya registrado", con `force` para repetir si se confirma |
+| S24-20 ✅ | Fallback por nombre con cédula mal escrita | Escanear una cédula que no existe pero con un nombre que sí calza por prefijo con alguien de la base (ej. "Sebas Angarita" para "Sebastián Angarita") | El Directorio se filtra a esa persona por nombre — no se acredita sola, el operador decide |
+| S24-21 ❌ | Ya no se ofrece alta automática al no encontrar | Escanear una cédula que no existe y sin nombre disponible | Solo un aviso de "no encontrada" — ya NO se abre el modal de "Registrar nuevo" solo |
+| S24-22 ✅ | "Registrar con cédula" en el alta manual | Abrir "Registrar nuevo", escanear una cédula (vieja o nueva) en el campo de arriba | Completa ID/Nombres/Apellidos del formulario, sin buscar ni acreditar nada por su cuenta |
+| S24-23 ⚠️ | ~~"Modo autoregistro" ya no afecta a cédula~~ — **corregido en Fase 3, ver sección 25 (S24-27)** | — | — |
+
+---
+
+## 25. Sprint 2.4 Fase 3: batch de correcciones (nombres, modales flotantes, autoregistro en cédula, filtros, avisos de duplicado con conteo)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-24 ✅ | Matching de nombre bidireccional — escaneo largo, BD corta | Escanear/buscar con nombre "JHOAN SEBASTIAN ANGARITA ROJAS" cuando la BD tiene "Sebas Angarita" | Encuentra el match (antes solo funcionaba en el sentido opuesto: BD larga, escaneo corto) |
+| S24-25 ✅ | Matching de nombre sigue rechazando falsos positivos | Buscar "Ju Perez" contra una BD con "Sebastian Angarita" | No hay match |
+| S24-26 ✅ | Formularios flotantes ya no cierran al hacer clic afuera | Abrir "Registrar nuevo" o "Editar persona", hacer clic fuera del formulario | El formulario permanece abierto — solo cierra con "Guardar"/"Cancelar" (aplica también a `showPrompt` de `toast.js`; `showConfirm` y el modal de cámara quedan igual que antes, a propósito, no son formularios de datos) |
+| S24-27 ✅ | Cédula con autoregistro apagado vuelve a respetar el switch | Con "Modo autoregistro" apagado, escanear una cédula con match exacto | Ya NO acredita sola — la fila queda filtrada en blanco/"No registrado", con un botón "✅ Acreditar" inline en esa fila para confirmar manualmente (corrige la Fase 2, que había quedado acreditando siempre en match exacto) |
+| S24-27b ✅ | Con autoregistro encendido, cédula sigue acreditando directo | Mismo escaneo con el switch prendido | Acredita de una vez, sin botón "Acreditar" |
+| S24-28 ✅ | Botón "🧹 Limpiar filtros" | En la sección Registro, con los 3 campos de búsqueda llenos, clic en "Limpiar filtros" (debajo de "Registrar nuevo") | Limpia los 3 campos y el filtro de "solo sin registrar", vuelve a mostrar todo el Directorio |
+| S24-29 ✅ | Aviso de doble registro incluye el conteo | Registrar/acreditar dos veces a la misma persona (por escáner facial, alta manual o cédula) | El aviso dice cuántas veces se había registrado antes ("ya lo hizo N veces") en los 3 flujos |
+| S24-30 ✅ | Aviso de reimpresión con conteo | Imprimir la escarapela de una persona, luego intentar imprimir de nuevo | Antes de abrir la ventana de impresión, aparece un aviso "ya se ha realizado impresión (N vez/veces)" con opción de cancelar o continuar; cancelar no abre nada ni registra una impresión nueva |
+| S24-31 ✅ | Primera impresión no muestra aviso | Imprimir la escarapela de alguien que nunca se ha impreso en este evento | Abre directo, sin ningún aviso previo |
+
+---
+
+## 26. Sprint 2.4 Fase 4: teléfono obligatorio y único para cuentas de staff
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-32 ❌ | Coordinador/comercial/admin sin teléfono | Crear una cuenta desde `/admin/staff` (o `POST /api/staff`) sin teléfono | 400 — el teléfono es obligatorio |
+| S24-33 ❌ | Teléfono duplicado entre cuentas | Crear una cuenta con el mismo teléfono que otra ya existente | 400 — no se puede repetir |
+| S24-34 ✅ | Digitador/cliente sin teléfono | Crear una cuenta digitador o cliente desde "Usuarios del Evento" sin teléfono | Se crea normal — es la excepción explícita del pedido |
+| S24-35 ❌ | Digitador/cliente con teléfono repetido | Crear digitador/cliente indicando un teléfono que ya usa otra cuenta | 400 — si se manda, igual debe ser único |
+| S24-36 ℹ️ | Migración limpia duplicados existentes | `alembic upgrade head` sobre una base con cuentas que ya comparten teléfono | Se conserva el teléfono en la cuenta más antigua, el resto queda en blanco; la migración no falla |
+
+---
+
+## 27. Sprint 2.4 Fase 5: comercial asignada a eventos + filtros de pertenencia (Eventos)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-37 ✅ | Comercial se autoasigna al crear | Una cuenta `comercial` crea un evento sin elegir "Comercial asignada" | El evento queda asignado a esa misma comercial |
+| S24-38 ✅ | Comercial elige a otra comercial | Al crear, cambiar el campo "Comercial asignada" a otra cuenta comercial | El evento queda asignado a la comercial elegida, no a quien creó |
+| S24-39 ❌ | Admin sin elegir comercial | Un `admin`/`super_admin` intenta crear un evento sin elegir "Comercial asignada" | 400 — es obligatorio elegir una |
+| S24-40 ✅ | Admin elige una comercial válida | Admin crea el evento eligiendo una comercial de la lista | Se crea con esa comercial asignada |
+| S24-41 ✅ | Reasignar comercial desde editar evento | Admin o comercial cambia la comercial asignada de un evento ya existente | Se actualiza correctamente |
+| S24-42 ❌ | Coordinador no puede reasignar comercial | Un `coordinador` intenta cambiar la comercial asignada (aunque pueda editar el resto del evento) | 403 |
+| S24-43 ✅ | Filtro "Mis eventos" / "Todos" (comercial) | En `/eventos`, con sesión de `comercial`, alternar el selector | "Mis eventos" solo trae los eventos donde esa cuenta es la comercial asignada; "Todos" los trae todos |
+| S24-44 ✅ | Filtros de admin por comercial/coordinador | En `/eventos`, con sesión admin+, elegir una comercial y/o un coordinador específico en los selectores | La lista se filtra combinando ambos criterios (y con la búsqueda de texto/estado si también están activos) |
+
+---
+
+## 28. Sprint 2.4 Fase 6: ocultar funciones operativas para "comercial"
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-45 ❌ | Comercial no ve "Adjuntar Base de Datos"/"Escarapelas"/"Parámetros del Evento" | Entrar a `/kiosk/{event_id}` con sesión `comercial` | Esas 3 tarjetas no aparecen en la pantalla de selección |
+| S24-46 ✅ | Comercial sigue viendo "Usuarios del Evento" y "Estadísticas" | Mismo `/kiosk/{event_id}` | Ambas tarjetas siguen visibles y funcionando |
+| S24-47 ❌ | URL directa a las 3 páginas bloqueadas | Con sesión `comercial`, entrar por URL directa a `/kiosk/{id}/roster`, `/parametros` o `/escarapela` | Redirige a `/kiosk/{id}` — no basta con ocultar el link, la página también rechaza el acceso |
+| S24-48 ❌ | Comercial no puede imprimir desde el Directorio en Vivo | Con sesión `comercial`, abrir Registro | El botón 🖨️ no aparece en ninguna fila del Directorio |
+| S24-49 ❌ | Endpoints de escarapelas/roster/parámetros rechazan a comercial | Llamar directo `POST /api/bulk_register`, cualquier endpoint de `badge-template`/`badge-print-data`, o `field-configs` con una sesión comercial | 403 en los 7 — el backend bloquea aunque se salte la UI |
+| S24-50 ✅ | Usuarios del Evento sigue limitado a crear solo clientes | Desde "Usuarios del Evento" con sesión comercial, el selector de rol | Solo ofrece "Cliente", no "Digitador" (heredado de Fase 0, sin cambios) |
+| S24-51 ✅ | Coordinador no tiene ninguna regresión | Repetir S24-45 a S24-49 con sesión `coordinador` | Todo sigue accesible exactamente igual que antes de esta fase |
+
+---
+
+## 29. Sprint 2.4 Fase 7: reforzar unicidad de cédula (validación DB)
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-52 ✅ | Insertar `User` con cédula duplicada rechaza a nivel de DB | Intentar crear dos `User` con el mismo `id`+`tenant_id` directo contra la base | `IntegrityError` — la PK compuesta es el guardrail, independiente de la validación de la app |
+| S24-53 ✅ | `PATCH` genérico ignora un `id` en el body | Editar una persona mandando `id` distinto en el JSON del `PATCH` | Se ignora silenciosamente — el resto de campos se guarda normal, el id no cambia |
+| S24-54 ❌ | `PUT .../cedula` sigue rechazando duplicados | Renombrar la cédula de alguien a una que ya usa otra persona del mismo cliente | 409, sin cambios |
+| S24-55 ✅ | Renombrar cédula de alguien con historial de impresiones | Imprimir la escarapela de alguien 1+ veces y luego corregirle la cédula | Ya NO truena (bug real de la Fase 3, corregido) — `PrintLog`, `AccessLog` y `EventAttendee` quedan todos reapuntados a la cédula nueva |
+
+---
+
+## 30. Sprint 2.4 Fase 8: módulo de Calendario
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-56 ✅ | Vista mensual muestra eventos en el día correcto | Entrar a `/calendario` con un evento que cae dentro del mes visible | La tarjeta del evento aparece en la celda de su `start_date` (y en cada día intermedio si dura varios días) |
+| S24-57 ✅ | Evento multi-día que cruza de mes aparece en ambos | Un evento que empieza el 28 de un mes y termina el 2 del siguiente, viendo el segundo mes | El evento aparece igual en los días 1 y 2 del mes siguiente |
+| S24-58 ✅ | Alternar Mes/Semana/Día | Cambiar el selector de vista | La cuadrícula cambia de tamaño/alcance sin perder los eventos/recordatorios cargados |
+| S24-59 ✅ | Filtro "Mis eventos"/"Todos" (comercial) en Calendario | Con sesión comercial, alternar el filtro | Mismo comportamiento que en Eventos (Fase 5) — solo se filtran los eventos donde esa cuenta es la comercial asignada |
+| S24-60 ✅ | Filtros de admin por comercial/coordinador en Calendario | Con sesión admin+, elegir comercial y/o coordinador | El calendario se filtra igual que en Eventos |
+| S24-61 ✅ | Clic en un evento abre el modal de edición | Clic en cualquier tarjeta de evento | Se abre un modal con los datos precargados; guardar aplica los cambios vía `PATCH /api/events/{id}` |
+| S24-62 ❌ | Coordinador no ve el campo "Comercial asignada" en el modal | Abrir el modal de edición con sesión coordinador | El campo no aparece (coincide con que el backend le daría 403 si lo intentara) |
+| S24-63 ✅ | Agregar un recordatorio a un día | Clic en "+ recordatorio" de cualquier celda, o "📝 Agregar recordatorio" | Aparece un chip con el texto en esa celda para cualquiera que entre al Calendario |
+| S24-64 ❌ | Solo el autor (o admin+) puede borrar un recordatorio | Con una cuenta distinta a quien lo creó, intentar borrarlo | El botón de borrar no aparece para esa cuenta; el backend igual rechaza con 403 si se intenta directo |
+| S24-65 ❌ | Digitador/cliente no acceden a `/calendario` | Entrar con esas sesiones | Redirige — mismo mínimo `coordinador`+ que Eventos/Clientes |
+
+---
+
+## 31. Sprint 2.4 Fase 9: fuente Agrandir por defecto
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-66 ℹ️ | Agrandir es la tipografía por defecto en toda la app | Entrar a cualquier página sin haber tocado Configuración > Apariencia | Los títulos se ven en Agrandir (peso marcado) y el texto de cuerpo en Agrandir Thin |
+| S24-67 ✅ | Configuración sigue pudiendo cambiar la fuente | Elegir cualquiera de las 40 familias de Google Fonts en Configuración > Apariencia y aplicar | La fuente elegida reemplaza a Agrandir en esa página, igual que antes |
+| S24-68 ✅ | "Original" vuelve a Agrandir | Tras haber elegido otra fuente, seleccionar "Original (Agrandir)" y aplicar/restablecer | Vuelve a Agrandir, no a Playfair/Montserrat/Raleway |
+| S24-69 ✅ | Tamaños y negrillas siguen funcionando igual | Comparar títulos/botones (negrilla) contra texto normal en cualquier página | Los elementos que ya pedían `font-weight:700` se ven en el peso Regular (más marcado); el resto en Thin — sin haber tocado esos estilos |
+
+---
+
+## 32. Sprint 2.4 Fase 10: correcciones de UI
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-70 ❌ | Configuración visible para todos en el sidebar | Entrar como `coordinador`/`comercial` (no solo admin) | El link "⚙️ Configuración" aparece en el menú lateral |
+| S24-71 ✅ | Selector de tipografía muestra cada opción en su fuente | Abrir el `<select>` de tipografía en Configuración | Cada opción se ve renderizada en su propia fuente, sin tener que aplicarla primero |
+| S24-72 ✅ | País/Ciudad por defecto al crear evento | Abrir "Nuevo evento" | Vienen precargados Colombia/Bogotá, editables |
+| S24-73 ✅ | Buscador de eventos por cliente | En Clientes - Cuentas, expandir un cliente con varios eventos y escribir en el buscador | Filtra solo los eventos de esa tarjeta, sin afectar otras |
+| S24-74 ℹ️ | "Clientes" ahora dice "Clientes - Cuentas" | Revisar sidebar, título de página, franjas "Cliente/Cuenta:" | Cambiado en toda la app; el rol de cuenta `cliente` (login) no cambió de nombre en ningún lado |
+
+---
+
+## 33. Sprint 2.4 Fase 11: permisos ampliados + botón único + estado desde Eventos/Calendario
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-75 ✅ | Coordinador elimina un asistente | Con sesión coordinador, "Eliminar de este evento" en el modal de Editar | 200 (antes 403) |
+| S24-76 ✅ | Coordinador cambia el estado de registro | Cambiar el select de Estado dentro del modal de Editar y pulsar "Guardar cambios" | Se aplica junto con el resto de cambios, sin un botón "Aplicar" aparte |
+| S24-77 ❌ | Cliente no puede exportar el reporte | `GET /api/report` con sesión cliente | 403; el botón de exportar tampoco aparece en la página |
+| S24-78 ✅ | Cambiar estado de evento desde Eventos | En `/eventos`, cambiar el select de estado de una tarjeta | Se aplica igual que desde Clientes - Cuentas |
+| S24-79 ✅ | Cambiar estado + "Ingresar" desde Calendario | Clic en un evento del calendario | El modal tiene selector de estado y un botón "Ingresar al evento" que lleva al kiosko |
+
+---
+
+## 34. Sprint 2.4 Fase 12: color de pañoleta + contraste automático
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-80 ✅ | Elegir color de pañoleta al crear/editar evento | Usar el selector de color (con gotero) + nombre libre | Se guarda y se puede editar después |
+| S24-81 ✅ | Calendario colorea por pañoleta, no por estado | Ver la cuadrícula mensual/semanal/diaria | Los chips usan el color de pañoleta elegido; eventos sin pañoleta caen a gris neutro |
+| S24-82 ✅ | Texto con contraste automático | Elegir un color de acento muy claro y muy oscuro en Configuración | El texto de botones/menú se ve siempre legible (negro sobre claro, blanco sobre oscuro) |
+
+---
+
+## 35. Sprint 2.4 Fase 13: bug de autoimpresión + imagen en vista previa de impresión
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-83 ❌ | Autoimpresión con autorregistro activado | Escanear con ambos switches prendidos | Acredita e imprime sola, sin ningún diálogo de por medio |
+| S24-84 ❌ | Autoimpresión sin autorregistro, tras cambiar estado manualmente | Con autoimpresión activa, cambiar el estado de alguien a "Registrado" desde el modal de Editar | Imprime sola, aunque no haya habido ningún escaneo |
+| S24-85 ✅ | Reimpresión manual sigue avisando | Usar el botón 🖨️ manual sobre alguien ya impreso antes | Sigue preguntando "¿imprimir de nuevo?" — ese aviso es solo para el botón manual |
+| S24-86 ✅ | Imagen visible en la vista previa de impresión | Diseñar una escarapela con una imagen fija y mandarla a imprimir | La imagen aparece en la vista previa del navegador, no solo en la pantalla previa |
+
+---
+
+## 36. Sprint 2.4 Fase 14: destinatarios en los recordatorios del Calendario
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-87 ✅ | Buscar y elegir varios destinatarios | Al crear un recordatorio, buscar por nombre y elegir más de una persona | Se pueden agregar varios, cada uno con su chip removible |
+| S24-88 ❌ | Cliente/digitador no pueden ser destinatarios | Intentar elegirlos (no deberían aparecer en la lista) | No aparecen en el buscador; si se manda su id directo al backend, 400 |
+| S24-89 ✅ | Recordatorio dirigido solo aparece para los elegidos | Crear uno con destinatarios específicos y entrar con otra cuenta no elegida | No lo ve (salvo que sea quien lo creó); las cuentas elegidas sí lo ven en su calendario |
+| S24-90 ✅ | Recordatorio sin destinatarios sigue siendo para todos | Crear uno sin elegir a nadie | Comportamiento igual a la Fase 8, visible para todo el equipo |
+
+---
+
+## 37. Sprint 2.4 Fase 15: doble rol coordinador+comercial
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-91 ✅ | Admin asigna rol secundario | En Staff, botón "+ También comercial"/"+ También coordinador" sobre una cuenta coordinador/comercial | Se guarda; la fila muestra "coordinador + comercial" |
+| S24-92 ❌ | No se puede asignar rol secundario a admin | Intentarlo sobre una cuenta admin | 400 |
+| S24-93 ✅ | Doble rol hereda la unión de permisos | Con una cuenta coordinador+comercial, crear un tenant/evento (privilegio de comercial) Y entrar a Escarapelas/Adjuntar BD/Parámetros (privilegio de coordinador, bloqueado para comercial puro) | Ambos funcionan — no queda atrapado por las restricciones de un solo rol |
+| S24-94 ✅ | UI se muestra como coordinador | Con sesión coordinador+comercial, ver `kiosk_select.html` | Las tarjetas que comercial puro no ve (Escarapelas, etc.) SÍ aparecen |
+
+---
+
+## 38. Sprint 2.4 Fase 16: reporte Excel rediseñado
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-95 ✅ | Solo columnas con datos reales | Exportar el reporte de un evento donde nadie tiene correo cargado | La columna "Correo Electrónico" no aparece; identidad (Cédula/Nombres/Apellidos) siempre aparece |
+| S24-96 ✅ | Opcionales con su nombre real | Exportar un evento con campos opcionales rotulados | Las columnas usan el rótulo real ("Talla de Camisa"), no "Opcional 1" |
+| S24-97 ✅ | Tipo de Registro correcto por método | Registrar personas por facial, por cédula (con y sin autorregistro), y por alta manual | Cada fila trae "Biométrico"/"Autoregistro"/"Tradicional" según corresponda |
+| S24-98 ✅ | Hora exacta con segundos | Revisar la columna "Hora de Registro" | Formato `HH:MM:SS`, no solo horas/minutos |
+| S24-99 ✅ | Formato de Excel: título + autofiltro | Abrir el `.xlsx` descargado | 3 filas de título (Cliente/Cuenta, Evento, Código) arriba de la tabla; encabezados con estilo; autofiltro activo en cada columna |
+| S24-100 ❌ | Evento sin nadie en el directorio no rompe el reporte | Exportar el reporte de un evento recién creado, sin roster ni registros | Se genera igual, con encabezados y cero filas de datos |
+
+---
+
+## 39. Sprint 2.4 Fase 17: bug de QA — revertir a "No registrado" no persistía
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-101 ❌ | Revertir a "No registrado" persiste de verdad | Acreditar a alguien, luego cambiar su estado a "No registrado" desde el modal de Editar y pulsar "Guardar cambios" | El Directorio muestra "No registrado" después de guardar — no vuelve a "Registrado" solo |
+| S24-102 ✅ | Un check-in real después del revert no da falso "ya registrado" | Tras revertir a alguien y guardar, escanear/buscar su cédula de nuevo | Acredita normal (`SÍ`), sin el aviso de `DUPLICADO` |
+| S24-103 ✅ | "Estado de registro" en Estadísticas coincide con el Directorio | Comparar la variable "Estado de registro" en gráficos contra la columna Estado del Directorio para la misma persona | Mismo valor en los dos lados |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -309,14 +777,42 @@ Estos casos verifican que las correcciones de seguridad ya aplicadas siguen vige
 | Autenticación | 8 |
 | Roles y permisos | 17 |
 | Clientes (Tenants) | 6 |
-| Eventos (CRUD + ciclo de vida) | 15 |
+| Eventos (CRUD + ciclo de vida) | 16 |
 | Selección (`/kiosk/{event_id}`) | 7 |
 | Registro unificado (con/sin cámara + Directorio compartido + opcionales en alta manual) | 32 |
 | Roster (formato, facial opcional, opcionales dinámicos, validación, `facial_enabled`, bloqueo de re-carga) | 35 |
 | Doble registro | 7 |
-| Directorio en Vivo | 7 |
+| Directorio en Vivo (modal de edición, borrado real, estado manual) | 20 |
 | Reporte | 2 |
 | Seguridad | 6 |
-| **Total** | **142** |
+| Escarapelas (editor, librería, impresión + 4 fixes de QA) | 35 |
+| Lector de cédula (CSV vieja, blindaje, OCR MRZ nueva) | 13 |
+| Registro unificado + Modo autoregistro (Fase B) | 12 |
+| Cámara + OCR robusto a orientación (Fase C) | 7 |
+| Escarapelas (lienzo) + spinners + Estadísticas (Fase D) | 14 |
+| Feedback: librería global, colores de gráficos, responsive, contexto | 9 |
+| Feedback 2: fondo del editor, auto-impresión, orden de columnas, Estadísticas | 9 |
+| Feedback 3: pestañas de cliente, formato de roster, transición de estado | 8 |
+| Parámetros del Evento (campos configurables, obligatorios, estadísticas por defecto) | 15 |
+| Sprint 2.3 (menú lateral, cédula editable, opcionales desde Parámetros, fix de Tesseract) | 28 |
+| Sprint 2.4 Fase 0 (rol comercial y matriz de permisos) | 8 |
+| Sprint 2.4 Fase 1 (ajustes de UI/UX) | 9 |
+| Sprint 2.4 Fase 2 (flujo de acreditar por cédula) | 6 |
+| Sprint 2.4 Fase 3 (nombres, modales flotantes, autoregistro en cédula, filtros, avisos de duplicado con conteo) | 8 |
+| Sprint 2.4 Fase 4 (teléfono obligatorio y único para staff) | 5 |
+| Sprint 2.4 Fase 5 (comercial asignada a eventos + filtros de pertenencia) | 8 |
+| Sprint 2.4 Fase 6 (ocultar funciones operativas para comercial) | 7 |
+| Sprint 2.4 Fase 7 (reforzar unicidad de cédula, validación DB) | 4 |
+| Sprint 2.4 Fase 8 (módulo de Calendario: mes/semana/día, filtros, edición, recordatorios) | 10 |
+| Sprint 2.4 Fase 9 (fuente Agrandir por defecto) | 4 |
+| Sprint 2.4 Fase 10 (correcciones de UI: Configuración, fuente con preview, país/ciudad, buscador, renombrar Clientes) | 5 |
+| Sprint 2.4 Fase 11 (permisos ampliados, botón único, estado desde Eventos/Calendario, bloqueo de exportar) | 5 |
+| Sprint 2.4 Fase 12 (color de pañoleta + contraste automático de texto) | 3 |
+| Sprint 2.4 Fase 13 (bug de autoimpresión + imagen en vista previa de impresión) | 4 |
+| Sprint 2.4 Fase 14 (destinatarios en los recordatorios del Calendario) | 4 |
+| Sprint 2.4 Fase 15 (doble rol coordinador+comercial) | 4 |
+| Sprint 2.4 Fase 16 (reporte Excel rediseñado) | 6 |
+| Sprint 2.4 Fase 17 (bug de QA: revertir a "No registrado" no persistía) | 3 |
+| **Total** | **409** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

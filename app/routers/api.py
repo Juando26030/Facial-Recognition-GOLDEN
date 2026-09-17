@@ -13,10 +13,31 @@ from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, AccessLog, EventAttendee, StaffUser
+from app.models import User, AccessLog, EventAttendee, PrintLog, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role
+from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
+from app.routers import parametros
+from app.routers.events import _words
+
+
+def _missing_required_fields(field_configs: list, values: dict) -> list:
+    """Nombres (rótulos) de los campos marcados obligatorios en Parámetros del Evento que no
+    vienen con valor en `values` — usado por manual_register y update_user (PATCH) para no dejar
+    guardar un perfil incompleto. NO se usa en bulk_register (ver parametros.py, decisión de
+    alcance). Un campo booleano "obligatorio" exige estar marcado (true), no solo presente."""
+    missing = []
+    for cfg in field_configs:
+        if not cfg["required"]:
+            continue
+        value = values.get(cfg["key"])
+        if cfg["field_type"] == "boolean":
+            ok = str(value).strip().lower() in ("true", "1", "si", "sí")
+        else:
+            ok = value is not None and str(value).strip() != ""
+        if not ok:
+            missing.append(cfg["label"])
+    return missing
 
 
 def _read_roster_rows(filename: str, content: bytes):
@@ -68,6 +89,25 @@ def _normalize_optional_key(raw_key: str):
         return None
     n = int(match.group(1))
     return f"opcional_{n}" if 1 <= n <= MAX_OPTIONAL_FIELDS else None
+
+
+def _optional_field_examples(rows: list, keys) -> dict:
+    """Hasta 2 valores no vacíos (sin repetir) de cada campo opcional en `keys`, tal como vienen
+    en el archivo — 2026-09-16, pedido explícito, para no tener que abrir el Excel a ver qué es
+    'opcional_1'. `rows` ya viene con las claves originales del archivo (no normalizadas), así
+    que hay que normalizar cada `raw_key` para saber a cuál "opcional_N" corresponde."""
+    examples = {key: [] for key in keys}
+    for row in rows:
+        if all(len(v) >= 2 for v in examples.values()):
+            break
+        for raw_key, value in row.items():
+            norm = _normalize_optional_key(raw_key)
+            if norm not in examples:
+                continue
+            val = (value or "").strip()
+            if val and val not in examples[norm] and len(examples[norm]) < 2:
+                examples[norm].append(val)
+    return examples
 
 
 def _parse_extra_fields(raw: str) -> dict:
@@ -170,20 +210,35 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str) -
 
 
 def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
-    """True si esta persona ya tiene al menos un AccessLog para ESTE evento — o sea, ya se
-    acreditó hoy por cualquier método (facial, cédula o alta manual). Se usa para pedir
-    confirmación antes de dejarla entrar una segunda vez por error/duplicado."""
+    """True si esta persona ya tiene al menos un AccessLog de ACREDITACIÓN real para ESTE evento
+    — o sea, ya se acreditó por cualquier método (facial, cédula o alta manual). Excluye
+    "Actualizado" (2026-09-17, mismo bug de fondo que el de get_all_users: ese record_type es solo
+    una edición de perfil vía update_user, no una acreditación — contarlo acá haría que alguien
+    que nunca se presentó, pero cuyo perfil ya se editó una vez, disparara el aviso de "ya
+    registrado" en su primer check-in real, cuando en realidad es el primero)."""
     return db.query(AccessLog).filter(
-        AccessLog.event_id == event_id, AccessLog.user_id == user_id
+        AccessLog.event_id == event_id, AccessLog.user_id == user_id, AccessLog.record_type != "Actualizado"
     ).first() is not None
 
 
-def _duplicate_warning(user: "User") -> dict:
-    return {"result": "DUPLICADO", "details": "Esta persona ya había sido registrada en este evento", "data": {
-        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-        "role": user.role, "company": user.company, "phone": user.phone,
-        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
-    }}
+def _duplicate_warning(db: Session, event_id: int, user: "User") -> dict:
+    # times_registered (2026-09-16, pedido explícito): cuántas veces YA se acreditó esta persona
+    # en este evento, para que el mensaje diga "ya se registró N veces" en vez de un genérico
+    # "ya está registrada" — el operador decide con ese dato de más. Excluye "Actualizado"
+    # (2026-09-17, mismo bug de fondo que _already_checked_in/get_all_users): son ediciones de
+    # perfil, no acreditaciones — contarlas inflaría el número mostrado sin motivo real.
+    times_registered = db.query(AccessLog).filter(
+        AccessLog.event_id == event_id, AccessLog.user_id == user.id, AccessLog.record_type != "Actualizado"
+    ).count()
+    return {
+        "result": "DUPLICADO", "details": "Esta persona ya había sido registrada en este evento",
+        "times_registered": times_registered,
+        "data": {
+            "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+            "role": user.role, "company": user.company, "phone": user.phone,
+            "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+        },
+    }
 
 
 @router.get("/users")
@@ -211,15 +266,24 @@ async def get_all_users(
 
     result = []
     for u in users:
-        logs = logs_by_user.get(u.id, [])
+        # Bug real (2026-09-17, reportado en QA): "Actualizado" es un log de EDICIÓN de perfil,
+        # no de acreditación (ver update_user más abajo) — antes contaba igual que "Nuevo"/
+        # "Existente" para decidir el estado, así que revertir a alguien a "No registrado" desde
+        # el modal de Editar (que en el mismo clic, después del cambio de estado, también guarda
+        # el resto del formulario vía update_user) volvía a dejarlo en "Registrado" de una,
+        # porque ese mismo guardado crea un "Actualizado" nuevo apenas se borran los logs reales.
+        real_logs = [log for log in logs_by_user.get(u.id, []) if log.record_type != "Actualizado"]
         status = "No registrado"
-        if logs:
-            status = "Nuevo" if any(log.record_type == "Nuevo" for log in logs) else "Registrado"
+        if real_logs:
+            status = "Nuevo" if any(log.record_type == "Nuevo" for log in real_logs) else "Registrado"
 
         result.append({
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "company": u.company, "phone": u.phone,
-            "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status
+            "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
+            # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta
+            # persona para poder mostrarlos/editarlos (antes se editaba inline, sin necesitarlos).
+            "extra_fields": u.get_extras(),
         })
 
     return result
@@ -227,8 +291,17 @@ async def get_all_users(
 @router.post("/recognize")
 async def recognize(
     event_id: int = Form(...), file: UploadFile = File(...), force: bool = Form(False),
+    confirm: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
+    """Sprint 2.2 Fase B (2026-09-16): un match facial YA NO acredita solo por defecto — antes
+    creaba el AccessLog apenas encontraba la cara, sin que el digitador confirmara nada. Ahora,
+    salvo que `Event.auto_register` esté prendido (switch por evento) o venga `confirm=true` (el
+    digitador ya confirmó en el modal "Guardar y autorizar acceso"), un match devuelve
+    `result: "MATCH_PENDING"` con los datos de la persona SIN crear ningún log todavía — el
+    frontend reenvía la MISMA petición (mismo `file`, vía FormData reusado) con `confirm=true`
+    para recién ahí acreditar de verdad. El flujo DUPLICADO/force sigue exactamente igual, se
+    evalúa ANTES de este chequeo nuevo."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
     img_array = BiometricEngine.process_image_stream(await file.read())
@@ -242,57 +315,115 @@ async def recognize(
         known_enc = user.get_encoding()
         if known_enc and BiometricEngine.compare(known_enc, unknown_enc):
             if not force and _already_checked_in(db, event.id, user.id):
-                return _duplicate_warning(user)
+                return _duplicate_warning(db, event.id, user)
+            data = {
+                "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+                "role": user.role, "company": user.company, "phone": user.phone,
+                "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+            }
+            if not event.auto_register and not confirm:
+                return {"result": "MATCH_PENDING", "data": data}
             log = AccessLog(
                 tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
                 event_id=event.id, registered_by_staff_id=staff.id,
+                registration_method="biometrico",  # Fase 16: este endpoint es SIEMPRE reconocimiento facial
             )
             db.add(log)
             _upsert_attendee(db, event.id, user.id, event.tenant_id)
             db.commit()
-            return {"result": "SÍ", "data": {
-                "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-                "role": user.role, "company": user.company, "phone": user.phone,
-                "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
-            }}
+            return {"result": "SÍ", "data": data}
 
     return {"result": "NO", "details": "Denegado"}
 
+def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
+    """Fuzzy-match de identidad (2026-09-16, Sprint 2.4 Fase 3 — corrección real) — distinto de
+    `_matches_by_word_prefix` (que exige que TODAS las palabras de lo que se busca prefijen algo
+    en el texto largo, pensado para búsquedas tipo "escribo un pedazo del nombre de un evento").
+    Acá el caso real es al revés y en ambas direcciones a la vez: la base puede tener el nombre
+    abreviado y lo escaneado el nombre completo real (`JHOAN SEBASTIAN ANGARITA ROJAS` escaneado
+    vs. `Sebas Angarita` en la base), o viceversa (`Sebas Angarita` escaneado vs. `Sebastián
+    Angarita` en la base, el caso original). Por eso se exige que CADA palabra del nombre en BASE
+    (el lado casi siempre más corto/abreviado) tenga alguna palabra en lo escaneado que la
+    prefije O que sea prefijada por ella — no al revés, y no en una sola dirección."""
+    db_words = _words(db_name)
+    scanned_words = _words(scanned_name)
+    if not db_words or not scanned_words:
+        return False
+    return all(
+        any(sw.startswith(dw) or dw.startswith(sw) for sw in scanned_words)
+        for dw in db_words
+    )
+
+
 @router.post("/checkin-cedula")
 async def checkin_cedula(
-    event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False),
+    event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False), confirm: bool = Form(False),
+    first_name: str = Form(""), last_name: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
-    """Acreditación por cédula (lector de código de barras) — mismo shape de respuesta que
-    /recognize (result SÍ/NO + data), para reusar el mismo patrón de frontend. Si la persona ya
-    es conocida en el tenant (estuviera o no precargada para este evento puntual), se acredita
-    directo como 'Existente' y de paso queda asociada a este evento. Si la cédula no existe en
-    absoluto, el frontend debe ofrecer el alta manual (POST /register, sin foto). Si ya tiene un
-    AccessLog para este evento, se avisa (result: DUPLICADO) en vez de acreditar de nuevo, salvo
-    que venga force=true (el operador ya confirmó que sí quiere repetirlo)."""
+    """Acreditación por cédula (lector de código de barras o MRZ de la cédula nueva) — mismo
+    shape de respuesta que /recognize (result + data), para reusar el mismo patrón de frontend.
+    Si la persona ya es conocida en el tenant (estuviera o no precargada para este evento
+    puntual), se acredita directo como 'Existente' y de paso queda asociada a este evento. Si ya
+    tiene un AccessLog para este evento, se avisa (result: DUPLICADO) en vez de acreditar de
+    nuevo, salvo que venga force=true (el operador ya confirmó que sí quiere repetirlo).
+
+    Sprint 2.4, Fase 2/3 (2026-09-16, pedido explícito, corregido en la Fase 3): un match EXACTO
+    por cédula SIEMPRE deja la fila filtrada/visible en el Directorio en Vivo, sin modal — pero
+    solo ACREDITA de una vez (crea el AccessLog, la fila sale "verde") si `Event.auto_register`
+    está prendido. Si está apagado, se devuelve `result: "FOUND_PENDING"` — la persona queda
+    visible pero SIN acreditar (blanco/"No registrado"), y el frontend ofrece un botón puntual
+    "Acreditar" en esa fila para confirmar con un clic (reintenta esta misma petición con
+    `confirm=true`) — sin volver a un modal flotante aparte. El reconocimiento facial
+    (`/recognize`) sigue con su propio flujo de confirmación, sin cambios, no es parte de esto.
+
+    Si NO hay match exacto por cédula, ya NO se ofrece alta manual automática — se intenta un
+    fallback por nombre (`first_name`/`last_name`, cuando el frontend los tiene: vienen del CSV
+    de la cédula vieja o del OCR de la MRZ de la nueva) contra TODOS los `User` de este tenant,
+    con `_identity_name_matches` (ver arriba — bidireccional, no `_matches_by_word_prefix`) — se
+    devuelven como candidatos (`name_matches`), NINGUNO se acredita solo, es el operador quien
+    decide desde el Directorio filtrado. Sin nombre (cédula suelta sin match), no hay con qué
+    intentar el fallback."""
     cedula = cedula.strip()
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
 
     user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
     if not user:
-        return {"result": "NO", "details": "Cédula no encontrada"}
+        full_name = f"{first_name} {last_name}".strip()
+        name_matches = []
+        if full_name:
+            candidates = db.query(User).filter(User.tenant_id == event.tenant_id).all()
+            for candidate in candidates:
+                db_name = f"{candidate.first_name or ''} {candidate.last_name or ''}"
+                if _identity_name_matches(db_name, full_name):
+                    name_matches.append({"id": candidate.id, "first_name": candidate.first_name, "last_name": candidate.last_name})
+        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches}
 
     if not force and _already_checked_in(db, event.id, user.id):
-        return _duplicate_warning(user)
+        return _duplicate_warning(db, event.id, user)
+
+    data = {
+        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+        "role": user.role, "company": user.company, "phone": user.phone,
+        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+    }
+
+    if not event.auto_register and not confirm:
+        return {"result": "FOUND_PENDING", "data": data}
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,
+        # Fase 16 (2026-09-17): "tradicional" = cédula encontrada y confirmada a mano;
+        # "autoregistro" = el mismo match, pero acreditado solo porque el evento tiene el switch
+        # prendido — misma cédula, la diferencia es si hizo falta que alguien confirmara.
+        registration_method="autoregistro" if event.auto_register else "tradicional",
     )
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)
     db.commit()
-    return {"result": "SÍ", "data": {
-        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-        "role": user.role, "company": user.company, "phone": user.phone,
-        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
-    }}
+    return {"result": "SÍ", "data": data}
 
 @router.patch("/users/{user_id}")
 async def update_user(
@@ -302,9 +433,37 @@ async def update_user(
     event = get_event_for_staff(event_id, db, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if user:
+        # extra_fields llega como un dict {opcional_N: valor} desde el modal de "Editar" del
+        # Directorio (2026-09-16) — no puede pasar por el setattr genérico de abajo: la columna
+        # real (`User.extra_fields`) es un Text con JSON serializado a mano (`get_extras()`/
+        # `set_extras()`), no un dict crudo; asignarlo directo lo corrompería.
+        extra_fields = data.pop("extra_fields", None)
+        if extra_fields is not None:
+            merged = user.get_extras()
+            merged.update(extra_fields)
+            user.set_extras(merged)
+        # Sprint 2.4 Fase 7 (2026-09-16, pedido explícito: "que no se pueda repetir para nadie el
+        # id"): 'id'/'tenant_id' son la llave primaria compuesta de User, referenciada por FK
+        # desde EventAttendee/AccessLog — un setattr genérico sobre ellas intentaría un UPDATE de
+        # la propia PK, algo que este endpoint nunca tuvo pensado hacer (eso es exactamente lo que
+        # resuelve PUT /users/{user_id}/cedula con su patrón seguro insertar-reapuntar-borrar, ver
+        # abajo) y que solo terminaría en un IntegrityError sin manejar. Se ignoran acá — el único
+        # camino válido para cambiar la cédula es ese otro endpoint.
+        data.pop("id", None)
+        data.pop("tenant_id", None)
         for key, value in data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
+
+        field_configs = parametros.field_configs_for_event(db, event)
+        final_values = {
+            "role": user.role, "company": user.company, "phone": user.phone,
+            "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
+        }
+        missing = _missing_required_fields(field_configs, final_values)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
+
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado",
             event_id=event.id, registered_by_staff_id=staff.id,
@@ -314,15 +473,165 @@ async def update_user(
         return {"message": "Actualizado correctamente"}
     return {"error": "Usuario no encontrado"}
 
+@router.put("/users/{user_id}/cedula")
+async def update_user_cedula(
+    user_id: str, event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("admin")),
+):
+    """Corrige la cédula (User.id) de una persona ya registrada (2026-09-16, pedido explícito: a
+    veces se acredita por nombre porque la cédula quedó mal escrita, y no había forma de
+    arreglarla). User.id es parte de la llave primaria compuesta (id, tenant_id) y está referenciada
+    por FK desde EventAttendee/AccessLog — renombrarla in-place violaría esa FK a mitad de camino,
+    así que el patrón seguro es insertar una fila nueva con el id correcto, reapuntar las filas
+    hijas, y recién ahí borrar la vieja, todo en una sola transacción. admin+ solamente: User vive
+    a nivel de tenant (se comparte entre eventos, ver CLAUDE.md), así que este cambio afecta a la
+    persona en TODOS los eventos de este cliente, no solo en este — más sensible que un campo
+    normal del perfil."""
+    event = get_event_for_staff(event_id, db, staff)
+    old_id = user_id
+    new_id = str(data.get("new_id", "")).strip()
+    if not new_id:
+        raise HTTPException(status_code=400, detail="La nueva cédula no puede estar vacía")
+    if new_id == old_id:
+        raise HTTPException(status_code=400, detail="La nueva cédula es igual a la actual")
+
+    user = db.query(User).filter(User.id == old_id, User.tenant_id == event.tenant_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+
+    conflict = db.query(User).filter(User.id == new_id, User.tenant_id == event.tenant_id).first()
+    if conflict:
+        raise HTTPException(status_code=409, detail="Ya existe otra persona con esa cédula en este cliente")
+
+    new_user = User(
+        id=new_id, tenant_id=user.tenant_id, first_name=user.first_name, last_name=user.last_name,
+        role=user.role, company=user.company, phone=user.phone, email=user.email,
+        opt_1=user.opt_1, opt_2=user.opt_2, extra_fields=user.extra_fields, face_encoding=user.face_encoding,
+    )
+    db.add(new_user)
+    db.flush()  # el nuevo User debe existir antes de reapuntar las filas hijas hacia él
+
+    db.query(EventAttendee).filter(
+        EventAttendee.user_id == old_id, EventAttendee.tenant_id == event.tenant_id
+    ).update({"user_id": new_id}, synchronize_session=False)
+    db.query(AccessLog).filter(
+        AccessLog.user_id == old_id, AccessLog.tenant_id == event.tenant_id
+    ).update({"user_id": new_id}, synchronize_session=False)
+    # PrintLog (Sprint 2.4 Fase 3, 2026-09-16) tiene la misma FK compuesta (user_id, tenant_id)
+    # que EventAttendee/AccessLog — bug real encontrado en Fase 7 (2026-09-16): faltaba
+    # reapuntarlo acá también, así que renombrar la cédula de alguien que ya se había impreso
+    # antes tumbaba este endpoint con un ForeignKeyViolation al borrar el User viejo más abajo.
+    db.query(PrintLog).filter(
+        PrintLog.user_id == old_id, PrintLog.tenant_id == event.tenant_id
+    ).update({"user_id": new_id}, synchronize_session=False)
+    db.flush()
+
+    db.delete(user)
+
+    old_photo = os.path.join(_known_faces_dir(event.tenant_id), f"{old_id}.jpg")
+    if os.path.exists(old_photo):
+        os.rename(old_photo, os.path.join(_known_faces_dir(event.tenant_id), f"{new_id}.jpg"))
+
+    db.commit()
+    return {"message": "Cédula actualizada correctamente", "new_id": new_id}
+
+
 @router.delete("/users/{user_id}/logs")
 async def delete_user_logs(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("admin")),
 ):
+    """Histórico (2026-09-21 en adelante) — ya NO se usa desde el frontend, quedó reemplazado por
+    `DELETE /users/{id}` (borrado real, ver abajo) y `PATCH /events/{id}/users/{id}/status`
+    (cambio de estado sin borrar nada). Se deja documentado, no se borra el endpoint, por si algún
+    integrador externo llegó a depender de él. Ojo: este SÍ borra por tenant completo, no por
+    evento — bug conocido, no replicar este patrón en código nuevo."""
     event = get_event_for_staff(event_id, db, staff)
     db.query(AccessLog).filter(AccessLog.user_id == user_id, AccessLog.tenant_id == event.tenant_id).delete()
     db.commit()
     return {"message": "Registros eliminados. Estado regresado a No Registrado."}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user_from_event(
+    user_id: str, event_id: int, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("coordinador")),
+):
+    """Borra a la persona de ESTE evento por completo (2026-09-16, pedido explícito: "Eliminar"
+    debía borrar de verdad, no solo resetear el estado). Scoped al evento — no confundir con el
+    viejo `.../logs` de arriba, que por bug afectaba TODO el tenant. Si tras sacarla de este
+    evento la persona no queda en NINGÚN otro evento del mismo tenant (mismo User se reusa entre
+    eventos, ver CLAUDE.md), se borra también el `User` y su foto física — si sigue en otro
+    evento, ese `User` se conserva intacto, no se puede reventar la base de un evento ajeno."""
+    event = get_event_for_staff(event_id, db, staff)
+    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+
+    db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
+    db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+    db.flush()
+
+    other_attendee = db.query(EventAttendee).filter(
+        EventAttendee.user_id == user_id, EventAttendee.tenant_id == event.tenant_id
+    ).first()
+    other_log = db.query(AccessLog).filter(
+        AccessLog.user_id == user_id, AccessLog.tenant_id == event.tenant_id
+    ).first()
+
+    fully_deleted = False
+    if not other_attendee and not other_log:
+        photo_path = os.path.join(_known_faces_dir(event.tenant_id), f"{user_id}.jpg")
+        if os.path.exists(photo_path):
+            os.remove(photo_path)
+        db.delete(user)
+        fully_deleted = True
+
+    db.commit()
+    return {
+        "message": "Persona eliminada de este evento" + (
+            " y de la base de datos (no pertenecía a ningún otro evento de este cliente)."
+            if fully_deleted else ". Sigue en la base porque pertenece a otro evento del mismo cliente."
+        ),
+        "fully_deleted": fully_deleted,
+    }
+
+
+@router.patch("/events/{event_id}/users/{user_id}/status")
+async def update_registration_status(
+    event_id: int, user_id: str, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("coordinador")),
+):
+    """Cambia manualmente el estado de registro de una persona en este evento (2026-09-16, nuevo;
+    ampliado a coordinador+ el 2026-09-17, pedido explícito — antes admin+ solamente, junto con
+    DELETE /users/{id} arriba) — antes la única forma de pasar a "Registrado" era un escaneo/
+    búsqueda real, y no existía forma de volver a "No registrado" salvo el viejo borrado-de-logs.
+    Pensado para el caso real que describió Juan David: crear a alguien de antemano (aún no ha
+    llegado) sin que quede "Registrado" de una, y poder marcarlo cuando sí llegue — o al revés,
+    corregir un registro hecho por error. `data: {"status": "registrado" | "no_registrado"}`."""
+    event = get_event_for_staff(event_id, db, staff)
+    user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+
+    new_status = data.get("status")
+    if new_status not in ("registrado", "no_registrado"):
+        raise HTTPException(status_code=400, detail="status debe ser 'registrado' o 'no_registrado'")
+
+    if new_status == "registrado":
+        if not _already_checked_in(db, event_id, user_id):
+            log = AccessLog(
+                tenant_id=event.tenant_id, user_id=user_id, record_type="Existente",
+                event_id=event_id, registered_by_staff_id=staff.id,
+                registration_method="tradicional",  # Fase 16: cambio manual de estado desde el Directorio
+            )
+            db.add(log)
+            _upsert_attendee(db, event_id, user_id, event.tenant_id)
+    else:
+        db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+
+    db.commit()
+    return {"message": "Estado de registro actualizado", "status": new_status}
 
 @router.post("/register")
 async def manual_register(
@@ -361,15 +670,22 @@ async def manual_register(
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
         if not force and _already_checked_in(db, event.id, existing.id):
-            return _duplicate_warning(existing)
+            return _duplicate_warning(db, event.id, existing)
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=existing.id, record_type="Existente",
             event_id=event.id, registered_by_staff_id=staff.id,
+            registration_method="tradicional",  # Fase 16: alta manual, formulario
         )
         db.add(log)
         _upsert_attendee(db, event.id, existing.id, event.tenant_id)
         db.commit()
         return {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
+
+    field_configs = parametros.field_configs_for_event(db, event)
+    final_values = {"role": role, "company": company, "phone": phone, "email": email, "opt_1": opt_1, **extras}
+    missing = _missing_required_fields(field_configs, final_values)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
 
     face_enc_json = None
     img_array = None
@@ -403,6 +719,7 @@ async def manual_register(
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",
         event_id=event.id, registered_by_staff_id=staff.id,
+        registration_method="tradicional",  # Fase 16: alta manual, formulario
     )
     db.add(log)
     _upsert_attendee(db, event.id, id, event.tenant_id)
@@ -418,7 +735,7 @@ async def manual_register(
 async def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(...), zip_file: UploadFile = File(None),
     field_labels: str = Form(None),
-    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -459,6 +776,24 @@ async def bulk_register(
     content = await roster_file.read()
     header_columns, rows = _read_roster_rows(roster_file.filename, content)
 
+    # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
+    # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
+    # ninguna columna reconocida traía nada), pero la carga "completaba" con 0 perfiles sin dejar
+    # claro que el problema real era el FORMATO del archivo, no los datos. Ahora se valida de una
+    # que las columnas mínimas de la plantilla estén presentes antes de procesar ninguna fila.
+    has_id_col = any(k in header_columns for k in _ID_KEYS)
+    has_nombres_col = any(k in header_columns for k in ('nombres', 'nombre'))
+    has_apellidos_col = any(k in header_columns for k in ('apellidos', 'apellido'))
+    if not rows or not (has_id_col and has_nombres_col and has_apellidos_col):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Este archivo no tiene el formato esperado — deben venir al menos las columnas "
+                "'id' (o 'cédula'), 'nombres' y 'apellidos'. Descarga y usa la plantilla oficial "
+                "de carga de asistentes en vez de un archivo con otras columnas."
+            ),
+        )
+
     used_optional_keys = set()
     for row in rows:
         for raw_key, value in row.items():
@@ -468,13 +803,25 @@ async def bulk_register(
 
     missing = used_optional_keys - set(event.get_optional_labels().keys())
     if missing and not field_labels:
-        return {"result": "NEEDS_LABELS", "fields": sorted(missing, key=lambda k: int(k.split("_")[1]))}
+        # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
+        # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
+        # Excel — ej. si "opcional_1" trae "Talla M"/"Talla L", eso mismo se muestra al preguntar.
+        examples = _optional_field_examples(rows, missing)
+        return {
+            "result": "NEEDS_LABELS",
+            "fields": sorted(missing, key=lambda k: int(k.split("_")[1])),
+            "examples": examples,
+        }
 
     if field_labels:
         _apply_optional_labels(event, used_optional_keys, field_labels)
         db.commit()
 
     known_faces_dir = _known_faces_dir(event.tenant_id)
+    # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
+    # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
+    # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
+    errors = []
 
     if zip_file is not None and zip_file.filename:
         zip_path = os.path.join(known_faces_dir, 'temp.zip')
@@ -489,8 +836,19 @@ async def bulk_register(
                 with zip_ref.open(filename) as source:
                     try:
                         img_array = BiometricEngine.process_image_stream(source.read())
-                        Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
-                    except: pass
+                    except Exception:
+                        errors.append(f"⚠️ La foto '{basename}' del zip no se pudo leer (formato no soportado o archivo dañado) — no quedó asociada a nadie.")
+                        continue
+                    # Misma validación que ya hace /api/register (manual_register) para altas
+                    # individuales: una foto sin rostro detectable no debe quedar guardada como si
+                    # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
+                    # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
+                    # persona quedó sin reconocimiento facial funcional).
+                    encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
+                    if not encodings:
+                        errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
+                        continue
+                    Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
         if os.path.exists(zip_path): os.remove(zip_path)
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
@@ -517,7 +875,6 @@ async def bulk_register(
             seen_rows_by_id.setdefault(identificador, []).append(row_num)
 
     id_col = next((header_columns[k] for k in _ID_KEYS if k in header_columns), None)
-    errors = []
     for id_val, row_nums in seen_rows_by_id.items():
         if len(row_nums) > 1:
             cells = ", ".join(f"{id_col}{n}" if id_col else f"fila {n}" for n in row_nums)
@@ -614,8 +971,12 @@ async def bulk_register(
 @router.get("/report")
 async def download_report(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    # 2026-09-17 (pedido explícito): 'cliente' ve Estadísticas (gráficos, vía
+    # require_role_or_client en stats.py) pero YA NO puede exportar la base — antes usaba el mismo
+    # require_role_or_client que las gráficas, ahora exige coordinador+ como cualquier otra
+    # acción operativa, sin la excepción de cliente.
 ):
     event = get_event_for_staff(event_id, db, staff)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    ReportManager.generate_excel_report(db, event.tenant_id, temp_file.name)
+    ReportManager.generate_excel_report(db, event.id, event.tenant_id, temp_file.name)
     return FileResponse(temp_file.name, filename="Golden_Reporte_Eventos.xlsx")

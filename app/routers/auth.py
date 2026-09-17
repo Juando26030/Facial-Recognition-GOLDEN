@@ -34,6 +34,7 @@ async def login_submit(
     request.session.clear()
     request.session["staff_user_id"] = staff.id
     request.session["staff_role"] = staff.role
+    request.session["staff_secondary_role"] = staff.secondary_role  # Sprint 2.4 Fase 15: doble rol coordinador+comercial
     request.session["staff_name"] = staff.full_name or staff.username
     request.session["staff_username"] = staff.username
     return RedirectResponse("/", status_code=302)

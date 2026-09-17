@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parámetros del Evento | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .params-table { width:100%; border-collapse:collapse; }
+        .params-table th, .params-table td { padding:0.7rem 0.6rem; border-bottom:1px solid #eee; vertical-align:top; text-align:left; font-size:0.9rem; }
+        .params-table th { color:#888; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; }
+        .params-table select, .params-table textarea { width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:6px 8px; font-size:0.88rem; font-family:inherit; }
+        .params-table textarea { min-height:60px; }
+        .params-field-name { font-weight:700; color:var(--golden-dark); }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
+
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="#" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+<script>window.EVENT_ID = {{ event.id }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+
+<main class="golden-main">
+  <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2>Parámetros del <span class="gradient-text">Evento</span></h2>
+      </div>
+
+      <div class="app-container">
+        <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+          <p style="color:#888; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
+            Define, para cada variable del alta manual y edición de este evento, si es obligatoria, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (cédula, nombres, apellidos) no se configura acá — siempre es texto corto obligatorio.
+          </p>
+          <table class="params-table">
+            <thead>
+              <tr>
+                <th style="min-width:140px;">Campo</th>
+                <th style="width:100px;">Obligatorio</th>
+                <th style="min-width:160px;">Tipo de campo</th>
+                <th style="min-width:180px;">Opciones (lista desplegable)</th>
+                <th style="width:130px;">Generar estadística</th>
+                <th style="min-width:140px;">Tipo de gráfico</th>
+              </tr>
+            </thead>
+            <tbody id="paramsTableBody"></tbody>
+          </table>
+          <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:1.2rem; padding-top:1.2rem; border-top:1px solid #eee;">
+            <input type="text" id="newOptionalFieldName" placeholder="Nombre del campo nuevo (ej. Alergias, Talla de camisa...)" style="flex:1; min-width:240px; border:1px solid #ccc; border-radius:8px; padding:0.6rem 0.8rem; font-size:0.9rem;">
+            <button type="button" id="addOptionalFieldBtn" class="golden-btn" style="width:auto; padding:0.6rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar campo opcional</button>
+          </div>
+          <p style="color:#888; font-size:0.78rem; margin-top:0.5rem;">El campo nuevo queda disponible de una en el formulario de alta manual y, si se configura con estadística, en Estadísticas — y siempre aparece como columna en el reporte Excel.</p>
+          <div style="display:flex; justify-content:flex-end; margin-top:1.5rem;">
+            <button type="button" id="saveParamsBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Guardar cambios</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+    const FIELD_TYPE_OPTIONS = [
+        { value: 'text_short', label: 'Texto corto' },
+        { value: 'text_long', label: 'Texto largo' },
+        { value: 'select', label: 'Lista desplegable' },
+        { value: 'boolean', label: 'Booleano (Sí/No)' },
+    ];
+    const CHART_TYPE_OPTIONS = [
+        { value: 'bar', label: 'Barras' },
+        { value: 'pie', label: 'Circular' },
+        { value: 'histogram', label: 'Histograma' },
+        { value: 'line', label: 'Líneas' },
+    ];
+
+    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+    function optionsHtml(list, selected) {
+        return list.map(o => `<option value="${o.value}" ${o.value === selected ? 'selected' : ''}>${o.label}</option>`).join('');
+    }
+
+    const tbody = document.getElementById('paramsTableBody');
+
+    function buildRow(cfg) {
+        const tr = document.createElement('tr');
+        tr.dataset.key = cfg.key;
+        tr.innerHTML = `
+            <td><span class="params-field-name">${esc(cfg.label)}</span></td>
+            <td><input type="checkbox" class="cfg-required" ${cfg.required ? 'checked' : ''} style="width:18px; height:18px;"></td>
+            <td><select class="cfg-field-type">${optionsHtml(FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
+            <td><textarea class="cfg-options" placeholder="Una opción por línea" style="display:${cfg.field_type === 'select' ? 'block' : 'none'};">${esc((cfg.options || []).join('\n'))}</textarea></td>
+            <td><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} style="width:18px; height:18px;"></td>
+            <td><select class="cfg-chart-type" style="display:${cfg.default_stat_enabled ? 'block' : 'none'};">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
+        `;
+        const typeSelect = tr.querySelector('.cfg-field-type');
+        const optionsBox = tr.querySelector('.cfg-options');
+        typeSelect.addEventListener('change', () => {
+            optionsBox.style.display = typeSelect.value === 'select' ? 'block' : 'none';
+        });
+        const statCheck = tr.querySelector('.cfg-stat-enabled');
+        const chartSelect = tr.querySelector('.cfg-chart-type');
+        statCheck.addEventListener('change', () => {
+            chartSelect.style.display = statCheck.checked ? 'block' : 'none';
+        });
+        return tr;
+    }
+
+    (window.FIELD_CONFIGS || []).forEach(cfg => tbody.appendChild(buildRow(cfg)));
+
+    document.getElementById('addOptionalFieldBtn').addEventListener('click', async () => {
+        const input = document.getElementById('newOptionalFieldName');
+        const label = input.value.trim();
+        if (!label) { showToast('Escribe un nombre para el campo nuevo', 'error'); return; }
+        const btn = document.getElementById('addOptionalFieldBtn');
+        setButtonLoading(btn, true, 'Agregando...');
+        try {
+            const res = await fetch(`/api/events/${window.EVENT_ID}/optional-fields`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || 'No se pudo agregar el campo');
+            tbody.appendChild(buildRow({
+                key: data.key, label: data.label, required: false, field_type: 'text_short',
+                options: [], default_stat_enabled: false, default_chart_type: null,
+            }));
+            input.value = '';
+            showToast(`Campo "${data.label}" agregado — recuerda "Guardar cambios" si le cambias el tipo/obligatoriedad`, 'success');
+        } catch (e) {
+            showToast(e.message || 'Error de red', 'error');
+        }
+        setButtonLoading(btn, false);
+    });
+
+    document.getElementById('saveParamsBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('saveParamsBtn');
+        setButtonLoading(btn, true, 'Guardando...');
+        try {
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            for (const tr of rows) {
+                const key = tr.dataset.key;
+                const fieldType = tr.querySelector('.cfg-field-type').value;
+                const options = tr.querySelector('.cfg-options').value.split('\n').map(s => s.trim()).filter(Boolean);
+                const statEnabled = tr.querySelector('.cfg-stat-enabled').checked;
+                const body = {
+                    required: tr.querySelector('.cfg-required').checked,
+                    field_type: fieldType,
+                    options: fieldType === 'select' ? options : [],
+                    default_stat_enabled: statEnabled,
+                    default_chart_type: statEnabled ? tr.querySelector('.cfg-chart-type').value : null,
+                };
+                const res = await fetch(`/api/events/${window.EVENT_ID}/field-configs/${encodeURIComponent(key)}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.detail || `No se pudo guardar "${key}"`);
+                }
+            }
+            showToast('Parámetros guardados', 'success');
+        } catch (e) {
+            showToast(e.message || 'Error de red al guardar', 'error');
+        }
+        setButtonLoading(btn, false);
+    });
+})();
+</script>
+</body>
+</html>

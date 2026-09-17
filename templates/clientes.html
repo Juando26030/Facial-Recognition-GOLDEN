@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clientes - Cuentas | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
+        .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
+        .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
+        .tenant-head .meta { font-size: 0.8rem; color: #888; }
+        .tenant-body { display:none; padding: 0 1.5rem 1.5rem; border-top: 1px solid #f0f0f0; }
+        .tenant-body.open { display:block; }
+        .event-row { display:flex; justify-content:space-between; align-items:center; padding: 0.8rem 0; border-bottom: 1px solid #f4f4f4; flex-wrap: wrap; gap: 8px; }
+        .event-row:last-child { border-bottom:none; }
+        .event-name { font-weight:700; color: var(--golden-dark); }
+        .event-meta { font-size: 0.78rem; color:#888; }
+        .status-pill { font-size:0.7rem; font-weight:700; padding: 3px 10px; border-radius: 12px; text-transform:uppercase; }
+        .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
+        .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
+        .status-finalizado { background: #eee; color:#777; }
+        .inline-form { background:#fafafa; border-radius:12px; padding:1rem; margin-top:1rem; display:none; }
+        .inline-form.open { display:block; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+        .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
+        .small-btn.danger { background:#dc3545; border-color:#dc3545; color:white; }
+        .search-box { width:100%; padding:1rem 1.2rem; border-radius:30px; border:1px solid #ddd; font-size:0.95rem; margin-bottom:1.5rem; }
+        .search-box:focus { outline:none; border-color: var(--golden-primary); }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" class="small-btn">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:flex-end;">
+      <div>
+        <span>PANEL</span>
+        <h2>Clientes - Cuentas</h2>
+      </div>
+      {% if staff_role != "coordinador" %}
+      <button class="small-btn primary" onclick="document.getElementById('newTenantForm').classList.toggle('open')">+ Nuevo cliente/cuenta</button>
+      {% endif %}
+    </div>
+
+    <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre de cliente/cuenta...">
+
+    <form id="newTenantForm" class="inline-form">
+      <div class="badge-input-row">
+        <div class="badge-input-group"><label>Nombre del cliente/cuenta</label><input type="text" name="name" required></div>
+      </div>
+      <div class="badge-input-row">
+        <div class="badge-input-group"><label>Contacto - Nombre</label><input type="text" name="contact_name"></div>
+        <div class="badge-input-group"><label>Contacto - Teléfono</label><input type="text" name="contact_phone"></div>
+        <div class="badge-input-group"><label>Contacto - Correo</label><input type="email" name="contact_email"></div>
+      </div>
+      <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Crear cliente/cuenta</button>
+    </form>
+
+    <div id="tenantsList" style="margin-top: 1.5rem;"></div>
+  </div>
+</main>
+
+<script>
+const isAdmin = "{{ staff_role }}" === "admin" || "{{ staff_role }}" === "super_admin";
+// Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes/eventos pasó a ser comercial+ — un
+// coordinador ya NO puede (sí puede seguir editando/gestionando los que ya existen).
+const canCreate = "{{ staff_role }}" !== "coordinador";
+
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
+function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+function stripAccents(text) { return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+
+const STATUS_LABELS = { creado: "Creado", en_proceso: "En Proceso", finalizado: "Finalizado" };
+
+// ---------- Lista de clientes + árbol de eventos ----------
+let allTenants = [];
+
+async function loadTenants() {
+  const res = await fetch("/api/tenants");
+  allTenants = await res.json();
+  renderTenants(allTenants);
+}
+
+function renderTenants(tenantsData) {
+  const el = document.getElementById("tenantsList");
+  if (!tenantsData.length) { el.innerHTML = '<p style="color:#888;">Sin resultados.</p>'; return; }
+  el.innerHTML = tenantsData.map(t => `
+    <div class="tenant-card" data-tenant-id="${t.id}">
+      <div class="tenant-head" data-action="toggle-tenant">
+        <div>
+          <h3>${esc(t.name)} <span style="color:#bbb; font-weight:400; font-size:0.75rem;">#${esc(t.client_code)}</span></h3>
+          <div class="meta">${esc(t.contact_name) || "Sin contacto"} ${t.contact_phone ? "· " + esc(t.contact_phone) : ""}</div>
+        </div>
+        <span class="small-btn">Ver eventos</span>
+      </div>
+      <div class="tenant-body" data-tenant-body>
+        ${canCreate ? `<a href="/clientes/${t.id}/nuevo-evento" class="small-btn primary" style="display:inline-block; margin:1rem 0; text-decoration:none;">+ Nuevo evento</a>` : ''}
+        <input type="text" data-events-search placeholder="🔎 Buscar evento de este cliente/cuenta..." style="width:100%; padding:0.6rem 1rem; border:1px solid #ddd; border-radius:20px; font-size:0.85rem; margin-bottom:0.8rem;">
+        <div data-events-container></div>
+      </div>
+    </div>
+  `).join("");
+}
+
+async function toggleTenant(tenantId, card) {
+  const body = card.querySelector("[data-tenant-body]");
+  body.classList.toggle("open");
+  if (body.classList.contains("open")) loadEventsForTenant(tenantId, card);
+}
+
+// Búsqueda de eventos DENTRO de la tarjeta de un cliente/cuenta (2026-09-17, pedido explícito:
+// un cliente con muchos eventos es difícil de recorrer a simple vista) — filtra en memoria sobre
+// lo que ya trajo loadEventsForTenant, sin pedir nada nuevo al backend.
+const tenantEventsCache = new WeakMap();
+function renderEventRows(events, el) {
+  if (!events.length) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin resultados.</p>'; return; }
+  el.innerHTML = events.map(e => `
+    <div class="event-row">
+      <div>
+        <div class="event-name">${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</div>
+        <div class="event-meta">${esc(e.location) || ""} ${e.city ? "· " + esc(e.city) : ""} · ${fmtDate(e.start_date)} · Coordinador: ${esc(e.coordinator_name) || "-"} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
+        <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
+          ${Object.entries(STATUS_LABELS).map(([value, label]) =>
+            `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
+          ).join("")}
+        </select>
+        ${isAdmin ? `<button type="button" class="small-btn danger" data-delete-event="${e.id}" data-event-name="${esc(e.name)}" data-event-status="${e.status}">Eliminar</button>` : ""}
+      </div>
+    </div>
+  `).join("");
+}
+
+const tenantsListEl = document.getElementById("tenantsList");
+tenantsListEl.addEventListener("click", (e) => {
+  const toggleHead = e.target.closest('[data-action="toggle-tenant"]');
+  if (toggleHead) {
+    const card = toggleHead.closest(".tenant-card");
+    toggleTenant(card.dataset.tenantId, card);
+    return;
+  }
+  const deleteBtn = e.target.closest("[data-delete-event]");
+  if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
+});
+
+tenantsListEl.addEventListener("input", (e) => {
+  const searchInput = e.target.closest("[data-events-search]");
+  if (!searchInput) return;
+  const card = searchInput.closest(".tenant-card");
+  const events = tenantEventsCache.get(card) || [];
+  const el = card.querySelector("[data-events-container]");
+  const q = stripAccents(searchInput.value.trim()).toLowerCase();
+  if (!q) { renderEventRows(events, el); return; }
+  renderEventRows(events.filter(ev => stripAccents(`${ev.name} ${ev.event_code || ""}`).toLowerCase().includes(q)), el);
+});
+
+tenantsListEl.addEventListener("change", async (e) => {
+  const select = e.target.closest("[data-status-select]");
+  if (!select) return;
+  const newStatus = select.value;
+  const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
+  const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
+  if (!confirmed) { select.value = previousStatus; return; }
+  await setEventStatus(select.dataset.eventId, newStatus, select);
+});
+
+async function loadEventsForTenant(tenantId, card) {
+  const res = await fetch(`/api/events?tenant_id=${tenantId}`);
+  const events = await res.json();
+  tenantEventsCache.set(card, events);
+  const el = card.querySelector("[data-events-container]");
+  if (events.length === 0) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin eventos todavía.</p>'; return; }
+  renderEventRows(events, el);
+}
+
+async function setEventStatus(eventId, status, btn) {
+  const res = await fetch(`/api/events/${eventId}`, {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({status})});
+  const card = btn.closest(".tenant-card");
+  loadEventsForTenant(card.dataset.tenantId, card);
+  showToast(res.ok ? `Evento pasó a "${STATUS_LABELS[status]}"` : "No se pudo actualizar el evento", res.ok ? "success" : "error");
+}
+
+async function deleteEvent(eventId, name, status, btn) {
+  const confirmed = await showConfirm(
+    `¿Está seguro que quiere eliminar el evento "${name}"?<br><br>` +
+    `Recuerde que este evento está en estado <strong>${STATUS_LABELS[status] || status}</strong>. ` +
+    `Esta acción es permanente y no se puede deshacer.`
+  );
+  if (!confirmed) return;
+  const res = await fetch(`/api/events/${eventId}`, {method: "DELETE"});
+  const card = btn.closest(".tenant-card");
+  loadEventsForTenant(card.dataset.tenantId, card);
+  showToast(res.ok ? "Evento eliminado" : "No se pudo eliminar el evento", res.ok ? "success" : "error");
+}
+
+const newTenantForm = document.getElementById("newTenantForm");
+newTenantForm.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const payload = Object.fromEntries(new FormData(ev.target).entries());
+  const res = await fetch("/api/tenants", {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+  });
+  if (res.ok) { ev.target.reset(); ev.target.classList.remove("open"); loadTenants(); showToast("Cliente/Cuenta creado", "success"); }
+  else { showToast("No se pudo crear el cliente/cuenta", "error"); }
+});
+
+// Búsqueda: solo por nombre de cliente (pedido explícito), filtrado en memoria sobre lo que ya
+// trajo /api/tenants — no hace falta otro endpoint para esto.
+const searchBox = document.getElementById("searchBox");
+searchBox.addEventListener("input", () => {
+  const q = stripAccents(searchBox.value.trim()).toLowerCase();
+  if (!q) { renderTenants(allTenants); return; }
+  renderTenants(allTenants.filter(t => stripAccents(t.name || "").toLowerCase().includes(q)));
+});
+
+loadTenants();
+</script>
+</body>
+</html>

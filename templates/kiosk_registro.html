@@ -6,6 +6,7 @@
     <title>Registro | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .btn-table-delete {
             background: #dc3545;
@@ -26,7 +27,8 @@
         .directory-scan-hint { font-size:0.78rem; color:#888; margin-bottom:1rem; }
     </style>
 </head>
-<body>
+<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+{% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 
 <header class="golden-header">
   <div class="golden-header-container">
@@ -34,17 +36,8 @@
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <div class="golden-anniversary-badge">
-        {{ event.name }}
-      </div>
-      {% if staff_role != "cliente" %}
-      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
-      {% endif %}
-      {% if staff_role not in ["digitador", "cliente"] %}
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
-      {% endif %}
-      {% if staff_role in ["admin", "super_admin"] %}
-      <a href="/admin/staff" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">Staff</a>
+      {% if staff_role in ["digitador", "cliente"] %}
+      <a href="/configuracion" title="Configuración (Apariencia)" style="text-decoration:none; font-size:1.1rem;">⚙️</a>
       {% endif %}
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
@@ -54,7 +47,15 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }};</script>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+<script src="{{ url_for('static', path='js/field-render.js') }}"></script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
@@ -81,32 +82,25 @@
         <div class="tab active" data-tab="scanner">{{ ns.n }}. Escáner de Acceso</div>
         {% endif %}
         {% set ns.n = ns.n + 1 %}
-        <div class="tab{% if not event.facial_enabled %} active{% endif %}" data-tab="manual">{{ ns.n }}. Registro Individual</div>
-        {% if staff_role != "digitador" %}
-        {% set ns.n = ns.n + 1 %}
-        <div class="tab" data-tab="exportar">{{ ns.n }}. Exportar Reporte</div>
-        {% endif %}
-        {% set ns.n = ns.n + 1 %}
-        <div class="tab" data-tab="directorio">{{ ns.n }}. Directorio en Vivo</div>
-        {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        {% set ns.n = ns.n + 1 %}
-        <div class="tab" data-tab="temporales">{{ ns.n }}. Usuarios del Evento</div>
-        {% endif %}
+        <div class="tab{% if not event.facial_enabled %} active{% endif %}" data-tab="directorio">{% if event.facial_enabled %}{{ ns.n }}. {% endif %}Registro</div>
         {% endif %}
       </div>
 
       <div class="app-container">
         {% if staff_role == "cliente" %}
-        <!-- PESTAÑA: ESTADÍSTICAS (mockeada, pendiente de diseño real) -->
+        <!-- PESTAÑA: ESTADÍSTICAS — habilitada para cliente (2026-09-16, pedido explícito). Antes
+             era un botón "Ver Estadísticas" que salía a otra página (bug reportado: no dejaba
+             alternar con Directorio sin perder el lugar) — ahora la página real se incrusta con
+             un <iframe> (?embed=1 le pide que omita su propio header) para poder rotar entre las
+             dos pestañas sin navegar afuera. Bug real corregido de paso: esta sección Y la de
+             Directorio de abajo tenían las dos la clase "active" hardcodeada al mismo tiempo —
+             solo debe empezar activa la que coincide con la pestaña marcada "active" arriba. -->
         <div id="estadisticas" class="section active">
-            <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
-                <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Estadísticas del evento</h3>
-                <p style="color: #888;">Próximamente. Esta sección todavía no está diseñada — placeholder mientras se define qué métricas mostrar.</p>
-            </div>
+            <iframe src="/kiosk/{{ event.id }}/estadisticas?embed=1" style="width:100%; min-height:80vh; border:none; border-radius:20px; background:transparent;" title="Estadísticas del evento"></iframe>
         </div>
 
         <!-- DIRECTORIO (cliente: solo lectura, sin acreditar) -->
-        <div id="directorio" class="section active" style="max-width: 100%;">
+        <div id="directorio" class="section" style="max-width: 100%;">
             <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
                 <div class="badge-form-title">Directorio en Vivo</div>
                 <div class="directory-search-bar">
@@ -126,8 +120,7 @@
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Cargo</th><th>Empresa</th>
-                            <th>Teléfono</th><th>Correo</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
+                            <th>Acción</th><th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -145,6 +138,7 @@
                     <canvas id="canvas" style="display:none;"></canvas>
                     <button id="escanearBtn" class="golden-btn golden-btn-primary full-width" {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>📸 Escanear Rostro</button>
                     <h3 id="resultadoTexto" style="text-align:center; margin-top: 15px; height: 30px;"></h3>
+                    <button id="printScanBtn" class="golden-btn" style="display:none; width:100%; background:#f0f0f0; color:var(--golden-dark); margin-top:0.5rem;">🖨️ Imprimir Escarapela</button>
                 </div>
 
                 <div class="badge-preview-area" id="profileCard" style="display: none;">
@@ -201,104 +195,26 @@
         </div>
         {% endif %}
 
-        <!-- PESTAÑA: REGISTRO MANUAL — la foto solo se pide si el evento tiene reconocimiento
-             facial activo (ver Event.facial_enabled); si no, es exactamente el alta tradicional
-             por cédula (identidad, sin foto). -->
-        <div id="manual" class="section{% if not event.facial_enabled %} active{% endif %}">
-            <form id="regForm" class="golden-badge-builder">
-                <fieldset {% if event.status != "en_proceso" %}disabled{% endif %} style="border:none; padding:0; margin:0;">
-                <div class="badge-form-title">Registro de Nuevo Personal</div>
-                {% if event.status != "en_proceso" %}<p style="text-align:center; color:#a66; font-size:0.85rem; margin-bottom:1rem;">Deshabilitado: el evento no está en proceso.</p>{% endif %}
-
-                <div class="badge-input-row">
-                    <div class="badge-input-group">
-                        <label>Nombres</label>
-                        <input type="text" name="first_name" required placeholder="Ej. Juan David">
-                    </div>
-                    <div class="badge-input-group">
-                        <label>Apellidos</label>
-                        <input type="text" name="last_name" required placeholder="Ej. Pérez Gómez">
+        <!-- PESTAÑA: REGISTRO — unifica lo que antes eran "Registro Individual" y "Directorio en
+             Vivo" en pestañas separadas (2026-09-16, Sprint 2.2 Fase B): la tabla del directorio
+             de siempre, más un botón "Registrar nuevo" que abre el alta manual en una ventana
+             flotante en vez de ser otra pestaña. -->
+        <div id="directorio" class="section{% if not event.facial_enabled %} active{% endif %}" style="max-width: 100%;">
+            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+                <div class="badge-form-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.8rem;">
+                    <span>Registro</span>
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:flex-end;">
+                        <button type="button" id="openRegisterModalBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;"
+                                {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>➕ Registrar nuevo</button>
+                        <button type="button" id="clearFiltersBtn" class="golden-btn" style="width:auto; padding:0.4rem 1rem; background:#f0f0f0; color:var(--golden-dark); font-size:0.8rem;">🧹 Limpiar filtros</button>
                     </div>
                 </div>
-
-                <div class="badge-input-row">
-                    <div class="badge-input-group">
-                        <label>Número de ID (Cédula)</label>
-                        <input type="text" name="id" required>
-                    </div>
-                    <div class="badge-input-group">
-                        <label>Cargo</label>
-                        <input type="text" name="role">
-                    </div>
-                </div>
-
-                <div class="badge-input-row">
-                    <div class="badge-input-group">
-                        <label>Empresa</label>
-                        <input type="text" name="company">
-                    </div>
-                    <div class="badge-input-group">
-                        <label>Teléfono</label>
-                        <input type="text" name="phone">
-                    </div>
-                </div>
-
-                <div class="badge-input-row">
-                    <div class="badge-input-group">
-                        <label>Correo Electrónico</label>
-                        <input type="email" name="email">
-                    </div>
-                    <div class="badge-input-group">
-                        <label>Tipo de Asistente</label>
-                        <input type="text" name="opt_1">
-                    </div>
-                </div>
-
-                <!-- Campos opcionales dinámicos (hasta 30, ver CLAUDE.md): uno por cada
-                     "opcional_N" que este evento ya tiene rotulado (Event.optional_field_labels,
-                     ej. porque se subió un Excel con esas columnas), más los que el operador
-                     agregue aquí mismo sobre la marcha con el botón de abajo — mismos campos que
-                     tendría el Excel de este evento, se use o no se use un Excel en absoluto. -->
-                <div id="optionalFieldsContainer">
-                    {% for key, label in optional_labels %}
-                    <div class="badge-input-group" data-opt-field="{{ key }}" style="margin-top:0.8rem;">
-                        <label>{{ label }}</label>
-                        <input type="text" name="{{ key }}">
-                    </div>
-                    {% endfor %}
-                </div>
-                <button type="button" id="addOptionalFieldBtn" class="golden-btn" style="margin-top:0.8rem; background:#f0f0f0; color:var(--golden-dark); width:auto; padding:0.5rem 1.2rem;">+ Agregar campo opcional</button>
-
-                {% if event.facial_enabled %}
-                <div class="badge-input-group" style="margin-top:1.2rem;">
-                    <label>Fotografía Oficial</label>
-                    <input type="file" name="file" accept="image/*" required>
+                {% if staff_role in ["coordinador", "admin", "super_admin"] %}
+                <div style="margin-bottom:1rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
+                    <button type="button" id="autoRegisterBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
+                    <button type="button" id="autoPrintBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
                 </div>
                 {% endif %}
-
-                <button type="submit" class="golden-btn golden-btn-primary" style="margin-top:1.2rem;">Guardar Perfil{{ " Biométrico" if event.facial_enabled else "" }}</button>
-                </fieldset>
-            </form>
-        </div>
-
-        {% if staff_role != "digitador" %}
-        <!-- PESTAÑA: EXPORTAR REPORTE -->
-        <div id="exportar" class="section">
-            <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
-                <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Base de Datos Oficial</h3>
-                <p style="color: #666; margin-bottom: 30px;">Genera y descarga el reporte unificado en Excel con los campos corporativos estándar.</p>
-                <button id="exportBtn" class="golden-btn golden-btn-primary" style="background: #28a745; color: white; width: auto; padding: 1rem 3rem; margin: 0 auto;">
-                    📥 Exportar Base de Datos (Excel)
-                </button>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- PESTAÑA: DIRECTORIO EN VIVO — búsqueda por cédula/nombre/empresa + Acreditar, igual
-             tenga o no el evento reconocimiento facial activo. -->
-        <div id="directorio" class="section" style="max-width: 100%;">
-            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
-                <div class="badge-form-title">Directorio en Vivo</div>
                 <div class="directory-search-bar">
                     <div class="badge-input-group">
                         <label>Buscar por cédula</label>
@@ -313,13 +229,22 @@
                         <label>Buscar por empresa</label>
                         <input type="text" id="searchEmpresa" placeholder="Empresa" autocomplete="off">
                     </div>
+                    <div class="badge-input-group">
+                        <label>Cédula nueva (reverso)</label>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <button type="button" id="scanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;"
+                                    {% if event.status != "en_proceso" %}disabled{% endif %}>📎 Adjuntar imagen</button>
+                            <button type="button" id="scanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;"
+                                    {% if event.status != "en_proceso" %}disabled{% endif %}>📸 Usar cámara</button>
+                        </div>
+                        <input type="file" id="scanMrzInput" accept="image/*" style="display:none;">
+                    </div>
                 </div>
-                <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se acredita al instante sin necesidad de buscarla en la tabla.</div>
+                <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se busca al instante sin necesidad de buscarla en la tabla. La cédula nueva no se puede leer con el lector (su QR viene encriptado) — usa "Adjuntar imagen" o "Usar cámara" para tomarle una foto al reverso.</div>
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>ID</th><th>Nombres</th><th>Apellidos</th><th>Cargo</th><th>Empresa</th>
-                            <th>Teléfono</th><th>Correo</th><th>Tipo Asistente</th><th>Estado</th><th>Acción</th>
+                            <th>Acción</th><th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -327,64 +252,93 @@
             </div>
         </div>
 
-        {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-        <!-- PESTAÑA: USUARIOS DEL EVENTO (digitador + cliente) -->
-        <div id="temporales" class="section">
-            <div class="golden-badge-builder" style="margin-bottom: 2rem;">
-                <div class="badge-form-title">Nueva cuenta para este evento</div>
-                <form id="tempUserForm">
+        <!-- Modal flotante "Registrar nuevo" (reemplaza la vieja pestaña "Registro Individual") —
+             mismos campos de siempre, incluida la foto si el evento es biométrico. -->
+        <div id="registerModal" style="display:none; position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9996; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;">
+            <div style="background:white; border-radius:20px; padding:1.8rem; max-width:560px; width:100%; max-height:90vh; overflow:auto;">
+                <form id="regForm" class="golden-badge-builder">
+                    <fieldset {% if event.status != "en_proceso" %}disabled{% endif %} style="border:none; padding:0; margin:0;">
+                    <div class="badge-form-title">Registro de Nuevo Personal</div>
+                    {% if event.status != "en_proceso" %}<p style="text-align:center; color:#a66; font-size:0.85rem; margin-bottom:1rem;">Deshabilitado: el evento no está en proceso.</p>{% endif %}
+
+                    <!-- "Registrar con cédula" (Sprint 2.4 Fase 2, 2026-09-16, pedido explícito):
+                         opcional, arriba de todo — escanear acá completa ID/Nombres/Apellidos
+                         solos, el operador solo revisa/completa el resto. Funciona con la cédula
+                         vieja (lector = teclado, Enter) y la nueva (foto del reverso + OCR MRZ,
+                         mismo endpoint que ya usa la búsqueda del Directorio). -->
+                    <div style="margin-bottom:1.2rem; padding:1rem; background:#faf8f0; border-radius:12px;">
+                        <div class="badge-input-group" style="margin-bottom:0.6rem;">
+                            <label>Registrar con cédula (opcional)</label>
+                            <input type="text" id="regScanCedulaInput" placeholder="Escanea la cédula (lector) o escribe el número y presiona Enter" autocomplete="off" inputmode="numeric">
+                        </div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <button type="button" id="regScanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📎 Cédula nueva (imagen)</button>
+                            <button type="button" id="regScanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📸 Cédula nueva (cámara)</button>
+                        </div>
+                        <input type="file" id="regScanMrzInput" accept="image/*" style="display:none;">
+                    </div>
+
                     <div class="badge-input-row">
                         <div class="badge-input-group">
-                            <label>Usuario (para digitador, la cédula)</label>
-                            <input type="text" name="username" required>
+                            <label>Nombres</label>
+                            <input type="text" name="first_name" required placeholder="Ej. Juan David">
                         </div>
                         <div class="badge-input-group">
-                            <label>Nombre completo</label>
-                            <input type="text" name="full_name">
+                            <label>Apellidos</label>
+                            <input type="text" name="last_name" required placeholder="Ej. Pérez Gómez">
                         </div>
                     </div>
+
                     <div class="badge-input-row">
                         <div class="badge-input-group">
-                            <label>Contraseña temporal</label>
-                            <input type="text" name="password" required>
+                            <label>Número de ID (Cédula)</label>
+                            <input type="text" name="id" id="manualIdField" required>
                         </div>
-                        <div class="badge-input-group">
-                            <label>Rol</label>
-                            <select name="role" id="eventRoleSelect" required>
-                                <option value="digitador">Digitador (temporal)</option>
-                                {% if staff_role in ["admin", "super_admin"] %}
-                                <option value="cliente">Cliente</option>
-                                {% endif %}
+                    </div>
+
+                    <!-- Campos configurables (Parámetros del Evento, 2026-09-16): las 5 variables
+                         fijas (Cargo/Empresa/Teléfono/Correo/Tipo de Asistente) + cada "opcional_N"
+                         ya rotulado (Event.optional_field_labels) — cada uno con el tipo de control,
+                         obligatoriedad y opciones que se hayan definido en
+                         /kiosk/{{ event.id }}/parametros (por defecto: texto corto, opcional). Más
+                         los que el operador agregue aquí mismo sobre la marcha con el botón de abajo. -->
+                    <div id="dynamicFieldsContainer">
+                        {% for cfg in field_configs %}
+                        <div class="badge-input-group" data-field-key="{{ cfg.key }}" style="margin-top:0.8rem;">
+                            <label>{{ cfg.label }}{% if cfg.required %} *{% endif %}</label>
+                            {% if cfg.field_type == "text_long" %}
+                            <textarea name="{{ cfg.key }}" rows="3" {% if cfg.required %}required{% endif %} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem; font-family:inherit;"></textarea>
+                            {% elif cfg.field_type == "select" %}
+                            <select name="{{ cfg.key }}" {% if cfg.required %}required{% endif %}>
+                                <option value="">Selecciona…</option>
+                                {% for opt in cfg.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
                             </select>
+                            {% elif cfg.field_type == "boolean" %}
+                            <input type="checkbox" name="{{ cfg.key }}" value="true" {% if cfg.required %}required{% endif %} style="width:18px; height:18px;">
+                            {% else %}
+                            <input type="{{ 'email' if cfg.key == 'email' else 'text' }}" name="{{ cfg.key }}" {% if cfg.required %}required{% endif %}>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if event.facial_enabled %}
+                    <div class="badge-input-group" style="margin-top:1.2rem;">
+                        <label>Fotografía Oficial</label>
+                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <input type="file" name="file" id="regPhotoInput" accept="image/*" required style="flex:1 1 200px; min-width:0;">
+                            <button type="button" id="regPhotoCameraBtn" class="golden-btn" style="width:auto; white-space:nowrap; background:#f0f0f0; color:var(--golden-dark); flex:0 0 auto;">📸 Usar cámara</button>
                         </div>
                     </div>
-                    <button type="submit" class="golden-btn golden-btn-primary">Crear y asignar a este evento</button>
-                </form>
-            </div>
+                    {% endif %}
 
-            {% if staff_role in ["admin", "super_admin"] %}
-            <div class="golden-badge-builder" style="margin-bottom: 2rem;">
-                <div class="badge-form-title">Asignar cuenta ya existente a este evento</div>
-                <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1rem;">Para reusar un digitador o cliente que ya existe de otro evento, en vez de crear uno nuevo.</p>
-                <form id="assignExistingForm">
-                    <div class="badge-input-group">
-                        <label>Usuario existente</label>
-                        <select name="staff_id" id="assignableSelect" required></select>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1.2rem;">
+                        <button type="button" id="closeRegisterModalBtn" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
+                        <button type="submit" class="golden-btn golden-btn-primary" style="width:auto;">Guardar Perfil{{ " Biométrico" if event.facial_enabled else "" }}</button>
                     </div>
-                    <button type="submit" class="golden-btn golden-btn-primary">Asignar a este evento</button>
+                    </fieldset>
                 </form>
-            </div>
-            {% endif %}
-
-            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
-                <div class="badge-form-title">Cuentas asignadas a este evento</div>
-                <table class="golden-table">
-                    <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead>
-                    <tbody id="tempUsersBody"></tbody>
-                </table>
             </div>
         </div>
-        {% endif %}
         {% endif %}
 
       </div>
@@ -392,166 +346,248 @@
   </section>
 </main>
 
+<script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+<script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
 (function() {
     /* Monta la búsqueda del Directorio (compartida por cliente y el resto de roles). El atajo de
-       lector de código de barras (Enter -> acredita al instante) solo tiene sentido para quien
+       lector de código de barras (Enter -> busca/pre-acredita) solo tiene sentido para quien
        puede acreditar (digitador+, no cliente). Si no encuentra la cédula, en vez de un mini-form
-       aparte (como antes en kiosk_cedula.html) saltamos a "Registro Individual" con la cédula
-       precargada — un solo formulario de alta manual, no dos. */
+       aparte abrimos el modal de "Registrar nuevo" con la cédula precargada — un solo formulario
+       de alta manual, no dos (2026-09-16: ese formulario dejó de ser una pestaña separada). */
     const canAccredit = window.STAFF_ROLE !== "cliente";
 
-    function goToManualWithCedula(cedula) {
-        const manualTab = document.querySelector('.tab[data-tab="manual"]');
-        if (manualTab) manualTab.click();
-        const idField = document.querySelector('#regForm input[name="id"]');
-        if (idField) idField.value = cedula;
-        const firstNameField = document.querySelector('#regForm input[name="first_name"]');
-        if (firstNameField) firstNameField.focus();
-        showToast('Cédula no encontrada — completa el registro', 'error');
+    const registerModal = document.getElementById('registerModal');
+    const openRegisterModalBtn = document.getElementById('openRegisterModalBtn');
+    const closeRegisterModalBtn = document.getElementById('closeRegisterModalBtn');
+
+    function openRegisterModal() { if (registerModal) registerModal.style.display = 'flex'; }
+    function closeRegisterModal() { if (registerModal) registerModal.style.display = 'none'; }
+
+    if (openRegisterModalBtn) openRegisterModalBtn.addEventListener('click', openRegisterModal);
+    if (closeRegisterModalBtn) closeRegisterModalBtn.addEventListener('click', closeRegisterModal);
+    // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
+    // solo con "Cancelar" o guardando ("Guardar Perfil"), para no perder lo escrito por error.
+    window.closeRegisterModal = closeRegisterModal;
+
+    /* Switch "Modo autoregistro" (Sprint 2.2 Fase B, 2026-09-16) — visible solo coordinador+.
+       Apagado por defecto: un match FACIAL queda "pendiente" hasta que el digitador confirme con
+       "Guardar y autorizar acceso" en vez de acreditar solo. Mismo componente/patrón que el
+       switch de auto-impresión del editor de escarapelas.
+       Sprint 2.4, Fase 2 (2026-09-16): ya NO afecta a la acreditación por cédula — un match
+       exacto de cédula siempre acredita de una vez (ver checkin_cedula en api.py), es un match
+       cierto a diferencia de un embedding facial. Este switch quedó exclusivo de /recognize. */
+    const autoRegisterBtn = document.getElementById('autoRegisterBtn');
+    if (autoRegisterBtn) {
+        window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }};
+        function updateAutoRegisterBtn() {
+            autoRegisterBtn.innerText = window.EVENT_AUTO_REGISTER ? '🔓 Modo autoregistro: ACTIVADO' : '🔒 Modo autoregistro: apagado';
+            autoRegisterBtn.style.background = window.EVENT_AUTO_REGISTER ? '#28a745' : '#f0f0f0';
+            autoRegisterBtn.style.color = window.EVENT_AUTO_REGISTER ? 'white' : 'var(--golden-dark)';
+        }
+        updateAutoRegisterBtn();
+        autoRegisterBtn.addEventListener('click', async () => {
+            const next = !window.EVENT_AUTO_REGISTER;
+            const res = await fetch(`/api/events/${window.EVENT_ID}`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auto_register: next }),
+            });
+            if (res.ok) {
+                window.EVENT_AUTO_REGISTER = next;
+                updateAutoRegisterBtn();
+                showToast(next ? 'Modo autoregistro activado para este evento' : 'Modo autoregistro desactivado', 'success');
+            } else {
+                showToast('No se pudo cambiar el modo autoregistro', 'error');
+            }
+        });
+    }
+
+    /* Switch "Auto-impresión" (Historia 2.2) — movido acá desde el editor de escarapelas
+       (2026-09-16, pedido explícito: vive mejor junto al de "Modo autoregistro", ambos son
+       comportamiento de Registro, no de diseño de la escarapela). Mismo endpoint/campo de
+       siempre (Event.auto_print_badge vía PATCH /api/events/{id}), solo cambió dónde vive el
+       botón. */
+    const autoPrintBtn = document.getElementById('autoPrintBtn');
+    if (autoPrintBtn) {
+        function updateAutoPrintBtn() {
+            autoPrintBtn.innerText = window.EVENT_AUTO_PRINT ? '🖨️ Auto-impresión: ACTIVADA' : '🖨️ Auto-impresión: apagada';
+            autoPrintBtn.style.background = window.EVENT_AUTO_PRINT ? '#28a745' : '#f0f0f0';
+            autoPrintBtn.style.color = window.EVENT_AUTO_PRINT ? 'white' : 'var(--golden-dark)';
+        }
+        updateAutoPrintBtn();
+        autoPrintBtn.addEventListener('click', async () => {
+            const next = !window.EVENT_AUTO_PRINT;
+            const res = await fetch(`/api/events/${window.EVENT_ID}`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auto_print_badge: next }),
+            });
+            if (res.ok) {
+                window.EVENT_AUTO_PRINT = next;
+                updateAutoPrintBtn();
+                showToast(next ? 'Auto-impresión activada para este evento' : 'Auto-impresión desactivada', 'success');
+            } else {
+                showToast('No se pudo cambiar la auto-impresión', 'error');
+            }
+        });
     }
 
     window.directorySearch = GoldenDirectory.mountSearch({
         tbodyId: 'directoryTableBody',
         searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', empresa: 'searchEmpresa' },
-        showAccredit: canAccredit,
         fastCheckin: canAccredit,
-        onNotFound: canAccredit ? goToManualWithCedula : null,
     });
-})();
-</script>
-<script>
-(function() {
-    /* "+ Agregar campo opcional" en Registro Individual (2026-09-22): deja añadir hasta 30
-       campos libres al formulario de alta manual, iguales a los "opcional_N" del roster — sirve
-       tanto para eventos que sí tuvieron un Excel (ya trae los que ese Excel usó, ver
-       optional_labels en main.py) como para eventos 100% manuales que nunca tuvieron uno. Cada
-       campo nuevo pide su nombre ahí mismo (mismo modal que bulk_register) y ese nombre se manda
-       junto con el registro para que quede guardado en Event.optional_field_labels — no hace
-       falta un viaje NEEDS_LABELS aparte porque ya lo preguntamos al agregar el campo. */
-    const container = document.getElementById('optionalFieldsContainer');
-    const addBtn = document.getElementById('addOptionalFieldBtn');
-    if (!container || !addBtn) return;
 
-    const pendingLabels = {};  // {opcional_N: "label"} — solo los agregados en ESTA carga del formulario
-
-    function usedSlots() {
-        const used = new Set();
-        container.querySelectorAll('input[name^="opcional_"]').forEach(inp => used.add(inp.name));
-        return used;
+    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+    if (clearFiltersBtn) {
+        clearFiltersBtn.addEventListener('click', () => {
+            if (window.directorySearch) window.directorySearch.clearFilters();
+        });
     }
 
-    function nextFreeSlot() {
-        const used = usedSlots();
-        for (let n = 1; n <= 30; n++) {
-            const key = 'opcional_' + n;
-            if (!used.has(key)) return key;
+    /* Blindaje contra atajos del navegador (Sprint 2 Parte 2, 2.2) — mismo criterio que el campo
+       de búsqueda por cédula de directory.js, aplicado también acá porque un lector se puede usar
+       para escribir directo en el alta manual (ej. si "Escanear foto" cayó en "no encontrado" y el
+       operador prefiere escanear el código de barras viejo en vez de escribir a mano). */
+    const manualIdField = document.getElementById('manualIdField');
+    if (manualIdField) {
+        manualIdField.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); }
+        });
+    }
+
+    /* Escaneo por foto de la MRZ de la cédula nueva (Sprint 2 Parte 2, 2.3) — el QR de esa cédula
+       viene encriptado por la Registraduría (ver 2.2, no se intenta decodificar), así que el
+       módulo correcto es una FOTO del reverso + OCR en el backend (zona MRZ, estándar ICAO 9303).
+       Dos formas de conseguir la foto (Sprint 2.2 Fase C): adjuntar un archivo, o tomarla con la
+       cámara del computador ahí mismo (CameraCapture, static/js/camera-capture.js) — ambas
+       terminan en el mismo processMrzPhoto(blob). */
+    const scanMrzBtn = document.getElementById('scanMrzBtn');
+    const scanMrzCameraBtn = document.getElementById('scanMrzCameraBtn');
+    const scanMrzInput = document.getElementById('scanMrzInput');
+
+    async function processMrzPhoto(blob) {
+        setButtonLoading(scanMrzBtn, true, 'Leyendo…');
+        scanMrzCameraBtn.disabled = true;
+        try {
+            const formData = new FormData();
+            formData.append('file', blob, 'cedula.jpg');
+            const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) {
+                showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
+            } else if (window.directorySearch) {
+                window.directorySearch.submitScannedCedula(data.id, { nombres: data.first_name, apellidos: data.last_name });
+            }
+        } catch (e) {
+            showToast('Error de red', 'error');
         }
-        return null;
+        setButtonLoading(scanMrzBtn, false);
+        scanMrzCameraBtn.disabled = false;
     }
 
-    addBtn.addEventListener('click', async () => {
-        const key = nextFreeSlot();
-        if (!key) { showToast('Ya se usaron los 30 campos opcionales disponibles para este evento', 'error'); return; }
-
-        const labels = await window.promptOptionalLabels([key]);
-        const label = labels && labels[key];
-        if (!label) return;
-
-        pendingLabels[key] = label;
-
-        const group = document.createElement('div');
-        group.className = 'badge-input-group';
-        group.dataset.optField = key;
-        group.style.marginTop = '0.8rem';
-        const labelEl = document.createElement('label');
-        labelEl.innerText = label;
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.name = key;
-        group.appendChild(labelEl);
-        group.appendChild(input);
-        container.appendChild(group);
-        input.focus();
-    });
-
-    window.getPendingOptionalLabels = () => Object.assign({}, pendingLabels);
-    window.clearPendingOptionalLabels = () => { Object.keys(pendingLabels).forEach(k => delete pendingLabels[k]); };
-})();
-</script>
-{% if staff_role in ["coordinador", "admin", "super_admin"] %}
-<script>
-(function() {
-    const tempForm = document.getElementById("tempUserForm");
-    if (!tempForm) return;
-
-    const assignForm = document.getElementById("assignExistingForm");
-
-    async function loadTempUsers() {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users`);
-        const list = await res.json();
-        document.getElementById("tempUsersBody").innerHTML = list.map(u => `
-            <tr>
-                <td>${u.username}</td><td>${u.full_name || "-"}</td><td>${u.role}</td>
-                <td>${u.is_active ? "Activo" : "Inactivo"}</td>
-                <td>
-                    <button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button>
-                    <button class="btn-table-delete" style="background:#6c1c1c;" onclick="deleteTempUser(${u.id}, '${u.username}')">Borrar permanente</button>
-                </td>
-            </tr>
-        `).join("");
-    }
-
-    async function loadAssignableOptions() {
-        if (!assignForm) return;
-        const res = await fetch("/api/staff/assignable");
-        const list = await res.json();
-        document.getElementById("assignableSelect").innerHTML = list
-            .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""} (${s.role})</option>`).join("");
-    }
-
-    tempForm.addEventListener("submit", async (ev) => {
-        ev.preventDefault();
-        const payload = Object.fromEntries(new FormData(ev.target).entries());
-        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users`, {
-            method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+    if (scanMrzBtn && scanMrzInput && canAccredit) {
+        scanMrzBtn.addEventListener('click', () => scanMrzInput.click());
+        scanMrzInput.addEventListener('change', () => {
+            const file = scanMrzInput.files[0];
+            scanMrzInput.value = '';
+            if (file) processMrzPhoto(file);
         });
-        if (res.ok) { ev.target.reset(); loadTempUsers(); showToast("Cuenta creada y asignada al evento", "success"); }
-        else { const err = await res.json(); showToast(err.detail || "No se pudo crear la cuenta", "error"); }
-    });
+    }
+    if (scanMrzCameraBtn && canAccredit) {
+        scanMrzCameraBtn.addEventListener('click', () => {
+            CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processMrzPhoto });
+        });
+    }
 
-    if (assignForm) {
-        assignForm.addEventListener("submit", async (ev) => {
-            ev.preventDefault();
-            const staffId = new FormData(ev.target).get("staff_id");
-            const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/assign-existing`, {
-                method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({staff_id: Number(staffId)}),
+    /* "Registrar con cédula" dentro del modal de alta (Sprint 2.4 Fase 2, 2026-09-16) — a
+       diferencia del escaneo de arriba (que busca/acredita en el Directorio), este solo LLENA el
+       formulario de alta manual con lo que se lea, sea cédula vieja (lector) o nueva (foto/MRZ).
+       No acredita nada por sí mismo — el operador sigue completando y guardando como siempre. */
+    const regScanCedulaInput = document.getElementById('regScanCedulaInput');
+    const regScanMrzBtn = document.getElementById('regScanMrzBtn');
+    const regScanMrzCameraBtn = document.getElementById('regScanMrzCameraBtn');
+    const regScanMrzInput = document.getElementById('regScanMrzInput');
+
+    function fillRegFormFromScan(cedula, nameInfo) {
+        const idField = document.querySelector('#regForm input[name="id"]');
+        const firstNameField = document.querySelector('#regForm input[name="first_name"]');
+        const lastNameField = document.querySelector('#regForm input[name="last_name"]');
+        if (idField) idField.value = cedula;
+        if (nameInfo && nameInfo.nombres && firstNameField) firstNameField.value = nameInfo.nombres;
+        if (nameInfo && nameInfo.apellidos && lastNameField) lastNameField.value = nameInfo.apellidos;
+        showToast('Cédula leída — revisa y completa el resto', 'success');
+        if (firstNameField) firstNameField.focus();
+    }
+
+    if (regScanCedulaInput) {
+        regScanCedulaInput.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.altKey || e.metaKey) { e.preventDefault(); e.stopPropagation(); return; }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const raw = regScanCedulaInput.value.trim();
+                if (!raw) return;
+                const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
+                if (parsed) fillRegFormFromScan(parsed.cedula, { nombres: parsed.nombres, apellidos: parsed.apellidos });
+                else fillRegFormFromScan(raw, null);
+                regScanCedulaInput.value = '';
+            }
+        });
+    }
+
+    async function processRegScanMrzPhoto(blob) {
+        setButtonLoading(regScanMrzBtn, true, 'Leyendo…');
+        regScanMrzCameraBtn.disabled = true;
+        try {
+            const formData = new FormData();
+            formData.append('file', blob, 'cedula.jpg');
+            const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok) {
+                showToast(data.detail || 'No se pudo leer la foto — intenta de nuevo', 'error');
+            } else {
+                fillRegFormFromScan(data.id, { nombres: data.first_name, apellidos: data.last_name });
+            }
+        } catch (e) {
+            showToast('Error de red', 'error');
+        }
+        setButtonLoading(regScanMrzBtn, false);
+        regScanMrzCameraBtn.disabled = false;
+    }
+
+    if (regScanMrzBtn && regScanMrzInput) {
+        regScanMrzBtn.addEventListener('click', () => regScanMrzInput.click());
+        regScanMrzInput.addEventListener('change', () => {
+            const file = regScanMrzInput.files[0];
+            regScanMrzInput.value = '';
+            if (file) processRegScanMrzPhoto(file);
+        });
+    }
+    if (regScanMrzCameraBtn) {
+        regScanMrzCameraBtn.addEventListener('click', () => {
+            CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processRegScanMrzPhoto });
+        });
+    }
+
+    /* "Usar cámara" para la foto de alta manual en eventos biométricos (Sprint 2.2 Fase C) — el
+       <input type="file"> normal no se puede llenar con un Blob directo; DataTransfer es la forma
+       estándar de simular "el usuario adjuntó este archivo" para que el resto del formulario
+       (incluido submitManualRegister en app.js) funcione exactamente igual sin tocarlo. */
+    const regPhotoInput = document.getElementById('regPhotoInput');
+    const regPhotoCameraBtn = document.getElementById('regPhotoCameraBtn');
+    if (regPhotoInput && regPhotoCameraBtn) {
+        regPhotoCameraBtn.addEventListener('click', () => {
+            CameraCapture.open({
+                title: 'Foto del asistente',
+                onCapture: (blob) => {
+                    const dt = new DataTransfer();
+                    dt.items.add(new File([blob], 'foto.jpg', { type: 'image/jpeg' }));
+                    regPhotoInput.files = dt.files;
+                    showToast('Foto capturada', 'success');
+                },
             });
-            if (res.ok) { loadTempUsers(); showToast("Cuenta asignada al evento", "success"); }
-            else { const err = await res.json(); showToast(err.detail || "No se pudo asignar", "error"); }
         });
     }
-
-    window.revokeTempUser = async (staffId) => {
-        if (!(await showConfirm("¿Quitar el acceso de este usuario a este evento?"))) return;
-        const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/${staffId}`, {method: "DELETE"});
-        loadTempUsers();
-        showToast(res.ok ? "Acceso revocado" : "No se pudo revocar el acceso", res.ok ? "success" : "error");
-    };
-
-    window.deleteTempUser = async (staffId, username) => {
-        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`))) return;
-        const res = await fetch(`/api/staff/${staffId}`, {method: "DELETE"});
-        if (res.ok) { loadTempUsers(); showToast("Cuenta eliminada", "success"); }
-        else { const err = await res.json(); showToast(err.detail || "No se pudo borrar", "error"); }
-    };
-
-    loadTempUsers();
-    loadAssignableOptions();
 })();
 </script>
-{% endif %}
 </body>
 </html>

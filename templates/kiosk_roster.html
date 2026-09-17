@@ -6,19 +6,16 @@
     <title>{{ event.name }} — Base de Datos | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 </head>
-<body>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <div class="golden-anniversary-badge">{{ event.name }}</div>
-      <a href="/kiosk/{{ event.id }}" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Métodos</a>
-      {% if staff_role not in ["digitador", "cliente"] %}
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
-      {% endif %}
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
@@ -27,6 +24,13 @@
   </div>
 </header>
 <div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
 <script>window.EVENT_ID = {{ event.id }};</script>
 
 <main class="golden-main">
@@ -127,7 +131,7 @@ async function submitRoster(formData) {
         return;
     }
     if (data.result === "NEEDS_LABELS") {
-        const labels = await promptOptionalLabels(data.fields);
+        const labels = await promptOptionalLabels(data.fields, data.examples);
         if (!labels) return;
         formData.set("field_labels", JSON.stringify(labels));
         await submitRoster(formData);
@@ -157,8 +161,7 @@ rosterForm.addEventListener("submit", async (e) => {
     }
 
     const btn = e.target.querySelector("button");
-    btn.innerText = "Cargando...";
-    btn.disabled = true;
+    setButtonLoading(btn, true, "Cargando base de datos...");
     rosterResult.innerHTML = "";
 
     const formData = new FormData(e.target);
@@ -170,8 +173,7 @@ rosterForm.addEventListener("submit", async (e) => {
     } catch (err) {
         showToast("Error de red", "error");
     }
-    btn.innerText = "Cargar Base de Datos";
-    btn.disabled = false;
+    setButtonLoading(btn, false);
 });
 </script>
 </body>

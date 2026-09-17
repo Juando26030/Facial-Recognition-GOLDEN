@@ -1,0 +1,30 @@
+<!-- Menú lateral (Sprint 2.3, 2026-09-16) — visible para coordinador+ en toda la app, incluido
+     como un include de Jinja justo después de la apertura de <body class="has-sidebar"> en cada
+     template afectado. `sidebar_active` (opcional, por página: clientes/eventos/calendario/
+     configuracion) resalta el link correspondiente; las páginas de evento (/kiosk/...) pasan
+     "eventos" porque es el punto de entrada más cercano, aunque no haya una coincidencia exacta.
+     Reemplaza los botones "Métodos"/"Panel" que existían antes — queda el atrás del navegador +
+     estos links para volver a cualquier parte de la app. -->
+<button type="button" class="golden-sidebar-toggle" id="sidebarToggleBtn" aria-label="Abrir menú">☰</button>
+<div class="golden-sidebar-backdrop" id="sidebarBackdrop"></div>
+<aside class="golden-sidebar">
+  <nav>
+    <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}>🏢 Clientes - Cuentas</a>
+    <a href="/eventos"{% if sidebar_active == "eventos" %} class="active"{% endif %}>📅 Eventos</a>
+    <a href="/calendario"{% if sidebar_active == "calendario" %} class="active"{% endif %}>🗓️ Calendario</a>
+    {# Bug real corregido (2026-09-16, pedido explícito): el link SIEMPRE estuvo oculto para
+       no-admin, aunque /configuracion (Apariencia) ya era accesible para cualquier staff desde
+       Sprint 2.4 (ver app/main.py: configuracion_page) — nadie con sidebar salvo admin/super_admin
+       tenía forma de llegar ahí. Apariencia es para todos; lo que sigue siendo admin+ es la
+       pestaña "Staff y Permisos" DENTRO del propio template, eso no cambia acá. #}
+    <a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}>⚙️ Configuración</a>
+  </nav>
+</aside>
+<script>
+(function () {
+  const toggle = document.getElementById('sidebarToggleBtn');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  if (toggle) toggle.addEventListener('click', () => document.body.classList.toggle('sidebar-open'));
+  if (backdrop) backdrop.addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+})();
+</script>

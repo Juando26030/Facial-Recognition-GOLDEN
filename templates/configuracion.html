@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+        .theme-row { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+        .theme-row label { font-weight:700; color:var(--golden-dark); min-width:160px; }
+        .theme-swatch { width:52px; height:40px; border:1px solid #ccc; border-radius:8px; cursor:pointer; padding:0; }
+        .theme-select { flex:1; min-width:260px; padding:0.6rem 0.8rem; border:1px solid #ccc; border-radius:8px; font-size:0.9rem; }
+    </style>
+</head>
+<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+{% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" class="small-btn">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1100px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1.5rem;">
+      <span>PANEL</span>
+      <h2>Configuración</h2>
+    </div>
+
+    <div class="tabs" style="margin-bottom:1.5rem;">
+      <div class="tab active" data-tab="apariencia">Apariencia</div>
+      {% if staff_role in ["admin", "super_admin"] %}
+      <div class="tab" data-tab="staff">Staff y Permisos</div>
+      {% endif %}
+    </div>
+
+    <div id="apariencia" class="section active">
+      <div style="background:white; padding:2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); max-width:700px;">
+        <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">
+          Esta preferencia es <strong>solo de este computador/navegador</strong> — no se guarda en la base de datos ni se sincroniza con otras sesiones.
+        </p>
+        <div class="theme-row">
+          <label for="themeColor">Color de acento y menú lateral</label>
+          <input type="color" id="themeColor" class="theme-swatch" value="#D4AF37">
+        </div>
+        <div class="theme-row">
+          <label for="themeFonts">Tipografía</label>
+          <select id="themeFonts" class="theme-select">
+            <option value="" style="font-family: 'Agrandir', sans-serif;">Original (Agrandir)</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:1rem;">
+          <button type="button" id="applyThemeBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 1.8rem;">Aplicar y guardar</button>
+          <button type="button" id="resetThemeBtn" class="small-btn" style="padding:0.7rem 1.4rem;">Restablecer</button>
+        </div>
+      </div>
+    </div>
+
+    {% if staff_role in ["admin", "super_admin"] %}
+    <div id="staff" class="section" style="max-width:100%;">
+      <iframe src="/admin/staff?embed=1" style="width:100%; min-height:80vh; border:none; border-radius:20px; background:transparent;" title="Staff y Permisos"></iframe>
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+
+<script>
+(function () {
+  const colorInput = document.getElementById('themeColor');
+  const fontsSelect = document.getElementById('themeFonts');
+
+  // Mismas 40 familias que el editor de escarapelas — expuestas por theme.js (cargado en <head>,
+  // antes que este script) como window.GOLDEN_FONT_FAMILIES para no duplicar la lista acá.
+  // Cada <option> se ve en SU PROPIA fuente (2026-09-17, pedido explícito: "que desde el menú se
+  // vea cómo son", antes había que elegirla y aplicarla para verla) — hace falta el <link> de
+  // Google Fonts cargado de una vez, no solo cuando ya hay una guardada en localStorage.
+  if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();
+  (window.GOLDEN_FONT_FAMILIES || []).forEach((f) => {
+    const opt = document.createElement('option');
+    opt.value = f;
+    opt.innerText = f;
+    opt.style.fontFamily = `'${f}', sans-serif`;
+    fontsSelect.appendChild(opt);
+  });
+
+  try {
+    const savedColor = localStorage.getItem('golden_theme_primary');
+    if (savedColor) colorInput.value = savedColor;
+    const savedFont = localStorage.getItem('golden_theme_font_family');
+    if (savedFont) fontsSelect.value = savedFont;
+  } catch (e) {}
+
+  document.getElementById('applyThemeBtn').addEventListener('click', () => {
+    try {
+      localStorage.setItem('golden_theme_primary', colorInput.value);
+      document.documentElement.style.setProperty('--golden-primary', colorInput.value);
+      // El mismo color también pinta el fondo del menú lateral (pedido explícito, ronda 2).
+      document.documentElement.style.setProperty('--golden-sidebar-bg', colorInput.value);
+      // Contraste automático (2026-09-17, pedido explícito): el texto de botones/menú se
+      // recalcula según qué tan clara/oscura sea la elegida, en vez de quedar fijo.
+      const contrast = window.goldenContrastColor ? window.goldenContrastColor(colorInput.value) : '#000000';
+      document.documentElement.style.setProperty('--golden-primary-contrast', contrast);
+      document.documentElement.style.setProperty('--golden-sidebar-contrast', contrast);
+
+      const family = fontsSelect.value;
+      if (family) {
+        localStorage.setItem('golden_theme_font_family', family);
+        if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();
+        const value = `'${family}', sans-serif`;
+        document.documentElement.style.setProperty('--font-heading-primary', value);
+        document.documentElement.style.setProperty('--font-heading-secondary', value);
+        document.documentElement.style.setProperty('--font-body', value);
+      } else {
+        localStorage.removeItem('golden_theme_font_family');
+        document.documentElement.style.removeProperty('--font-heading-primary');
+        document.documentElement.style.removeProperty('--font-heading-secondary');
+        document.documentElement.style.removeProperty('--font-body');
+      }
+      showToast('Apariencia aplicada en este computador', 'success');
+    } catch (e) {
+      showToast('No se pudo guardar la preferencia (¿ventana privada?)', 'error');
+    }
+  });
+
+  document.getElementById('resetThemeBtn').addEventListener('click', () => {
+    try {
+      localStorage.removeItem('golden_theme_primary');
+      localStorage.removeItem('golden_theme_font_family');
+    } catch (e) {}
+    document.documentElement.style.removeProperty('--golden-primary');
+    document.documentElement.style.removeProperty('--golden-sidebar-bg');
+    document.documentElement.style.removeProperty('--golden-primary-contrast');
+    document.documentElement.style.removeProperty('--golden-sidebar-contrast');
+    document.documentElement.style.removeProperty('--font-heading-primary');
+    document.documentElement.style.removeProperty('--font-heading-secondary');
+    document.documentElement.style.removeProperty('--font-body');
+    colorInput.value = '#D4AF37';
+    fontsSelect.value = '';
+    showToast('Apariencia restablecida', 'success');
+  });
+
+  // Mismo patrón .tabs/.section que kiosk_registro.html
+  document.querySelectorAll('.tabs .tab').forEach((tabEl) => {
+    tabEl.addEventListener('click', () => {
+      document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      tabEl.classList.add('active');
+      document.getElementById(tabEl.dataset.tab).classList.add('active');
+    });
+  });
+})();
+</script>
+</body>
+</html>

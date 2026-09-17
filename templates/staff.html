@@ -6,19 +6,25 @@
     <title>Staff | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 </head>
-<body>
+<body{% if not embed %} class="has-sidebar"{% endif %}>
+{% if not embed %}{% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
     </a>
     <nav style="display:flex; gap:14px; align-items:center;">
-      <a href="/" style="font-weight:600; color: var(--golden-dark); text-decoration:none;">← Panel</a>
+      <span style="color:#666; font-size:0.85rem;">{{ staff_username }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
     </nav>
   </div>
 </header>
 <div class="golden-content-spacer"></div>
+{% endif %}
 
 <main class="golden-main">
   <div class="golden-container" style="padding: 3rem 2rem; max-width: 1000px;">
@@ -27,7 +33,7 @@
       <h2>Usuarios de staff</h2>
     </div>
 
-    <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">Aquí solo se crean cuentas <strong>Coordinador</strong>{% if staff_role == "super_admin" %} y <strong>Admin</strong>{% endif %}. Los usuarios <strong>digitador (temporal)</strong> y <strong>cliente</strong> se crean y se asignan desde dentro de cada evento (pestaña "Usuarios del evento" en el kiosko de ese evento) — quedan asociados a ese evento en el mismo paso, sin necesidad de un formulario aparte aquí.</p>
+    <p style="color:#888; font-size:0.85rem; margin-bottom:1.5rem;">Aquí solo se crean cuentas <strong>Coordinador</strong> y <strong>Comercial</strong>{% if staff_role == "super_admin" %} y <strong>Admin</strong>{% endif %}. Los usuarios <strong>digitador (temporal)</strong> y <strong>cliente</strong> se crean y se asignan desde dentro de cada evento (pestaña "Usuarios del evento" en el kiosko de ese evento) — quedan asociados a ese evento en el mismo paso, sin necesidad de un formulario aparte aquí.</p>
 
     <div class="golden-badge-builder" style="margin-bottom: 2rem;">
       <div class="badge-form-title">Nueva cuenta</div>
@@ -51,7 +57,14 @@
             <label>Rol</label>
             <select name="role" id="roleSelect" required>
               <option value="coordinador">Coordinador</option>
+              <option value="comercial">Comercial</option>
             </select>
+          </div>
+        </div>
+        <div class="badge-input-row">
+          <div class="badge-input-group">
+            <label>Teléfono (obligatorio y único — no puede repetirse entre cuentas)</label>
+            <input type="text" name="phone" placeholder="Ej. +57 300 1234567" required>
           </div>
         </div>
         <button type="submit" class="golden-btn golden-btn-primary">Crear cuenta</button>
@@ -80,21 +93,35 @@ if (staffRole === "super_admin") {
 // el backend va a rechazar; el permiso real siempre lo valida el servidor.
 const DELETABLE_ROLES = {
   coordinador: ["digitador"],
-  admin: ["coordinador", "digitador", "cliente"],
-  super_admin: ["admin", "coordinador", "digitador", "cliente"],
+  admin: ["comercial", "coordinador", "digitador", "cliente"],
+  super_admin: ["admin", "comercial", "coordinador", "digitador", "cliente"],
 }[staffRole] || [];
+
+// Doble rol coordinador+comercial (Sprint 2.4 Fase 15, 2026-09-17, pedido explícito): "hay
+// coordinadores que también pueden ser comerciales... lo hace el administrador". Solo admite este
+// único par, en cualquier orden — el botón de abajo solo aparece para filas coordinador/comercial.
+const DUAL_ROLE_PAIR = { coordinador: "comercial", comercial: "coordinador" };
 
 async function loadStaff() {
   const res = await fetch("/api/staff");
   const list = await res.json();
-  document.getElementById("staffBody").innerHTML = list.map(s => `
+  document.getElementById("staffBody").innerHTML = list.map(s => {
+    const roleLabel = s.secondary_role ? `${s.role} + ${s.secondary_role}` : s.role;
+    const otherRole = DUAL_ROLE_PAIR[s.role];
+    const dualRoleBtn = (staffRole === "admin" || staffRole === "super_admin") && otherRole
+      ? (s.secondary_role
+          ? `<button class="btn-table-action" onclick="setSecondaryRole(${s.id}, null)">✕ Quitar "${otherRole}"</button>`
+          : `<button class="btn-table-action btn-save" onclick="setSecondaryRole(${s.id}, '${otherRole}')">+ También ${otherRole}</button>`)
+      : "";
+    return `
     <tr>
       <td>${s.username}</td>
       <td>${s.full_name || "-"}</td>
-      <td>${s.role}</td>
+      <td>${roleLabel}</td>
       <td>${s.is_active ? "Activo" : "Inactivo"}</td>
       <td>
         ${s.role === "super_admin" || s.username === staffUsername ? '<span style="color:#aaa; font-size:0.8rem;">—</span>' : `
+          ${dualRoleBtn}
           ${s.is_active
             ? `<button class="btn-table-action" style="background:#dc3545;" onclick="toggleStaff(${s.id}, false)">Desactivar</button>`
             : `<button class="btn-table-action btn-save" onclick="toggleStaff(${s.id}, true)">Reactivar</button>`}
@@ -104,7 +131,17 @@ async function loadStaff() {
         `}
       </td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
+}
+
+async function setSecondaryRole(id, secondaryRole) {
+  const res = await fetch(`/api/staff/${id}/secondary-role`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secondary_role: secondaryRole }),
+  });
+  if (res.ok) { loadStaff(); showToast(secondaryRole ? `Ahora también es ${secondaryRole}` : "Rol secundario quitado", "success"); }
+  else { const err = await res.json(); showToast(err.detail || "No se pudo actualizar", "error"); }
 }
 
 async function deleteStaff(id, username) {

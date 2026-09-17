@@ -53,8 +53,11 @@ async def list_tenants(db: Session = Depends(get_db), staff: StaffUser = Depends
 
 @router.post("/tenants")
 async def create_tenant(
-    data: TenantIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    data: TenantIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))
 ):
+    """Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes pasó a ser comercial+ — antes
+    era coordinador+, ahora coordinador ya NO puede (solo comercial/admin/super_admin). Editar un
+    cliente ya existente (update_tenant, abajo) sigue en coordinador+, sin cambios."""
     base_id = _slugify(data.name)
     tenant_id = base_id
     suffix = 1
