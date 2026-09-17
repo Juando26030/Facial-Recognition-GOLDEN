@@ -165,6 +165,36 @@
 <datalist id="modalCoordinatorList"></datalist>
 <datalist id="modalCommercialList"></datalist>
 
+<div class="modal-overlay" id="noteModalOverlay" style="display:none;">
+  <div class="modal-box" style="max-width:440px;">
+    <h3>Nuevo recordatorio</h3>
+    <div class="modal-row">
+      <div class="modal-group" style="min-width:100%;">
+        <label>Fecha</label>
+        <input type="date" id="noteDateField">
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-group" style="min-width:100%;">
+        <label>Mensaje</label>
+        <textarea id="noteTextField" rows="3" placeholder="Ej. Llamar al cliente para confirmar transporte" style="width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem; font-family:inherit; resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div class="modal-row">
+      <div class="modal-group" style="min-width:100%; position:relative;">
+        <label>Destinatarios (opcional — vacío = todo el equipo con acceso al Calendario)</label>
+        <input type="text" id="noteTargetSearch" placeholder="Buscar usuario por nombre..." autocomplete="off">
+        <div id="noteTargetDropdown" style="display:none; position:absolute; left:0; right:0; z-index:20; background:white; border:1px solid #ddd; border-radius:8px; max-height:180px; overflow-y:auto; box-shadow:0 8px 20px rgba(0,0,0,0.12);"></div>
+        <div id="noteTargetChips" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:0.6rem;"></div>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:0.5rem;">
+      <button type="button" class="small-btn" id="noteModalCancel">Cancelar</button>
+      <button type="button" class="small-btn primary" id="noteModalSave">Guardar recordatorio</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const STAFF_ROLE = "{{ staff_role }}";
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
@@ -373,7 +403,7 @@ function wireCellEvents() {
     el.addEventListener('click', () => openEventModal(el.dataset.eventId));
   });
   calBody.querySelectorAll('[data-add-note]').forEach(el => {
-    el.addEventListener('click', (ev) => { ev.stopPropagation(); addNote(el.dataset.addNote); });
+    el.addEventListener('click', (ev) => { ev.stopPropagation(); openNoteModal(el.dataset.addNote); });
   });
   calBody.querySelectorAll('[data-note-del]').forEach(el => {
     el.addEventListener('click', async (ev) => {
@@ -387,17 +417,93 @@ function wireCellEvents() {
   });
 }
 
-async function addNote(iso) {
-  const text = await window.showPrompt(`Recordatorio para el ${iso}:`, { placeholder: 'Ej. Llamar al cliente para confirmar transporte' });
-  if (!text) return;
+// Modal de recordatorio con destinatarios (2026-09-17, pedido explícito: "puede elegir a quién
+// afectan esas notificaciones... buscar usuarios... lista desplegable pero también escribiendo...
+// elegir más de uno"). Sin destinatarios elegidos = visible para todo el equipo, igual que antes.
+let notifiableStaffCache = [];
+let selectedNoteTargets = new Map(); // id -> label
+
+async function loadNotifiableStaff() {
+  const res = await fetch('/api/calendar/notifiable-staff');
+  notifiableStaffCache = res.ok ? await res.json() : [];
+}
+loadNotifiableStaff();
+
+const noteModalOverlay = document.getElementById('noteModalOverlay');
+const noteDateField = document.getElementById('noteDateField');
+const noteTextField = document.getElementById('noteTextField');
+const noteTargetSearch = document.getElementById('noteTargetSearch');
+const noteTargetDropdown = document.getElementById('noteTargetDropdown');
+const noteTargetChips = document.getElementById('noteTargetChips');
+
+function openNoteModal(iso) {
+  noteDateField.value = iso;
+  noteTextField.value = '';
+  noteTargetSearch.value = '';
+  selectedNoteTargets = new Map();
+  renderNoteTargetChips();
+  noteTargetDropdown.style.display = 'none';
+  noteModalOverlay.style.display = 'flex';
+  noteTextField.focus();
+}
+document.getElementById('addNoteTodayBtn').addEventListener('click', () => openNoteModal(toISO(todayDate())));
+document.getElementById('noteModalCancel').addEventListener('click', () => { noteModalOverlay.style.display = 'none'; });
+
+function renderNoteTargetChips() {
+  noteTargetChips.innerHTML = Array.from(selectedNoteTargets.entries()).map(([id, label]) => `
+    <span style="background:#eef; border-radius:14px; padding:3px 10px; font-size:0.78rem; display:inline-flex; align-items:center; gap:6px;">
+      ${esc(label)} <span data-remove-target="${id}" style="cursor:pointer; font-weight:700;">✕</span>
+    </span>
+  `).join('');
+  noteTargetChips.querySelectorAll('[data-remove-target]').forEach(el => {
+    el.addEventListener('click', () => { selectedNoteTargets.delete(Number(el.dataset.removeTarget)); renderNoteTargetChips(); });
+  });
+}
+
+noteTargetSearch.addEventListener('input', () => {
+  const q = stripAccents(noteTargetSearch.value.trim()).toLowerCase();
+  const candidates = notifiableStaffCache.filter(p => !selectedNoteTargets.has(p.id));
+  const matches = q
+    ? candidates.filter(p => stripAccents(`${p.full_name || ''} ${p.username}`).toLowerCase().includes(q))
+    : candidates;
+  if (!matches.length) { noteTargetDropdown.style.display = 'none'; return; }
+  noteTargetDropdown.innerHTML = matches.slice(0, 20).map(p => `
+    <div data-pick-target="${p.id}" data-label="${esc(p.full_name || p.username)}" style="padding:0.5rem 0.8rem; cursor:pointer; border-bottom:1px solid #f0f0f0; font-size:0.85rem;">
+      ${esc(p.full_name || p.username)} <span style="color:#aaa;">(${esc(p.username)})</span>
+    </div>
+  `).join('');
+  noteTargetDropdown.style.display = 'block';
+});
+noteTargetDropdown.addEventListener('click', (e) => {
+  const row = e.target.closest('[data-pick-target]');
+  if (!row) return;
+  selectedNoteTargets.set(Number(row.dataset.pickTarget), row.dataset.label);
+  renderNoteTargetChips();
+  noteTargetSearch.value = '';
+  noteTargetDropdown.style.display = 'none';
+});
+function stripAccents(text) { return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+
+document.getElementById('noteModalSave').addEventListener('click', async () => {
+  const iso = noteDateField.value;
+  const text = noteTextField.value.trim();
+  if (!iso || !text) { showToast('Falta la fecha o el mensaje', 'error'); return; }
+  const btn = document.getElementById('noteModalSave');
+  setButtonLoading(btn, true, 'Guardando...');
   const res = await fetch('/api/calendar/notes', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date: iso, text }),
+    body: JSON.stringify({ date: iso, text, target_staff_ids: Array.from(selectedNoteTargets.keys()) }),
   });
-  if (res.ok) { showToast('Recordatorio agregado', 'success'); loadAndRender(); }
-  else { const err = await res.json(); showToast(err.detail || 'No se pudo agregar', 'error'); }
-}
-document.getElementById('addNoteTodayBtn').addEventListener('click', () => addNote(toISO(todayDate())));
+  setButtonLoading(btn, false);
+  if (res.ok) {
+    showToast('Recordatorio agregado', 'success');
+    noteModalOverlay.style.display = 'none';
+    loadAndRender();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    showToast(err.detail || 'No se pudo agregar', 'error');
+  }
+});
 
 /* --- Modal de edición de evento --- */
 const eventModalOverlay = document.getElementById('eventModalOverlay');

@@ -17,6 +17,27 @@ from app.routers.events import _serialize
 
 router = APIRouter()
 
+# Sprint 2.4 Fase 14 (2026-09-17, pedido explícito): "esto no aplica para usuarios temporales o
+# para clientes" — solo estos 4 roles pueden ser destinatarios de un recordatorio, mismos roles
+# que ya tienen acceso al Calendario (coordinador+).
+NOTIFIABLE_ROLES = ("coordinador", "comercial", "admin", "super_admin")
+
+
+@router.get("/calendar/notifiable-staff")
+async def list_notifiable_staff(
+    q: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+):
+    """Para el buscador de destinatarios al crear un recordatorio — lista desplegable que también
+    filtra escribiendo. `q` (opcional) filtra por nombre o usuario, substring insensible a
+    mayúsculas (no hace falta el criterio de prefijo por palabra de otras búsquedas, esta lista es
+    corta)."""
+    query = db.query(StaffUser).filter(StaffUser.role.in_(NOTIFIABLE_ROLES), StaffUser.is_active == True)
+    people = query.all()
+    if q:
+        q_lower = q.lower()
+        people = [p for p in people if q_lower in (p.full_name or "").lower() or q_lower in p.username.lower()]
+    return [{"id": p.id, "username": p.username, "full_name": p.full_name, "role": p.role} for p in people]
+
 
 @router.get("/events/calendar")
 async def calendar_events(
@@ -42,13 +63,16 @@ async def calendar_events(
 class CalendarNoteIn(BaseModel):
     date: date
     text: str
+    target_staff_ids: list = []
 
 
 def _serialize_note(n: CalendarNote) -> dict:
+    targets = n.get_targets()
     return {
         "id": n.id, "date": n.date.isoformat(), "text": n.text,
         "created_by_id": n.created_by_id,
         "created_by_name": (n.created_by.full_name or n.created_by.username) if n.created_by else None,
+        "target_staff_ids": targets,
     }
 
 
@@ -56,8 +80,12 @@ def _serialize_note(n: CalendarNote) -> dict:
 async def list_calendar_notes(
     start: date, end: date, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
+    """Solo trae los recordatorios que le corresponden a quien pregunta (Fase 14, 2026-09-17,
+    pedido explícito): sin destinatarios elegidos = para todo el equipo (comportamiento original);
+    con destinatarios = solo para esas personas + quien lo creó."""
     notes = db.query(CalendarNote).filter(CalendarNote.date >= start, CalendarNote.date <= end).order_by(CalendarNote.date).all()
-    return [_serialize_note(n) for n in notes]
+    visible = [n for n in notes if not n.get_targets() or staff.id in n.get_targets() or n.created_by_id == staff.id]
+    return [_serialize_note(n) for n in visible]
 
 
 @router.post("/calendar/notes")
@@ -67,7 +95,17 @@ async def create_calendar_note(
     text = data.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="El recordatorio no puede estar vacío")
+
+    target_ids = [int(i) for i in (data.target_staff_ids or [])]
+    if target_ids:
+        valid = db.query(StaffUser).filter(
+            StaffUser.id.in_(target_ids), StaffUser.role.in_(NOTIFIABLE_ROLES), StaffUser.is_active == True
+        ).all()
+        if len(valid) != len(set(target_ids)):
+            raise HTTPException(status_code=400, detail="Uno o más destinatarios no son válidos (cliente/digitador no pueden recibir recordatorios)")
+
     note = CalendarNote(date=data.date, text=text, created_by_id=staff.id)
+    note.set_targets(target_ids)
     db.add(note)
     db.commit()
     db.refresh(note)

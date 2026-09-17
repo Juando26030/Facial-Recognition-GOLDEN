@@ -131,17 +131,31 @@ class CalendarNote(Base):
     """Recordatorio/anotación libre en el Calendario (Sprint 2.4 Fase 8, 2026-09-16, pedido
     explícito) — NO está atado a un evento en particular (para eso ya está Event.notes), es una
     nota suelta sobre un día cualquiera (ej. "llamar al cliente X", "confirmar transporte").
-    Compartida entre todo el equipo con acceso al Calendario (coordinador+), no privada por
-    usuario — pensado como un tablero de equipo, no una agenda personal. `created_by_id` sirve
-    para mostrar quién la dejó y para que solo su autor (o admin+) pueda borrarla."""
+    `created_by_id` sirve para mostrar quién la dejó y para que solo su autor (o admin+) pueda
+    borrarla.
+
+    `target_staff_ids` (Fase 14, 2026-09-17, pedido explícito: "puede elegir a quién afectan esas
+    notificaciones... a esas personas que elija también les aparecerá la notificación en sus
+    calendarios") — JSON con una lista de StaffUser.id, mismo patrón de columna JSON-en-Text que
+    Event.optional_field_labels. Vacía/None = visible para todo el equipo con acceso al Calendario
+    (comportamiento original, sigue siendo el default); con ids = solo esas personas (+ quien la
+    creó) la ven. Nunca incluye cuentas 'cliente'/'digitador' — se valida al crear, ver
+    routers/calendar.py."""
     __tablename__ = 'calendar_notes'
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False)
     text = Column(String, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
+    target_staff_ids = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     created_by = relationship("StaffUser")
+
+    def get_targets(self) -> list:
+        return json.loads(self.target_staff_ids) if self.target_staff_ids else []
+
+    def set_targets(self, ids: list) -> None:
+        self.target_staff_ids = json.dumps(ids) if ids else None
 
 
 class StaffUser(Base):
