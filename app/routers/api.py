@@ -313,6 +313,7 @@ async def recognize(
             log = AccessLog(
                 tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
                 event_id=event.id, registered_by_staff_id=staff.id,
+                registration_method="biometrico",  # Fase 16: este endpoint es SIEMPRE reconocimiento facial
             )
             db.add(log)
             _upsert_attendee(db, event.id, user.id, event.tenant_id)
@@ -401,6 +402,10 @@ async def checkin_cedula(
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,
+        # Fase 16 (2026-09-17): "tradicional" = cédula encontrada y confirmada a mano;
+        # "autoregistro" = el mismo match, pero acreditado solo porque el evento tiene el switch
+        # prendido — misma cédula, la diferencia es si hizo falta que alguien confirmara.
+        registration_method="autoregistro" if event.auto_register else "tradicional",
     )
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)
@@ -605,6 +610,7 @@ async def update_registration_status(
             log = AccessLog(
                 tenant_id=event.tenant_id, user_id=user_id, record_type="Existente",
                 event_id=event_id, registered_by_staff_id=staff.id,
+                registration_method="tradicional",  # Fase 16: cambio manual de estado desde el Directorio
             )
             db.add(log)
             _upsert_attendee(db, event_id, user_id, event.tenant_id)
@@ -655,6 +661,7 @@ async def manual_register(
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=existing.id, record_type="Existente",
             event_id=event.id, registered_by_staff_id=staff.id,
+            registration_method="tradicional",  # Fase 16: alta manual, formulario
         )
         db.add(log)
         _upsert_attendee(db, event.id, existing.id, event.tenant_id)
@@ -699,6 +706,7 @@ async def manual_register(
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",
         event_id=event.id, registered_by_staff_id=staff.id,
+        registration_method="tradicional",  # Fase 16: alta manual, formulario
     )
     db.add(log)
     _upsert_attendee(db, event.id, id, event.tenant_id)
