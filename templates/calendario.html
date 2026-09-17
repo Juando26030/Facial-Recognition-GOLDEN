@@ -135,11 +135,21 @@
         {% endif %}
       </div>
       <div class="modal-row">
+        <div class="modal-group"><label>Estado del evento</label>
+          <select name="status" id="modalStatusSelect" style="width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem;">
+            <option value="creado">Creado</option>
+            <option value="en_proceso">En Proceso</option>
+            <option value="finalizado">Finalizado</option>
+          </select>
+        </div>
         <div class="modal-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
       </div>
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:0.5rem;">
-        <button type="button" class="small-btn" id="eventModalCancel">Cancelar</button>
-        <button type="submit" class="small-btn primary">Guardar cambios</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0.5rem;">
+        <a href="#" id="eventModalEnter" class="small-btn primary" style="text-decoration:none;">🚪 Ingresar al evento</a>
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="small-btn" id="eventModalCancel">Cancelar</button>
+          <button type="submit" class="small-btn primary">Guardar cambios</button>
+        </div>
       </div>
     </form>
   </div>
@@ -433,6 +443,11 @@ function openEventModal(eventId) {
   form.notes.value = ev.notes || '';
   form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
   if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
+  form.status.value = ev.status || 'creado';
+  // "Ingresar al evento" (2026-09-17, pedido explícito): el clic en un evento del Calendario no
+  // debe ser solo para editar — también debe poder entrar al menú del evento (Registro, QR,
+  // Escarapelas...), igual que el botón "Ingresar" de Clientes - Cuentas/Eventos.
+  document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;
   eventModalOverlay.style.display = 'flex';
 }
 

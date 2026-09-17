@@ -86,10 +86,17 @@ function eventCard(e) {
     <div class="tenant-card"><div class="tenant-head">
       <div>
         <h3>${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</h3>
-        <div class="meta">${esc(e.tenant_name)} · ${esc(e.city) || ""} ${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
+        <div class="meta">${esc(e.tenant_name)} · ${esc(e.city) || ""} ${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)}</div>
         <div class="meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}</div>
       </div>
-      <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
+          ${Object.entries(STATUS_LABELS).map(([value, label]) =>
+            `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
+          ).join("")}
+        </select>
+        <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
+      </div>
     </div></div>
   `;
 }
@@ -141,6 +148,23 @@ async function runSearch() {
   const events = await res.json();
   resultsEl.innerHTML = events.length ? events.map(eventCard).join("") : '<p style="color:#888;">Sin resultados.</p>';
 }
+
+// Cambiar el estado del evento directo desde el panel de Eventos (2026-09-17, pedido explícito:
+// antes solo se podía desde Clientes - Cuentas, entrando a la tarjeta del cliente) — mismo select
+// + confirmación que ya usa clientes.html.
+document.getElementById("eventsList").addEventListener("change", async (e) => {
+  const select = e.target.closest("[data-status-select]");
+  if (!select) return;
+  const newStatus = select.value;
+  const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
+  const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
+  if (!confirmed) { select.value = previousStatus; return; }
+  const res = await fetch(`/api/events/${select.dataset.eventId}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus }),
+  });
+  showToast(res.ok ? `Evento pasó a "${STATUS_LABELS[newStatus]}"` : "No se pudo actualizar el evento", res.ok ? "success" : "error");
+  if (!res.ok) select.value = previousStatus;
+});
 
 runSearch();
 </script>

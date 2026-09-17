@@ -55,6 +55,10 @@
       {% endif %}
 
       <div class="app-container">
+        {% if staff_role != "cliente" %}
+        {# 2026-09-17 (pedido explícito): cliente ve Estadísticas pero ya NO puede exportar la
+           base — el botón se oculta acá, y el backend (GET /api/report) ya rechaza a cliente
+           igual aunque se llame directo. #}
         <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
             <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Base de Datos Oficial</h3>
             <p style="color: #666; margin-bottom: 30px;">Genera y descarga el reporte unificado en Excel con los campos corporativos estándar.</p>
@@ -62,6 +66,7 @@
                 📥 Exportar Base de Datos (Excel)
             </button>
         </div>
+        {% endif %}
 
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;">
             <div class="badge-form-title">Gráficos por variable</div>
@@ -85,7 +90,8 @@
 
 <script>
 (function() {
-    document.getElementById('exportBtn').addEventListener('click', () => {
+    const exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) exportBtn.addEventListener('click', () => {
         window.location.href = `/api/report?event_id=${window.EVENT_ID}`;
     });
 

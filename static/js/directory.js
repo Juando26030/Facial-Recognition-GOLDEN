@@ -56,14 +56,17 @@
      de "Roles y permisos" en CLAUDE.md) — bug real encontrado en testing (DIR-06, 2026-09-21): el
      botón "Editar" se mostraba para digitador/cliente aunque el PATCH les fuera a dar 403 igual.
      Ocultar el botón entero es más claro que dejar que el usuario lo intente y falle.
-     ADMIN_ROLES (2026-09-16): "Eliminar" y "Cambiar estado de registro" son más delicados que un
-     editar de perfil normal — vivos DENTRO del modal de Editar, pero solo visibles/operables para
-     admin+ (mismo mínimo que ya exigía el backend en DELETE /users/{id}/logs desde antes; se
-     mantiene ese mínimo también para los dos endpoints nuevos). */
+     ADMIN_ROLES: corregir la cédula (User.id) sigue siendo admin+ solamente — afecta a la persona
+     en TODOS los eventos del cliente, más sensible que el resto (sin cambios, Sprint 2.3).
+     STATUS_ROLES (2026-09-17, pedido explícito: "asígnale ese permiso también a los
+     coordinadores" — antes admin+ solamente): "Eliminar" y "Cambiar estado de registro" pasan a
+     coordinador+, DESACOPLADO de ADMIN_ROLES (la cédula sigue admin+, esto ya no). */
   const EDIT_ROLES = ['coordinador', 'admin', 'super_admin'];
   const ADMIN_ROLES = ['admin', 'super_admin'];
+  const STATUS_ROLES = ['coordinador', 'admin', 'super_admin'];
   const canEdit = EDIT_ROLES.includes(window.STAFF_ROLE);
   const isAdmin = ADMIN_ROLES.includes(window.STAFF_ROLE);
+  const canManageStatus = STATUS_ROLES.includes(window.STAFF_ROLE);
 
   /* Modal flotante de edición (2026-09-16, reemplaza la edición inline contentEditable de antes —
      con 10 columnas en pantalla no cabía nada sin scroll horizontal). Mismos campos que el alta
@@ -101,6 +104,7 @@
 
     const configuredHtml = fieldConfigs.map(configuredFieldRow).join('');
     const isRegistered = user.status !== 'No registrado';
+    const originalStatus = isRegistered ? 'registrado' : 'no_registrado';
 
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;';
@@ -124,17 +128,15 @@
           <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar cambios</button>
         </div>
       </form>
-      ${isAdmin ? `
+      ${canManageStatus ? `
       <hr style="margin:1.2rem 0; border:none; border-top:1px solid #eee;">
       <div style="margin-bottom:0.8rem;">
         <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Estado de registro</label>
-        <div style="display:flex; gap:8px;">
-          <select id="editModalStatus" style="flex:1; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
-            <option value="no_registrado" ${!isRegistered ? 'selected' : ''}>No registrado</option>
-            <option value="registrado" ${isRegistered ? 'selected' : ''}>Registrado</option>
-          </select>
-          <button type="button" id="editModalApplyStatus" class="golden-btn btn-table-action" style="width:auto; padding:8px 16px;">Aplicar</button>
-        </div>
+        <select id="editModalStatus" style="width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+          <option value="no_registrado" ${!isRegistered ? 'selected' : ''}>No registrado</option>
+          <option value="registrado" ${isRegistered ? 'selected' : ''}>Registrado</option>
+        </select>
+        <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
       </div>
       <button type="button" id="editModalDelete" class="btn-table-delete" style="width:100%; padding:10px; font-size:0.85rem;">🗑️ Eliminar de este evento</button>
       ` : ''}
@@ -190,6 +192,37 @@
         }
       }
 
+      // Cambio de estado de registro (2026-09-17, pedido explícito: "que con el mismo botón de
+      // guardar de todo el formulario también tome ese guardar" — antes tenía su propio botón
+      // "Aplicar" aparte, ahora se aplica junto con el resto de campos en un solo Guardar). Solo
+      // se llama al endpoint si el valor del select realmente cambió — evitar un PATCH de estado
+      // sin sentido en cada guardado normal del perfil.
+      if (canManageStatus) {
+        const statusSelect = box.querySelector('#editModalStatus');
+        const newStatus = statusSelect ? statusSelect.value : originalStatus;
+        if (newStatus !== originalStatus) {
+          const label = newStatus === 'registrado' ? 'Registrado' : 'No registrado';
+          const ok = await showConfirm(`¿Cambiar el estado de registro de esta persona a "${label}"? Se guardará junto con el resto de cambios.`, { variant: 'warning', confirmLabel: 'Sí, cambiar y guardar' });
+          if (!ok) return;
+          saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
+          try {
+            const statusRes = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
+            });
+            if (!statusRes.ok) {
+              const data = await statusRes.json().catch(() => ({}));
+              showToast(data.detail || 'No se pudo cambiar el estado', 'error');
+              saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+              return;
+            }
+          } catch (e) {
+            showToast('Error de red', 'error');
+            saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
+            return;
+          }
+        }
+      }
+
       const payload = { first_name: val('first_name'), last_name: val('last_name') };
       const newExtras = {};
       fieldConfigs.forEach((cfg) => {
@@ -218,28 +251,7 @@
       }
     });
 
-    if (isAdmin) {
-      box.querySelector('#editModalApplyStatus').addEventListener('click', async () => {
-        const select = box.querySelector('#editModalStatus');
-        const newStatus = select.value;
-        const label = newStatus === 'registrado' ? 'Registrado' : 'No registrado';
-        const ok = await showConfirm(`¿Cambiar el estado de registro de esta persona a "${label}"?`, { variant: 'warning', confirmLabel: 'Sí, cambiar' });
-        if (!ok) return;
-        try {
-          const res = await fetch(`/api/events/${window.EVENT_ID}/users/${user.id}/status`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
-          });
-          if (res.ok) {
-            showToast('Estado de registro actualizado', 'success');
-            close();
-            if (window.directorySearch) window.directorySearch.reload();
-          } else {
-            const data = await res.json().catch(() => ({}));
-            showToast(data.detail || 'No se pudo cambiar el estado', 'error');
-          }
-        } catch (e) { showToast('Error de red', 'error'); }
-      });
-
+    if (canManageStatus) {
       box.querySelector('#editModalDelete').addEventListener('click', async () => {
         const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
         const ok = await showConfirm(`⚠️ Esto elimina COMPLETAMENTE a ${fullName || 'esta persona'} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });

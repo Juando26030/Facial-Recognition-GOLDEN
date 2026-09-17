@@ -537,7 +537,7 @@ async def delete_user_logs(
 @router.delete("/users/{user_id}")
 async def delete_user_from_event(
     user_id: str, event_id: int, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("admin")),
+    staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Borra a la persona de ESTE evento por completo (2026-09-16, pedido explícito: "Eliminar"
     debía borrar de verdad, no solo resetear el estado). Scoped al evento — no confundir con el
@@ -582,14 +582,15 @@ async def delete_user_from_event(
 @router.patch("/events/{event_id}/users/{user_id}/status")
 async def update_registration_status(
     event_id: int, user_id: str, data: dict, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("admin")),
+    staff: StaffUser = Depends(require_role("coordinador")),
 ):
-    """Cambia manualmente el estado de registro de una persona en este evento (2026-09-16, nuevo)
-    — antes la única forma de pasar a "Registrado" era un escaneo/búsqueda real, y no existía
-    forma de volver a "No registrado" salvo el viejo borrado-de-logs. Pensado para el caso real
-    que describió Juan David: crear a alguien de antemano (aún no ha llegado) sin que quede
-    "Registrado" de una, y poder marcarlo cuando sí llegue — o al revés, corregir un registro
-    hecho por error. `data: {"status": "registrado" | "no_registrado"}`."""
+    """Cambia manualmente el estado de registro de una persona en este evento (2026-09-16, nuevo;
+    ampliado a coordinador+ el 2026-09-17, pedido explícito — antes admin+ solamente, junto con
+    DELETE /users/{id} arriba) — antes la única forma de pasar a "Registrado" era un escaneo/
+    búsqueda real, y no existía forma de volver a "No registrado" salvo el viejo borrado-de-logs.
+    Pensado para el caso real que describió Juan David: crear a alguien de antemano (aún no ha
+    llegado) sin que quede "Registrado" de una, y poder marcarlo cuando sí llegue — o al revés,
+    corregir un registro hecho por error. `data: {"status": "registrado" | "no_registrado"}`."""
     event = get_event_for_staff(event_id, db, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
@@ -948,7 +949,11 @@ async def bulk_register(
 
 @router.get("/report")
 async def download_report(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador"))
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
+    # 2026-09-17 (pedido explícito): 'cliente' ve Estadísticas (gráficos, vía
+    # require_role_or_client en stats.py) pero YA NO puede exportar la base — antes usaba el mismo
+    # require_role_or_client que las gráficas, ahora exige coordinador+ como cualquier otra
+    # acción operativa, sin la excepción de cliente.
 ):
     event = get_event_for_staff(event_id, db, staff)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
