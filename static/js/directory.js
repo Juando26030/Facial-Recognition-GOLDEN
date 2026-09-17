@@ -215,6 +215,11 @@
               saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
               return;
             }
+            // Autoimpresión (2026-09-17, pedido explícito): "apenas cambia el estado a
+            // registrado, si está autoimpresión activo entonces debe mandar a imprimir" — este es
+            // uno de los puntos donde el estado puede pasar a "Registrado" sin pasar por un
+            // escaneo (ver maybeAutoPrint en badge-render.js para el resto).
+            if (newStatus === 'registrado' && window.BadgePrint) BadgePrint.maybeAutoPrint(currentId);
           } catch (e) {
             showToast('Error de red', 'error');
             saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';

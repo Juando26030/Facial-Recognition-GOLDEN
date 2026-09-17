@@ -55,12 +55,22 @@
     const pageStyle = document.createElement('style');
     document.head.appendChild(pageStyle);
 
+    // Bug real (2026-09-17, pedido explícito): una escarapela con imagen (logo, image_static) se
+    // veía bien en pantalla pero la imagen no aparecía en la vista previa de impresión del
+    // navegador. Esperar solo el evento 'load' no alcanza — Chrome puede disparar 'load' antes de
+    // terminar de DECODIFICAR la imagen, y si window.print() se llama en ese punto, el motor de
+    // impresión a veces captura la página con la imagen todavía en blanco. img.decode() resuelve
+    // recién cuando la imagen está lista para pintarse — es el fix estándar para este problema.
     function waitForImages(container, timeoutMs) {
         const imgs = Array.from(container.querySelectorAll('img'));
         if (!imgs.length) return Promise.resolve();
         const promises = imgs.map(img => new Promise(resolve => {
-            if (img.complete) { resolve(); return; }
-            img.addEventListener('load', resolve, { once: true });
+            const decodeAndResolve = () => {
+                if (img.decode) img.decode().then(resolve).catch(resolve);
+                else resolve();
+            };
+            if (img.complete) { decodeAndResolve(); return; }
+            img.addEventListener('load', decodeAndResolve, { once: true });
             img.addEventListener('error', resolve, { once: true });
         }));
         const timeout = new Promise(resolve => setTimeout(resolve, timeoutMs));
@@ -87,7 +97,7 @@
             BadgeRender.renderBadge(badgeEl, template, data, { eventId: EVENT_ID });
             statusEl.style.display = 'none';
 
-            await waitForImages(badgeEl, 2500);
+            await waitForImages(badgeEl, 4000);
             window.print();
         } catch (e) {
             statusEl.innerText = 'Error de red cargando la escarapela.';

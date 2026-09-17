@@ -136,11 +136,18 @@
     return `/kiosk/${window.EVENT_ID}/escarapela/imprimir/${encodeURIComponent(userId)}`;
   }
 
+  async function logPrint(userId) {
+    try {
+      await fetch(`/api/users/${encodeURIComponent(userId)}/print-log?event_id=${window.EVENT_ID}`, { method: 'POST' });
+    } catch (e) { /* no bloquea la impresión si falla el registro del log */ }
+  }
+
   /* Aviso de reimpresión (Sprint 2.4 Fase 3, pedido explícito): antes de abrir la ventana de
      impresión se consulta cuántas veces se imprimió antes esta escarapela EN ESTE evento — si ya
      se imprimió, se avisa con el conteo y el operador decide si de todas formas imprime de nuevo.
      Cada impresión (haya habido aviso o no) se registra vía POST print-log para que el próximo
-     conteo sea correcto. */
+     conteo sea correcto. SOLO para el botón manual — ver maybeAutoPrint abajo para la
+     autoimpresión, que nunca debe pasar por este confirm. */
   async function openPrintWindow(userId) {
     try {
       const countRes = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${window.EVENT_ID}`);
@@ -156,14 +163,29 @@
         }
       }
     } catch (e) { /* si falla la consulta del conteo, no bloquea la impresión */ }
-    try {
-      await fetch(`/api/users/${encodeURIComponent(userId)}/print-log?event_id=${window.EVENT_ID}`, { method: 'POST' });
-    } catch (e) { /* no bloquea la impresión si falla el registro del log */ }
+    await logPrint(userId);
     window.open(printWindowUrl(userId), '_blank', 'width=480,height=720,noopener');
   }
 
+  /* Bug real corregido (2026-09-17, "el módulo de autoimpresión no está sirviendo"): maybeAutoPrint
+     llamaba a openPrintWindow, que desde la Fase 3 pregunta "¿deseas imprimir de nuevo?" si la
+     persona ya se había impreso antes — un modal que nadie está mirando para confirmar, así que la
+     autoimpresión se quedaba esperando en silencio para siempre y nunca abría nada. La
+     autoimpresión, por definición, NUNCA debe preguntar nada: si el switch está prendido, se
+     imprime directo (se registra el conteo igual, para que el próximo conteo/aviso manual sea
+     correcto). Dos escenarios reales (pedido explícito):
+     1) auto_print_badge + auto_register: un escaneo con match acredita solo (auto_register) y acá
+        se imprime solo también, ambos activados.
+     2) auto_print_badge sin auto_register: cualquier acción que deje a alguien "Registrado" —
+        escanear y confirmar, alta manual, "Acreditar" en el Directorio, o cambiar el estado a
+        "Registrado" desde el modal de Editar — debe imprimir sola apenas eso pasa. Los 5 puntos
+        donde el estado puede pasar a "Registrado" ya llaman a esta función (ver app.js y
+        directory.js); el fix real estaba acá, no en cuántos sitios la llaman. */
   function maybeAutoPrint(userId) {
-    if (window.EVENT_AUTO_PRINT) openPrintWindow(userId);
+    if (!window.EVENT_AUTO_PRINT) return;
+    logPrint(userId).then(() => {
+      window.open(printWindowUrl(userId), '_blank', 'width=480,height=720,noopener');
+    });
   }
 
   window.BadgePrint = { printWindowUrl, openPrintWindow, maybeAutoPrint };
