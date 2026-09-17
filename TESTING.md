@@ -680,6 +680,86 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 32. Sprint 2.4 Fase 10: correcciones de UI
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-70 ❌ | Configuración visible para todos en el sidebar | Entrar como `coordinador`/`comercial` (no solo admin) | El link "⚙️ Configuración" aparece en el menú lateral |
+| S24-71 ✅ | Selector de tipografía muestra cada opción en su fuente | Abrir el `<select>` de tipografía en Configuración | Cada opción se ve renderizada en su propia fuente, sin tener que aplicarla primero |
+| S24-72 ✅ | País/Ciudad por defecto al crear evento | Abrir "Nuevo evento" | Vienen precargados Colombia/Bogotá, editables |
+| S24-73 ✅ | Buscador de eventos por cliente | En Clientes - Cuentas, expandir un cliente con varios eventos y escribir en el buscador | Filtra solo los eventos de esa tarjeta, sin afectar otras |
+| S24-74 ℹ️ | "Clientes" ahora dice "Clientes - Cuentas" | Revisar sidebar, título de página, franjas "Cliente/Cuenta:" | Cambiado en toda la app; el rol de cuenta `cliente` (login) no cambió de nombre en ningún lado |
+
+---
+
+## 33. Sprint 2.4 Fase 11: permisos ampliados + botón único + estado desde Eventos/Calendario
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-75 ✅ | Coordinador elimina un asistente | Con sesión coordinador, "Eliminar de este evento" en el modal de Editar | 200 (antes 403) |
+| S24-76 ✅ | Coordinador cambia el estado de registro | Cambiar el select de Estado dentro del modal de Editar y pulsar "Guardar cambios" | Se aplica junto con el resto de cambios, sin un botón "Aplicar" aparte |
+| S24-77 ❌ | Cliente no puede exportar el reporte | `GET /api/report` con sesión cliente | 403; el botón de exportar tampoco aparece en la página |
+| S24-78 ✅ | Cambiar estado de evento desde Eventos | En `/eventos`, cambiar el select de estado de una tarjeta | Se aplica igual que desde Clientes - Cuentas |
+| S24-79 ✅ | Cambiar estado + "Ingresar" desde Calendario | Clic en un evento del calendario | El modal tiene selector de estado y un botón "Ingresar al evento" que lleva al kiosko |
+
+---
+
+## 34. Sprint 2.4 Fase 12: color de pañoleta + contraste automático
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-80 ✅ | Elegir color de pañoleta al crear/editar evento | Usar el selector de color (con gotero) + nombre libre | Se guarda y se puede editar después |
+| S24-81 ✅ | Calendario colorea por pañoleta, no por estado | Ver la cuadrícula mensual/semanal/diaria | Los chips usan el color de pañoleta elegido; eventos sin pañoleta caen a gris neutro |
+| S24-82 ✅ | Texto con contraste automático | Elegir un color de acento muy claro y muy oscuro en Configuración | El texto de botones/menú se ve siempre legible (negro sobre claro, blanco sobre oscuro) |
+
+---
+
+## 35. Sprint 2.4 Fase 13: bug de autoimpresión + imagen en vista previa de impresión
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-83 ❌ | Autoimpresión con autorregistro activado | Escanear con ambos switches prendidos | Acredita e imprime sola, sin ningún diálogo de por medio |
+| S24-84 ❌ | Autoimpresión sin autorregistro, tras cambiar estado manualmente | Con autoimpresión activa, cambiar el estado de alguien a "Registrado" desde el modal de Editar | Imprime sola, aunque no haya habido ningún escaneo |
+| S24-85 ✅ | Reimpresión manual sigue avisando | Usar el botón 🖨️ manual sobre alguien ya impreso antes | Sigue preguntando "¿imprimir de nuevo?" — ese aviso es solo para el botón manual |
+| S24-86 ✅ | Imagen visible en la vista previa de impresión | Diseñar una escarapela con una imagen fija y mandarla a imprimir | La imagen aparece en la vista previa del navegador, no solo en la pantalla previa |
+
+---
+
+## 36. Sprint 2.4 Fase 14: destinatarios en los recordatorios del Calendario
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-87 ✅ | Buscar y elegir varios destinatarios | Al crear un recordatorio, buscar por nombre y elegir más de una persona | Se pueden agregar varios, cada uno con su chip removible |
+| S24-88 ❌ | Cliente/digitador no pueden ser destinatarios | Intentar elegirlos (no deberían aparecer en la lista) | No aparecen en el buscador; si se manda su id directo al backend, 400 |
+| S24-89 ✅ | Recordatorio dirigido solo aparece para los elegidos | Crear uno con destinatarios específicos y entrar con otra cuenta no elegida | No lo ve (salvo que sea quien lo creó); las cuentas elegidas sí lo ven en su calendario |
+| S24-90 ✅ | Recordatorio sin destinatarios sigue siendo para todos | Crear uno sin elegir a nadie | Comportamiento igual a la Fase 8, visible para todo el equipo |
+
+---
+
+## 37. Sprint 2.4 Fase 15: doble rol coordinador+comercial
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-91 ✅ | Admin asigna rol secundario | En Staff, botón "+ También comercial"/"+ También coordinador" sobre una cuenta coordinador/comercial | Se guarda; la fila muestra "coordinador + comercial" |
+| S24-92 ❌ | No se puede asignar rol secundario a admin | Intentarlo sobre una cuenta admin | 400 |
+| S24-93 ✅ | Doble rol hereda la unión de permisos | Con una cuenta coordinador+comercial, crear un tenant/evento (privilegio de comercial) Y entrar a Escarapelas/Adjuntar BD/Parámetros (privilegio de coordinador, bloqueado para comercial puro) | Ambos funcionan — no queda atrapado por las restricciones de un solo rol |
+| S24-94 ✅ | UI se muestra como coordinador | Con sesión coordinador+comercial, ver `kiosk_select.html` | Las tarjetas que comercial puro no ve (Escarapelas, etc.) SÍ aparecen |
+
+---
+
+## 38. Sprint 2.4 Fase 16: reporte Excel rediseñado
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-95 ✅ | Solo columnas con datos reales | Exportar el reporte de un evento donde nadie tiene correo cargado | La columna "Correo Electrónico" no aparece; identidad (Cédula/Nombres/Apellidos) siempre aparece |
+| S24-96 ✅ | Opcionales con su nombre real | Exportar un evento con campos opcionales rotulados | Las columnas usan el rótulo real ("Talla de Camisa"), no "Opcional 1" |
+| S24-97 ✅ | Tipo de Registro correcto por método | Registrar personas por facial, por cédula (con y sin autorregistro), y por alta manual | Cada fila trae "Biométrico"/"Autoregistro"/"Tradicional" según corresponda |
+| S24-98 ✅ | Hora exacta con segundos | Revisar la columna "Hora de Registro" | Formato `HH:MM:SS`, no solo horas/minutos |
+| S24-99 ✅ | Formato de Excel: título + autofiltro | Abrir el `.xlsx` descargado | 3 filas de título (Cliente/Cuenta, Evento, Código) arriba de la tabla; encabezados con estilo; autofiltro activo en cada columna |
+| S24-100 ❌ | Evento sin nadie en el directorio no rompe el reporte | Exportar el reporte de un evento recién creado, sin roster ni registros | Se genera igual, con encabezados y cero filas de datos |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -715,6 +795,13 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 7 (reforzar unicidad de cédula, validación DB) | 4 |
 | Sprint 2.4 Fase 8 (módulo de Calendario: mes/semana/día, filtros, edición, recordatorios) | 10 |
 | Sprint 2.4 Fase 9 (fuente Agrandir por defecto) | 4 |
-| **Total** | **375** |
+| Sprint 2.4 Fase 10 (correcciones de UI: Configuración, fuente con preview, país/ciudad, buscador, renombrar Clientes) | 5 |
+| Sprint 2.4 Fase 11 (permisos ampliados, botón único, estado desde Eventos/Calendario, bloqueo de exportar) | 5 |
+| Sprint 2.4 Fase 12 (color de pañoleta + contraste automático de texto) | 3 |
+| Sprint 2.4 Fase 13 (bug de autoimpresión + imagen en vista previa de impresión) | 4 |
+| Sprint 2.4 Fase 14 (destinatarios en los recordatorios del Calendario) | 4 |
+| Sprint 2.4 Fase 15 (doble rol coordinador+comercial) | 4 |
+| Sprint 2.4 Fase 16 (reporte Excel rediseñado) | 6 |
+| **Total** | **406** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.
