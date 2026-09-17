@@ -107,9 +107,13 @@
     try {
       localStorage.setItem('golden_theme_primary', colorInput.value);
       document.documentElement.style.setProperty('--golden-primary', colorInput.value);
-      // El mismo color también pinta el fondo del menú lateral (pedido explícito, ronda 2) — el
-      // texto del menú se queda siempre blanco, no se personaliza.
+      // El mismo color también pinta el fondo del menú lateral (pedido explícito, ronda 2).
       document.documentElement.style.setProperty('--golden-sidebar-bg', colorInput.value);
+      // Contraste automático (2026-09-17, pedido explícito): el texto de botones/menú se
+      // recalcula según qué tan clara/oscura sea la elegida, en vez de quedar fijo.
+      const contrast = window.goldenContrastColor ? window.goldenContrastColor(colorInput.value) : '#000000';
+      document.documentElement.style.setProperty('--golden-primary-contrast', contrast);
+      document.documentElement.style.setProperty('--golden-sidebar-contrast', contrast);
 
       const family = fontsSelect.value;
       if (family) {
@@ -138,6 +142,8 @@
     } catch (e) {}
     document.documentElement.style.removeProperty('--golden-primary');
     document.documentElement.style.removeProperty('--golden-sidebar-bg');
+    document.documentElement.style.removeProperty('--golden-primary-contrast');
+    document.documentElement.style.removeProperty('--golden-sidebar-contrast');
     document.documentElement.style.removeProperty('--font-heading-primary');
     document.documentElement.style.removeProperty('--font-heading-secondary');
     document.documentElement.style.removeProperty('--font-body');

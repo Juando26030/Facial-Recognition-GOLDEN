@@ -6,6 +6,22 @@
    privada o con site data bloqueada. Disponible para TODOS los roles (Sprint 2.4, ronda 2) —
    cargado en todos los templates, igual que toast.js. */
 (function () {
+  // Contraste automático de texto (Sprint 2.4 Fase 13, 2026-09-17, pedido explícito): "en todo
+  // lugar que haya texto... si detecta que el fondo es claro, letra negra; si es oscuro, letra
+  // blanca". Fórmula de luminancia percibida (coeficientes ITU-R BT.601, ya usados de forma
+  // habitual para esto) — no es una conversión de color exacta, pero alcanza de sobra para
+  // decidir blanco/negro. Expuesta globalmente porque calendario.html la reusa para los chips de
+  // "color de pañoleta" (otro lugar con fondo elegido libremente por el usuario).
+  window.goldenContrastColor = function (hex) {
+    if (!hex) return '#000000';
+    let c = String(hex).replace('#', '').trim();
+    if (c.length === 3) c = c.split('').map((ch) => ch + ch).join('');
+    if (c.length !== 6 || /[^0-9a-fA-F]/.test(c)) return '#000000';
+    const r = parseInt(c.substr(0, 2), 16), g = parseInt(c.substr(2, 2), 16), b = parseInt(c.substr(4, 2), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? '#000000' : '#ffffff';
+  };
+
   // Mismas 40 familias tipográficas que ya ofrece el editor de escarapelas (badge_editor.html:
   // FONT_FAMILIES) — un solo <link> de Google Fonts, idéntico al de ahí, inyectado una vez por
   // página (no todas las páginas lo tenían, y sin cargarlo la fuente elegida no se ve aunque la
@@ -46,9 +62,13 @@
     const primary = localStorage.getItem('golden_theme_primary');
     if (primary) {
       document.documentElement.style.setProperty('--golden-primary', primary);
-      // El mismo color también pinta el fondo del menú lateral (2026-09-16, ronda 2) — el texto
-      // del menú se queda siempre blanco (ver .golden-sidebar a en style.css).
+      // El mismo color también pinta el fondo del menú lateral (2026-09-16, ronda 2).
       document.documentElement.style.setProperty('--golden-sidebar-bg', primary);
+      // Contraste automático (2026-09-17, pedido explícito) — antes el texto de botones/menú
+      // quedaba fijo, ahora se recalcula según qué tan clara/oscura sea la elegida.
+      const contrast = window.goldenContrastColor(primary);
+      document.documentElement.style.setProperty('--golden-primary-contrast', contrast);
+      document.documentElement.style.setProperty('--golden-sidebar-contrast', contrast);
     }
   } catch (e) { /* preferencia local opcional — si falla, se queda con el tema por defecto */ }
 })();

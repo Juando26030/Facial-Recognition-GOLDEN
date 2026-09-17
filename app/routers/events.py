@@ -59,6 +59,8 @@ class EventIn(BaseModel):
     setup_time_end: str
     coordinator_staff_id: int
     commercial_staff_id: Optional[int] = None  # Sprint 2.4 Fase 5: si no viene, se resuelve en create_event (self si el creador es comercial, obligatorio elegir si es admin+)
+    bandana_color: Optional[str] = None  # Sprint 2.4 Fase 12: "Color de pañoleta", hex #rrggbb
+    bandana_color_name: Optional[str] = None  # nombre libre para ese color (ej. "Rojo Golden")
     notes: Optional[str] = None
 
 
@@ -78,6 +80,8 @@ class EventUpdate(BaseModel):
     setup_time_end: Optional[str] = None
     coordinator_staff_id: Optional[int] = None
     commercial_staff_id: Optional[int] = None
+    bandana_color: Optional[str] = None
+    bandana_color_name: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
     auto_print_badge: Optional[bool] = None
@@ -99,6 +103,8 @@ def _serialize(e: Event) -> dict:
         "coordinator_name": (e.coordinator.full_name or e.coordinator.username) if e.coordinator else None,
         "commercial_staff_id": e.commercial_staff_id,
         "commercial_name": (e.commercial.full_name or e.commercial.username) if e.commercial else None,
+        "bandana_color": e.bandana_color,
+        "bandana_color_name": e.bandana_color_name,
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,

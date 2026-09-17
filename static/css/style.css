@@ -29,11 +29,20 @@
   --font-heading-primary: 'Agrandir', serif;
   --font-heading-secondary: 'Agrandir', sans-serif;
   --font-body: 'Agrandir', sans-serif;
-  /* Fondo del menú lateral (Sprint 2.3, ronda 2, 2026-09-16, pedido explícito): variable aparte
-     de --golden-dark para que Configuración > Apariencia pueda cambiar el color del menú sin
-     tocar el resto de la app (el texto del menú NO se personaliza — ver .golden-sidebar a abajo,
-     siempre blanco a propósito, para que se siga leyendo bien sin importar qué color se elija). */
+  /* Fondo del menú lateral (Sprint 2.3, ronda 2, 2026-09-16) — variable aparte de --golden-dark
+     para que Configuración > Apariencia pueda cambiar el color del menú sin tocar el resto de la
+     app. */
   --golden-sidebar-bg: var(--golden-dark);
+  /* Contraste automático (Sprint 2.4 Fase 13, 2026-09-17, pedido explícito): "en todo lugar que
+     haya texto... si el fondo es claro, letra negra; si es oscuro, letra blanca". Antes el texto
+     del menú/botones quedaba SIEMPRE blanco/oscuro fijo sin importar qué color de acento eligiera
+     Configuración — si alguien elegía un acento claro, el texto blanco del menú podía quedar
+     ilegible. static/js/theme.js recalcula estas dos variables (con goldenContrastColor(), la
+     misma función que usan los chips del Calendario para el color de pañoleta) cada vez que
+     --golden-primary/--golden-sidebar-bg cambian; acá quedan los valores por defecto, coherentes
+     con los colores por defecto de arriba. */
+  --golden-primary-contrast: var(--golden-dark);
+  --golden-sidebar-contrast: #fff;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -42,7 +51,7 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
 .golden-header { background: rgba(255,255,255,0.98); position: fixed; width: 100%; z-index: 1000; box-shadow: 0 2px 16px rgba(0,0,0,0.08); top: 0; left: 0; }
 .golden-header-container { max-width: 1600px; margin: auto; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; height: 80px; }
 .golden-logo img { height: 50px; }
-.golden-anniversary-badge { background: var(--golden-primary); color: var(--golden-dark); padding: 0.5rem 1.5rem; border-radius: 20px; font-weight: 700; font-size: 0.85rem; font-family: var(--font-heading-secondary); }
+.golden-anniversary-badge { background: var(--golden-primary); color: var(--golden-primary-contrast); padding: 0.5rem 1.5rem; border-radius: 20px; font-weight: 700; font-size: 0.85rem; font-family: var(--font-heading-secondary); }
 .golden-content-spacer { height: 80px; }
 
 /* Barra de contexto del evento (2026-09-16, pedido explícito: "para saber siempre donde estoy" /
@@ -64,7 +73,7 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
 
 .tabs { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-bottom: 30px; }
 .tab { padding: 12px 25px; cursor: pointer; font-weight: bold; background: white; border-radius: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 2px solid transparent; transition: 0.3s; color: var(--golden-dark); }
-.tab.active, .tab:hover { background: var(--golden-primary); color: white; }
+.tab.active, .tab:hover { background: var(--golden-primary); color: var(--golden-primary-contrast); }
 
 .app-container { max-width: 1500px; width: 100%; margin: auto; }
 .section { display: none; animation: fadeIn 0.4s ease; }
@@ -80,7 +89,7 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
 .badge-input-group input:focus { outline: none; border-color: var(--golden-primary); }
 
 .golden-btn { border: none; padding: 1rem 2rem; border-radius: 30px; font-weight: 700; cursor: pointer; transition: 0.3s; font-family: var(--font-heading-secondary); display: block; }
-.golden-btn-primary { background: var(--golden-primary); color: var(--golden-dark); width: 100%; }
+.golden-btn-primary { background: var(--golden-primary); color: var(--golden-primary-contrast); width: 100%; }
 .golden-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3); background: #b5952f; }
 .golden-btn-primary:disabled { background: #ccc; cursor: not-allowed; box-shadow: none; transform: none; }
 
@@ -166,20 +175,21 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
   background: var(--golden-sidebar-bg); z-index: 1002; padding-top: 80px; box-shadow: 2px 0 16px rgba(0,0,0,0.2);
 }
 .golden-sidebar nav { display: flex; flex-direction: column; padding: 1rem 0; }
-/* Texto del menú siempre blanco (pedido explícito, 2026-09-16): antes el link activo cambiaba a
-   --golden-primary, lo que se veía mal/ilegible según el color elegido en Apariencia — el color
-   personalizable ahora es el FONDO (--golden-sidebar-bg), el texto nunca cambia. El estado activo
-   se marca con el borde izquierdo + un fondo blanco translúcido, no con el color del texto. */
+/* Texto del menú con contraste automático (2026-09-16, ajustado 2026-09-17 — antes SIEMPRE
+   blanco fijo; ahora goldenContrastColor() en theme.js decide blanco/negro según qué tan clara u
+   oscura sea --golden-sidebar-bg elegida en Apariencia, vía --golden-sidebar-contrast). El estado
+   activo se sigue marcando con el borde izquierdo + un fondo blanco translúcido, no con el color
+   del texto (ese overlay funciona razonablemente bien tanto con texto blanco como negro encima). */
 .golden-sidebar a {
-  color: #fff; text-decoration: none; padding: 0.9rem 1.5rem; display: flex;
+  color: var(--golden-sidebar-contrast); text-decoration: none; padding: 0.9rem 1.5rem; display: flex;
   align-items: center; gap: 10px; font-family: var(--font-heading-secondary); font-weight: 600;
   font-size: 0.9rem; border-left: 3px solid transparent; transition: 0.2s;
 }
-.golden-sidebar a:hover { background: rgba(255,255,255,0.1); color: #fff; }
-.golden-sidebar a.active { border-left-color: #fff; background: rgba(255,255,255,0.18); color: #fff; font-weight: 800; }
+.golden-sidebar a:hover { background: rgba(255,255,255,0.1); color: var(--golden-sidebar-contrast); }
+.golden-sidebar a.active { border-left-color: var(--golden-sidebar-contrast); background: rgba(255,255,255,0.18); color: var(--golden-sidebar-contrast); font-weight: 800; }
 .golden-sidebar-toggle {
   display: none; position: fixed; top: 18px; left: 16px; z-index: 1003; background: var(--golden-sidebar-bg);
-  color: #fff; border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
+  color: var(--golden-sidebar-contrast); border: none; border-radius: 10px; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer;
   box-shadow: 0 2px 10px rgba(0,0,0,0.25);
 }
 .golden-sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1001; }
