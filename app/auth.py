@@ -30,12 +30,27 @@ def get_current_staff(request: Request, db: Session = Depends(get_db)) -> StaffU
     return staff
 
 
+def effective_roles(staff: StaffUser) -> set:
+    """Sprint 2.4 Fase 15 (2026-09-17, pedido explícito): "hay coordinadores que también pueden
+    ser comerciales" — StaffUser.secondary_role permite exactamente ESE doble rol (coordinador+
+    comercial, en cualquier orden), asignado por admin+. Todo el resto de auth.py razona sobre
+    este CONJUNTO de roles en vez de un solo `staff.role`, para que alguien con doble rol reciba
+    la UNIÓN de permisos de ambos — en particular, para que las exclusiones de Fase 6 (comercial
+    no puede Escarapelas/Adjuntar BD/Parámetros) NO le apliquen a quien también es coordinador de
+    verdad, no una comercial pura."""
+    roles = {staff.role}
+    if staff.secondary_role:
+        roles.add(staff.secondary_role)
+    return roles
+
+
 def require_role(minimum_role: str):
-    """Exige que el staff logueado tenga al menos este rol (jerarquía en STAFF_ROLES)."""
+    """Exige que el staff logueado tenga al menos este rol (jerarquía en STAFF_ROLES) — considera
+    el rol secundario si tiene uno (ver effective_roles)."""
     minimum_level = ROLE_HIERARCHY[minimum_role]
 
     def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
-        if ROLE_HIERARCHY[staff.role] < minimum_level:
+        if max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < minimum_level:
             raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
         return staff
 
@@ -47,13 +62,17 @@ def require_role_excluding(minimum_role: str, excluded_roles: tuple):
     2.4 Fase 6 (2026-09-16, pedido explícito): 'comercial' queda por ENCIMA de 'coordinador' en
     STAFF_ROLES (hereda su acceso operativo por diseño, ver Fase 0), pero el usuario pidió que
     puntualmente NO tenga Adjuntar Base de Datos, Escarapelas ni Parámetros del Evento — un
-    require_role('coordinador') simple no puede excluir un rol que está POR ENCIMA del mínimo."""
+    require_role('coordinador') simple no puede excluir un rol que está POR ENCIMA del mínimo.
+    Con doble rol (Fase 15): solo bloquea si TODOS sus roles efectivos están en excluded_roles —
+    una comercial pura queda bloqueada, pero alguien coordinador+comercial no (porque también es
+    coordinador de verdad, no solo comercial con la jerarquía prestada)."""
     minimum_level = ROLE_HIERARCHY[minimum_role]
 
     def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
-        if staff.role in excluded_roles:
+        roles = effective_roles(staff)
+        if roles.issubset(set(excluded_roles)):
             raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
-        if ROLE_HIERARCHY[staff.role] < minimum_level:
+        if max(ROLE_HIERARCHY[r] for r in roles) < minimum_level:
             raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
         return staff
 
@@ -65,11 +84,12 @@ def require_role_or_client(minimum_role: str):
     mínimo en STAFF_ROLES — pensado para vistas de solo lectura (Estadísticas, 2026-09-16,
     pedido explícito: el cliente asignado a un evento debe poder ver sus estadísticas) donde
     'cliente' sí debe entrar pero 'digitador' (que en la jerarquía queda POR ENCIMA de 'cliente')
-    sigue sin poder, porque no le corresponde ver reportes."""
+    sigue sin poder, porque no le corresponde ver reportes. 'cliente' nunca tiene rol secundario
+    (el doble rol solo aplica a coordinador/comercial), así que effective_roles no cambia este caso."""
     minimum_level = ROLE_HIERARCHY[minimum_role]
 
     def checker(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
-        if staff.role == "cliente" or ROLE_HIERARCHY[staff.role] >= minimum_level:
+        if staff.role == "cliente" or max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) >= minimum_level:
             return staff
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
 

@@ -7,9 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from sqlalchemy import or_
+
 from app.database import get_db
 from app.models import AccessLog, EVENT_STATUSES, Event, EventAttendee, EventStaffAuthorization, StaffUser, Tenant
-from app.auth import get_current_staff, hash_password, require_role
+from app.auth import effective_roles, get_current_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
 router = APIRouter()
@@ -239,13 +241,15 @@ async def create_event(
     # asigna a sí misma; si es admin+ (no es comercial), tiene que elegir explícitamente.
     commercial_id = data.commercial_staff_id
     if commercial_id is None:
-        if staff.role == "comercial":
+        if "comercial" in effective_roles(staff):
             commercial_id = staff.id
         else:
             raise HTTPException(status_code=400, detail="Debes asignar una comercial para este evento")
     else:
         commercial = db.query(StaffUser).filter(
-            StaffUser.id == commercial_id, StaffUser.role == "comercial", StaffUser.is_active == True
+            StaffUser.id == commercial_id,
+            or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),
+            StaffUser.is_active == True,
         ).first()
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
@@ -284,12 +288,15 @@ async def update_event(
         if db.query(Event).filter(Event.event_code == data.event_code, Event.id != event_id).first():
             raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
     if data.commercial_staff_id is not None:
-        # Reasignar la comercial es decisión de comercial+ — un coordinador puede editar el
-        # resto del evento (fechas, estado, etc.) pero no a quién pertenece comercialmente.
-        if staff.role not in ("comercial", "admin", "super_admin"):
+        # Reasignar la comercial es decisión de comercial+ — un coordinador "puro" puede editar el
+        # resto del evento (fechas, estado, etc.) pero no a quién pertenece comercialmente. Un
+        # coordinador+comercial (Fase 15) SÍ puede, porque también es comercial de verdad.
+        if not ({"comercial", "admin", "super_admin"} & effective_roles(staff)):
             raise HTTPException(status_code=403, detail="Solo una comercial o Admin puede reasignar la comercial del evento")
         commercial = db.query(StaffUser).filter(
-            StaffUser.id == data.commercial_staff_id, StaffUser.role == "comercial", StaffUser.is_active == True
+            StaffUser.id == data.commercial_staff_id,
+            or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),
+            StaffUser.is_active == True,
         ).first()
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
@@ -331,12 +338,15 @@ async def create_event_staff(
     simple de STAFF_ROLES (ver models.py) se codifican a mano acá:
     - 'cliente' exige comercial+ (antes admin+ solamente — comercial ahora también puede).
     - 'digitador' excluye explícitamente a 'comercial', aunque en la jerarquía quede "por encima"
-      de coordinador — comercial gestiona clientes/eventos, no cuentas temporales de operación."""
+      de coordinador — comercial gestiona clientes/eventos, no cuentas temporales de operación.
+    Fase 15 (doble rol coordinador+comercial): ambas excepciones se evalúan sobre effective_roles,
+    no sobre `staff.role` a secas — alguien coordinador+comercial SÍ puede crear digitador (porque
+    también es coordinador de verdad), la exclusión es solo para quien es comercial pura."""
     if data.role not in ("digitador", "cliente"):
         raise HTTPException(status_code=400, detail="Rol inválido (debe ser 'digitador' o 'cliente')")
-    if data.role == "cliente" and staff.role not in ("comercial", "admin", "super_admin"):
+    if data.role == "cliente" and not ({"comercial", "admin", "super_admin"} & effective_roles(staff)):
         raise HTTPException(status_code=403, detail="Solo un comercial o Admin puede crear cuentas cliente")
-    if data.role == "digitador" and staff.role == "comercial":
+    if data.role == "digitador" and effective_roles(staff).issubset({"comercial"}):
         raise HTTPException(status_code=403, detail="Un comercial no puede crear cuentas digitador")
 
     event = db.query(Event).filter(Event.id == event_id).first()

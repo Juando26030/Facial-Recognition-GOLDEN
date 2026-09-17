@@ -97,17 +97,31 @@ const DELETABLE_ROLES = {
   super_admin: ["admin", "comercial", "coordinador", "digitador", "cliente"],
 }[staffRole] || [];
 
+// Doble rol coordinador+comercial (Sprint 2.4 Fase 15, 2026-09-17, pedido explícito): "hay
+// coordinadores que también pueden ser comerciales... lo hace el administrador". Solo admite este
+// único par, en cualquier orden — el botón de abajo solo aparece para filas coordinador/comercial.
+const DUAL_ROLE_PAIR = { coordinador: "comercial", comercial: "coordinador" };
+
 async function loadStaff() {
   const res = await fetch("/api/staff");
   const list = await res.json();
-  document.getElementById("staffBody").innerHTML = list.map(s => `
+  document.getElementById("staffBody").innerHTML = list.map(s => {
+    const roleLabel = s.secondary_role ? `${s.role} + ${s.secondary_role}` : s.role;
+    const otherRole = DUAL_ROLE_PAIR[s.role];
+    const dualRoleBtn = (staffRole === "admin" || staffRole === "super_admin") && otherRole
+      ? (s.secondary_role
+          ? `<button class="btn-table-action" onclick="setSecondaryRole(${s.id}, null)">✕ Quitar "${otherRole}"</button>`
+          : `<button class="btn-table-action btn-save" onclick="setSecondaryRole(${s.id}, '${otherRole}')">+ También ${otherRole}</button>`)
+      : "";
+    return `
     <tr>
       <td>${s.username}</td>
       <td>${s.full_name || "-"}</td>
-      <td>${s.role}</td>
+      <td>${roleLabel}</td>
       <td>${s.is_active ? "Activo" : "Inactivo"}</td>
       <td>
         ${s.role === "super_admin" || s.username === staffUsername ? '<span style="color:#aaa; font-size:0.8rem;">—</span>' : `
+          ${dualRoleBtn}
           ${s.is_active
             ? `<button class="btn-table-action" style="background:#dc3545;" onclick="toggleStaff(${s.id}, false)">Desactivar</button>`
             : `<button class="btn-table-action btn-save" onclick="toggleStaff(${s.id}, true)">Reactivar</button>`}
@@ -117,7 +131,17 @@ async function loadStaff() {
         `}
       </td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
+}
+
+async function setSecondaryRole(id, secondaryRole) {
+  const res = await fetch(`/api/staff/${id}/secondary-role`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secondary_role: secondaryRole }),
+  });
+  if (res.ok) { loadStaff(); showToast(secondaryRole ? `Ahora también es ${secondaryRole}` : "Rol secundario quitado", "success"); }
+  else { const err = await res.json(); showToast(err.detail || "No se pudo actualizar", "error"); }
 }
 
 async function deleteStaff(id, username) {

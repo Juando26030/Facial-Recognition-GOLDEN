@@ -11,7 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.routers import api, auth as auth_router, badges, calendar as calendar_router, cedula, events, parametros, staff, stats, tenants
-from app.auth import ROLE_HIERARCHY, get_event_for_staff
+from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -68,13 +68,35 @@ def _page_staff(request: Request, db: Session):
     return db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
 
 
+def _display_role(role: str, secondary_role: str = None) -> str:
+    """Rol a mostrarle a los templates Jinja (Fase 15, 2026-09-17, doble rol coordinador+
+    comercial) — muchísimos templates deciden qué mostrar/ocultar comparando `staff_role` contra
+    un solo string (ej. kiosk_select.html: `{% if staff_role != "comercial" %}` para ocultar
+    Escarapelas/Adjuntar BD/Parámetros a comercial). Reescribir cada uno de esos checks para que
+    entienda un rol secundario sería un cambio mucho más grande que el pedido; en vez de eso, acá
+    se decide UNA sola etiqueta a mostrar: si la persona es coordinador Y comercial (en cualquier
+    orden), se le muestra como 'coordinador' — el rol estrictamente menos restringido de los dos
+    en toda la UI existente — así hereda visualmente todo lo que un coordinador ve, sin tener que
+    tocar cada template. La distinción real de permisos (crear tenant/evento, reasignar comercial,
+    etc.) ya se resuelve en el backend vía auth.effective_roles(), esto es solo para la UI."""
+    roles = {role} | ({secondary_role} if secondary_role else set())
+    if {"coordinador", "comercial"} <= roles:
+        return "coordinador"
+    return role
+
+
 def _require_page_role(request: Request, minimum_role: str):
     """Para páginas simples que solo necesitan el rol (no el objeto completo): sin sesión -> /login;
-    sin permiso suficiente -> /."""
+    sin permiso suficiente -> /. Considera el rol secundario (Fase 15, doble rol coordinador+
+    comercial) guardado en sesión al loguearse — sin esto, alguien coordinador+comercial cuyo rol
+    PRIMARIO es 'coordinador' quedaría bloqueado de páginas que piden 'comercial' como mínimo
+    (ej. /clientes/{id}/nuevo-evento), aunque también sea comercial de verdad."""
     role = request.session.get("staff_role")
     if not role:
         return RedirectResponse("/login", status_code=302)
-    if ROLE_HIERARCHY[role] < ROLE_HIERARCHY[minimum_role]:
+    secondary_role = request.session.get("staff_secondary_role")
+    roles = [role] + ([secondary_role] if secondary_role else [])
+    if max(ROLE_HIERARCHY[r] for r in roles) < ROLE_HIERARCHY[minimum_role]:
         return RedirectResponse("/", status_code=302)
     return None
 
@@ -99,7 +121,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
         return templates.TemplateResponse(request=request, name="dashboard.html", context={
             "staff_name": staff_user.full_name or staff_user.username,
-            "staff_role": staff_user.role,
+            "staff_role": _display_role(staff_user.role, staff_user.secondary_role),
         })
 
     # coordinador/admin/super_admin (Sprint 2.3, 2026-09-16): el panel combinado (árbol
@@ -115,7 +137,7 @@ async def clientes_page(request: Request):
         return redirect
     return templates.TemplateResponse(request=request, name="clientes.html", context={
         "staff_name": request.session.get("staff_name"),
-        "staff_role": request.session.get("staff_role"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "clientes",
     })
 
@@ -134,7 +156,7 @@ async def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depe
         return RedirectResponse("/clientes", status_code=302)
     return templates.TemplateResponse(request=request, name="nuevo_evento.html", context={
         "staff_name": request.session.get("staff_name"),
-        "staff_role": request.session.get("staff_role"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "clientes",
         "tenant_id": tenant.id,
@@ -149,7 +171,7 @@ async def eventos_page(request: Request):
         return redirect
     return templates.TemplateResponse(request=request, name="eventos.html", context={
         "staff_name": request.session.get("staff_name"),
-        "staff_role": request.session.get("staff_role"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "eventos",
     })
@@ -162,7 +184,7 @@ async def calendario_page(request: Request):
         return redirect
     return templates.TemplateResponse(request=request, name="calendario.html", context={
         "staff_name": request.session.get("staff_name"),
-        "staff_role": request.session.get("staff_role"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "staff_id": request.session.get("staff_user_id"),
         "sidebar_active": "calendario",
     })
@@ -180,7 +202,7 @@ async def configuracion_page(request: Request):
         return redirect
     return templates.TemplateResponse(request=request, name="configuracion.html", context={
         "staff_name": request.session.get("staff_name"),
-        "staff_role": request.session.get("staff_role"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
     })
 
@@ -210,7 +232,7 @@ async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get
 
     return templates.TemplateResponse(request=request, name="kiosk_select.html", context={
         "staff_name": staff_user.full_name or staff_user.username,
-        "staff_role": staff_user.role,
+        "staff_role": _display_role(staff_user.role, staff_user.secondary_role),
         "event": event,
         "sidebar_active": "eventos",
     })
@@ -231,12 +253,18 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         event = get_event_for_staff(event_id, db, staff_user)
     except HTTPException:
         return RedirectResponse("/", status_code=302)
-    if min_role and ROLE_HIERARCHY.get(staff_user.role, -1) < ROLE_HIERARCHY[min_role]:
+    # effective_roles (Fase 15, 2026-09-17): considera el rol secundario si tiene uno (doble rol
+    # coordinador+comercial) — tanto para el mínimo jerárquico como para exclude_roles abajo.
+    staff_roles = effective_roles(staff_user)
+    if min_role and max(ROLE_HIERARCHY[r] for r in staff_roles) < ROLE_HIERARCHY[min_role]:
         return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
     # exclude_roles (2026-09-16): para vistas que NO siguen la jerarquía de min_role — ej.
     # Estadísticas la puede ver 'cliente' (que en STAFF_ROLES queda por debajo de 'digitador')
-    # pero NO 'digitador'; un simple mínimo jerárquico no puede expresar eso.
-    if exclude_roles and staff_user.role in exclude_roles:
+    # pero NO 'digitador'; un simple mínimo jerárquico no puede expresar eso. Con doble rol, solo
+    # excluye si TODOS sus roles efectivos están en exclude_roles (mismo criterio que
+    # require_role_excluding en auth.py) — coordinador+comercial no queda excluido de Escarapelas/
+    # Adjuntar BD/Parámetros, porque también es coordinador de verdad.
+    if exclude_roles and staff_roles.issubset(set(exclude_roles)):
         return RedirectResponse(f"/kiosk/{event_id}", status_code=302)
     # Lista (clave, rótulo) ordenada numéricamente (no alfabéticamente — "opcional_10" antes que
     # "opcional_2" si se ordenara como texto) de los campos opcionales que este evento ya tiene
@@ -256,7 +284,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
     field_configs_json = json.dumps(field_configs).replace("</", "<\\/")
     context = {
         "staff_name": staff_user.full_name or staff_user.username,
-        "staff_role": staff_user.role,
+        "staff_role": _display_role(staff_user.role, staff_user.secondary_role),
         "event": event,
         "optional_labels": optional_labels,
         "optional_labels_json": optional_labels_json,
@@ -362,7 +390,7 @@ async def staff_page(request: Request):
         return redirect
     embed = request.query_params.get("embed") == "1"
     return templates.TemplateResponse(request=request, name="staff.html", context={
-        "staff_role": request.session.get("staff_role"),
+        "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "staff_username": request.session.get("staff_username"),
         "sidebar_active": "configuracion",
         "embed": embed,

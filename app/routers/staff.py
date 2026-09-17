@@ -2,11 +2,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
-from app.auth import hash_password, require_role
+from app.auth import effective_roles, hash_password, require_role
 
 router = APIRouter()
 
@@ -37,23 +38,36 @@ class StaffIn(BaseModel):
 def _serialize(s: StaffUser) -> dict:
     return {
         "id": s.id, "username": s.username, "full_name": s.full_name,
-        "role": s.role, "is_active": s.is_active, "phone": s.phone,
+        "role": s.role, "secondary_role": s.secondary_role, "is_active": s.is_active, "phone": s.phone,
     }
+
+
+# Sprint 2.4 Fase 15 (2026-09-17, pedido explícito): "el único doble rol permitido es coordinador
+# comercial" — ambos deben estar entre coordinador/comercial, y distintos entre sí.
+DUAL_ROLE_PAIR = {"coordinador", "comercial"}
 
 
 @router.get("/staff/coordinators")
 async def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Liviano y accesible desde coordinador+ (a diferencia de /staff, que es admin+) — para
-    poblar el selector de 'coordinador asignado' al crear/editar un evento."""
-    coords = db.query(StaffUser).filter(StaffUser.role == "coordinador", StaffUser.is_active == True).all()
+    poblar el selector de 'coordinador asignado' al crear/editar un evento. Incluye a quien tenga
+    'coordinador' como rol PRIMARIO o SECUNDARIO (Fase 15: doble rol coordinador+comercial)."""
+    coords = db.query(StaffUser).filter(
+        or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
+        StaffUser.is_active == True,
+    ).all()
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in coords]
 
 
 @router.get("/staff/commercials")
 async def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))):
     """Sprint 2.4 Fase 5 (2026-09-16): mismo patrón que /staff/coordinators — poblar el selector
-    de 'comercial asignada' al crear/editar un evento y el filtro de admin+ en /eventos."""
-    commercials = db.query(StaffUser).filter(StaffUser.role == "comercial", StaffUser.is_active == True).all()
+    de 'comercial asignada' al crear/editar un evento y el filtro de admin+ en /eventos. Incluye a
+    quien tenga 'comercial' como rol PRIMARIO o SECUNDARIO (Fase 15)."""
+    commercials = db.query(StaffUser).filter(
+        or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),
+        StaffUser.is_active == True,
+    ).all()
     return [{"id": c.id, "username": c.username, "full_name": c.full_name} for c in commercials]
 
 
@@ -117,6 +131,36 @@ async def create_staff(
     return _serialize(new_staff)
 
 
+@router.patch("/staff/{staff_id}/secondary-role")
+async def assign_secondary_role(
+    staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin")),
+):
+    """Sprint 2.4 Fase 15 (2026-09-17, pedido explícito): "hay coordinadores que también pueden
+    ser comerciales, esos son los únicos usuarios que pueden tener doble rol... lo hace el
+    administrador". `data: {"secondary_role": "comercial"|"coordinador"|null}` — null quita el rol
+    secundario. El rol primario del objetivo y el secundario elegido deben ser, entre los dos,
+    exactamente el par {coordinador, comercial} — no se admite ninguna otra combinación (ej. un
+    admin no puede ganar un rol secundario, ni comercial+comercial)."""
+    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    secondary = data.get("secondary_role")
+    if secondary is None:
+        target.secondary_role = None
+        db.commit()
+        return _serialize(target)
+
+    if target.role not in DUAL_ROLE_PAIR:
+        raise HTTPException(status_code=400, detail="Solo cuentas coordinador o comercial pueden tener un rol secundario")
+    if secondary not in DUAL_ROLE_PAIR or secondary == target.role:
+        raise HTTPException(status_code=400, detail="El rol secundario debe ser el otro de coordinador/comercial")
+
+    target.secondary_role = secondary
+    db.commit()
+    return _serialize(target)
+
+
 @router.patch("/staff/{staff_id}/deactivate")
 async def deactivate_staff(
     staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
@@ -154,10 +198,15 @@ async def delete_staff(
     staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
     """Borrado PERMANENTE (no desactivación) — cada rol solo puede borrar lo que tiene
-    directamente debajo en DELETABLE_ROLES_BY. No borra Eventos ni AccessLogs asociados (son
-    datos de negocio reales, no cuentas de staff): las referencias a este staff se desvinculan
-    (quedan en NULL) en vez de arrastrar un borrado en cascada."""
-    if staff.role not in DELETABLE_ROLES_BY:
+    directamente debajo en DELETABLE_ROLES_BY (Fase 15: la unión de lo que permite CADA uno de sus
+    roles efectivos, por si tiene doble rol coordinador+comercial en cualquier orden). No borra
+    Eventos ni AccessLogs asociados (son datos de negocio reales, no cuentas de staff): las
+    referencias a este staff se desvinculan (quedan en NULL) en vez de arrastrar un borrado en
+    cascada."""
+    deletable_roles = set()
+    for r in effective_roles(staff):
+        deletable_roles |= set(DELETABLE_ROLES_BY.get(r, ()))
+    if not deletable_roles:
         raise HTTPException(status_code=403, detail="No autorizado")
 
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
@@ -165,8 +214,8 @@ async def delete_staff(
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if target.id == staff.id:
         raise HTTPException(status_code=400, detail="No puedes borrar tu propia cuenta")
-    if target.role not in DELETABLE_ROLES_BY[staff.role]:
-        raise HTTPException(status_code=403, detail=f"Un {staff.role} no puede borrar cuentas de rol '{target.role}'")
+    if target.role not in deletable_roles:
+        raise HTTPException(status_code=403, detail=f"No puedes borrar cuentas de rol '{target.role}'")
 
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.staff_user_id == target.id).delete()
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.authorized_by_id == target.id).update({"authorized_by_id": None})
