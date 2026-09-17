@@ -9,12 +9,15 @@
 <div class="golden-sidebar-backdrop" id="sidebarBackdrop"></div>
 <aside class="golden-sidebar">
   <nav>
-    <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}>🏢 Clientes</a>
+    <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}>🏢 Clientes - Cuentas</a>
     <a href="/eventos"{% if sidebar_active == "eventos" %} class="active"{% endif %}>📅 Eventos</a>
     <a href="/calendario"{% if sidebar_active == "calendario" %} class="active"{% endif %}>🗓️ Calendario</a>
-    {% if staff_role in ["admin", "super_admin"] %}
+    {# Bug real corregido (2026-09-16, pedido explícito): el link SIEMPRE estuvo oculto para
+       no-admin, aunque /configuracion (Apariencia) ya era accesible para cualquier staff desde
+       Sprint 2.4 (ver app/main.py: configuracion_page) — nadie con sidebar salvo admin/super_admin
+       tenía forma de llegar ahí. Apariencia es para todos; lo que sigue siendo admin+ es la
+       pestaña "Staff y Permisos" DENTRO del propio template, eso no cambia acá. #}
     <a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}>⚙️ Configuración</a>
-    {% endif %}
   </nav>
 </aside>
 <script>

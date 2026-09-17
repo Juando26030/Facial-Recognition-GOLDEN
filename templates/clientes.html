@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clientes | Golden Logísticas</title>
+    <title>Clientes - Cuentas | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -53,25 +53,25 @@
     <div class="golden-section-title" style="text-align:left; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:flex-end;">
       <div>
         <span>PANEL</span>
-        <h2>Clientes</h2>
+        <h2>Clientes - Cuentas</h2>
       </div>
       {% if staff_role != "coordinador" %}
-      <button class="small-btn primary" onclick="document.getElementById('newTenantForm').classList.toggle('open')">+ Nuevo cliente</button>
+      <button class="small-btn primary" onclick="document.getElementById('newTenantForm').classList.toggle('open')">+ Nuevo cliente/cuenta</button>
       {% endif %}
     </div>
 
-    <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre de cliente...">
+    <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre de cliente/cuenta...">
 
     <form id="newTenantForm" class="inline-form">
       <div class="badge-input-row">
-        <div class="badge-input-group"><label>Nombre del cliente</label><input type="text" name="name" required></div>
+        <div class="badge-input-group"><label>Nombre del cliente/cuenta</label><input type="text" name="name" required></div>
       </div>
       <div class="badge-input-row">
         <div class="badge-input-group"><label>Contacto - Nombre</label><input type="text" name="contact_name"></div>
         <div class="badge-input-group"><label>Contacto - Teléfono</label><input type="text" name="contact_phone"></div>
         <div class="badge-input-group"><label>Contacto - Correo</label><input type="email" name="contact_email"></div>
       </div>
-      <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Crear cliente</button>
+      <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Crear cliente/cuenta</button>
     </form>
 
     <div id="tenantsList" style="margin-top: 1.5rem;"></div>
@@ -113,6 +113,7 @@ function renderTenants(tenantsData) {
       </div>
       <div class="tenant-body" data-tenant-body>
         ${canCreate ? `<a href="/clientes/${t.id}/nuevo-evento" class="small-btn primary" style="display:inline-block; margin:1rem 0; text-decoration:none;">+ Nuevo evento</a>` : ''}
+        <input type="text" data-events-search placeholder="🔎 Buscar evento de este cliente/cuenta..." style="width:100%; padding:0.6rem 1rem; border:1px solid #ddd; border-radius:20px; font-size:0.85rem; margin-bottom:0.8rem;">
         <div data-events-container></div>
       </div>
     </div>
@@ -125,33 +126,12 @@ async function toggleTenant(tenantId, card) {
   if (body.classList.contains("open")) loadEventsForTenant(tenantId, card);
 }
 
-const tenantsListEl = document.getElementById("tenantsList");
-tenantsListEl.addEventListener("click", (e) => {
-  const toggleHead = e.target.closest('[data-action="toggle-tenant"]');
-  if (toggleHead) {
-    const card = toggleHead.closest(".tenant-card");
-    toggleTenant(card.dataset.tenantId, card);
-    return;
-  }
-  const deleteBtn = e.target.closest("[data-delete-event]");
-  if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
-});
-
-tenantsListEl.addEventListener("change", async (e) => {
-  const select = e.target.closest("[data-status-select]");
-  if (!select) return;
-  const newStatus = select.value;
-  const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
-  const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
-  if (!confirmed) { select.value = previousStatus; return; }
-  await setEventStatus(select.dataset.eventId, newStatus, select);
-});
-
-async function loadEventsForTenant(tenantId, card) {
-  const res = await fetch(`/api/events?tenant_id=${tenantId}`);
-  const events = await res.json();
-  const el = card.querySelector("[data-events-container]");
-  if (events.length === 0) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin eventos todavía.</p>'; return; }
+// Búsqueda de eventos DENTRO de la tarjeta de un cliente/cuenta (2026-09-17, pedido explícito:
+// un cliente con muchos eventos es difícil de recorrer a simple vista) — filtra en memoria sobre
+// lo que ya trajo loadEventsForTenant, sin pedir nada nuevo al backend.
+const tenantEventsCache = new WeakMap();
+function renderEventRows(events, el) {
+  if (!events.length) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin resultados.</p>'; return; }
   el.innerHTML = events.map(e => `
     <div class="event-row">
       <div>
@@ -169,6 +149,48 @@ async function loadEventsForTenant(tenantId, card) {
       </div>
     </div>
   `).join("");
+}
+
+const tenantsListEl = document.getElementById("tenantsList");
+tenantsListEl.addEventListener("click", (e) => {
+  const toggleHead = e.target.closest('[data-action="toggle-tenant"]');
+  if (toggleHead) {
+    const card = toggleHead.closest(".tenant-card");
+    toggleTenant(card.dataset.tenantId, card);
+    return;
+  }
+  const deleteBtn = e.target.closest("[data-delete-event]");
+  if (deleteBtn) { deleteEvent(deleteBtn.dataset.deleteEvent, deleteBtn.dataset.eventName, deleteBtn.dataset.eventStatus, deleteBtn); return; }
+});
+
+tenantsListEl.addEventListener("input", (e) => {
+  const searchInput = e.target.closest("[data-events-search]");
+  if (!searchInput) return;
+  const card = searchInput.closest(".tenant-card");
+  const events = tenantEventsCache.get(card) || [];
+  const el = card.querySelector("[data-events-container]");
+  const q = stripAccents(searchInput.value.trim()).toLowerCase();
+  if (!q) { renderEventRows(events, el); return; }
+  renderEventRows(events.filter(ev => stripAccents(`${ev.name} ${ev.event_code || ""}`).toLowerCase().includes(q)), el);
+});
+
+tenantsListEl.addEventListener("change", async (e) => {
+  const select = e.target.closest("[data-status-select]");
+  if (!select) return;
+  const newStatus = select.value;
+  const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
+  const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
+  if (!confirmed) { select.value = previousStatus; return; }
+  await setEventStatus(select.dataset.eventId, newStatus, select);
+});
+
+async function loadEventsForTenant(tenantId, card) {
+  const res = await fetch(`/api/events?tenant_id=${tenantId}`);
+  const events = await res.json();
+  tenantEventsCache.set(card, events);
+  const el = card.querySelector("[data-events-container]");
+  if (events.length === 0) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin eventos todavía.</p>'; return; }
+  renderEventRows(events, el);
 }
 
 async function setEventStatus(eventId, status, btn) {
@@ -198,8 +220,8 @@ newTenantForm.addEventListener("submit", async (ev) => {
   const res = await fetch("/api/tenants", {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
   });
-  if (res.ok) { ev.target.reset(); ev.target.classList.remove("open"); loadTenants(); showToast("Cliente creado", "success"); }
-  else { showToast("No se pudo crear el cliente", "error"); }
+  if (res.ok) { ev.target.reset(); ev.target.classList.remove("open"); loadTenants(); showToast("Cliente/Cuenta creado", "success"); }
+  else { showToast("No se pudo crear el cliente/cuenta", "error"); }
 });
 
 // Búsqueda: solo por nombre de cliente (pedido explícito), filtrado en memoria sobre lo que ya

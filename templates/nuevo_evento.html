@@ -56,8 +56,8 @@
           <div class="badge-input-group"><label>Hora fin montaje *</label><input type="text" class="clock-time" name="setup_time_end" required></div>
         </div>
         <div class="badge-input-row">
-          <div class="badge-input-group"><label>País *</label><input type="text" id="countryField" name="country" list="countryList" required autocomplete="off"></div>
-          <div class="badge-input-group"><label>Ciudad *</label><input type="text" name="city" list="cityList" required autocomplete="off"></div>
+          <div class="badge-input-group"><label>País *</label><input type="text" id="countryField" name="country" list="countryList" required autocomplete="off" value="Colombia"></div>
+          <div class="badge-input-group"><label>Ciudad *</label><input type="text" id="cityField" name="city" list="cityList" required autocomplete="off" value="Bogotá"></div>
         </div>
         <datalist id="cityList"></datalist>
         <div class="badge-input-row">
@@ -101,14 +101,18 @@ document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option v
 
 document.querySelectorAll(".clock-time").forEach((input) => attachClockPicker(input));
 
-document.getElementById("countryField").addEventListener("change", async (e) => {
-  const country = e.target.value.trim();
+async function loadCitiesFor(country) {
   const cityDatalist = document.getElementById("cityList");
   if (!country) { cityDatalist.innerHTML = ""; return; }
   const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
   const cities = res.ok ? await res.json() : [];
   cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join("");
-});
+}
+document.getElementById("countryField").addEventListener("change", (e) => loadCitiesFor(e.target.value.trim()));
+// País/Ciudad por defecto (2026-09-17, pedido explícito): Colombia/Bogotá, editable como
+// cualquier otro campo — solo precarga el datalist de ciudades para que el valor por defecto
+// tenga sus sugerencias listas igual que si el usuario acabara de elegir el país a mano.
+loadCitiesFor(document.getElementById("countryField").value.trim());
 
 let coordinatorsByLabel = {};
 async function loadCoordinatorOptions() {

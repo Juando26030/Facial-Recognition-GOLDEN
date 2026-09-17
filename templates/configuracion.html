@@ -58,7 +58,7 @@
         <div class="theme-row">
           <label for="themeFonts">Tipografía</label>
           <select id="themeFonts" class="theme-select">
-            <option value="">Original (Agrandir)</option>
+            <option value="" style="font-family: 'Agrandir', sans-serif;">Original (Agrandir)</option>
           </select>
         </div>
         <div style="display:flex; gap:10px; margin-top:1rem;">
@@ -84,10 +84,15 @@
 
   // Mismas 40 familias que el editor de escarapelas — expuestas por theme.js (cargado en <head>,
   // antes que este script) como window.GOLDEN_FONT_FAMILIES para no duplicar la lista acá.
+  // Cada <option> se ve en SU PROPIA fuente (2026-09-17, pedido explícito: "que desde el menú se
+  // vea cómo son", antes había que elegirla y aplicarla para verla) — hace falta el <link> de
+  // Google Fonts cargado de una vez, no solo cuando ya hay una guardada en localStorage.
+  if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();
   (window.GOLDEN_FONT_FAMILIES || []).forEach((f) => {
     const opt = document.createElement('option');
     opt.value = f;
     opt.innerText = f;
+    opt.style.fontFamily = `'${f}', sans-serif`;
     fontsSelect.appendChild(opt);
   });
 
