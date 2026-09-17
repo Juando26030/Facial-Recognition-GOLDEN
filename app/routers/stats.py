@@ -42,7 +42,12 @@ def _event_directory_users(db: Session, event_id: int, tenant_id: str):
 
 
 def _status_of(db: Session, event_id: int, user_id: str) -> str:
-    logs = db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).all()
+    # Mismo bug corregido en routers/api.py (2026-09-17, reportado en QA): "Actualizado" es una
+    # edición de perfil, no una acreditación — contarla acá inflaba "Registrado" en la variable de
+    # Estadísticas "Estado de registro" para alguien que en realidad nunca se presentó.
+    logs = db.query(AccessLog).filter(
+        AccessLog.event_id == event_id, AccessLog.user_id == user_id, AccessLog.record_type != "Actualizado"
+    ).all()
     if not logs:
         return "No registrado"
     return "Nuevo" if any(l.record_type == "Nuevo" for l in logs) else "Registrado"

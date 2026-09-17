@@ -210,19 +210,26 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str) -
 
 
 def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
-    """True si esta persona ya tiene al menos un AccessLog para ESTE evento — o sea, ya se
-    acreditó hoy por cualquier método (facial, cédula o alta manual). Se usa para pedir
-    confirmación antes de dejarla entrar una segunda vez por error/duplicado."""
+    """True si esta persona ya tiene al menos un AccessLog de ACREDITACIÓN real para ESTE evento
+    — o sea, ya se acreditó por cualquier método (facial, cédula o alta manual). Excluye
+    "Actualizado" (2026-09-17, mismo bug de fondo que el de get_all_users: ese record_type es solo
+    una edición de perfil vía update_user, no una acreditación — contarlo acá haría que alguien
+    que nunca se presentó, pero cuyo perfil ya se editó una vez, disparara el aviso de "ya
+    registrado" en su primer check-in real, cuando en realidad es el primero)."""
     return db.query(AccessLog).filter(
-        AccessLog.event_id == event_id, AccessLog.user_id == user_id
+        AccessLog.event_id == event_id, AccessLog.user_id == user_id, AccessLog.record_type != "Actualizado"
     ).first() is not None
 
 
 def _duplicate_warning(db: Session, event_id: int, user: "User") -> dict:
     # times_registered (2026-09-16, pedido explícito): cuántas veces YA se acreditó esta persona
     # en este evento, para que el mensaje diga "ya se registró N veces" en vez de un genérico
-    # "ya está registrada" — el operador decide con ese dato de más.
-    times_registered = db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user.id).count()
+    # "ya está registrada" — el operador decide con ese dato de más. Excluye "Actualizado"
+    # (2026-09-17, mismo bug de fondo que _already_checked_in/get_all_users): son ediciones de
+    # perfil, no acreditaciones — contarlas inflaría el número mostrado sin motivo real.
+    times_registered = db.query(AccessLog).filter(
+        AccessLog.event_id == event_id, AccessLog.user_id == user.id, AccessLog.record_type != "Actualizado"
+    ).count()
     return {
         "result": "DUPLICADO", "details": "Esta persona ya había sido registrada en este evento",
         "times_registered": times_registered,
@@ -259,10 +266,16 @@ async def get_all_users(
 
     result = []
     for u in users:
-        logs = logs_by_user.get(u.id, [])
+        # Bug real (2026-09-17, reportado en QA): "Actualizado" es un log de EDICIÓN de perfil,
+        # no de acreditación (ver update_user más abajo) — antes contaba igual que "Nuevo"/
+        # "Existente" para decidir el estado, así que revertir a alguien a "No registrado" desde
+        # el modal de Editar (que en el mismo clic, después del cambio de estado, también guarda
+        # el resto del formulario vía update_user) volvía a dejarlo en "Registrado" de una,
+        # porque ese mismo guardado crea un "Actualizado" nuevo apenas se borran los logs reales.
+        real_logs = [log for log in logs_by_user.get(u.id, []) if log.record_type != "Actualizado"]
         status = "No registrado"
-        if logs:
-            status = "Nuevo" if any(log.record_type == "Nuevo" for log in logs) else "Registrado"
+        if real_logs:
+            status = "Nuevo" if any(log.record_type == "Nuevo" for log in real_logs) else "Registrado"
 
         result.append({
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,

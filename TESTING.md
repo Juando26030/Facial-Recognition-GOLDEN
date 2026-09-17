@@ -760,6 +760,16 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 
 ---
 
+## 39. Sprint 2.4 Fase 17: bug de QA — revertir a "No registrado" no persistía
+
+| # | Caso | Pasos | Resultado esperado |
+|---|---|---|---|
+| S24-101 ❌ | Revertir a "No registrado" persiste de verdad | Acreditar a alguien, luego cambiar su estado a "No registrado" desde el modal de Editar y pulsar "Guardar cambios" | El Directorio muestra "No registrado" después de guardar — no vuelve a "Registrado" solo |
+| S24-102 ✅ | Un check-in real después del revert no da falso "ya registrado" | Tras revertir a alguien y guardar, escanear/buscar su cédula de nuevo | Acredita normal (`SÍ`), sin el aviso de `DUPLICADO` |
+| S24-103 ✅ | "Estado de registro" en Estadísticas coincide con el Directorio | Comparar la variable "Estado de registro" en gráficos contra la columna Estado del Directorio para la misma persona | Mismo valor en los dos lados |
+
+---
+
 ## Resumen de cobertura
 
 | Área | # de casos |
@@ -802,6 +812,7 @@ Cubre `static/js/directory.js` (`parseOldCedulaBarcode`, el segundo paso de `fas
 | Sprint 2.4 Fase 14 (destinatarios en los recordatorios del Calendario) | 4 |
 | Sprint 2.4 Fase 15 (doble rol coordinador+comercial) | 4 |
 | Sprint 2.4 Fase 16 (reporte Excel rediseñado) | 6 |
-| **Total** | **406** |
+| Sprint 2.4 Fase 17 (bug de QA: revertir a "No registrado" no persistía) | 3 |
+| **Total** | **409** |
 
 Actualiza este archivo cada vez que se agregue o cambie una funcionalidad — es un checklist vivo, no una foto única.

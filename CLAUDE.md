@@ -424,6 +424,21 @@ Pedido explícito: aplicar "Agrandir" (fuente comercial, no está en Google Font
 
 Verificado con `TestClient` en las 7 fases (más de 100 aserciones nuevas en total: render sweeps de cada template tocado, `node --check` del JS inline, permisos de cada endpoint nuevo/modificado, y para la Fase 16 en particular una verificación completa abriendo el `.xlsx` generado con `openpyxl` para confirmar columnas dinámicas, etiquetas de `Tipo de Registro`, hora exacta con segundos, y el formato/autofiltro reales) — toda la regresión de fases anteriores del sprint sigue en verde.
 
+## Sprint 2.4 (2026-09-17) — Fase 17: bug real de QA — revertir a "No registrado" no persistía
+
+Reportado en la primera pasada de QA real sobre toda esta ronda (ver `qa_sprint2_4_local.md` de Juan David): cambiar el estado de alguien de "Registrado" a "No registrado" desde el modal de Editar respondía 200 y mostraba "✓ Cambios guardados", pero el estado **no cambiaba** — seguía en "Registrado" tanto en la tabla como en `GET /api/users`.
+
+**Causa real**: `record_type="Actualizado"` (el log que `update_user` crea SIEMPRE después de guardar cualquier campo de perfil, para llevar un rastro de ediciones) se estaba contando IGUAL que `"Nuevo"`/`"Existente"` (acreditaciones reales) en tres lugares que calculan si alguien está "Registrado":
+1. `get_all_users` (`GET /api/users`, el Directorio en Vivo).
+2. `_already_checked_in` (el guardrail de `DUPLICADO` en `recognize`/`checkin_cedula`/`manual_register`).
+3. `_status_of` en `stats.py` (la variable "Estado de registro" de Estadísticas — mismo bug, no reportado por QA pero encontrado de paso al corregir los otros dos).
+
+El bug se volvió VISIBLE recién con la Fase 11 (unificar "Cambiar estado" dentro del mismo botón "Guardar cambios"): antes, cambiar el estado era una acción aparte que no disparaba automáticamente un guardado de perfil; ahora, el mismo clic que revierte el estado a "No registrado" (borra los `AccessLog` reales) SIEMPRE sigue con un `PATCH /api/users/{id}` (guardar el resto del formulario) — y ese segundo paso crea un `AccessLog("Actualizado")` nuevo, que los tres lugares de arriba volvían a contar como si la persona estuviera acreditada, deshaciendo el revert en el mismo clic que lo pedía.
+
+**Fix**: los tres lugares ahora excluyen explícitamente `record_type == "Actualizado"` al decidir si alguien está registrado — ese `record_type` es y siempre fue solo un rastro de auditoría de ediciones de perfil, nunca una prueba de asistencia (mismo criterio que ya se había aplicado en `reports.py` desde la Fase 16, al calcular el "primer registro real" de cada persona para el reporte — ahí sí se había hecho bien desde el principio).
+
+Verificado con `TestClient` reproduciendo EXACTAMENTE la secuencia del bug (acreditar → revertir a no_registrado vía el endpoint de estado → guardar perfil vía el endpoint genérico, igual que hace el modal unificado → confirmar que el estado sigue en "No registrado" y que un check-in real después no dispara un `DUPLICADO` falso por culpa del log "Actualizado" que quedó de por medio) — 6/6 casos, y la regresión completa del sprint (más de 180 aserciones de fases anteriores) sigue en verde.
+
 ## Sprint 2.4 (2026-09-16) — Fase 2: rediseño del flujo de acreditar por cédula
 
 Pedido explícito, confirmado con el usuario antes de implementar: escanear cédula debe comportarse **como una búsqueda** — la fila de esa persona aparece filtrada en el Directorio en Vivo con los botones normales (Editar/Imprimir), sin modal flotante aparte.
