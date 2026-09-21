@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, auth as auth_router, badges, calendar as calendar_router, cedula, event_report, events, parametros, signatures, staff, stats, tenants
+from app.routers import api, auth as auth_router, badges, calendar as calendar_router, cedula, event_docs, event_report, events, parametros, signatures, staff, stats, tenants
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -75,6 +75,7 @@ app.include_router(cedula.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
 app.include_router(parametros.router, prefix="/api")
 app.include_router(event_report.router, prefix="/api")
+app.include_router(event_docs.router, prefix="/api")
 app.include_router(signatures.router, prefix="/api")
 app.include_router(calendar_router.router, prefix="/api")
 
@@ -379,6 +380,18 @@ async def kiosk_parametros(event_id: int, request: Request, db: Session = Depend
     'comercial' excluido explícitamente (Sprint 2.4 Fase 6, 2026-09-16, pedido explícito) — queda
     por ENCIMA de 'coordinador' en STAFF_ROLES, así que min_role solo no alcanza para bloquearlo."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"])
+
+
+@app.get("/kiosk/{event_id}/documentos")
+async def kiosk_documents(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Documentos del Evento (reunión 2026-09-21, ítem 8) — coordinador+ (comercial incluida)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_documentos.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/legalizaciones")
+async def kiosk_expenses(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Legalizaciones / gastos del evento (reunión 2026-09-21, ítem 7) — coordinador+ (comercial incluida)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_legalizaciones.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/escarapela")

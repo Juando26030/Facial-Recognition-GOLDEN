@@ -1,5 +1,5 @@
 import json
-from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
@@ -360,3 +360,35 @@ class SavedBadgeTemplate(Base):
 
     def set_elements(self, data: list) -> None:
         self.elements_json = json.dumps(data) if data else None
+
+class EventDocument(Base):
+    """Documento general del evento (reunión 2026-09-21, ítem 8): nombre/referencia, descripción y
+    un archivo (línea Office o imágenes). El archivo vive en data/<tenant>/event_docs/<evento>/."""
+    __tablename__ = 'event_documents'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    original_filename = Column(String, nullable=False)
+    stored_path = Column(String, nullable=False)
+    mime_type = Column(String, nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    uploaded_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EventExpense(Base):
+    """Un gasto legalizado del evento (ítem 7): categoría, responsable, descripción, a quién aplica,
+    valor y foto de evidencia (opcional). El reporte Excel suma el total."""
+    __tablename__ = 'event_expenses'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    category = Column(String, nullable=False)
+    responsible = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    applies_to = Column(String, nullable=True)
+    amount = Column(Numeric(14, 2), nullable=False, default=0)
+    evidence_path = Column(String, nullable=True)
+    evidence_name = Column(String, nullable=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

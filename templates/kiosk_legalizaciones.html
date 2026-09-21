@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legalizaciones | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; overflow-x:auto; }
+        .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.9rem; align-items:end; }
+        .form-grid label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
+        .form-grid input, .form-grid textarea { width:100%; box-sizing:border-box; padding:0.6rem 0.8rem; border:1px solid #ddd; border-radius:10px; font-size:0.9rem; font-family:inherit; }
+        table.exp { width:100%; border-collapse:collapse; }
+        table.exp th, table.exp td { padding:0.6rem 0.5rem; border-bottom:1px solid #f0f0f0; font-size:0.85rem; text-align:left; vertical-align:top; }
+        table.exp th { color:#888; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.5px; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
+        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
+        .small-btn.danger { color:#a12631; border-color:#e5b8bd; }
+        .total-box { font-size:1.15rem; font-weight:700; color:var(--golden-dark); }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }};</script>
+
+<main class="golden-main">
+  <section class="golden-section">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2><span class="gradient-text">Legalizaciones</span> del Evento</h2>
+      </div>
+      <div class="app-container">
+        <form id="expForm" class="card">
+          <div class="form-grid">
+            <div><label>Categoría de gasto *</label><input type="text" name="category" list="catList" required placeholder="Ej. Transporte"><datalist id="catList"><option value="Transporte"><option value="Alimentación"><option value="Hospedaje"><option value="Materiales"><option value="Personal"><option value="Otros"></datalist></div>
+            <div><label>Persona responsable *</label><input type="text" name="responsible" required></div>
+            <div><label>Valor *</label><input type="number" name="amount" min="0" step="0.01" required placeholder="0"></div>
+            <div><label>A quién aplica</label><input type="text" name="applies_to" placeholder="Ej. Cliente, Golden, un proveedor..."></div>
+            <div><label>Foto de evidencia</label><input type="file" name="evidence" accept="image/*"></div>
+            <div style="grid-column:1/-1;"><label>Descripción</label><textarea name="description" rows="2"></textarea></div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; margin-top:0.8rem;">
+            <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.6rem;">Agregar gasto</button>
+          </div>
+        </form>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:0.8rem;">
+            <div><h4 style="margin:0; color:var(--golden-dark);">Gastos registrados</h4><div class="total-box">Total: <span id="totalAmount">0</span></div></div>
+            <a class="small-btn primary" href="/api/events/{{ event.id }}/expenses/report">⬇ Descargar reporte (Excel)</a>
+          </div>
+          <table class="exp">
+            <thead><tr><th>Fecha</th><th>Categoría</th><th>Responsable</th><th>Descripción</th><th>Aplica a</th><th style="text-align:right;">Valor</th><th>Evidencia</th><th></th></tr></thead>
+            <tbody id="expBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+const money = (n) => Number(n || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function loadExpenses() {
+  const res = await fetch(`/api/events/${EVENT_ID}/expenses`);
+  const data = res.ok ? await res.json() : { expenses: [], total: 0 };
+  document.getElementById('totalAmount').textContent = money(data.total);
+  document.getElementById('expBody').innerHTML = data.expenses.length ? data.expenses.map(x => `
+    <tr>
+      <td>${x.created_at ? new Date(x.created_at + 'Z').toLocaleDateString() : ''}</td>
+      <td>${esc(x.category)}</td><td>${esc(x.responsible)}</td><td>${esc(x.description)}</td><td>${esc(x.applies_to)}</td>
+      <td style="text-align:right; white-space:nowrap;">${money(x.amount)}</td>
+      <td>${x.has_evidence ? `<a href="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" target="_blank" rel="noopener"><img src="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" alt="evidencia" style="height:46px; border-radius:6px; border:1px solid #eee;"></a>` : '<span style="color:#bbb;">—</span>'}</td>
+      <td><button type="button" class="small-btn danger" data-del="${x.id}">Eliminar</button></td>
+    </tr>`).join('') : '<tr><td colspan="8" style="color:#888; text-align:center; padding:1.2rem;">Todavía no hay gastos registrados.</td></tr>';
+}
+
+document.getElementById('expForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type="submit"]');
+  setButtonLoading(btn, true, 'Guardando...');
+  const res = await fetch(`/api/events/${EVENT_ID}/expenses`, { method: 'POST', body: new FormData(e.target) });
+  setButtonLoading(btn, false);
+  if (res.ok) { e.target.reset(); showToast('Gasto agregado', 'success'); loadExpenses(); }
+  else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo guardar el gasto', 'error');
+});
+
+document.getElementById('expBody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-del]');
+  if (!btn) return;
+  if (!await showConfirm('¿Eliminar este gasto (y su evidencia)? No se puede deshacer.', { confirmLabel: 'Eliminar' })) return;
+  const res = await fetch(`/api/events/${EVENT_ID}/expenses/${btn.dataset.del}`, { method: 'DELETE' });
+  showToast(res.ok ? 'Gasto eliminado' : 'No se pudo eliminar', res.ok ? 'success' : 'error');
+  loadExpenses();
+});
+
+loadExpenses();
+</script>
+</body>
+</html>

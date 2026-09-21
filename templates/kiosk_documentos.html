@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentos del Evento | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
+        .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.9rem; align-items:end; }
+        .form-grid label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
+        .form-grid input, .form-grid textarea { width:100%; box-sizing:border-box; padding:0.6rem 0.8rem; border:1px solid #ddd; border-radius:10px; font-size:0.9rem; font-family:inherit; }
+        .doc-row { display:flex; justify-content:space-between; gap:1rem; align-items:center; padding:0.9rem 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
+        .doc-row:last-child { border-bottom:none; }
+        .doc-meta { font-size:0.78rem; color:#888; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
+        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
+        .small-btn.danger { color:#a12631; border-color:#e5b8bd; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }};</script>
+
+<main class="golden-main">
+  <section class="golden-section">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2>Documentos del <span class="gradient-text">Evento</span></h2>
+      </div>
+      <div class="app-container">
+        <form id="docForm" class="card">
+          <div class="form-grid">
+            <div><label>Nombre / referencia *</label><input type="text" name="name" required placeholder="Ej. Contrato de logística"></div>
+            <div><label>Archivo * (PDF, Word, Excel, PowerPoint, TXT, imágenes — máx. 25 MB)</label><input type="file" name="file" required></div>
+            <div style="grid-column:1/-1;"><label>Descripción</label><textarea name="description" rows="2" placeholder="De qué trata este documento"></textarea></div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; margin-top:0.8rem;">
+            <button type="submit" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.6rem;">Adjuntar documento</button>
+          </div>
+        </form>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:0.6rem;">
+            <h4 style="margin:0; color:var(--golden-dark);">Documentos adjuntos <span id="docCount" style="color:#aaa; font-weight:400;"></span></h4>
+            <a id="zipBtn" class="small-btn primary" href="/api/events/{{ event.id }}/documents/zip" style="display:none;">⬇ Descargar todos (ZIP)</a>
+          </div>
+          <div id="docList"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+function fmtSize(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1024)) + ' KB'; }
+
+async function loadDocs() {
+  const res = await fetch(`/api/events/${EVENT_ID}/documents`);
+  const docs = res.ok ? await res.json() : [];
+  document.getElementById('docCount').textContent = docs.length ? `(${docs.length})` : '';
+  document.getElementById('zipBtn').style.display = docs.length ? 'inline-block' : 'none';
+  document.getElementById('docList').innerHTML = docs.length ? docs.map(d => `
+    <div class="doc-row">
+      <div>
+        <strong>${esc(d.name)}</strong>
+        <div class="doc-meta">${esc(d.filename)} · ${fmtSize(d.size_bytes)} · ${d.created_at ? new Date(d.created_at + 'Z').toLocaleDateString() : ''}</div>
+        ${d.description ? `<div style="font-size:0.85rem; color:#555; margin-top:2px;">${esc(d.description)}</div>` : ''}
+      </div>
+      <div style="display:flex; gap:8px;">
+        <a class="small-btn" href="/api/events/${EVENT_ID}/documents/${d.id}/download">⬇ Descargar</a>
+        <button type="button" class="small-btn danger" data-del="${d.id}" data-name="${esc(d.name)}">Eliminar</button>
+      </div>
+    </div>`).join('') : '<p style="color:#888; font-size:0.9rem;">Todavía no hay documentos en este evento.</p>';
+}
+
+document.getElementById('docForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type="submit"]');
+  setButtonLoading(btn, true, 'Subiendo...');
+  const res = await fetch(`/api/events/${EVENT_ID}/documents`, { method: 'POST', body: new FormData(e.target) });
+  setButtonLoading(btn, false);
+  if (res.ok) { e.target.reset(); showToast('Documento adjuntado', 'success'); loadDocs(); }
+  else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo adjuntar', 'error');
+});
+
+document.getElementById('docList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-del]');
+  if (!btn) return;
+  if (!await showConfirm(`¿Eliminar el documento "${btn.dataset.name}"? No se puede deshacer.`, { confirmLabel: 'Eliminar' })) return;
+  const res = await fetch(`/api/events/${EVENT_ID}/documents/${btn.dataset.del}`, { method: 'DELETE' });
+  showToast(res.ok ? 'Documento eliminado' : 'No se pudo eliminar', res.ok ? 'success' : 'error');
+  loadDocs();
+});
+
+loadDocs();
+</script>
+</body>
+</html>

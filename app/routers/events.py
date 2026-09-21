@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.models import AccessLog, EVENT_STATUSES, Event, EventAttendee, EventStaffAuthorization, StaffUser, Tenant
+from app.models import AccessLog, BadgeTemplate, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, StaffUser, Tenant
+from app.routers.event_docs import delete_event_files
 from app.auth import effective_roles, get_current_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
@@ -452,6 +453,13 @@ async def delete_event(
 
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.event_id == event_id).delete()
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id).delete()
+    # Lo que se agregó después del primer arreglo de este endpoint y también apunta al evento por FK
+    # (mismo tipo de bug: sin esto, borrar un evento con plantilla de escarapela, parámetros,
+    # impresiones, documentos o gastos daba ForeignKeyViolation).
+    db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event_id).delete()
+    db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event_id).delete()
+    db.query(PrintLog).filter(PrintLog.event_id == event_id).delete()
+    delete_event_files(db, event_id)
     db.query(AccessLog).filter(AccessLog.event_id == event_id).update({"event_id": None})
     db.delete(event)
     db.commit()

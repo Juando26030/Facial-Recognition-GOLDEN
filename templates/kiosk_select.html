@@ -106,6 +106,16 @@
         <div class="mode-title">Usuarios del Evento</div>
         <div class="mode-sub">Cuentas temporales de digitador/cliente para este evento</div>
       </a>
+      <a href="/kiosk/{{ event.id }}/documentos" class="mode-card enabled">
+        <div class="mode-icon">📁</div>
+        <div class="mode-title">Documentos del Evento</div>
+        <div class="mode-sub">Adjunta archivos del evento y descárgalos todos juntos en un ZIP</div>
+      </a>
+      <a href="/kiosk/{{ event.id }}/legalizaciones" class="mode-card enabled">
+        <div class="mode-icon">🧾</div>
+        <div class="mode-title">Legalizaciones</div>
+        <div class="mode-sub">Gastos del evento con evidencia, y reporte con el total</div>
+      </a>
       {% if staff_role != "comercial" %}
       <a href="/kiosk/{{ event.id }}/parametros" class="mode-card enabled">
         <div class="mode-icon">⚙️</div>

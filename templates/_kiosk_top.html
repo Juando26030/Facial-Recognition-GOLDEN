@@ -1,0 +1,25 @@
+<!-- Encabezado común de las pantallas de un evento (sidebar + header + franja del evento). Lo usan las
+     secciones nuevas (Documentos, Legalizaciones, Áreas, Inventario...) para no copiar 25 líneas en cada
+     una — las pantallas más viejas todavía lo traen inline. Requiere: event, staff_name, staff_role. -->
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/kiosk/{{ event.id }}" class="golden-logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo">{% endif %}
+    </a>
+    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;">
+        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+      </form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+<div class="golden-event-strip">
+  <div class="golden-event-strip-inner">
+    <span><strong>Cliente/Cuenta:</strong> {{ event.tenant.name }}</span>
+    <span><strong>Evento:</strong> {{ event.name }}</span>
+    <span><strong>Código:</strong> {{ event.event_code }}</span>
+  </div>
+</div>
