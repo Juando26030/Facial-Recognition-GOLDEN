@@ -152,6 +152,34 @@ def _words(text: Optional[str]) -> list:
     return re.findall(r"\w+", _strip_accents(text or "").lower())
 
 
+def _edit_distance(a: str, b: str) -> int:
+    """Distancia de edición con transposición de letras adyacentes contada como 1 (Damerau/OSA):
+    "jaun" vs "juan" = 1, "yuliana" vs "juliana" = 1. Mismo algoritmo que `editDistance` en
+    static/js/directory.js (se mantienen iguales a propósito, como el resto de la búsqueda)."""
+    prev2, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if prev2 is not None and i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+    return prev[len(b)]
+
+
+def _typo_match(a: str, b: str) -> bool:
+    """Tolera errores de tipeo (reunión 2026-09-21, ítem 2): palabras de 4+ letras con hasta 1
+    error (4-6 letras) o 2 (7+), comparando contra la palabra entera Y contra su inicio del mismo
+    largo (así "julia" también encuentra "yuliana" mientras se sigue escribiendo). Palabras de
+    3 letras o menos no se toleran: "ana"/"ani" no deben confundirse."""
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) < 4:
+        return False
+    limit = 1 if len(short) <= 6 else 2
+    return _edit_distance(short, long_) <= limit or _edit_distance(short, long_[:len(short)]) <= limit
+
+
 def _matches_by_word_prefix(haystack: str, query: str) -> bool:
     """True si CADA palabra de `query` es prefijo de ALGUNA palabra de `haystack`
     (ej. 'c' o 'cor' matchean 'Corferias', pero 'ferias' no) — como cualquier buscador

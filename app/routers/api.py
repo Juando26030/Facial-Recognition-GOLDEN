@@ -18,7 +18,7 @@ from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app.routers import parametros
-from app.routers.events import _words
+from app.routers.events import _typo_match, _words
 
 
 def _missing_required_fields(field_configs: list, values: dict) -> list:
@@ -349,8 +349,10 @@ def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
     scanned_words = _words(scanned_name)
     if not db_words or not scanned_words:
         return False
+    # Ítem 2 (reunión 2026-09-21): además del prefijo en ambas direcciones, tolera errores de
+    # tipeo ("Yuliana" en base vs "Juliana" escaneado) — ver `_typo_match`.
     return all(
-        any(sw.startswith(dw) or dw.startswith(sw) for sw in scanned_words)
+        any(sw.startswith(dw) or dw.startswith(sw) or _typo_match(dw, sw) for sw in scanned_words)
         for dw in db_words
     )
 

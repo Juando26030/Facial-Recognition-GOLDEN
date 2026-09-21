@@ -21,11 +21,48 @@
     return stripAccents(text).toLowerCase().match(/\w+/g) || [];
   }
 
+  /* Distancia de edición con transposición (Damerau/OSA): "jaun" vs "juan" = 1. Misma lógica que
+     `_edit_distance` en routers/events.py. */
+  function editDistance(a, b) {
+    let prev2 = null, prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+        if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      }
+      prev2 = prev; prev = cur;
+    }
+    return prev[b.length];
+  }
+
+  /* ¿La palabra escrita `qw` corresponde a la palabra guardada `hw`? (ítem 2, reunión 2026-09-21)
+     - prefijo normal ("sebas" -> "sebastian"),
+     - apodo al revés: se escribe la forma larga y en base hay la corta de 4+ letras ("sebastian" -> "sebas"),
+     - error de tipeo: 4-6 letras con 1 error, 7+ con 2 ("juliana" -> "yuliana", "jaun" -> "juan"),
+       comparando también contra el inicio de la palabra para que funcione mientras se escribe. */
+  function wordMatches(qw, hw) {
+    if (hw.startsWith(qw)) return true;
+    if (hw.length >= 4 && qw.startsWith(hw)) return true;
+    const shortLen = Math.min(qw.length, hw.length);
+    if (shortLen < 4) return false;
+    const limit = shortLen <= 6 ? 1 : 2;
+    return editDistance(qw, hw) <= limit || editDistance(qw, hw.slice(0, qw.length)) <= limit;
+  }
+
+  /* Cada palabra escrita debe corresponder a alguna palabra distinta de lo guardado, en cualquier
+     orden: "David Juzga" encuentra "Juan David Ramirez Juzga". */
   function matchesWordPrefix(haystack, query) {
     const queryWords = wordsOf(query);
     if (!queryWords.length) return false;
-    const haystackWords = wordsOf(haystack);
-    return queryWords.every(qw => haystackWords.some(hw => hw.startsWith(qw)));
+    const available = wordsOf(haystack);
+    return queryWords.every(qw => {
+      const idx = available.findIndex(hw => wordMatches(qw, hw));
+      if (idx === -1) return false;
+      available.splice(idx, 1);
+      return true;
+    });
   }
 
   /* Cédula vieja (código de barras) — Sprint 2 Parte 2, 2.1: el lector manda un CSV plano
