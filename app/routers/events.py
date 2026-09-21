@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.models import AccessLog, BadgeTemplate, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, StaffUser, Tenant
+from app.models import AccessLog, BadgeTemplate, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.auth import effective_roles, get_current_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
@@ -89,6 +89,7 @@ class EventUpdate(BaseModel):
     status: Optional[str] = None
     auto_print_badge: Optional[bool] = None
     auto_register: Optional[bool] = None
+    super_event_id: Optional[int] = None  # ítem 19; null explícito = sacarlo de su superevento
 
 
 def _serialize(e: Event) -> dict:
@@ -112,6 +113,8 @@ def _serialize(e: Event) -> dict:
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
+        "super_event_id": e.super_event_id,
+        "super_event_name": e.super_event.name if e.super_event else None,
         "report_uploaded": bool(e.report_pdf_path),  # ítem 6: bombillo verde/naranja
         "report_uploaded_at": e.report_uploaded_at.isoformat() if e.report_uploaded_at else None,
     }
@@ -331,6 +334,11 @@ async def update_event(
         ).first()
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
+
+    if data.super_event_id is not None:
+        sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
+        if not sup or sup.tenant_id != event.tenant_id:
+            raise HTTPException(status_code=400, detail="El superevento debe existir y ser del mismo cliente que el evento")
 
     effective_start = data.start_date if data.start_date is not None else event.start_date
     effective_end = data.end_date if data.end_date is not None else event.end_date

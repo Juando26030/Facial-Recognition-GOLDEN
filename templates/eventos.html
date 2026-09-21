@@ -88,7 +88,7 @@ function eventCard(e) {
       <div>
         <h3>${reportBulbHtml(e)} ${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</h3>
         <div class="meta">${esc(e.tenant_name)} · ${esc(e.city) || ""} ${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)}</div>
-        <div class="meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}</div>
+        <div class="meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}${e.super_event_name ? ` · 🔗 Superevento: ${esc(e.super_event_name)}` : ""}</div>
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
         <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">

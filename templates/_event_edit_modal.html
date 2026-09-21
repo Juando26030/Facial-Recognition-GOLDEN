@@ -57,6 +57,15 @@
         {% endif %}
       </div>
       <div class="ee-row">
+        <!-- Superevento (ítem 19): agrupa eventos independientes del mismo cliente; solo cruza el aviso de asistencia entre hermanos. -->
+        <div class="ee-group"><label>Superevento (agrupa eventos hermanos del mismo cliente)</label>
+          <div style="display:flex; gap:6px;">
+            <select name="super_event_id" id="eeSuperEvent"><option value="">— Ninguno —</option></select>
+            <button type="button" class="ee-btn" id="eeNewSuper" title="Crear superevento">+ Nuevo</button>
+          </div>
+        </div>
+      </div>
+      <div class="ee-row">
         <div class="ee-group" style="max-width:110px;">
           <label>Color de pañoleta</label>
           <input type="color" name="bandana_color" style="height:40px; padding:2px; cursor:pointer;">
@@ -161,9 +170,27 @@
       : 'Pendiente de subir';
   }
 
+  const superSelect = document.getElementById('eeSuperEvent');
+  async function loadSuperEvents(selectedId) {
+    const res = await fetch(`/api/super-events?tenant_id=${encodeURIComponent(current.tenant_id)}`);
+    const list = res.ok ? await res.json() : [];
+    superSelect.innerHTML = '<option value="">— Ninguno —</option>' + list.map(s => `<option value="${s.id}">${s.name} (${s.events} eventos)</option>`).join('');
+    superSelect.value = selectedId ? String(selectedId) : '';
+  }
+  document.getElementById('eeNewSuper').addEventListener('click', async () => {
+    const name = await showPrompt('Nombre del superevento (ej. Congreso X):', { confirmLabel: 'Crear' });
+    if (!name) return;
+    const res = await fetch('/api/super-events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenant_id: current.tenant_id, name }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.detail || 'No se pudo crear el superevento', 'error'); return; }
+    await loadSuperEvents(data.id);
+    showToast('Superevento creado — guarda los cambios para asignarlo a este evento', 'success');
+  });
+
   window.openEventEditModal = async function (ev, onSaved) {
     await staffOptionsReady;
     current = ev; savedCallback = onSaved || null;
+    await loadSuperEvents(ev.super_event_id);
     form.event_id.value = ev.id;
     form.name.value = ev.name || '';
     form.start_date.value = ev.start_date || '';
@@ -214,6 +241,7 @@
     const payload = Object.fromEntries(new FormData(form).entries());
     const eventId = payload.event_id;
     delete payload.event_id;
+    payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
 
     if (payload.coordinator_label) {
       const id = coordinatorsByLabel[payload.coordinator_label];

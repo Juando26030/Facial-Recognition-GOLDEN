@@ -20,6 +20,7 @@ from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app.routers import parametros, signatures
+from app.routers.super_events import sibling_attendance
 from app.routers.events import _typo_match, _words
 
 
@@ -462,6 +463,9 @@ async def checkin_cedula(
         "role": user.role, "entity": user.entity, "phone": user.phone,
         "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
     }
+    # Superevento (ítem 19): si ya asistió a un evento hermano, se avisa. Acá no hay que "capturar de
+    # nuevo" nada: la persona ya existe y este flujo solo la vincula/acredita en este evento.
+    data["sibling_events"] = [s["event_name"] for s in sibling_attendance(db, event, user.id)]
 
     if not event.auto_register and not confirm:
         return {"result": "FOUND_PENDING", "data": data}

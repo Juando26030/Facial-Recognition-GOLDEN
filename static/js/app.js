@@ -214,7 +214,35 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         window.FieldRender.initSignatures(regForm);
         window.FieldRender.watchEmail(regForm, () => regForm.querySelector('[name="id"]').value.trim());
+        // Superevento (ítem 19): al terminar de escribir la cédula, avisa si la persona ya asistió a un
+        // evento hermano y ofrece SOLO vincularla (sus datos ya están guardados) en vez de capturarlos de nuevo.
+        const idInput = regForm.querySelector('[name="id"]');
+        const siblingBanner = document.createElement('div');
+        siblingBanner.style.cssText = 'display:none; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; border-radius:10px; padding:10px 12px; font-size:0.82rem; margin-top:6px;';
+        idInput.insertAdjacentElement('afterend', siblingBanner);
+        idInput.addEventListener('blur', async () => {
+            const id = idInput.value.trim();
+            siblingBanner.style.display = 'none';
+            if (!id) return;
+            const res = await fetch(`/api/users/${encodeURIComponent(id)}/sibling-check?event_id=${EVENT_ID}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.siblings.length || !data.user) return;
+            const who = `${data.user.first_name || ''} ${data.user.last_name || ''}`.trim();
+            siblingBanner.innerHTML = `⚠️ <strong></strong> ya asistió a <span class="sib-events"></span> (mismo superevento «<span class="sib-super"></span>»). Sus datos ya están guardados. <button type="button" class="sib-link" style="margin-left:6px; border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:14px; padding:4px 12px; font-weight:700; cursor:pointer;">Solo vincular a este evento</button> <span style="color:#8a6d1a;">(o sigue llenando el formulario para actualizar sus datos)</span>`;
+            siblingBanner.querySelector('strong').textContent = who || id;
+            siblingBanner.querySelector('.sib-events').textContent = data.siblings.map(s => s.event_name).join(', ');
+            siblingBanner.querySelector('.sib-super').textContent = data.super_event_name || '';
+            siblingBanner.querySelector('.sib-link').addEventListener('click', async () => {
+                const fd = new FormData();
+                fd.append('event_id', EVENT_ID); fd.append('id', id);
+                fd.append('first_name', data.user.first_name || ''); fd.append('last_name', data.user.last_name || '');
+                await submitManualRegister(fd, siblingBanner.querySelector('.sib-link'));
+            });
+            siblingBanner.style.display = 'block';
+        });
         regForm.addEventListener('reset', () => setTimeout(() => {
+            siblingBanner.style.display = 'none';
             regForm.querySelectorAll('.sig-canvas').forEach(c => c.getContext('2d').clearRect(0, 0, c.width, c.height));
             regForm.querySelectorAll('.sig-wrap').forEach(w => { w._dirty = false; });
         }, 0));

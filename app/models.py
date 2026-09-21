@@ -215,6 +215,7 @@ class Event(Base):
     facial_enabled = Column(Boolean, default=False, nullable=False)  # 2026-09-21: se enciende solo (nunca se apaga solo) la primera vez que se sube un roster con zip de fotos para este evento — ver bulk_register. Decide si /kiosk/{id}/registro muestra el escáner de cámara o se comporta como cédula tradicional.
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
+    super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente
     report_uploaded_at = Column(DateTime, nullable=True)
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1
@@ -227,6 +228,7 @@ class Event(Base):
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
     commercial = relationship("StaffUser", foreign_keys=[commercial_staff_id])
+    super_event = relationship("SuperEvent", back_populates="events")
 
     def get_optional_labels(self) -> dict:
         return json.loads(self.optional_field_labels) if self.optional_field_labels else {}
@@ -392,3 +394,16 @@ class EventExpense(Base):
     evidence_name = Column(String, nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SuperEvent(Base):
+    """Evento "padre" (reunión 2026-09-21, ítem 19) que agrupa eventos hijos independientes de un
+    mismo cliente. Solo agrupa: parámetros, registro y reportes de cada hijo siguen separados."""
+    __tablename__ = 'super_events'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
+    name = Column(String, nullable=False)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    events = relationship("Event", back_populates="super_event")

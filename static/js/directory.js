@@ -525,6 +525,9 @@
           // explícito) — la "confirmación" es ver la fila aparecer filtrada en el Directorio,
           // como si se hubiera buscado por cédula a mano.
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          if (data.data.sibling_events && data.data.sibling_events.length) {
+            showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
+          }
           if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id);
           await reload();
           if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
@@ -551,6 +554,9 @@
             actionTd.appendChild(acreditarBtn);
           }
           showToast(`${data.data.first_name} ${data.data.last_name} encontrado(a) — confirma con "Acreditar" en la fila`, 'success');
+          if (data.data.sibling_events && data.data.sibling_events.length) {
+            showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos ya están guardados`, 'success');
+          }
           return;
         }
         // NO_MATCH: ya NO se ofrece alta manual automática (2026-09-16, pedido explícito — para
