@@ -207,6 +207,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const regForm = document.getElementById('regForm');
     if(regForm) {
+        // Consentimiento/firma (ítems 16 y 10): se dibujan desde FieldRender, igual que en Editar.
+        (window.FIELD_CONFIGS || []).forEach((cfg) => {
+            const slot = regForm.querySelector(`[data-render-control="${cfg.key}"]`);
+            if (slot) slot.innerHTML = window.FieldRender.renderControl(cfg, '');
+        });
+        window.FieldRender.initSignatures(regForm);
+        regForm.addEventListener('reset', () => setTimeout(() => {
+            regForm.querySelectorAll('.sig-canvas').forEach(c => c.getContext('2d').clearRect(0, 0, c.width, c.height));
+            regForm.querySelectorAll('.sig-wrap').forEach(w => { w._dirty = false; });
+        }, 0));
+
         async function submitManualRegister(formData, btn) {
             try {
                 const res = await fetch('/api/register', { method: 'POST', body: formData });
@@ -236,6 +247,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast(data.message || data.error, data.error ? "error" : "success");
                 if (!data.error) {
                     const registeredId = formData.get('id');
+                    try { await window.FieldRender.saveSignatures(regForm, registeredId); }
+                    catch (e) { showToast(e.message, 'error'); }
                     regForm.reset();
                     if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
                     if (window.directorySearch) window.directorySearch.reload();

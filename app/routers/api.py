@@ -17,7 +17,7 @@ from app.models import User, AccessLog, EventAttendee, PrintLog, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app.routers import parametros
+from app.routers import parametros, signatures
 from app.routers.events import _typo_match, _words
 
 
@@ -31,7 +31,7 @@ def _missing_required_fields(field_configs: list, values: dict) -> list:
         if not cfg["required"]:
             continue
         value = values.get(cfg["key"])
-        if cfg["field_type"] == "boolean":
+        if cfg["field_type"] in ("boolean", "consent"):
             ok = str(value).strip().lower() in ("true", "1", "si", "sí")
         else:
             ok = value is not None and str(value).strip() != ""
@@ -530,6 +530,7 @@ async def update_user_cedula(
 
     db.delete(user)
 
+    signatures.rename_signatures(event.tenant_id, old_id, new_id)
     old_photo = os.path.join(_known_faces_dir(event.tenant_id), f"{old_id}.jpg")
     if os.path.exists(old_photo):
         os.rename(old_photo, os.path.join(_known_faces_dir(event.tenant_id), f"{new_id}.jpg"))
@@ -572,6 +573,7 @@ async def delete_user_from_event(
 
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
     db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+    signatures.delete_signatures(event.tenant_id, event_id, user_id)
     db.flush()
 
     other_attendee = db.query(EventAttendee).filter(

@@ -270,7 +270,9 @@ class BadgeTemplate(Base):
         self.elements_json = json.dumps(data) if data else None
 
 
-FIELD_TYPES = ("text_short", "text_long", "select", "boolean")
+# consent = casilla con texto de política debajo (ítem 16); signature = lienzo de firma (ítem 10).
+# Ambos solo aplican a campos opcionales (opcional_N).
+FIELD_TYPES = ("text_short", "text_long", "select", "boolean", "consent", "signature")
 CHART_TYPES = ("bar", "pie", "histogram", "line")
 
 
@@ -295,6 +297,7 @@ class EventFieldConfig(Base):
     default_chart_type = Column(String, nullable=True)
     label = Column(String, nullable=True)  # nombre a mostrar SOLO en este evento (NULL = el de por defecto) — reunión 2026-09-21, ítem 3a
     sort_order = Column(Integer, nullable=True)  # posición en Registrar/Editar (NULL = orden por defecto) — ítem 4
+    help_text = Column(Text, nullable=True)  # texto de política/consentimiento (solo consent/signature) — ítems 16 y 10
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

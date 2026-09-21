@@ -98,6 +98,11 @@
         { value: 'histogram', label: 'Histograma' },
         { value: 'line', label: 'Líneas' },
     ];
+    // Solo para campos opcionales (opcional_N) — el backend también lo exige.
+    const EXTRA_TYPE_OPTIONS = [
+        { value: 'consent', label: 'Consentimiento (check + política)' },
+        { value: 'signature', label: 'Captura de firma' },
+    ];
 
     function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
     function optionsHtml(list, selected) {
@@ -116,8 +121,9 @@
             <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:#999; text-align:center;">☰</td>
             <td><input type="text" class="cfg-label" maxlength="60" value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
             <td><input type="checkbox" class="cfg-required" ${cfg.required || locked ? 'checked' : ''} ${locked ? 'disabled' : ''} style="width:18px; height:18px;"></td>
-            <td><select class="cfg-field-type">${optionsHtml(FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
-            <td><textarea class="cfg-options" placeholder="Una opción por línea" style="display:${cfg.field_type === 'select' ? 'block' : 'none'};">${esc((cfg.options || []).join('\n'))}</textarea></td>
+            <td><select class="cfg-field-type">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
+            <td><textarea class="cfg-options" placeholder="Una opción por línea" style="display:${cfg.field_type === 'select' ? 'block' : 'none'};">${esc((cfg.options || []).join('\n'))}</textarea>
+                <textarea class="cfg-help" placeholder="Texto de la política / consentimiento (se muestra junto al check o a la firma)" style="display:${['consent', 'signature'].includes(cfg.field_type) ? 'block' : 'none'};">${esc(cfg.help_text || '')}</textarea></td>
             <td><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-chart-type" style="display:${cfg.default_stat_enabled ? 'block' : 'none'};">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
         `;
@@ -130,8 +136,10 @@
         tr.addEventListener('dragstart', (e) => { tr.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', cfg.key); });
         const typeSelect = tr.querySelector('.cfg-field-type');
         const optionsBox = tr.querySelector('.cfg-options');
+        const helpBox = tr.querySelector('.cfg-help');
         typeSelect.addEventListener('change', () => {
             optionsBox.style.display = typeSelect.value === 'select' ? 'block' : 'none';
+            helpBox.style.display = ['consent', 'signature'].includes(typeSelect.value) ? 'block' : 'none';
         });
         const statCheck = tr.querySelector('.cfg-stat-enabled');
         const chartSelect = tr.querySelector('.cfg-chart-type');
@@ -169,7 +177,7 @@
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || 'No se pudo agregar el campo');
             tbody.appendChild(buildRow({
-                key: data.key, label: data.label, default_label: data.label, required: false, field_type: 'text_short',
+                key: data.key, label: data.label, default_label: data.label, help_text: '', required: false, field_type: 'text_short',
                 options: [], default_stat_enabled: false, default_chart_type: null,
             }));
             input.value = '';
@@ -196,6 +204,7 @@
                     required: tr.querySelector('.cfg-required').checked,
                     field_type: fieldType,
                     options: fieldType === 'select' ? options : [],
+                    help_text: tr.querySelector('.cfg-help').value.trim(),
                     default_stat_enabled: statEnabled,
                     default_chart_type: statEnabled ? tr.querySelector('.cfg-chart-type').value : null,
                 };

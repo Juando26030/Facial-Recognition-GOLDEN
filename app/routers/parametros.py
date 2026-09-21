@@ -59,13 +59,14 @@ def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig]) ->
     if row is None or locked:
         return {
             "key": key, "label": label, "default_label": default_label, "locked": locked,
-            "required": False, "field_type": "text_short", "options": [],
+            "required": False, "field_type": "text_short", "options": [], "help_text": "",
             "default_stat_enabled": False, "default_chart_type": None,
         }
     return {
         "key": key, "label": label, "default_label": default_label, "locked": False,
         "required": row.required, "field_type": row.field_type,
-        "options": row.get_options(), "default_stat_enabled": row.default_stat_enabled,
+        "options": row.get_options(), "help_text": row.help_text or "",
+        "default_stat_enabled": row.default_stat_enabled,
         "default_chart_type": row.default_chart_type,
     }
 
@@ -161,6 +162,13 @@ async def upsert_field_config(
     if field_type not in FIELD_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de campo inválido — debe ser uno de: {', '.join(FIELD_TYPES)}")
 
+    help_text = str(data.get("help_text") or "").strip()
+    if field_type in ("consent", "signature"):
+        if not field_key.startswith("opcional_"):
+            raise HTTPException(status_code=400, detail="Consentimiento y firma solo se pueden usar en campos opcionales")
+        if not help_text:
+            raise HTTPException(status_code=400, detail="Escribe el texto de política/consentimiento que acompaña a este campo")
+
     options = [str(o).strip() for o in (data.get("options") or []) if str(o).strip()]
     if field_type == "select" and not options:
         raise HTTPException(status_code=400, detail="Un campo de lista desplegable necesita al menos una opción")
@@ -170,6 +178,7 @@ async def upsert_field_config(
     if default_stat_enabled and default_chart_type not in CHART_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de gráfico inválido — debe ser uno de: {', '.join(CHART_TYPES)}")
 
+    row.help_text = help_text if field_type in ("consent", "signature") else None
     row.required = bool(data.get("required", False))
     row.field_type = field_type
     row.set_options(options if field_type == "select" else [])

@@ -288,6 +288,8 @@
                             <label>{{ cfg.label }}{% if cfg.required or cfg.locked %} *{% endif %}</label>
                             {% if cfg.locked %}
                             <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField"{% endif %} required>
+                            {% elif cfg.field_type in ("consent", "signature") %}
+                            <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "text_long" %}
                             <textarea name="{{ cfg.key }}" rows="3" {% if cfg.required %}required{% endif %} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem; font-family:inherit;"></textarea>
                             {% elif cfg.field_type == "select" %}

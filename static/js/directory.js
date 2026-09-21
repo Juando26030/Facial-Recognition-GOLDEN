@@ -135,11 +135,14 @@
           ${isAdmin ? '<p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>' : ''}
         </div>`;
     }
-    function configuredValueOf(key) {
+    function configuredValueOf(key, cfg) {
+      // La firma es por EVENTO (archivo aparte): el valor guardado en extra_fields no dice si
+      // ESTE evento la tiene — la existencia se comprueba al dibujar el lienzo (initSignatures).
+      if (cfg && cfg.field_type === 'signature') return '';
       return Object.prototype.hasOwnProperty.call(user, key) ? user[key] : extras[key];
     }
     function configuredFieldRow(cfg) {
-      const control = window.FieldRender.renderControl(cfg, configuredValueOf(cfg.key));
+      const control = window.FieldRender.renderControl(cfg, configuredValueOf(cfg.key, cfg));
       return `<div style="margin-bottom:0.8rem;">
         <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(cfg.label)}${cfg.required ? ' *' : ''}</label>
         ${control}
@@ -184,6 +187,9 @@
     `;
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+    window.FieldRender.initSignatures(box, {
+      existingUrl: (key) => `/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/signature/${key}`,
+    });
 
     function close() { overlay.remove(); }
     // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
@@ -283,6 +289,8 @@
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         if (res.ok) {
+          try { await window.FieldRender.saveSignatures(box, currentId); }
+          catch (e) { showToast(e.message, 'error'); }
           showToast('Cambios guardados', 'success');
           close();
           if (window.directorySearch) window.directorySearch.reload();

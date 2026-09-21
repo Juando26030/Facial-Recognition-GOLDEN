@@ -1,4 +1,7 @@
+import os
+
 import pandas as pd
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
@@ -67,7 +70,9 @@ class ReportManager:
         event = db.query(Event).filter(Event.id == event_id).first()
         optional_labels = sorted(event.get_optional_labels().items(), key=lambda kv: int(kv[0].split("_")[1])) if event else []
         # Etiquetas propias de este evento (Parámetros, ítem 3a) — solo cambian el encabezado.
-        custom = {r.field_key: r.label for r in db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event_id) if r.label}
+        config_rows = db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event_id).all()
+        custom = {r.field_key: r.label for r in config_rows if r.label}
+        field_types = {r.field_key: r.field_type for r in config_rows}
         optional_labels = [(k, custom.get(k, label)) for k, label in optional_labels]
         users = _event_directory_users(db, event_id, tenant_id)
 
@@ -103,10 +108,18 @@ class ReportManager:
             (key, custom.get(key, label)) for key, label in BASE_FIELDS
             if key in ALWAYS_INCLUDED_BASE_KEYS or any(_has_value(row[key]) for row in raw_rows)
         ]
-        optional_columns = [
-            (key, label) for key, label in optional_labels
-            if any(_has_value(row["extras"].get(key)) for row in raw_rows)
-        ]
+        def _signature_file(user_id, key):
+            # Firmas (ítem 10): un archivo PNG por evento/persona/campo, ver routers/signatures.py.
+            path = os.path.join("data", tenant_id, "signatures", str(event_id), f"{user_id}__{key}.png")
+            return path if os.path.isfile(path) else None
+
+        def _column_used(key):
+            if field_types.get(key) == "signature":
+                return any(_signature_file(row["id"], key) for row in raw_rows)
+            return any(_has_value(row["extras"].get(key)) for row in raw_rows)
+
+        optional_columns = [(key, label) for key, label in optional_labels if _column_used(key)]
+        signature_keys = {key for key, _ in optional_columns if field_types.get(key) == "signature"}
         all_headers = [label for _, label in base_columns] + [label for _, label in optional_columns] + \
             ["Tipo de Registro", "Fecha de Registro", "Hora de Registro"]
 
@@ -117,7 +130,12 @@ class ReportManager:
                 value = row[key] or ""
                 out[label] = value.upper() if key in UPPERCASE_KEYS and isinstance(value, str) else value
             for key, label in optional_columns:
-                out[label] = row["extras"].get(key, "")
+                if key in signature_keys:
+                    out[label] = "Firmado" if _signature_file(row["id"], key) else ""
+                elif field_types.get(key) in ("boolean", "consent"):
+                    out[label] = "Sí" if str(row["extras"].get(key, "")).strip().lower() == "true" else "No"
+                else:
+                    out[label] = row["extras"].get(key, "")
 
             log = row["log"]
             if log:
@@ -170,6 +188,21 @@ class ReportManager:
                 for value in df[header]:
                     max_len = max(max_len, len(str(value)) if value is not None else 0)
                 ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 3, 45)
+
+            # Firmas: la imagen queda pegada en la celda de esa persona (fila más alta para verla).
+            for key, label in optional_columns:
+                if key not in signature_keys:
+                    continue
+                col_idx = headers.index(label) + 1
+                ws.column_dimensions[get_column_letter(col_idx)].width = 24
+                for offset, row in enumerate(raw_rows, start=1):
+                    sig = _signature_file(row["id"], key)
+                    if not sig:
+                        continue
+                    img = XLImage(sig)
+                    img.width, img.height = 150, 56
+                    ws.add_image(img, f"{get_column_letter(col_idx)}{header_row + offset}")
+                    ws.row_dimensions[header_row + offset].height = 46
 
             last_data_row = header_row + len(df)
             ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{last_data_row}"
