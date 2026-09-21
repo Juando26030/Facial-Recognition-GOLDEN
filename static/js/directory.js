@@ -87,9 +87,16 @@
     function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
     function fieldRow(label, name, value, type) {
       return `<div style="margin-bottom:0.8rem;">
-        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${label}</label>
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(label)} *</label>
         <input type="${type || 'text'}" name="${name}" value="${esc(value)}" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
       </div>`;
+    }
+    function cedulaRow(label) {
+      return `<div style="margin-bottom:0.8rem;">
+          <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(label)}</label>
+          <input type="text" id="editModalCedulaField" value="${esc(user.id)}" ${isAdmin ? '' : 'disabled'} style="width:100%; box-sizing:border-box; border:1px solid ${isAdmin ? '#ccc' : '#ddd'}; border-radius:8px; padding:8px 10px; font-size:0.95rem; ${isAdmin ? '' : 'background:#f5f5f5; color:#888;'}">
+          ${isAdmin ? '<p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>' : ''}
+        </div>`;
     }
     function configuredValueOf(key) {
       return Object.prototype.hasOwnProperty.call(user, key) ? user[key] : extras[key];
@@ -102,7 +109,13 @@
       </div>`;
     }
 
-    const configuredHtml = fieldConfigs.map(configuredFieldRow).join('');
+    // Todos los campos en el orden definido en Parámetros del Evento (ítems 3a/4): la identidad
+    // (nombres/apellidos/cédula) entra en la misma lista, con la etiqueta propia del evento.
+    const configuredHtml = fieldConfigs.map((cfg) => {
+      if (cfg.key === 'id') return cedulaRow(cfg.label);
+      if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
+      return configuredFieldRow(cfg);
+    }).join('');
     const isRegistered = user.status !== 'No registrado';
     const originalStatus = isRegistered ? 'registrado' : 'no_registrado';
 
@@ -113,15 +126,6 @@
     box.innerHTML = `
       <h4 style="margin-top:0; color:var(--golden-dark);">Editar persona</h4>
       <form id="editModalForm">
-        <div style="display:flex; gap:0.8rem;">
-          <div style="flex:1;">${fieldRow('Nombres', 'first_name', user.first_name)}</div>
-          <div style="flex:1;">${fieldRow('Apellidos', 'last_name', user.last_name)}</div>
-        </div>
-        <div style="margin-bottom:0.8rem;">
-          <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Cédula</label>
-          <input type="text" id="editModalCedulaField" value="${esc(user.id)}" ${isAdmin ? '' : 'disabled'} style="width:100%; box-sizing:border-box; border:1px solid ${isAdmin ? '#ccc' : '#ddd'}; border-radius:8px; padding:8px 10px; font-size:0.95rem; ${isAdmin ? '' : 'background:#f5f5f5; color:#888;'}">
-          ${isAdmin ? '<p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Corrige un error de digitación (ej. se acreditó por nombre porque la cédula quedó mal). Afecta a esta persona en TODOS los eventos de este cliente, no solo este.</p>' : ''}
-        </div>
         ${configuredHtml}
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
           <button type="button" id="editModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
@@ -230,7 +234,7 @@
 
       const payload = { first_name: val('first_name'), last_name: val('last_name') };
       const newExtras = {};
-      fieldConfigs.forEach((cfg) => {
+      fieldConfigs.filter((cfg) => !cfg.locked).forEach((cfg) => {
         if (Object.prototype.hasOwnProperty.call(user, cfg.key)) payload[cfg.key] = val(cfg.key);
         else newExtras[cfg.key] = val(cfg.key);
       });

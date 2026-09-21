@@ -20,10 +20,18 @@ from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffU
 
 router = APIRouter()
 
+# Identidad (reunión 2026-09-21, ítems 3a y 4): siempre texto corto obligatorio — NO se puede
+# cambiar su tipo/obligatoriedad ni generar estadística, pero SÍ su etiqueta y su posición en el
+# formulario (`locked=True` en la serialización).
+IDENTITY_FIELDS = [
+    ("first_name", "Nombres"),
+    ("last_name", "Apellidos"),
+    ("id", "Cédula"),
+]
+IDENTITY_KEYS = {k for k, _ in IDENTITY_FIELDS}
+
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
-# Event.optional_field_labels). A propósito NO incluye id/first_name/last_name (identidad,
-# siempre texto corto obligatorio, no configurable) ni "status" (no es un campo de formulario,
-# ver stats.py: _FIXED_VARIABLES).
+# Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
 CONFIGURABLE_FIXED_FIELDS = [
     ("role", "Cargo"),
     ("entity", "Entidad"),
@@ -34,22 +42,29 @@ CONFIGURABLE_FIXED_FIELDS = [
 
 
 def _configurable_fields(event: Event):
-    """(key, label) de todo lo configurable para este evento, en el orden en que debe mostrarse."""
-    fields = list(CONFIGURABLE_FIXED_FIELDS)
+    """(key, label por defecto) de todo lo configurable para este evento, en el orden POR DEFECTO
+    (la identidad primero, igual que el formulario de siempre)."""
+    fields = list(IDENTITY_FIELDS) + list(CONFIGURABLE_FIXED_FIELDS)
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
         fields.append((key, label))
     return fields
 
 
-def _serialize(key: str, label: str, row: Optional[EventFieldConfig]) -> dict:
-    if row is None:
+def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig]) -> dict:
+    """`label` = lo que se muestra en este evento (el propio si lo personalizaron, si no el de por
+    defecto); `default_label` se conserva para poder mostrarlo como sugerencia en Parámetros."""
+    locked = key in IDENTITY_KEYS
+    label = (row.label if row and row.label else default_label)
+    if row is None or locked:
         return {
-            "key": key, "label": label, "required": False, "field_type": "text_short",
-            "options": [], "default_stat_enabled": False, "default_chart_type": None,
+            "key": key, "label": label, "default_label": default_label, "locked": locked,
+            "required": False, "field_type": "text_short", "options": [],
+            "default_stat_enabled": False, "default_chart_type": None,
         }
     return {
-        "key": key, "label": label, "required": row.required, "field_type": row.field_type,
+        "key": key, "label": label, "default_label": default_label, "locked": False,
+        "required": row.required, "field_type": row.field_type,
         "options": row.get_options(), "default_stat_enabled": row.default_stat_enabled,
         "default_chart_type": row.default_chart_type,
     }
@@ -59,9 +74,23 @@ def field_configs_for_event(db: Session, event: Event) -> list:
     """Lista completa de campos configurables de este evento, cada uno con su config real si
     existe o los valores por defecto si todavía no se guardó nada — así quien consuma esto
     (frontend, o la validación de manual_register/update_user) siempre ve la lista completa sin
-    filas 'faltantes'. Usado también por stats.py para saber qué gráficos generar solos."""
+    filas 'faltantes'. Usado también por stats.py para saber qué gráficos generar solos.
+
+    Viene ORDENADA (ítem 4): por `sort_order` si alguien reordenó; los campos sin posición guardada
+    (ej. un opcional agregado después de reordenar) van al final, en su orden por defecto."""
     rows = {r.field_key: r for r in db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event.id)}
-    return [_serialize(key, label, rows.get(key)) for key, label in _configurable_fields(event)]
+    ordered = []
+    for idx, (key, label) in enumerate(_configurable_fields(event)):
+        row = rows.get(key)
+        position = row.sort_order if row and row.sort_order is not None else 1000 + idx
+        ordered.append((position, _serialize(key, label, row)))
+    return [cfg for _, cfg in sorted(ordered, key=lambda pair: pair[0])]
+
+
+def field_labels_for_event(db: Session, event: Event) -> dict:
+    """{field_key: etiqueta efectiva} — atajo para reportes/estadísticas/plantillas que solo
+    necesitan el nombre a mostrar."""
+    return {cfg["key"]: cfg["label"] for cfg in field_configs_for_event(db, event)}
 
 
 @router.post("/events/{event_id}/optional-fields")
@@ -109,6 +138,25 @@ async def upsert_field_config(
     if field_key not in valid_keys:
         raise HTTPException(status_code=400, detail="Ese campo no existe o no es configurable en este evento")
 
+    label = str(data.get("label") or "").strip()[:60] or None
+    sort_order = data.get("sort_order")
+    if sort_order is not None and not isinstance(sort_order, int):
+        raise HTTPException(status_code=400, detail="sort_order debe ser un entero")
+
+    row = db.query(EventFieldConfig).filter_by(event_id=event_id, field_key=field_key).first()
+    if not row:
+        row = EventFieldConfig(event_id=event_id, field_key=field_key)
+        db.add(row)
+    row.label = label
+    row.sort_order = sort_order
+
+    if field_key in IDENTITY_KEYS:
+        # Identidad: solo etiqueta y posición. Tipo/obligatoriedad/estadística siguen fijos.
+        row.required, row.field_type, row.default_stat_enabled, row.default_chart_type = False, "text_short", False, None
+        row.set_options([])
+        db.commit()
+        return _serialize(field_key, dict(_configurable_fields(event))[field_key], row)
+
     field_type = data.get("field_type", "text_short")
     if field_type not in FIELD_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de campo inválido — debe ser uno de: {', '.join(FIELD_TYPES)}")
@@ -122,11 +170,6 @@ async def upsert_field_config(
     if default_stat_enabled and default_chart_type not in CHART_TYPES:
         raise HTTPException(status_code=400, detail=f"Tipo de gráfico inválido — debe ser uno de: {', '.join(CHART_TYPES)}")
 
-    row = db.query(EventFieldConfig).filter_by(event_id=event_id, field_key=field_key).first()
-    if not row:
-        row = EventFieldConfig(event_id=event_id, field_key=field_key)
-        db.add(row)
-
     row.required = bool(data.get("required", False))
     row.field_type = field_type
     row.set_options(options if field_type == "select" else [])
@@ -134,5 +177,4 @@ async def upsert_field_config(
     row.default_chart_type = default_chart_type
     db.commit()
 
-    label = dict(_configurable_fields(event))[field_key]
-    return _serialize(field_key, label, row)
+    return _serialize(field_key, dict(_configurable_fields(event))[field_key], row)

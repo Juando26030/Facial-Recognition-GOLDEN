@@ -105,7 +105,7 @@
                 <div class="badge-form-title">Directorio en Vivo</div>
                 <div class="directory-search-bar">
                     <div class="badge-input-group">
-                        <label>Buscar por cédula</label>
+                        <label>Buscar por {{ field_labels.id|lower }}</label>
                         <input type="text" id="searchCedula" placeholder="Cédula" autocomplete="off" inputmode="numeric">
                     </div>
                     <div class="badge-input-group">
@@ -113,14 +113,14 @@
                         <input type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off">
                     </div>
                     <div class="badge-input-group">
-                        <label>Buscar por entidad</label>
+                        <label>Buscar por {{ field_labels.entity|lower }}</label>
                         <input type="text" id="searchEntidad" placeholder="Entidad" autocomplete="off">
                     </div>
                 </div>
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>Acción</th><th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th>
+                            <th>Acción</th><th>{{ field_labels.id }}</th><th>{{ field_labels.first_name }}</th><th>{{ field_labels.last_name }}</th><th>{{ field_labels.opt_1 }}</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -217,7 +217,7 @@
                 {% endif %}
                 <div class="directory-search-bar">
                     <div class="badge-input-group">
-                        <label>Buscar por cédula</label>
+                        <label>Buscar por {{ field_labels.id|lower }}</label>
                         <input type="text" id="searchCedula" placeholder="Escanea o escribe la cédula" autocomplete="off" inputmode="numeric"
                                {% if event.status != "en_proceso" %}disabled{% endif %}>
                     </div>
@@ -226,7 +226,7 @@
                         <input type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off">
                     </div>
                     <div class="badge-input-group">
-                        <label>Buscar por entidad</label>
+                        <label>Buscar por {{ field_labels.entity|lower }}</label>
                         <input type="text" id="searchEntidad" placeholder="Entidad" autocomplete="off">
                     </div>
                     <div class="badge-input-group">
@@ -244,7 +244,7 @@
                 <table class="golden-table">
                     <thead>
                         <tr>
-                            <th>Acción</th><th>ID</th><th>Nombres</th><th>Apellidos</th><th>Tipo Asistente</th><th>Estado</th>
+                            <th>Acción</th><th>{{ field_labels.id }}</th><th>{{ field_labels.first_name }}</th><th>{{ field_labels.last_name }}</th><th>{{ field_labels.opt_1 }}</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
@@ -278,35 +278,17 @@
                         <input type="file" id="regScanMrzInput" accept="image/*" style="display:none;">
                     </div>
 
-                    <div class="badge-input-row">
-                        <div class="badge-input-group">
-                            <label>Nombres</label>
-                            <input type="text" name="first_name" required placeholder="Ej. Juan David">
-                        </div>
-                        <div class="badge-input-group">
-                            <label>Apellidos</label>
-                            <input type="text" name="last_name" required placeholder="Ej. Pérez Gómez">
-                        </div>
-                    </div>
-
-                    <div class="badge-input-row">
-                        <div class="badge-input-group">
-                            <label>Número de ID (Cédula)</label>
-                            <input type="text" name="id" id="manualIdField" required>
-                        </div>
-                    </div>
-
-                    <!-- Campos configurables (Parámetros del Evento, 2026-09-16): las 5 variables
-                         fijas (Cargo/Entidad/Teléfono/Correo/Tipo de Asistente) + cada "opcional_N"
-                         ya rotulado (Event.optional_field_labels) — cada uno con el tipo de control,
-                         obligatoriedad y opciones que se hayan definido en
-                         /kiosk/{{ event.id }}/parametros (por defecto: texto corto, opcional). Más
-                         los que el operador agregue aquí mismo sobre la marcha con el botón de abajo. -->
+                    <!-- Todos los campos (identidad + fijos + opcionales) en UNA lista ordenada según
+                         Parámetros del Evento (reunión 2026-09-21, ítems 3a/4): etiqueta propia del
+                         evento y orden arrastrable. La identidad (nombres/apellidos/cédula) conserva
+                         sus `name`/`id` de siempre — otros scripts (lector de cédula, OCR) los buscan. -->
                     <div id="dynamicFieldsContainer">
                         {% for cfg in field_configs %}
                         <div class="badge-input-group" data-field-key="{{ cfg.key }}" style="margin-top:0.8rem;">
-                            <label>{{ cfg.label }}{% if cfg.required %} *{% endif %}</label>
-                            {% if cfg.field_type == "text_long" %}
+                            <label>{{ cfg.label }}{% if cfg.required or cfg.locked %} *{% endif %}</label>
+                            {% if cfg.locked %}
+                            <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField"{% endif %} required>
+                            {% elif cfg.field_type == "text_long" %}
                             <textarea name="{{ cfg.key }}" rows="3" {% if cfg.required %}required{% endif %} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem; font-family:inherit;"></textarea>
                             {% elif cfg.field_type == "select" %}
                             <select name="{{ cfg.key }}" {% if cfg.required %}required{% endif %}>

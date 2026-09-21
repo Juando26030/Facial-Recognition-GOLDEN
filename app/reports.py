@@ -3,7 +3,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app.models import User, AccessLog, EventAttendee, Event
+from app.models import User, AccessLog, EventAttendee, Event, EventFieldConfig
 
 # Sprint 2.4 Fase 16 (2026-09-17, pedido explícito): reemplaza el reporte de formato fijo/legacy
 # (columnas "Tipo_Pago"/"usuario"/etc, pensadas para un integrador externo que ya no aplica) por
@@ -66,6 +66,9 @@ class ReportManager:
     def generate_excel_report(db: Session, event_id: int, tenant_id: str, output_path: str):
         event = db.query(Event).filter(Event.id == event_id).first()
         optional_labels = sorted(event.get_optional_labels().items(), key=lambda kv: int(kv[0].split("_")[1])) if event else []
+        # Etiquetas propias de este evento (Parámetros, ítem 3a) — solo cambian el encabezado.
+        custom = {r.field_key: r.label for r in db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event_id) if r.label}
+        optional_labels = [(k, custom.get(k, label)) for k, label in optional_labels]
         users = _event_directory_users(db, event_id, tenant_id)
 
         # Primer log de REGISTRO real por persona (excluye "Actualizado" — esas son ediciones de
@@ -97,7 +100,7 @@ class ReportManager:
         # abajo: pd.DataFrame([]) (lista vacía de filas) no tiene columnas SIN IMPORTAR qué diga
         # esta lista, rompiendo get_column_letter(0) — hay que pasarle `columns=` explícito.
         base_columns = [
-            (key, label) for key, label in BASE_FIELDS
+            (key, custom.get(key, label)) for key, label in BASE_FIELDS
             if key in ALWAYS_INCLUDED_BASE_KEYS or any(_has_value(row[key]) for row in raw_rows)
         ]
         optional_columns = [

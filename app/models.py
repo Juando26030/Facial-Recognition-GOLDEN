@@ -293,6 +293,8 @@ class EventFieldConfig(Base):
     options_json = Column(Text)  # solo con sentido si field_type == 'select'
     default_stat_enabled = Column(Boolean, default=False, nullable=False)
     default_chart_type = Column(String, nullable=True)
+    label = Column(String, nullable=True)  # nombre a mostrar SOLO en este evento (NULL = el de por defecto) — reunión 2026-09-21, ítem 3a
+    sort_order = Column(Integer, nullable=True)  # posición en Registrar/Editar (NULL = orden por defecto) — ítem 4
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

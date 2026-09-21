@@ -290,6 +290,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "optional_labels_json": optional_labels_json,
         "field_configs": field_configs,
         "field_configs_json": field_configs_json,
+        "field_labels": {cfg["key"]: cfg["label"] for cfg in field_configs},
         "sidebar_active": "eventos",
     }
     if extra_context:

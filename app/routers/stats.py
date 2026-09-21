@@ -77,8 +77,9 @@ async def list_stats_variables(
     result = []
     for k, label in variables:
         cfg = defaults_by_key.get(k)
+        cfg = defaults_by_key.get(k)
         result.append({
-            "key": k, "label": label,
+            "key": k, "label": cfg["label"] if cfg else label,  # etiqueta propia del evento (ítem 3a)
             "default_stat_enabled": bool(cfg and cfg["default_stat_enabled"]),
             "default_chart_type": cfg["default_chart_type"] if cfg else None,
         })

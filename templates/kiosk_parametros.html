@@ -13,6 +13,7 @@
         .params-table th { color:#888; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; }
         .params-table select, .params-table textarea { width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:6px 8px; font-size:0.88rem; font-family:inherit; }
         .params-table textarea { min-height:60px; }
+        .params-table tr.dragging { opacity:0.4; background:#fff8e1; }
         .params-field-name { font-weight:700; color:var(--golden-dark); }
     </style>
 </head>
@@ -53,12 +54,13 @@
       <div class="app-container">
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
           <p style="color:#888; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
-            Define, para cada variable del alta manual y edición de este evento, si es obligatoria, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (cédula, nombres, apellidos) no se configura acá — siempre es texto corto obligatorio.
+            Define, para cada campo de este evento: cómo se llama (solo aquí, no cambia el nombre en otros eventos), en qué orden aparece en "Registrar nuevo" y "Editar persona" (arrastra las filas con ☰), si es obligatorio, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (nombres, apellidos, cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.
           </p>
           <table class="params-table">
             <thead>
               <tr>
-                <th style="min-width:140px;">Campo</th>
+                <th style="width:34px;" title="Arrastra para reordenar"></th>
+                <th style="min-width:180px;">Campo (nombre en este evento)</th>
                 <th style="width:100px;">Obligatorio</th>
                 <th style="min-width:160px;">Tipo de campo</th>
                 <th style="min-width:180px;">Opciones (lista desplegable)</th>
@@ -107,14 +109,25 @@
     function buildRow(cfg) {
         const tr = document.createElement('tr');
         tr.dataset.key = cfg.key;
+        const locked = !!cfg.locked;
+        const defaultLabel = cfg.default_label || cfg.label;
+        const customLabel = cfg.label !== defaultLabel ? cfg.label : '';
         tr.innerHTML = `
-            <td><span class="params-field-name">${esc(cfg.label)}</span></td>
-            <td><input type="checkbox" class="cfg-required" ${cfg.required ? 'checked' : ''} style="width:18px; height:18px;"></td>
+            <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:#999; text-align:center;">☰</td>
+            <td><input type="text" class="cfg-label" maxlength="60" value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
+            <td><input type="checkbox" class="cfg-required" ${cfg.required || locked ? 'checked' : ''} ${locked ? 'disabled' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-field-type">${optionsHtml(FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="cfg-options" placeholder="Una opción por línea" style="display:${cfg.field_type === 'select' ? 'block' : 'none'};">${esc((cfg.options || []).join('\n'))}</textarea></td>
             <td><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-chart-type" style="display:${cfg.default_stat_enabled ? 'block' : 'none'};">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
         `;
+        if (locked) {
+            tr.querySelectorAll('.cfg-field-type, .cfg-options, .cfg-stat-enabled, .cfg-chart-type').forEach(el => { el.disabled = true; });
+        }
+        const handle = tr.querySelector('.drag-handle');
+        handle.addEventListener('mousedown', () => { tr.draggable = true; });
+        tr.addEventListener('dragend', () => { tr.draggable = false; tr.classList.remove('dragging'); });
+        tr.addEventListener('dragstart', (e) => { tr.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', cfg.key); });
         const typeSelect = tr.querySelector('.cfg-field-type');
         const optionsBox = tr.querySelector('.cfg-options');
         typeSelect.addEventListener('change', () => {
@@ -130,6 +143,19 @@
 
     (window.FIELD_CONFIGS || []).forEach(cfg => tbody.appendChild(buildRow(cfg)));
 
+    // Reordenar arrastrando (ítem 4): la fila arrastrada se coloca antes de la que quede justo
+    // debajo del puntero; el orden final se guarda con "Guardar cambios" (sort_order).
+    tbody.addEventListener('dragover', (e) => {
+        const dragging = tbody.querySelector('tr.dragging');
+        if (!dragging) return;
+        e.preventDefault();
+        const after = Array.from(tbody.querySelectorAll('tr:not(.dragging)')).find(row => {
+            const box = row.getBoundingClientRect();
+            return e.clientY < box.top + box.height / 2;
+        });
+        tbody.insertBefore(dragging, after || null);
+    });
+
     document.getElementById('addOptionalFieldBtn').addEventListener('click', async () => {
         const input = document.getElementById('newOptionalFieldName');
         const label = input.value.trim();
@@ -143,7 +169,7 @@
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || 'No se pudo agregar el campo');
             tbody.appendChild(buildRow({
-                key: data.key, label: data.label, required: false, field_type: 'text_short',
+                key: data.key, label: data.label, default_label: data.label, required: false, field_type: 'text_short',
                 options: [], default_stat_enabled: false, default_chart_type: null,
             }));
             input.value = '';
@@ -159,12 +185,14 @@
         setButtonLoading(btn, true, 'Guardando...');
         try {
             const rows = Array.from(tbody.querySelectorAll('tr'));
-            for (const tr of rows) {
+            for (const [position, tr] of rows.entries()) {
                 const key = tr.dataset.key;
                 const fieldType = tr.querySelector('.cfg-field-type').value;
                 const options = tr.querySelector('.cfg-options').value.split('\n').map(s => s.trim()).filter(Boolean);
                 const statEnabled = tr.querySelector('.cfg-stat-enabled').checked;
                 const body = {
+                    label: tr.querySelector('.cfg-label').value.trim(),
+                    sort_order: position,
                     required: tr.querySelector('.cfg-required').checked,
                     field_type: fieldType,
                     options: fieldType === 'select' ? options : [],
