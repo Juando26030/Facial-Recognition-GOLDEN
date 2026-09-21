@@ -34,7 +34,7 @@ def _missing_required_fields(field_configs: list, values: dict) -> list:
         if not cfg["required"]:
             continue
         value = values.get(cfg["key"])
-        if cfg["field_type"] in ("boolean", "consent"):
+        if cfg["field_type"] in ("boolean", "consent", "certificate"):
             ok = str(value).strip().lower() in ("true", "1", "si", "sí")
         else:
             ok = value is not None and str(value).strip() != ""
@@ -204,7 +204,11 @@ def _known_faces_dir(tenant_id: str) -> str:
     return path
 
 
-def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None) -> None:
+def _truthy(value) -> bool:
+    return str(value).strip().lower() in ("true", "1", "si", "sí", "x", "yes")
+
+
+def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None) -> None:
     """Asegura que esta persona quede en la lista del evento, se haya precargado o no (ej. un
     'Nuevo' dado de alta sobre la marcha el día del evento) — ver EventAttendee en models.py.
     `categories` (ítem 14): si viene, fija las categorías de la persona EN este evento."""
@@ -214,6 +218,8 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, c
         db.add(row)
     if categories is not None:
         row.set_categories(categories)
+    if certificate is not None:
+        row.certificate = certificate  # ítem 5: ¿le corresponde certificado en este evento?
 
 
 def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
@@ -290,7 +296,9 @@ async def get_all_users(
         return []
 
     users = db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(all_ids)).all()
-    categories_by_user = {a.user_id: a.get_categories() for a in db.query(EventAttendee).filter(EventAttendee.event_id == event_id)}
+    attendee_rows = db.query(EventAttendee).filter(EventAttendee.event_id == event_id).all()
+    categories_by_user = {a.user_id: a.get_categories() for a in attendee_rows}
+    certificate_by_user = {a.user_id: bool(a.certificate) for a in attendee_rows}
     event_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id).all()
     logs_by_user = {}
     for log in event_logs:
@@ -317,6 +325,7 @@ async def get_all_users(
             # persona para poder mostrarlos/editarlos (antes se editaba inline, sin necesitarlos).
             "extra_fields": u.get_extras(),
             "categories": categories_by_user.get(u.id, []),
+            "certificate": certificate_by_user.get(u.id, False),
         })
 
     return result
@@ -498,6 +507,9 @@ async def update_user(
         categories = data.pop("categories", None)  # ítem 14: por evento (EventAttendee), no una columna de User
         if categories is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, _clean_categories(event, categories))
+        certificate = data.pop("certificate", None)  # ítem 5: también por evento
+        if certificate is not None:
+            _upsert_attendee(db, event.id, user.id, event.tenant_id, certificate=_truthy(certificate))
         extra_fields = data.pop("extra_fields", None)
         if extra_fields is not None:
             merged = user.get_extras()
@@ -521,6 +533,8 @@ async def update_user(
             "role": user.role, "entity": user.entity, "phone": user.phone,
             "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
         }
+        attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+        final_values["certificate"] = "true" if (attendee and attendee.certificate) else ""
         missing = _missing_required_fields(field_configs, final_values)
         if missing:
             raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
@@ -700,7 +714,7 @@ async def update_registration_status(
 async def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
-    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None),
+    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None),
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
@@ -749,7 +763,7 @@ async def manual_register(
         return {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
 
     field_configs = parametros.field_configs_for_event(db, event)
-    final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, **extras}
+    final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, "certificate": certificate or "", **extras}
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
         raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
@@ -789,7 +803,7 @@ async def manual_register(
         registration_method="tradicional",  # Fase 16: alta manual, formulario
     )
     db.add(log)
-    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories)
+    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None)
     db.commit()
 
     if img_array is not None:
@@ -1070,9 +1084,11 @@ async def bulk_register(
                 # Categorías (ítem 14): columna "categoria"/"categorias" (con o sin tilde), varias
                 # separadas por coma/;/|. Las que el evento no conocía se agregan solas.
                 raw_categories = next((clean_row[k] for k in ("categoria", "categorias", "categoría", "categorías") if clean_row.get(k)), None)
+                raw_certificate = clean_row.get('certificado')
                 _upsert_attendee(
                     db, event.id, identificador, event.tenant_id,
                     _clean_categories(event, raw_categories, auto_add=True) if raw_categories else None,
+                    certificate=_truthy(raw_certificate) if raw_certificate else None,
                 )
                 db.flush()
 

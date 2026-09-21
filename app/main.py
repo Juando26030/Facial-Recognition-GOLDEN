@@ -404,6 +404,19 @@ async def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depe
     return _resolve_kiosk_page(event_id, request, db, "badge_editor.html", min_role="coordinador", exclude_roles=["comercial"])
 
 
+@app.get("/kiosk/{event_id}/certificado")
+async def kiosk_certificate_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Diseñador del certificado (reunión 2026-09-21, ítem 5): el MISMO editor de escarapelas, en modo
+    certificado (A4 horizontal). Solo si el módulo está activado en Parámetros; comercial excluida."""
+    return _resolve_kiosk_page(event_id, request, db, "badge_editor.html", min_role="coordinador", exclude_roles=["comercial"], extra_context={"template_kind": "certificate"})
+
+
+@app.get("/kiosk/{event_id}/certificados")
+async def kiosk_certificates(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Sección Certificados (ítem 5): con el evento Finalizado, genera el ZIP de PDFs."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_certificados.html", min_role="coordinador", exclude_roles=["comercial"])
+
+
 @app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
 async def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: Session = Depends(get_db)):
     """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en

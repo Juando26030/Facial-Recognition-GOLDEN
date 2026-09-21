@@ -60,6 +60,19 @@ class SaveAsIn(BaseModel):
     name: str
 
 
+def _default_certificate_elements(event) -> list:
+    """Diseño inicial del certificado (A4 horizontal, 297x210 mm): título, 'se otorga a', nombre y
+    apellido de la persona y el nombre del evento — el coordinador lo edita a su gusto."""
+    base = {"rotation": 0, "font_family": "Playfair Display", "font_color": "#0A0E2E", "align": "center", "x": 20, "width": 257}
+    return [
+        {**base, "id": "cert_titulo", "type": "text_static", "content": "CERTIFICADO DE PARTICIPACIÓN", "y": 30, "height": 16, "z_index": 1, "font_size": 30, "font_weight": "bold"},
+        {**base, "id": "cert_otorga", "type": "text_static", "content": "Se otorga el presente certificado a", "y": 65, "height": 10, "z_index": 2, "font_size": 16, "font_weight": "normal"},
+        {**base, "id": "cert_nombre", "type": "text_variable", "variable": "first_name", "y": 82, "height": 16, "z_index": 3, "font_size": 32, "font_weight": "bold"},
+        {**base, "id": "cert_apellido", "type": "text_variable", "variable": "last_name", "y": 100, "height": 16, "z_index": 4, "font_size": 32, "font_weight": "bold"},
+        {**base, "id": "cert_evento", "type": "text_static", "content": f"por su participación en {event.name}", "y": 132, "height": 12, "z_index": 5, "font_size": 18, "font_weight": "normal"},
+    ]
+
+
 DEFAULT_ELEMENTS = [
     {"id": "el_nombre", "type": "text_variable", "variable": "first_name", "x": 5, "y": 10, "width": 52, "height": 8,
      "rotation": 0, "z_index": 1, "font_family": "Roboto", "font_size": 14, "font_color": "#0A0E2E",
@@ -73,17 +86,31 @@ DEFAULT_ELEMENTS = [
 ]
 
 
-def _get_or_create_template(event, db: Session, category: Optional[str] = None) -> BadgeTemplate:
+def _get_or_create_template(event, db: Session, category: Optional[str] = None, kind: str = "badge") -> BadgeTemplate:
     """Plantilla del evento (`category=None` = la general, para todas las categorías). Con una
     categoría (ítem 14, reunión 2026-09-21): la de esa categoría; si todavía no tiene, se crea como
     COPIA de la general — punto de partida editable, no un vínculo vivo."""
+    if kind not in ("badge", "certificate"):
+        raise HTTPException(status_code=400, detail="kind debe ser badge o certificate")
     if category is not None and category not in event.get_categories():
         raise HTTPException(status_code=400, detail="Esa categoría no existe en este evento")
-    tpl = db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id, BadgeTemplate.category == category).first()
+    tpl = db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id, BadgeTemplate.category == category, BadgeTemplate.kind == kind).first()
+    if not tpl and kind == "certificate":
+        # Ítem 5: el certificado es UNA plantilla por evento (A4 horizontal, sin categorías).
+        tpl = BadgeTemplate(
+            tenant_id=event.tenant_id, event_id=event.id, category=None, kind="certificate",
+            name=f"Certificado {event.name}", width_mm=297.0, height_mm=210.0, orientation="horizontal",
+            background_type="color", background_value="#FFFFFF",
+        )
+        tpl.set_elements(_default_certificate_elements(event))
+        db.add(tpl)
+        db.commit()
+        db.refresh(tpl)
+        return tpl
     if not tpl:
         base = _get_or_create_template(event, db) if category is not None else None
         tpl = BadgeTemplate(
-            tenant_id=event.tenant_id, event_id=event.id, category=category,
+            tenant_id=event.tenant_id, event_id=event.id, category=category, kind="badge",
             name=f"Escarapela {event.name}" + (f" — {category}" if category else ""),
             width_mm=base.width_mm if base else 62.0, height_mm=base.height_mm if base else 100.0,
             orientation=base.orientation if base else "vertical",
@@ -104,14 +131,14 @@ def template_category_for_user(event, db: Session, user_id: str) -> Optional[str
         return None
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user_id).first()
     for category in (attendee.get_categories() if attendee else []):
-        if db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id, BadgeTemplate.category == category).first():
+        if db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id, BadgeTemplate.category == category, BadgeTemplate.kind == "badge").first():
             return category
     return None
 
 
 @router.get("/events/{event_id}/badge-template")
 async def get_badge_template(
-    event_id: int, category: Optional[str] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
+    event_id: int, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
 ):
     """La plantilla ACTIVA del evento — se crea sola con un diseño mínimo por defecto (nombre +
     apellido + entidad) la primera vez que se pide, así el editor nunca arranca en blanco del
@@ -120,17 +147,17 @@ async def get_badge_template(
     imprime el día del evento) recibía 403 — la escritura (`PUT` abajo) sigue exigiendo
     `coordinador`+, solo se separó el gate de lectura."""
     event = get_event_for_staff(event_id, db, staff)
-    tpl = _get_or_create_template(event, db, category)
+    tpl = _get_or_create_template(event, db, category, kind)
     return _serialize_template(tpl)
 
 
 @router.put("/events/{event_id}/badge-template")
 async def update_badge_template(
-    event_id: int, data: BadgeTemplateIn, category: Optional[str] = None, db: Session = Depends(get_db),
+    event_id: int, data: BadgeTemplateIn, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    tpl = _get_or_create_template(event, db, category)
+    tpl = _get_or_create_template(event, db, category, kind)
     tpl.name = data.name
     tpl.width_mm = data.width_mm
     tpl.height_mm = data.height_mm
@@ -160,13 +187,13 @@ async def list_saved_badge_templates(
 
 @router.post("/events/{event_id}/badge-template/save-as")
 async def save_badge_template_as(
-    event_id: int, data: SaveAsIn, category: Optional[str] = None, db: Session = Depends(get_db),
+    event_id: int, data: SaveAsIn, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """'Guardar como plantilla': copia el diseño actual del evento a una fila nueva de la
     librería reusable. Es una COPIA — editar el evento después no toca esta fila."""
     event = get_event_for_staff(event_id, db, staff)
-    tpl = _get_or_create_template(event, db, category)
+    tpl = _get_or_create_template(event, db, category, kind)
     saved = SavedBadgeTemplate(
         tenant_id=event.tenant_id, name=data.name.strip() or tpl.name,
         width_mm=tpl.width_mm, height_mm=tpl.height_mm, orientation=tpl.orientation,
@@ -181,7 +208,7 @@ async def save_badge_template_as(
 
 @router.post("/events/{event_id}/badge-template/import/{saved_id}")
 async def import_saved_badge_template(
-    event_id: int, saved_id: int, category: Optional[str] = None, db: Session = Depends(get_db),
+    event_id: int, saved_id: int, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """'Importar plantilla': copia el diseño de una SavedBadgeTemplate al BadgeTemplate de ESTE
@@ -193,7 +220,7 @@ async def import_saved_badge_template(
     if not saved:
         raise HTTPException(status_code=404, detail="Plantilla guardada no encontrada")
 
-    tpl = _get_or_create_template(event, db, category)
+    tpl = _get_or_create_template(event, db, category, kind)
     tpl.width_mm = saved.width_mm
     tpl.height_mm = saved.height_mm
     tpl.orientation = saved.orientation

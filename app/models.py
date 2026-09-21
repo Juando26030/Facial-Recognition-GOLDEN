@@ -73,6 +73,7 @@ class EventAttendee(Base):
     user_id = Column(String, nullable=False)
     tenant_id = Column(String, nullable=False)
     categories = Column(Text, nullable=True)  # JSON: categorías de esta persona EN ESTE evento (reunión 2026-09-21, ítem 14)
+    certificate = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: ¿le corresponde certificado en este evento?
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -216,6 +217,7 @@ class Event(Base):
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
+    certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
     report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente
     report_uploaded_at = Column(DateTime, nullable=True)
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1
@@ -271,6 +273,7 @@ class BadgeTemplate(Base):
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     category = Column(String, nullable=True)  # NULL = plantilla general; con nombre = la de esa categoría (ítem 14)
+    kind = Column(String, nullable=False, default='badge', server_default='badge')  # 'badge' (escarapela) | 'certificate' (plantilla del certificado, ítem 5)
     name = Column(String, nullable=False, default='Escarapela')
     width_mm = Column(Float, nullable=False, default=62.0)
     height_mm = Column(Float, nullable=False, default=100.0)
@@ -282,7 +285,7 @@ class BadgeTemplate(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    __table_args__ = (UniqueConstraint('event_id', 'category', name='uq_badge_template_event_category'),)
+    __table_args__ = (UniqueConstraint('event_id', 'category', 'kind', name='uq_badge_template_event_category_kind'),)
 
     tenant = relationship("Tenant")
     event = relationship("Event")

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificados | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap" rel="stylesheet">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
+        .progress { height:10px; background:#eee; border-radius:6px; overflow:hidden; margin-top:0.8rem; }
+        .progress > div { height:100%; width:0; background:var(--golden-primary); transition:width .2s; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }}; window.EVENT_CODE = "{{ event.event_code }}"; window.EVENT_FINALIZED = {{ "true" if event.status == "finalizado" else "false" }}; window.CERT_ENABLED = {{ "true" if event.certificates_enabled else "false" }};</script>
+
+<main class="golden-main">
+  <section class="golden-section">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2><span class="gradient-text">Certificados</span> del Evento</h2>
+      </div>
+      <div class="app-container">
+        <div class="card" id="statusCard"></div>
+        <div id="renderStage" style="position:fixed; left:-20000px; top:0; background:#fff;"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const card = document.getElementById('statusCard');
+const stage = document.getElementById('renderStage');
+const safe = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '');
+
+async function init() {
+  if (!CERT_ENABLED) { card.innerHTML = '<p>El módulo de certificados no está activado en este evento (Parámetros del Evento).</p>'; return; }
+  if (!EVENT_FINALIZED) { card.innerHTML = '<p>Esta sección se habilita cuando el evento está <strong>Finalizado</strong>. Cambia el estado del evento y vuelve aquí.</p>'; return; }
+  const users = await (await fetch(`/api/users?event_id=${EVENT_ID}`)).json();
+  const recipients = users.filter(u => u.certificate);
+  card.innerHTML = `
+    <h4 style="margin:0 0 0.5rem; color:var(--golden-dark);">Generar certificados</h4>
+    <p style="margin:0 0 0.8rem;">Personas con <strong>Certificado = Sí</strong>: <strong>${recipients.length}</strong> de ${users.length}.</p>
+    <button type="button" id="genBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;" ${recipients.length ? '' : 'disabled'}>Generar ZIP de certificados (PDF)</button>
+    <a href="/kiosk/${EVENT_ID}/certificado" style="margin-left:1rem; color:var(--golden-primary); font-weight:600;">Editar la plantilla</a>
+    <div class="progress" id="progressWrap" style="display:none;"><div id="progressBar"></div></div>
+    <p id="progressText" style="font-size:0.82rem; color:#777; margin:0.4rem 0 0;"></p>`;
+  document.getElementById('genBtn').addEventListener('click', () => generate(recipients));
+}
+
+async function generate(recipients) {
+  const btn = document.getElementById('genBtn');
+  setButtonLoading(btn, true, 'Generando...');
+  const bar = document.getElementById('progressBar'), text = document.getElementById('progressText');
+  document.getElementById('progressWrap').style.display = 'block';
+  try {
+    const tplRes = await fetch(`/api/events/${EVENT_ID}/badge-template?kind=certificate`);
+    if (!tplRes.ok) throw new Error('No se pudo cargar la plantilla del certificado');
+    const template = await tplRes.json();
+    const { jsPDF } = window.jspdf;
+    const zip = new JSZip();
+    const used = new Set();
+    for (let i = 0; i < recipients.length; i++) {
+      const u = recipients[i];
+      text.textContent = `Generando ${i + 1} de ${recipients.length}: ${u.first_name || ''} ${u.last_name || ''}`;
+      const data = await (await fetch(`/api/users/${encodeURIComponent(u.id)}/badge-print-data?event_id=${EVENT_ID}`)).json();
+      BadgeRender.renderBadge(stage, template, data, { eventId: EVENT_ID });
+      await document.fonts.ready;
+      await Promise.all(Array.from(stage.querySelectorAll('img')).map(img => img.decode ? img.decode().catch(() => {}) : null));
+      const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const w = template.width_mm, h = template.height_mm;
+      const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'mm', format: [w, h] });
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, w, h);
+      let name = `${safe(u.id)}_${safe(u.first_name)}_${safe(u.last_name)}.pdf`;
+      for (let n = 2; used.has(name); n++) name = name.replace(/(_\d+)?\.pdf$/, `_${n}.pdf`);
+      used.add(name);
+      zip.file(name, pdf.output('arraybuffer'));
+      bar.style.width = `${Math.round(((i + 1) / recipients.length) * 100)}%`;
+    }
+    text.textContent = 'Comprimiendo...';
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Certificados_${EVENT_CODE}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    text.textContent = `Listo: ${recipients.length} certificados en el ZIP.`;
+    showToast('ZIP de certificados generado', 'success');
+  } catch (e) {
+    showToast(e.message || 'No se pudieron generar los certificados', 'error');
+    text.textContent = '';
+  }
+  setButtonLoading(btn, false);
+  stage.innerHTML = '';
+}
+
+init();
+</script>
+</body>
+</html>

@@ -34,7 +34,7 @@ IDENTITY_FIELDS = [
 IDENTITY_KEYS = {k for k, _ in IDENTITY_FIELDS}
 # Campos de los que solo se cambia nombre y posición: identidad + "Categoría" (ítem 14: sus opciones
 # salen de las categorías del evento, no de una lista propia, y se guarda por evento).
-LOCKED_KEYS = IDENTITY_KEYS | {"categories"}
+LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate"}
 
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
 # Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
@@ -53,6 +53,8 @@ def _configurable_fields(event: Event):
     fields = list(IDENTITY_FIELDS) + list(CONFIGURABLE_FIXED_FIELDS)
     if event.get_categories():
         fields.append(("categories", "Categoría"))
+    if event.certificates_enabled:
+        fields.append(("certificate", "Certificado"))
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
         fields.append((key, label))
@@ -63,11 +65,13 @@ def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], ca
     """`label` = lo que se muestra en este evento (el propio si lo personalizaron, si no el de por
     defecto); `default_label` se conserva para poder mostrarlo como sugerencia en Parámetros."""
     locked = key in LOCKED_KEYS
-    label = (row.label if row and row.label else default_label)
+    label = default_label if key == "certificate" else (row.label if row and row.label else default_label)
     if row is None or locked:
         return {
             "key": key, "label": label, "default_label": default_label, "locked": locked,
-            "required": False, "field_type": "categories" if key == "categories" else "text_short",
+            "label_fixed": key == "certificate",
+            "required": bool(row.required) if (row and key == "certificate") else False,
+            "field_type": {"categories": "categories", "certificate": "certificate"}.get(key, "text_short"),
             "options": categories or [], "help_text": "",
             "default_stat_enabled": False, "default_chart_type": None,
         }
@@ -158,6 +162,19 @@ async def upload_event_logo(
     return {"logo_mode": "custom"}
 
 
+@router.put("/events/{event_id}/certificates-enabled")
+async def set_certificates_enabled(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Activa/desactiva el módulo de certificados (ítem 5, reunión 2026-09-21). Al activarlo aparece
+    el campo "Certificado" (Sí/No, default No) en Registrar/Editar y el diseñador del certificado."""
+    event = get_event_for_staff(event_id, db, staff)
+    event.certificates_enabled = bool(data.get("enabled"))
+    db.commit()
+    return {"certificates_enabled": event.certificates_enabled}
+
+
 @router.get("/events/{event_id}/categories")
 async def get_event_categories(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
     event = get_event_for_staff(event_id, db, staff)
@@ -239,12 +256,13 @@ async def upsert_field_config(
     if not row:
         row = EventFieldConfig(event_id=event_id, field_key=field_key)
         db.add(row)
-    row.label = label
+    row.label = None if field_key == "certificate" else label  # "Certificado": ni nombre ni tipo editables
     row.sort_order = sort_order
 
     if field_key in LOCKED_KEYS:
-        # Identidad y Categoría: solo etiqueta y posición. Tipo/obligatoriedad/estadística siguen fijos.
-        row.required, row.field_type, row.default_stat_enabled, row.default_chart_type = False, "text_short", False, None
+        # Identidad y Categoría: solo etiqueta y posición. Certificado: solo posición y obligatorio.
+        row.required = bool(data.get("required", False)) if field_key == "certificate" else False
+        row.field_type, row.default_stat_enabled, row.default_chart_type = "text_short", False, None
         row.set_options([])
         db.commit()
         return _serialize(field_key, dict(_configurable_fields(event))[field_key], row, event.get_categories())

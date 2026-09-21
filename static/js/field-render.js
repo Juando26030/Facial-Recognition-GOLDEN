@@ -31,6 +31,11 @@
       return `<div style="display:flex; gap:6px 14px; flex-wrap:wrap;">${(config.options || []).map(o =>
         `<label style="display:flex; gap:5px; align-items:center; font-weight:400; text-transform:none; margin:0;"><input type="checkbox" name="categories" value="${esc(o)}" ${selected.includes(o) ? 'checked' : ''} style="width:16px; height:16px;"> ${esc(o)}</label>`).join('')}</div>`;
     }
+    if (config.field_type === 'certificate') {
+      // Certificado Sí/No (ítem 5): default No; con Sí la persona sale en el ZIP de certificados.
+      const checked = String(val).trim().toLowerCase() === 'true' ? 'checked' : '';
+      return `<label style="display:flex; gap:8px; align-items:center; font-weight:400; text-transform:none; margin:0;"><input type="checkbox" name="certificate" value="true" ${checked} ${requiredAttr} style="width:18px; height:18px;"> Sí, entregar certificado</label>`;
+    }
     if (config.field_type === 'consent') {
       // Casilla de tratamiento de datos (ítem 16): la política se lee justo debajo del check.
       const checked = String(val).trim().toLowerCase() === 'true' ? 'checked' : '';

@@ -285,8 +285,8 @@
                     <div id="dynamicFieldsContainer">
                         {% for cfg in field_configs %}
                         <div class="badge-input-group" data-field-key="{{ cfg.key }}" style="margin-top:0.8rem;">
-                            <label>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.field_type != "categories") %} *{% endif %}</label>
-                            {% if cfg.field_type == "categories" %}
+                            <label>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.field_type not in ("categories", "certificate")) %} *{% endif %}</label>
+                            {% if cfg.field_type in ("categories", "certificate") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.locked %}
                             <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField"{% endif %} required>

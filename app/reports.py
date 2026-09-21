@@ -34,6 +34,7 @@ BASE_FIELDS = [
     ("email", "Correo Electrónico"),
     ("opt_1", "Tipo de Asistente"),
     ("categories", "Categoría"),  # ítem 14: solo sale si alguien tiene categoría en este evento
+    ("certificate", "Certificado"),  # ítem 5: solo sale si el evento tiene el módulo de certificados activo
 ]
 ALWAYS_INCLUDED_BASE_KEYS = {"id", "first_name", "last_name"}
 UPPERCASE_KEYS = {"first_name", "last_name", "entity", "role"}
@@ -91,12 +92,15 @@ class ReportManager:
             first_log_by_user.setdefault(log.user_id, log)
 
         categories_by_user = {a.user_id: ", ".join(a.get_categories()) for a in db.query(EventAttendee).filter(EventAttendee.event_id == event_id)}
+        certificate_by_user = {a.user_id: bool(a.certificate) for a in db.query(EventAttendee).filter(EventAttendee.event_id == event_id)}
+        certificates_on = bool(event and event.certificates_enabled)
         raw_rows = []
         for user in users:
             raw_rows.append({
                 "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
                 "role": user.role, "entity": user.entity, "phone": user.phone,
                 "email": user.email, "opt_1": user.opt_1, "categories": categories_by_user.get(user.id, ""),
+                "certificate": ("Sí" if certificate_by_user.get(user.id) else "No") if certificates_on else "",
                 "extras": user.get_extras(),
                 "log": first_log_by_user.get(user.id),
             })

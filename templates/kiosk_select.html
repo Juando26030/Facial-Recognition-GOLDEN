@@ -106,6 +106,20 @@
         <div class="mode-title">Usuarios del Evento</div>
         <div class="mode-sub">Cuentas temporales de digitador/cliente para este evento</div>
       </a>
+      {% if event.certificates_enabled and staff_role != "comercial" %}
+      <a href="/kiosk/{{ event.id }}/certificado" class="mode-card enabled">
+        <div class="mode-icon">🎓</div>
+        <div class="mode-title">Diseñar Certificado</div>
+        <div class="mode-sub">Plantilla del certificado (PDF) para quienes tengan Certificado = Sí</div>
+      </a>
+      {% if event.status == "finalizado" %}
+      <a href="/kiosk/{{ event.id }}/certificados" class="mode-card enabled">
+        <div class="mode-icon">📜</div>
+        <div class="mode-title">Certificados</div>
+        <div class="mode-sub">Genera el ZIP con los certificados en PDF</div>
+      </a>
+      {% endif %}
+      {% endif %}
       <a href="/kiosk/{{ event.id }}/documentos" class="mode-card enabled">
         <div class="mode-icon">📁</div>
         <div class="mode-title">Documentos del Evento</div>

@@ -154,6 +154,7 @@
     const configuredHtml = fieldConfigs.map((cfg) => {
       if (cfg.key === 'id') return cedulaRow(cfg.label);
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
+      if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
     }).join('');
@@ -284,6 +285,9 @@
         else newExtras[cfg.key] = val(cfg.key);
       });
       payload.extra_fields = newExtras;
+      if (fieldConfigs.some((cfg) => cfg.field_type === 'certificate')) {
+        payload.certificate = !!form.querySelector('input[name="certificate"]:checked');
+      }
       if (fieldConfigs.some((cfg) => cfg.field_type === 'categories')) {
         payload.categories = Array.from(form.querySelectorAll('input[name="categories"]:checked')).map((i) => i.value);
       }
