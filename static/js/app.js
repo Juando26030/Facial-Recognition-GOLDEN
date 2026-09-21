@@ -274,6 +274,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
                 showToast(data.message || data.error, data.error ? "error" : "success");
+                if (data.digital) showToast(`📲 Escarapela digital: ${data.digital.detail}`, 'success');
                 if (!data.error) {
                     const registeredId = formData.get('id');
                     try { await window.FieldRender.saveSignatures(regForm, registeredId); }

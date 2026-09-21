@@ -74,6 +74,9 @@ class EventAttendee(Base):
     tenant_id = Column(String, nullable=False)
     categories = Column(Text, nullable=True)  # JSON: categorías de esta persona EN ESTE evento (reunión 2026-09-21, ítem 14)
     certificate = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: ¿le corresponde certificado en este evento?
+    digital_contact = Column(String, nullable=True)  # ítem 17: correo o teléfono al que se envía la escarapela digital
+    digital_token = Column(String, unique=True, nullable=True)  # ítem 17: enlace secreto /b/<token>
+    digital_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -218,6 +221,7 @@ class Event(Base):
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
+    digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
     report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente

@@ -58,6 +58,12 @@
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
           <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
         </div>
+        <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
+          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
+          <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo sale por SMTP y el SMS por Twilio si están configurados (ver <code>.env.example</code>); si no, el mensaje queda guardado en <code>data/outbox/</code> y NO sale a nadie.</p>
+        </div>
         <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Áreas</h4>
@@ -246,6 +252,11 @@
     });
     loadAreas().catch(() => {}); loadItems().catch(() => {});
 
+    document.getElementById('digitalEnabled').addEventListener('change', async (e) => {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/digital-badge-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
+        if (res.ok) location.reload(); else { e.target.checked = !e.target.checked; showToast('No se pudo cambiar la escarapela digital', 'error'); }
+    });
+
     // Módulo de certificados (ítem 5): activar agrega el campo "Certificado" y el diseñador.
     document.getElementById('certificatesEnabled').addEventListener('change', async (e) => {
         const res = await fetch(`/api/events/${window.EVENT_ID}/certificates-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
@@ -273,7 +284,7 @@
         tr.innerHTML = `
             <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:#999; text-align:center;">☰</td>
             <td><input type="text" class="cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
-            <td><input type="checkbox" class="cfg-required" ${cfg.required || (locked && cfg.key !== 'certificate') ? 'checked' : ''} ${locked && cfg.key !== 'certificate' ? 'disabled' : ''} style="width:18px; height:18px;"></td>
+            <td><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-field-type">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="cfg-options" placeholder="Una opción por línea" style="display:${cfg.field_type === 'select' ? 'block' : 'none'};">${esc((cfg.options || []).join('\n'))}</textarea>
                 <textarea class="cfg-help" placeholder="Texto de la política / consentimiento (se muestra junto al check o a la firma)" style="display:${['consent', 'signature'].includes(cfg.field_type) ? 'block' : 'none'};">${esc(cfg.help_text || '')}</textarea></td>

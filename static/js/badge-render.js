@@ -34,10 +34,11 @@
     div.innerText = content;
   }
 
-  function renderImageStatic(div, el) {
+  function renderImageStatic(div, el, opts) {
     const img = document.createElement('img');
     img.style.cssText = 'width:100%; height:100%; object-fit:contain; display:block;';
-    img.src = el.storage_path ? `/api/badge-assets/${el.storage_path}` : '';
+    // opts.assetUrl: la escarapela digital pública (/b/<token>) sirve los recursos por su propio enlace autorizado.
+    img.src = el.storage_path ? (opts && opts.assetUrl ? opts.assetUrl(el.storage_path) : `/api/badge-assets/${el.storage_path}`) : '';
     img.alt = '';
     div.appendChild(img);
   }
@@ -46,7 +47,9 @@
     const img = document.createElement('img');
     img.style.cssText = 'width:100%; height:100%; object-fit:cover; display:block; border-radius:4px; background:#e9e9e9;';
     img.alt = 'Foto';
-    if (data && data.has_photo && opts.eventId && data.id) {
+    if (data && data.has_photo && opts.photoUrl) {
+      img.src = opts.photoUrl(data);
+    } else if (data && data.has_photo && opts.eventId && data.id) {
       img.src = `/api/users/${encodeURIComponent(data.id)}/photo?event_id=${opts.eventId}`;
     } else if (opts.samplePhotoUrl) {
       img.src = opts.samplePhotoUrl;
@@ -95,7 +98,7 @@
     div.style.cssText = `position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${el.height}mm; transform:rotate(${el.rotation || 0}deg); z-index:${el.z_index || 1}; box-sizing:border-box;`;
 
     if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data);
-    else if (el.type === 'image_static') renderImageStatic(div, el);
+    else if (el.type === 'image_static') renderImageStatic(div, el, opts);
     else if (el.type === 'image_variable') renderImageVariable(div, el, data, opts);
     else if (el.type === 'qr') renderQr(div, el, data);
     else if (el.type === 'barcode') renderBarcode(div, el, data);
@@ -112,7 +115,7 @@
     container.style.overflow = 'hidden';
     container.style.boxSizing = 'border-box';
     if (template.background_type === 'image' && template.background_value) {
-      container.style.backgroundImage = `url(/api/badge-assets/${template.background_value})`;
+      container.style.backgroundImage = `url(${opts.assetUrl ? opts.assetUrl(template.background_value) : '/api/badge-assets/' + template.background_value})`;
       container.style.backgroundSize = 'cover';
       container.style.backgroundPosition = 'center';
       container.style.backgroundColor = '#ffffff';

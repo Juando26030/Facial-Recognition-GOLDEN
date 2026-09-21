@@ -34,7 +34,7 @@ IDENTITY_FIELDS = [
 IDENTITY_KEYS = {k for k, _ in IDENTITY_FIELDS}
 # Campos de los que solo se cambia nombre y posición: identidad + "Categoría" (ítem 14: sus opciones
 # salen de las categorías del evento, no de una lista propia, y se guarda por evento).
-LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate"}
+LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact"}
 
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
 # Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
@@ -55,6 +55,8 @@ def _configurable_fields(event: Event):
         fields.append(("categories", "Categoría"))
     if event.certificates_enabled:
         fields.append(("certificate", "Certificado"))
+    if event.digital_badge_enabled:
+        fields.append(("digital_contact", "Enviar escarapela digital a (correo o celular)"))
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
         fields.append((key, label))
@@ -70,8 +72,8 @@ def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], ca
         return {
             "key": key, "label": label, "default_label": default_label, "locked": locked,
             "label_fixed": key == "certificate",
-            "required": bool(row.required) if (row and key == "certificate") else False,
-            "field_type": {"categories": "categories", "certificate": "certificate"}.get(key, "text_short"),
+            "required": bool(row.required) if (row and key in ("certificate", "digital_contact")) else False,
+            "field_type": {"categories": "categories", "certificate": "certificate", "digital_contact": "digital_contact"}.get(key, "text_short"),
             "options": categories or [], "help_text": "",
             "default_stat_enabled": False, "default_chart_type": None,
         }
@@ -160,6 +162,19 @@ async def upload_event_logo(
     event.logo_path, event.logo_mode = path, "custom"
     db.commit()
     return {"logo_mode": "custom"}
+
+
+@router.put("/events/{event_id}/digital-badge-enabled")
+async def set_digital_badge_enabled(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Activa/desactiva la escarapela digital (ítem 17): agrega el campo de contacto (correo o celular,
+    validado) y, al guardar a una persona con ese dato, se le envía el enlace de su escarapela."""
+    event = get_event_for_staff(event_id, db, staff)
+    event.digital_badge_enabled = bool(data.get("enabled"))
+    db.commit()
+    return {"digital_badge_enabled": event.digital_badge_enabled}
 
 
 @router.put("/events/{event_id}/certificates-enabled")
@@ -261,7 +276,7 @@ async def upsert_field_config(
 
     if field_key in LOCKED_KEYS:
         # Identidad y Categoría: solo etiqueta y posición. Certificado: solo posición y obligatorio.
-        row.required = bool(data.get("required", False)) if field_key == "certificate" else False
+        row.required = bool(data.get("required", False)) if field_key in ("certificate", "digital_contact") else False
         row.field_type, row.default_stat_enabled, row.default_chart_type = "text_short", False, None
         row.set_options([])
         db.commit()

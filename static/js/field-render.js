@@ -31,6 +31,10 @@
       return `<div style="display:flex; gap:6px 14px; flex-wrap:wrap;">${(config.options || []).map(o =>
         `<label style="display:flex; gap:5px; align-items:center; font-weight:400; text-transform:none; margin:0;"><input type="checkbox" name="categories" value="${esc(o)}" ${selected.includes(o) ? 'checked' : ''} style="width:16px; height:16px;"> ${esc(o)}</label>`).join('')}</div>`;
     }
+    if (config.field_type === 'digital_contact') {
+      // Escarapela digital (ítem 17): correo o celular; el servidor lo valida y, al guardar, envía el enlace.
+      return `<input type="text" name="${key}" value="${esc(val)}" ${requiredAttr} autocomplete="off" placeholder="correo@ejemplo.com o +57 300 1234567" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">`;
+    }
     if (config.field_type === 'certificate') {
       // Certificado Sí/No (ítem 5): default No; con Sí la persona sale en el ZIP de certificados.
       const checked = String(val).trim().toLowerCase() === 'true' ? 'checked' : '';

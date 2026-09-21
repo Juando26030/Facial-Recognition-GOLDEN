@@ -155,6 +155,7 @@
       if (cfg.key === 'id') return cedulaRow(cfg.label);
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
+      if (cfg.field_type === 'digital_contact') return configuredFieldRow(cfg, user.digital_contact || '');
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
     }).join('');
@@ -285,6 +286,7 @@
         else newExtras[cfg.key] = val(cfg.key);
       });
       payload.extra_fields = newExtras;
+      if (fieldConfigs.some((cfg) => cfg.field_type === 'digital_contact')) payload.digital_contact = val('digital_contact');
       if (fieldConfigs.some((cfg) => cfg.field_type === 'certificate')) {
         payload.certificate = !!form.querySelector('input[name="certificate"]:checked');
       }
@@ -298,6 +300,10 @@
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         if (res.ok) {
+          try {
+            const info = await res.clone().json();
+            if (info.digital) showToast(`📲 Escarapela digital: ${info.digital.detail}`, 'success');
+          } catch (e) { /* sin detalle de envío */ }
           try { await window.FieldRender.saveSignatures(box, currentId); }
           catch (e) { showToast(e.message, 'error'); }
           showToast('Cambios guardados', 'success');

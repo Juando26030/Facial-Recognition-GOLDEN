@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, digital_public, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -78,6 +78,7 @@ app.include_router(event_report.router, prefix="/api")
 app.include_router(event_docs.router, prefix="/api")
 app.include_router(super_events.router, prefix="/api")
 app.include_router(areas_inventory.router, prefix="/api")
+app.include_router(digital_public.router)  # /b/<token>, público (sin login) a propósito
 app.include_router(signatures.router, prefix="/api")
 app.include_router(calendar_router.router, prefix="/api")
 

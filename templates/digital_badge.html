@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Escarapela digital</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Playfair+Display:wght@400;700&family=Inter:wght@400;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+    <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <style>
+        html, body { margin:0; min-height:100%; background:#0a0e2e; color:#fff; font-family:'Inter', system-ui, sans-serif; }
+        body { display:flex; flex-direction:column; align-items:center; padding:18px 12px 28px; }
+        h1 { font-size:0.95rem; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; margin:6px 0 2px; color:#D4AF37; text-align:center; }
+        .sub { font-size:0.8rem; color:#9aa3c7; margin-bottom:14px; text-align:center; }
+        /* Marco animado: un anillo de color que gira sin parar alrededor de la escarapela — una foto fija no lo reproduce. */
+        .frame { position:relative; padding:5px; border-radius:20px; overflow:hidden; width:max-content; margin:0 auto; }
+        .frame::before { content:""; position:absolute; inset:-60%; background:conic-gradient(from 0deg, #D4AF37, #ff4d6d, #4dd0ff, #7cff6b, #D4AF37); animation:spin 3.2s linear infinite; }
+        .frame-inner { position:relative; border-radius:15px; overflow:hidden; background:#fff; line-height:0; }
+        #badgeHost { transform-origin:top left; }
+        /* Franja de brillo que barre la escarapela de lado a lado. */
+        .shimmer { position:absolute; inset:0; pointer-events:none; background:linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.55) 50%, transparent 65%); background-size:250% 100%; animation:sweep 2.4s ease-in-out infinite; mix-blend-mode:overlay; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        @keyframes sweep { 0% { background-position:150% 0; } 100% { background-position:-150% 0; } }
+        .live { margin-top:16px; text-align:center; }
+        .clock { font-size:2.2rem; font-weight:700; letter-spacing:2px; font-variant-numeric:tabular-nums; }
+        .date { font-size:0.85rem; color:#9aa3c7; }
+        .pulse { display:inline-block; width:10px; height:10px; border-radius:50%; background:#2ee6a6; margin-right:6px; animation:blink 1s ease-in-out infinite; }
+        @keyframes blink { 50% { opacity:0.15; } }
+        .note { max-width:340px; text-align:center; font-size:0.72rem; color:#7f89b5; margin-top:14px; }
+        #error { color:#ff9aa8; text-align:center; margin-top:20vh; }
+    </style>
+</head>
+<body>
+<h1 id="eventName">Escarapela digital</h1>
+<div class="sub" id="personName"></div>
+<div id="stage" style="display:none;">
+    <div class="frame"><div class="frame-inner" id="clip"><div id="badgeHost"></div><div class="shimmer"></div></div></div>
+    <div class="live">
+        <div class="clock" id="clock">--:--:--</div>
+        <div class="date"><span class="pulse"></span><span id="dateLine"></span></div>
+    </div>
+    <p class="note">Documento personal y en vivo: la animación y el reloj deben moverse. Una captura de pantalla no es válida.</p>
+</div>
+<div id="error" style="display:none;">Esta escarapela no está disponible.</div>
+
+<script>
+const TOKEN = "{{ token }}";
+const base = `/b/${TOKEN}`;
+
+function tick() {
+    const now = new Date();
+    document.getElementById('clock').textContent = now.toLocaleTimeString('es-CO', { hour12: false });
+    document.getElementById('dateLine').textContent = now.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+setInterval(tick, 250); tick();
+
+async function load() {
+    const res = await fetch(`${base}/data`);
+    if (!res.ok) { document.getElementById('error').style.display = 'block'; return; }
+    const { event, template, person } = await res.json();
+    document.getElementById('eventName').textContent = event.name;
+    document.getElementById('personName').textContent = `${person.first_name || ''} ${person.last_name || ''}`.trim();
+    document.getElementById('stage').style.display = 'block';
+
+    const host = document.getElementById('badgeHost');
+    BadgeRender.renderBadge(host, template, person, {
+        assetUrl: (p) => `${base}/asset/${p}`,   // storage_path = "<cliente>/<archivo>"
+        photoUrl: () => `${base}/photo`,
+    });
+    // Escala la escarapela (mm reales) para que entre en el ancho del celular sin cortarla.
+    const clip = document.getElementById('clip');
+    const naturalW = host.offsetWidth, naturalH = host.offsetHeight;
+    const scale = Math.min(1, (Math.min(window.innerWidth, 460) - 44) / naturalW);
+    host.style.transform = `scale(${scale})`;
+    clip.style.width = `${naturalW * scale}px`; clip.style.height = `${naturalH * scale}px`;
+}
+load();
+</script>
+</body>
+</html>

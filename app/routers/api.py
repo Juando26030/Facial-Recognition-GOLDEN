@@ -10,7 +10,7 @@ import face_recognition
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PIL import Image
-from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException
+from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUse
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
+from app import digital_badge
 from app.routers import parametros, signatures
 from app.routers.super_events import sibling_attendance
 from app.routers.events import _typo_match, _words
@@ -204,11 +205,19 @@ def _known_faces_dir(tenant_id: str) -> str:
     return path
 
 
+def _send_digital(db: Session, event: Event, user: User, request: Optional[Request]) -> dict:
+    """Envío automático de la escarapela digital (ítem 17) tras guardar a la persona."""
+    att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+    result = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url) if request else "")
+    db.commit()
+    return result
+
+
 def _truthy(value) -> bool:
     return str(value).strip().lower() in ("true", "1", "si", "sí", "x", "yes")
 
 
-def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None) -> None:
+def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None, digital_contact: Optional[str] = None) -> None:
     """Asegura que esta persona quede en la lista del evento, se haya precargado o no (ej. un
     'Nuevo' dado de alta sobre la marcha el día del evento) — ver EventAttendee en models.py.
     `categories` (ítem 14): si viene, fija las categorías de la persona EN este evento."""
@@ -220,6 +229,8 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, c
         row.set_categories(categories)
     if certificate is not None:
         row.certificate = certificate  # ítem 5: ¿le corresponde certificado en este evento?
+    if digital_contact is not None:
+        row.digital_contact = digital_contact or None  # ítem 17: '' lo borra
 
 
 def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
@@ -299,6 +310,7 @@ async def get_all_users(
     attendee_rows = db.query(EventAttendee).filter(EventAttendee.event_id == event_id).all()
     categories_by_user = {a.user_id: a.get_categories() for a in attendee_rows}
     certificate_by_user = {a.user_id: bool(a.certificate) for a in attendee_rows}
+    digital_by_user = {a.user_id: a.digital_contact or "" for a in attendee_rows}
     event_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id).all()
     logs_by_user = {}
     for log in event_logs:
@@ -326,6 +338,7 @@ async def get_all_users(
             "extra_fields": u.get_extras(),
             "categories": categories_by_user.get(u.id, []),
             "certificate": certificate_by_user.get(u.id, False),
+            "digital_contact": digital_by_user.get(u.id, ""),
         })
 
     return result
@@ -494,7 +507,7 @@ async def checkin_cedula(
 
 @router.patch("/users/{user_id}")
 async def update_user(
-    user_id: str, data: dict, event_id: int, db: Session = Depends(get_db),
+    user_id: str, data: dict, event_id: int, request: Request, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
@@ -507,6 +520,14 @@ async def update_user(
         categories = data.pop("categories", None)  # ítem 14: por evento (EventAttendee), no una columna de User
         if categories is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, _clean_categories(event, categories))
+        digital_raw = data.pop("digital_contact", None)  # ítem 17: correo/teléfono de la escarapela digital (por evento)
+        new_digital = None
+        if digital_raw is not None:
+            try:
+                new_digital = digital_badge.normalize_contact(digital_raw) or ""
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            _upsert_attendee(db, event.id, user.id, event.tenant_id, digital_contact=new_digital)
         certificate = data.pop("certificate", None)  # ítem 5: también por evento
         if certificate is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, certificate=_truthy(certificate))
@@ -535,6 +556,7 @@ async def update_user(
         }
         attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
         final_values["certificate"] = "true" if (attendee and attendee.certificate) else ""
+        final_values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
         missing = _missing_required_fields(field_configs, final_values)
         if missing:
             raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
@@ -545,7 +567,12 @@ async def update_user(
         )
         db.add(log)
         db.commit()
-        return {"message": "Actualizado correctamente"}
+        result = {"message": "Actualizado correctamente"}
+        if new_digital and event.digital_badge_enabled:
+            att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+            result["digital"] = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url))
+            db.commit()
+        return result
     return {"error": "Usuario no encontrado"}
 
 @router.put("/users/{user_id}/cedula")
@@ -714,7 +741,8 @@ async def update_registration_status(
 async def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
-    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None),
+    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None),
+    request: Request = None,
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
@@ -740,6 +768,10 @@ async def manual_register(
         person_categories = _clean_categories(event, json.loads(categories)) if categories else []
     except ValueError:
         person_categories = []
+    try:
+        contact_clean = digital_badge.normalize_contact(digital_contact) if digital_contact else None
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     used_optional_keys = set(extras.keys())
     missing = used_optional_keys - set(event.get_optional_labels().keys())
     if missing and not field_labels:
@@ -758,12 +790,15 @@ async def manual_register(
             registration_method="tradicional",  # Fase 16: alta manual, formulario
         )
         db.add(log)
-        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None)
+        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean)
         db.commit()
-        return {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
+        reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
+        if contact_clean and event.digital_badge_enabled:
+            reply["digital"] = _send_digital(db, event, existing, request)
+        return reply
 
     field_configs = parametros.field_configs_for_event(db, event)
-    final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, "certificate": certificate or "", **extras}
+    final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, "certificate": certificate or "", "digital_contact": contact_clean or "", **extras}
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
         raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
@@ -803,14 +838,17 @@ async def manual_register(
         registration_method="tradicional",  # Fase 16: alta manual, formulario
     )
     db.add(log)
-    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None)
+    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean)
     db.commit()
 
     if img_array is not None:
         img_path = os.path.join(_known_faces_dir(event.tenant_id), f"{id}.jpg")
         Image.fromarray(img_array).save(img_path)
 
-    return {"message": "Usuario registrado exitosamente como Nuevo."}
+    reply = {"message": "Usuario registrado exitosamente como Nuevo."}
+    if contact_clean and event.digital_badge_enabled:
+        reply["digital"] = _send_digital(db, event, user, request)
+    return reply
 
 def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: StaffUser):
     """Ítem 18: agrega al evento `event` a TODAS las personas de otro evento del MISMO cliente (su
