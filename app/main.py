@@ -300,7 +300,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
 @app.get("/kiosk/{event_id}/registro")
 async def kiosk_registro(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Pantalla única de registro (2026-09-21, reemplaza los antiguos /facial y /cedula
-    separados) — un solo Directorio en Vivo con búsqueda por cédula/nombre/empresa, y el escáner
+    separados) — un solo Directorio en Vivo con búsqueda por cédula/nombre/entidad, y el escáner
     de cámara aparece o no según `event.facial_enabled` (se enciende solo al subir un roster con
     fotos, ver bulk_register). Se dejaron de exponer dos "métodos" distintos porque ambos
     compartían exactamente el mismo directorio y la diferencia real era una sola cosa: si hay

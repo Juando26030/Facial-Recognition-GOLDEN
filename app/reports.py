@@ -26,13 +26,13 @@ BASE_FIELDS = [
     ("first_name", "Nombres"),
     ("last_name", "Apellidos"),
     ("role", "Cargo"),
-    ("company", "Empresa"),
+    ("entity", "Entidad"),
     ("phone", "Teléfono"),
     ("email", "Correo Electrónico"),
     ("opt_1", "Tipo de Asistente"),
 ]
 ALWAYS_INCLUDED_BASE_KEYS = {"id", "first_name", "last_name"}
-UPPERCASE_KEYS = {"first_name", "last_name", "company", "role"}
+UPPERCASE_KEYS = {"first_name", "last_name", "entity", "role"}
 
 HEADER_FILL = PatternFill(start_color="0A0E2E", end_color="0A0E2E", fill_type="solid")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
@@ -85,7 +85,7 @@ class ReportManager:
         for user in users:
             raw_rows.append({
                 "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-                "role": user.role, "company": user.company, "phone": user.phone,
+                "role": user.role, "entity": user.entity, "phone": user.phone,
                 "email": user.email, "opt_1": user.opt_1,
                 "extras": user.get_extras(),
                 "log": first_log_by_user.get(user.id),

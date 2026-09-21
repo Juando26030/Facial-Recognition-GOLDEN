@@ -42,7 +42,7 @@ class User(Base):
     first_name = Column(String)
     last_name = Column(String)
     role = Column(String)
-    company = Column(String)
+    entity = Column(String)  # antes `company`/"Empresa" — renombrado a "Entidad" en toda la app (reunión 2026-09-21, ítem 3b), migración 0024
     phone = Column(String)
     email = Column(String)
     opt_1 = Column(String)  # "Tipo de asistente" (2026-09-20; antes "tipo de empresa") — único campo opcional fijo, el resto son extra_fields
@@ -279,7 +279,7 @@ class EventFieldConfig(Base):
     manual/edición para ESTE evento: si es obligatorio, qué tipo de control usar (texto
     corto/largo, lista desplegable con sus propias opciones, booleano), y si debe generar
     estadística sola al entrar a Estadísticas (y con qué tipo de gráfico). `field_key` es
-    `role`/`company`/`phone`/`email`/`opt_1` o un `opcional_N` ya rotulado en
+    `role`/`entity`/`phone`/`email`/`opt_1` o un `opcional_N` ya rotulado en
     `Event.optional_field_labels` — la identidad (`id`/`first_name`/`last_name`) queda afuera a
     propósito, siempre texto corto obligatorio, no configurable. Sin fila para un campo dado =
     valores por defecto (no obligatorio, texto corto, sin estadística por defecto) — ver

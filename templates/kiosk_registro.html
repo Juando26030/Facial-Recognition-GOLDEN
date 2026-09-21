@@ -113,8 +113,8 @@
                         <input type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off">
                     </div>
                     <div class="badge-input-group">
-                        <label>Buscar por empresa</label>
-                        <input type="text" id="searchEmpresa" placeholder="Empresa" autocomplete="off">
+                        <label>Buscar por entidad</label>
+                        <input type="text" id="searchEntidad" placeholder="Entidad" autocomplete="off">
                     </div>
                 </div>
                 <table class="golden-table">
@@ -164,8 +164,8 @@
                                     <input type="text" id="edit_role" name="role">
                                 </div>
                                 <div class="badge-input-group">
-                                    <label>Empresa</label>
-                                    <input type="text" id="edit_company" name="company">
+                                    <label>Entidad</label>
+                                    <input type="text" id="edit_entity" name="entity">
                                 </div>
                             </div>
 
@@ -226,8 +226,8 @@
                         <input type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off">
                     </div>
                     <div class="badge-input-group">
-                        <label>Buscar por empresa</label>
-                        <input type="text" id="searchEmpresa" placeholder="Empresa" autocomplete="off">
+                        <label>Buscar por entidad</label>
+                        <input type="text" id="searchEntidad" placeholder="Entidad" autocomplete="off">
                     </div>
                     <div class="badge-input-group">
                         <label>Cédula nueva (reverso)</label>
@@ -297,7 +297,7 @@
                     </div>
 
                     <!-- Campos configurables (Parámetros del Evento, 2026-09-16): las 5 variables
-                         fijas (Cargo/Empresa/Teléfono/Correo/Tipo de Asistente) + cada "opcional_N"
+                         fijas (Cargo/Entidad/Teléfono/Correo/Tipo de Asistente) + cada "opcional_N"
                          ya rotulado (Event.optional_field_labels) — cada uno con el tipo de control,
                          obligatoriedad y opciones que se hayan definido en
                          /kiosk/{{ event.id }}/parametros (por defecto: texto corto, opcional). Más
@@ -433,7 +433,7 @@
 
     window.directorySearch = GoldenDirectory.mountSearch({
         tbodyId: 'directoryTableBody',
-        searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', empresa: 'searchEmpresa' },
+        searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', entidad: 'searchEntidad' },
         fastCheckin: canAccredit,
     });
 

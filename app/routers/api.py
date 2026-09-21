@@ -235,7 +235,7 @@ def _duplicate_warning(db: Session, event_id: int, user: "User") -> dict:
         "times_registered": times_registered,
         "data": {
             "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-            "role": user.role, "company": user.company, "phone": user.phone,
+            "role": user.role, "entity": user.entity, "phone": user.phone,
             "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
         },
     }
@@ -279,7 +279,7 @@ async def get_all_users(
 
         result.append({
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
-            "role": u.role, "company": u.company, "phone": u.phone,
+            "role": u.role, "entity": u.entity, "phone": u.phone,
             "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta
             # persona para poder mostrarlos/editarlos (antes se editaba inline, sin necesitarlos).
@@ -318,7 +318,7 @@ async def recognize(
                 return _duplicate_warning(db, event.id, user)
             data = {
                 "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-                "role": user.role, "company": user.company, "phone": user.phone,
+                "role": user.role, "entity": user.entity, "phone": user.phone,
                 "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
             }
             if not event.auto_register and not confirm:
@@ -405,7 +405,7 @@ async def checkin_cedula(
 
     data = {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-        "role": user.role, "company": user.company, "phone": user.phone,
+        "role": user.role, "entity": user.entity, "phone": user.phone,
         "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
     }
 
@@ -457,7 +457,7 @@ async def update_user(
 
         field_configs = parametros.field_configs_for_event(db, event)
         final_values = {
-            "role": user.role, "company": user.company, "phone": user.phone,
+            "role": user.role, "entity": user.entity, "phone": user.phone,
             "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
         }
         missing = _missing_required_fields(field_configs, final_values)
@@ -505,7 +505,7 @@ async def update_user_cedula(
 
     new_user = User(
         id=new_id, tenant_id=user.tenant_id, first_name=user.first_name, last_name=user.last_name,
-        role=user.role, company=user.company, phone=user.phone, email=user.email,
+        role=user.role, entity=user.entity, phone=user.phone, email=user.email,
         opt_1=user.opt_1, opt_2=user.opt_2, extra_fields=user.extra_fields, face_encoding=user.face_encoding,
     )
     db.add(new_user)
@@ -636,7 +636,7 @@ async def update_registration_status(
 @router.post("/register")
 async def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
-    role: str = Form(""), company: str = Form(""), phone: str = Form(""),
+    role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None),
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
@@ -682,7 +682,7 @@ async def manual_register(
         return {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
 
     field_configs = parametros.field_configs_for_event(db, event)
-    final_values = {"role": role, "company": company, "phone": phone, "email": email, "opt_1": opt_1, **extras}
+    final_values = {"role": role, "entity": entity, "phone": phone, "email": email, "opt_1": opt_1, **extras}
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
         raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
@@ -702,7 +702,7 @@ async def manual_register(
 
     user = User(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
-        role=role, company=company, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json
+        role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json
     )
     user.set_extras(extras)
     db.add(user)
@@ -747,7 +747,7 @@ async def bulk_register(
     ya 'finalizado' (sí sobre 'creado' o 'en_proceso' — es preparación previa al evento).
 
     Campos dinámicos "opcional_1".."opcional_30" (2026-09-20): además de las columnas fijas
-    (id, nombres, apellidos, cargo, empresa, telefono, correo, "tipo de asistente"), el roster
+    (id, nombres, apellidos, cargo, entidad, telefono, correo, "tipo de asistente"), el roster
     puede traer hasta 30 columnas "opcional_N" — se interpretan las que de verdad vengan usadas
     (con al menos un valor no vacío en alguna fila), el resto se ignoran. Si el archivo trae
     columnas opcionales que este evento todavía no tiene rotuladas (Event.optional_field_labels),
@@ -934,7 +934,7 @@ async def bulk_register(
                 user.first_name = nombres
                 user.last_name = apellidos
                 user.role = clean_row.get('cargo', '')
-                user.company = clean_row.get('empresa', '')
+                user.entity = clean_row.get('entidad', '') or clean_row.get('empresa', '')  # 'empresa' = columna del nombre viejo, sigue aceptándose en Excels ya armados
                 user.phone = telefono
                 user.email = correo
                 user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')

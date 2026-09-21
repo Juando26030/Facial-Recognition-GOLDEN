@@ -51,7 +51,7 @@ DEFAULT_ELEMENTS = [
     {"id": "el_apellido", "type": "text_variable", "variable": "last_name", "x": 5, "y": 19, "width": 52, "height": 8,
      "rotation": 0, "z_index": 2, "font_family": "Roboto", "font_size": 14, "font_color": "#0A0E2E",
      "font_weight": "bold", "align": "center"},
-    {"id": "el_empresa", "type": "text_variable", "variable": "company", "x": 5, "y": 30, "width": 52, "height": 6,
+    {"id": "el_entidad", "type": "text_variable", "variable": "entity", "x": 5, "y": 30, "width": 52, "height": 6,
      "rotation": 0, "z_index": 3, "font_family": "Roboto", "font_size": 10, "font_color": "#555555",
      "font_weight": "normal", "align": "center"},
 ]
@@ -77,7 +77,7 @@ async def get_badge_template(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
 ):
     """La plantilla ACTIVA del evento — se crea sola con un diseño mínimo por defecto (nombre +
-    apellido + empresa) la primera vez que se pide, así el editor nunca arranca en blanco del
+    apellido + entidad) la primera vez que se pide, así el editor nunca arranca en blanco del
     todo. Mínimo `digitador`+ (bug real, QA local 2026-09-15): este GET también lo usa
     badge_print.html para cargar la plantilla antes de imprimir, y un digitador (el rol que más
     imprime el día del evento) recibía 403 — la escritura (`PUT` abajo) sigue exigiendo
@@ -241,7 +241,7 @@ async def get_badge_print_data(
     has_photo = os.path.isfile(os.path.join('data', event.tenant_id, 'known_people', f"{user.id}.jpg"))
     return {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-        "role": user.role, "company": user.company, "phone": user.phone, "email": user.email,
+        "role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email,
         "opt_1": user.opt_1, "extra_fields": user.get_extras(),
         "optional_field_labels": event.get_optional_labels(),
         "has_photo": has_photo,

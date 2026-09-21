@@ -214,7 +214,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     'Comfortaa','DM Sans','Space Grotesk','Manrope','Zilla Slab',
   ];
   const FIXED_VARIABLES = [
-    ['first_name', 'Nombres'], ['last_name', 'Apellidos'], ['company', 'Empresa'],
+    ['first_name', 'Nombres'], ['last_name', 'Apellidos'], ['entity', 'Entidad'],
     ['role', 'Cargo'], ['id', 'Cédula / ID'], ['phone', 'Teléfono'], ['email', 'Correo'],
     ['opt_1', 'Tipo de Asistente'],
   ];
@@ -235,7 +235,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const extras = {};
     (window.OPTIONAL_VARIABLES || []).forEach(([k]) => { extras[k] = 'Ejemplo'; });
     return {
-      id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', company: 'Golden Logísticas',
+      id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'Golden Logísticas',
       role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP',
       extra_fields: extras, has_photo: false,
     };

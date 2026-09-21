@@ -47,7 +47,7 @@
 
   /* Columnas visibles en la tabla (2026-09-16, pedido explícito de Juan David: la tabla de antes
      obligaba a hacer scroll horizontal con 10 columnas — ya no cabía en pantalla). El resto de
-     los datos (cargo, empresa, teléfono, correo, opcionales) se muestran y editan SOLO dentro del
+     los datos (cargo, entidad, teléfono, correo, opcionales) se muestran y editan SOLO dentro del
      modal de "Editar" (ver buildEditModal), no como <td> sueltos en la fila. opt_2 (antes
      "cantidad de empl") sigue deprecado, ni siquiera vive en el modal. */
   const FIELDS_ORDER = ['id', 'first_name', 'last_name', 'opt_1'];
@@ -358,12 +358,12 @@
   }
 
   /* Unifica en un solo componente lo que antes vivía duplicado inline en kiosk_cedula.html:
-     los 3 campos de búsqueda independientes (cédula/nombre/empresa) que filtran en vivo sobre
+     los 3 campos de búsqueda independientes (cédula/nombre/entidad) que filtran en vivo sobre
      los datos ya cargados, más el atajo de lector de código de barras (Enter con cédula exacta
      = acreditar al instante, con el mismo flujo DUPLICADO/force de siempre). Reusado ahora por
      la vista de Registro unificada (2026-09-21) esté o no el modo cámara activo — la búsqueda
      no depende de si el evento tiene reconocimiento facial o no.
-     opts: { tbodyId, searchIds: {cedula, nombre, empresa}, fastCheckin }
+     opts: { tbodyId, searchIds: {cedula, nombre, entidad}, fastCheckin }
      Devuelve { reload() } para que la página pueda refrescar manualmente (ej. al volver a la
      pestaña, o tras registrar a alguien nuevo desde otra pestaña). */
   function mountSearch(opts) {
@@ -372,7 +372,7 @@
     const ids = opts.searchIds || {};
     const cedulaInput = ids.cedula ? document.getElementById(ids.cedula) : null;
     const nombreInput = ids.nombre ? document.getElementById(ids.nombre) : null;
-    const empresaInput = ids.empresa ? document.getElementById(ids.empresa) : null;
+    const entidadInput = ids.entidad ? document.getElementById(ids.entidad) : null;
 
     /* Botón/contador "N sin registrar" (Sprint 2 Fix 2, 2026-09-15) — se crea solo, insertado
        justo antes de la tabla, así no hay que tocar cada template que use mountSearch. Clic
@@ -416,7 +416,7 @@
     function applyFilters() {
       const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
       const nombre = (nombreInput && nombreInput.value || '').trim();
-      const empresa = (empresaInput && empresaInput.value || '').trim();
+      const entidad = (entidadInput && entidadInput.value || '').trim();
       const filtered = allUsers.filter(u => {
         if (onlyNotRegistered && u.status !== 'No registrado') return false;
         if (cedula && !String(u.id || '').toLowerCase().includes(cedula)) return false;
@@ -424,7 +424,7 @@
           const fullName = `${u.first_name || ''} ${u.last_name || ''}`;
           if (!matchesWordPrefix(fullName, nombre)) return false;
         }
-        if (empresa && !matchesWordPrefix(String(u.company || ''), empresa)) return false;
+        if (entidad && !matchesWordPrefix(String(u.entity || ''), entidad)) return false;
         return true;
       });
       updateCounterLabel();
@@ -436,7 +436,7 @@
       applyFilters();
     }
 
-    [cedulaInput, nombreInput, empresaInput].forEach(input => {
+    [cedulaInput, nombreInput, entidadInput].forEach(input => {
       if (input) input.addEventListener('input', applyFilters);
     });
 
@@ -559,7 +559,7 @@
       clearFilters: () => {
         if (cedulaInput) cedulaInput.value = '';
         if (nombreInput) nombreInput.value = '';
-        if (empresaInput) empresaInput.value = '';
+        if (entidadInput) entidadInput.value = '';
         onlyNotRegistered = false;
         if (counterBtn) { counterBtn.style.background = '#fbe9ea'; counterBtn.style.color = '#a12631'; }
         applyFilters();

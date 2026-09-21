@@ -26,7 +26,7 @@ router = APIRouter()
 # ver stats.py: _FIXED_VARIABLES).
 CONFIGURABLE_FIXED_FIELDS = [
     ("role", "Cargo"),
-    ("company", "Empresa"),
+    ("entity", "Entidad"),
     ("phone", "Teléfono"),
     ("email", "Correo Electrónico"),
     ("opt_1", "Tipo de Asistente"),

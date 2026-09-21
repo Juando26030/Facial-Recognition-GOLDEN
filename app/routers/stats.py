@@ -20,7 +20,7 @@ router = APIRouter()
 # excluyen a propósito id/first_name/last_name/phone/email: son identificadores, prácticamente
 # únicos por persona — un gráfico de barras con 500 barras distintas no aporta nada.
 _FIXED_VARIABLES = [
-    ("company", "Empresa"),
+    ("entity", "Entidad"),
     ("role", "Cargo"),
     ("opt_1", "Tipo de Asistente"),
     ("status", "Estado de registro"),
