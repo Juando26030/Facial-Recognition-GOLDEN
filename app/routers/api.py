@@ -794,10 +794,34 @@ async def manual_register(
 
     return {"message": "Usuario registrado exitosamente como Nuevo."}
 
+def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: StaffUser):
+    """Ítem 18: agrega al evento `event` a TODAS las personas de otro evento del MISMO cliente (su
+    directorio: EventAttendee ∪ AccessLog), como asistentes esperados — sin AccessLog, o sea "No
+    registrado". Las personas viven a nivel de cliente (User), así que no se copian datos: ya son
+    las mismas filas, y por eso prevalece el dato del evento viejo frente a un Excel con el mismo ID.
+    También trae los rótulos de campos opcionales del evento viejo que este todavía no tenga, para
+    que sus valores (opcional_N) sigan teniendo nombre. Devuelve ({ids}, nombre_del_evento_origen)."""
+    source = get_event_for_staff(source_event_id, db, staff)
+    if source.id == event.id:
+        raise HTTPException(status_code=400, detail="Elige un evento distinto a este")
+    if source.tenant_id != event.tenant_id:
+        raise HTTPException(status_code=400, detail="Solo se pueden traer personas de eventos del mismo cliente")
+    ids = {a.user_id for a in db.query(EventAttendee).filter(EventAttendee.event_id == source.id)}
+    ids |= {l.user_id for l in db.query(AccessLog).filter(AccessLog.event_id == source.id, AccessLog.record_type != "Actualizado")}
+    for user_id in ids:
+        _upsert_attendee(db, event.id, user_id, event.tenant_id)
+    labels = event.get_optional_labels()
+    for key, label in source.get_optional_labels().items():
+        labels.setdefault(key, label)
+    event.set_optional_labels(labels)
+    db.flush()
+    return ids, source.name
+
+
 @router.post("/bulk_register")
 async def bulk_register(
-    event_id: int = Form(...), roster_file: UploadFile = File(...), zip_file: UploadFile = File(None),
-    field_labels: str = Form(None),
+    event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
+    field_labels: str = Form(None), source_event_id: int = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
@@ -835,6 +859,21 @@ async def bulk_register(
                 "base sobre este evento — si necesitas cargar una base distinta, crea un evento nuevo."
             ),
         )
+
+    # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
+    # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
+    has_excel = roster_file is not None and bool(roster_file.filename)
+    if not has_excel and not source_event_id:
+        raise HTTPException(status_code=400, detail="Sube un archivo de base o elige un evento anterior del que traer a las personas")
+    carried_ids = set()
+    if not has_excel:
+        carried_ids, source_name = _carry_source_event(db, event, source_event_id, staff)
+        event.roster_uploaded = True
+        db.commit()
+        return {
+            "message": f"Se agregaron {len(carried_ids)} personas del evento «{source_name}» (quedan como No registrado).",
+            "count": 0, "carried": len(carried_ids), "errors": [], "optional_labels": event.get_optional_labels(),
+        }
 
     content = await roster_file.read()
     header_columns, rows = _read_roster_rows(roster_file.filename, content)
@@ -879,6 +918,10 @@ async def bulk_register(
     if field_labels:
         _apply_optional_labels(event, used_optional_keys, field_labels)
         db.commit()
+
+    source_name = ""
+    if source_event_id:
+        carried_ids, source_name = _carry_source_event(db, event, source_event_id, staff)
 
     known_faces_dir = _known_faces_dir(event.tenant_id)
     # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
@@ -956,6 +999,12 @@ async def bulk_register(
             errors.append(f"❌ Fila {row_num} ({where}): sin ID/cédula, se omitió esta fila.")
             continue
 
+        if identificador in carried_ids:
+            # Ítem 18: un ID repetido entre el evento anterior y el Excel queda como UN solo registro,
+            # y prevalece el dato del evento anterior — no se toca a la persona que ya existe.
+            errors.append(f"ℹ️ Fila {row_num}: la cédula '{identificador}' ya venía del evento anterior — se conservaron sus datos del evento anterior (no se duplicó).")
+            continue
+
         # Validaciones de calidad de dato — no bloquean la fila (se guarda igual), solo avisan
         # exactamente en qué celda está el problema para que el operador lo revise si quiere.
         nombres, nombres_cell = _field_lookup(clean_row, header_columns, row_num, 'nombres', 'nombre')
@@ -1028,11 +1077,13 @@ async def bulk_register(
             where = info["id_cell"] or f"fila {row_num}"
             errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {e}")
 
-    if count > 0 and not event.roster_uploaded:
+    if (count > 0 or carried_ids) and not event.roster_uploaded:
         event.roster_uploaded = True
 
     db.commit()
     message = f"Carga completa: {count} perfiles cargados."
+    if carried_ids:
+        message += f" Además, {len(carried_ids)} personas traídas del evento «{source_name}»."
     if errors:
         message += f" {len(errors)} observación(es) — revisa el detalle."
     return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels()}

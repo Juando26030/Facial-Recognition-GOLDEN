@@ -54,9 +54,20 @@
           cédula, facial o QR. No es necesario volver a subir un archivo distinto por cada método.
         </p>
 
+        <!-- Ítem 18 (reunión 2026-09-21): traer a todas las personas de otro evento DEL MISMO CLIENTE. -->
+        <div class="badge-input-group" style="display:flex; align-items:center; gap:10px;">
+          <input type="checkbox" id="useSourceEvent" style="width:auto;">
+          <label for="useSourceEvent" style="margin:0;">Tener en cuenta la base de datos de otro evento de este cliente</label>
+        </div>
+        <div id="sourceEventGroup" class="badge-input-group" style="display:none; margin:0.6rem 0 1rem;">
+          <label>Evento del que traer a las personas (solo eventos de {{ event.tenant.name }})</label>
+          <select name="source_event_id" id="sourceEventSelect" style="width:100%; padding:0.7rem; border:1px solid #ddd; border-radius:10px;"></select>
+          <p style="font-size:0.78rem; color:#888; margin-top:0.4rem;">Entran todas como "No registrado". Si también subes un Excel y una cédula se repite, queda un solo registro con los datos del evento anterior. Puedes usar solo esta opción, sin Excel.</p>
+        </div>
+
         <div class="badge-input-group">
           <label>Archivo de base (.xlsx o .csv)</label>
-          <input type="file" name="roster_file" accept=".xlsx,.csv" required>
+          <input type="file" name="roster_file" id="rosterFileInput" accept=".xlsx,.csv" required>
           <p style="font-size:0.8rem; margin-top:0.4rem;">
             ¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download style="color: var(--golden-primary); font-weight:600;">Descarga la plantilla de Excel</a>.
           </p>
@@ -86,6 +97,26 @@ const facialZipGroup = document.getElementById("facialZipGroup");
 enableFacial.addEventListener("change", () => {
     facialZipGroup.style.display = enableFacial.checked ? "block" : "none";
 });
+
+const useSourceEvent = document.getElementById("useSourceEvent");
+const sourceEventGroup = document.getElementById("sourceEventGroup");
+const sourceEventSelect = document.getElementById("sourceEventSelect");
+const rosterFileInput = document.getElementById("rosterFileInput");
+let sourceEventsLoaded = false;
+useSourceEvent.addEventListener("change", async () => {
+    sourceEventGroup.style.display = useSourceEvent.checked ? "block" : "none";
+    sourceEventSelect.disabled = !useSourceEvent.checked;
+    rosterFileInput.required = !useSourceEvent.checked;  // con un evento anterior el Excel pasa a ser opcional
+    if (useSourceEvent.checked && !sourceEventsLoaded) {
+        const res = await fetch(`/api/events?tenant_id=${encodeURIComponent("{{ event.tenant_id }}")}`);
+        const events = (res.ok ? await res.json() : []).filter(e => e.id !== window.EVENT_ID);
+        sourceEventSelect.innerHTML = events.length
+            ? events.map(e => `<option value="${e.id}">${e.name} (${e.event_code || "sin código"})</option>`).join("")
+            : '<option value="">Este cliente no tiene otros eventos</option>';
+        sourceEventsLoaded = true;
+    }
+});
+sourceEventSelect.disabled = true;
 
 const rosterForm = document.getElementById("rosterForm");
 const rosterResult = document.getElementById("rosterResult");
@@ -141,6 +172,9 @@ async function submitRoster(formData) {
     renderRosterResult(data);
     rosterForm.reset();
     facialZipGroup.style.display = "none";
+    sourceEventGroup.style.display = "none";
+    sourceEventSelect.disabled = true;
+    rosterFileInput.required = true;
 }
 
 rosterForm.addEventListener("submit", async (e) => {
@@ -167,6 +201,7 @@ rosterForm.addEventListener("submit", async (e) => {
     const formData = new FormData(e.target);
     formData.append("event_id", window.EVENT_ID);
     if (!enableFacial.checked) formData.delete("zip_file");
+    if (!useSourceEvent.checked || !sourceEventSelect.value) formData.delete("source_event_id");
 
     try {
         await submitRoster(formData);
