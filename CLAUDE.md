@@ -635,3 +635,25 @@ Requiere PostgreSQL corriendo y accesible con la URL de `.env`. `face_recognitio
 - Systemd (`facial-recognition.service`) mantiene viva la app FastAPI; se reinicia solo si cae.
 - Deploy automático vía runner self-hosted de GitHub Actions instalado en la propia VM (ver `.github/workflows/deploy.yml`): en cada push a `main` instala dependencias, corre `alembic upgrade head`, y reinicia el servicio.
 - Sigue faltando: `Dockerfile` y los unit files de systemd versionados en el repo (hoy `facial-recognition.service` solo existe en `/etc/systemd/system/` de la VM, no en git); backup offsite.
+
+## Reunión 2026-09-21 — 20 ítems resueltos en local (rama `sprint3/bugs-reunion-0921`, NO desplegada)
+
+Fuente: `bugs_reunion.md` (no versionado). Migraciones nuevas **0024–0034** (todas probadas de cero contra Postgres con `alembic upgrade head`, y bajando/subiendo). Resumen técnico por ítem:
+- **22** verde de "Registrado" más visible (`.row-registrado`, alpha 0.22); el estado ya persistía desde la Fase 17.
+- **3b** `User.company` → `User.entity` ("Entidad") en todo (migración 0024 también migra `event_field_configs.field_key` y las variables de escarapela). El roster acepta `entidad` y, por compatibilidad, `empresa`.
+- **3a + 4** `event_field_configs.label`/`sort_order` (0025): cada evento renombra y reordena (arrastrando, en Parámetros) TODOS los campos, identidad incluida. Formulario de alta, modal de edición, cabeceras del Directorio, búsqueda, Estadísticas y reporte usan la etiqueta/orden del evento. La identidad y los campos "especiales" (`categories`, `certificate`, `digital_contact`) son `locked` (solo etiqueta/posición; `certificate` ni siquiera etiqueta).
+- **2** búsqueda tolerante (Damerau–Levenshtein, apodos inversos, tokens sin orden): `_typo_match` (Python) / `wordMatches` (JS), mantenidos iguales a propósito.
+- **16 y 10** tipos de campo `consent` y `signature` (`help_text`, 0026) solo para `opcional_N`. Las firmas viven como PNG por evento/persona/campo en `data/<tenant>/signatures/` (`routers/signatures.py`) y van incrustadas en el Excel.
+- **20** `GET /api/email-check` (solo lectura, por cliente).
+- **1** `events.logo_mode/logo_path` (0027). Helper Jinja `event_logo_url(event)`.
+- **14** `events.categories`, `events.badge_per_category`, `event_attendees.categories`, `badge_templates.category` (0028; `UNIQUE(event_id)` → `UNIQUE(event_id, category)`). La categoría es POR EVENTO y por persona (EventAttendee).
+- **6** `events.report_pdf_path`, `staff_users.email` (0029); `app/mailer.py` (SMTP por `.env`; sin `SMTP_HOST` deja un `.eml` en `data/outbox/` y NO envía); modal "Editar evento" compartido (`templates/_event_edit_modal.html`) en Calendario/Eventos/Clientes; bombillo (`reportBulbHtml`).
+- **8 y 7** `event_documents`, `event_expenses` (0030, `routers/event_docs.py`). Se agregó `amount` a los gastos (el reporte pide total). `delete_event` ahora también suelta plantillas, parámetros, impresiones, documentos, gastos y datos de áreas/inventario.
+- **18** `bulk_register` acepta `source_event_id` (mismo cliente) con o sin Excel; ID repetido → prevalece el evento anterior.
+- **19** `super_events` + `events.super_event_id` (0031); aviso de asistencia entre hermanos en Registrar nuevo (banner "Solo vincular") y en `checkin-cedula`.
+- **5** certificados (0032): `events.certificates_enabled`, `event_attendees.certificate`, `badge_templates.kind`; el editor de escarapelas se reusa con `?kind=certificate` (A4). El ZIP de PDFs se genera **en el navegador** (jsPDF + html2canvas + JSZip por CDN) para conservar exactamente el render/fuentes del editor y no agregar dependencias de Python.
+- **9** Áreas e Inventario (0033, `routers/areas_inventory.py`): switches por evento, reingresos por zona, entregas todo-o-nada con `with_for_update`. Reportes en hora local (`app/timeutil.py`, `APP_TIMEZONE`). OJO: el reporte de registro original (`reports.py`) sigue mostrando UTC.
+- **17** escarapela digital (0034): página pública `/b/<token>` (sin login, token largo por persona/evento), animación + reloj en vivo; envío por correo (SMTP) o SMS (Twilio) — sin proveedor queda en `data/outbox/`.
+- **12 y 13** investigación en `docs/investigaciones_reunion_2026-09-21.md`.
+
+**Local con `uvicorn --reload` en Windows:** el autoreload se cuelga si el navegador tiene conexiones keep-alive abiertas ("Reloading..." sin volver a arrancar) — ahí hay que matar el proceso y relanzar.
