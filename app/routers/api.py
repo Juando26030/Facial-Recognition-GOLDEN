@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 from PIL import Image
 from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, AccessLog, EventAttendee, PrintLog, StaffUser
@@ -287,6 +288,26 @@ async def get_all_users(
         })
 
     return result
+
+@router.get("/email-check")
+async def email_check(
+    event_id: int, email: str, exclude_id: str = "", db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role("digitador")),
+):
+    """Aviso de correo ya existente (reunión 2026-09-21, ítem 20) — SOLO lectura: dice si otra
+    persona de este cliente (las personas viven a nivel de tenant) ya tiene ese correo, para que
+    quien digita lo vea ANTES de guardar. No bloquea nada. `exclude_id` = la propia persona al
+    editar, para que su propio correo no cuente como duplicado."""
+    event = get_event_for_staff(event_id, db, staff)
+    wanted = email.strip().lower()
+    if not wanted:
+        return {"exists": False, "matches": []}
+    query = db.query(User).filter(User.tenant_id == event.tenant_id, func.lower(User.email) == wanted)
+    if exclude_id:
+        query = query.filter(User.id != exclude_id)
+    matches = [{"id": u.id, "name": f"{u.first_name or ''} {u.last_name or ''}".strip()} for u in query.limit(5).all()]
+    return {"exists": bool(matches), "matches": matches}
+
 
 @router.post("/recognize")
 async def recognize(

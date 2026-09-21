@@ -187,6 +187,7 @@
     `;
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+    window.FieldRender.watchEmail(box, () => user.id);
     window.FieldRender.initSignatures(box, {
       existingUrl: (key) => `/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/signature/${key}`,
     });

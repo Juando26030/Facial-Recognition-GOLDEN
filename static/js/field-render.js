@@ -112,5 +112,33 @@
     }
   }
 
-  window.FieldRender = { renderControl, initSignatures, saveSignatures };
+  /* Aviso de correo ya registrado (ítem 20): al salir del campo correo (o dejar de escribir), consulta
+     el backend y muestra un aviso naranja bajo el campo. Solo informa, no bloquea el guardado.
+     `getExcludeId()` = cédula de la persona que se edita (su propio correo no cuenta). */
+  function watchEmail(root, getExcludeId) {
+    const input = root.querySelector('input[name="email"]');
+    if (!input) return;
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:0.75rem; color:#b26a00; margin-top:4px; display:none;';
+    input.insertAdjacentElement('afterend', note);
+    let timer = null, seq = 0;
+    async function check() {
+      const value = input.value.trim();
+      const mine = ++seq;
+      if (!value.includes('@')) { note.style.display = 'none'; return; }
+      try {
+        const qs = new URLSearchParams({ event_id: window.EVENT_ID, email: value, exclude_id: getExcludeId ? (getExcludeId() || '') : '' });
+        const data = await (await fetch('/api/email-check?' + qs)).json();
+        if (mine !== seq) return;
+        if (data.exists) {
+          note.textContent = '⚠️ Este correo ya está registrado a nombre de ' + data.matches.map(m => `${m.name || 'sin nombre'} (${m.id})`).join(', ') + '.';
+          note.style.display = 'block';
+        } else note.style.display = 'none';
+      } catch (e) { /* solo es un aviso: si falla la consulta, no molesta */ }
+    }
+    input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(check, 500); });
+    input.addEventListener('blur', () => { clearTimeout(timer); check(); });
+  }
+
+  window.FieldRender = { renderControl, initSignatures, saveSignatures, watchEmail };
 })();

@@ -213,6 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (slot) slot.innerHTML = window.FieldRender.renderControl(cfg, '');
         });
         window.FieldRender.initSignatures(regForm);
+        window.FieldRender.watchEmail(regForm, () => regForm.querySelector('[name="id"]').value.trim());
         regForm.addEventListener('reset', () => setTimeout(() => {
             regForm.querySelectorAll('.sig-canvas').forEach(c => c.getContext('2d').clearRect(0, 0, c.width, c.height));
             regForm.querySelectorAll('.sig-wrap').forEach(w => { w._dirty = false; });
