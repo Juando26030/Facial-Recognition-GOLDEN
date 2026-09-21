@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, auth as auth_router, badges, calendar as calendar_router, cedula, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -77,6 +77,7 @@ app.include_router(parametros.router, prefix="/api")
 app.include_router(event_report.router, prefix="/api")
 app.include_router(event_docs.router, prefix="/api")
 app.include_router(super_events.router, prefix="/api")
+app.include_router(areas_inventory.router, prefix="/api")
 app.include_router(signatures.router, prefix="/api")
 app.include_router(calendar_router.router, prefix="/api")
 
@@ -402,6 +403,18 @@ async def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depe
     /kiosk/{event_id}/registro, disponible para digitador+. 'comercial' excluido explícitamente
     (Sprint 2.4 Fase 6) — no debe diseñar NI imprimir escarapelas."""
     return _resolve_kiosk_page(event_id, request, db, "badge_editor.html", min_role="coordinador", exclude_roles=["comercial"])
+
+
+@app.get("/kiosk/{event_id}/areas")
+async def kiosk_areas(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Control de Áreas (ítem 9a): entrada/salida por zona. digitador+ (comercial excluida)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_areas.html", min_role="digitador", exclude_roles=["comercial"])
+
+
+@app.get("/kiosk/{event_id}/inventario")
+async def kiosk_inventory(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Control de Inventario (ítem 9b): entrega de ítems/combos. digitador+ (comercial excluida)."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_inventario.html", min_role="digitador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/certificado")

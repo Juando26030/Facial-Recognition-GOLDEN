@@ -218,6 +218,8 @@ class Event(Base):
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
+    areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
+    inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
     report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente
     report_uploaded_at = Column(DateTime, nullable=True)
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1
@@ -410,3 +412,57 @@ class SuperEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     events = relationship("Event", back_populates="super_event")
+
+
+class EventArea(Base):
+    """Zona de un evento (reunión 2026-09-21, ítem 9a: Control de Áreas). `allow_reentry` apagado =
+    la persona solo puede entrar UNA vez a esa zona (un segundo intento da alerta roja)."""
+    __tablename__ = 'event_areas'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    name = Column(String, nullable=False)
+    allow_reentry = Column(Boolean, default=True, server_default='true', nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AreaMovement(Base):
+    """Una entrada ('in') o salida ('out') de una persona a una zona, con hora exacta y método."""
+    __tablename__ = 'area_movements'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    area_id = Column(Integer, ForeignKey('event_areas.id'), nullable=False)
+    user_id = Column(String, nullable=False)
+    tenant_id = Column(String, nullable=False)
+    direction = Column(String, nullable=False)  # 'in' | 'out'
+    method = Column(String, nullable=True)  # 'cedula' | 'qr' | 'facial' | 'manual'
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)
+
+
+class InventoryItem(Base):
+    """Ítem a repartir en un evento (ítem 9b: Control de Inventario) con su cantidad inicial."""
+    __tablename__ = 'inventory_items'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    name = Column(String, nullable=False)
+    initial_qty = Column(Integer, nullable=False, default=0)
+    allow_multiple = Column(Boolean, default=False, server_default='false', nullable=False)  # ¿se pueden entregar varias unidades de una vez?
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class InventoryDelivery(Base):
+    """Una línea entregada (ítem + cantidad) a una persona; las de un mismo combo comparten `batch_id`."""
+    __tablename__ = 'inventory_deliveries'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    item_id = Column(Integer, ForeignKey('inventory_items.id'), nullable=False)
+    batch_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    tenant_id = Column(String, nullable=False)
+    qty = Column(Integer, nullable=False, default=1)
+    delivered_at = Column(DateTime, default=datetime.utcnow)
+    delivered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+
+    __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)

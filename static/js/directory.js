@@ -631,5 +631,5 @@
     };
   }
 
-  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode };
+  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode, matchesWordPrefix };
 })();

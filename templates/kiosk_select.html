@@ -78,6 +78,20 @@
         <div class="mode-title">Código QR</div>
         <div class="mode-sub">Próximamente</div>
       </div>
+      {% if event.areas_enabled and staff_role != "comercial" %}
+      <a href="/kiosk/{{ event.id }}/areas" class="mode-card enabled">
+        <div class="mode-icon">🚪</div>
+        <div class="mode-title">Control de Áreas</div>
+        <div class="mode-sub">Entradas y salidas por zona (cédula, QR o facial)</div>
+      </a>
+      {% endif %}
+      {% if event.inventory_enabled and staff_role != "comercial" %}
+      <a href="/kiosk/{{ event.id }}/inventario" class="mode-card enabled">
+        <div class="mode-icon">📦</div>
+        <div class="mode-title">Control de Inventario</div>
+        <div class="mode-sub">Entrega de insumos y combos, con el disponible al día</div>
+      </a>
+      {% endif %}
       {% if staff_role != "digitador" %}
       {# Sprint 2.4 Fase 6 (2026-09-16, pedido explícito): 'comercial' no debe ver Adjuntar Base
          de Datos, Escarapelas ni Parámetros del Evento — literal que no aparezcan, no solo que

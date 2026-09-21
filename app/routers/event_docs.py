@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
+from app.timeutil import to_local
 from app.models import EventDocument, EventExpense, StaffUser
 
 router = APIRouter()
@@ -222,7 +223,7 @@ async def expenses_report(event_id: int, db: Session = Depends(get_db), staff: S
     rows = db.query(EventExpense).filter(EventExpense.event_id == event.id).order_by(EventExpense.created_at).all()
     headers = ["Fecha", "Categoría", "Responsable", "Descripción", "Aplica a", "Valor", "Evidencia"]
     df = pd.DataFrame(
-        [[e.created_at.strftime("%Y-%m-%d") if e.created_at else "", e.category, e.responsible, e.description or "",
+        [[to_local(e.created_at).strftime("%Y-%m-%d") if e.created_at else "", e.category, e.responsible, e.description or "",
           e.applies_to or "", float(e.amount or 0), "" if e.evidence_path else "Sin evidencia"] for e in rows],
         columns=headers,
     )

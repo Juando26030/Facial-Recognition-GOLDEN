@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Áreas | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
+    <script src="{{ url_for('static', path='js/directory.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.4rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
+        .toolbar { display:flex; gap:0.8rem; flex-wrap:wrap; align-items:end; }
+        .toolbar label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
+        .toolbar select, .toolbar input[type=text] { padding:0.65rem 0.8rem; border:1px solid #ddd; border-radius:10px; font-size:0.95rem; }
+        .dir-btn { border:1px solid #ccc; background:white; border-radius:20px; padding:8px 16px; cursor:pointer; font-weight:600; }
+        .dir-btn.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
+        .banner { border-radius:14px; padding:1rem 1.2rem; margin-top:1rem; font-size:1rem; display:none; }
+        .banner.ok-in { background:#d4edda; color:#155724; border:1px solid #28a745; }
+        .banner.ok-out { background:#f8d7da; color:#721c24; border:1px solid #dc3545; }
+        .banner.alert { background:#dc3545; color:white; font-weight:700; font-size:1.1rem; }
+        .banner.warn { background:#fff3cd; color:#664d03; border:1px solid #ffe69c; }
+        table.pres { width:100%; border-collapse:collapse; }
+        table.pres td, table.pres th { padding:0.55rem 0.6rem; font-size:0.88rem; text-align:left; border-bottom:1px solid #f0f0f0; }
+        tr.in td { background:rgba(40,167,69,0.16); } tr.out td { background:rgba(220,53,69,0.14); }
+        .suggest { margin-top:0.6rem; display:flex; flex-direction:column; gap:4px; }
+        .suggest button { text-align:left; border:1px solid #eee; background:#fafafa; border-radius:10px; padding:6px 10px; cursor:pointer; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }}; window.FACIAL = {{ "true" if event.facial_enabled else "false" }}; window.AUTOREG = {{ "true" if event.auto_register else "false" }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.areas_enabled else "false" }};</script>
+
+<main class="golden-main">
+  <section class="golden-section">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2>Control de <span class="gradient-text">Áreas</span></h2>
+      </div>
+      <div class="app-container">
+        <div class="card" id="disabledCard" style="display:none;">El control de áreas no está activado en este evento (Parámetros del Evento).</div>
+        <div id="mainArea" style="display:none;">
+          <div class="card">
+            <div class="toolbar">
+              <div><label>Zona</label><select id="areaSelect"></select></div>
+              <div>
+                <label>Movimiento</label>
+                <div style="display:flex; gap:6px;">
+                  <button type="button" class="dir-btn active" data-dir="auto">Automático</button>
+                  <button type="button" class="dir-btn" data-dir="in">Entrada</button>
+                  <button type="button" class="dir-btn" data-dir="out">Salida</button>
+                </div>
+              </div>
+              <div style="flex:1; min-width:240px;"><label>Cédula / QR / lector</label><input type="text" id="scanInput" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter" style="width:100%; box-sizing:border-box;"></div>
+              <button type="button" id="faceBtn" class="dir-btn" style="display:none;">📸 Facial</button>
+            </div>
+            <div style="margin-top:0.8rem;"><label style="font-size:0.78rem; color:#777;">O busca por nombre</label>
+              <input type="text" id="nameSearch" autocomplete="off" placeholder="Nombre o apellido" style="width:100%; box-sizing:border-box; padding:0.6rem 0.8rem; border:1px solid #ddd; border-radius:10px;">
+              <div class="suggest" id="suggest"></div>
+            </div>
+            <div class="banner" id="banner"></div>
+            <p style="font-size:0.78rem; color:#888; margin:0.8rem 0 0;">Modo autoregistro: <strong id="autoregLabel"></strong> — con "OFF" hay que confirmar cada movimiento con "Acreditar".</p>
+          </div>
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
+              <h4 style="margin:0; color:var(--golden-dark);">Personas en la zona: <span id="insideCount">0</span> adentro</h4>
+              <a id="reportBtn" href="/api/events/{{ event.id }}/areas-report" style="display:none; border:1px solid var(--golden-primary); background:var(--golden-primary); color:var(--golden-dark); border-radius:20px; padding:6px 14px; font-weight:700; text-decoration:none; font-size:0.8rem;">⬇ Reporte de movimientos (Excel)</a>
+            </div>
+            <table class="pres"><thead><tr><th>Cédula</th><th>Persona</th><th>Estado</th><th>Hora</th></tr></thead><tbody id="presBody"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+let direction = 'auto', users = [];
+const $ = (id) => document.getElementById(id);
+function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+const areaId = () => $('areaSelect').value;
+
+async function init() {
+  if (!ENABLED) { $('disabledCard').style.display = 'block'; return; }
+  $('mainArea').style.display = 'block';
+  $('autoregLabel').textContent = AUTOREG ? 'ON' : 'OFF';
+  if (FACIAL) $('faceBtn').style.display = 'inline-block';
+  if (CAN_REPORT) $('reportBtn').style.display = 'inline-block';
+  users = await (await fetch(`/api/users?event_id=${EVENT_ID}`)).json();
+  await loadAreas();
+  $('scanInput').focus();
+}
+
+async function loadAreas(keep) {
+  const areas = await (await fetch(`/api/events/${EVENT_ID}/areas`)).json();
+  const current = keep || areaId();
+  $('areaSelect').innerHTML = areas.length ? areas.map(a => `<option value="${a.id}">${esc(a.name)} (${a.inside} adentro${a.allow_reentry ? '' : ' · sin reingresos'})</option>`).join('') : '<option value="">Crea zonas en Parámetros del Evento</option>';
+  if (current) $('areaSelect').value = current;
+  loadPresence();
+}
+
+async function loadPresence() {
+  if (!areaId()) { $('presBody').innerHTML = ''; $('insideCount').textContent = '0'; return; }
+  const rows = await (await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/presence`)).json();
+  $('insideCount').textContent = rows.filter(r => r.direction === 'in').length;
+  $('presBody').innerHTML = rows.length ? rows.map(r => `<tr class="${r.direction}"><td>${esc(r.id)}</td><td>${esc(r.name)}</td><td>${r.direction === 'in' ? '🟢 Entró' : '🔴 Salió'}</td><td>${new Date(r.time + 'Z').toLocaleTimeString()}</td></tr>`).join('') : '<tr><td colspan="4" style="color:#999;">Sin movimientos todavía.</td></tr>';
+}
+
+function show(cls, html) { const b = $('banner'); b.className = 'banner ' + cls; b.innerHTML = html; b.style.display = 'block'; }
+
+async function handle(result, retry) {
+  const who = result.data ? `${esc(result.data.first_name)} ${esc(result.data.last_name)}` : '';
+  if (result.result === 'OK') {
+    show(result.direction === 'in' ? 'ok-in' : 'ok-out', `${result.direction === 'in' ? '🟢 ENTRÓ' : '🔴 SALIÓ'}: <strong>${who}</strong> — ${esc(result.area)} · ${new Date(result.time + 'Z').toLocaleTimeString()}`);
+    await loadAreas(areaId());
+  } else if (result.result === 'FOUND_PENDING') {
+    show('warn', `Encontrado(a): <strong>${who}</strong> — se registrará <strong>${result.direction === 'in' ? 'ENTRADA' : 'SALIDA'}</strong> a ${esc(result.area)}. <button type="button" id="confirmBtn" class="dir-btn active" style="margin-left:8px;">✅ Acreditar</button>`);
+    $('confirmBtn').addEventListener('click', () => retry(true, result.direction));
+  } else if (result.result === 'ALREADY_ENTERED') {
+    show('alert', `⛔ ALERTA: ${esc(result.details)}`);
+  } else if (result.result === 'NOT_INSIDE') {
+    show('warn', `⚠️ ${esc(result.details)}`);
+  } else {
+    show('warn', esc(result.details || 'No se encontró a la persona'));
+  }
+}
+
+async function register(cedula, confirm, forcedDirection) {
+  if (!areaId()) { showToast('Primero elige una zona', 'error'); return; }
+  const method = /,/.test(cedula) ? 'cedula' : 'cedula';
+  const res = await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/movement`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cedula, direction: forcedDirection || direction, confirm: !!confirm, method }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { show('warn', esc(data.detail || 'No se pudo registrar')); return; }
+  await handle(data, (c, d) => register(cedula, c, d));
+}
+
+document.querySelectorAll('.dir-btn[data-dir]').forEach(btn => btn.addEventListener('click', () => {
+  direction = btn.dataset.dir;
+  document.querySelectorAll('.dir-btn[data-dir]').forEach(b => b.classList.toggle('active', b === btn));
+}));
+$('areaSelect').addEventListener('change', loadPresence);
+
+$('scanInput').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const raw = e.target.value.trim(); e.target.value = '';
+  if (!raw) return;
+  const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);  // cédula vieja (CSV del lector) o ID suelto / QR con el ID
+  register(parsed ? parsed.cedula : raw);
+});
+
+$('nameSearch').addEventListener('input', (e) => {
+  const q = e.target.value.trim();
+  const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];
+  $('suggest').innerHTML = found.map(u => `<button type="button" data-id="${esc(u.id)}">${esc(u.first_name)} ${esc(u.last_name)} · ${esc(u.id)}</button>`).join('');
+});
+$('suggest').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-id]'); if (!btn) return;
+  register(btn.dataset.id); $('suggest').innerHTML = ''; $('nameSearch').value = '';
+});
+
+$('faceBtn').addEventListener('click', () => CameraCapture.open({ title: 'Reconocimiento facial', onCapture: async (blob) => {
+  const send = async (confirm, forcedDirection) => {
+    const fd = new FormData(); fd.append('file', blob, 'face.jpg'); fd.append('direction', forcedDirection || direction); fd.append('confirm', confirm ? 'true' : 'false');
+    const res = await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/movement-face`, { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { show('warn', esc(data.detail || 'No se pudo registrar')); return; }
+    await handle(data, send);
+  };
+  await send(false);
+} }));
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Inventario | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/directory.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.4rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
+        .banner { border-radius:14px; padding:0.9rem 1.2rem; margin-top:0.8rem; display:none; }
+        .banner.ok { background:#d4edda; color:#155724; border:1px solid #28a745; }
+        .banner.warn { background:#fff3cd; color:#664d03; border:1px solid #ffe69c; }
+        .item-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:0.7rem 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
+        .item-row.empty { opacity:0.45; }
+        .avail { font-size:0.8rem; color:#777; }
+        .suggest { margin-top:0.6rem; display:flex; flex-direction:column; gap:4px; }
+        .suggest button { text-align:left; border:1px solid #eee; background:#fafafa; border-radius:10px; padding:6px 10px; cursor:pointer; }
+        table.del { width:100%; border-collapse:collapse; } table.del td, table.del th { padding:0.5rem 0.6rem; font-size:0.85rem; text-align:left; border-bottom:1px solid #f0f0f0; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }}; window.CAN_REPORT = {{ "true" if staff_role != "digitador" else "false" }}; window.ENABLED = {{ "true" if event.inventory_enabled else "false" }};</script>
+
+<main class="golden-main">
+  <section class="golden-section">
+    <div class="golden-container">
+      <div class="golden-section-title">
+        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <h2>Control de <span class="gradient-text">Inventario</span></h2>
+      </div>
+      <div class="app-container">
+        <div class="card" id="disabledCard" style="display:none;">El control de inventario no está activado en este evento (Parámetros del Evento).</div>
+        <div id="mainArea" style="display:none;">
+          <div class="card">
+            <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">1. ¿A quién se le entrega?</h4>
+            <input type="text" id="scanInput" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter" style="width:100%; box-sizing:border-box; padding:0.65rem 0.8rem; border:1px solid #ddd; border-radius:10px;">
+            <input type="text" id="nameSearch" autocomplete="off" placeholder="…o busca por nombre" style="width:100%; box-sizing:border-box; padding:0.6rem 0.8rem; border:1px solid #ddd; border-radius:10px; margin-top:0.5rem;">
+            <div class="suggest" id="suggest"></div>
+            <div class="banner ok" id="personBanner"></div>
+          </div>
+          <div class="card">
+            <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">2. ¿Qué se le entrega? <span style="font-weight:400; color:#888; font-size:0.8rem;">(uno o varios a la vez — combos)</span></h4>
+            <div id="itemsList"></div>
+            <div style="display:flex; justify-content:flex-end; margin-top:1rem;"><button type="button" id="deliverBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Entregar</button></div>
+            <div class="banner" id="resultBanner"></div>
+          </div>
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
+              <h4 style="margin:0; color:var(--golden-dark);">Últimas entregas</h4>
+              <a id="reportBtn" href="/api/events/{{ event.id }}/inventory-report" style="display:none; border:1px solid var(--golden-primary); background:var(--golden-primary); color:var(--golden-dark); border-radius:20px; padding:6px 14px; font-weight:700; text-decoration:none; font-size:0.8rem;">⬇ Reporte (Excel)</a>
+            </div>
+            <table class="del"><thead><tr><th>Hora</th><th>Persona</th><th>Ítem</th><th>Cant.</th></tr></thead><tbody id="delBody"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+let users = [], person = null, items = [];
+
+async function init() {
+  if (!ENABLED) { $('disabledCard').style.display = 'block'; return; }
+  $('mainArea').style.display = 'block';
+  if (CAN_REPORT) $('reportBtn').style.display = 'inline-block';
+  users = await (await fetch(`/api/users?event_id=${EVENT_ID}`)).json();
+  await loadItems(); loadDeliveries();
+  $('scanInput').focus();
+}
+
+async function loadItems() {
+  items = await (await fetch(`/api/events/${EVENT_ID}/inventory`)).json();
+  $('itemsList').innerHTML = items.length ? items.map(i => `
+    <div class="item-row ${i.available <= 0 ? 'empty' : ''}" data-item="${i.id}">
+      <div><strong>${esc(i.name)}</strong> <span class="avail">— disponibles: <strong>${i.available}</strong> de ${i.initial_qty}</span></div>
+      <div>${i.allow_multiple
+        ? `<input type="number" class="qty" min="0" max="${Math.max(i.available, 0)}" value="0" style="width:80px; padding:6px 8px; border:1px solid #ddd; border-radius:8px;" ${i.available <= 0 ? 'disabled' : ''}>`
+        : `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" class="qty-check" style="width:18px; height:18px;" ${i.available <= 0 ? 'disabled' : ''}> Entregar 1</label>`}</div>
+    </div>`).join('') : '<p style="color:#999;">No hay ítems: créalos en Parámetros del Evento.</p>';
+}
+
+async function loadDeliveries() {
+  const rows = await (await fetch(`/api/events/${EVENT_ID}/inventory/deliveries`)).json();
+  $('delBody').innerHTML = rows.length ? rows.map(r => `<tr><td>${new Date(r.time + 'Z').toLocaleTimeString()}</td><td>${esc(r.name)} <span style="color:#aaa;">(${esc(r.user_id)})</span></td><td>${esc(r.item)}</td><td>${r.qty}</td></tr>`).join('') : '<tr><td colspan="4" style="color:#999;">Sin entregas todavía.</td></tr>';
+}
+
+function setPerson(u) {
+  person = u;
+  $('personBanner').style.display = 'block';
+  $('personBanner').innerHTML = `Entregando a: <strong>${esc(u.first_name)} ${esc(u.last_name)}</strong> (${esc(u.id)})`;
+  $('suggest').innerHTML = ''; $('nameSearch').value = '';
+}
+
+$('scanInput').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const raw = e.target.value.trim(); e.target.value = '';
+  if (!raw) return;
+  const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
+  const id = parsed ? parsed.cedula : raw;
+  const u = users.find(x => x.id === id);
+  if (u) setPerson(u); else showToast('Esa persona no está en la base de este evento', 'error');
+});
+$('nameSearch').addEventListener('input', (e) => {
+  const q = e.target.value.trim();
+  const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];
+  $('suggest').innerHTML = found.map(u => `<button type="button" data-id="${esc(u.id)}">${esc(u.first_name)} ${esc(u.last_name)} · ${esc(u.id)}</button>`).join('');
+});
+$('suggest').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-id]'); if (btn) setPerson(users.find(u => u.id === btn.dataset.id));
+});
+
+$('deliverBtn').addEventListener('click', async () => {
+  const banner = $('resultBanner');
+  if (!person) { showToast('Primero elige a quién se le entrega', 'error'); return; }
+  const lines = [];
+  document.querySelectorAll('.item-row').forEach(row => {
+    const id = parseInt(row.dataset.item, 10);
+    const qty = row.querySelector('.qty') ? parseInt(row.querySelector('.qty').value, 10) || 0 : (row.querySelector('.qty-check').checked ? 1 : 0);
+    if (qty > 0) lines.push({ item_id: id, qty });
+  });
+  if (!lines.length) { showToast('Elige al menos un ítem', 'error'); return; }
+  setButtonLoading($('deliverBtn'), true, 'Entregando...');
+  const res = await fetch(`/api/events/${EVENT_ID}/inventory/deliver`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cedula: person.id, items: lines }) });
+  const data = await res.json().catch(() => ({}));
+  setButtonLoading($('deliverBtn'), false);
+  banner.style.display = 'block';
+  if (!res.ok) { banner.className = 'banner warn'; banner.textContent = data.detail || 'No se pudo entregar'; return; }
+  banner.className = 'banner ok';
+  banner.innerHTML = `✅ Entregado a <strong>${esc(person.first_name)} ${esc(person.last_name)}</strong>: ${data.delivered.map(d => `${d.qty} × ${esc(d.name)}`).join(', ')}. Quedan: ${data.stock.map(s => `${esc(s.name)} ${s.available}`).join(' · ')}`;
+  await loadItems(); loadDeliveries();
+});
+
+init();
+</script>
+</body>
+</html>

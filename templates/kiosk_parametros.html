@@ -58,6 +58,34 @@
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
           <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
         </div>
+        <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Áreas</h4>
+          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de entrada/salida por zonas</label>
+          <div id="areasConfig" style="display:{{ 'block' if event.areas_enabled else 'none' }}; margin-top:0.8rem;">
+            <table class="params-table"><thead><tr><th>Zona</th><th style="width:150px;">Permitir reingresos</th><th style="width:90px;"></th></tr></thead><tbody id="areasBody"></tbody></table>
+            <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:0.8rem;">
+              <input type="text" id="newAreaName" placeholder="Nombre de la zona (ej. VIP, Backstage, Comedor)" style="flex:1; min-width:220px; border:1px solid #ccc; border-radius:8px; padding:0.55rem 0.8rem;">
+              <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
+              <button type="button" id="addAreaBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar zona</button>
+            </div>
+            <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Con "permitir reingresos" apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula/QR/facial) usa el "Modo autoregistro" del evento. <a href="/kiosk/{{ event.id }}/areas" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Áreas →</a></p>
+          </div>
+        </div>
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Inventario</h4>
+          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de inventario (repartir insumos)</label>
+          <div id="inventoryConfig" style="display:{{ 'block' if event.inventory_enabled else 'none' }}; margin-top:0.8rem;">
+            <table class="params-table"><thead><tr><th>Ítem</th><th style="width:130px;">Cantidad inicial</th><th style="width:170px;">Varias unidades a la vez</th><th style="width:140px;">Entregado / Disponible</th><th style="width:90px;"></th></tr></thead><tbody id="itemsBody"></tbody></table>
+            <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:0.8rem;">
+              <input type="text" id="newItemName" placeholder="Ítem (ej. Empanadas, Gaseosas)" style="flex:1; min-width:200px; border:1px solid #ccc; border-radius:8px; padding:0.55rem 0.8rem;">
+              <input type="number" id="newItemQty" min="0" placeholder="Cantidad" style="width:110px; border:1px solid #ccc; border-radius:8px; padding:0.55rem 0.8rem;">
+              <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
+              <button type="button" id="addItemBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar ítem</button>
+            </div>
+            <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al entregar, el disponible se descuenta solo. <a href="/kiosk/{{ event.id }}/inventario" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Inventario →</a></p>
+          </div>
+        </div>
         <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE
              evento; los demás eventos siguen con el logo de Golden. Se aplica al elegir, sin "Guardar cambios". -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
@@ -142,6 +170,81 @@
         const res = await fetch(`/api/events/${window.EVENT_ID}/categories`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categories }) });
         if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudieron guardar las categorías', 'error');
     });
+
+    // ---- Control de Áreas / Inventario (ítem 9): switches + configuración inline ----
+    async function api(url, method, body) {
+        const res = await fetch(url, { method: method || 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(data.detail || 'No se pudo completar la acción', 'error'); throw new Error(data.detail || 'error'); }
+        return data;
+    }
+    const base = `/api/events/${window.EVENT_ID}`;
+    ['areas', 'inventory'].forEach(mod => {
+        document.getElementById(mod + 'Enabled').addEventListener('change', async (e) => {
+            try {
+                await api(`${base}/modules`, 'PUT', { [mod + '_enabled']: e.target.checked });
+                document.getElementById(mod + 'Config').style.display = e.target.checked ? 'block' : 'none';
+                showToast(e.target.checked ? 'Módulo activado — ya aparece en el menú del evento' : 'Módulo desactivado', 'success');
+            } catch (err) { e.target.checked = !e.target.checked; }
+        });
+    });
+
+    async function loadAreas() {
+        const areas = await api(`${base}/areas`);
+        document.getElementById('areasBody').innerHTML = areas.length ? areas.map(a => `
+            <tr data-area="${a.id}"><td><input type="text" class="area-name" value="${esc(a.name)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
+            <td><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} style="width:18px; height:18px;"></td>
+            <td><button type="button" class="area-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
+            : '<tr><td colspan="3" style="color:#999;">Todavía no hay zonas.</td></tr>';
+    }
+    document.getElementById('areasBody').addEventListener('change', async (e) => {
+        const tr = e.target.closest('tr[data-area]'); if (!tr) return;
+        await api(`${base}/areas/${tr.dataset.area}`, 'PATCH', { name: tr.querySelector('.area-name').value, allow_reentry: tr.querySelector('.area-reentry').checked });
+        showToast('Zona actualizada', 'success');
+    });
+    document.getElementById('areasBody').addEventListener('click', async (e) => {
+        const btn = e.target.closest('.area-del'); if (!btn) return;
+        if (!await showConfirm('¿Eliminar esta zona y todos sus movimientos registrados?', { confirmLabel: 'Eliminar' })) return;
+        await api(`${base}/areas/${btn.closest('tr').dataset.area}`, 'DELETE'); loadAreas();
+    });
+    document.getElementById('addAreaBtn').addEventListener('click', async () => {
+        const name = document.getElementById('newAreaName').value.trim();
+        if (!name) { showToast('Escribe el nombre de la zona', 'error'); return; }
+        await api(`${base}/areas`, 'POST', { name, allow_reentry: document.getElementById('newAreaReentry').checked });
+        document.getElementById('newAreaName').value = ''; loadAreas();
+    });
+
+    async function loadItems() {
+        const items = await api(`${base}/inventory`);
+        document.getElementById('itemsBody').innerHTML = items.length ? items.map(i => `
+            <tr data-item="${i.id}"><td><input type="text" class="item-name" value="${esc(i.name)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
+            <td><input type="number" class="item-qty" min="${i.delivered}" value="${i.initial_qty}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
+            <td><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} style="width:18px; height:18px;"></td>
+            <td>${i.delivered} / <strong>${i.available}</strong></td>
+            <td><button type="button" class="item-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
+            : '<tr><td colspan="5" style="color:#999;">Todavía no hay ítems.</td></tr>';
+    }
+    document.getElementById('itemsBody').addEventListener('change', async (e) => {
+        const tr = e.target.closest('tr[data-item]'); if (!tr) return;
+        try {
+            await api(`${base}/inventory/${tr.dataset.item}`, 'PATCH', { name: tr.querySelector('.item-name').value, initial_qty: tr.querySelector('.item-qty').value, allow_multiple: tr.querySelector('.item-multi').checked });
+            showToast('Ítem actualizado', 'success');
+        } catch (err) { /* el toast ya lo mostró api() */ }
+        loadItems();
+    });
+    document.getElementById('itemsBody').addEventListener('click', async (e) => {
+        const btn = e.target.closest('.item-del'); if (!btn) return;
+        if (!await showConfirm('¿Eliminar este ítem del inventario?', { confirmLabel: 'Eliminar' })) return;
+        try { await api(`${base}/inventory/${btn.closest('tr').dataset.item}`, 'DELETE'); } catch (err) {}
+        loadItems();
+    });
+    document.getElementById('addItemBtn').addEventListener('click', async () => {
+        const name = document.getElementById('newItemName').value.trim();
+        if (!name) { showToast('Escribe el nombre del ítem', 'error'); return; }
+        await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked });
+        document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
+    });
+    loadAreas().catch(() => {}); loadItems().catch(() => {});
 
     // Módulo de certificados (ítem 5): activar agrega el campo "Certificado" y el diseñador.
     document.getElementById('certificatesEnabled').addEventListener('change', async (e) => {
