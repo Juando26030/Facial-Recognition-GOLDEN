@@ -32,6 +32,9 @@ IDENTITY_FIELDS = [
     ("id", "Cédula"),
 ]
 IDENTITY_KEYS = {k for k, _ in IDENTITY_FIELDS}
+# Campos de los que solo se cambia nombre y posición: identidad + "Categoría" (ítem 14: sus opciones
+# salen de las categorías del evento, no de una lista propia, y se guarda por evento).
+LOCKED_KEYS = IDENTITY_KEYS | {"categories"}
 
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
 # Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
@@ -48,21 +51,24 @@ def _configurable_fields(event: Event):
     """(key, label por defecto) de todo lo configurable para este evento, en el orden POR DEFECTO
     (la identidad primero, igual que el formulario de siempre)."""
     fields = list(IDENTITY_FIELDS) + list(CONFIGURABLE_FIXED_FIELDS)
+    if event.get_categories():
+        fields.append(("categories", "Categoría"))
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
         fields.append((key, label))
     return fields
 
 
-def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig]) -> dict:
+def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], categories: Optional[list] = None) -> dict:
     """`label` = lo que se muestra en este evento (el propio si lo personalizaron, si no el de por
     defecto); `default_label` se conserva para poder mostrarlo como sugerencia en Parámetros."""
-    locked = key in IDENTITY_KEYS
+    locked = key in LOCKED_KEYS
     label = (row.label if row and row.label else default_label)
     if row is None or locked:
         return {
             "key": key, "label": label, "default_label": default_label, "locked": locked,
-            "required": False, "field_type": "text_short", "options": [], "help_text": "",
+            "required": False, "field_type": "categories" if key == "categories" else "text_short",
+            "options": categories or [], "help_text": "",
             "default_stat_enabled": False, "default_chart_type": None,
         }
     return {
@@ -87,7 +93,7 @@ def field_configs_for_event(db: Session, event: Event) -> list:
     for idx, (key, label) in enumerate(_configurable_fields(event)):
         row = rows.get(key)
         position = row.sort_order if row and row.sort_order is not None else 1000 + idx
-        ordered.append((position, _serialize(key, label, row)))
+        ordered.append((position, _serialize(key, label, row, event.get_categories())))
     return [cfg for _, cfg in sorted(ordered, key=lambda pair: pair[0])]
 
 
@@ -152,6 +158,33 @@ async def upload_event_logo(
     return {"logo_mode": "custom"}
 
 
+@router.get("/events/{event_id}/categories")
+async def get_event_categories(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+    event = get_event_for_staff(event_id, db, staff)
+    return {"categories": event.get_categories(), "badge_per_category": event.badge_per_category}
+
+
+@router.put("/events/{event_id}/categories")
+async def set_event_categories(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Categorías del evento (ítem 14, reunión 2026-09-21): la lista de la que se eligen las de cada
+    persona (Registrar/Editar/roster) y a la que se le puede asignar plantilla de escarapela."""
+    event = get_event_for_staff(event_id, db, staff)
+    cleaned = []
+    for name in (str(x).strip() for x in (data.get("categories") or [])):
+        if name and len(name) <= 40 and name.lower() not in {c.lower() for c in cleaned}:
+            cleaned.append(name)
+    if len(cleaned) > 30:
+        raise HTTPException(status_code=400, detail="Máximo 30 categorías por evento")
+    event.set_categories(cleaned)
+    if not cleaned:
+        event.badge_per_category = False
+    db.commit()
+    return {"categories": cleaned, "badge_per_category": event.badge_per_category}
+
+
 @router.post("/events/{event_id}/optional-fields")
 async def add_optional_field(
     event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
@@ -209,12 +242,12 @@ async def upsert_field_config(
     row.label = label
     row.sort_order = sort_order
 
-    if field_key in IDENTITY_KEYS:
-        # Identidad: solo etiqueta y posición. Tipo/obligatoriedad/estadística siguen fijos.
+    if field_key in LOCKED_KEYS:
+        # Identidad y Categoría: solo etiqueta y posición. Tipo/obligatoriedad/estadística siguen fijos.
         row.required, row.field_type, row.default_stat_enabled, row.default_chart_type = False, "text_short", False, None
         row.set_options([])
         db.commit()
-        return _serialize(field_key, dict(_configurable_fields(event))[field_key], row)
+        return _serialize(field_key, dict(_configurable_fields(event))[field_key], row, event.get_categories())
 
     field_type = data.get("field_type", "text_short")
     if field_type not in FIELD_TYPES:

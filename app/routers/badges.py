@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import BadgeTemplate, SavedBadgeTemplate, StaffUser, User, PrintLog
+from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 
 router = APIRouter()
@@ -28,6 +28,22 @@ def _serialize_template(t) -> dict:
         "orientation": t.orientation, "background_type": t.background_type,
         "background_value": t.background_value, "elements": t.get_elements(),
     }
+
+
+@router.put("/events/{event_id}/badge-mode")
+async def set_badge_mode(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Ítem 14: `per_category` False = una plantilla para todas las categorías; True = una distinta
+    por categoría (las que no tengan plantilla propia siguen usando la general)."""
+    event = get_event_for_staff(event_id, db, staff)
+    per_category = bool(data.get("per_category"))
+    if per_category and not event.get_categories():
+        raise HTTPException(status_code=400, detail="Este evento no tiene categorías — créalas primero en Parámetros del Evento")
+    event.badge_per_category = per_category
+    db.commit()
+    return {"badge_per_category": event.badge_per_category, "categories": event.get_categories()}
 
 
 class BadgeTemplateIn(BaseModel):
@@ -57,24 +73,45 @@ DEFAULT_ELEMENTS = [
 ]
 
 
-def _get_or_create_template(event, db: Session) -> BadgeTemplate:
-    tpl = db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id).first()
+def _get_or_create_template(event, db: Session, category: Optional[str] = None) -> BadgeTemplate:
+    """Plantilla del evento (`category=None` = la general, para todas las categorías). Con una
+    categoría (ítem 14, reunión 2026-09-21): la de esa categoría; si todavía no tiene, se crea como
+    COPIA de la general — punto de partida editable, no un vínculo vivo."""
+    if category is not None and category not in event.get_categories():
+        raise HTTPException(status_code=400, detail="Esa categoría no existe en este evento")
+    tpl = db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id, BadgeTemplate.category == category).first()
     if not tpl:
+        base = _get_or_create_template(event, db) if category is not None else None
         tpl = BadgeTemplate(
-            tenant_id=event.tenant_id, event_id=event.id, name=f"Escarapela {event.name}",
-            width_mm=62.0, height_mm=100.0, orientation="vertical",
-            background_type="color", background_value="#FFFFFF",
+            tenant_id=event.tenant_id, event_id=event.id, category=category,
+            name=f"Escarapela {event.name}" + (f" — {category}" if category else ""),
+            width_mm=base.width_mm if base else 62.0, height_mm=base.height_mm if base else 100.0,
+            orientation=base.orientation if base else "vertical",
+            background_type=base.background_type if base else "color",
+            background_value=base.background_value if base else "#FFFFFF",
         )
-        tpl.set_elements(DEFAULT_ELEMENTS)
+        tpl.set_elements(base.get_elements() if base else DEFAULT_ELEMENTS)
         db.add(tpl)
         db.commit()
         db.refresh(tpl)
     return tpl
 
 
+def template_category_for_user(event, db: Session, user_id: str) -> Optional[str]:
+    """Categoría cuya plantilla se debe usar para imprimir a esta persona: con "una plantilla por
+    categoría" activo, la primera de sus categorías que tenga plantilla propia; si no, la general."""
+    if not event.badge_per_category:
+        return None
+    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user_id).first()
+    for category in (attendee.get_categories() if attendee else []):
+        if db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id, BadgeTemplate.category == category).first():
+            return category
+    return None
+
+
 @router.get("/events/{event_id}/badge-template")
 async def get_badge_template(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
+    event_id: int, category: Optional[str] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
 ):
     """La plantilla ACTIVA del evento — se crea sola con un diseño mínimo por defecto (nombre +
     apellido + entidad) la primera vez que se pide, así el editor nunca arranca en blanco del
@@ -83,17 +120,17 @@ async def get_badge_template(
     imprime el día del evento) recibía 403 — la escritura (`PUT` abajo) sigue exigiendo
     `coordinador`+, solo se separó el gate de lectura."""
     event = get_event_for_staff(event_id, db, staff)
-    tpl = _get_or_create_template(event, db)
+    tpl = _get_or_create_template(event, db, category)
     return _serialize_template(tpl)
 
 
 @router.put("/events/{event_id}/badge-template")
 async def update_badge_template(
-    event_id: int, data: BadgeTemplateIn, db: Session = Depends(get_db),
+    event_id: int, data: BadgeTemplateIn, category: Optional[str] = None, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    tpl = _get_or_create_template(event, db)
+    tpl = _get_or_create_template(event, db, category)
     tpl.name = data.name
     tpl.width_mm = data.width_mm
     tpl.height_mm = data.height_mm
@@ -123,13 +160,13 @@ async def list_saved_badge_templates(
 
 @router.post("/events/{event_id}/badge-template/save-as")
 async def save_badge_template_as(
-    event_id: int, data: SaveAsIn, db: Session = Depends(get_db),
+    event_id: int, data: SaveAsIn, category: Optional[str] = None, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """'Guardar como plantilla': copia el diseño actual del evento a una fila nueva de la
     librería reusable. Es una COPIA — editar el evento después no toca esta fila."""
     event = get_event_for_staff(event_id, db, staff)
-    tpl = _get_or_create_template(event, db)
+    tpl = _get_or_create_template(event, db, category)
     saved = SavedBadgeTemplate(
         tenant_id=event.tenant_id, name=data.name.strip() or tpl.name,
         width_mm=tpl.width_mm, height_mm=tpl.height_mm, orientation=tpl.orientation,
@@ -144,7 +181,7 @@ async def save_badge_template_as(
 
 @router.post("/events/{event_id}/badge-template/import/{saved_id}")
 async def import_saved_badge_template(
-    event_id: int, saved_id: int, db: Session = Depends(get_db),
+    event_id: int, saved_id: int, category: Optional[str] = None, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """'Importar plantilla': copia el diseño de una SavedBadgeTemplate al BadgeTemplate de ESTE
@@ -156,7 +193,7 @@ async def import_saved_badge_template(
     if not saved:
         raise HTTPException(status_code=404, detail="Plantilla guardada no encontrada")
 
-    tpl = _get_or_create_template(event, db)
+    tpl = _get_or_create_template(event, db, category)
     tpl.width_mm = saved.width_mm
     tpl.height_mm = saved.height_mm
     tpl.orientation = saved.orientation
@@ -239,12 +276,15 @@ async def get_badge_print_data(
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
     has_photo = os.path.isfile(os.path.join('data', event.tenant_id, 'known_people', f"{user.id}.jpg"))
+    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     return {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
         "role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email,
         "opt_1": user.opt_1, "extra_fields": user.get_extras(),
         "optional_field_labels": event.get_optional_labels(),
         "has_photo": has_photo,
+        "categories": ", ".join(attendee.get_categories()) if attendee else "",
+        "template_category": template_category_for_user(event, db, user.id),  # qué plantilla usar (ítem 14)
     }
 
 

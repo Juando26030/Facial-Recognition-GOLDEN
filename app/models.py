@@ -72,6 +72,7 @@ class EventAttendee(Base):
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     user_id = Column(String, nullable=False)
     tenant_id = Column(String, nullable=False)
+    categories = Column(Text, nullable=True)  # JSON: categorías de esta persona EN ESTE evento (reunión 2026-09-21, ítem 14)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -80,6 +81,12 @@ class EventAttendee(Base):
     )
 
     event = relationship("Event")
+
+    def get_categories(self) -> list:
+        return json.loads(self.categories) if self.categories else []
+
+    def set_categories(self, data: list) -> None:
+        self.categories = json.dumps(data) if data else None
 
 
 class AccessLog(Base):
@@ -208,6 +215,8 @@ class Event(Base):
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1
+    categories = Column(Text, nullable=True)  # JSON: nombres de las categorías del evento (ítem 14)
+    badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría
     logo_path = Column(String, nullable=True)  # archivo del logo propio (solo si logo_mode='custom'), en data/<tenant>/event_logos/
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
 
@@ -221,6 +230,12 @@ class Event(Base):
 
     def set_optional_labels(self, data: dict) -> None:
         self.optional_field_labels = json.dumps(data) if data else None
+
+    def get_categories(self) -> list:
+        return json.loads(self.categories) if self.categories else []
+
+    def set_categories(self, data: list) -> None:
+        self.categories = json.dumps(data) if data else None
 
 
 class EventStaffAuthorization(Base):
@@ -249,7 +264,8 @@ class BadgeTemplate(Base):
     __tablename__ = 'badge_templates'
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
-    event_id = Column(Integer, ForeignKey('events.id'), nullable=False, unique=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    category = Column(String, nullable=True)  # NULL = plantilla general; con nombre = la de esa categoría (ítem 14)
     name = Column(String, nullable=False, default='Escarapela')
     width_mm = Column(Float, nullable=False, default=62.0)
     height_mm = Column(Float, nullable=False, default=100.0)
@@ -260,6 +276,8 @@ class BadgeTemplate(Base):
     imported_from_saved_template_id = Column(Integer, ForeignKey('saved_badge_templates.id'), nullable=True)  # solo trazabilidad ("de dónde vino"), no un vínculo vivo
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('event_id', 'category', name='uq_badge_template_event_category'),)
 
     tenant = relationship("Tenant")
     event = relationship("Event")

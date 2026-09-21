@@ -285,6 +285,11 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (Object.keys(extras).length) formData.append('extra_fields', JSON.stringify(extras));
 
+            // Categorías (ítem 14): varias casillas "categories" -> un solo JSON, como extra_fields.
+            const cats = formData.getAll('categories');
+            formData.delete('categories');
+            if (cats.length) formData.append('categories', JSON.stringify(cats));
+
             const pending = window.getPendingOptionalLabels ? window.getPendingOptionalLabels() : {};
             if (Object.keys(pending).length) formData.append('field_labels', JSON.stringify(pending));
 

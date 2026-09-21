@@ -141,8 +141,8 @@
       if (cfg && cfg.field_type === 'signature') return '';
       return Object.prototype.hasOwnProperty.call(user, key) ? user[key] : extras[key];
     }
-    function configuredFieldRow(cfg) {
-      const control = window.FieldRender.renderControl(cfg, configuredValueOf(cfg.key, cfg));
+    function configuredFieldRow(cfg, valueOverride) {
+      const control = window.FieldRender.renderControl(cfg, valueOverride !== undefined ? valueOverride : configuredValueOf(cfg.key, cfg));
       return `<div style="margin-bottom:0.8rem;">
         <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(cfg.label)}${cfg.required ? ' *' : ''}</label>
         ${control}
@@ -153,6 +153,7 @@
     // (nombres/apellidos/cédula) entra en la misma lista, con la etiqueta propia del evento.
     const configuredHtml = fieldConfigs.map((cfg) => {
       if (cfg.key === 'id') return cedulaRow(cfg.label);
+      if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
     }).join('');
@@ -283,6 +284,9 @@
         else newExtras[cfg.key] = val(cfg.key);
       });
       payload.extra_fields = newExtras;
+      if (fieldConfigs.some((cfg) => cfg.field_type === 'categories')) {
+        payload.categories = Array.from(form.querySelectorAll('input[name="categories"]:checked')).map((i) => i.value);
+      }
 
       saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
       try {

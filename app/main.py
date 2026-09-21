@@ -47,6 +47,7 @@ app.add_middleware(
 
 app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+templates.env.filters["fromjson"] = json.loads
 
 DEFAULT_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
 

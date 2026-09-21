@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from typing import Optional
 import zipfile
 import tempfile
 import csv
@@ -14,7 +15,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, AccessLog, EventAttendee, PrintLog, StaffUser
+from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
@@ -202,12 +203,40 @@ def _known_faces_dir(tenant_id: str) -> str:
     return path
 
 
-def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str) -> None:
+def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None) -> None:
     """Asegura que esta persona quede en la lista del evento, se haya precargado o no (ej. un
-    'Nuevo' dado de alta sobre la marcha el día del evento) — ver EventAttendee en models.py."""
-    exists = db.query(EventAttendee).filter_by(event_id=event_id, user_id=user_id).first()
-    if not exists:
-        db.add(EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id))
+    'Nuevo' dado de alta sobre la marcha el día del evento) — ver EventAttendee en models.py.
+    `categories` (ítem 14): si viene, fija las categorías de la persona EN este evento."""
+    row = db.query(EventAttendee).filter_by(event_id=event_id, user_id=user_id).first()
+    if not row:
+        row = EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id)
+        db.add(row)
+    if categories is not None:
+        row.set_categories(categories)
+
+
+def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
+    """Categorías (ítem 14) de `raw` (lista o texto separado por , ; |) que existen en el evento,
+    con la escritura oficial del evento. `auto_add=True` (carga de roster) agrega al evento las
+    que no existían todavía, para que importar un Excel con categorías nuevas no las pierda."""
+    if isinstance(raw, str):
+        raw = re.split(r"[,;|]", raw)
+    known = event.get_categories()
+    by_lower = {c.lower(): c for c in known}
+    result = []
+    for name in (str(x).strip() for x in (raw or [])):
+        if not name:
+            continue
+        canonical = by_lower.get(name.lower())
+        if not canonical and auto_add:
+            canonical = name
+            known.append(name)
+            by_lower[name.lower()] = name
+        if canonical and canonical not in result:
+            result.append(canonical)
+    if auto_add:
+        event.set_categories(known)
+    return result
 
 
 def _already_checked_in(db: Session, event_id: int, user_id: str) -> bool:
@@ -260,6 +289,7 @@ async def get_all_users(
         return []
 
     users = db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(all_ids)).all()
+    categories_by_user = {a.user_id: a.get_categories() for a in db.query(EventAttendee).filter(EventAttendee.event_id == event_id)}
     event_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id).all()
     logs_by_user = {}
     for log in event_logs:
@@ -285,6 +315,7 @@ async def get_all_users(
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta
             # persona para poder mostrarlos/editarlos (antes se editaba inline, sin necesitarlos).
             "extra_fields": u.get_extras(),
+            "categories": categories_by_user.get(u.id, []),
         })
 
     return result
@@ -460,6 +491,9 @@ async def update_user(
         # Directorio (2026-09-16) — no puede pasar por el setattr genérico de abajo: la columna
         # real (`User.extra_fields`) es un Text con JSON serializado a mano (`get_extras()`/
         # `set_extras()`), no un dict crudo; asignarlo directo lo corrompería.
+        categories = data.pop("categories", None)  # ítem 14: por evento (EventAttendee), no una columna de User
+        if categories is not None:
+            _upsert_attendee(db, event.id, user.id, event.tenant_id, _clean_categories(event, categories))
         extra_fields = data.pop("extra_fields", None)
         if extra_fields is not None:
             merged = user.get_extras()
@@ -662,7 +696,7 @@ async def update_registration_status(
 async def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
-    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None),
+    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None),
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
@@ -684,6 +718,10 @@ async def manual_register(
     require_event_in_progress(event)
 
     extras = _parse_extra_fields(extra_fields)
+    try:
+        person_categories = _clean_categories(event, json.loads(categories)) if categories else []
+    except ValueError:
+        person_categories = []
     used_optional_keys = set(extras.keys())
     missing = used_optional_keys - set(event.get_optional_labels().keys())
     if missing and not field_labels:
@@ -702,7 +740,7 @@ async def manual_register(
             registration_method="tradicional",  # Fase 16: alta manual, formulario
         )
         db.add(log)
-        _upsert_attendee(db, event.id, existing.id, event.tenant_id)
+        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None)
         db.commit()
         return {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
 
@@ -747,7 +785,7 @@ async def manual_register(
         registration_method="tradicional",  # Fase 16: alta manual, formulario
     )
     db.add(log)
-    _upsert_attendee(db, event.id, id, event.tenant_id)
+    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories)
     db.commit()
 
     if img_array is not None:
@@ -976,7 +1014,13 @@ async def bulk_register(
                     user.face_encoding = face_enc_json
 
                 db.flush()
-                _upsert_attendee(db, event.id, identificador, event.tenant_id)
+                # Categorías (ítem 14): columna "categoria"/"categorias" (con o sin tilde), varias
+                # separadas por coma/;/|. Las que el evento no conocía se agregan solas.
+                raw_categories = next((clean_row[k] for k in ("categoria", "categorias", "categoría", "categorías") if clean_row.get(k)), None)
+                _upsert_attendee(
+                    db, event.id, identificador, event.tenant_id,
+                    _clean_categories(event, raw_categories, auto_add=True) if raw_categories else None,
+                )
                 db.flush()
 
             count += 1

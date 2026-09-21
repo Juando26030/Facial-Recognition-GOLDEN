@@ -79,16 +79,16 @@
 
     async function load() {
         try {
-            const [tplRes, dataRes] = await Promise.all([
-                fetch(`/api/events/${EVENT_ID}/badge-template`),
-                fetch(`/api/users/${encodeURIComponent(USER_ID)}/badge-print-data?event_id=${EVENT_ID}`),
-            ]);
-            if (!tplRes.ok || !dataRes.ok) {
+            // Primero los datos de la persona: dicen qué plantilla le toca (por categoría, ítem 14).
+            const dataRes = await fetch(`/api/users/${encodeURIComponent(USER_ID)}/badge-print-data?event_id=${EVENT_ID}`);
+            const data = dataRes.ok ? await dataRes.json() : null;
+            const qs = data && data.template_category ? `?category=${encodeURIComponent(data.template_category)}` : '';
+            const tplRes = data ? await fetch(`/api/events/${EVENT_ID}/badge-template${qs}`) : null;
+            if (!dataRes.ok || !tplRes.ok) {
                 statusEl.innerText = 'No se pudo cargar la escarapela (revisa que la persona exista en este evento).';
                 return;
             }
             const template = await tplRes.json();
-            const data = await dataRes.json();
 
             // @page con el tamaño REAL de la plantilla — así la impresora (ej. Brother QL-800)
             // recibe el tamaño de etiqueta correcto en vez del tamaño carta por defecto del navegador.

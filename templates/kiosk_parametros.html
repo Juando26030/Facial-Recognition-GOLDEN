@@ -64,6 +64,14 @@
           </div>
           <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al subir una imagen se activa "Usar logo propio" (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia este evento.</p>
         </div>
+        <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar
+             y las plantillas de escarapela por categoría (editor de escarapelas). -->
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Categorías del evento</h4>
+          <textarea id="categoriesBox" rows="3" placeholder="Una categoría por línea (ej. VIP, Prensa, Staff)" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-family:inherit;">{{ (event.categories | fromjson) | join("\n") if event.categories else "" }}</textarea>
+          <div style="display:flex; justify-content:flex-end; margin-top:0.5rem;"><button type="button" id="saveCategoriesBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">Guardar categorías</button></div>
+          <p style="color:#888; font-size:0.78rem; margin:0.3rem 0 0;">Al haber categorías aparece el campo "Categoría" (casillas, se puede marcar más de una) en Registrar/Editar, una columna en el reporte y la columna "categoria" en la carga de base; en el editor de escarapelas podrás usar una plantilla distinta por categoría.</p>
+        </div>
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
           <p style="color:#888; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
             Define, para cada campo de este evento: cómo se llama (solo aquí, no cambia el nombre en otros eventos), en qué orden aparece en "Registrar nuevo" y "Editar persona" (arrastra las filas con ☰), si es obligatorio, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (nombres, apellidos, cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.
@@ -122,6 +130,12 @@
     }
 
     const tbody = document.getElementById('paramsTableBody');
+
+    document.getElementById('saveCategoriesBtn').addEventListener('click', async () => {
+        const categories = document.getElementById('categoriesBox').value.split('\n').map(s => s.trim()).filter(Boolean);
+        const res = await fetch(`/api/events/${window.EVENT_ID}/categories`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categories }) });
+        if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudieron guardar las categorías', 'error');
+    });
 
     // Logo del evento: se aplica al elegir/subir (recarga para ver el header nuevo).
     document.querySelectorAll('input[name="logoMode"]').forEach(radio => radio.addEventListener('change', async () => {

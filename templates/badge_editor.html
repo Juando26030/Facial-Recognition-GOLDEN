@@ -117,6 +117,21 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       <h2>Diseñador de <span class="gradient-text">Escarapela</span></h2>
     </div>
 
+    <div class="badge-toolbar" id="categoryBar" style="display:none;">
+      <!-- Categorías (ítem 14, reunión 2026-09-21): solo aparece si el evento tiene categorías. -->
+      <div class="toolbar-group">
+        <label>Escarapela por categoría</label>
+        <select id="badgeModeSelect">
+          <option value="all">Una plantilla para todas las categorías</option>
+          <option value="per">Una plantilla distinta por categoría</option>
+        </select>
+      </div>
+      <div class="toolbar-group" id="categorySelectGroup" style="display:none;">
+        <label>Estás editando la de</label>
+        <select id="categorySelect"></select>
+      </div>
+      <p style="margin:0; font-size:0.75rem; color:#888; align-self:center; max-width:420px;">Con "una distinta por categoría", cada categoría parte como copia de la general; las que no tengan plantilla propia se imprimen con la general.</p>
+    </div>
     <div class="badge-toolbar">
       <div class="toolbar-group">
         <label>Nombre de la plantilla</label>
@@ -216,7 +231,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   const FIXED_VARIABLES = [
     ['first_name', 'Nombres'], ['last_name', 'Apellidos'], ['entity', 'Entidad'],
     ['role', 'Cargo'], ['id', 'Cédula / ID'], ['phone', 'Teléfono'], ['email', 'Correo'],
-    ['opt_1', 'Tipo de Asistente'],
+    ['opt_1', 'Tipo de Asistente'], ['categories', 'Categoría'],
   ];
   const ALL_VARIABLES = FIXED_VARIABLES.concat(window.OPTIONAL_VARIABLES || []);
 
@@ -259,8 +274,32 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   // ---------- Carga / guardado ----------
 
+  // Categoría cuya plantilla se está editando (ítem 14); null = la general.
+  let currentCategory = null;
+  function catQs(prefix) { return currentCategory ? `${prefix || '?'}category=${encodeURIComponent(currentCategory)}` : ''; }
+
+  async function initCategoryBar() {
+    const info = await (await fetch(`/api/events/${window.EVENT_ID}/categories`)).json();
+    if (!info.categories.length) return;
+    document.getElementById('categoryBar').style.display = 'flex';
+    const modeSel = document.getElementById('badgeModeSelect');
+    const catSel = document.getElementById('categorySelect');
+    catSel.innerHTML = '<option value="">Plantilla general (todas)</option>' + info.categories.map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('');
+    modeSel.value = info.badge_per_category ? 'per' : 'all';
+    document.getElementById('categorySelectGroup').style.display = info.badge_per_category ? 'flex' : 'none';
+    modeSel.addEventListener('change', async () => {
+      const per = modeSel.value === 'per';
+      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-mode`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ per_category: per }) });
+      if (!res.ok) { showToast('No se pudo cambiar el modo', 'error'); modeSel.value = per ? 'all' : 'per'; return; }
+      document.getElementById('categorySelectGroup').style.display = per ? 'flex' : 'none';
+      if (!per) { currentCategory = null; catSel.value = ''; await loadTemplate(); }
+      showToast(per ? 'Ahora cada categoría puede tener su propia escarapela' : 'Todas las categorías usan la misma escarapela', 'success');
+    });
+    catSel.addEventListener('change', async () => { currentCategory = catSel.value || null; selectedId = null; await loadTemplate(); });
+  }
+
   async function loadTemplate() {
-    const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template`);
+    const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template${catQs()}`);
     template = await res.json();
     syncToolbarFromTemplate();
     renderCanvas();
@@ -297,7 +336,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const saveBtn = document.getElementById('saveBtn');
     setButtonLoading(saveBtn, true, 'Guardando...');
     try {
-      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template`, {
+      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template${catQs()}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: template.name, width_mm: template.width_mm, height_mm: template.height_mm,
@@ -318,7 +357,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     if (!name) return;
     await saveTemplate();
     try {
-      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/save-as`, {
+      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/save-as${catQs()}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
       });
       if (res.ok) showToast('Guardada en tu librería de plantillas', 'success');
@@ -364,7 +403,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const ok = await showConfirm('Esto reemplaza el diseño actual de este evento por el de la plantilla importada. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, importar' });
     if (!ok) return;
     try {
-      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/import/${savedId}`, { method: 'POST' });
+      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/import/${savedId}${catQs()}`, { method: 'POST' });
       if (!res.ok) { showToast('No se pudo importar', 'error'); return; }
       template = await res.json();
       selectedId = null;
@@ -716,6 +755,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   document.getElementById('importBtn').addEventListener('click', openImportModal);
   document.getElementById('importCancelBtn').addEventListener('click', () => { document.getElementById('importModal').style.display = 'none'; });
 
+  initCategoryBar();
   loadTemplate();
 })();
 </script>
