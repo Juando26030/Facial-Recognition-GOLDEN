@@ -107,7 +107,8 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
 .golden-table td { color: #333; }
 
 /* Colores de las filas por Estado */
-.row-registrado { background-color: rgba(40, 167, 69, 0.1) !important; } /* Verde suave (Escaneados) */
+.row-registrado { background-color: rgba(40, 167, 69, 0.22) !important; } /* Verde bien visible (reunión 2026-09-21, ítem 22: al 10% casi no se notaba el cambio a Registrado) */
+.row-registrado td:last-child { color: #1e7e34; }
 .row-nuevo { background-color: rgba(0, 123, 255, 0.08) !important; } /* Azul suave (Nuevos manuales) */
 .row-noregistrado { background-color: #ffffff !important; } /* Blanco (En base de datos, aún no llegan) */
 
