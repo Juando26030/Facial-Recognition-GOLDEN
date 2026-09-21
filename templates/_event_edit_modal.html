@@ -1,0 +1,250 @@
+<!-- "Editar evento" COMPARTIDO (reunión 2026-09-21, ítem 6a): la misma vista se abre desde Calendario,
+     Eventos y la ficha de Clientes/Cuentas — antes vivía copiada solo dentro de calendario.html.
+     Incluye el informe final (PDF → bombillo verde + correo a la comercial, ítem 6b).
+     Uso: incluir con la sintaxis de include de Jinja, y llamar openEventEditModal(evento, onSaved).
+     También define reportBulbHtml(evento) para el bombillo de las listas (ítem 6c). Requiere
+     staff_role (contexto) y toast.js/clockpicker.js cargados en la página que la incluye. -->
+<style>
+  .ee-overlay { position:fixed; inset:0; background:rgba(10,14,46,0.5); display:none; align-items:center; justify-content:center; z-index:9000; padding:1rem; }
+  .ee-box { background:white; border-radius:18px; padding:2rem; max-width:640px; width:100%; max-height:88vh; overflow-y:auto; box-shadow:0 24px 70px rgba(0,0,0,0.3); }
+  .ee-box h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); margin-bottom:1.2rem; }
+  .ee-row { display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:0.9rem; }
+  .ee-group { flex:1; min-width:180px; }
+  .ee-group label { display:block; font-size:0.78rem; color:#777; margin-bottom:0.3rem; }
+  .ee-group input, .ee-group select { width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem; box-sizing:border-box; }
+  .ee-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; display:inline-block; }
+  .ee-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
+  .ee-report { border:1px solid #eee; border-radius:12px; padding:0.9rem 1rem; margin:0.4rem 0 1rem; background:#fafafa; }
+  /* Bombillo del informe final (ítem 6c): naranja = pendiente, verde = subido (clic descarga el PDF). */
+  .report-bulb { display:inline-block; width:13px; height:13px; border-radius:50%; vertical-align:middle; flex:0 0 auto; }
+  .report-bulb.on { background:#28a745; box-shadow:0 0 7px #28a745; cursor:pointer; }
+  .report-bulb.off { background:#f39c12; box-shadow:0 0 7px #f39c12; }
+</style>
+
+<div class="ee-overlay" id="eventModalOverlay">
+  <div class="ee-box">
+    <h3>Editar evento</h3>
+    <form id="eventEditForm">
+      <input type="hidden" name="event_id">
+      <div class="ee-row">
+        <div class="ee-group" style="min-width:100%;"><label>Nombre del evento</label><input type="text" name="name" required></div>
+      </div>
+      <div class="ee-row">
+        <div class="ee-group"><label>Fecha inicio</label><input type="date" name="start_date" required></div>
+        <div class="ee-group"><label>Fecha fin</label><input type="date" name="end_date" required></div>
+        <div class="ee-group"><label>Fecha montaje</label><input type="date" name="setup_date" required></div>
+      </div>
+      <div class="ee-row">
+        <div class="ee-group"><label>Hora inicio evento</label><input type="text" class="clock-time" name="event_time_start" required></div>
+        <div class="ee-group"><label>Hora fin evento</label><input type="text" class="clock-time" name="event_time_end" required></div>
+      </div>
+      <div class="ee-row">
+        <div class="ee-group"><label>Hora inicio montaje</label><input type="text" class="clock-time" name="setup_time_start" required></div>
+        <div class="ee-group"><label>Hora fin montaje</label><input type="text" class="clock-time" name="setup_time_end" required></div>
+      </div>
+      <div class="ee-row">
+        <div class="ee-group"><label>País</label><input type="text" id="modalCountryField" name="country" list="modalCountryList" autocomplete="off"></div>
+        <div class="ee-group"><label>Ciudad</label><input type="text" name="city" list="modalCityList" autocomplete="off"></div>
+      </div>
+      <div class="ee-row">
+        <div class="ee-group"><label>Lugar</label><input type="text" name="location"></div>
+        <div class="ee-group"><label>Dirección</label><input type="text" name="address"></div>
+      </div>
+      <div class="ee-row">
+        <div class="ee-group"><label>Coordinador asignado</label><input type="text" name="coordinator_label" list="modalCoordinatorList" autocomplete="off"></div>
+        {% if staff_role in ("comercial", "admin", "super_admin") %}
+        <div class="ee-group"><label>Comercial asignada</label><input type="text" name="commercial_label" list="modalCommercialList" autocomplete="off"></div>
+        {% endif %}
+      </div>
+      <div class="ee-row">
+        <div class="ee-group" style="max-width:110px;">
+          <label>Color de pañoleta</label>
+          <input type="color" name="bandana_color" style="height:40px; padding:2px; cursor:pointer;">
+        </div>
+        <div class="ee-group"><label>Nombre del color</label><input type="text" name="bandana_color_name" placeholder="Ej. Rojo Golden"></div>
+      </div>
+      <div class="ee-row">
+        <div class="ee-group"><label>Estado del evento</label>
+          <select name="status" id="modalStatusSelect">
+            <option value="creado">Creado</option>
+            <option value="en_proceso">En Proceso</option>
+            <option value="finalizado">Finalizado</option>
+          </select>
+        </div>
+        <div class="ee-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
+      </div>
+
+      <!-- Informe final (ítem 6b): se sube aparte de "Guardar cambios", con su propia confirmación. -->
+      <div class="ee-report">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:0.5rem;">
+          <strong style="font-size:0.85rem;">Informe final</strong>
+          <span id="eeReportBulb"></span>
+          <span id="eeReportInfo" style="font-size:0.78rem; color:#777;"></span>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <input type="file" id="eeReportFile" accept="application/pdf" style="max-width:260px; font-size:0.8rem;">
+          <button type="button" class="ee-btn primary" id="eeReportUpload">Subir informe y avisar a la comercial</button>
+        </div>
+        <p style="font-size:0.72rem; color:#999; margin:0.4rem 0 0;">Sube el PDF ya corregido y autorizado. Se marca como enviado (verde) y se le manda por correo a la comercial del evento.</p>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0.5rem;">
+        <a href="#" id="eventModalEnter" class="ee-btn primary">🚪 Ingresar al evento</a>
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="ee-btn" id="eventModalCancel">Cancelar</button>
+          <button type="submit" class="ee-btn primary">Guardar cambios</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+<datalist id="modalCountryList"></datalist>
+<datalist id="modalCityList"></datalist>
+<datalist id="modalCoordinatorList"></datalist>
+<datalist id="modalCommercialList"></datalist>
+
+<script>
+(function () {
+  const ROLE = "{{ staff_role }}";
+  const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
+  document.getElementById("modalCountryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
+
+  const overlay = document.getElementById('eventModalOverlay');
+  const form = document.getElementById('eventEditForm');
+  document.getElementById('eventModalCancel').addEventListener('click', () => { overlay.style.display = 'none'; });
+  document.querySelectorAll('.clock-time').forEach((input) => attachClockPicker(input));
+
+  document.getElementById('modalCountryField').addEventListener('change', async (e) => {
+    const country = e.target.value.trim();
+    const cityDatalist = document.getElementById('modalCityList');
+    if (!country) { cityDatalist.innerHTML = ''; return; }
+    const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
+    const cities = res.ok ? await res.json() : [];
+    cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join('');
+  });
+
+  let coordinatorsByLabel = {}, coordinatorsById = {};
+  let commercialsByLabel = {}, commercialsById = {};
+  const staffOptionsReady = (async () => {
+    const res = await fetch('/api/staff/coordinators');
+    const coords = res.ok ? await res.json() : [];
+    document.getElementById('modalCoordinatorList').innerHTML = coords.map(c => {
+      const label = `${c.full_name || c.username} (${c.username})`;
+      coordinatorsByLabel[label] = c.id; coordinatorsById[c.id] = label;
+      return `<option value="${label}">`;
+    }).join('');
+    if (['comercial', 'admin', 'super_admin'].includes(ROLE)) {
+      const res2 = await fetch('/api/staff/commercials');
+      const commercials = res2.ok ? await res2.json() : [];
+      document.getElementById('modalCommercialList').innerHTML = commercials.map(c => {
+        const label = `${c.full_name || c.username} (${c.username})`;
+        commercialsByLabel[label] = c.id; commercialsById[c.id] = label;
+        return `<option value="${label}">`;
+      }).join('');
+    }
+  })();
+
+  let current = null, savedCallback = null;
+
+  /* Bombillo del informe final (ítem 6c) para usar en cualquier lista de eventos: verde con enlace
+     al PDF si ya se subió, naranja si falta. */
+  window.reportBulbHtml = function (ev) {
+    return ev.report_uploaded
+      ? `<a class="report-bulb on" href="/api/events/${ev.id}/final-report" target="_blank" rel="noopener" title="Informe final enviado — clic para descargar el PDF" onclick="event.stopPropagation()"></a>`
+      : `<span class="report-bulb off" title="Informe final pendiente de subir"></span>`;
+  };
+
+  function paintReport(ev) {
+    document.getElementById('eeReportBulb').innerHTML = window.reportBulbHtml(ev);
+    document.getElementById('eeReportInfo').textContent = ev.report_uploaded
+      ? `Enviado${ev.report_uploaded_at ? ' el ' + new Date(ev.report_uploaded_at + 'Z').toLocaleString() : ''} (subir otro lo reemplaza)`
+      : 'Pendiente de subir';
+  }
+
+  window.openEventEditModal = async function (ev, onSaved) {
+    await staffOptionsReady;
+    current = ev; savedCallback = onSaved || null;
+    form.event_id.value = ev.id;
+    form.name.value = ev.name || '';
+    form.start_date.value = ev.start_date || '';
+    form.end_date.value = ev.end_date || '';
+    form.setup_date.value = ev.setup_date || '';
+    form.event_time_start.value = ev.event_time_start || '';
+    form.event_time_end.value = ev.event_time_end || '';
+    form.setup_time_start.value = ev.setup_time_start || '';
+    form.setup_time_end.value = ev.setup_time_end || '';
+    form.country.value = ev.country || '';
+    form.city.value = ev.city || '';
+    form.location.value = ev.location || '';
+    form.address.value = ev.address || '';
+    form.notes.value = ev.notes || '';
+    form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
+    if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
+    form.status.value = ev.status || 'creado';
+    form.bandana_color.value = ev.bandana_color || '#D4AF37';
+    form.bandana_color_name.value = ev.bandana_color_name || '';
+    document.getElementById('eeReportFile').value = '';
+    paintReport(ev);
+    // "Ingresar al evento": el clic en un evento no es solo para editar, también entra al menú del evento.
+    document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;
+    overlay.style.display = 'flex';
+  };
+
+  document.getElementById('eeReportUpload').addEventListener('click', async () => {
+    const file = document.getElementById('eeReportFile').files[0];
+    if (!file) { showToast('Elige primero el PDF del informe', 'error'); return; }
+    const who = current.commercial_name ? ` a ${current.commercial_name}` : ' a la comercial del evento';
+    const ok = await showConfirm(`Se marcará el informe como enviado y se enviará por correo${who}, con el PDF adjunto. ¿Continuar?`, { variant: 'warning', confirmLabel: 'Sí, subir y enviar' });
+    if (!ok) return;
+    const btn = document.getElementById('eeReportUpload');
+    setButtonLoading(btn, true, 'Subiendo...');
+    const fd = new FormData(); fd.append('file', file);
+    const res = await fetch(`/api/events/${current.id}/final-report`, { method: 'POST', body: fd });
+    setButtonLoading(btn, false);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.detail || 'No se pudo subir el informe', 'error'); return; }
+    current.report_uploaded = true; current.report_uploaded_at = new Date().toISOString().replace('Z', '');
+    paintReport(current);
+    showToast(data.email && data.email.sent ? 'Informe subido y correo enviado' : `Informe subido. ${data.email ? data.email.detail : ''}`, 'success');
+    if (savedCallback) savedCallback();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const eventId = payload.event_id;
+    delete payload.event_id;
+
+    if (payload.coordinator_label) {
+      const id = coordinatorsByLabel[payload.coordinator_label];
+      if (!id) { showToast('Selecciona un coordinador válido de la lista.', 'error'); return; }
+      payload.coordinator_staff_id = id;
+    }
+    delete payload.coordinator_label;
+
+    if ('commercial_label' in payload) {
+      if (payload.commercial_label) {
+        const id = commercialsByLabel[payload.commercial_label];
+        if (!id) { showToast('Selecciona una comercial válida de la lista.', 'error'); return; }
+        payload.commercial_staff_id = id;
+      }
+      delete payload.commercial_label;
+    }
+
+    const btn = form.querySelector('button[type="submit"]');
+    setButtonLoading(btn, true, 'Guardando...');
+    const res = await fetch(`/api/events/${eventId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    setButtonLoading(btn, false);
+    if (res.ok) {
+      showToast('Evento actualizado', 'success');
+      overlay.style.display = 'none';
+      if (savedCallback) savedCallback();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.detail || 'No se pudo actualizar', 'error');
+    }
+  });
+})();
+</script>

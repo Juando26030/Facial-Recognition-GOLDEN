@@ -98,72 +98,7 @@
   </div>
 </main>
 
-<div class="modal-overlay" id="eventModalOverlay" style="display:none;">
-  <div class="modal-box">
-    <h3>Editar evento</h3>
-    <form id="eventEditForm">
-      <input type="hidden" name="event_id">
-      <div class="modal-row">
-        <div class="modal-group" style="min-width:100%;"><label>Nombre del evento</label><input type="text" name="name" required></div>
-      </div>
-      <div class="modal-row">
-        <div class="modal-group"><label>Fecha inicio</label><input type="date" name="start_date" required></div>
-        <div class="modal-group"><label>Fecha fin</label><input type="date" name="end_date" required></div>
-        <div class="modal-group"><label>Fecha montaje</label><input type="date" name="setup_date" required></div>
-      </div>
-      <div class="modal-row">
-        <div class="modal-group"><label>Hora inicio evento</label><input type="text" class="clock-time" name="event_time_start" required></div>
-        <div class="modal-group"><label>Hora fin evento</label><input type="text" class="clock-time" name="event_time_end" required></div>
-      </div>
-      <div class="modal-row">
-        <div class="modal-group"><label>Hora inicio montaje</label><input type="text" class="clock-time" name="setup_time_start" required></div>
-        <div class="modal-group"><label>Hora fin montaje</label><input type="text" class="clock-time" name="setup_time_end" required></div>
-      </div>
-      <div class="modal-row">
-        <div class="modal-group"><label>País</label><input type="text" id="modalCountryField" name="country" list="modalCountryList" autocomplete="off"></div>
-        <div class="modal-group"><label>Ciudad</label><input type="text" name="city" list="modalCityList" autocomplete="off"></div>
-      </div>
-      <div class="modal-row">
-        <div class="modal-group"><label>Lugar</label><input type="text" name="location"></div>
-        <div class="modal-group"><label>Dirección</label><input type="text" name="address"></div>
-      </div>
-      <div class="modal-row">
-        <div class="modal-group"><label>Coordinador asignado</label><input type="text" name="coordinator_label" list="modalCoordinatorList" autocomplete="off"></div>
-        {% if staff_role in ("comercial", "admin", "super_admin") %}
-        <div class="modal-group"><label>Comercial asignada</label><input type="text" name="commercial_label" list="modalCommercialList" autocomplete="off"></div>
-        {% endif %}
-      </div>
-      <div class="modal-row">
-        <div class="modal-group" style="max-width:110px;">
-          <label>Color de pañoleta</label>
-          <input type="color" name="bandana_color" style="width:100%; height:40px; padding:2px; border:1px solid #ddd; border-radius:8px; cursor:pointer;">
-        </div>
-        <div class="modal-group"><label>Nombre del color</label><input type="text" name="bandana_color_name" placeholder="Ej. Rojo Golden"></div>
-      </div>
-      <div class="modal-row">
-        <div class="modal-group"><label>Estado del evento</label>
-          <select name="status" id="modalStatusSelect" style="width:100%; padding:0.6rem 0.8rem; border-radius:10px; border:1px solid #ddd; font-size:0.9rem;">
-            <option value="creado">Creado</option>
-            <option value="en_proceso">En Proceso</option>
-            <option value="finalizado">Finalizado</option>
-          </select>
-        </div>
-        <div class="modal-group" style="min-width:100%;"><label>Observaciones</label><input type="text" name="notes"></div>
-      </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0.5rem;">
-        <a href="#" id="eventModalEnter" class="small-btn primary" style="text-decoration:none;">🚪 Ingresar al evento</a>
-        <div style="display:flex; gap:10px;">
-          <button type="button" class="small-btn" id="eventModalCancel">Cancelar</button>
-          <button type="submit" class="small-btn primary">Guardar cambios</button>
-        </div>
-      </div>
-    </form>
-  </div>
-</div>
-<datalist id="modalCountryList"></datalist>
-<datalist id="modalCityList"></datalist>
-<datalist id="modalCoordinatorList"></datalist>
-<datalist id="modalCommercialList"></datalist>
+{% include "_event_edit_modal.html" %}
 
 <div class="modal-overlay" id="noteModalOverlay" style="display:none;">
   <div class="modal-box" style="max-width:440px;">
@@ -198,8 +133,6 @@
 <script>
 const STAFF_ROLE = "{{ staff_role }}";
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
-const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
-document.getElementById("modalCountryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
 
 const MONTH_NAMES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 const DAY_LABELS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
@@ -313,7 +246,7 @@ function eventChipStyle(e) {
 function dayCellContent(d, iso, extraClass) {
   const evs = eventsForDay(iso);
   const notes = notesForDay(iso);
-  const evChips = evs.map(e => `<div class="cal-event-chip" data-event-id="${e.id}" title="${esc(e.name)}${e.bandana_color_name ? ' — ' + esc(e.bandana_color_name) : ''}" style="${eventChipStyle(e)}">${esc(e.name)}</div>`).join('');
+  const evChips = evs.map(e => `<div class="cal-event-chip" data-event-id="${e.id}" title="${esc(e.name)}${e.bandana_color_name ? ' — ' + esc(e.bandana_color_name) : ''}" style="${eventChipStyle(e)}">${reportBulbHtml(e)} ${esc(e.name)}</div>`).join('');
   const noteChips = notes.map(n => `<div class="cal-note-chip" data-note-id="${n.id}"><span>📝 ${esc(n.text)}</span>${(n.created_by_id === STAFF_ID || ['admin','super_admin'].includes(STAFF_ROLE)) ? '<span class="cal-note-del" data-note-del="' + n.id + '">✕</span>' : ''}</span></div>`).join('');
   return `
     <div class="cal-cell ${extraClass}" data-date="${iso}">
@@ -380,7 +313,7 @@ function renderDay() {
   evs.forEach(e => {
     html += `
       <div class="cal-event-chip" data-event-id="${e.id}" style="padding:0.8rem 1rem; white-space:normal; cursor:pointer; ${eventChipStyle(e)}">
-        <strong>${esc(e.name)}</strong><br>
+        ${reportBulbHtml(e)} <strong>${esc(e.name)}</strong><br>
         <span style="font-size:0.8rem;">${esc(e.tenant_name || '')} · ${esc(e.location || '')} · ${esc(e.event_time_start || '')}–${esc(e.event_time_end || '')}</span><br>
         <span style="font-size:0.75rem;">Comercial: ${esc(e.commercial_name) || '—'} · Coordinador: ${esc(e.coordinator_name) || '—'}${e.bandana_color_name ? ' · Pañoleta: ' + esc(e.bandana_color_name) : ''}</span>
       </div>`;
@@ -505,116 +438,11 @@ document.getElementById('noteModalSave').addEventListener('click', async () => {
   }
 });
 
-/* --- Modal de edición de evento --- */
-const eventModalOverlay = document.getElementById('eventModalOverlay');
-const eventEditForm = document.getElementById('eventEditForm');
-document.getElementById('eventModalCancel').addEventListener('click', () => { eventModalOverlay.style.display = 'none'; });
-
-document.querySelectorAll('.clock-time').forEach((input) => attachClockPicker(input));
-
-document.getElementById('modalCountryField').addEventListener('change', async (e) => {
-  const country = e.target.value.trim();
-  const cityDatalist = document.getElementById('modalCityList');
-  if (!country) { cityDatalist.innerHTML = ''; return; }
-  const res = await fetch(`/api/cities?country=${encodeURIComponent(country)}`);
-  const cities = res.ok ? await res.json() : [];
-  cityDatalist.innerHTML = cities.map(c => `<option value="${c}">`).join('');
-});
-
-let coordinatorsByLabel = {}, coordinatorsById = {};
-let commercialsByLabel = {}, commercialsById = {};
-async function loadModalStaffOptions() {
-  const res = await fetch('/api/staff/coordinators');
-  const coords = res.ok ? await res.json() : [];
-  coordinatorsByLabel = {}; coordinatorsById = {};
-  document.getElementById('modalCoordinatorList').innerHTML = coords.map(c => {
-    const label = `${c.full_name || c.username} (${c.username})`;
-    coordinatorsByLabel[label] = c.id; coordinatorsById[c.id] = label;
-    return `<option value="${label}">`;
-  }).join('');
-
-  if (['comercial', 'admin', 'super_admin'].includes(STAFF_ROLE)) {
-    const res2 = await fetch('/api/staff/commercials');
-    const commercials = res2.ok ? await res2.json() : [];
-    commercialsByLabel = {}; commercialsById = {};
-    document.getElementById('modalCommercialList').innerHTML = commercials.map(c => {
-      const label = `${c.full_name || c.username} (${c.username})`;
-      commercialsByLabel[label] = c.id; commercialsById[c.id] = label;
-      return `<option value="${label}">`;
-    }).join('');
-  }
-}
-loadModalStaffOptions();
-
+/* --- Editar evento: modal compartido (_event_edit_modal.html) --- */
 function openEventModal(eventId) {
   const ev = eventsCache.find(e => String(e.id) === String(eventId));
-  if (!ev) return;
-  const form = eventEditForm;
-  form.event_id.value = ev.id;
-  form.name.value = ev.name || '';
-  form.start_date.value = ev.start_date || '';
-  form.end_date.value = ev.end_date || '';
-  form.setup_date.value = ev.setup_date || '';
-  form.event_time_start.value = ev.event_time_start || '';
-  form.event_time_end.value = ev.event_time_end || '';
-  form.setup_time_start.value = ev.setup_time_start || '';
-  form.setup_time_end.value = ev.setup_time_end || '';
-  form.country.value = ev.country || '';
-  form.city.value = ev.city || '';
-  form.location.value = ev.location || '';
-  form.address.value = ev.address || '';
-  form.notes.value = ev.notes || '';
-  form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
-  if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
-  form.status.value = ev.status || 'creado';
-  form.bandana_color.value = ev.bandana_color || '#D4AF37';
-  form.bandana_color_name.value = ev.bandana_color_name || '';
-  // "Ingresar al evento" (2026-09-17, pedido explícito): el clic en un evento del Calendario no
-  // debe ser solo para editar — también debe poder entrar al menú del evento (Registro, QR,
-  // Escarapelas...), igual que el botón "Ingresar" de Clientes - Cuentas/Eventos.
-  document.getElementById('eventModalEnter').href = `/kiosk/${ev.id}`;
-  eventModalOverlay.style.display = 'flex';
+  if (ev) openEventEditModal(ev, loadAndRender);
 }
-
-eventEditForm.addEventListener('submit', async (ev) => {
-  ev.preventDefault();
-  const form = ev.target;
-  const formData = new FormData(form);
-  const payload = Object.fromEntries(formData.entries());
-  const eventId = payload.event_id;
-  delete payload.event_id;
-
-  if (payload.coordinator_label) {
-    const id = coordinatorsByLabel[payload.coordinator_label];
-    if (!id) { showToast('Selecciona un coordinador válido de la lista.', 'error'); return; }
-    payload.coordinator_staff_id = id;
-  }
-  delete payload.coordinator_label;
-
-  if ('commercial_label' in payload) {
-    if (payload.commercial_label) {
-      const id = commercialsByLabel[payload.commercial_label];
-      if (!id) { showToast('Selecciona una comercial válida de la lista.', 'error'); return; }
-      payload.commercial_staff_id = id;
-    }
-    delete payload.commercial_label;
-  }
-
-  const btn = form.querySelector('button[type="submit"]');
-  setButtonLoading(btn, true, 'Guardando...');
-  const res = await fetch(`/api/events/${eventId}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-  });
-  setButtonLoading(btn, false);
-  if (res.ok) {
-    showToast('Evento actualizado', 'success');
-    eventModalOverlay.style.display = 'none';
-    loadAndRender();
-  } else {
-    const err = await res.json();
-    showToast(err.detail || 'No se pudo actualizar', 'error');
-  }
-});
 
 loadAndRender();
 </script>

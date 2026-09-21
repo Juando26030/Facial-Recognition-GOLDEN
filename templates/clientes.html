@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <style>
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
@@ -135,10 +136,11 @@ function renderEventRows(events, el) {
   el.innerHTML = events.map(e => `
     <div class="event-row">
       <div>
-        <div class="event-name">${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</div>
+        <div class="event-name">${reportBulbHtml(e)} ${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</div>
         <div class="event-meta">${esc(e.location) || ""} ${e.city ? "· " + esc(e.city) : ""} · ${fmtDate(e.start_date)} · Coordinador: ${esc(e.coordinator_name) || "-"} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
       </div>
       <div style="display:flex; gap:6px; align-items:center;">
+        <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
         <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
           ${Object.entries(STATUS_LABELS).map(([value, label]) =>
@@ -157,6 +159,13 @@ tenantsListEl.addEventListener("click", (e) => {
   if (toggleHead) {
     const card = toggleHead.closest(".tenant-card");
     toggleTenant(card.dataset.tenantId, card);
+    return;
+  }
+  const editBtn = e.target.closest("[data-edit-event]");
+  if (editBtn) {
+    const card = editBtn.closest(".tenant-card");
+    const ev = (tenantEventsCache.get(card) || []).find(x => String(x.id) === editBtn.dataset.editEvent);
+    if (ev) openEventEditModal(ev, () => loadEventsForTenant(card.dataset.tenantId, card));
     return;
   }
   const deleteBtn = e.target.closest("[data-delete-event]");
@@ -235,5 +244,6 @@ searchBox.addEventListener("input", () => {
 
 loadTenants();
 </script>
+{% include "_event_edit_modal.html" %}
 </body>
 </html>

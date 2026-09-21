@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <style>
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; }
@@ -85,7 +86,7 @@ function eventCard(e) {
   return `
     <div class="tenant-card"><div class="tenant-head">
       <div>
-        <h3>${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</h3>
+        <h3>${reportBulbHtml(e)} ${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</h3>
         <div class="meta">${esc(e.tenant_name)} · ${esc(e.city) || ""} ${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)}</div>
         <div class="meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}</div>
       </div>
@@ -95,6 +96,7 @@ function eventCard(e) {
             `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
           ).join("")}
         </select>
+        <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
       </div>
     </div></div>
@@ -146,8 +148,18 @@ async function runSearch() {
   if (coordinatorFilter && coordinatorFilter.value) params.set("coordinator_staff_id", coordinatorFilter.value);
   const res = await fetch(`/api/events/search?${params.toString()}`);
   const events = await res.json();
+  eventsCache = events;
   resultsEl.innerHTML = events.length ? events.map(eventCard).join("") : '<p style="color:#888;">Sin resultados.</p>';
 }
+
+// "Editar evento": la misma vista que Calendario y la ficha de Cliente/Cuenta (_event_edit_modal.html).
+let eventsCache = [];
+document.getElementById("eventsList").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-edit-event]");
+  if (!btn) return;
+  const ev = eventsCache.find(x => String(x.id) === btn.dataset.editEvent);
+  if (ev) openEventEditModal(ev, runSearch);
+});
 
 // Cambiar el estado del evento directo desde el panel de Eventos (2026-09-17, pedido explícito:
 // antes solo se podía desde Clientes - Cuentas, entrando a la tarjeta del cliente) — mismo select
@@ -168,5 +180,6 @@ document.getElementById("eventsList").addEventListener("change", async (e) => {
 
 runSearch();
 </script>
+{% include "_event_edit_modal.html" %}
 </body>
 </html>

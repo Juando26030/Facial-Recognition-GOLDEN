@@ -111,6 +111,8 @@ def _serialize(e: Event) -> dict:
         "facial_enabled": e.facial_enabled,
         "auto_print_badge": e.auto_print_badge,
         "auto_register": e.auto_register,
+        "report_uploaded": bool(e.report_pdf_path),  # ítem 6: bombillo verde/naranja
+        "report_uploaded_at": e.report_uploaded_at.isoformat() if e.report_uploaded_at else None,
     }
 
 

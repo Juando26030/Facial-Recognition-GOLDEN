@@ -66,6 +66,10 @@
             <label>Teléfono (obligatorio y único — no puede repetirse entre cuentas)</label>
             <input type="text" name="phone" placeholder="Ej. +57 300 1234567" required>
           </div>
+          <div class="badge-input-group">
+            <label>Correo (para notificaciones — ej. informe final del evento a la comercial)</label>
+            <input type="email" name="email" placeholder="nombre@empresa.com">
+          </div>
         </div>
         <button type="submit" class="golden-btn golden-btn-primary">Crear cuenta</button>
       </form>
@@ -74,7 +78,7 @@
     <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
       <table class="golden-table">
         <thead>
-          <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
+          <tr><th>Usuario</th><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
         </thead>
         <tbody id="staffBody"></tbody>
       </table>
@@ -117,6 +121,7 @@ async function loadStaff() {
     <tr>
       <td>${s.username}</td>
       <td>${s.full_name || "-"}</td>
+      <td>${s.email || '<span style="color:#c98;">sin correo</span>'} <button class="btn-table-action" onclick="editStaffEmail(${s.id}, '${(s.email || "").replace(/'/g, "")}')" title="Editar correo">✎</button></td>
       <td>${roleLabel}</td>
       <td>${s.is_active ? "Activo" : "Inactivo"}</td>
       <td>
@@ -133,6 +138,16 @@ async function loadStaff() {
     </tr>
   `;
   }).join("");
+}
+
+async function editStaffEmail(id, current) {
+  const email = await showPrompt("Correo de esta cuenta (vacío para quitarlo):", { defaultValue: current, confirmLabel: "Guardar" });
+  if (email === null) return;
+  const res = await fetch(`/api/staff/${id}/email`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+  });
+  if (res.ok) { showToast("Correo actualizado", "success"); loadStaff(); }
+  else { const err = await res.json().catch(() => ({})); showToast(err.detail || "No se pudo actualizar el correo", "error"); }
 }
 
 async function setSecondaryRole(id, secondaryRole) {

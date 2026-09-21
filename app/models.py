@@ -176,6 +176,7 @@ class StaffUser(Base):
     role = Column(String, nullable=False)  # uno de STAFF_ROLES
     secondary_role = Column(String, nullable=True)  # Sprint 2.4 Fase 15 (2026-09-17, pedido explícito): "hay coordinadores que también pueden ser comerciales" — el ÚNICO doble rol permitido es coordinador+comercial (en cualquier orden), lo asigna admin+ desde Configuración > Staff (ver routers/staff.py: assign_secondary_role). Ver auth.py: effective_roles()/require_role()/require_role_excluding() para cómo se combina con la jerarquía normal.
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=True)  # null = alcance global (super_admin)
+    email = Column(String, nullable=True)  # correo para notificaciones (informe final del evento a la comercial) — reunión 2026-09-21, ítem 6
     phone = Column(String, nullable=True, unique=True)  # Sprint 2.4, 2026-09-16: WhatsApp; Fase 4: obligatorio+único salvo cliente/digitador (ver routers/staff.py, routers/events.py)
     is_active = Column(Boolean, default=True, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -214,6 +215,8 @@ class Event(Base):
     facial_enabled = Column(Boolean, default=False, nullable=False)  # 2026-09-21: se enciende solo (nunca se apaga solo) la primera vez que se sube un roster con zip de fotos para este evento — ver bulk_register. Decide si /kiosk/{id}/registro muestra el escáner de cámara o se comporta como cédula tradicional.
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
+    report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente
+    report_uploaded_at = Column(DateTime, nullable=True)
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1
     categories = Column(Text, nullable=True)  # JSON: nombres de las categorías del evento (ítem 14)
     badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría
