@@ -23,7 +23,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="#" class="golden-logo">
-      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo">{% endif %}
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
@@ -52,6 +52,18 @@
       </div>
 
       <div class="app-container">
+        <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE
+             evento; los demás eventos siguen con el logo de Golden. Se aplica al elegir, sin "Guardar cambios". -->
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Logo del evento</h4>
+          <div style="display:flex; gap:1.2rem; flex-wrap:wrap; align-items:center;" id="logoOptions">
+            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="default" {% if event.logo_mode == "default" %}checked{% endif %}> Mostrar logo de Golden</label>
+            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="hidden" {% if event.logo_mode == "hidden" %}checked{% endif %}> Ocultar logo</label>
+            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="custom" {% if event.logo_mode == "custom" %}checked{% endif %} {% if not event.logo_path %}disabled{% endif %}> Usar logo propio</label>
+            <input type="file" id="logoFile" accept="image/*" style="max-width:240px;">
+          </div>
+          <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al subir una imagen se activa "Usar logo propio" (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia este evento.</p>
+        </div>
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
           <p style="color:#888; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
             Define, para cada campo de este evento: cómo se llama (solo aquí, no cambia el nombre en otros eventos), en qué orden aparece en "Registrar nuevo" y "Editar persona" (arrastra las filas con ☰), si es obligatorio, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (nombres, apellidos, cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.
@@ -110,6 +122,18 @@
     }
 
     const tbody = document.getElementById('paramsTableBody');
+
+    // Logo del evento: se aplica al elegir/subir (recarga para ver el header nuevo).
+    document.querySelectorAll('input[name="logoMode"]').forEach(radio => radio.addEventListener('change', async () => {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/logo`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: radio.value }) });
+        if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo cambiar el logo', 'error');
+    }));
+    document.getElementById('logoFile').addEventListener('change', async (e) => {
+        if (!e.target.files.length) return;
+        const fd = new FormData(); fd.append('file', e.target.files[0]);
+        const res = await fetch(`/api/events/${window.EVENT_ID}/logo/upload`, { method: 'POST', body: fd });
+        if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo subir el logo', 'error');
+    });
 
     function buildRow(cfg) {
         const tr = document.createElement('tr');

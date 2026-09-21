@@ -13,7 +13,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
-      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo">{% endif %}
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>

@@ -48,6 +48,22 @@ app.add_middleware(
 app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+DEFAULT_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
+
+
+def event_logo_url(event):
+    """URL del logo del header para las páginas de un evento (ítem 1, reunión 2026-09-21): el de
+    Golden por defecto, ninguno si se ocultó, o el propio del evento. Vacío = no dibujar <img>."""
+    mode = getattr(event, "logo_mode", "default")
+    if mode == "hidden":
+        return ""
+    if mode == "custom" and event.logo_path:
+        return f"/api/events/{event.id}/logo"
+    return DEFAULT_LOGO_URL
+
+
+templates.env.globals["event_logo_url"] = event_logo_url
+
 app.include_router(auth_router.router)
 app.include_router(api.router, prefix="/api")
 app.include_router(events.router, prefix="/api")

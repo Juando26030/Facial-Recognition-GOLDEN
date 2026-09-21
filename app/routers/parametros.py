@@ -9,12 +9,15 @@ manual_register y update_user (routers/api.py) — NO en bulk_register, que sigu
 comportamiento tolerante de siempre; forzar esto ahí arriesgaba romper cargas reales con datos
 incompletos que hoy funcionan.
 """
+import os
+import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.auth import get_event_for_staff, require_role_excluding
+from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
 
@@ -92,6 +95,61 @@ def field_labels_for_event(db: Session, event: Event) -> dict:
     """{field_key: etiqueta efectiva} — atajo para reportes/estadísticas/plantillas que solo
     necesitan el nombre a mostrar."""
     return {cfg["key"]: cfg["label"] for cfg in field_configs_for_event(db, event)}
+
+
+LOGO_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+LOGO_MODES = ("default", "hidden", "custom")
+
+
+@router.get("/events/{event_id}/logo")
+async def get_event_logo(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+    """Sirve el logo propio del evento (ítem 1, reunión 2026-09-21) — cualquier staff con acceso al
+    evento lo necesita para dibujar el header, no solo quien lo configura."""
+    event = get_event_for_staff(event_id, db, staff)
+    if event.logo_mode != "custom" or not event.logo_path or not os.path.isfile(event.logo_path):
+        raise HTTPException(status_code=404, detail="Este evento no tiene logo propio")
+    return FileResponse(event.logo_path, headers={"Cache-Control": "no-cache"})
+
+
+@router.put("/events/{event_id}/logo")
+async def set_event_logo_mode(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """`mode`: 'default' (logo de Golden), 'hidden' (sin logo) o 'custom' (el propio ya subido)."""
+    event = get_event_for_staff(event_id, db, staff)
+    mode = data.get("mode")
+    if mode not in LOGO_MODES:
+        raise HTTPException(status_code=400, detail=f"mode debe ser uno de: {', '.join(LOGO_MODES)}")
+    if mode == "custom" and not (event.logo_path and os.path.isfile(event.logo_path)):
+        raise HTTPException(status_code=400, detail="Primero sube la imagen del logo")
+    event.logo_mode = mode
+    db.commit()
+    return {"logo_mode": event.logo_mode}
+
+
+@router.post("/events/{event_id}/logo/upload")
+async def upload_event_logo(
+    event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    event = get_event_for_staff(event_id, db, staff)
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in LOGO_EXT:
+        raise HTTPException(status_code=400, detail=f"Formato no permitido — usa uno de: {', '.join(sorted(LOGO_EXT))}")
+    content = await file.read()
+    if not content or len(content) > 3_000_000:
+        raise HTTPException(status_code=400, detail="La imagen está vacía o pesa más de 3 MB")
+    folder = os.path.join("data", event.tenant_id, "event_logos")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{uuid.uuid4().hex}{ext}")
+    with open(path, "wb") as f:
+        f.write(content)
+    if event.logo_path and os.path.isfile(event.logo_path):
+        os.remove(event.logo_path)
+    event.logo_path, event.logo_mode = path, "custom"
+    db.commit()
+    return {"logo_mode": "custom"}
 
 
 @router.post("/events/{event_id}/optional-fields")
