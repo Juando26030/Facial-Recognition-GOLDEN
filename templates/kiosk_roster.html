@@ -156,7 +156,31 @@ function renderRosterResult(data) {
 
 async function submitRoster(formData) {
     const res = await fetch("/api/bulk_register", { method: "POST", body: formData });
-    const data = await res.json();
+
+    // 413 (Payload Too Large) lo devuelve el proxy (Nginx/Cloudflare) ANTES de llegar a la app —
+    // su respuesta es una página de error, no JSON, así que hay que detectarlo por el status y
+    // decirlo claro, en vez de que res.json() truene abajo y termine mostrando "Error de red"
+    // genérico (indistinguible de una caída real de conexión).
+    if (res.status === 413) {
+        showToast(
+            "El archivo es demasiado grande para subir de una vez (el zip de fotos, normalmente). " +
+            "Divide la carga en grupos más pequeños (ej. de 500 a 1000 personas por vez, el sistema " +
+            "acepta varias cargas seguidas mientras el evento esté en 'Creado') o comprime las fotos antes de armar el zip.",
+            "error"
+        );
+        return;
+    }
+
+    let data;
+    try {
+        data = await res.json();
+    } catch (e) {
+        // Cualquier otra respuesta que no sea JSON (ej. una página de error de Cloudflare/Nginx
+        // por otro motivo) — mismo criterio: decir que fue un problema del lado del servidor con
+        // el tamaño/formato del archivo, no un "error de red" genérico e indistinguible.
+        showToast(`El servidor rechazó el archivo (código ${res.status}) — probablemente por su tamaño. Intenta con un archivo más pequeño o divide la carga.`, "error");
+        return;
+    }
     if (!res.ok) {
         showToast(data.detail || "No se pudo cargar la base", "error");
         return;
