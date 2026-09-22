@@ -56,7 +56,7 @@ def _configurable_fields(event: Event):
     if event.certificates_enabled:
         fields.append(("certificate", "Certificado"))
     if event.digital_badge_enabled:
-        fields.append(("digital_contact", "Enviar escarapela digital a (correo o celular)"))
+        fields.append(("digital_contact", "Correo corporativo para la escarapela digital"))
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
         fields.append((key, label))
@@ -169,10 +169,16 @@ async def set_digital_badge_enabled(
     event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
-    """Activa/desactiva la escarapela digital (ítem 17): agrega el campo de contacto (correo o celular,
-    validado) y, al guardar a una persona con ese dato, se le envía el enlace de su escarapela."""
+    """Activa/desactiva la escarapela digital (ítem 17): agrega el campo de correo corporativo y, al
+    guardar a una persona con ese dato, se le envía el enlace de su escarapela. Decisión 2026-09-21:
+    solo correo (se descartó WhatsApp por costo) — al activar, el campo queda `required` por defecto
+    (si todavía no tenía una fila propia en event_field_configs, o sea nadie lo había tocado antes)."""
     event = get_event_for_staff(event_id, db, staff)
     event.digital_badge_enabled = bool(data.get("enabled"))
+    if event.digital_badge_enabled:
+        row = db.query(EventFieldConfig).filter_by(event_id=event_id, field_key="digital_contact").first()
+        if not row:
+            db.add(EventFieldConfig(event_id=event_id, field_key="digital_contact", required=True, field_type="text_short"))
     db.commit()
     return {"digital_badge_enabled": event.digital_badge_enabled}
 
