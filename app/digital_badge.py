@@ -1,16 +1,17 @@
 """Escarapela digital (reunión 2026-09-21, ítem 17): validación del contacto, enlace secreto por persona
-y envío automático (correo por SMTP, o SMS por Twilio si está configurado).
+y envío automático — correo por Microsoft 365 corporativo (SMTP, ver app/mailer.py) o WhatsApp por
+Meta Business (WhatsApp Cloud API) si el contacto es un celular.
 
 Sin proveedor configurado NADA sale al exterior: el mensaje queda como archivo en `data/outbox/` (igual que
-el correo del informe final). Variables opcionales: PUBLIC_BASE_URL (dominio público para armar el enlace;
-por defecto el de la petición), TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM (SMS)."""
-import base64
+el correo del informe final). Variables opcionales: PUBLIC_BASE_URL (dominio público para armar el enlace,
+p.ej. https://golden.juandajuzga.com; por defecto el de la petición), WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID /
+WHATSAPP_TEMPLATE_NAME / WHATSAPP_TEMPLATE_LANG (WhatsApp Cloud API) — ver .env.example para el detalle de cada una."""
 import json
 import os
 import re
 import secrets
 import time
-import urllib.parse
+import urllib.error
 import urllib.request
 from datetime import datetime
 from typing import Optional
@@ -46,25 +47,44 @@ def ensure_token(db: Session, attendee: EventAttendee) -> str:
     return attendee.digital_token
 
 
-def _send_sms(phone: str, text: str) -> dict:
-    sid, token, sender = os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"), os.getenv("TWILIO_FROM")
-    if not (sid and token and sender):
+# Texto sugerido para el template que hay que dar de alta y mandar a aprobar en Meta Business Manager
+# (WhatsApp Manager > Plantillas de mensajes) antes de que esto pueda enviar nada — WhatsApp Cloud API
+# exige una plantilla PRE-APROBADA para cualquier mensaje que la empresa inicia (no es una respuesta a
+# algo que la persona escribió). Categoría: Utility. 3 variables en el cuerpo, en este orden:
+#   {{1}} = nombre de la persona, {{2}} = nombre del evento, {{3}} = enlace (lo arma send_digital_badge).
+# Cuerpo sugerido:
+#   "Hola {{1}}, tu escarapela digital para el evento {{2}} ya está lista. Ábrela aquí: {{3}}"
+# El nombre exacto que le pongas a la plantilla al crearla va en WHATSAPP_TEMPLATE_NAME (.env).
+def _send_whatsapp(phone: str, person_name: str, event_name: str, link: str) -> dict:
+    token, phone_id = os.getenv("WHATSAPP_TOKEN"), os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    template = os.getenv("WHATSAPP_TEMPLATE_NAME")
+    if not (token and phone_id and template):
         os.makedirs(os.path.join("data", "outbox"), exist_ok=True)
-        path = os.path.join("data", "outbox", f"{int(time.time())}_sms_{phone.lstrip('+')}.txt")
+        path = os.path.join("data", "outbox", f"{int(time.time())}_whatsapp_{phone.lstrip('+')}.txt")
         with open(path, "w", encoding="utf-8") as f:
-            f.write(f"Para: {phone}\n\n{text}\n")
-        return {"sent": False, "detail": f"SMS no configurado — el mensaje quedó guardado en {path}"}
+            f.write(f"Para: {phone}\n\nHola {person_name}, tu escarapela digital para {event_name}: {link}\n")
+        return {"sent": False, "detail": f"WhatsApp no configurado — el mensaje quedó guardado en {path}"}
+    body = {
+        "messaging_product": "whatsapp", "to": phone.lstrip("+"), "type": "template",
+        "template": {
+            "name": template, "language": {"code": os.getenv("WHATSAPP_TEMPLATE_LANG", "es")},
+            "components": [{"type": "body", "parameters": [
+                {"type": "text", "text": person_name}, {"type": "text", "text": event_name}, {"type": "text", "text": link},
+            ]}],
+        },
+    }
     try:
         req = urllib.request.Request(
-            f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
-            data=urllib.parse.urlencode({"To": phone if phone.startswith("+") else "+" + phone, "From": sender, "Body": text}).encode(),
+            f"https://graph.facebook.com/v20.0/{phone_id}/messages", data=json.dumps(body).encode(),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         )
-        req.add_header("Authorization", "Basic " + base64.b64encode(f"{sid}:{token}".encode()).decode())
         with urllib.request.urlopen(req, timeout=20) as resp:
             json.load(resp)
-        return {"sent": True, "detail": f"SMS enviado a {phone}"}
+        return {"sent": True, "detail": f"WhatsApp enviado a {phone}"}
+    except urllib.error.HTTPError as e:
+        return {"sent": False, "detail": f"No se pudo enviar el WhatsApp: {e.read().decode(errors='replace')[:300]}"}
     except Exception as e:
-        return {"sent": False, "detail": f"No se pudo enviar el SMS: {e}"}
+        return {"sent": False, "detail": f"No se pudo enviar el WhatsApp: {e}"}
 
 
 def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name: str, base_url: str) -> dict:
@@ -81,7 +101,7 @@ def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name:
             "Es personal: no compartas el enlace ni capturas de pantalla (la escarapela muestra una animación y la hora en vivo).",
         )
     else:
-        result = _send_sms(contact, f"Tu escarapela digital para {event.name}: {link}")
+        result = _send_whatsapp(contact, person_name, event.name, link)
     attendee.digital_sent_at = datetime.utcnow()
     db.flush()
     return result
