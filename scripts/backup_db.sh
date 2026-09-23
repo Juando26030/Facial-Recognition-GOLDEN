@@ -6,6 +6,7 @@
 #
 # Variables (todas opcionales salvo GCS_BUCKET para la copia externa):
 #   GCS_BUCKET       bucket destino, ej. gs://golden-backups-XXXX. Vacío = solo copia local (y se avisa por log).
+#   GCS_DATA_BUCKET  SEGUNDO bucket (con versionado) para data/ y .env, ej. gs://golden-datos-XXXX. Vacío = sin copia de archivos.
 #   DB_NAME          base a respaldar (golden_db).
 #   BACKUP_DIR       carpeta local (~/backups).
 #   LOCAL_KEEP_DAYS  días que se conserva la copia local (7). La retención en el bucket la define su regla de
@@ -22,6 +23,7 @@ BACKUP_DIR="${BACKUP_DIR:-$HOME/backups}"
 DB_NAME="${DB_NAME:-golden_db}"
 LOCAL_KEEP_DAYS="${LOCAL_KEEP_DAYS:-7}"
 GCS_BUCKET="${GCS_BUCKET:-}"
+GCS_DATA_BUCKET="${GCS_DATA_BUCKET:-}"
 PG_DUMP="${PG_DUMP:-pg_dump -U golden_app -h localhost}"
 
 mkdir -p "$BACKUP_DIR"
@@ -66,6 +68,33 @@ else
   else
     log "Copia EXTERNA subida y verificada: $dest"
   fi
+fi
+
+# Archivos que NO están en la base (fotos de personas, firmas, logos, plantillas, informes, documentos) y el .env
+# (claves): se copian a un SEGUNDO bucket (GCS_DATA_BUCKET) con versionado, para poder reconstruir la VM completa.
+# Es incremental (solo sube lo nuevo o cambiado) y NO borra nada del bucket aunque se borre en la VM. Si falla,
+# sale con error pero no bloquea lo de arriba. Ver docs/recuperacion_desastre.md.
+if [ -n "$GCS_DATA_BUCKET" ]; then
+  DATA_DIR="${DATA_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data}"
+  APP_DIR="$(dirname "$DATA_DIR")"
+  data_dest="${GCS_DATA_BUCKET%/}"
+  log "Copiando archivos ($DATA_DIR) a $data_dest/data"
+  if gcloud storage rsync --recursive --exclude='.*outbox.*' "$DATA_DIR" "$data_dest/data" --quiet >> "$LOG" 2>&1; then
+    log "Archivos sincronizados"
+  else
+    log "ERROR: no se pudieron sincronizar los archivos de data/ (ver $LOG)"
+    status=1
+  fi
+  if [ -f "$APP_DIR/.env" ]; then
+    if gcloud storage cp "$APP_DIR/.env" "$data_dest/config/.env" --quiet >> "$LOG" 2>&1; then
+      log "Copia de .env guardada (bucket privado, con versionado)"
+    else
+      log "ERROR: no se pudo copiar el .env"
+      status=1
+    fi
+  fi
+else
+  log "AVISO: GCS_DATA_BUCKET no está definido — los archivos de data/ y el .env NO tienen copia externa."
 fi
 
 # Rotación local (solo los volcados de este script; los pre_deploy_* manuales no se tocan).
