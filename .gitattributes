@@ -1,0 +1,3 @@
+# Los scripts de shell y los workflows deben quedar con LF aunque se editen en Windows (si no, bash en la VM falla con "").
+*.sh text eol=lf
+*.yml text eol=lf
