@@ -5,7 +5,7 @@ navegador con la misma plantilla del editor, igual que el ZIP del coordinador).
 
 Qué se expone: solo el nombre/entidad para confirmar y los campos que la plantilla del certificado realmente
 usa — nunca la foto biométrica ni el resto de datos de la persona. El enlace es inadivinable y las consultas
-por cédula tienen tope por IP. Solo aparecen quienes tienen Certificado = Sí, y solo con el evento Finalizado."""
+por cédula tienen tope por IP. Solo se genera para quienes tienen Certificado = Sí, y solo con el evento Finalizado. Si la cédula es de alguien del evento sin certificado se le dice "no pidió"; si no está en la base, "no encontramos" (decisión explícita 2026-09-23: se prefirió claridad para el asistente a esconder quién está en el evento)."""
 import os
 import re
 import secrets
@@ -24,6 +24,7 @@ router = APIRouter()        # público, sin prefijo (/c/<token>)
 staff_router = APIRouter()  # con login, bajo /api
 
 NOT_FOUND = "No encontramos un certificado para esa cédula en este evento. Revisa el número o consulta con los organizadores."
+NOT_REQUESTED = "Usted no pidió certificado para este evento. Si crees que es un error, comunícate con los organizadores."
 _WINDOW_SECONDS, _MAX_LOOKUPS = 600, 30
 _hits: dict = {}  # (ip, token) -> [instantes de las últimas consultas]
 
@@ -77,14 +78,19 @@ async def certificate_lookup(token: str, id: str, request: Request, db: Session 
     wanted = id.strip()
     candidates = [wanted, re.sub(r"[\s.,]", "", wanted)]  # tolera "1.016.100.329" o con espacios
     user = att = None
+    in_event = False  # ¿la cédula pertenece a alguien de ESTE evento? (para decir "no pidió" y no "no existe")
     for candidate in dict.fromkeys(c for c in candidates if c):
-        user = db.query(User).filter(User.id == candidate, User.tenant_id == event.tenant_id).first()
-        att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=candidate).first() if user else None
-        if user and att and att.certificate:
-            break
-        user = att = None
+        u = db.query(User).filter(User.id == candidate, User.tenant_id == event.tenant_id).first()
+        if not u:
+            continue
+        a = db.query(EventAttendee).filter_by(event_id=event.id, user_id=candidate).first()
+        if a:
+            in_event = True
+            if a.certificate:
+                user, att = u, a
+                break
     if not user:
-        raise HTTPException(status_code=404, detail=NOT_FOUND)
+        raise HTTPException(status_code=404, detail=NOT_REQUESTED if in_event else NOT_FOUND)
 
     template = _serialize_template(_get_or_create_template(event, db, None, "certificate"))
     needed = _variables_used(template)
