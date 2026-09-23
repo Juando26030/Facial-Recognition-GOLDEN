@@ -98,7 +98,7 @@
      STATUS_ROLES (2026-09-17, pedido explícito: "asígnale ese permiso también a los
      coordinadores" — antes admin+ solamente): "Eliminar" y "Cambiar estado de registro" pasan a
      coordinador+, DESACOPLADO de ADMIN_ROLES (la cédula sigue admin+, esto ya no). */
-  const EDIT_ROLES = ['coordinador', 'admin', 'super_admin'];
+  const EDIT_ROLES = ['digitador', 'coordinador', 'admin', 'super_admin'];  // 2026-09-23: el digitador temporal también edita datos (no cédula, ni estado a "No registrado", ni eliminar)
   const ADMIN_ROLES = ['admin', 'super_admin'];
   const STATUS_ROLES = ['coordinador', 'admin', 'super_admin'];
   const canEdit = EDIT_ROLES.includes(window.STAFF_ROLE);
@@ -312,6 +312,17 @@
           } catch (e) { /* sin detalle de envío */ }
           try { await window.FieldRender.saveSignatures(box, currentId); }
           catch (e) { showToast(e.message, 'error'); }
+          // Digitador (sin selector de estado): guardar la edición de alguien que aún no llegó lo deja
+          // "Registrado", igual que el valor por defecto que ven coordinador+.
+          if (!canManageStatus && !isRegistered) {
+            try {
+              const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado' }),
+              });
+              if (st.ok) { if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId); }
+              else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
+            } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
+          }
           showToast('Cambios guardados', 'success');
           close();
           if (window.directorySearch) window.directorySearch.reload();

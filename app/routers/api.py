@@ -18,7 +18,7 @@ from app.database import get_db
 from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUser
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
-from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
+from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import digital_badge
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -537,7 +537,7 @@ async def checkin_cedula(
 @router.patch("/users/{user_id}")
 async def update_user(
     user_id: str, data: dict, event_id: int, request: Request, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role("digitador")),  # 2026-09-23: el digitador temporal también edita datos (no cédula, estado a "No registrado" ni eliminar)
 ):
     event = get_event_for_staff(event_id, db, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
@@ -736,7 +736,7 @@ async def delete_user_from_event(
 @router.patch("/events/{event_id}/users/{user_id}/status")
 async def update_registration_status(
     event_id: int, user_id: str, data: dict, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role("coordinador")),
+    staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Cambia manualmente el estado de registro de una persona en este evento (2026-09-16, nuevo;
     ampliado a coordinador+ el 2026-09-17, pedido explícito — antes admin+ solamente, junto con
@@ -753,6 +753,10 @@ async def update_registration_status(
     new_status = data.get("status")
     if new_status not in ("registrado", "no_registrado"):
         raise HTTPException(status_code=400, detail="status debe ser 'registrado' o 'no_registrado'")
+    # 2026-09-23: el digitador temporal solo puede MARCAR como registrado (al guardar una edición);
+    # volver a "No registrado" sigue siendo de coordinador+.
+    if new_status == "no_registrado" and max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < ROLE_HIERARCHY["coordinador"]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
 
     if new_status == "registrado":
         if not _already_checked_in(db, event_id, user_id):
