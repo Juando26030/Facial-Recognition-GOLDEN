@@ -7,6 +7,11 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <!-- Carga automática en lotes para bases grandes (10.000+ personas con foto) — ver el bloque de
+         abajo. XLSX (SheetJS) para partir el Excel/CSV en trozos válidos; JSZip para armar, por
+         lote, un mini-zip solo con las fotos de ESE lote (ya se usa igual en kiosk_certificados.html). -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body class="has-sidebar">
 {% include "_sidebar.html" %}
@@ -71,6 +76,7 @@
           <p style="font-size:0.8rem; margin-top:0.4rem;">
             ¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download style="color: var(--golden-primary); font-weight:600;">Descarga la plantilla de Excel</a>.
           </p>
+          <p style="font-size:0.78rem; color:#888; margin-top:0.4rem;">Para bases grandes (miles de personas con foto), no hace falta partir el archivo a mano: si el Excel + el zip juntos pesan mucho, el sistema los divide solo en varios envíos seguidos, sin que muevas nada.</p>
         </div>
 
         <div class="badge-input-group" style="display:flex; align-items:center; gap:10px; margin-top:1.2rem;">
@@ -154,7 +160,7 @@ function renderRosterResult(data) {
     rosterResult.innerHTML = html;
 }
 
-async function submitRoster(formData) {
+async function postBulkRegister(formData) {
     const res = await fetch("/api/bulk_register", { method: "POST", body: formData });
 
     // 413 (Payload Too Large) lo devuelve el proxy (Nginx/Cloudflare) ANTES de llegar a la app —
@@ -168,9 +174,8 @@ async function submitRoster(formData) {
             "acepta varias cargas seguidas mientras el evento esté en 'Creado') o comprime las fotos antes de armar el zip.",
             "error"
         );
-        return;
+        return null;
     }
-
     let data;
     try {
         data = await res.json();
@@ -179,26 +184,189 @@ async function submitRoster(formData) {
         // por otro motivo) — mismo criterio: decir que fue un problema del lado del servidor con
         // el tamaño/formato del archivo, no un "error de red" genérico e indistinguible.
         showToast(`El servidor rechazó el archivo (código ${res.status}) — probablemente por su tamaño. Intenta con un archivo más pequeño o divide la carga.`, "error");
-        return;
+        return null;
     }
     if (!res.ok) {
         showToast(data.detail || "No se pudo cargar la base", "error");
-        return;
+        return null;
     }
+    return data;
+}
+
+// Envía un lote, resolviendo NEEDS_LABELS (nombre de columnas opcionales nuevas) si hace falta —
+// lo mismo que hacía submitRoster antes, factorizado para reusarlo lote por lote.
+async function submitChunkWithLabels(formData) {
+    const data = await postBulkRegister(formData);
+    if (!data) return null;
     if (data.result === "NEEDS_LABELS") {
         const labels = await promptOptionalLabels(data.fields, data.examples);
-        if (!labels) return;
+        if (!labels) return null;
         formData.set("field_labels", JSON.stringify(labels));
-        await submitRoster(formData);
-        return;
+        return submitChunkWithLabels(formData);
     }
+    return data;
+}
+
+async function submitRoster(formData) {
+    const data = await submitChunkWithLabels(formData);
+    if (!data) return;
     showToast(data.message || "Base cargada", "success");
     renderRosterResult(data);
+    resetRosterForm();
+}
+
+function resetRosterForm() {
     rosterForm.reset();
     facialZipGroup.style.display = "none";
     sourceEventGroup.style.display = "none";
     sourceEventSelect.disabled = true;
     rosterFileInput.required = true;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   Carga automática en lotes (bases grandes, ej. 10.000+ personas con foto — pedido explícito
+   2026-09-22): por arriba de cierto tamaño combinado, en vez de un solo POST enorme (que Nginx/
+   Cloudflare rechazarían con 413 — Cloudflare topa en 100 MB por request en los planes no
+   Enterprise), se parte el Excel/CSV en trozos y, para cada trozo, se arma un mini-zip SOLO con
+   las fotos de esas personas — así cada request queda cómodamente bajo el tope, y el operador
+   solo elige UN Excel y UN zip como siempre, sin tocar nada a mano. */
+const BATCH_TRIGGER_BYTES = 60 * 1024 * 1024;  // arriba de esto (Excel + zip juntos) se activa la división automática
+const BATCH_TARGET_BYTES = 70 * 1024 * 1024;   // "peso en fotos" objetivo por lote — deja margen bajo el tope de 100 MB de Cloudflare
+const MAX_ROWS_PER_BATCH = 1000;               // tope adicional por cantidad de personas, aunque las fotos sean chicas
+// Tope por CANTIDAD DE FOTOS por lote (2026-09-22, medido en QA local): el costo real de un lote
+// no es su peso en MB sino el encoding facial en el servidor (num_jitters=25, ver CLAUDE.md) — a
+// ~3-4s por foto, 40 fotos dejan cada lote bien por debajo del proxy_read_timeout de Nginx. Así,
+// una base de 10.000 fotos sí termina de subir (en ~250 lotes sucesivos), aunque tome horas.
+const MAX_PHOTOS_PER_BATCH = 40;
+const ID_HEADER_NAMES = new Set(["id", "cedula", "identificacion", "documento", "no documento", "numero documento", "nro documento", "cc"]);
+
+function stripAccentsLower(s) {
+    return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+}
+
+// Parser de CSV tolerante a campos con comas/comillas — solo lo necesita la división en lotes
+// (server-side el CSV se sigue leyendo igual que siempre, esto es puramente para poder partirlo).
+// ponytail: no maneja campos con saltos de línea dentro de comillas (caso raro en un roster de
+// texto simple) — si algún roster real lo usa, subir a una librería (ej. PapaParse) en vez de esto.
+function parseCsv(text) {
+    const rows = []; let row = []; let field = ""; let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuotes) {
+            if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+            else field += c;
+        } else if (c === '"') inQuotes = true;
+        else if (c === ",") { row.push(field); field = ""; }
+        else if (c === "\r") { /* se ignora, \n cierra la fila */ }
+        else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+        else field += c;
+    }
+    if (field !== "" || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(r => r.some(v => v !== ""));
+}
+function csvField(v) {
+    const s = String(v == null ? "" : v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function writeCsv(rows) { return rows.map(r => r.map(csvField).join(",")).join("\r\n"); }
+
+async function readRosterRows(file) {
+    if (file.name.toLowerCase().endsWith(".csv")) {
+        const rows = parseCsv(await file.text());
+        return { kind: "csv", header: rows[0] || [], rows: rows.slice(1) };
+    }
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+    return { kind: "xlsx", header: (aoa[0] || []).map(String), rows: aoa.slice(1) };
+}
+
+function buildRosterBlob(kind, header, rows) {
+    if (kind === "csv") return new Blob([writeCsv([header, ...rows])], { type: "text/csv" });
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Base de Asistentes");
+    return new Blob([XLSX.write(wb, { type: "array", bookType: "xlsx" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+// Agrupa las filas en lotes por peso de fotos (sin descomprimir el zip todavía — solo mide, ver
+// nota más abajo) + tope de filas. No hace falta que el ID de cada foto quede en el MISMO lote
+// exacto que su fila por corrección de datos (el backend igual crea la fila sin foto si no la
+// encuentra) — se hace así para que cada persona SÍ tenga su encoding facial listo desde el
+// primer intento, en vez de depender de que otro lote posterior suba esa foto antes.
+async function buildBatchPlan(header, rows, zipFile) {
+    const idIdx = header.findIndex(h => ID_HEADER_NAMES.has(stripAccentsLower(h)));
+    let zip = null;
+    const sizeByBase = new Map();
+    if (zipFile) {
+        zip = await JSZip.loadAsync(zipFile);
+        for (const [path, entry] of Object.entries(zip.files)) {
+            if (entry.dir) continue;
+            const base = path.split("/").pop().replace(/\.[^.]+$/, "");
+            // ponytail: usa el campo interno _data de JSZip (no es API pública) para el tamaño SIN
+            // descomprimir cada foto una por una — con miles de fotos, descomprimirlas todas de una
+            // solo para medir el tamaño sería demasiada memoria en el navegador. Si una versión
+            // futura de JSZip lo quita/renombra, hay que buscar otra forma de estimar el tamaño.
+            sizeByBase.set(base, (entry._data && entry._data.uncompressedSize) || 0);
+        }
+    }
+    const groups = [];
+    let cur = { rows: [], ids: new Set(), bytes: 0, photos: 0 };
+    const flush = () => { if (cur.rows.length) groups.push(cur); cur = { rows: [], ids: new Set(), bytes: 0, photos: 0 }; };
+    for (const row of rows) {
+        const id = idIdx >= 0 ? String(row[idIdx] || "").trim() : "";
+        const hasPhoto = !!(id && sizeByBase.has(id));
+        const photoBytes = hasPhoto ? sizeByBase.get(id) : 0;
+        if (cur.rows.length && (cur.bytes + photoBytes > BATCH_TARGET_BYTES || cur.rows.length >= MAX_ROWS_PER_BATCH || (hasPhoto && cur.photos >= MAX_PHOTOS_PER_BATCH))) flush();
+        cur.rows.push(row);
+        if (id) cur.ids.add(id);
+        cur.bytes += photoBytes;
+        if (hasPhoto) cur.photos++;
+    }
+    flush();
+    return { groups, zip };
+}
+
+// Arma el mini-zip de UN lote (recién en el momento de enviarlo, no todos de una — para no tener
+// las fotos de miles de personas descomprimidas en memoria al mismo tiempo).
+async function buildBatchZip(zip, ids) {
+    if (!zip || !ids.size) return null;
+    const sub = new JSZip();
+    let any = false;
+    for (const [path, entry] of Object.entries(zip.files)) {
+        if (entry.dir) continue;
+        const base = path.split("/").pop().replace(/\.[^.]+$/, "");
+        if (ids.has(base)) { sub.file(path, await entry.async("uint8array")); any = true; }
+    }
+    return any ? await sub.generateAsync({ type: "blob" }) : null;
+}
+
+async function submitRosterAutoBatched(rosterFile, zipFile) {
+    const progressBox = document.createElement("div");
+    progressBox.style.cssText = "background:#e7f1ff; border:1px solid #b6d4fe; color:#084298; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-bottom:0.8rem;";
+    rosterResult.innerHTML = "";
+    rosterResult.appendChild(progressBox);
+
+    const { header, rows, kind } = await readRosterRows(rosterFile);
+    if (!rows.length) { progressBox.remove(); showToast("El archivo no tiene filas de datos", "error"); return null; }
+    const { groups, zip } = await buildBatchPlan(header, rows, zipFile);
+
+    let totalCount = 0, allErrors = [];
+    for (let i = 0; i < groups.length; i++) {
+        progressBox.textContent = `Cargando en lotes: ${i + 1} de ${groups.length} — ${totalCount} de ${rows.length} personas procesadas hasta ahora.`;
+        const group = groups[i];
+        const fd = new FormData();
+        fd.append("event_id", window.EVENT_ID);
+        fd.append("roster_file", buildRosterBlob(kind, header, group.rows), `lote_${i + 1}.${kind}`);
+        const zipBlob = await buildBatchZip(zip, group.ids);
+        if (zipBlob) fd.append("zip_file", zipBlob, `lote_${i + 1}.zip`);
+        const data = await submitChunkWithLabels(fd);
+        if (!data) { progressBox.remove(); return null; }
+        totalCount += data.count || 0;
+        if (data.errors && data.errors.length) allErrors.push(...data.errors.map(e => `[Lote ${i + 1}/${groups.length}] ${e}`));
+    }
+    progressBox.remove();
+    return { message: `Carga en ${groups.length} lote(s) completa: ${totalCount} de ${rows.length} perfiles cargados.`, count: totalCount, errors: allErrors };
 }
 
 rosterForm.addEventListener("submit", async (e) => {
@@ -227,8 +395,33 @@ rosterForm.addEventListener("submit", async (e) => {
     if (!enableFacial.checked) formData.delete("zip_file");
     if (!useSourceEvent.checked || !sourceEventSelect.value) formData.delete("source_event_id");
 
+    const rosterFile = formData.get("roster_file");
+    const zipFile = formData.get("zip_file");
+    const totalBytes = (rosterFile && rosterFile.size || 0) + (zipFile && zipFile.size || 0);
+
     try {
-        await submitRoster(formData);
+        if (rosterFile && rosterFile.size && totalBytes > BATCH_TRIGGER_BYTES) {
+            if (EVENT_STATUS === "en_proceso") {
+                // La protección de "no te deje volver a subir con el evento en_proceso" (ver arriba)
+                // se dispara sola apenas el PRIMER lote tenga éxito — el segundo lote quedaría
+                // bloqueado a mitad de camino. Se avisa de una en vez de dejarlo fallar a la mitad.
+                showToast(
+                    "El archivo es grande y la carga automática en lotes solo está disponible con el evento en estado \"Creado\" " +
+                    "(si no, quedaría bloqueado a mitad de camino por la protección contra recargas). Cambia el estado del evento, " +
+                    "o divide el archivo tú mismo antes de subirlo.",
+                    "error"
+                );
+            } else {
+                const result = await submitRosterAutoBatched(rosterFile, zipFile);
+                if (result) {
+                    showToast(result.message, "success");
+                    renderRosterResult(result);
+                    resetRosterForm();
+                }
+            }
+        } else {
+            await submitRoster(formData);
+        }
     } catch (err) {
         showToast("Error de red", "error");
     }

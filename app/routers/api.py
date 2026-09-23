@@ -984,6 +984,11 @@ async def bulk_register(
     # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
     # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
     errors = []
+    # identificador -> encoding ya calculada al leer el zip (2026-09-22): antes se calculaba acá
+    # Y OTRA VEZ más abajo (al releer la misma foto del disco) — el costo real de una carga masiva
+    # es el encoding facial (num_jitters=25, ver CLAUDE.md), así que calcularlo dos veces por foto
+    # duplicaba sin necesidad el tiempo de procesamiento de cada lote.
+    zip_encodings = {}
 
     if zip_file is not None and zip_file.filename:
         zip_path = os.path.join(known_faces_dir, 'temp.zip')
@@ -1011,6 +1016,7 @@ async def bulk_register(
                         errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
                         continue
                     Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
+                    zip_encodings[os.path.splitext(basename)[0]] = encodings
         if os.path.exists(zip_path): os.remove(zip_path)
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
@@ -1078,12 +1084,15 @@ async def bulk_register(
 
         try:
             face_enc_json = None
-            img_path = os.path.join(known_faces_dir, f"{identificador}.jpg")
-            if os.path.exists(img_path):
-                known_image = face_recognition.load_image_file(img_path)
-                encodings = face_recognition.face_encodings(known_image, num_jitters=25)
-                if encodings:
-                    face_enc_json = json.dumps(encodings[0].tolist())
+            if str(identificador) in zip_encodings:
+                face_enc_json = json.dumps(zip_encodings[str(identificador)])
+            else:
+                img_path = os.path.join(known_faces_dir, f"{identificador}.jpg")
+                if os.path.exists(img_path):
+                    known_image = face_recognition.load_image_file(img_path)
+                    encodings = face_recognition.face_encodings(known_image, num_jitters=25)
+                    if encodings:
+                        face_enc_json = json.dumps(encodings[0].tolist())
 
             # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
             # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
