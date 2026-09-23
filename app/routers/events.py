@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
 from app.database import get_db
-from app.models import AccessLog, BadgeTemplate, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
+from app.models import AccessLog, BadgeTemplate, BulkJob, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.areas_inventory import delete_event_modules
 from app.auth import effective_roles, get_current_staff, hash_password, require_role
@@ -504,6 +504,7 @@ async def delete_event(
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
+    db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.event_id == event_id).delete()
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id).delete()
     # Lo que se agregó después del primer arreglo de este endpoint y también apunta al evento por FK

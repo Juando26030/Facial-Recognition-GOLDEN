@@ -374,6 +374,27 @@ class SavedBadgeTemplate(Base):
     def set_elements(self, data: list) -> None:
         self.elements_json = json.dumps(data) if data else None
 
+class BulkJob(Base):
+    """Carga masiva de una base en segundo plano (Sprint 5): el navegador recibe un `id` de inmediato y consulta
+    el avance (`stage`, `done`/`total` en unidades ponderadas: una foto pesa mucho más que una fila) hasta que
+    termina. `result_json` guarda la misma respuesta que antes devolvía la petición; `error_*` el error que
+    antes habría sido un HTTP 4xx/5xx."""
+    __tablename__ = 'bulk_jobs'
+    id = Column(String, primary_key=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    status = Column(String, nullable=False, default='queued')  # queued | running | done | error
+    stage = Column(String, nullable=True)
+    done = Column(Integer, nullable=False, default=0)
+    total = Column(Integer, nullable=False, default=0)
+    result_json = Column(Text, nullable=True)
+    error_status = Column(Integer, nullable=True)
+    error_detail = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+
+
 class RateLimitEvent(Base):
     """Intentos registrados para limitar abuso (Sprint 4): login fallido, solicitud de restablecer contraseña,
     consulta pública de certificados. Vive en Postgres (no en memoria) para que el límite valga aunque haya

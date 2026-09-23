@@ -15,11 +15,11 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUser
+from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import digital_badge
+from app import bulk_jobs, digital_badge
 from app.email_check import check_email
 from app.routers import parametros, signatures
 from app.routers.super_events import sibling_attendance
@@ -943,8 +943,49 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 @router.post("/bulk_register")
 async def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
-    field_labels: str = Form(None), source_event_id: List[int] = Form(None),
+    field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
+    (lo que usa la pantalla "Adjuntar Base de Datos", Sprint 5) responde de inmediato con `{job_id}` y el trabajo
+    corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
+    la petición y devuelve el resultado, como siempre."""
+    get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    content = await roster_file.read() if (roster_file is not None and roster_file.filename) else None
+    zip_bytes = await zip_file.read() if (zip_file is not None and zip_file.filename) else None
+    args = dict(event_id=event_id, roster_filename=roster_file.filename if content is not None else None,
+                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id)
+    if not background:
+        return _bulk_register_impl(db, staff, **args)
+
+    if bulk_jobs.active_job(db, event_id):
+        raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
+    job_id = bulk_jobs.create_job(db, event_id, staff.id)
+    staff_id = staff.id
+
+    def work(job_db, reporter):
+        worker_staff = job_db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+        return _bulk_register_impl(job_db, worker_staff, progress=reporter, **args)
+
+    bulk_jobs.start(job_id, work)
+    return {"background": True, "job_id": job_id}
+
+
+@router.get("/bulk_jobs/{job_id}")
+async def bulk_job_status(
+    job_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Avance de una carga en segundo plano: estado, etapa, `done`/`total` (unidades ponderadas) y, al terminar,
+    el resultado (o el error) que antes devolvía la petición."""
+    job = db.query(BulkJob).filter(BulkJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Carga no encontrada")
+    get_event_for_staff(job.event_id, db, staff)
+    return bulk_jobs.serialize(job, db)
+
+
+def _bulk_register_impl(
+    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -984,7 +1025,7 @@ async def bulk_register(
 
     # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
     # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
-    has_excel = roster_file is not None and bool(roster_file.filename)
+    has_excel = content is not None
     if not has_excel and not source_event_id:
         raise HTTPException(status_code=400, detail="Sube un archivo de base o elige un evento anterior del que traer a las personas")
     carried_ids = set()
@@ -997,8 +1038,7 @@ async def bulk_register(
             "count": 0, "carried": len(carried_ids), "errors": [], "optional_labels": event.get_optional_labels(),
         }
 
-    content = await roster_file.read()
-    header_columns, rows = _read_roster_rows(roster_file.filename, content)
+    header_columns, rows = _read_roster_rows(roster_filename, content)
 
     # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
     # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
@@ -1056,16 +1096,24 @@ async def bulk_register(
     # duplicaba sin necesidad el tiempo de procesamiento de cada lote.
     zip_encodings = {}
 
-    if zip_file is not None and zip_file.filename:
-        zip_path = os.path.join(known_faces_dir, 'temp.zip')
-        with open(zip_path, "wb") as buffer:
-            buffer.write(await zip_file.read())
+    progress = progress or (lambda *a, **k: None)
+    photo_entries = []
+    if zip_bytes:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as counting_zip:
+            photo_entries = [
+                n for n in counting_zip.namelist()
+                if not (n.startswith('__MACOSX') or n.startswith('.') or n.endswith('/')) and os.path.basename(n)
+            ]
+    total_units = len(photo_entries) * bulk_jobs.PHOTO_WEIGHT + len(rows) * bulk_jobs.ROW_WEIGHT
+    done_units = 0
+    progress("Leyendo el archivo", 0, total_units, force=True)
 
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            for filename in zip_ref.namelist():
-                if filename.startswith('__MACOSX') or filename.startswith('.') or filename.endswith('/'): continue
+    if zip_bytes:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zip_ref:
+            for photo_i, filename in enumerate(photo_entries, start=1):
+                progress(f"Procesando fotos ({photo_i} de {len(photo_entries)})", done_units, total_units)
+                done_units += bulk_jobs.PHOTO_WEIGHT
                 basename = os.path.basename(filename)
-                if not basename: continue
                 with zip_ref.open(filename) as source:
                     try:
                         img_array = BiometricEngine.process_image_stream(source.read())
@@ -1084,7 +1132,6 @@ async def bulk_register(
                         continue
                     Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
                     zip_encodings[os.path.splitext(basename)[0]] = encodings
-        if os.path.exists(zip_path): os.remove(zip_path)
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
         # quitarle a un evento la capacidad de reconocimiento facial que ya tenía. Decide si
@@ -1119,7 +1166,9 @@ async def bulk_register(
             )
 
     count = 0
-    for info in row_infos:
+    for row_i, info in enumerate(row_infos, start=1):
+        done_units += bulk_jobs.ROW_WEIGHT
+        progress(f"Guardando personas ({row_i} de {len(row_infos)})", done_units, total_units)
         row_num, clean_row, identificador = info["row_num"], info["clean_row"], info["identificador"]
         errors.extend(info["notes"])
 

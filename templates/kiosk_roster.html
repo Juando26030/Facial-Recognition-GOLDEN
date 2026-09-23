@@ -10,7 +10,8 @@
     <!-- Carga automática en lotes para bases grandes (10.000+ personas con foto) — ver el bloque de
          abajo. XLSX (SheetJS) para partir el Excel/CSV en trozos válidos; JSZip para armar, por
          lote, un mini-zip solo con las fotos de ESE lote (ya se usa igual en kiosk_certificados.html). -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body class="has-sidebar">
@@ -158,58 +159,108 @@ function renderRosterResult(data) {
     rosterResult.innerHTML = html;
 }
 
-async function postBulkRegister(formData) {
-    const res = await fetch("/api/bulk_register", { method: "POST", body: formData });
+// POST con progreso de SUBIDA (fetch no lo da): XMLHttpRequest.
+function xhrPost(url, formData, onUpload) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url);
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable && onUpload) onUpload(e.loaded, e.total); };
+        xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText });
+        xhr.onerror = () => reject(new Error("network"));
+        xhr.send(formData);
+    });
+}
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/* `ui(fase, fracción, texto)`: 'upload' = subida del archivo (bytes), 'process' = avance real del servidor. Cada
+   lote pesa 15 % subida + 85 % proceso dentro de su parte de la barra total (ver makeUi). */
+async function postBulkRegister(formData, ui) {
+    formData.set("background", "true");
+    let res;
+    try {
+        res = await xhrPost("/api/bulk_register", formData, (loaded, total) => {
+            ui && ui("upload", loaded / total, `Subiendo archivos… ${(loaded / 1048576).toFixed(1)} de ${(total / 1048576).toFixed(1)} MB`);
+        });
+    } catch (e) {
+        showToast("Error de red al subir el archivo", "error");
+        return null;
+    }
 
     // 413 (Payload Too Large) lo devuelve el proxy (Nginx/Cloudflare) ANTES de llegar a la app —
-    // su respuesta es una página de error, no JSON, así que hay que detectarlo por el status y
-    // decirlo claro, en vez de que res.json() truene abajo y termine mostrando "Error de red"
-    // genérico (indistinguible de una caída real de conexión).
+    // su respuesta es una página de error, no JSON: se dice claro en vez de un "error de red" genérico.
     if (res.status === 413) {
         showToast(
             "El archivo es demasiado grande para subir de una vez (el zip de fotos, normalmente). " +
-            "Divide la carga en grupos más pequeños (ej. de 500 a 1000 personas por vez, el sistema " +
-            "acepta varias cargas seguidas mientras el evento esté en 'Creado') o comprime las fotos antes de armar el zip.",
+            "Divide la carga en grupos más pequeños (ej. de 500 a 1000 personas por vez) o comprime las fotos antes de armar el zip.",
             "error"
         );
         return null;
     }
     let data;
-    try {
-        data = await res.json();
-    } catch (e) {
-        // Cualquier otra respuesta que no sea JSON (ej. una página de error de Cloudflare/Nginx
-        // por otro motivo) — mismo criterio: decir que fue un problema del lado del servidor con
-        // el tamaño/formato del archivo, no un "error de red" genérico e indistinguible.
+    try { data = JSON.parse(res.text); }
+    catch (e) {
         showToast(`El servidor rechazó el archivo (código ${res.status}) — probablemente por su tamaño. Intenta con un archivo más pequeño o divide la carga.`, "error");
         return null;
     }
-    if (!res.ok) {
+    if (res.status < 200 || res.status >= 300) {
         showToast(data.detail || "No se pudo cargar la base", "error");
         return null;
     }
-    return data;
+    if (!data.job_id) return data;   // respuesta directa (sin tarea en segundo plano)
+
+    // La carga corre en el servidor: se consulta su avance cada segundo hasta que termine.
+    let failures = 0;
+    while (true) {
+        await sleep(1000);
+        let st;
+        try {
+            const r = await fetch(`/api/bulk_jobs/${data.job_id}`);
+            st = await r.json();
+            if (!r.ok) throw new Error(st.detail || "estado");
+            failures = 0;
+        } catch (e) {
+            if (++failures >= 8) { showToast("Se perdió la conexión con el servidor. La carga puede seguir corriendo: revisa el directorio antes de reintentar.", "error"); return null; }
+            continue;
+        }
+        if (st.status === "error") { showToast(st.error.detail || "No se pudo cargar la base", "error"); return null; }
+        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); return st.result; }
+        if (ui) ui("process", st.total ? st.done / st.total : 0, st.stage);
+    }
 }
 
-// Envía un lote, resolviendo NEEDS_LABELS (nombre de columnas opcionales nuevas) si hace falta —
-// lo mismo que hacía submitRoster antes, factorizado para reusarlo lote por lote.
-async function submitChunkWithLabels(formData) {
-    const data = await postBulkRegister(formData);
+// Envía un lote, resolviendo NEEDS_LABELS (nombre de columnas opcionales nuevas) si hace falta.
+async function submitChunkWithLabels(formData, ui) {
+    const data = await postBulkRegister(formData, ui);
     if (!data) return null;
     if (data.result === "NEEDS_LABELS") {
         const labels = await promptOptionalLabels(data.fields, data.examples);
         if (!labels) return null;
         formData.set("field_labels", JSON.stringify(labels));
-        return submitChunkWithLabels(formData);
+        return submitChunkWithLabels(formData, ui);
     }
     return data;
 }
 
+// Barra total: lote `i` de `n`; cada lote = 15 % subida + 85 % proceso.
+function makeUi(bar, i, n, prefix) {
+    let upload = 0, process = 0, text = "";
+    return (phase, fraction, label) => {
+        if (phase === "upload") upload = fraction; else { upload = 1; process = fraction; }
+        if (label) text = label;
+        bar.update((i + 0.15 * upload + 0.85 * process) / n, (prefix || "") + text);
+    };
+}
+
 async function submitRoster(formData) {
-    const data = await submitChunkWithLabels(formData);
-    if (!data) return;
+    rosterResult.innerHTML = "";
+    const bar = ProgressBar.create(rosterResult, { title: "Cargando base de datos", stage: "Preparando…" });
+    const data = await submitChunkWithLabels(formData, makeUi(bar, 0, 1));
+    if (!data) { bar.fail("No se pudo completar la carga"); return; }
+    bar.finish(data.message || "Base cargada");
     showToast(data.message || "Base cargada", "success");
+    const keep = bar.element;
     renderRosterResult(data);
+    rosterResult.prepend(keep);
     resetRosterForm();
 }
 
@@ -339,18 +390,17 @@ async function buildBatchZip(zip, ids) {
 }
 
 async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
-    const progressBox = document.createElement("div");
-    progressBox.style.cssText = "background:#e7f1ff; border:1px solid #b6d4fe; color:#084298; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-bottom:0.8rem;";
     rosterResult.innerHTML = "";
-    rosterResult.appendChild(progressBox);
+    const bar = ProgressBar.create(rosterResult, { title: "Cargando base de datos", stage: "Leyendo el archivo…" });
+    const progressBox = bar.element;   // se conserva el nombre: abajo se quita/oculta igual que antes
 
     const { header, rows, kind } = await readRosterRows(rosterFile);
-    if (!rows.length) { progressBox.remove(); showToast("El archivo no tiene filas de datos", "error"); return null; }
+    if (!rows.length) { bar.remove(); showToast("El archivo no tiene filas de datos", "error"); return null; }
     const { groups, zip } = await buildBatchPlan(header, rows, zipFile);
 
     let totalCount = 0, allErrors = [];
     for (let i = 0; i < groups.length; i++) {
-        progressBox.textContent = `Cargando en lotes: ${i + 1} de ${groups.length} — ${totalCount} de ${rows.length} personas procesadas hasta ahora.`;
+        bar.update(i / groups.length, `Lote ${i + 1} de ${groups.length} — ${totalCount} de ${rows.length} personas procesadas hasta ahora.`);
         const group = groups[i];
         const fd = new FormData();
         fd.append("event_id", window.EVENT_ID);
@@ -358,12 +408,12 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
         fd.append("roster_file", buildRosterBlob(kind, header, group.rows), `lote_${i + 1}.${kind}`);
         const zipBlob = await buildBatchZip(zip, group.ids);
         if (zipBlob) fd.append("zip_file", zipBlob, `lote_${i + 1}.zip`);
-        const data = await submitChunkWithLabels(fd);
-        if (!data) { progressBox.remove(); return null; }
+        const data = await submitChunkWithLabels(fd, makeUi(bar, i, groups.length, `Lote ${i + 1} de ${groups.length} — `));
+        if (!data) { bar.fail("La carga se detuvo en el lote " + (i + 1) + " de " + groups.length); return null; }
         totalCount += data.count || 0;
         if (data.errors && data.errors.length) allErrors.push(...data.errors.map(e => `[Lote ${i + 1}/${groups.length}] ${e}`));
     }
-    progressBox.remove();
+    bar.finish(`Carga completa: ${totalCount} de ${rows.length} personas`);
     return { message: `Carga en ${groups.length} lote(s) completa: ${totalCount} de ${rows.length} perfiles cargados.`, count: totalCount, errors: allErrors };
 }
 
@@ -413,7 +463,9 @@ rosterForm.addEventListener("submit", async (e) => {
                 const result = await submitRosterAutoBatched(rosterFile, zipFile, formData.getAll("source_event_id"));
                 if (result) {
                     showToast(result.message, "success");
+                    const keepBar = rosterResult.firstElementChild;
                     renderRosterResult(result);
+                    if (keepBar) rosterResult.prepend(keepBar);
                     resetRosterForm();
                 }
             }
