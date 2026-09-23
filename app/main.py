@@ -12,7 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, roulette, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, forms, forms_public, roulette, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -123,6 +123,8 @@ app.include_router(event_docs.router, prefix="/api")
 app.include_router(super_events.router, prefix="/api")
 app.include_router(areas_inventory.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(forms.router, prefix="/api")
+app.include_router(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
 app.include_router(roulette.router, prefix="/api")
 app.include_router(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
 app.include_router(certificates_public.router)  # /c/<token>, público (sin login) a propósito
@@ -450,6 +452,18 @@ async def kiosk_roulette(event_id: int, request: Request, db: Session = Depends(
 async def kiosk_roulette_visual(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Ruleta — configuración visual (fuente, colores, imagen, fondo) — coordinador+."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_ruleta_visual.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/formularios")
+async def kiosk_forms(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Formularios Web del evento — listado (Sprint 5) — coordinador+."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_formularios.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/formularios/{form_id}")
+async def kiosk_form_editor(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db)):
+    """Editor de un formulario web (diseño, campos, estados, respuestas, analítica) — coordinador+."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_formulario_editor.html", min_role="coordinador", extra_context={"form_id": form_id})
 
 
 @app.get("/kiosk/{event_id}/legalizaciones")

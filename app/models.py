@@ -395,6 +395,97 @@ class BulkJob(Base):
     finished_at = Column(DateTime, nullable=True)
 
 
+class WebForm(Base):
+    """Formulario web propio de un evento (Sprint 5): reemplaza a Excel/Google Forms como vía de inscripción. Un
+    evento puede tener varios. `design_json` = diseño (tema, filas, campos); `settings_json` = seguridad, pre-llenado,
+    plantillas de cierre/agradecimiento y cómo se alimenta la base del evento. El estado efectivo sale de
+    `manual_status` o, con `use_schedule`, del calendario `schedule_json` (ver app/formlib.py)."""
+    __tablename__ = 'web_forms'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    name = Column(String, nullable=False)
+    slug = Column(String, nullable=False)
+    manual_status = Column(String, nullable=False, default='pruebas')  # pruebas | activo | cerrado | finalizado
+    use_schedule = Column(Boolean, nullable=False, default=False)
+    schedule_json = Column(Text, nullable=True)  # [{"status":"pruebas","from":"2026-10-01T08:00","to":"2026-10-05T23:59"}, ...] hora local
+    capacity = Column(Integer, nullable=True)     # cupo de inscripciones (NULL = sin límite); editable en caliente
+    design_json = Column(Text, nullable=False)
+    settings_json = Column(Text, nullable=True)
+    test_key = Column(String, nullable=False)     # clave del enlace de pruebas (?k=...)
+    fed_at = Column(DateTime, nullable=True)      # cuándo se cargaron a la base las inscripciones (modo "al cerrar")
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint('event_id', 'slug', name='uq_web_form_event_slug'),)
+
+
+class FormSubmission(Base):
+    """Una inscripción. `is_test`: enviada mientras el formulario estaba en `pruebas` (se excluye del reporte y de la
+    analítica oficiales sin tener que borrarla a mano)."""
+    __tablename__ = 'form_submissions'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(Integer, ForeignKey('web_forms.id'), nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    data_json = Column(Text, nullable=False)     # {field_id: valor}; archivos: {"filename","stored","size"}
+    is_test = Column(Boolean, nullable=False, default=False)
+    person_id = Column(String, nullable=True)    # cédula, si el formulario identifica a la persona
+    invite_id = Column(Integer, ForeignKey('form_invites.id'), nullable=True)
+    source = Column(String, nullable=True)       # utm_source (instagram, tiktok, whatsapp, ...)
+    sid = Column(String, nullable=True)          # sesión del navegador (para medir tiempos y abandono)
+    started_at = Column(DateTime, nullable=True)
+    fed = Column(Boolean, nullable=False, default=False)   # ya se cargó a la base del evento
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FormEvent(Base):
+    """Marcas de uso de un formulario público para la analítica: `view` (abrió), `start` (empezó a llenar) y `submit`."""
+    __tablename__ = 'form_events'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(Integer, ForeignKey('web_forms.id'), nullable=False)
+    sid = Column(String, nullable=False)
+    kind = Column(String, nullable=False)
+    source = Column(String, nullable=True)
+    is_test = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FormInvite(Base):
+    """Enlace personalizado por invitado (`/f/<evento>/<slug>?i=<token>`): ya trae identificada a la persona."""
+    __tablename__ = 'form_invites'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(Integer, ForeignKey('web_forms.id'), nullable=False)
+    person_id = Column(String, nullable=False)
+    token = Column(String, nullable=False, unique=True)
+    email = Column(String, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint('form_id', 'person_id', name='uq_form_invite_person'),)
+
+
+class FormPerson(Base):
+    """Base subida aparte solo para pre-llenar UN formulario (no entra a la base del evento)."""
+    __tablename__ = 'form_people'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(Integer, ForeignKey('web_forms.id'), nullable=False)
+    person_id = Column(String, nullable=False)
+    data_json = Column(Text, nullable=False)
+
+    __table_args__ = (UniqueConstraint('form_id', 'person_id', name='uq_form_person'),)
+
+
+class SavedFormTemplate(Base):
+    """Librería de diseños de formulario reutilizables, por cliente (mismo patrón que SavedBadgeTemplate)."""
+    __tablename__ = 'saved_form_templates'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
+    name = Column(String, nullable=False)
+    design_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class RouletteConfig(Base):
     """Configuración de la Ruleta de un evento (Sprint 5): comportamiento y estilo visual por separado, y el código
     secreto de la pantalla de visualización (/r/<token>)."""

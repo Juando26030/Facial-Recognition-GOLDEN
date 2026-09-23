@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
 from app.database import get_db
-from app.models import AccessLog, BadgeTemplate, BulkJob, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
+from app.models import AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
+from app.routers.forms import delete_form_rows
 from app.routers.areas_inventory import delete_event_modules
 from app.auth import effective_roles, get_current_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
@@ -505,6 +506,8 @@ async def delete_event(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
+    for _form in db.query(WebForm).filter(WebForm.event_id == event_id).all():
+        delete_form_rows(db, _form)
     db.query(RouletteDraw).filter(RouletteDraw.event_id == event_id).delete()
     db.query(RouletteConfig).filter(RouletteConfig.event_id == event_id).delete()
     db.query(EventStaffAuthorization).filter(EventStaffAuthorization.event_id == event_id).delete()

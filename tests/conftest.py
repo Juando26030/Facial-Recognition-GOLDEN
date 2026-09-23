@@ -111,6 +111,7 @@ def outbox(monkeypatch):
     monkeypatch.setattr("app.routers.auth.send_mail", fake_send_mail)
     monkeypatch.setattr("app.routers.event_report.send_mail", fake_send_mail)
     monkeypatch.setattr("app.digital_badge.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.routers.forms.send_mail", fake_send_mail)
     return sent
 
 
