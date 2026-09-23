@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formularios Web | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
+        .row { display:flex; gap:0.8rem; flex-wrap:wrap; align-items:flex-end; }
+        .row label { display:block; font-size:0.75rem; color:#777; margin-bottom:3px; }
+        .row input, .row select { padding:0.55rem 0.7rem; border:1px solid #ddd; border-radius:10px; font-size:0.9rem; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
+        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
+        .small-btn.danger { color:#a12631; border-color:#e5b8bd; }
+        table.forms { width:100%; border-collapse:collapse; font-size:0.85rem; } table.forms th, table.forms td { text-align:left; padding:10px 8px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
+        .st { display:inline-block; padding:3px 10px; border-radius:12px; font-size:0.72rem; font-weight:700; }
+        .st.pruebas { background:#fff3cd; color:#664d03; } .st.activo { background:#d1e7dd; color:#0a3622; } .st.cerrado { background:#e2e3e5; color:#41464b; }
+        .st.cupo_lleno { background:#f8d7da; color:#842029; } .st.finalizado { background:#212529; color:#fff; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }};</script>
+<main class="golden-main">
+  <section class="golden-section"><div class="golden-container">
+    <div class="golden-section-title"><span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span><h2>Formularios <span class="gradient-text">Web</span></h2></div>
+    <div class="app-container">
+      <div class="card">
+        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Crear un formulario de inscripción</h4>
+        <p style="font-size:0.82rem; color:#888; margin-top:0;">Diseña tu propio formulario público, con cupo, fechas, contraseña y pre-llenado; las inscripciones pueden alimentar la base de este evento.</p>
+        <form id="newForm" class="row">
+          <div style="flex:1 1 260px;"><label>Nombre del formulario</label><input type="text" id="newName" required maxlength="120" style="width:100%; box-sizing:border-box;" placeholder="Ej. Inscripción Feria 2026"></div>
+          <div><label>Empezar desde</label><select id="newTemplate"><option value="">Formulario nuevo (cédula, nombres, apellidos, correo)</option></select></div>
+          <button type="submit" class="small-btn primary" style="padding:10px 22px;">Crear y editar</button>
+        </form>
+      </div>
+      <div class="card">
+        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Formularios de este evento</h4>
+        <div style="overflow-x:auto;"><table class="forms"><thead><tr><th>Nombre</th><th>Estado</th><th>Inscripciones</th><th>Cupo</th><th>Enlace</th><th></th></tr></thead><tbody id="body"></tbody></table></div>
+      </div>
+    </div>
+  </div></section>
+</main>
+<script>
+const EV = window.EVENT_ID, api = `/api/events/${EV}`;
+const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const LABELS = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrado', cupo_lleno: 'Cupo lleno', finalizado: 'Finalizado' };
+async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
+
+async function load() {
+  const forms = await j(`${api}/forms`);
+  $('body').innerHTML = forms.map((f) => `<tr>
+    <td><a href="/kiosk/${EV}/formularios/${f.id}" style="font-weight:700; color:var(--golden-dark);">${esc(f.name)}</a><div style="font-size:0.72rem; color:#999;">/${esc(f.slug)}</div></td>
+    <td><span class="st ${f.public_state}">${LABELS[f.public_state] || f.public_state}</span>${f.use_schedule ? '<div style="font-size:0.7rem; color:#888;">por calendario</div>' : ''}</td>
+    <td>${f.submissions}${f.test_submissions ? `<span style="font-size:0.72rem; color:#999;"> (+${f.test_submissions} de prueba)</span>` : ''}</td>
+    <td>${f.capacity == null ? '—' : f.capacity}</td>
+    <td><button class="small-btn" data-copy="${esc(f.public_url)}">Copiar enlace</button> <a class="small-btn" href="${esc(f.test_url)}" target="_blank" rel="noopener">Probar</a></td>
+    <td style="white-space:nowrap;"><a class="small-btn primary" href="/kiosk/${EV}/formularios/${f.id}">Editar</a> <button class="small-btn" data-dup="${f.id}">Duplicar</button> <button class="small-btn danger" data-del="${f.id}" data-name="${esc(f.name)}">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="6" style="color:#999;">Este evento todavía no tiene formularios.</td></tr>';
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) {} showToast('Enlace copiado (el formulario público solo abre cuando está en estado Activo)', 'success'); }));
+  document.querySelectorAll('[data-dup]').forEach((b) => b.addEventListener('click', async () => { await j(`${api}/forms/${b.dataset.dup}/duplicate`, { method: 'POST' }); showToast('Formulario duplicado', 'success'); load(); }));
+  document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+    if (!(await showConfirm(`¿Eliminar el formulario «${b.dataset.name}» con TODAS sus inscripciones y archivos? No se puede deshacer.`, { confirmLabel: 'Eliminar' }))) return;
+    try { await j(`${api}/forms/${b.dataset.del}`, { method: 'DELETE' }); showToast('Formulario eliminado', 'success'); load(); } catch (e) { showToast(e.message, 'error'); }
+  }));
+}
+$('newForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const body = { name: $('newName').value, template_id: $('newTemplate').value ? +$('newTemplate').value : undefined };
+    const f = await j(`${api}/forms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    location.href = `/kiosk/${EV}/formularios/${f.id}`;
+  } catch (err) { showToast(err.message, 'error'); }
+});
+(async () => {
+  const tpls = await j(`${api}/form-templates`);
+  $('newTemplate').insertAdjacentHTML('beforeend', tpls.map((t) => `<option value="${t.id}">Plantilla: ${esc(t.name)} (${t.fields} elementos)</option>`).join(''));
+  load();
+})();
+</script>
+</body>
+</html>

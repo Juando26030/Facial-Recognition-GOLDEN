@@ -524,3 +524,84 @@ async def send_invites(event_id: int, form_id: int, data: dict, request: Request
 
     bulk_jobs.start(job_id, work)
     return {"background": True, "job_id": job_id}
+
+
+# ------------------------------------------------------------------ analítica (módulo compartido, app/analytics.py)
+def form_dashboard(db: Session, form: WebForm, include_tests: bool = False) -> dict:
+    from collections import Counter
+    from app import analytics as an
+
+    design = formsvc.get_design(form)
+    q_sub = db.query(FormSubmission).filter(FormSubmission.form_id == form.id)
+    q_evt = db.query(FormEvent).filter(FormEvent.form_id == form.id)
+    if not include_tests:
+        q_sub, q_evt = q_sub.filter(FormSubmission.is_test == False), q_evt.filter(FormEvent.is_test == False)  # noqa: E712
+    subs = q_sub.order_by(FormSubmission.id).all()
+    events = q_evt.all()
+    views = {e.sid for e in events if e.kind == "view"}
+    starts = {e.sid for e in events if e.kind == "start"}
+    sent = {e.sid for e in events if e.kind == "submit"}
+    abandoned = starts - sent
+    durations = [(s.created_at - s.started_at).total_seconds() for s in subs if s.started_at and s.created_at >= s.started_at]
+
+    state = formsvc.public_state(db, form)
+    reason = {"cupo_lleno": "Cupo lleno", "cerrado": "Cerrado (manual o por fecha)", "finalizado": "Finalizado", "activo": "Abierto", "pruebas": "En pruebas"}[state]
+    kpis = [
+        an.kpi("Inscripciones", len(subs), "sin las de prueba" if not include_tests else "incluye pruebas", "good"),
+        an.kpi("Estado", reason, "ahora mismo"),
+        an.kpi("Visitas", len(views), "personas que abrieron el formulario"),
+        an.kpi("Empezaron a llenarlo", len(starts), an.pct(len(starts), len(views)) + " de las visitas"),
+        an.kpi("Lo enviaron", len(sent), an.pct(len(sent), len(views)) + " de las visitas (conversión)", "good"),
+        an.kpi("Lo abandonaron", len(abandoned), an.pct(len(abandoned), len(starts)) + " de quienes empezaron", "warn" if abandoned else ""),
+    ]
+    if durations:
+        durations.sort()
+        kpis.append(an.kpi("Tiempo promedio", an.fmt_duration(sum(durations) / len(durations)), f"mediana {an.fmt_duration(durations[len(durations) // 2])}"))
+    if form.capacity:
+        kpis.append(an.kpi("Cupo", f"{len(subs) if include_tests else formsvc.real_submissions(db, form).count()} / {form.capacity}", "inscripciones reales / cupo", "warn" if formsvc.is_full(db, form) else ""))
+    if subs:
+        kpis.append(an.kpi("Última inscripción", an.fmt_local(subs[-1].created_at), "hora local"))
+
+    charts = [an.time_series("timeline", "Inscripciones en el tiempo", [s.created_at for s in subs], label="Inscripciones"),
+              an.hour_histogram("by_hour", "Inscripciones por hora del día", [s.created_at for s in subs], label="Inscripciones"),
+              an.counter_chart("by_source", "¿De dónde llegaron? (enlaces con utm_source)", [s.source or "Directo" for s in subs], kind="pie", label="Inscripciones")]
+
+    # Campos con más y con menos respuesta (sobre las inscripciones, contando solo las que tenían el campo visible: aproximación por valor presente)
+    if subs:
+        answered = Counter()
+        for s in subs:
+            for fid, v in json.loads(s.data_json).items():
+                if v not in (None, "", []):
+                    answered[fid] += 1
+        cols = _column_defs(design)
+        rates = [(label, round(100 * answered.get(fid, 0) / len(subs))) for fid, label, _ in cols]
+        if rates:
+            rates.sort(key=lambda x: -x[1])
+            charts.append(an.chart("response_rate", "Campos con más y menos respuesta (% de inscripciones que lo llenaron)", "bar", [r[0] for r in rates], [{"label": "% que respondió", "data": [r[1] for r in rates]}], horizontal=True,
+                                   note="Un campo condicional solo lo ven algunos, por eso puede aparecer con menos respuestas."))
+        # Distribución de cada campo marcado «genera estadísticas»
+        for fid, label, kind in cols:
+            f = design["fields"][fid]
+            if not f.get("stats"):
+                continue
+            values = []
+            for s in subs:
+                v = json.loads(s.data_json).get(fid)
+                if isinstance(v, list):
+                    values += v
+                elif v is True:
+                    values.append("Sí")
+                elif v is False:
+                    values.append("No")
+                elif isinstance(v, str) and kind in ("select", "radio", "checkbox", "number", "text_short", "email"):
+                    values.append(v if kind != "email" else v.split("@")[-1])       # correo: por dominio, no por persona
+            c = an.counter_chart(f"field_{fid}", f"{label}", values, kind="pie" if kind in ("select", "radio", "checkbox") else "bar", label="Inscripciones")
+            if c:
+                charts.append(c)
+    return an.dashboard(f"Formulario: {form.name}", kpis, [c for c in charts if c])
+
+
+@router.get("/events/{event_id}/forms/{form_id}/analytics")
+async def form_analytics(event_id: int, form_id: int, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    event = get_event_for_staff(event_id, db, staff)
+    return form_dashboard(db, _get_form(db, event, form_id), include_tests)

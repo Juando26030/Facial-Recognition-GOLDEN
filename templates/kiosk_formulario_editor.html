@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de formulario | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Playfair+Display:wght@400;700&family=Inter:wght@400;700&family=Bebas+Neue&family=Merriweather:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=Rubik:wght@400;700&family=Comfortaa:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
+    <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.2rem 1.4rem; border-radius:18px; box-shadow:0 8px 30px rgba(0,0,0,0.07); margin-bottom:1rem; }
+        .bar { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+        .bar label, .fld label { display:block; font-size:0.72rem; color:#777; margin-bottom:3px; }
+        input[type=text], input[type=number], input[type=datetime-local], select, textarea { padding:0.5rem 0.65rem; border:1px solid #ddd; border-radius:10px; font-size:0.86rem; font-family:inherit; box-sizing:border-box; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
+        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
+        .small-btn.danger { color:#a12631; border-color:#e5b8bd; }
+        .tabs-f { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:1rem; }
+        .tabs-f button { padding:8px 18px; border-radius:20px; border:1px solid #ddd; background:white; cursor:pointer; font-weight:600; font-size:0.84rem; }
+        .tabs-f button.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
+        .pane { display:none; } .pane.active { display:block; }
+        .grid3 { display:grid; grid-template-columns:230px minmax(0,1fr) 290px; gap:1rem; align-items:start; } @media (max-width: 1100px) { .grid3 { grid-template-columns:1fr; } }
+        .pal { display:flex; flex-wrap:wrap; gap:6px; } .pal button { flex:1 1 46%; padding:7px 8px; border:1px dashed #bbb; border-radius:10px; background:#fafafa; cursor:grab; font-size:0.76rem; text-align:left; }
+        .pal button:hover { background:#fffbee; border-color:var(--golden-primary); }
+        #canvas { min-height:300px; background:#f6f7fb; border-radius:14px; padding:12px; }
+        .crow { display:flex; gap:8px; align-items:stretch; position:relative; padding:4px; border-radius:10px; }
+        .crow .rowtools { position:absolute; right:6px; top:-11px; display:none; gap:4px; background:#fff; border-radius:12px; padding:1px 6px; box-shadow:0 2px 8px rgba(0,0,0,.15); font-size:0.7rem; }
+        .crow:hover .rowtools { display:flex; }
+        .ccard { flex:1 1 0; min-width:0; background:#fff; border:2px solid #e3e5ec; border-radius:12px; padding:9px 12px; cursor:grab; position:relative; }
+        .ccard.sel { border-color:var(--golden-primary); box-shadow:0 0 0 3px rgba(212,175,55,.25); }
+        .ccard.dl { box-shadow:inset 5px 0 0 var(--golden-primary); } .ccard.dr { box-shadow:inset -5px 0 0 var(--golden-primary); }
+        .ccard .t { font-size:0.7rem; color:#888; } .ccard .l { font-weight:700; font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ccard .tags span { font-size:0.62rem; background:#eef; border-radius:8px; padding:1px 6px; margin-right:3px; }
+        .gap { height:10px; border-radius:6px; transition:height .1s; } .gap.over { height:26px; background:rgba(212,175,55,.35); }
+        .props .fld { margin-bottom:0.7rem; } .props input[type=text], .props select, .props textarea { width:100%; }
+        table.ans { width:100%; border-collapse:collapse; font-size:0.8rem; } table.ans th, table.ans td { padding:6px 8px; border-bottom:1px solid #f0f0f0; text-align:left; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+        .test-row { background:#fff8e1; }
+        #previewOverlay { position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9990; display:none; overflow:auto; padding:2rem 1rem; }
+        .hint { font-size:0.76rem; color:#888; }
+        .sched { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:6px; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
+<main class="golden-main">
+  <section class="golden-section"><div class="golden-container" style="max-width:1400px;">
+    <div class="card">
+      <div class="bar">
+        <a class="small-btn" href="/kiosk/{{ event.id }}/formularios">← Formularios</a>
+        <div style="flex:1 1 260px;"><label>Nombre del formulario</label><input type="text" id="fname" maxlength="120" style="width:100%;"></div>
+        <div><label>Dirección (parte final del enlace)</label><input type="text" id="fslug" style="width:200px;"></div>
+        <span id="statusPill" class="hint"></span>
+        <button class="small-btn primary" id="saveBtn">💾 Guardar diseño</button>
+        <button class="small-btn" id="previewBtn">👁 Previsualizar</button>
+        <a class="small-btn" id="testBtn" target="_blank" rel="noopener" title="Abre el enlace real del formulario, respetando su estado actual">🧪 Probar</a>
+        <button class="small-btn" id="tplBtn">📚 Guardar como plantilla</button>
+      </div>
+    </div>
+    <div class="tabs-f" id="tabs">
+      <button data-tab="design" class="active">🎨 Diseño</button><button data-tab="config">⚙️ Configuración</button><button data-tab="answers">📥 Respuestas</button>
+      <button data-tab="analytics">📊 Analítica</button><button data-tab="invites" id="invTab" style="display:none;">✉️ Invitaciones</button>
+    </div>
+
+    <!-- ===================== DISEÑO ===================== -->
+    <div class="pane active" id="pane-design"><div class="grid3">
+      <div>
+        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Elementos nuevos</h4><p class="hint" style="margin:0 0 8px;">Arrástralos al lienzo (o haz clic para agregarlos al final).</p><div class="pal" id="palNew"></div></div>
+        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Campos del evento</h4><p class="hint" style="margin:0 0 8px;">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div></div>
+        <div class="card"><details><summary style="cursor:pointer; font-weight:700; font-size:0.9rem;">Apariencia del formulario</summary><div id="themeBox" class="props" style="margin-top:0.7rem;"></div></details></div>
+      </div>
+      <div><div class="card" style="padding:0.8rem;"><div id="canvas"></div><p class="hint" style="margin:8px 4px 0;">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></div></div>
+      <div><div class="card props" id="propsBox"><p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p></div></div>
+    </div></div>
+
+    <!-- ===================== CONFIGURACIÓN ===================== -->
+    <div class="pane" id="pane-config">
+      <div class="card"><h4 style="margin:0 0 8px;">Estado y enlaces</h4>
+        <div class="bar"><div class="fld"><label>Estado</label><select id="cfgStatus"><option value="pruebas">Pruebas (solo con el enlace de pruebas)</option><option value="activo">Activo (abierto al público)</option><option value="cerrado">Cerrado (muestra la plantilla de cierre)</option><option value="finalizado">Finalizado (el enlace deja de existir)</option></select></div>
+          <div class="fld"><label>Cupo de inscripciones (vacío = sin límite)</label><input type="number" id="cfgCap" min="1" style="width:130px;"></div>
+          <button class="small-btn primary" id="cfgStatusSave">Aplicar estado y cupo</button><span class="hint" id="capInfo"></span></div>
+        <div style="margin-top:0.9rem;"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
+          <div id="schedBox" style="margin-top:8px; display:none;"><div id="schedRows"></div><button class="small-btn" id="addSched">+ Agregar tramo</button>
+            <p class="hint">Fuera de cualquier tramo el formulario se comporta como «cerrado» (usa la plantilla de cierre). Con el calendario activo, el estado manual de arriba se ignora.</p><button class="small-btn primary" id="cfgSchedSave">Guardar calendario</button></div></div>
+        <div style="margin-top:1rem;" id="linksBox"></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Seguridad</h4>
+        <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="secOn"> Activar seguridad con contraseña</label>
+        <div id="secBox" class="bar" style="margin-top:8px; display:none;"><div class="fld"><label>Tipo de contraseña</label><select id="secType"><option value="code">Palabra o código fijo (lo defines tú)</option><option value="cedula">La propia cédula de la persona (debe estar en la base elegida abajo)</option></select></div>
+          <div class="fld" id="secCodeBox"><label>Palabra o código de acceso</label><input type="text" id="secCode" maxlength="60"></div></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Pre-llenado de datos</h4>
+        <p class="hint" style="margin-top:0;">Los campos marcados como «se muestra pero no se edita» quedan bloqueados con los datos que ya tenemos de la persona.</p>
+        <div class="bar"><div class="fld"><label>¿Cómo se identifica la persona?</label><select id="preMode"><option value="none">No se pre-llena (formulario en blanco)</option><option value="cedula">Autoservicio: un solo enlace, pide la cédula primero</option><option value="invite">Un enlace personal por invitado (llega por correo)</option></select></div>
+          <div class="fld" id="preSrcBox"><label>¿De dónde salen los datos?</label><select id="preSrc"><option value="event">La base de este evento</option><option value="upload">Una base subida aparte solo para este formulario</option></select></div>
+          <div class="fld" id="preUpBox" style="display:none;"><label>Archivo (.xlsx / .csv, con columna de cédula)</label><input type="file" id="preFile" accept=".xlsx,.csv"></div></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Al terminar el registro</h4>
+        <div class="bar"><div class="fld"><label>Qué pasa</label><select id="thMode"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
+          <div class="fld" id="thUrlBox" style="display:none;"><label>Dirección (https://…)</label><input type="text" id="thUrl" style="width:320px;"></div></div>
+        <div id="thTplBox" class="bar" style="margin-top:8px;"><div class="fld"><label>Título</label><input type="text" id="thTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="text" id="thText" style="width:340px;"></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="thImgFile" accept="image/*"><span class="hint" id="thImgName"></span></div></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Plantilla de «formulario cerrado» / cupo lleno</h4>
+        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="clTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="text" id="clText" style="width:340px;"></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="clImgFile" accept="image/*"><span class="hint" id="clImgName"></span></div></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Alimentar la base de datos del evento</h4>
+        <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="realtime"> En tiempo real: cada inscripción entra de una vez al roster del evento («No registrado»)</label></div>
+        <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="on_close"> Al cerrar el formulario: se cargan todas juntas cuando pasa a cerrado o finalizado</label></div>
+        <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="manual"> Manual: no se integra sola (descargas el reporte y lo subes como Excel)</label></div>
+        <p class="hint">Requiere un campo de cédula vinculado al campo «Cédula» del evento. Las inscripciones de prueba nunca se cargan.</p>
+        <button class="small-btn" id="feedNow">Cargar a la base ahora las que falten</button> <span class="hint" id="feedInfo"></span>
+      </div>
+      <div style="margin-bottom:2rem;"><button class="small-btn primary" id="cfgSave" style="padding:10px 26px;">💾 Guardar configuración</button></div>
+    </div>
+
+    <!-- ===================== RESPUESTAS ===================== -->
+    <div class="pane" id="pane-answers"><div class="card">
+      <div class="bar" style="margin-bottom:8px;"><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="ansTests" checked> Mostrar las de prueba</label>
+        <a class="small-btn primary" id="repBtn" href="#">⬇️ Descargar reporte (Excel)</a><a class="small-btn" id="repBtnAll" href="#">⬇️ Con las de prueba</a><span class="hint" id="ansInfo"></span></div>
+      <div style="overflow-x:auto;"><table class="ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
+    </div></div>
+
+    <!-- ===================== ANALÍTICA ===================== -->
+    <div class="pane" id="pane-analytics">
+      <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;"><input type="checkbox" id="anTests"> Incluir las inscripciones de prueba</label>
+      <div id="anHost" style="background:#f6f7fb; padding:1rem; border-radius:16px;"></div>
+      <div class="card" style="margin-top:1rem;"><h4 style="margin:0 0 6px;">Enlaces por red social</h4><p class="hint" style="margin-top:0;">Agrega <code>?utm_source=…</code> al enlace y la analítica te dirá de dónde llegó cada inscripción (Instagram, TikTok, WhatsApp…). Es un conteo de origen; no requiere conectar cuentas.</p><div class="bar" id="utmBox"></div></div>
+    </div>
+
+    <!-- ===================== INVITACIONES ===================== -->
+    <div class="pane" id="pane-invites"><div class="card"><h4 style="margin:0 0 8px;">Enlaces personales por invitado</h4>
+      <p class="hint" style="margin-top:0;">Se genera un enlace único por cada persona de la base elegida y se envía por correo a quien tenga correo registrado. Cada enlace ya trae identificada a la persona.</p>
+      <p id="invStats" style="font-size:0.88rem;"></p>
+      <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="invOnlyNew" checked> No reenviar a quienes ya lo recibieron</label>
+      <button class="small-btn primary" id="invSend" style="margin-top:8px;">✉️ Generar y enviar invitaciones</button><div id="invProgress" style="margin-top:10px;"></div>
+    </div></div>
+  </div></section>
+</main>
+
+<div id="previewOverlay"><div style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
+
+<script>
+const EV = window.EVENT_ID, FID = window.FORM_ID, api = `/api/events/${EV}/forms/${FID}`;
+const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const uid = () => 'f_' + Math.random().toString(36).slice(2, 10);
+async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
+const jput = (url, body) => j(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const jpost = (url, body) => j(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+const assetUrl = (p) => `/api/badge-assets/${p}`;
+const FONTS = ['Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald', 'Raleway', 'Poppins', 'Playfair Display', 'Inter', 'Bebas Neue', 'Merriweather', 'Nunito', 'Ubuntu', 'Rubik', 'Comfortaa', 'Space Grotesk', 'Manrope', 'Zilla Slab'];
+const TYPES = {
+  text_short: ['Texto corto', '✏️'], text_long: ['Texto largo', '📄'], email: ['Correo', '✉️'], phone: ['Teléfono', '📞'], number: ['Número', '🔢'], date: ['Fecha', '📅'],
+  checkbox: ['Casilla sí/no', '☑️'], select: ['Lista desplegable', '▾'], radio: ['Opción única', '◉'], multiselect: ['Selección múltiple', '☰'], file: ['Archivo adjunto', '📎'],
+  heading: ['Título', 'H'], paragraph: ['Texto informativo', '¶'], image: ['Imagen', '🖼️'],
+};
+const CHOICE = ['select', 'radio', 'multiselect'], STATIC = ['heading', 'paragraph', 'image'];
+const EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
+const STATUS_LABEL = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrado', cupo_lleno: 'Cupo lleno', finalizado: 'Finalizado' };
+
+let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
+const markDirty = () => { dirty = true; $('saveBtn').textContent = '💾 Guardar diseño *'; };
+window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+// ---------------------------------------------------------------- utilidades del diseño
+function locate(id) { for (let r = 0; r < design.rows.length; r++) { const i = design.rows[r].items.indexOf(id); if (i >= 0) return [r, i]; } return null; }
+function detach(id) { const at = locate(id); if (!at) return; design.rows[at[0]].items.splice(at[1], 1); if (!design.rows[at[0]].items.length) design.rows.splice(at[0], 1); }
+function newField(type, evField) {
+  const id = uid();
+  const f = { id, type, label: evField ? evField.label : (type === 'heading' ? '' : TYPES[type][0]), required: evField ? !!evField.required && false : false, stats: false, help: '', placeholder: '', key: evField ? evField.key : null };
+  if (CHOICE.includes(type)) f.options = evField && evField.options && evField.options.length ? [...evField.options] : ['Opción 1', 'Opción 2'];
+  if (type === 'file') { f.accept = ['pdf', 'docx', 'xlsx', 'png', 'jpg']; f.max_mb = 10; }
+  if (type === 'heading') f.content = 'Título de sección';
+  if (type === 'paragraph') f.content = 'Escribe aquí un texto informativo.';
+  if (type === 'image') f.src = '';
+  design.fields[id] = f;
+  return f;
+}
+function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
+  if (target.gap != null) { design.rows.splice(target.gap, 0, { align: 'left', items: [id] }); }
+  else { const row = design.rows[target.row]; if (row.items.length >= 4) { showToast('Una fila admite hasta 4 elementos', 'error'); return false; } row.items.splice(target.pos, 0, id); }
+  return true;
+}
+function usedKeys() { return new Set(Object.values(design.fields).map((f) => f.key).filter(Boolean)); }
+
+// ---------------------------------------------------------------- paleta
+function renderPalette() {
+  $('palNew').innerHTML = Object.entries(TYPES).map(([t, [l, ic]]) => `<button type="button" draggable="true" data-new="${t}">${ic} ${l}</button>`).join('');
+  const used = usedKeys();
+  const free = eventFields.filter((f) => !used.has(f.key));
+  $('palEvent').innerHTML = free.map((f) => `<button type="button" draggable="true" data-ev="${esc(f.key)}">🔗 ${esc(f.label)}</button>`).join('') || '<span class="hint">Todos los campos del evento ya están en el formulario.</span>';
+  document.querySelectorAll('[data-new],[data-ev]').forEach((b) => {
+    b.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', JSON.stringify(b.dataset.new ? { kind: 'new', type: b.dataset.new } : { kind: 'event', key: b.dataset.ev })); e.dataTransfer.effectAllowed = 'copy'; });
+    b.addEventListener('click', () => { const f = b.dataset.new ? newField(b.dataset.new) : newField(eventFields.find((x) => x.key === b.dataset.ev).type, eventFields.find((x) => x.key === b.dataset.ev)); place(f.id, { gap: design.rows.length }); selected = f.id; markDirty(); renderAll(); });
+  });
+}
+
+// ---------------------------------------------------------------- lienzo (arrastrar y soltar)
+function onDrop(target, raw) {
+  let p; try { p = JSON.parse(raw); } catch (e) { return; }
+  let id;
+  if (p.kind === 'move') {
+    id = p.id;
+    const at = locate(id);
+    if (target.row != null && at) {   // el índice de destino puede cambiar al quitar el elemento de su fila
+      const dest = design.rows[target.row];
+      if (at[0] === target.row && at[1] < target.pos) target.pos--;
+      if (dest.items.length === 1 && dest.items[0] === id) return;
+    }
+    const gapBefore = target.gap != null && at && design.rows[at[0]].items.length === 1 && at[0] < target.gap ? 1 : 0;
+    detach(id);
+    if (target.gap != null) target.gap -= gapBefore;
+    else if (target.row != null && !design.rows[target.row]) return;
+    if (target.row != null && at && at[0] < target.row && !design.rows.some((r) => r.items.includes(id))) { /* fila de origen quedó vacía y se eliminó: se corrige el índice */ }
+  } else {
+    id = (p.kind === 'event' ? newField(eventFields.find((x) => x.key === p.key).type, eventFields.find((x) => x.key === p.key)) : newField(p.type)).id;
+  }
+  if (!place(id, target)) { if (p.kind !== 'move') delete design.fields[id]; renderAll(); return; }
+  selected = id; markDirty(); renderAll();
+}
+function renderCanvas() {
+  const rows = design.rows;
+  const gap = (i) => `<div class="gap" data-gap="${i}"></div>`;
+  $('canvas').innerHTML = rows.map((row, ri) => gap(ri) + `<div class="crow" data-ri="${ri}">${row.items.map((id) => cardHtml(design.fields[id])).join('')}
+    <div class="rowtools"><select data-align="${ri}" style="font-size:0.7rem; padding:1px;"><option value="left" ${row.align === 'left' ? 'selected' : ''}>◀ izquierda</option><option value="center" ${row.align === 'center' ? 'selected' : ''}>▬ centro</option><option value="right" ${row.align === 'right' ? 'selected' : ''}>▶ derecha</option></select>
+    <button class="small-btn" data-rowup="${ri}" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" style="padding:0 6px;">↓</button></div></div>`).join('') + gap(rows.length) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
+  $('canvas').querySelectorAll('.gap').forEach((g) => {
+    g.addEventListener('dragover', (e) => { e.preventDefault(); g.classList.add('over'); });
+    g.addEventListener('dragleave', () => g.classList.remove('over'));
+    g.addEventListener('drop', (e) => { e.preventDefault(); g.classList.remove('over'); onDrop({ gap: +g.dataset.gap }, e.dataTransfer.getData('text/plain')); });
+  });
+  $('canvas').querySelectorAll('.ccard').forEach((c) => {
+    const [ri, pos] = locate(c.dataset.id);
+    c.addEventListener('click', () => { selected = c.dataset.id; renderCanvas(); renderProps(); });
+    c.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'move', id: c.dataset.id })); e.dataTransfer.effectAllowed = 'move'; });
+    c.addEventListener('dragover', (e) => { e.preventDefault(); const r = c.getBoundingClientRect(); const left = e.clientX < r.left + r.width / 2; c.classList.toggle('dl', left); c.classList.toggle('dr', !left); });
+    c.addEventListener('dragleave', () => { c.classList.remove('dl', 'dr'); });
+    c.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); const r = c.getBoundingClientRect(); const left = e.clientX < r.left + r.width / 2; c.classList.remove('dl', 'dr'); onDrop({ row: ri, pos: left ? pos : pos + 1 }, e.dataTransfer.getData('text/plain')); });
+  });
+  $('canvas').querySelectorAll('[data-align]').forEach((s) => s.addEventListener('change', () => { design.rows[+s.dataset.align].align = s.value; markDirty(); }));
+  const moveRow = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= design.rows.length) return; [design.rows[i], design.rows[j2]] = [design.rows[j2], design.rows[i]]; markDirty(); renderCanvas(); };
+  $('canvas').querySelectorAll('[data-rowup]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowup, -1)));
+  $('canvas').querySelectorAll('[data-rowdown]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowdown, 1)));
+}
+function cardHtml(f) {
+  const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
+  const label = STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
+  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
+}
+
+// ---------------------------------------------------------------- propiedades del elemento
+function fieldInput(id, lbl, value, extra) { return `<div class="fld"><label>${lbl}</label><input type="text" id="${id}" value="${esc(value)}" ${extra || ''}></div>`; }
+function renderProps() {
+  const box = $('propsBox');
+  const f = selected && design.fields[selected];
+  if (!f) { box.innerHTML = '<p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p>'; return; }
+  const isInput = !STATIC.includes(f.type);
+  const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type));
+  const used = usedKeys();
+  let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
+  if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
+  if (f.type === 'heading' || f.type === 'paragraph') html += `<div class="fld"><label>Texto</label><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
+  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>`;
+  if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
+  if (f.type === 'file') html += `<div class="fld"><label>Formatos permitidos</label><div>${EXTS.map((x) => `<label style="display:inline-flex; gap:3px; margin-right:8px; font-size:0.78rem;"><input type="checkbox" data-ext="${x}" ${(f.accept || []).includes(x) ? 'checked' : ''}>${x}</label>`).join('')}</div></div>${fieldInput('pMax', 'Tamaño máximo (MB, hasta 20)', f.max_mb || 10)}`;
+  if (isInput) {
+    const keyOpts = `<option value="">— Solo en este formulario —</option>` + eventFields.filter((e) => e.key === f.key || !used.has(e.key)).map((e) => `<option value="${esc(e.key)}" ${f.key === e.key ? 'selected' : ''}>🔗 ${esc(e.label)}</option>`).join('');
+    html += `<div class="fld"><label>Vinculado al campo del evento</label><select id="pKey">${keyOpts}</select></div>`;
+    if (!f.key) html += `<label style="display:flex; gap:6px; font-size:0.78rem; margin-bottom:0.6rem;"><input type="checkbox" id="pSync" ${f.sync ? 'checked' : ''}> Crear también este campo en Parámetros del Evento (entra a la base)</label>`;
+    html += `<label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pReq" ${f.required ? 'checked' : ''}> Obligatorio</label>
+      <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
+      <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
+  }
+  // regla condicional
+  const cond = f.show_if;
+  const parent = cond && design.fields[cond.field];
+  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label><select id="cOn"><option value="">Siempre visible</option><option value="1" ${cond ? 'selected' : ''}>Mostrar solo si…</option></select></div>`;
+  if (cond) {
+    html += `<div class="fld"><select id="cField">${others.map((o) => `<option value="${o.id}" ${o.id === cond.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select></div>
+      <div class="fld"><select id="cOp">${[['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']].map(([v, l]) => `<option value="${v}" ${cond.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
+    if (cond.op !== 'filled') {
+      const opts = parent && (parent.options || (parent.type === 'checkbox' ? ['true', 'false'] : null));
+      html += cond.op === 'in' || !opts ? `<div class="fld"><input type="text" id="cVal" value="${esc(Array.isArray(cond.value) ? cond.value.join(', ') : cond.value)}" placeholder="${cond.op === 'in' ? 'valores separados por coma' : 'valor'}"></div>`
+        : `<div class="fld"><select id="cVal">${opts.map((o) => `<option ${cond.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+    }
+  }
+  html += `<div style="display:flex; gap:6px; margin-top:0.8rem; flex-wrap:wrap;"><button class="small-btn" id="pUp">← Antes</button><button class="small-btn" id="pDown">Después →</button><button class="small-btn danger" id="pDel">Eliminar</button></div>`;
+  box.innerHTML = html;
+
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  const upd = (fn) => () => { fn(); markDirty(); renderCanvas(); };
+  on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pHelp', 'input', upd(() => { f.help = $('pHelp').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
+  on('pContent', 'input', upd(() => { f.content = $('pContent').value; }));
+  on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
+  on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
+  box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
+  on('pKey', 'change', () => { f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false; markDirty(); renderAll(); });
+  on('pSync', 'change', upd(() => { f.sync = $('pSync').checked; })); on('pReq', 'change', upd(() => { f.required = $('pReq').checked; }));
+  on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; }));
+  on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
+  on('cOn', 'change', () => { f.show_if = $('cOn').value ? { field: others[0] ? others[0].id : '', op: 'equals', value: '' } : null; if (f.show_if && !f.show_if.field) { f.show_if = null; showToast('Agrega primero otro campo para usarlo como condición', 'error'); } markDirty(); renderCanvas(); renderProps(); });
+  on('cField', 'change', () => { cond.field = $('cField').value; cond.value = ''; markDirty(); renderProps(); }); on('cOp', 'change', () => { cond.op = $('cOp').value; markDirty(); renderProps(); });
+  on('cVal', 'input', () => { const v = $('cVal').value; cond.value = cond.op === 'in' ? v.split(',').map((s) => s.trim()).filter(Boolean) : v; markDirty(); });
+  on('cVal', 'change', () => { cond.value = $('cVal').value; markDirty(); });
+  const shift = (d) => { const at = locate(f.id); const row = design.rows[at[0]]; const n = at[1] + d; if (n < 0 || n >= row.items.length) return; [row.items[at[1]], row.items[n]] = [row.items[n], row.items[at[1]]]; markDirty(); renderCanvas(); };
+  on('pUp', 'click', () => shift(-1)); on('pDown', 'click', () => shift(1));
+  on('pDel', 'click', () => { const dependents = Object.values(design.fields).filter((x) => x.show_if && x.show_if.field === f.id); dependents.forEach((x) => { x.show_if = null; }); detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+}
+
+// ---------------------------------------------------------------- apariencia
+const COLOR_LABELS = { bg_color: 'Color de fondo de la página', card_color: 'Color de la tarjeta', text_color: 'Color del texto', accent: 'Color de acento (botón)' };
+function renderTheme() {
+  const t = design.theme;
+  $('themeBox').innerHTML = fieldInput('tTitle', 'Título', t.title) + fieldInput('tSub', 'Subtítulo', t.subtitle) + fieldInput('tBtn', 'Texto del botón', t.button_text) +
+    ['bg_color', 'card_color', 'text_color', 'accent'].map((k) => `<div class="fld"><label>${COLOR_LABELS[k]}</label><input type="color" data-color="${k}" value="${t[k]}" style="width:100%; height:34px; padding:2px;"></div>`).join('') +
+    `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${t.font === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
+     <div class="fld"><label>Logo</label><input type="file" id="tLogo" accept="image/*"> <button class="small-btn" id="tLogoX">Quitar</button></div>
+     <div class="fld"><label>Imagen de fondo</label><input type="file" id="tBg" accept="image/*"> <button class="small-btn" id="tBgX">Quitar</button></div>`;
+  const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
+  on('tTitle', 'input', () => { t.title = $('tTitle').value; markDirty(); }); on('tSub', 'input', () => { t.subtitle = $('tSub').value; markDirty(); }); on('tBtn', 'input', () => { t.button_text = $('tBtn').value; markDirty(); });
+  $('themeBox').querySelectorAll('[data-color]').forEach((c) => c.addEventListener('input', () => { t[c.dataset.color] = c.value; markDirty(); }));
+  on('tFont', 'change', () => { t.font = $('tFont').value; markDirty(); });
+  const up = (id, key) => on(id, 'change', async () => { const fd = new FormData(); fd.append('file', $(id).files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); t[key] = d.storage_path; markDirty(); showToast('Imagen cargada — guarda el diseño', 'success'); } catch (e) { showToast(e.message, 'error'); } });
+  up('tLogo', 'logo'); up('tBg', 'bg_image');
+  on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
+}
+function renderAll() { renderPalette(); renderCanvas(); renderProps(); }
+
+// ---------------------------------------------------------------- guardar / previsualizar / plantilla
+async function saveDesign() {
+  try {
+    form = await jput(api, { name: $('fname').value, slug: $('fslug').value, design });
+    design = form.design; dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
+    eventFields = await j(`/api/events/${EV}/form-event-fields`);
+    showToast('Diseño guardado', 'success'); paintHeader(); renderTheme(); renderAll();
+    return true;
+  } catch (e) { showToast(e.message, 'error'); return false; }
+}
+$('saveBtn').addEventListener('click', saveDesign);
+$('previewBtn').addEventListener('click', () => {
+  const host = $('previewHost');
+  RenderPreview(host);
+  $('previewOverlay').style.display = 'block';
+});
+function RenderPreview(host) {
+  host.style.background = design.theme.bg_color; if (design.theme.bg_image) { host.style.backgroundImage = `url(${assetUrl(design.theme.bg_image)})`; host.style.backgroundSize = 'cover'; } else host.style.backgroundImage = 'none';
+  FormRender.render(host, design, { assetUrl, previewOnly: true });
+}
+$('closePreview').addEventListener('click', () => { $('previewOverlay').style.display = 'none'; });
+$('tplBtn').addEventListener('click', async () => {
+  if (dirty && !(await saveDesign())) return;
+  const name = await showPrompt('Nombre de la plantilla (queda en la librería de este cliente):', { defaultValue: form.name, confirmLabel: 'Guardar plantilla' });
+  if (!name) return;
+  try { await jpost(`${api}/save-as-template`, { name }); showToast('Plantilla guardada en la librería', 'success'); } catch (e) { showToast(e.message, 'error'); }
+});
+
+function paintHeader() {
+  $('fname').value = form.name; $('fslug').value = form.slug;
+  $('statusPill').innerHTML = `Estado: <b>${STATUS_LABEL[form.public_state] || form.public_state}</b> · ${form.submissions} inscripción(es)`;
+  $('testBtn').href = form.test_url;
+  $('invTab').style.display = settings.prefill.mode === 'invite' ? '' : 'none';
+}
+
+// ---------------------------------------------------------------- pestañas
+$('tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-tab]'); if (!b) return;
+  document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + b.dataset.tab));
+  if (b.dataset.tab === 'answers') loadAnswers(); if (b.dataset.tab === 'analytics') mountAnalytics(); if (b.dataset.tab === 'invites') loadInvites();
+});
+
+// ---------------------------------------------------------------- configuración
+let schedule = [];
+function schedRowsHtml() {
+  return schedule.map((s, i) => `<div class="sched"><div class="fld"><label>Estado</label><select data-si="${i}" data-k="status">${['pruebas', 'activo', 'cerrado', 'finalizado'].map((v) => `<option ${s.status === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="fld"><label>Desde</label><input type="datetime-local" data-si="${i}" data-k="from" value="${esc(s.from)}"></div><div class="fld"><label>Hasta</label><input type="datetime-local" data-si="${i}" data-k="to" value="${esc(s.to)}"></div>
+    <button class="small-btn danger" data-sdel="${i}">Quitar</button></div>`).join('');
+}
+function bindSched() {
+  $('schedRows').innerHTML = schedRowsHtml();
+  $('schedRows').querySelectorAll('[data-si]').forEach((el) => el.addEventListener('input', () => { schedule[+el.dataset.si][el.dataset.k] = el.value; }));
+  $('schedRows').querySelectorAll('[data-sdel]').forEach((b) => b.addEventListener('click', () => { schedule.splice(+b.dataset.sdel, 1); bindSched(); }));
+}
+function paintConfig() {
+  const s = settings;
+  $('cfgStatus').value = form.manual_status; $('cfgCap').value = form.capacity == null ? '' : form.capacity;
+  $('capInfo').textContent = form.capacity ? `${form.submissions} de ${form.capacity} inscripciones` : `${form.submissions} inscripciones`;
+  $('cfgUseSched').checked = form.use_schedule; $('schedBox').style.display = form.use_schedule ? 'block' : 'none';
+  schedule = (form.schedule || []).map((x) => ({ ...x })); bindSched();
+  $('linksBox').innerHTML = `<div class="hint" style="margin-bottom:4px;">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" style="width:min(460px,100%);"><button class="small-btn" data-c="${esc(form.public_url)}">Copiar</button></div>
+    <div class="hint" style="margin:8px 0 4px;">Enlace de pruebas (funciona en estado «Pruebas»; lo que se envíe queda marcado como prueba):</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" style="width:min(460px,100%);"><button class="small-btn" data-c="${esc(form.test_url)}">Copiar</button></div>`;
+  $('linksBox').querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.c); } catch (e) {} showToast('Enlace copiado', 'success'); }));
+  $('secOn').checked = s.security.enabled; $('secBox').style.display = s.security.enabled ? 'flex' : 'none'; $('secType').value = s.security.type; $('secCode').value = s.security.code; $('secCodeBox').style.display = s.security.type === 'code' ? '' : 'none';
+  $('preMode').value = s.prefill.mode; $('preSrc').value = s.prefill.source === 'upload' ? 'upload' : (s.prefill.source.startsWith('event:') ? s.prefill.source : 'event');
+  $('preSrcBox').style.display = s.prefill.mode === 'none' ? 'none' : ''; $('preUpBox').style.display = s.prefill.source === 'upload' ? '' : 'none';
+  $('thMode').value = s.thanks.mode; $('thUrl').value = s.thanks.url; $('thTitle').value = s.thanks.title; $('thText').value = s.thanks.text; $('thImgName').textContent = s.thanks.image ? ' (imagen cargada)' : '';
+  $('thUrlBox').style.display = s.thanks.mode === 'redirect' ? '' : 'none'; $('thTplBox').style.display = s.thanks.mode === 'redirect' ? 'none' : '';
+  $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
+  document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
+}
+$('cfgStatusSave').addEventListener('click', async () => {
+  try { form = await jput(`${api}/status`, { manual_status: $('cfgStatus').value, capacity: $('cfgCap').value === '' ? null : +$('cfgCap').value }); settings = form.settings; paintHeader(); paintConfig(); showToast('Estado y cupo aplicados', 'success'); } catch (e) { showToast(e.message, 'error'); }
+});
+$('cfgUseSched').addEventListener('change', () => { $('schedBox').style.display = $('cfgUseSched').checked ? 'block' : 'none'; if (!$('cfgUseSched').checked) jput(`${api}/status`, { use_schedule: false }).then((f) => { form = f; paintHeader(); showToast('Calendario desactivado: vale el estado manual', 'success'); }); });
+$('addSched').addEventListener('click', () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); schedule.push({ status: 'activo', from: d, to: d }); bindSched(); });
+$('cfgSchedSave').addEventListener('click', async () => {
+  try { form = await jput(`${api}/status`, { schedule, use_schedule: true }); settings = form.settings; paintHeader(); paintConfig(); showToast('Calendario guardado', 'success'); } catch (e) { showToast(e.message, 'error'); }
+});
+$('secOn').addEventListener('change', () => { $('secBox').style.display = $('secOn').checked ? 'flex' : 'none'; });
+$('secType').addEventListener('change', () => { $('secCodeBox').style.display = $('secType').value === 'code' ? '' : 'none'; });
+$('preMode').addEventListener('change', () => { $('preSrcBox').style.display = $('preMode').value === 'none' ? 'none' : ''; });
+$('preSrc').addEventListener('change', () => { $('preUpBox').style.display = $('preSrc').value === 'upload' ? '' : 'none'; });
+$('thMode').addEventListener('change', () => { $('thUrlBox').style.display = $('thMode').value === 'redirect' ? '' : 'none'; $('thTplBox').style.display = $('thMode').value === 'redirect' ? 'none' : ''; });
+const cfgUpload = (input, target, label) => input.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', input.files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); target(d.storage_path); label.textContent = ' (imagen cargada — guarda la configuración)'; } catch (e) { showToast(e.message, 'error'); } });
+cfgUpload($('thImgFile'), (p) => { settings.thanks.image = p; }, $('thImgName')); cfgUpload($('clImgFile'), (p) => { settings.closed_template.image = p; }, $('clImgName'));
+$('preFile').addEventListener('change', async () => {
+  const fd = new FormData(); fd.append('file', $('preFile').files[0]);
+  try { const d = await j(`${api}/people`, { method: 'POST', body: fd }); showToast(d.message, 'success'); settings.prefill.source = 'upload'; } catch (e) { showToast(e.message, 'error'); }
+});
+$('cfgSave').addEventListener('click', async () => {
+  const payload = {
+    security: { enabled: $('secOn').checked, type: $('secType').value, code: $('secCode').value },
+    prefill: { mode: $('preMode').value, source: $('preSrc').value },
+    thanks: { ...settings.thanks, mode: $('thMode').value, url: $('thUrl').value, title: $('thTitle').value, text: $('thText').value },
+    closed_template: { ...settings.closed_template, title: $('clTitle').value, text: $('clText').value },
+    feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
+  };
+  try { form = await jput(api, { settings: payload }); settings = form.settings; paintHeader(); paintConfig(); showToast('Configuración guardada', 'success'); } catch (e) { showToast(e.message, 'error'); }
+});
+$('feedNow').addEventListener('click', async () => {
+  try { const r = await jpost(`${api}/feed-now`); $('feedInfo').textContent = `${r.fed} inscripción(es) cargadas a la base` + (r.problems.length ? ` · ${r.problems.length} con problema: ${r.problems[0]}` : ''); showToast(`${r.fed} cargadas a la base del evento`, r.problems.length ? 'error' : 'success'); } catch (e) { showToast(e.message, 'error'); }
+});
+
+// ---------------------------------------------------------------- respuestas
+async function loadAnswers() {
+  const withTests = $('ansTests').checked;
+  const d = await j(`${api}/submissions?include_tests=${withTests}`);
+  $('repBtn').href = `${api}/report`; $('repBtnAll').href = `${api}/report?include_tests=true`;
+  $('ansInfo').textContent = `${d.rows.length} inscripción(es)`;
+  $('ansHead').innerHTML = `<tr><th>#</th><th>Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}<th>Origen</th><th>En la base</th><th></th></tr>`;
+  $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' 🧪' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
+    const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
+    <td><button class="small-btn danger" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 5}" style="color:#999;">Todavía no hay inscripciones.</td></tr>`;
+  document.querySelectorAll('[data-delsub]').forEach((b) => b.addEventListener('click', async () => { if (!(await showConfirm('¿Eliminar esta inscripción?', { confirmLabel: 'Eliminar' }))) return; await j(`${api}/submissions/${b.dataset.delsub}`, { method: 'DELETE' }); loadAnswers(); }));
+}
+$('ansTests').addEventListener('change', loadAnswers);
+
+// ---------------------------------------------------------------- analítica
+let dash = null;
+function mountAnalytics() {
+  $('anHost').innerHTML = '';
+  AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}`, { refreshSeconds: 30 });
+  $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<button class="small-btn" data-utm="${s}">📋 Copiar enlace para ${s}</button>`).join('');
+  $('utmBox').querySelectorAll('[data-utm]').forEach((b) => b.addEventListener('click', async () => { const url = `${form.public_url}?utm_source=${b.dataset.utm}`; try { await navigator.clipboard.writeText(url); } catch (e) {} showToast('Enlace copiado: ' + url, 'success'); }));
+}
+$('anTests').addEventListener('change', mountAnalytics);
+
+// ---------------------------------------------------------------- invitaciones
+async function loadInvites() {
+  const s = await j(`${api}/invites`);
+  $('invStats').textContent = `Personas en la base elegida: ${s.source_people} · enlaces generados: ${s.total} · enviados: ${s.sent} · ya usados: ${s.used}`;
+}
+$('invSend').addEventListener('click', async () => {
+  if (!(await showConfirm('Se enviará un correo con su enlace personal a cada persona que tenga correo registrado. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, enviar' }))) return;
+  const host = $('invProgress'); host.innerHTML = '';
+  try {
+    const { job_id } = await jpost(`${api}/invites/send`, { only_unsent: $('invOnlyNew').checked });
+    const bar = ProgressBar.create(host, { title: 'Enviando invitaciones', stage: 'Preparando…' });
+    while (true) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const st = await j(`/api/bulk_jobs/${job_id}`);
+      if (st.status === 'error') { bar.fail(st.error.detail); return; }
+      if (st.status === 'done') { bar.finish(st.result.message); loadInvites(); return; }
+      bar.update(st.total ? st.done / st.total : 0, st.stage);
+    }
+  } catch (e) { showToast(e.message, 'error'); }
+});
+
+// ---------------------------------------------------------------- inicio
+(async function init() {
+  form = await j(api); design = form.design; settings = form.settings;
+  eventFields = await j(`/api/events/${EV}/form-event-fields`);
+  paintHeader(); renderTheme(); renderAll(); paintConfig();
+  // origen "otro evento": se ofrece cada evento anterior del mismo cliente
+  try {
+    const events = (await j(`/api/events?tenant_id=${encodeURIComponent(window.TENANT_ID)}`)).filter((e) => e.id !== EV);
+    $('preSrc').insertAdjacentHTML('beforeend', events.map((e) => `<option value="event:${e.id}">La base del evento «${esc(e.name)}»</option>`).join(''));
+    $('preSrc').value = settings.prefill.source === 'upload' ? 'upload' : (settings.prefill.source.startsWith('event:') ? settings.prefill.source : 'event');
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

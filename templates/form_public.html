@@ -1,1 +1,135 @@
-<html><body>stub {{ form_title }}</body></html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{{ form_title }}</title>
+    <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
+    <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
+    <style>
+        html, body { margin:0; min-height:100%; }
+        body { padding:24px 14px 50px; box-sizing:border-box; font-family:'Montserrat', sans-serif; background:#F4F5F9; }
+        #test-banner { display:none; max-width:760px; margin:0 auto 12px; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; border-radius:12px; padding:10px 14px; font-size:.85rem; text-align:center; }
+        .box { background:#fff; border-radius:20px; padding:30px; max-width:520px; margin:8vh auto 0; text-align:center; box-shadow:0 12px 40px rgba(0,0,0,.12); box-sizing:border-box; }
+        .box input { width:100%; box-sizing:border-box; padding:12px; border:1px solid #c9ccd6; border-radius:10px; font:inherit; font-size:1.05rem; text-align:center; }
+        .box button, .box a.btn { display:inline-block; margin-top:14px; padding:12px 30px; border:none; border-radius:26px; background:#D4AF37; color:#111; font:inherit; font-weight:800; cursor:pointer; text-decoration:none; }
+        .msg { margin-top:10px; color:#c0392b; font-size:.88rem; min-height:1.2em; }
+    </style>
+</head>
+<body>
+<div id="test-banner">🧪 <strong>Modo de pruebas:</strong> lo que envíes aquí queda marcado como prueba y no cuenta en el reporte oficial.</div>
+<div id="app"><div class="box">Cargando…</div></div>
+
+<script>
+const BASE = "/f/{{ event_id }}/{{ slug }}";
+const qs = new URLSearchParams(location.search);
+const K = qs.get("k"), INVITE = qs.get("i"), SOURCE = qs.get("utm_source") || qs.get("src") || "";
+const SID = (() => { try { let s = sessionStorage.getItem("sid_" + BASE); if (!s) { s = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("sid_" + BASE, s); } return s; } catch (e) { return Math.random().toString(36).slice(2); } })();
+const app = document.getElementById("app");
+let token = null, theme = null;
+
+const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const assetUrl = (p) => `${BASE}/asset/${p}` + (K ? `?k=${encodeURIComponent(K)}` : "");
+async function api(path, body) {
+  const res = await fetch(BASE + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ k: K, t: token, sid: SID, source: SOURCE, ...body }) });
+  return { res, data: await res.json().catch(() => ({})) };
+}
+function beacon(kind) { fetch(BASE + "/beacon", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ k: K, sid: SID, kind, source: SOURCE }) }).catch(() => {}); }
+
+function applyTheme(t) {
+  theme = t || {};
+  document.body.style.backgroundColor = theme.bg_color || "#F4F5F9";
+  document.body.style.color = theme.text_color || "#0A0E2E";
+  document.body.style.fontFamily = `'${theme.font || "Montserrat"}', sans-serif`;
+  if (theme.bg_image) { document.body.style.backgroundImage = `url(${assetUrl(theme.bg_image)})`; document.body.style.backgroundSize = "cover"; document.body.style.backgroundAttachment = "fixed"; }
+  document.getElementById("fontsLink").href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font || "Montserrat").replace(/%20/g, "+")}:wght@400;700&display=swap`;
+}
+function box(html) { app.innerHTML = `<div class="box">${html}</div>`; }
+function templateHtml(tpl) {
+  return `${tpl.image ? `<img src="${esc(assetUrl(tpl.image))}" alt="" style="max-width:100%; max-height:220px; border-radius:12px; margin-bottom:14px;">` : ""}
+    <h2 style="margin:0 0 8px;">${esc(tpl.title)}</h2><p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(tpl.text)}</p>`;
+}
+
+async function load() {
+  const params = new URLSearchParams();
+  if (K) params.set("k", K); if (INVITE) params.set("i", INVITE); if (token) params.set("t", token);
+  const res = await fetch(`${BASE}/state?${params}`);
+  if (!res.ok) { box("<h3>Este formulario no está disponible</h3>"); return; }
+  const st = await res.json();
+  applyTheme(st.theme);
+  if (st.is_test) document.getElementById("test-banner").style.display = "block";
+  if (st.token) token = st.token;
+  if (st.stage === "closed") { box(templateHtml(st.template)); return; }
+  if (st.stage === "invalid") { box(`<h3>${esc(st.message)}</h3>`); return; }
+  if (st.stage === "gate") return showGate();
+  if (st.stage === "identify") return showIdentify(st);
+  if (st.stage === "form") return showForm(st);
+}
+
+function showGate() {
+  box(`<h3 style="margin-top:0;">Este formulario tiene acceso restringido</h3><p style="opacity:.8;">Escribe la palabra o el código que te compartieron.</p>
+    <input type="text" id="code" autocomplete="off" placeholder="Código de acceso"><div class="msg" id="msg"></div><button id="go">Continuar</button>`);
+  const go = async () => {
+    const { res, data } = await api("/gate", { code: document.getElementById("code").value });
+    if (!res.ok) { document.getElementById("msg").textContent = data.detail || "No se pudo verificar"; return; }
+    token = data.token; load();
+  };
+  document.getElementById("go").addEventListener("click", go);
+  document.getElementById("code").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  document.getElementById("code").focus();
+}
+
+function showIdentify(st) {
+  box(`<h3 style="margin-top:0;">Identifícate</h3><p style="opacity:.8;">${st.required ? "Escribe tu número de documento: debes estar en la lista de invitados." : "Escribe tu número de documento: si ya estás en nuestra base, tus datos aparecerán listos."}</p>
+    <input type="text" id="docid" inputmode="numeric" autocomplete="off" placeholder="Número de documento"><div class="msg" id="msg"></div><button id="go">Continuar</button>`);
+  const go = async () => {
+    const { res, data } = await api("/lookup", { id: document.getElementById("docid").value });
+    if (!res.ok) { document.getElementById("msg").textContent = data.detail || "No se pudo verificar"; return; }
+    token = data.token; load();
+  };
+  document.getElementById("go").addEventListener("click", go);
+  document.getElementById("docid").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  document.getElementById("docid").focus();
+}
+
+function showForm(st) {
+  beacon("view");
+  app.innerHTML = "";
+  const host = document.createElement("div"); app.appendChild(host);
+  let started = false;
+  const fr = FormRender.render(host, st.design, {
+    assetUrl, prefill: st.prefill, readonly: st.readonly,
+    onFirstInput: () => { if (!started) { started = true; beacon("start"); } },
+  });
+  if (st.capacity_left !== null && st.capacity_left !== undefined && st.capacity_left <= 10 && !st.is_test) {
+    host.insertAdjacentHTML("afterbegin", `<p style="text-align:center; font-size:.85rem; color:#b26a00;">Quedan ${st.capacity_left} cupo(s)</p>`);
+  }
+  fr.form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!fr.validate()) return;
+    fr.button.disabled = true; fr.button.textContent = "Enviando…";
+    const { values, files } = fr.collect();
+    const fd = new FormData();
+    fd.append("data", JSON.stringify({ values, k: K, t: token, sid: SID, source: SOURCE }));
+    Object.entries(files).forEach(([fid, f]) => fd.append("file:" + fid, f, f.name));
+    let res, data;
+    try { res = await fetch(BASE + "/submit", { method: "POST", body: fd }); data = await res.json().catch(() => ({})); }
+    catch (err) { fr.button.disabled = false; fr.button.textContent = st.design.theme.button_text || "Enviar"; alert("No hay conexión. Intenta de nuevo."); return; }
+    if (res.ok) return done(data.thanks);
+    fr.button.disabled = false; fr.button.textContent = st.design.theme.button_text || "Enviar";
+    if (res.status === 422 && data.errors) return fr.setErrors(data.errors);
+    if (res.status === 409 && data.stage === "closed") return load();
+    alert(data.detail || "No se pudo enviar. Intenta de nuevo.");
+  });
+}
+
+function done(thanks) {
+  if (thanks.mode === "redirect" && thanks.url) { location.href = thanks.url; return; }
+  box(templateHtml(thanks));
+}
+
+load();
+</script>
+</body>
+</html>

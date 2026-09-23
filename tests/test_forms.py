@@ -146,6 +146,16 @@ def test_only_coordinador_plus_manage_forms(client, factory):
     assert client.get(f"/kiosk/{ev.id}/formularios").status_code in (302, 403)
 
 
+def test_staff_pages_and_public_page_render(client, factory):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    assert client.get(f"/kiosk/{ev.id}/formularios").status_code == 200
+    r = client.get(f"/kiosk/{ev.id}/formularios/{f['id']}")
+    assert r.status_code == 200 and "Editor de formulario" in r.text
+    r = client.get(f"/f/{ev.id}/{f['slug']}?k={f['test_key']}")
+    assert r.status_code == 200 and "form-render.js" in r.text
+
+
 # ------------------------------- estados y URL -------------------------------
 def test_four_states_and_their_public_behaviour(client, factory):
     ev = _event(client, factory)
@@ -565,3 +575,42 @@ def test_public_page_exposes_nothing_else_and_needs_no_login(client, factory):
     _open(client, ev, f)
     assert client.get(_url(ev, f)).status_code == 200
     assert client.get("/api/events").status_code == 401 and client.get(f"/kiosk/{ev.id}").status_code == 302
+
+
+# ------------------------------- analítica del formulario (módulo compartido) -------------------------------
+def test_form_analytics_uses_the_shared_dashboard_format(client, factory, db):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    fields = _basic_fields()[:3] + [{"id": "ciudad", "type": "select", "label": "Ciudad", "options": ["Bogotá", "Cali"], "stats": True},
+                                    {"id": "nota", "type": "text_long", "label": "Comentario"}]
+    _status(client, ev, f, manual_status="activo", capacity=10)
+    _put(client, ev, f, design=_design(fields))
+    key = f["test_key"]
+    client.post("/logout")
+    for sid in ("a", "b", "c", "d"):                                     # 4 visitas
+        client.post(f"{_url(ev, f)}/beacon", json={"sid": sid, "kind": "view", "source": "instagram" if sid in "ab" else "tiktok"})
+    for sid in ("a", "b", "c"):                                          # 3 empezaron
+        client.post(f"{_url(ev, f)}/beacon", json={"sid": sid, "kind": "start"})
+    base = {"nombres": "A", "apellidos": "B"}
+    _submit(client, ev, f, {**base, "cedula": "1", "ciudad": "Bogotá", "nota": "hola"}, sid="a", source="instagram")
+    _submit(client, ev, f, {**base, "cedula": "2", "ciudad": "Bogotá"}, sid="b", source="instagram")
+    _submit(client, ev, f, {**base, "cedula": "3", "ciudad": "Cali"}, sid="x", source="tiktok")
+    login(client, "coord1")
+    _status(client, ev, f, manual_status="pruebas")
+    client.post("/logout")
+    _submit(client, ev, f, {**base, "cedula": "9", "ciudad": "Cali"}, key=key, sid="t")                    # prueba: no cuenta
+    login(client, "coord1")
+    d = client.get(f"/api/events/{ev.id}/forms/{f['id']}/analytics").json()
+    k = {x["label"]: x for x in d["kpis"]}
+    assert k["Inscripciones"]["value"] == 3 and k["Visitas"]["value"] == 4 and k["Empezaron a llenarlo"]["value"] == 3
+    assert k["Lo enviaron"]["value"] == 3 and k["Lo abandonaron"]["value"] == 1                            # 'c' empezó y no envió
+    assert k["Lo abandonaron"]["hint"].startswith("33%") and k["Cupo"]["value"] == "3 / 10"
+    charts = {c["id"]: c for c in d["charts"]}
+    assert dict(zip(charts["by_source"]["labels"], charts["by_source"]["datasets"][0]["data"])) == {"instagram": 2, "tiktok": 1}
+    ciudad = charts["field_ciudad"]
+    assert dict(zip(ciudad["labels"], ciudad["datasets"][0]["data"])) == {"Bogotá": 2, "Cali": 1}           # sin la de prueba
+    assert "field_nota" not in charts                                                                       # solo los campos marcados «genera estadísticas»
+    rate = dict(zip(charts["response_rate"]["labels"], charts["response_rate"]["datasets"][0]["data"]))
+    assert rate["Cédula"] == 100 and rate["Comentario"] == 33
+    with_tests = client.get(f"/api/events/{ev.id}/forms/{f['id']}/analytics", params={"include_tests": "true"}).json()
+    assert {x["label"]: x for x in with_tests["kpis"]}["Inscripciones"]["value"] == 4
