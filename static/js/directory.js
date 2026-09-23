@@ -161,6 +161,9 @@
     }).join('');
     const isRegistered = user.status !== 'No registrado';
     const originalStatus = isRegistered ? 'registrado' : 'no_registrado';
+    // 2026-09-23, pedido explícito: al darle Editar a alguien que aún no llegó, "Registrado" queda
+    // preseleccionado — guardar sin tocar nada ya lo deja acreditado (en verde).
+    const defaultStatus = 'registrado';
 
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;';
@@ -180,8 +183,8 @@
       <div style="margin-bottom:0.8rem;">
         <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">Estado de registro</label>
         <select id="editModalStatus" style="width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
-          <option value="no_registrado" ${!isRegistered ? 'selected' : ''}>No registrado</option>
-          <option value="registrado" ${isRegistered ? 'selected' : ''}>Registrado</option>
+          <option value="no_registrado" ${defaultStatus === 'no_registrado' ? 'selected' : ''}>No registrado</option>
+          <option value="registrado" ${defaultStatus === 'registrado' ? 'selected' : ''}>Registrado</option>
         </select>
         <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
       </div>
@@ -191,6 +194,7 @@
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     window.FieldRender.watchEmail(box, () => user.id);
+    window.FieldRender.watchEmailDeliverable(box);
     window.FieldRender.initSignatures(box, {
       existingUrl: (key) => `/api/events/${window.EVENT_ID}/users/${encodeURIComponent(user.id)}/signature/${key}`,
     });
@@ -253,7 +257,9 @@
         const newStatus = statusSelect ? statusSelect.value : originalStatus;
         if (newStatus !== originalStatus) {
           const label = newStatus === 'registrado' ? 'Registrado' : 'No registrado';
-          const ok = await showConfirm(`¿Cambiar el estado de registro de esta persona a "${label}"? Se guardará junto con el resto de cambios.`, { variant: 'warning', confirmLabel: 'Sí, cambiar y guardar' });
+          // Pasar a "Registrado" (el valor por defecto de este modal) no pide confirmación: es
+          // justo el flujo de "buscar, Editar, Guardar". Volver a "No registrado" sí la pide.
+          const ok = newStatus === 'registrado' || await showConfirm(`¿Cambiar el estado de registro de esta persona a "${label}"? Se guardará junto con el resto de cambios.`, { variant: 'warning', confirmLabel: 'Sí, cambiar y guardar' });
           if (!ok) return;
           saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
           try {

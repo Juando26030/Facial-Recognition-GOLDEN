@@ -14,3 +14,4 @@ itsdangerous
 alembic
 mrz
 pytesseract
+dnspython

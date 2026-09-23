@@ -89,12 +89,13 @@
           <strong style="font-size:0.85rem;">Informe final</strong>
           <span id="eeReportBulb"></span>
           <span id="eeReportInfo" style="font-size:0.78rem; color:#777;"></span>
+          <a id="eeReportDownload" class="ee-btn" href="#" target="_blank" rel="noopener" style="display:none; text-decoration:none; margin-left:auto;">⬇️ Descargar informe</a>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <input type="file" id="eeReportFile" accept="application/pdf" style="max-width:260px; font-size:0.8rem;">
+          <input type="file" id="eeReportFile" accept=".pdf,.xlsx,.xls,application/pdf" style="max-width:260px; font-size:0.8rem;">
           <button type="button" class="ee-btn primary" id="eeReportUpload">Subir informe y avisar a la comercial</button>
         </div>
-        <p style="font-size:0.72rem; color:#999; margin:0.4rem 0 0;">Sube el PDF ya corregido y autorizado. Se marca como enviado (verde) y se le manda por correo a la comercial del evento.</p>
+        <p style="font-size:0.72rem; color:#999; margin:0.4rem 0 0;">Sube el informe ya corregido y autorizado, en PDF o Excel. Se marca como enviado (verde) y se le manda por correo a la comercial del evento.</p>
       </div>
 
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:0.5rem;">
@@ -112,6 +113,7 @@
 <datalist id="modalCoordinatorList"></datalist>
 <datalist id="modalCommercialList"></datalist>
 
+<script src="{{ url_for('static', path='js/color-library.js') }}"></script>
 <script>
 (function () {
   const ROLE = "{{ staff_role }}";
@@ -120,6 +122,7 @@
 
   const overlay = document.getElementById('eventModalOverlay');
   const form = document.getElementById('eventEditForm');
+  if (window.ColorLibrary) ColorLibrary.attach(form.bandana_color, form.bandana_color_name);
   document.getElementById('eventModalCancel').addEventListener('click', () => { overlay.style.display = 'none'; });
   document.querySelectorAll('.clock-time').forEach((input) => attachClockPicker(input));
 
@@ -159,7 +162,7 @@
      al PDF si ya se subió, naranja si falta. */
   window.reportBulbHtml = function (ev) {
     return ev.report_uploaded
-      ? `<a class="report-bulb on" href="/api/events/${ev.id}/final-report" target="_blank" rel="noopener" title="Informe final enviado — clic para descargar el PDF" onclick="event.stopPropagation()"></a>`
+      ? `<a class="report-bulb on" href="/api/events/${ev.id}/final-report" target="_blank" rel="noopener" title="Informe final enviado — clic para descargarlo" onclick="event.stopPropagation()"></a>`
       : `<span class="report-bulb off" title="Informe final pendiente de subir"></span>`;
   };
 
@@ -168,6 +171,9 @@
     document.getElementById('eeReportInfo').textContent = ev.report_uploaded
       ? `Enviado${ev.report_uploaded_at ? ' el ' + new Date(ev.report_uploaded_at + 'Z').toLocaleString() : ''} (subir otro lo reemplaza)`
       : 'Pendiente de subir';
+    const dl = document.getElementById('eeReportDownload');
+    dl.style.display = ev.report_uploaded ? 'inline-block' : 'none';
+    dl.href = `/api/events/${ev.id}/final-report`;
   }
 
   const superSelect = document.getElementById('eeSuperEvent');
@@ -219,9 +225,9 @@
 
   document.getElementById('eeReportUpload').addEventListener('click', async () => {
     const file = document.getElementById('eeReportFile').files[0];
-    if (!file) { showToast('Elige primero el PDF del informe', 'error'); return; }
+    if (!file) { showToast('Elige primero el archivo del informe (PDF o Excel)', 'error'); return; }
     const who = current.commercial_name ? ` a ${current.commercial_name}` : ' a la comercial del evento';
-    const ok = await showConfirm(`Se marcará el informe como enviado y se enviará por correo${who}, con el PDF adjunto. ¿Continuar?`, { variant: 'warning', confirmLabel: 'Sí, subir y enviar' });
+    const ok = await showConfirm(`Se marcará el informe como enviado y se enviará por correo${who}, con el archivo adjunto. ¿Continuar?`, { variant: 'warning', confirmLabel: 'Sí, subir y enviar' });
     if (!ok) return;
     const btn = document.getElementById('eeReportUpload');
     setButtonLoading(btn, true, 'Subiendo...');

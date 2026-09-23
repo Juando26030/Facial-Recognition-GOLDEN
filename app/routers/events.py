@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from app.database import get_db
-from app.models import AccessLog, BadgeTemplate, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, StaffUser, SuperEvent, Tenant
+from app.models import AccessLog, BadgeTemplate, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.areas_inventory import delete_event_modules
 from app.auth import effective_roles, get_current_staff, hash_password, require_role
@@ -65,6 +65,7 @@ class EventIn(BaseModel):
     commercial_staff_id: Optional[int] = None  # Sprint 2.4 Fase 5: si no viene, se resuelve en create_event (self si el creador es comercial, obligatorio elegir si es admin+)
     bandana_color: Optional[str] = None  # Sprint 2.4 Fase 12: "Color de pañoleta", hex #rrggbb
     bandana_color_name: Optional[str] = None  # nombre libre para ese color (ej. "Rojo Golden")
+    super_event_id: Optional[int] = None  # superevento al que pertenece (2026-09-23: también se elige al CREAR el evento)
     notes: Optional[str] = None
 
 
@@ -251,6 +252,44 @@ def _validate_event_dates(start_date, end_date, setup_date):
         raise HTTPException(status_code=400, detail="La fecha de montaje debe ser el día del inicio o antes")
 
 
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+@router.get("/colors")
+async def list_saved_colors(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Librería de colores de pañoleta (se define una vez y se elige en cualquier evento)."""
+    return [{"id": c.id, "name": c.name, "hex": c.hex} for c in db.query(SavedColor).order_by(SavedColor.name)]
+
+
+@router.post("/colors")
+async def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Crea un color; si ya existe uno con ese nombre, le cambia el tono (así "Rojo Golden" es siempre uno solo)."""
+    name = str(data.get("name") or "").strip()[:60]
+    hex_value = str(data.get("hex") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Ponle un nombre al color para guardarlo (ej. Rojo Golden)")
+    if not _HEX_RE.match(hex_value):
+        raise HTTPException(status_code=400, detail="El color debe ser un hex como #C0392B")
+    color = db.query(SavedColor).filter(func.lower(SavedColor.name) == name.lower()).first()
+    if color:
+        color.hex = hex_value.lower()
+    else:
+        color = SavedColor(name=name, hex=hex_value.lower(), created_by_id=staff.id)
+        db.add(color)
+    db.commit()
+    return {"id": color.id, "name": color.name, "hex": color.hex}
+
+
+@router.delete("/colors/{color_id}")
+async def delete_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    color = db.query(SavedColor).filter(SavedColor.id == color_id).first()
+    if not color:
+        raise HTTPException(status_code=404, detail="Color no encontrado")
+    db.delete(color)
+    db.commit()
+    return {"message": "Color eliminado de la librería"}
+
+
 @router.post("/events")
 async def create_event(
     data: EventIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))
@@ -288,6 +327,11 @@ async def create_event(
         ).first()
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
+
+    if data.super_event_id is not None:
+        sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
+        if not sup or sup.tenant_id != data.tenant_id:
+            raise HTTPException(status_code=400, detail="El superevento debe existir y ser del mismo cliente que el evento")
 
     event_data = data.dict()
     event_data["commercial_staff_id"] = commercial_id

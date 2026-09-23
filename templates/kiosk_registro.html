@@ -290,7 +290,7 @@
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.locked %}
                             <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField"{% endif %} required>
-                            {% elif cfg.field_type in ("consent", "signature") %}
+                            {% elif cfg.field_type in ("consent", "signature", "email") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "text_long" %}
                             <textarea name="{{ cfg.key }}" rows="3" {% if cfg.required %}required{% endif %} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem; font-family:inherit;"></textarea>
@@ -300,7 +300,11 @@
                                 {% for opt in cfg.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
                             </select>
                             {% elif cfg.field_type == "boolean" %}
-                            <input type="checkbox" name="{{ cfg.key }}" value="true" {% if cfg.required %}required{% endif %} style="width:18px; height:18px;">
+                            <select name="{{ cfg.key }}" {% if cfg.required %}required{% endif %}>
+                                <option value="">— Sin elegir —</option>
+                                <option value="true">Sí</option>
+                                <option value="false">No</option>
+                            </select>
                             {% else %}
                             <input type="{{ 'email' if cfg.key == 'email' else 'text' }}" name="{{ cfg.key }}" {% if cfg.required %}required{% endif %}>
                             {% endif %}

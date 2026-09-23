@@ -130,7 +130,7 @@ async def get_stats_data(
             buckets.append({"label": f"{start:.1f}–{end:.1f}", "count": count})
         return {"type": "numeric", "buckets": buckets}
 
-    counts = Counter(non_empty)
+    counts = Counter({"true": "Sí", "false": "No"}.get(v, v) for v in non_empty)  # campos booleanos guardan "true"/"false"
     ordered = counts.most_common()
     top = ordered[:_MAX_CATEGORIES]
     rest_count = sum(c for _, c in ordered[_MAX_CATEGORIES:])

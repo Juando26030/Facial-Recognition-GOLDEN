@@ -65,9 +65,9 @@
           <label for="useSourceEvent" style="margin:0;">Tener en cuenta la base de datos de otro evento de este cliente</label>
         </div>
         <div id="sourceEventGroup" class="badge-input-group" style="display:none; margin:0.6rem 0 1rem;">
-          <label>Evento del que traer a las personas (solo eventos de {{ event.tenant.name }})</label>
-          <select name="source_event_id" id="sourceEventSelect" style="width:100%; padding:0.7rem; border:1px solid #ddd; border-radius:10px;"></select>
-          <p style="font-size:0.78rem; color:#888; margin-top:0.4rem;">Entran todas como "No registrado". Si también subes un Excel y una cédula se repite, queda un solo registro con los datos del evento anterior. Puedes usar solo esta opción, sin Excel.</p>
+          <label>Eventos de los que traer a las personas (solo eventos de {{ event.tenant.name }}) — marca uno o varios</label>
+          <div id="sourceEventList" style="max-height:220px; overflow:auto; border:1px solid #ddd; border-radius:10px; padding:0.5rem 0.8rem;"></div>
+          <p style="font-size:0.78rem; color:#888; margin-top:0.4rem;">Entran todas como "No registrado". Si una persona está en varios eventos, o se repite en el Excel, queda un solo registro con los datos del evento anterior. Puedes usar solo esta opción, sin Excel.</p>
         </div>
 
         <div class="badge-input-group">
@@ -106,24 +106,22 @@ enableFacial.addEventListener("change", () => {
 
 const useSourceEvent = document.getElementById("useSourceEvent");
 const sourceEventGroup = document.getElementById("sourceEventGroup");
-const sourceEventSelect = document.getElementById("sourceEventSelect");
+const sourceEventList = document.getElementById("sourceEventList");
 const rosterFileInput = document.getElementById("rosterFileInput");
 let sourceEventsLoaded = false;
 useSourceEvent.addEventListener("change", async () => {
     sourceEventGroup.style.display = useSourceEvent.checked ? "block" : "none";
-    sourceEventSelect.disabled = !useSourceEvent.checked;
     rosterFileInput.required = !useSourceEvent.checked;  // con un evento anterior el Excel pasa a ser opcional
     if (useSourceEvent.checked && !sourceEventsLoaded) {
         const res = await fetch(`/api/events?tenant_id=${encodeURIComponent("{{ event.tenant_id }}")}`);
         const events = (res.ok ? await res.json() : []).filter(e => e.id !== window.EVENT_ID);
-        sourceEventSelect.innerHTML = events.length
-            ? events.map(e => `<option value="${e.id}">${e.name} (${e.event_code || "sin código"})</option>`).join("")
-            : '<option value="">Este cliente no tiene otros eventos</option>';
+        const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+        sourceEventList.innerHTML = events.length
+            ? events.map(e => `<label style="display:flex; gap:8px; align-items:center; font-weight:400; text-transform:none; margin:4px 0;"><input type="checkbox" name="source_event_id" value="${e.id}" style="width:auto;"> ${esc(e.name)} (${esc(e.event_code || "sin código")})</label>`).join("")
+            : '<p style="margin:0.3rem 0; color:#888;">Este cliente no tiene otros eventos</p>';
         sourceEventsLoaded = true;
     }
 });
-sourceEventSelect.disabled = true;
-
 const rosterForm = document.getElementById("rosterForm");
 const rosterResult = document.getElementById("rosterResult");
 const EVENT_STATUS = "{{ event.status }}";
@@ -219,7 +217,6 @@ function resetRosterForm() {
     rosterForm.reset();
     facialZipGroup.style.display = "none";
     sourceEventGroup.style.display = "none";
-    sourceEventSelect.disabled = true;
     rosterFileInput.required = true;
 }
 
@@ -341,7 +338,7 @@ async function buildBatchZip(zip, ids) {
     return any ? await sub.generateAsync({ type: "blob" }) : null;
 }
 
-async function submitRosterAutoBatched(rosterFile, zipFile) {
+async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
     const progressBox = document.createElement("div");
     progressBox.style.cssText = "background:#e7f1ff; border:1px solid #b6d4fe; color:#084298; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-bottom:0.8rem;";
     rosterResult.innerHTML = "";
@@ -357,6 +354,7 @@ async function submitRosterAutoBatched(rosterFile, zipFile) {
         const group = groups[i];
         const fd = new FormData();
         fd.append("event_id", window.EVENT_ID);
+        if (i === 0) (sourceEventIds || []).forEach(id => fd.append("source_event_id", id));  // los eventos anteriores entran una sola vez, con el primer lote
         fd.append("roster_file", buildRosterBlob(kind, header, group.rows), `lote_${i + 1}.${kind}`);
         const zipBlob = await buildBatchZip(zip, group.ids);
         if (zipBlob) fd.append("zip_file", zipBlob, `lote_${i + 1}.zip`);
@@ -393,7 +391,7 @@ rosterForm.addEventListener("submit", async (e) => {
     const formData = new FormData(e.target);
     formData.append("event_id", window.EVENT_ID);
     if (!enableFacial.checked) formData.delete("zip_file");
-    if (!useSourceEvent.checked || !sourceEventSelect.value) formData.delete("source_event_id");
+    if (!useSourceEvent.checked) formData.delete("source_event_id");
 
     const rosterFile = formData.get("roster_file");
     const zipFile = formData.get("zip_file");
@@ -412,7 +410,7 @@ rosterForm.addEventListener("submit", async (e) => {
                     "error"
                 );
             } else {
-                const result = await submitRosterAutoBatched(rosterFile, zipFile);
+                const result = await submitRosterAutoBatched(rosterFile, zipFile, formData.getAll("source_event_id"));
                 if (result) {
                     showToast(result.message, "success");
                     renderRosterResult(result);

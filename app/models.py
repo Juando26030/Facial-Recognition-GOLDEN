@@ -221,6 +221,7 @@ class Event(Base):
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
+    certificates_token = Column(String, unique=True, nullable=True)  # enlace público /c/<token> para que cada persona descargue su certificado (2026-09-23)
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
@@ -306,7 +307,7 @@ class BadgeTemplate(Base):
 
 # consent = casilla con texto de política debajo (ítem 16); signature = lienzo de firma (ítem 10).
 # Ambos solo aplican a campos opcionales (opcional_N).
-FIELD_TYPES = ("text_short", "text_long", "select", "boolean", "consent", "signature")
+FIELD_TYPES = ("text_short", "text_long", "select", "boolean", "consent", "signature", "email")
 CHART_TYPES = ("bar", "pie", "histogram", "line")
 
 
@@ -371,6 +372,18 @@ class SavedBadgeTemplate(Base):
 
     def set_elements(self, data: list) -> None:
         self.elements_json = json.dumps(data) if data else None
+
+class SavedColor(Base):
+    """Librería de colores de pañoleta (2026-09-23): se define una vez ("Rojo Golden" = #C0392B) y se elige
+    en cualquier evento. Es global a la organización (no por cliente). El evento guarda su propia copia
+    (`bandana_color`/`bandana_color_name`), así que borrar un color no toca los eventos que ya lo usaron."""
+    __tablename__ = 'saved_colors'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    hex = Column(String, nullable=False)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class EventDocument(Base):
     """Documento general del evento (reunión 2026-09-21, ítem 8): nombre/referencia, descripción y

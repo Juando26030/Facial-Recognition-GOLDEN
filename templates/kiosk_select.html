@@ -139,6 +139,13 @@
         <div class="mode-title">Documentos del Evento</div>
         <div class="mode-sub">Adjunta archivos del evento y descárgalos todos juntos en un ZIP</div>
       </a>
+      {% if event.report_pdf_path %}
+      <a href="/api/events/{{ event.id }}/final-report" class="mode-card enabled" target="_blank" rel="noopener">
+        <div class="mode-icon">⬇️</div>
+        <div class="mode-title">Descargar informe</div>
+        <div class="mode-sub">El informe final que se adjuntó al evento (el mismo que se envió a la comercial)</div>
+      </a>
+      {% endif %}
       <a href="/kiosk/{{ event.id }}/legalizaciones" class="mode-card enabled">
         <div class="mode-icon">🧾</div>
         <div class="mode-title">Legalizaciones</div>
@@ -159,5 +166,10 @@
     {% endif %}
   </div>
 </main>
+<script>
+// Volver con "Atrás" desde Parámetros puede traer esta página de la caché de ida y vuelta del navegador
+// (bfcache) con el menú viejo — se recarga para reflejar lo que se activó/desactivó allá.
+window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+</script>
 </body>
 </html>

@@ -8,6 +8,7 @@
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/color-library.js') }}"></script>
     <style>
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
     </style>
@@ -77,6 +78,15 @@
           </div>
         </div>
         <div class="badge-input-row">
+          <div class="badge-input-group" style="min-width:100%;">
+            <label>Superevento (opcional — agrupa eventos hermanos de este cliente)</label>
+            <div style="display:flex; gap:8px;">
+              <select name="super_event_id" id="superEventSelect" style="flex:1; padding:0.7rem; border:1px solid #ddd; border-radius:10px;"><option value="">— Ninguno —</option></select>
+              <button type="button" id="newSuperBtn" class="small-btn" style="padding:8px 16px; white-space:nowrap;">+ Nuevo superevento</button>
+            </div>
+          </div>
+        </div>
+        <div class="badge-input-row">
           <div class="badge-input-group" style="max-width:110px;">
             <label>Color de pañoleta</label>
             <input type="color" name="bandana_color" value="#D4AF37" style="width:100%; height:44px; padding:2px; border:1px solid #ddd; border-radius:8px; cursor:pointer;">
@@ -107,6 +117,7 @@ const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","V
 document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
 
 document.querySelectorAll(".clock-time").forEach((input) => attachClockPicker(input));
+ColorLibrary.attach(document.querySelector('[name="bandana_color"]'), document.querySelector('[name="bandana_color_name"]'));
 
 async function loadCitiesFor(country) {
   const cityDatalist = document.getElementById("cityList");
@@ -157,12 +168,31 @@ async function loadCommercialOptions() {
 }
 loadCommercialOptions();
 
+async function loadSuperEvents(selectedId) {
+  const res = await fetch(`/api/super-events?tenant_id=${encodeURIComponent(TENANT_ID)}`);
+  const list = res.ok ? await res.json() : [];
+  const select = document.getElementById("superEventSelect");
+  select.innerHTML = '<option value="">— Ninguno —</option>' + list.map(s => `<option value="${s.id}">${s.name} (${s.events} eventos)</option>`).join("");
+  select.value = selectedId ? String(selectedId) : "";
+}
+loadSuperEvents();
+document.getElementById("newSuperBtn").addEventListener("click", async () => {
+  const name = await showPrompt("Nombre del superevento (ej. Congreso X):", { confirmLabel: "Crear" });
+  if (!name) return;
+  const res = await fetch("/api/super-events", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ tenant_id: TENANT_ID, name }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { showToast(data.detail || "No se pudo crear el superevento", "error"); return; }
+  await loadSuperEvents(data.id);
+  showToast("Superevento creado y seleccionado", "success");
+});
+
 document.getElementById("newEventForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const form = ev.target;
   const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
   payload.tenant_id = TENANT_ID;
+  payload.super_event_id = payload.super_event_id ? parseInt(payload.super_event_id, 10) : null;
 
   const coordinatorId = coordinatorsByLabel[payload.coordinator_label];
   if (!coordinatorId) {

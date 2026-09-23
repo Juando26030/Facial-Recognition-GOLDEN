@@ -1,7 +1,7 @@
 import os
 import re
 import json
-from typing import Optional
+from typing import List, Optional
 import zipfile
 import tempfile
 import csv
@@ -20,6 +20,7 @@ from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import digital_badge
+from app.email_check import check_email
 from app.routers import parametros, signatures
 from app.routers.super_events import sibling_attendance
 from app.routers.events import _typo_match, _words
@@ -35,13 +36,33 @@ def _missing_required_fields(field_configs: list, values: dict) -> list:
         if not cfg["required"]:
             continue
         value = values.get(cfg["key"])
-        if cfg["field_type"] in ("boolean", "consent", "certificate"):
+        if cfg["field_type"] == "boolean":
+            # Sí/No/sin elegir (2026-09-23): "obligatorio" = haber respondido, sea Sí o No.
+            ok = str(value).strip().lower() in ("true", "false", "1", "0", "si", "sí", "no")
+        elif cfg["field_type"] in ("consent", "certificate"):
             ok = str(value).strip().lower() in ("true", "1", "si", "sí")
         else:
             ok = value is not None and str(value).strip() != ""
         if not ok:
             missing.append(cfg["label"])
     return missing
+
+
+def _invalid_email_fields(field_configs: list, values: dict) -> list:
+    """Mensajes de los campos de tipo "correo" (Parámetros del Evento) cuyo valor no es un correo real
+    (formato + dominio que recibe correo, ver app/email_check.py). Vacío no se marca acá: eso lo cubre
+    "obligatorio" (`_missing_required_fields`)."""
+    problems = []
+    for cfg in field_configs:
+        if cfg["field_type"] != "email":
+            continue
+        value = str(values.get(cfg["key"]) or "").strip()
+        if not value:
+            continue
+        ok, reason = check_email(value)
+        if not ok:
+            problems.append(f"{cfg['label']}: «{value}» {reason}")
+    return problems
 
 
 def _read_roster_rows(filename: str, content: bytes):
@@ -343,6 +364,14 @@ async def get_all_users(
 
     return result
 
+@router.get("/email-validate")
+async def email_validate(email: str, staff: StaffUser = Depends(require_role("digitador"))):
+    """¿Es un correo real (formato + dominio que recibe correo)? Lo usa el formulario al salir del campo,
+    para avisar ANTES de guardar; el guardado lo vuelve a comprobar del lado del servidor."""
+    ok, reason = check_email(email)
+    return {"valid": ok, "reason": reason}
+
+
 @router.get("/email-check")
 async def email_check(
     event_id: int, email: str, exclude_id: str = "", db: Session = Depends(get_db),
@@ -560,6 +589,9 @@ async def update_user(
         missing = _missing_required_fields(field_configs, final_values)
         if missing:
             raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
+        bad_emails = _invalid_email_fields(field_configs, final_values)
+        if bad_emails:
+            raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
 
         log = AccessLog(
             tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado",
@@ -802,6 +834,9 @@ async def manual_register(
     missing = _missing_required_fields(field_configs, final_values)
     if missing:
         raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
+    bad_emails = _invalid_email_fields(field_configs, final_values)
+    if bad_emails:
+        raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
 
     face_enc_json = None
     img_array = None
@@ -850,6 +885,17 @@ async def manual_register(
         reply["digital"] = _send_digital(db, event, user, request)
     return reply
 
+def _carry_source_events(db: Session, event: Event, source_event_ids: list, staff: StaffUser):
+    """Igual que `_carry_source_event` pero con uno o VARIOS eventos de origen (2026-09-23): une a las
+    personas de todos. Devuelve ({ids}, "Evento A, Evento B")."""
+    ids, names = set(), []
+    for source_id in dict.fromkeys(source_event_ids):  # sin repetir, conservando el orden
+        got, name = _carry_source_event(db, event, source_id, staff)
+        ids |= got
+        names.append(name)
+    return ids, ", ".join(names)
+
+
 def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: StaffUser):
     """Ítem 18: agrega al evento `event` a TODAS las personas de otro evento del MISMO cliente (su
     directorio: EventAttendee ∪ AccessLog), como asistentes esperados — sin AccessLog, o sea "No
@@ -877,7 +923,7 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 @router.post("/bulk_register")
 async def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
-    field_labels: str = Form(None), source_event_id: int = Form(None),
+    field_labels: str = Form(None), source_event_id: List[int] = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
@@ -923,11 +969,11 @@ async def bulk_register(
         raise HTTPException(status_code=400, detail="Sube un archivo de base o elige un evento anterior del que traer a las personas")
     carried_ids = set()
     if not has_excel:
-        carried_ids, source_name = _carry_source_event(db, event, source_event_id, staff)
+        carried_ids, source_name = _carry_source_events(db, event, source_event_id, staff)
         event.roster_uploaded = True
         db.commit()
         return {
-            "message": f"Se agregaron {len(carried_ids)} personas del evento «{source_name}» (quedan como No registrado).",
+            "message": f"Se agregaron {len(carried_ids)} personas de: {source_name} (quedan como No registrado).",
             "count": 0, "carried": len(carried_ids), "errors": [], "optional_labels": event.get_optional_labels(),
         }
 
@@ -977,7 +1023,7 @@ async def bulk_register(
 
     source_name = ""
     if source_event_id:
-        carried_ids, source_name = _carry_source_event(db, event, source_event_id, staff)
+        carried_ids, source_name = _carry_source_events(db, event, source_event_id, staff)
 
     known_faces_dir = _known_faces_dir(event.tenant_id)
     # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
@@ -1152,7 +1198,7 @@ async def bulk_register(
     db.commit()
     message = f"Carga completa: {count} perfiles cargados."
     if carried_ids:
-        message += f" Además, {len(carried_ids)} personas traídas del evento «{source_name}»."
+        message += f" Además, {len(carried_ids)} personas traídas de: {source_name}."
     if errors:
         message += f" {len(errors)} observación(es) — revisa el detalle."
     return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels()}

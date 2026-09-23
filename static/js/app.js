@@ -213,6 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (slot) slot.innerHTML = window.FieldRender.renderControl(cfg, '');
         });
         window.FieldRender.initSignatures(regForm);
+        window.FieldRender.watchEmailDeliverable(regForm);
         window.FieldRender.watchEmail(regForm, () => regForm.querySelector('[name="id"]').value.trim());
         // Superevento (ítem 19): al terminar de escribir la cédula, avisa si la persona ya asistió a un
         // evento hermano y ofrece SOLO vincularla (sus datos ya están guardados) en vez de capturarlos de nuevo.

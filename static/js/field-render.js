@@ -36,6 +36,11 @@
       // servidor lo valida y, al guardar, envía el enlace.
       return `<input type="email" name="${key}" value="${esc(val)}" ${requiredAttr} autocomplete="off" placeholder="nombre@empresa.com" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">`;
     }
+    if (config.field_type === 'email') {
+      // Correo verificado (2026-09-23): al salir del campo se comprueba que el correo sea real (ver
+      // watchEmailDeliverable); el servidor lo vuelve a comprobar al guardar.
+      return `<input type="email" name="${key}" value="${esc(val)}" ${requiredAttr} data-email-verify="1" autocomplete="off" placeholder="nombre@empresa.com" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">`;
+    }
     if (config.field_type === 'certificate') {
       // Certificado Sí/No (ítem 5): default No; con Sí la persona sale en el ZIP de certificados.
       const checked = String(val).trim().toLowerCase() === 'true' ? 'checked' : '';
@@ -63,8 +68,15 @@
       </div>`;
     }
     if (config.field_type === 'boolean') {
-      const checked = String(val).trim().toLowerCase() === 'true' ? 'checked' : '';
-      return `<input type="checkbox" name="${key}" value="true" ${checked} ${requiredAttr} style="width:18px; height:18px;">`;
+      // Tres estados (2026-09-23): Sí ("true"), No ("false") o sin elegir ("") — antes era una casilla
+      // y "no marcar" no distinguía entre "dijo que no" y "no respondió".
+      const v = String(val).trim().toLowerCase();
+      const sel = (x) => (v === x ? 'selected' : '');
+      return `<select name="${key}" ${requiredAttr} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+        <option value="" ${v !== 'true' && v !== 'false' ? 'selected' : ''}>— Sin elegir —</option>
+        <option value="true" ${sel('true')}>Sí</option>
+        <option value="false" ${sel('false')}>No</option>
+      </select>`;
     }
     // text_short (default)
     return `<input type="text" name="${key}" value="${esc(val)}" ${requiredAttr} style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">`;
@@ -156,5 +168,35 @@
     input.addEventListener('blur', () => { clearTimeout(timer); check(); });
   }
 
-  window.FieldRender = { renderControl, initSignatures, saveSignatures, watchEmail };
+  /* Campos de tipo "correo" (data-email-verify): al salir del campo pregunta al servidor si el correo es
+     real (formato + dominio que recibe correo). Si no lo es, muestra el motivo en rojo y bloquea el envío
+     del formulario (setCustomValidity); si la consulta falla, no molesta (el servidor decide al guardar). */
+  function watchEmailDeliverable(root) {
+    root.querySelectorAll('input[data-email-verify]').forEach((input) => {
+      if (input.dataset.emailWatch) return;
+      input.dataset.emailWatch = '1';
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:0.75rem; color:#c0392b; margin-top:4px; display:none;';
+      input.insertAdjacentElement('afterend', note);
+      let seq = 0;
+      async function check() {
+        const value = input.value.trim();
+        const mine = ++seq;
+        input.setCustomValidity('');
+        note.style.display = 'none';
+        if (!value) return;
+        try {
+          const data = await (await fetch('/api/email-validate?' + new URLSearchParams({ email: value }))).json();
+          if (mine !== seq || data.valid !== false) return;
+          note.textContent = '❌ Este correo no es válido: ' + data.reason + '.';
+          note.style.display = 'block';
+          input.setCustomValidity('Correo no válido: ' + data.reason);
+        } catch (e) { /* si la consulta falla, el servidor valida al guardar */ }
+      }
+      input.addEventListener('blur', check);
+      input.addEventListener('input', () => { input.setCustomValidity(''); note.style.display = 'none'; });
+    });
+  }
+
+  window.FieldRender = { renderControl, initSignatures, saveSignatures, watchEmail, watchEmailDeliverable };
 })();

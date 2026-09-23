@@ -138,7 +138,10 @@ class ReportManager:
             for key, label in optional_columns:
                 if key in signature_keys:
                     out[label] = "Firmado" if _signature_file(row["id"], key) else ""
-                elif field_types.get(key) in ("boolean", "consent"):
+                elif field_types.get(key) == "boolean":
+                    raw = str(row["extras"].get(key, "")).strip().lower()
+                    out[label] = "Sí" if raw == "true" else "No" if raw == "false" else ""  # sin elegir = vacío
+                elif field_types.get(key) == "consent":
                     out[label] = "Sí" if str(row["extras"].get(key, "")).strip().lower() == "true" else "No"
                 else:
                     out[label] = row["extras"].get(key, "")

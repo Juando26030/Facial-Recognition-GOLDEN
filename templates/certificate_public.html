@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Descarga tu certificado</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <style>
+        html, body { margin:0; min-height:100%; background:#f4f5f9; color:#0a0e2e; font-family:'Inter', system-ui, sans-serif; }
+        body { display:flex; flex-direction:column; align-items:center; padding:24px 14px 40px; }
+        .brand { font-size:0.75rem; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#b8941f; margin-bottom:6px; text-align:center; }
+        h1 { font-size:1.35rem; margin:0 0 4px; text-align:center; }
+        .sub { font-size:0.9rem; color:#666; margin-bottom:20px; text-align:center; }
+        .card { background:#fff; border-radius:16px; box-shadow:0 8px 30px rgba(0,0,0,0.08); padding:22px 20px; width:100%; max-width:440px; box-sizing:border-box; }
+        label { display:block; font-size:0.78rem; font-weight:700; color:#777; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px; }
+        input[type=text] { width:100%; box-sizing:border-box; padding:12px 14px; border:1px solid #ccc; border-radius:10px; font-size:1.05rem; }
+        button.primary { width:100%; margin-top:14px; padding:13px; border:none; border-radius:24px; background:#D4AF37; color:#1a1200; font-weight:700; font-size:1rem; cursor:pointer; }
+        button.primary:disabled { opacity:0.6; cursor:default; }
+        button.secondary { margin-top:10px; background:none; border:none; color:#666; text-decoration:underline; cursor:pointer; font-size:0.85rem; }
+        .msg { margin-top:12px; font-size:0.88rem; padding:10px 12px; border-radius:10px; display:none; }
+        .msg.error { background:#fbe9ea; color:#a12631; display:block; }
+        .msg.info { background:#e7f1ff; color:#084298; display:block; }
+        .who { text-align:center; margin-bottom:6px; }
+        .who .name { font-size:1.25rem; font-weight:700; }
+        .who .entity { font-size:0.9rem; color:#666; }
+        .ask { text-align:center; font-size:0.9rem; color:#444; margin:12px 0 4px; }
+        #preview { margin:14px auto 0; display:none; }
+        .frame { border:1px solid #ddd; border-radius:8px; overflow:hidden; margin:0 auto; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.08); }
+        #host { transform-origin:top left; }
+    </style>
+</head>
+<body>
+<div class="brand">Golden Eventos y Logística</div>
+<h1>{{ event_name }}</h1>
+<div class="sub">Descarga tu certificado</div>
+
+{% if not finalized %}
+<div class="card"><div class="msg info">Los certificados estarán disponibles cuando el evento haya finalizado. Vuelve a abrir este enlace más tarde.</div></div>
+{% else %}
+<div class="card" id="searchCard">
+    <form id="lookupForm">
+        <label for="cedula">Tu número de cédula (sin puntos)</label>
+        <input type="text" id="cedula" inputmode="text" autocomplete="off" required placeholder="Ej. 1016100329">
+        <button type="submit" class="primary" id="lookupBtn">Buscar mi certificado</button>
+    </form>
+    <div id="lookupMsg" class="msg"></div>
+</div>
+
+<div class="card" id="resultCard" style="display:none; margin-top:16px;">
+    <div class="who"><div class="name" id="whoName"></div><div class="entity" id="whoEntity"></div></div>
+    <div class="ask">¿Eres tú? Revisa que los datos sean correctos y descarga tu certificado.</div>
+    <div id="preview"><div class="frame" id="frame"><div id="host"></div></div></div>
+    <button type="button" class="primary" id="downloadBtn">Descargar mi certificado (PDF)</button>
+    <button type="button" class="secondary" id="notMeBtn">No soy yo / buscar otra cédula</button>
+    <div id="downloadMsg" class="msg"></div>
+</div>
+<div id="renderStage" style="position:fixed; left:-20000px; top:0; background:#fff;"></div>
+{% endif %}
+
+<script>
+const TOKEN = "{{ token }}";
+const base = `/c/${TOKEN}`;
+const $ = (id) => document.getElementById(id);
+const assetUrl = (p) => `${base}/asset/${p}`;   // storage_path = "<cliente>/<archivo>"
+const safe = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '');
+let current = null;
+
+function showMsg(el, text, kind) { el.textContent = text; el.className = 'msg ' + kind; }
+function clearMsg(el) { el.textContent = ''; el.className = 'msg'; }
+
+const form = $('lookupForm');
+if (form) {
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = $('cedula').value.trim();
+        if (!id) return;
+        const btn = $('lookupBtn');
+        btn.disabled = true; btn.textContent = 'Buscando...';
+        clearMsg($('lookupMsg')); $('resultCard').style.display = 'none';
+        try {
+            const res = await fetch(`${base}/lookup?id=${encodeURIComponent(id)}`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { showMsg($('lookupMsg'), data.detail || 'No se pudo buscar', 'error'); }
+            else { current = data; showResult(data); }
+        } catch (err) { showMsg($('lookupMsg'), 'No hay conexión. Intenta de nuevo.', 'error'); }
+        btn.disabled = false; btn.textContent = 'Buscar mi certificado';
+    });
+    $('notMeBtn').addEventListener('click', () => {
+        current = null; $('resultCard').style.display = 'none'; $('cedula').value = ''; $('cedula').focus();
+    });
+    $('downloadBtn').addEventListener('click', download);
+}
+
+async function showResult(data) {
+    $('whoName').textContent = data.display.name;
+    $('whoEntity').textContent = data.display.entity;
+    $('resultCard').style.display = 'block';
+    clearMsg($('downloadMsg'));
+    // Vista previa reducida al ancho del celular.
+    const host = $('host');
+    BadgeRender.renderBadge(host, data.template, data.person, { assetUrl });
+    $('preview').style.display = 'block';
+    host.style.transform = 'none';
+    const naturalW = host.offsetWidth, naturalH = host.offsetHeight;
+    const scale = Math.min(1, (Math.min(window.innerWidth, 440) - 76) / naturalW);
+    host.style.transform = `scale(${scale})`;
+    $('frame').style.width = `${naturalW * scale}px`; $('frame').style.height = `${naturalH * scale}px`;
+}
+
+async function download() {
+    if (!current) return;
+    const btn = $('downloadBtn');
+    btn.disabled = true; btn.textContent = 'Generando PDF...';
+    try {
+        const stage = $('renderStage');
+        const { template, person } = current;
+        BadgeRender.renderBadge(stage, template, person, { assetUrl });
+        await document.fonts.ready;
+        await Promise.all(Array.from(stage.querySelectorAll('img')).map(img => img.decode ? img.decode().catch(() => {}) : null));
+        const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+        const { jsPDF } = window.jspdf;
+        const w = template.width_mm, h = template.height_mm;
+        const pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'mm', format: [w, h] });
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, w, h);
+        pdf.save(`Certificado_${safe(person.id)}_${safe(person.first_name)}_${safe(person.last_name)}.pdf`);
+        stage.innerHTML = '';
+        showMsg($('downloadMsg'), 'Listo, tu certificado se descargó.', 'info');
+    } catch (err) {
+        showMsg($('downloadMsg'), 'No se pudo generar el PDF. Intenta de nuevo.', 'error');
+    }
+    btn.disabled = false; btn.textContent = 'Descargar mi certificado (PDF)';
+}
+</script>
+</body>
+</html>
