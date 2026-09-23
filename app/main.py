@@ -12,7 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, digital_public, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, digital_public, roulette, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -122,6 +122,8 @@ app.include_router(event_report.router, prefix="/api")
 app.include_router(event_docs.router, prefix="/api")
 app.include_router(super_events.router, prefix="/api")
 app.include_router(areas_inventory.router, prefix="/api")
+app.include_router(roulette.router, prefix="/api")
+app.include_router(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
 app.include_router(certificates_public.router)  # /c/<token>, público (sin login) a propósito
 app.include_router(certificates_public.staff_router, prefix="/api")
 app.include_router(digital_public.router)  # /b/<token>, público (sin login) a propósito
@@ -435,6 +437,18 @@ async def kiosk_parametros(event_id: int, request: Request, db: Session = Depend
 async def kiosk_documents(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Documentos del Evento (reunión 2026-09-21, ítem 8) — coordinador+ (comercial incluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_documentos.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/ruleta")
+async def kiosk_roulette(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Ruleta — configuración de comportamiento y ejecución (Sprint 5) — coordinador+."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_ruleta.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/ruleta/visual")
+async def kiosk_roulette_visual(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """Ruleta — configuración visual (fuente, colores, imagen, fondo) — coordinador+."""
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_ruleta_visual.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/legalizaciones")

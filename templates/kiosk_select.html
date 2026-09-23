@@ -105,6 +105,13 @@
         <div class="mode-sub">Diseña la escarapela de este evento e imprímela al registrar</div>
       </a>
       {% endif %}
+      {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
+      <a href="/kiosk/{{ event.id }}/ruleta" class="mode-card enabled">
+        <div class="mode-icon">🎡</div>
+        <div class="mode-title">Ruleta</div>
+        <div class="mode-sub">Sorteos entre los asistentes: elige cómo se escoge al ganador y cómo se ve en pantalla</div>
+      </a>
+      {% endif %}
       <a href="/kiosk/{{ event.id }}/estadisticas" class="mode-card enabled">
         <div class="mode-icon">📊</div>
         <div class="mode-title">Estadísticas</div>

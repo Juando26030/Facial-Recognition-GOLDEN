@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ruleta — Apariencia | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/roulette-render.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
+        .tabs-r { display:flex; gap:8px; margin-bottom:1.2rem; flex-wrap:wrap; }
+        .tabs-r a { padding:8px 20px; border-radius:20px; border:1px solid #ddd; background:white; text-decoration:none; color:inherit; font-size:0.85rem; font-weight:600; }
+        .tabs-r a.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
+        .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:0.9rem; align-items:end; }
+        .grid label { display:block; font-size:0.75rem; color:#777; margin-bottom:3px; }
+        .grid input[type=text], .grid input[type=number], .grid select { width:100%; box-sizing:border-box; padding:0.55rem 0.7rem; border:1px solid #ddd; border-radius:10px; font-size:0.88rem; }
+        .grid input[type=color] { width:100%; height:40px; padding:2px; border:1px solid #ddd; border-radius:10px; cursor:pointer; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
+        .palette { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+        .palette span { position:relative; } .palette input { width:46px; height:40px; padding:0; border:1px solid #ddd; border-radius:8px; cursor:pointer; }
+        .palette button { position:absolute; top:-8px; right:-8px; width:18px; height:18px; border-radius:50%; border:none; background:#dc3545; color:white; font-size:11px; cursor:pointer; line-height:1; }
+        #preview { border-radius:20px; padding:20px; text-align:center; min-height:520px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+        #preview canvas { width:min(440px, 100%); height:auto; }
+        .split { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:1.2rem; align-items:start; } @media (max-width: 1000px) { .split { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
+<main class="golden-main">
+  <section class="golden-section"><div class="golden-container">
+    <div class="golden-section-title"><span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span><h2>Apariencia de la <span class="gradient-text">Ruleta</span></h2></div>
+    <div class="app-container">
+      <div class="tabs-r"><a href="/kiosk/{{ event.id }}/ruleta">1. Comportamiento y sorteo</a><a class="active" href="/kiosk/{{ event.id }}/ruleta/visual">2. Apariencia (visual)</a></div>
+      <p style="font-size:0.85rem; color:#777;">Esto solo cambia cómo se VE la pantalla del sorteo; es independiente de cómo se elige al ganador.</p>
+      <div class="split">
+        <div class="card">
+          <div class="grid">
+            <div><label>Título en pantalla</label><input type="text" id="title" maxlength="80"></div>
+            <div><label>Fuente del título</label><select id="title_font"></select></div>
+            <div><label>Color del título</label><input type="color" id="title_color"></div>
+            <div><label>Fuente de los nombres</label><select id="font_family"></select></div>
+            <div><label>Color del texto</label><input type="color" id="text_color"></div>
+            <div><label>Color del fondo</label><input type="color" id="background_color"></div>
+            <div><label>Color del puntero y borde</label><input type="color" id="pointer_color"></div>
+            <div><label>Fondo de la tarjeta del ganador</label><input type="color" id="winner_bg"></div>
+            <div><label>Texto de la tarjeta del ganador</label><input type="color" id="winner_color"></div>
+            <div><label>Duración del giro (segundos)</label><input type="number" id="spin_seconds" min="2" max="20"></div>
+          </div>
+          <h4 style="margin:1.2rem 0 0.4rem; color:var(--golden-dark); font-size:0.9rem;">Colores de los segmentos de la ruleta</h4>
+          <div class="palette" id="palette"></div>
+          <button type="button" class="small-btn" id="addColor" style="margin-top:0.6rem;">+ Agregar color</button>
+          <h4 style="margin:1.2rem 0 0.4rem; color:var(--golden-dark); font-size:0.9rem;">Imágenes</h4>
+          <div class="grid">
+            <div><label>Imagen de fondo</label><input type="file" id="bgFile" accept="image/*"><button type="button" class="small-btn" id="bgClear" style="margin-top:4px;">Quitar imagen</button></div>
+            <div><label>Logo (arriba del título)</label><input type="file" id="logoFile" accept="image/*"><button type="button" class="small-btn" id="logoClear" style="margin-top:4px;">Quitar logo</button></div>
+          </div>
+          <div style="margin-top:1.2rem; display:flex; gap:8px; flex-wrap:wrap;"><button type="button" class="small-btn primary" id="saveBtn">Guardar apariencia</button><button type="button" class="small-btn" id="spinBtn">▶ Probar animación</button></div>
+        </div>
+        <div><div id="preview"><h1 id="pTitle" style="margin:0 0 8px; font-weight:400; font-size:2.4rem;"></h1><img id="pLogo" alt="" style="max-height:70px; margin-bottom:6px; display:none;"><canvas id="pWheel" width="700" height="700"></canvas><div id="pResult" style="margin-top:12px; min-height:90px;"></div></div></div>
+      </div>
+    </div>
+  </div></section>
+</main>
+<script>
+const EV = window.EVENT_ID, api = `/api/events/${EV}/roulette`;
+const $ = (id) => document.getElementById(id);
+const SAMPLE = ['Ana Pérez', 'Luis Gómez', 'Marta Ruiz', 'Juan Mora', 'Sofía Díaz', 'Pedro Cruz', 'Laura Vega', 'Diego Rey', 'Carla Sosa', 'Iván León', 'Elena Paz', 'Tomás Gil'];
+let style = null, wheel = null, busy = false;
+const staffAsset = (p) => `/api/badge-assets/${p}`;
+async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
+
+function paintPreview() {
+  $('fontsLink').href = RouletteRender.fontsUrl([style.font_family, style.title_font]);
+  RouletteRender.applyBackground($('preview'), style, staffAsset);
+  $('pTitle').textContent = style.title; $('pTitle').style.fontFamily = `'${style.title_font}', sans-serif`; $('pTitle').style.color = style.title_color;
+  $('pLogo').style.display = style.logo ? 'inline' : 'none'; if (style.logo) $('pLogo').src = staffAsset(style.logo);
+  wheel = RouletteRender.wheel($('pWheel'), style);
+  wheel.draw(SAMPLE, 0);
+}
+function bindColor(id) { $(id).value = style[id]; $(id).addEventListener('input', () => { style[id] = $(id).value; paintPreview(); }); }
+function renderPalette() {
+  $('palette').innerHTML = style.colors.map((c, i) => `<span><input type="color" value="${c}" data-i="${i}">${style.colors.length > 2 ? `<button type="button" data-rm="${i}">×</button>` : ''}</span>`).join('');
+  $('palette').querySelectorAll('input').forEach((el) => el.addEventListener('input', () => { style.colors[+el.dataset.i] = el.value; paintPreview(); }));
+  $('palette').querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => { style.colors.splice(+b.dataset.rm, 1); renderPalette(); paintPreview(); }));
+}
+async function upload(input, key) {
+  const f = input.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  try { const d = await j(`${api}/upload-image`, { method: 'POST', body: fd }); style[key] = d.storage_path; paintPreview(); showToast('Imagen cargada — guarda la apariencia para conservarla', 'success'); }
+  catch (e) { showToast(e.message, 'error'); }
+}
+
+(async function init() {
+  const cfg = await j(api);
+  style = cfg.style;
+  const fill = (id) => { $(id).innerHTML = cfg.fonts.map((f) => `<option ${style[id] === f ? 'selected' : ''}>${f}</option>`).join(''); $(id).addEventListener('change', () => { style[id] = $(id).value; paintPreview(); }); };
+  fill('title_font'); fill('font_family');
+  $('title').value = style.title; $('title').addEventListener('input', () => { style.title = $('title').value; paintPreview(); });
+  ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach(bindColor);
+  $('spin_seconds').value = style.spin_seconds; $('spin_seconds').addEventListener('input', () => { style.spin_seconds = +$('spin_seconds').value || 6; });
+  $('fontsLink').href = RouletteRender.fontsUrl(cfg.fonts);   // carga todas para que el selector se vea bien
+  renderPalette(); paintPreview();
+  $('addColor').addEventListener('click', () => { if (style.colors.length >= 12) return; style.colors.push('#888888'); renderPalette(); paintPreview(); });
+  $('bgFile').addEventListener('change', () => upload($('bgFile'), 'background_image')); $('logoFile').addEventListener('change', () => upload($('logoFile'), 'logo'));
+  $('bgClear').addEventListener('click', () => { style.background_image = ''; $('bgFile').value = ''; paintPreview(); });
+  $('logoClear').addEventListener('click', () => { style.logo = ''; $('logoFile').value = ''; paintPreview(); });
+  $('saveBtn').addEventListener('click', async () => { try { style = await j(`${api}/style`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(style) }); showToast('Apariencia guardada — la pantalla del sorteo la toma sola', 'success'); } catch (e) { showToast(e.message, 'error'); } });
+  $('spinBtn').addEventListener('click', async () => {
+    if (busy) return; busy = true; $('pResult').innerHTML = '';
+    const seg = RouletteRender.buildSegments(SAMPLE, 'Ana Pérez', 12);
+    await wheel.spinTo(seg.names, seg.winnerIndex, style.spin_seconds);
+    RouletteRender.reveal($('pResult'), { position: 1, name: 'Ana Pérez', entity: 'Ejemplo S.A.S.' }, style); busy = false;
+  });
+})();
+</script>
+</body>
+</html>

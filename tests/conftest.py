@@ -63,6 +63,14 @@ def _database():
     yield
 
 
+def _wipe_test_files():
+    """Las pruebas escriben archivos (fotos, logos...) en data/<cliente>/ con clientes de mentira; se borran para que
+    un archivo que quedó de una prueba no contamine la siguiente (bug real: una foto vieja rompía la carga masiva)."""
+    import shutil
+    for tenant in ("acme", "otro"):
+        shutil.rmtree(os.path.join("data", tenant), ignore_errors=True)
+
+
 @pytest.fixture(autouse=True)
 def _clean_tables(_database):
     """Vacía todas las tablas de datos antes de cada prueba (no toca alembic_version)."""
@@ -70,10 +78,16 @@ def _clean_tables(_database):
     from app.database import engine
     from app.models import Base
 
+    import threading
+    for t in threading.enumerate():          # una carga en segundo plano de la prueba anterior no puede seguir tocando la base
+        if t.name.startswith("bulk-"):
+            t.join(timeout=60)
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+    _wipe_test_files()
     yield
+    _wipe_test_files()
 
 
 @pytest.fixture()

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ruleta | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
+        .tabs-r { display:flex; gap:8px; margin-bottom:1.2rem; flex-wrap:wrap; }
+        .tabs-r a { padding:8px 20px; border-radius:20px; border:1px solid #ddd; background:white; text-decoration:none; color:inherit; font-size:0.85rem; font-weight:600; }
+        .tabs-r a.active { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); }
+        .modes { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:0.7rem; }
+        .mode { border:2px solid #e5e5e5; border-radius:14px; padding:0.8rem 1rem; cursor:pointer; background:#fff; }
+        .mode.sel { border-color:var(--golden-primary); background:#fffbee; }
+        .mode b { display:block; font-size:0.9rem; } .mode span { font-size:0.76rem; color:#777; }
+        .row { display:flex; gap:0.8rem; flex-wrap:wrap; align-items:flex-end; margin-top:0.8rem; }
+        .row label { display:block; font-size:0.75rem; color:#777; margin-bottom:3px; }
+        .row input, .row select { padding:0.55rem 0.7rem; border:1px solid #ddd; border-radius:10px; font-size:0.88rem; }
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
+        .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
+        .list { max-height:230px; overflow:auto; border:1px solid #eee; border-radius:12px; }
+        .list div { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid #f3f3f3; font-size:0.83rem; }
+        .picked div { background:#fffbee; }
+        .hint { font-size:0.78rem; color:#888; margin:0.4rem 0; }
+        .big-run { width:100%; padding:1rem; border:none; border-radius:16px; font-size:1.15rem; font-weight:800; cursor:pointer; background:var(--golden-primary); color:var(--golden-dark); }
+        .big-run:disabled { opacity:.5; cursor:default; }
+        table.hist { width:100%; border-collapse:collapse; font-size:0.82rem; } table.hist th, table.hist td { text-align:left; padding:7px 8px; border-bottom:1px solid #f0f0f0; }
+        .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.7rem; background:#eee; } .badge.rand { background:#d1e7dd; color:#0a3622; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_kiosk_top.html" %}
+<script>window.EVENT_ID = {{ event.id }};</script>
+<main class="golden-main">
+  <section class="golden-section"><div class="golden-container">
+    <div class="golden-section-title"><span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span><h2><span class="gradient-text">Ruleta</span> del Evento</h2></div>
+    <div class="app-container">
+      <div class="tabs-r"><a class="active" href="/kiosk/{{ event.id }}/ruleta">1. Comportamiento y sorteo</a><a href="/kiosk/{{ event.id }}/ruleta/visual">2. Apariencia (visual)</a></div>
+
+      <div class="card" id="displayCard"></div>
+
+      <div class="card">
+        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">¿Cómo se elige al ganador? <span style="font-weight:400; font-size:0.8rem; color:#888;">(candidatos: la base ya cargada del evento — <b id="totalCandidates">…</b> personas)</span></h4>
+        <div class="modes" id="modes"></div>
+
+        <div id="pickerBox" style="display:none;">
+          <div class="row"><div style="flex:1 1 320px;"><label id="pickerLabel">Elige a los ganadores</label><input type="text" id="pickerSearch" placeholder="Busca por nombre, apellido o cédula…" style="width:100%; box-sizing:border-box;"></div></div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-top:0.6rem;">
+            <div><div class="hint">Candidatos (clic para agregar)</div><div class="list" id="candList"></div></div>
+            <div><div class="hint" id="pickedHint">Elegidos</div><div class="list picked" id="pickedList"></div></div>
+          </div>
+        </div>
+
+        <div id="filterBox" style="display:none;">
+          <div class="hint" style="margin-top:1rem;"><b>Filtro:</b> todas las condiciones deben cumplirse. <span id="filterHint"></span></div>
+          <div id="conds"></div>
+          <div class="row"><button type="button" class="small-btn" id="addCond">+ Agregar condición</button><button type="button" class="small-btn" id="testFilter">Ver cuántas personas cumplen</button><span id="filterCount" class="hint"></span></div>
+        </div>
+
+        <div class="row" id="numbersRow">
+          <div id="countBox" style="display:none;"><label>¿Cuántos ganadores sortear?</label><input type="number" id="count" min="1" max="500" value="1" style="width:110px;"></div>
+          <div id="batchBox" style="display:none;"><label>Personas por ejecución</label><input type="number" id="batch" min="1" max="500" value="1" style="width:110px;"></div>
+          <div id="excludeBox" style="display:none;"><label style="display:flex; gap:6px; align-items:center; margin-top:18px;"><input type="checkbox" id="exclude" checked> No repetir a quienes ya ganaron antes en este evento</label></div>
+        </div>
+        <div id="roundBox" class="row" style="display:none;"><span class="hint" id="roundText"></span><button type="button" class="small-btn" id="resetRound">Reiniciar ronda</button></div>
+        <div class="row"><button type="button" class="small-btn primary" id="saveBtn">Guardar configuración</button><span class="hint" id="saveState"></span></div>
+      </div>
+
+      <div class="card">
+        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Ejecutar</h4>
+        <div class="row" style="margin-top:0;"><div style="flex:1 1 300px;"><label>Nombre del sorteo (opcional — queda en el registro, ej. «Sorteo iPhone»)</label><input type="text" id="label" maxlength="120" style="width:100%; box-sizing:border-box;"></div></div>
+        <p class="hint" id="runHint"></p>
+        <button type="button" class="big-run" id="runBtn">🎡 Ejecutar sorteo</button>
+        <div id="resultBox" style="margin-top:1rem;"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+          <h4 style="margin:0; color:var(--golden-dark);">Registro de sorteos</h4>
+          <a class="small-btn" href="/api/events/{{ event.id }}/roulette/report">⬇️ Descargar reporte (Excel)</a>
+        </div>
+        <div style="overflow-x:auto; margin-top:0.6rem;"><table class="hist"><thead><tr><th>Fecha y hora</th><th>Sorteo</th><th>Modo</th><th>Ganadores</th><th>Ejecutó</th></tr></thead><tbody id="histBody"></tbody></table></div>
+      </div>
+    </div>
+  </div></section>
+</main>
+
+<script>
+const EV = window.EVENT_ID, api = `/api/events/${EV}/roulette`;
+const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const MODES = {
+  single_fixed: ['1 · Un ganador', 'Tú eliges de antemano quién gana.'],
+  ordered: ['2 · Varios, en orden fijo', 'Eliges a los ganadores en el orden exacto en que deben salir (1º, 2º, 3º…).'],
+  shuffled: ['3 · Varios, orden aleatorio', 'Los mismos ganadores que eliges, pero el sistema mezcla el orden en cada ejecución.'],
+  all: ['4 · Todos los asistentes', 'Recorre a todos: cada ejecución saca a alguien (o a un lote) al azar, sin repetir, hasta agotarlos.'],
+  filter_manual: ['5a · Filtro + elijo yo', 'El filtro solo acota la lista de candidatos; tú sigues eligiendo al ganador a mano.'],
+  filter_random: ['5b · Filtro + sorteo real', 'El sistema elige AL AZAR entre quienes cumplen el filtro; nadie puede predecir el resultado.'],
+};
+const NEEDS_PICKER = ['single_fixed', 'ordered', 'shuffled', 'filter_manual'];
+let state = { mode: 'single_fixed', winners: [], count: 1, batch_size: 1, filter: { conditions: [] }, exclude_previous_winners: true };
+let fields = [], people = [], nameOf = {}, dirty = false;
+
+async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
+function markDirty(v) { dirty = v; $('saveState').textContent = v ? 'Hay cambios sin guardar' : ''; $('runBtn').disabled = v; }
+
+function renderModes() {
+  $('modes').innerHTML = Object.entries(MODES).map(([k, [t, d]]) => `<div class="mode ${state.mode === k ? 'sel' : ''}" data-mode="${k}"><b>${t}</b><span>${d}</span></div>`).join('');
+  $('modes').querySelectorAll('.mode').forEach((el) => el.addEventListener('click', async () => { state.mode = el.dataset.mode; if (state.mode === 'single_fixed') state.winners = state.winners.slice(0, 1); markDirty(true); await refreshPeople(); render(); }));
+}
+function render() {
+  const m = state.mode;
+  renderModes();
+  $('pickerBox').style.display = NEEDS_PICKER.includes(m) ? 'block' : 'none';
+  $('filterBox').style.display = (m === 'filter_manual' || m === 'filter_random') ? 'block' : 'none';
+  $('countBox').style.display = m === 'filter_random' ? 'block' : 'none';
+  $('batchBox').style.display = m === 'all' ? 'block' : 'none';
+  $('excludeBox').style.display = m === 'filter_random' ? 'block' : 'none';
+  $('roundBox').style.display = m === 'all' ? 'flex' : 'none';
+  $('count').value = state.count; $('batch').value = state.batch_size; $('exclude').checked = state.exclude_previous_winners;
+  $('pickerLabel').textContent = { single_fixed: 'Elige al ganador', ordered: 'Elige a los ganadores, en el orden en que deben salir', shuffled: 'Elige a los ganadores (el orden lo mezcla el sistema)', filter_manual: 'Elige al ganador entre quienes cumplen el filtro' }[m] || '';
+  $('pickedHint').textContent = m === 'ordered' ? 'Elegidos, en orden (usa ↑ ↓)' : 'Elegidos';
+  $('filterHint').textContent = m === 'filter_random' ? 'El sistema sorteará entre quienes cumplan TODAS las condiciones.' : 'Solo se listarán como candidatos quienes cumplan TODAS las condiciones.';
+  renderCands(); renderPicked(); renderConds();
+  $('runBtn').textContent = m === 'filter_random' ? '🎲 Sortear entre los que cumplen el filtro' : m === 'all' ? '🎡 Sacar al siguiente' : '🎡 Ejecutar sorteo (ganador elegido)';
+  $('runHint').textContent = m === 'filter_random' || m === 'all' ? 'El resultado lo decide el sistema al azar al pulsar: nadie lo conoce antes.' : 'La ruleta girará y revelará al ganador que dejaste elegido.';
+}
+function renderCands() {
+  const q = $('pickerSearch').value.trim().toLowerCase();
+  const list = people.filter((p) => !state.winners.includes(p.id) && (!q || (p.name + ' ' + p.id).toLowerCase().includes(q))).slice(0, 80);
+  $('candList').innerHTML = list.map((p) => `<div data-id="${esc(p.id)}" style="cursor:pointer;"><span>${esc(p.name)} <small style="color:#999;">· ${esc(p.id)}${p.entity ? ' · ' + esc(p.entity) : ''}</small></span><b>＋</b></div>`).join('') || '<div style="color:#999;">Sin candidatos</div>';
+  $('candList').querySelectorAll('[data-id]').forEach((el) => el.addEventListener('click', () => {
+    if (state.mode === 'single_fixed') state.winners = [el.dataset.id]; else state.winners.push(el.dataset.id);
+    markDirty(true); renderCands(); renderPicked();
+  }));
+}
+function renderPicked() {
+  $('pickedList').innerHTML = state.winners.map((id, i) => `<div><span>${state.mode === 'ordered' ? (i + 1) + '. ' : ''}${esc(nameOf[id] || id)} <small style="color:#999;">· ${esc(id)}</small></span>
+    <span>${state.mode === 'ordered' ? `<button class="small-btn" data-up="${i}">↑</button> <button class="small-btn" data-down="${i}">↓</button> ` : ''}<button class="small-btn" data-rm="${i}">✕</button></span></div>`).join('') || '<div style="color:#999;">Nadie elegido todavía</div>';
+  const move = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= state.winners.length) return; [state.winners[i], state.winners[j2]] = [state.winners[j2], state.winners[i]]; markDirty(true); renderPicked(); };
+  $('pickedList').querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', () => move(+b.dataset.up, -1)));
+  $('pickedList').querySelectorAll('[data-down]').forEach((b) => b.addEventListener('click', () => move(+b.dataset.down, 1)));
+  $('pickedList').querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => { state.winners.splice(+b.dataset.rm, 1); markDirty(true); renderCands(); renderPicked(); }));
+}
+function renderConds() {
+  $('conds').innerHTML = state.filter.conditions.map((c, i) => {
+    const f = fields.find((x) => x.key === c.field) || fields[0];
+    const opts = fields.map((x) => `<option value="${esc(x.key)}" ${x.key === c.field ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+    let valueInput;
+    if (f.type === 'choice') valueInput = `<select data-v="${i}">${f.choices.map(([v, l]) => `<option value="${esc(v)}" ${c.value === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+    else if (f.type === 'datetime') valueInput = `<input type="datetime-local" data-v="${i}" value="${esc(c.value || '')}">`;
+    else valueInput = `<select data-op="${i}" style="margin-right:4px;"><option value="equals" ${c.op !== 'contains' ? 'selected' : ''}>es igual a</option><option value="contains" ${c.op === 'contains' ? 'selected' : ''}>contiene</option></select><input type="text" data-v="${i}" value="${esc(c.value || '')}">`;
+    return `<div class="row"><div><label>Campo</label><select data-f="${i}">${opts}</select></div><div><label>Valor</label>${valueInput}</div><button class="small-btn" data-del="${i}">Quitar</button></div>`;
+  }).join('');
+  const ch = () => { markDirty(true); };
+  $('conds').querySelectorAll('[data-f]').forEach((el) => el.addEventListener('change', () => { const c = state.filter.conditions[+el.dataset.f]; c.field = el.value; c.op = 'equals'; const f = fields.find((x) => x.key === c.field); c.value = f.type === 'choice' ? f.choices[0][0] : ''; ch(); renderConds(); }));
+  $('conds').querySelectorAll('[data-v]').forEach((el) => el.addEventListener('input', () => { state.filter.conditions[+el.dataset.v].value = el.value; ch(); }));
+  $('conds').querySelectorAll('[data-op]').forEach((el) => el.addEventListener('change', () => { state.filter.conditions[+el.dataset.op].op = el.value; ch(); }));
+  $('conds').querySelectorAll('[data-del]').forEach((el) => el.addEventListener('click', async () => { state.filter.conditions.splice(+el.dataset.del, 1); ch(); await refreshPeople(); renderConds(); renderCands(); }));
+}
+async function refreshPeople() {
+  const useFilter = state.mode === 'filter_manual' && state.filter.conditions.length;
+  const q = useFilter ? '?filter=' + encodeURIComponent(JSON.stringify(state.filter)) : '';
+  try { const d = await j(`${api}/candidates${q}`); people = d.people; } catch (e) { people = []; }
+  people.forEach((p) => { nameOf[p.id] = p.name; });
+  renderCands();
+}
+
+$('addCond').addEventListener('click', () => { const f = fields[0]; state.filter.conditions.push({ field: f.key, op: 'equals', value: f.type === 'choice' ? f.choices[0][0] : '' }); markDirty(true); renderConds(); });
+$('testFilter').addEventListener('click', async () => {
+  try { const d = await j(`${api}/candidates?filter=${encodeURIComponent(JSON.stringify(state.filter))}`); $('filterCount').textContent = `${d.total} persona(s) cumplen el filtro`; people = state.mode === 'filter_manual' ? d.people : people; renderCands(); }
+  catch (e) { showToast(e.message, 'error'); }
+});
+$('pickerSearch').addEventListener('input', renderCands);
+$('count').addEventListener('input', () => { state.count = +$('count').value || 1; markDirty(true); });
+$('batch').addEventListener('input', () => { state.batch_size = +$('batch').value || 1; markDirty(true); });
+$('exclude').addEventListener('change', () => { state.exclude_previous_winners = $('exclude').checked; markDirty(true); });
+
+$('saveBtn').addEventListener('click', async () => {
+  try {
+    await j(`${api}/behavior`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
+    markDirty(false); showToast('Configuración guardada', 'success'); loadRound();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+$('resetRound').addEventListener('click', async () => { await j(`${api}/reset-round`, { method: 'POST' }); showToast('Ronda reiniciada', 'success'); loadRound(); });
+async function loadRound() { if (state.mode !== 'all') return; const r = await j(`${api}/round`); $('roundText').textContent = `Ronda actual: han salido ${r.drawn} de ${r.total} personas.`; }
+
+$('runBtn').addEventListener('click', async () => {
+  const btn = $('runBtn'); btn.disabled = true;
+  try {
+    const r = await j(`${api}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: $('label').value }) });
+    $('resultBox').innerHTML = `<div style="background:#d1e7dd; border-radius:14px; padding:1rem 1.2rem;"><b>${r.is_random ? '🎲 Sorteo real' : '✅ Ganador(es) elegido(s)'}</b> — la pantalla de visualización ya está girando.<ol style="margin:0.5rem 0 0; padding-left:1.2rem;">${r.winners.map((w) => `<li><b>${esc(w.name)}</b> <small>· ${esc(w.id)}${w.entity ? ' · ' + esc(w.entity) : ''}</small></li>`).join('')}</ol></div>`;
+    loadHistory(); loadRound();
+  } catch (e) { showToast(e.message, 'error'); }
+  btn.disabled = dirty;
+});
+
+async function loadHistory() {
+  const draws = await j(`${api}/draws`);
+  $('histBody').innerHTML = draws.map((d) => `<tr><td>${esc(d.created_at.replace('T', ' '))}</td><td>${esc(d.label || '—')}</td><td>${esc((MODES[d.mode] || [d.mode])[0])} ${d.is_random ? '<span class="badge rand">aleatorio real</span>' : ''}</td><td>${d.winners.map((w) => esc(w.name)).join(', ')}</td><td>${esc(d.created_by)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:#999;">Todavía no se ha ejecutado ningún sorteo.</td></tr>';
+}
+
+async function loadDisplayLink() {
+  const { url } = await j(`${api}/display-link`);
+  const box = $('displayCard');
+  const head = `<h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Pantalla de visualización (para el proyector)</h4><p class="hint" style="margin-top:0;">Abre este enlace en la pantalla que verá la gente (sin iniciar sesión). Cuando tú ejecutas el sorteo aquí, allá gira la ruleta y se revela el ganador.</p>`;
+  if (!url) { box.innerHTML = head + `<button type="button" class="small-btn primary" id="genLink">🔗 Generar enlace de la pantalla</button>`; $('genLink').addEventListener('click', async () => { await j(`${api}/display-link`, { method: 'POST' }); loadDisplayLink(); }); return; }
+  box.innerHTML = head + `<div class="row" style="margin-top:0;"><input type="text" readonly value="${esc(url)}" id="linkInput" style="flex:1 1 300px;"><button type="button" class="small-btn primary" id="copyLink">Copiar</button><a class="small-btn" href="${esc(url)}" target="_blank" rel="noopener">Abrir pantalla</a><button type="button" class="small-btn" id="regenLink">Cambiar enlace</button></div>`;
+  $('copyLink').addEventListener('click', async () => { try { await navigator.clipboard.writeText(url); } catch (e) { $('linkInput').select(); document.execCommand('copy'); } showToast('Enlace copiado', 'success'); });
+  $('regenLink').addEventListener('click', async () => { if (!(await showConfirm('Se creará un enlace nuevo y el anterior dejará de funcionar. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, cambiar' }))) return; await j(`${api}/display-link?regenerate=true`, { method: 'POST' }); loadDisplayLink(); });
+}
+
+(async function init() {
+  const cfg = await j(api);
+  state = { ...state, ...cfg.behavior };
+  state.filter = cfg.behavior.filter || { conditions: [] };
+  $('totalCandidates').textContent = cfg.candidates_total;
+  fields = await j(`${api}/fields`);
+  await refreshPeople();
+  // nombres de los ganadores ya elegidos (aunque no estén en la lista visible)
+  try { const all = await j(`${api}/candidates`); all.people.forEach((p) => { nameOf[p.id] = p.name; }); } catch (e) {}
+  render(); markDirty(false); loadDisplayLink(); loadHistory(); loadRound();
+})();
+</script>
+</body>
+</html>

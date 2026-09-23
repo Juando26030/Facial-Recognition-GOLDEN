@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{{ event_name }} — Sorteo</title>
+    <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;700&display=swap">
+    <script src="{{ url_for('static', path='js/roulette-render.js') }}"></script>
+    <style>
+        html, body { margin:0; height:100%; overflow:hidden; }
+        body { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition:background .4s; }
+        #logo { max-height:90px; max-width:40vw; margin-bottom:8px; display:none; }
+        h1 { margin:0 0 6px; font-size:clamp(2rem,6vw,4.4rem); letter-spacing:2px; font-weight:400; }
+        .label { font-size:clamp(1rem,2.4vw,1.8rem); opacity:.9; min-height:1.6em; margin-bottom:8px; }
+        canvas { width:min(78vh, 92vw); height:min(78vh, 92vw); }
+        #result { position:fixed; left:0; right:0; bottom:5vh; display:flex; justify-content:center; gap:14px; flex-wrap:wrap; pointer-events:none; }
+        #hint { position:fixed; bottom:8px; right:12px; font-size:0.7rem; opacity:.35; }
+        @keyframes rr-pop { from { transform:scale(.6); opacity:0; } to { transform:scale(1); opacity:1; } }
+    </style>
+</head>
+<body>
+<img id="logo" alt="">
+<h1 id="title">{{ event_name }}</h1>
+<div class="label" id="label"></div>
+<canvas id="wheel" width="900" height="900"></canvas>
+<div id="result"></div>
+<div id="hint">Pantalla de sorteo · el operador lanza el sorteo desde su equipo</div>
+
+<script>
+const TOKEN = "{{ token }}";
+const base = `/r/${TOKEN}`;
+const assetUrl = (p) => `${base}/asset/${p}`;
+let style = null, wheel = null, lastSeen = null, busy = false, idleNames = [];
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function paintStyle(s) {
+    style = s;
+    document.getElementById('fontsLink').href = RouletteRender.fontsUrl([s.font_family, s.title_font]);
+    RouletteRender.applyBackground(document.body, s, assetUrl);
+    $('title').textContent = s.title || '';
+    $('title').style.fontFamily = `'${s.title_font}', sans-serif`; $('title').style.color = s.title_color;
+    const logo = $('logo'); logo.style.display = s.logo ? 'block' : 'none'; if (s.logo) logo.src = assetUrl(s.logo);
+    wheel = RouletteRender.wheel($('wheel'), s);
+    wheel.draw(idleNames.length ? idleNames : ['?', '?', '?', '?', '?', '?'], 0);
+}
+
+async function poll() {
+    try {
+        const url = `${base}/state` + (lastSeen === null ? '' : `?after=${lastSeen}`);
+        const st = await (await fetch(url)).json();
+        if (!style || JSON.stringify(st.style) !== JSON.stringify(style)) paintStyle(st.style);
+        if (lastSeen === null) { lastSeen = st.latest_id; }          // lo que ya estaba: no se re-anima
+        else if (st.draw && !busy) { lastSeen = st.draw.id; run(st.draw); }
+    } catch (e) { /* sin red por un momento: se reintenta */ }
+}
+
+// Un giro por ganador; entre giro y giro se muestra a quien acaba de salir.
+async function run(draw) {
+    busy = true;
+    $('label').textContent = draw.label || '';
+    $('result').innerHTML = '';
+    for (const winner of draw.winners) {
+        const seg = RouletteRender.buildSegments(draw.pool, winner.name, 24);
+        wheel.draw(seg.names, 0);
+        await wheel.spinTo(seg.names, seg.winnerIndex, style.spin_seconds);
+        const card = document.createElement('div'); $('result').appendChild(card);
+        RouletteRender.reveal(card, winner, style);
+        if (draw.winners.length > 1) await sleep(2200);
+    }
+    busy = false;
+}
+
+poll(); setInterval(poll, 1500);
+</script>
+</body>
+</html>

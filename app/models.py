@@ -395,6 +395,33 @@ class BulkJob(Base):
     finished_at = Column(DateTime, nullable=True)
 
 
+class RouletteConfig(Base):
+    """Configuración de la Ruleta de un evento (Sprint 5): comportamiento y estilo visual por separado, y el código
+    secreto de la pantalla de visualización (/r/<token>)."""
+    __tablename__ = 'roulette_configs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False, unique=True)
+    behavior_json = Column(Text, nullable=True)
+    style_json = Column(Text, nullable=True)
+    display_token = Column(String, unique=True, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RouletteDraw(Base):
+    """Un sorteo ejecutado (auditoría): quién ganó, con qué modo, si fue aleatorio real y cuándo."""
+    __tablename__ = 'roulette_draws'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    label = Column(String, nullable=True)
+    mode = Column(String, nullable=False)
+    is_random = Column(Boolean, nullable=False, default=False)
+    candidates_count = Column(Integer, nullable=False, default=0)
+    filter_json = Column(Text, nullable=True)
+    winners_json = Column(Text, nullable=False)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class RateLimitEvent(Base):
     """Intentos registrados para limitar abuso (Sprint 4): login fallido, solicitud de restablecer contraseña,
     consulta pública de certificados. Vive en Postgres (no en memoria) para que el límite valga aunque haya
