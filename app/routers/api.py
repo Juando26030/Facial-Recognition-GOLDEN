@@ -1011,7 +1011,8 @@ async def bulk_register(
                     # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
                     # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
                     # persona quedó sin reconocimiento facial funcional).
-                    encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
+                    encodings = BiometricEngine.extract_encoding(
+                        img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
                     if not encodings:
                         errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
                         continue
@@ -1089,10 +1090,11 @@ async def bulk_register(
             else:
                 img_path = os.path.join(known_faces_dir, f"{identificador}.jpg")
                 if os.path.exists(img_path):
-                    known_image = face_recognition.load_image_file(img_path)
-                    encodings = face_recognition.face_encodings(known_image, num_jitters=25)
-                    if encodings:
-                        face_enc_json = json.dumps(encodings[0].tolist())
+                    enc = BiometricEngine.extract_encoding(
+                        face_recognition.load_image_file(img_path),
+                        jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
+                    if enc:
+                        face_enc_json = json.dumps(enc)
 
             # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
             # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
