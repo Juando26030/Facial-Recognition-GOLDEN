@@ -464,7 +464,7 @@ def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
 @router.post("/checkin-cedula")
 async def checkin_cedula(
     event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False), confirm: bool = Form(False),
-    first_name: str = Form(""), last_name: str = Form(""),
+    first_name: str = Form(""), last_name: str = Form(""), method: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Acreditación por cédula (lector de código de barras o MRZ de la cédula nueva) — mismo
@@ -527,7 +527,8 @@ async def checkin_cedula(
         # Fase 16 (2026-09-17): "tradicional" = cédula encontrada y confirmada a mano;
         # "autoregistro" = el mismo match, pero acreditado solo porque el evento tiene el switch
         # prendido — misma cédula, la diferencia es si hizo falta que alguien confirmara.
-        registration_method="autoregistro" if event.auto_register else "tradicional",
+        # "qr" (Sprint 4): el código QR entregó la cédula por la cámara/lector — el mismo flujo, distinto origen.
+        registration_method="qr" if method == "qr" else ("autoregistro" if event.auto_register else "tradicional"),
     )
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)

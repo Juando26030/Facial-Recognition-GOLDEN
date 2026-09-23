@@ -167,7 +167,7 @@ async def area_movement(event_id: int, area_id: int, data: dict, db: Session = D
     require_event_in_progress(event)
     area = _get_area(db, event, area_id)
     user = _find_person(db, event, str(data.get("cedula") or ""))
-    return _apply_movement(db, event, area, user, data.get("direction", "auto"), bool(data.get("confirm")), str(data.get("method") or "cedula"), staff)
+    return _apply_movement(db, event, area, user, data.get("direction", "auto"), bool(data.get("confirm")), "qr" if data.get("method") == "qr" else "cedula", staff)
 
 
 @router.post("/events/{event_id}/areas/{area_id}/movement-face")

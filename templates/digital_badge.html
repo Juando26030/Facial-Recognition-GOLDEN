@@ -42,6 +42,10 @@
         <div class="clock" id="clock">--:--:--</div>
         <div class="date"><span class="pulse"></span><span id="dateLine"></span></div>
     </div>
+    <div class="qr-entry" id="qrEntry" style="display:none; margin:14px auto 0; text-align:center;">
+        <div id="qrBox" style="display:inline-block; background:#fff; padding:10px; border-radius:12px; line-height:0;"></div>
+        <div style="font-size:0.75rem; color:#9aa3c7; margin-top:6px;">Muestra este código al ingresar, en vez de tu cédula.</div>
+    </div>
     <p class="note">Documento personal y en vivo: la animación y el reloj deben moverse. Una captura de pantalla no es válida.</p>
 </div>
 <div id="error" style="display:none;">Esta escarapela no está disponible.</div>
@@ -65,6 +69,15 @@ async function load() {
     document.getElementById('personName').textContent = `${person.first_name || ''} ${person.last_name || ''}`.trim();
     document.getElementById('stage').style.display = 'block';
 
+    // QR de entrada (Sprint 4): con la cédula, para poder registrarse con el QR aunque nunca se haya impreso una escarapela.
+    if (typeof qrcode !== 'undefined' && person.id) {
+        try {
+            const qr = qrcode(0, 'M'); qr.addData(String(person.id)); qr.make();
+            document.getElementById('qrBox').innerHTML = qr.createSvgTag({ scalable: true });
+            const svg = document.querySelector('#qrBox svg'); if (svg) { svg.style.width = '180px'; svg.style.height = '180px'; }
+            document.getElementById('qrEntry').style.display = 'block';
+        } catch (e) { /* sin QR, la escarapela sigue funcionando */ }
+    }
     const host = document.getElementById('badgeHost');
     BadgeRender.renderBadge(host, template, person, {
         assetUrl: (p) => `${base}/asset/${p}`,   // storage_path = "<cliente>/<archivo>"

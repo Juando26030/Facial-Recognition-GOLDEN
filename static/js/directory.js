@@ -528,12 +528,13 @@
        paso buscando ese nombre completo entre los ya cargados en el Directorio, reutilizando el
        mismo criterio de prefijo por palabra + insensible a tildes de arriba — recién si ninguno
        de los dos encuentra nada se cae al comportamiento de "no encontrado" de siempre. */
-    async function fastCheckin(cedula, force, nameInfo, confirmFlag) {
+    async function fastCheckin(cedula, force, nameInfo, confirmFlag, method) {
       const formData = new FormData();
       formData.append('event_id', window.EVENT_ID);
       formData.append('cedula', cedula);
       if (force) formData.append('force', 'true');
       if (confirmFlag) formData.append('confirm', 'true');
+      if (method) formData.append('method', method);  // 'qr' cuando la cédula vino de un código QR
       if (nameInfo) {
         if (nameInfo.nombres) formData.append('first_name', nameInfo.nombres);
         if (nameInfo.apellidos) formData.append('last_name', nameInfo.apellidos);
@@ -544,7 +545,7 @@
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {
           const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
-          if (confirmado) await fastCheckin(cedula, true, nameInfo);
+          if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method);
           return;
         }
         if (data.result === 'SÍ') {
@@ -576,7 +577,7 @@
             acreditarBtn.className = 'golden-btn btn-table-action btn-accredit-pending';
             acreditarBtn.addEventListener('click', async () => {
               acreditarBtn.disabled = true; acreditarBtn.innerText = 'Acreditando...';
-              await fastCheckin(data.data.id, false, null, true);
+              await fastCheckin(data.data.id, false, null, true, method);
             });
             actionTd.appendChild(acreditarBtn);
           }
@@ -624,7 +625,11 @@
           const raw = cedulaInput.value.trim();
           if (!raw) return;
           const parsed = parseOldCedulaBarcode(raw);
-          if (parsed) {
+          const qr = window.QrCode ? QrCode.parse(raw) : null;
+          if (qr && qr.isQr) {
+            // QR propio (escarapela): cédula, o cédula|nombre — mismo flujo que la cédula: por cédula y luego por nombre.
+            fastCheckin(qr.cedula, false, { nombres: qr.nombres, apellidos: qr.apellidos }, undefined, 'qr');
+          } else if (parsed) {
             fastCheckin(parsed.cedula, false, { nombres: parsed.nombres, apellidos: parsed.apellidos });
           } else {
             fastCheckin(raw, false, null);
@@ -640,7 +645,7 @@
       /* Punto de entrada compartido para cualquier OTRO método que resuelva una cédula+nombre
          fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
-      submitScannedCedula: (cedula, nameInfo) => fastCheckin(cedula, false, nameInfo || null),
+      submitScannedCedula: (cedula, nameInfo, method) => fastCheckin(cedula, false, nameInfo || null, undefined, method),
       /* "Limpiar filtros" (2026-09-16, pedido explícito) — vacía los 3 campos de búsqueda + el
          filtro de "sin registrar" y vuelve a mostrar el Directorio completo. */
       clearFilters: () => {

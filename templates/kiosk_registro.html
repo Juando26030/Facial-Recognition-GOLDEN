@@ -56,6 +56,7 @@
 </div>
 <script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
+<script src="{{ url_for('static', path='js/qr.js') }}"></script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
@@ -228,6 +229,11 @@
                     <div class="badge-input-group">
                         <label>Buscar por {{ field_labels.entity|lower }}</label>
                         <input type="text" id="searchEntidad" placeholder="Entidad" autocomplete="off">
+                    </div>
+                    <div class="badge-input-group">
+                        <label>Código QR</label>
+                        <button type="button" id="scanQrBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto;"
+                                {% if event.status != "en_proceso" %}disabled{% endif %}>📷 Escanear QR con cámara</button>
                     </div>
                     <div class="badge-input-group">
                         <label>Cédula nueva (reverso)</label>
@@ -483,6 +489,21 @@
             if (file) processMrzPhoto(file);
         });
     }
+    /* QR (Sprint 4): no es una sección aparte — el QR entrega la cédula igual que el lector: se busca por cédula y,
+       si no está, por nombre. El lector de mano ya funciona en el campo "Buscar por cédula" (Enter); esta es la
+       cámara del dispositivo. */
+    const scanQrBtn = document.getElementById('scanQrBtn');
+    if (scanQrBtn && canAccredit) {
+        scanQrBtn.addEventListener('click', () => {
+            QrScanner.open({
+                title: 'Escanear código QR',
+                onCode: (text) => {
+                    const qr = QrCode.parse(text);
+                    if (qr && window.directorySearch) window.directorySearch.submitScannedCedula(qr.cedula, { nombres: qr.nombres, apellidos: qr.apellidos }, 'qr');
+                },
+            });
+        });
+    }
     if (scanMrzCameraBtn && canAccredit) {
         scanMrzCameraBtn.addEventListener('click', () => {
             CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: processMrzPhoto });
@@ -517,7 +538,9 @@
                 const raw = regScanCedulaInput.value.trim();
                 if (!raw) return;
                 const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
-                if (parsed) fillRegFormFromScan(parsed.cedula, { nombres: parsed.nombres, apellidos: parsed.apellidos });
+                const qr = QrCode.parse(raw);
+                if (qr && qr.isQr) fillRegFormFromScan(qr.cedula, { nombres: qr.nombres, apellidos: qr.apellidos });
+                else if (parsed) fillRegFormFromScan(parsed.cedula, { nombres: parsed.nombres, apellidos: parsed.apellidos });
                 else fillRegFormFromScan(raw, null);
                 regScanCedulaInput.value = '';
             }

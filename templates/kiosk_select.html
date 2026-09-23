@@ -73,11 +73,6 @@
           {% endif %}
         </div>
       </a>
-      <div class="mode-card disabled">
-        <div class="mode-icon">🔳</div>
-        <div class="mode-title">Código QR</div>
-        <div class="mode-sub">Próximamente</div>
-      </div>
       {% if event.areas_enabled and staff_role != "comercial" %}
       <a href="/kiosk/{{ event.id }}/areas" class="mode-card enabled">
         <div class="mode-icon">🚪</div>

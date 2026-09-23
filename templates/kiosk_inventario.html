@@ -8,6 +8,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/directory.js') }}"></script>
+    <script src="{{ url_for('static', path='js/qr.js') }}"></script>
     <style>
         .card { background:white; padding:1.4rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
         .banner { border-radius:14px; padding:0.9rem 1.2rem; margin-top:0.8rem; display:none; }
@@ -38,6 +39,7 @@
           <div class="card">
             <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">1. ¿A quién se le entrega?</h4>
             <input type="text" id="scanInput" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter" style="width:100%; box-sizing:border-box; padding:0.65rem 0.8rem; border:1px solid #ddd; border-radius:10px;">
+            <button type="button" id="scanQrBtn" class="golden-btn" style="width:auto; background:#f0f0f0; color:var(--golden-dark); margin-top:0.5rem;">📷 Escanear QR con cámara</button>
             <input type="text" id="nameSearch" autocomplete="off" placeholder="…o busca por nombre" style="width:100%; box-sizing:border-box; padding:0.6rem 0.8rem; border:1px solid #ddd; border-radius:10px; margin-top:0.5rem;">
             <div class="suggest" id="suggest"></div>
             <div class="banner ok" id="personBanner"></div>
@@ -103,11 +105,21 @@ $('scanInput').addEventListener('keydown', (e) => {
   e.preventDefault();
   const raw = e.target.value.trim(); e.target.value = '';
   if (!raw) return;
+  const qr = QrCode.parse(raw);
   const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);
-  const id = parsed ? parsed.cedula : raw;
+  const id = qr && qr.isQr ? qr.cedula : (parsed ? parsed.cedula : raw);   // QR propio: en vez de entregar la cédula
   const u = users.find(x => x.id === id);
   if (u) setPerson(u); else showToast('Esa persona no está en la base de este evento', 'error');
 });
+// Cámara del dispositivo: cada QR leído elige a la persona a la que se le entrega.
+if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
+  title: 'Escanear QR — Control de Inventario',
+  onCode: (text) => {
+    const qr = QrCode.parse(text); if (!qr) return;
+    const u = users.find(x => x.id === qr.cedula);
+    if (u) setPerson(u); else showToast('Esa persona no está en la base de este evento', 'error');
+  },
+}));
 $('nameSearch').addEventListener('input', (e) => {
   const q = e.target.value.trim();
   const found = q ? users.filter(u => GoldenDirectory.matchesWordPrefix(`${u.first_name} ${u.last_name}`, q)).slice(0, 6) : [];

@@ -9,6 +9,7 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
     <script src="{{ url_for('static', path='js/directory.js') }}"></script>
+    <script src="{{ url_for('static', path='js/qr.js') }}"></script>
     <style>
         .card { background:white; padding:1.4rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
         .toolbar { display:flex; gap:0.8rem; flex-wrap:wrap; align-items:end; }
@@ -54,6 +55,7 @@
                 </div>
               </div>
               <div style="flex:1; min-width:240px;"><label>Cédula / QR / lector</label><input type="text" id="scanInput" autocomplete="off" placeholder="Escanea o escribe la cédula y presiona Enter" style="width:100%; box-sizing:border-box;"></div>
+            <div style="align-self:flex-end;"><button type="button" id="scanQrBtn" class="golden-btn" style="width:auto; background:#f0f0f0; color:var(--golden-dark); white-space:nowrap;">📷 Escanear QR con cámara</button></div>
               <button type="button" id="faceBtn" class="dir-btn" style="display:none;">📸 Facial</button>
             </div>
             <div style="margin-top:0.8rem;"><label style="font-size:0.78rem; color:#777;">O busca por nombre</label>
@@ -127,16 +129,16 @@ async function handle(result, retry) {
   }
 }
 
-async function register(cedula, confirm, forcedDirection) {
+async function register(cedula, confirm, forcedDirection, method) {
   if (!areaId()) { showToast('Primero elige una zona', 'error'); return; }
-  const method = /,/.test(cedula) ? 'cedula' : 'cedula';
+  method = method || 'cedula';
   const res = await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/movement`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cedula, direction: forcedDirection || direction, confirm: !!confirm, method }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { show('warn', esc(data.detail || 'No se pudo registrar')); return; }
-  await handle(data, (c, d) => register(cedula, c, d));
+  await handle(data, (c, d) => register(cedula, c, d, method));
 }
 
 document.querySelectorAll('.dir-btn[data-dir]').forEach(btn => btn.addEventListener('click', () => {
@@ -150,9 +152,17 @@ $('scanInput').addEventListener('keydown', (e) => {
   e.preventDefault();
   const raw = e.target.value.trim(); e.target.value = '';
   if (!raw) return;
-  const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);  // cédula vieja (CSV del lector) o ID suelto / QR con el ID
+  const qr = QrCode.parse(raw);
+  if (qr && qr.isQr) { register(qr.cedula, false, undefined, 'qr'); return; }   // QR propio: en vez de entregar la cédula
+  const parsed = GoldenDirectory.parseOldCedulaBarcode(raw);  // cédula vieja (CSV del lector) o ID suelto
   register(parsed ? parsed.cedula : raw);
 });
+
+// Cámara del dispositivo: escanea varias personas seguidas (cada una entra/sale según la dirección elegida).
+if ($('scanQrBtn')) $('scanQrBtn').addEventListener('click', () => QrScanner.open({
+  title: 'Escanear QR — Control de Áreas',
+  onCode: (text) => { const qr = QrCode.parse(text); if (qr) register(qr.cedula, false, undefined, 'qr'); },
+}));
 
 $('nameSearch').addEventListener('input', (e) => {
   const q = e.target.value.trim();
