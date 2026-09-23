@@ -34,7 +34,14 @@
     if (config.field_type === 'digital_contact') {
       // Escarapela digital (ítem 17): solo correo (2026-09-21, se descartó WhatsApp por costo) — el
       // servidor lo valida y, al guardar, envía el enlace.
-      return `<input type="email" name="${key}" value="${esc(val)}" ${requiredAttr} autocomplete="off" placeholder="nombre@empresa.com" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">`;
+      // Casilla «Enviar ahora» (2026-09-23): marcada por defecto; guardar NO reenvía solo — se envía únicamente si
+      // sigue marcada. Si ya se había enviado, se avisa cuándo, para que quien digita decida si la desmarca.
+      const sentAt = config.__sentAt ? new Date(config.__sentAt + 'Z').toLocaleString() : '';
+      return `<input type="email" name="${key}" value="${esc(val)}" ${requiredAttr} autocomplete="off" placeholder="nombre@empresa.com" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+        <label style="display:flex; gap:8px; align-items:center; font-weight:400; text-transform:none; margin:8px 0 0; cursor:pointer;">
+          <input type="checkbox" name="send_digital_now" value="true" checked style="width:16px; height:16px;"> Enviar ahora la escarapela digital a este correo
+        </label>
+        ${sentAt ? `<div style="font-size:0.75rem; color:#b26a00; margin-top:4px;">Ya se envió el ${esc(sentAt)}. Si no quieres reenviarla, desmarca la casilla.</div>` : ''}`;
     }
     if (config.field_type === 'email') {
       // Correo verificado (2026-09-23): al salir del campo se comprueba que el correo sea real (ver

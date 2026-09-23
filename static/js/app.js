@@ -320,6 +320,9 @@ document.addEventListener("DOMContentLoaded", () => {
             formData.delete('categories');
             if (cats.length) formData.append('categories', JSON.stringify(cats));
 
+            // Casilla «Enviar ahora la escarapela digital»: una casilla sin marcar no viaja en el FormData, así que se manda explícita.
+            if (e.target.querySelector('input[name="send_digital_now"]') && !formData.has('send_digital_now')) formData.set('send_digital_now', 'false');
+
             const pending = window.getPendingOptionalLabels ? window.getPendingOptionalLabels() : {};
             if (Object.keys(pending).length) formData.append('field_labels', JSON.stringify(pending));
 

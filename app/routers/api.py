@@ -238,6 +238,15 @@ def _truthy(value) -> bool:
     return str(value).strip().lower() in ("true", "1", "si", "sí", "x", "yes")
 
 
+def _send_now(value) -> bool:
+    """Casilla «Enviar ahora la escarapela» (2026-09-23): por defecto SÍ. Guardar a una persona ya no reenvía
+    el enlace por sí solo; solo se envía si la casilla viene marcada. Ausente (una pantalla vieja en caché) = enviar,
+    para no dejar de mandar; el formulario nuevo siempre manda el valor explícito."""
+    if value is None:
+        return True
+    return str(value).strip().lower() not in ("false", "0", "no", "off", "")
+
+
 def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None, digital_contact: Optional[str] = None) -> None:
     """Asegura que esta persona quede en la lista del evento, se haya precargado o no (ej. un
     'Nuevo' dado de alta sobre la marcha el día del evento) — ver EventAttendee en models.py.
@@ -332,6 +341,7 @@ async def get_all_users(
     categories_by_user = {a.user_id: a.get_categories() for a in attendee_rows}
     certificate_by_user = {a.user_id: bool(a.certificate) for a in attendee_rows}
     digital_by_user = {a.user_id: a.digital_contact or "" for a in attendee_rows}
+    digital_sent_by_user = {a.user_id: a.digital_sent_at.isoformat() if a.digital_sent_at else None for a in attendee_rows}
     event_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id).all()
     logs_by_user = {}
     for log in event_logs:
@@ -360,6 +370,7 @@ async def get_all_users(
             "categories": categories_by_user.get(u.id, []),
             "certificate": certificate_by_user.get(u.id, False),
             "digital_contact": digital_by_user.get(u.id, ""),
+            "digital_sent_at": digital_sent_by_user.get(u.id),
         })
 
     return result
@@ -551,6 +562,7 @@ async def update_user(
         if categories is not None:
             _upsert_attendee(db, event.id, user.id, event.tenant_id, _clean_categories(event, categories))
         digital_raw = data.pop("digital_contact", None)  # ítem 17: correo/teléfono de la escarapela digital (por evento)
+        send_now = _send_now(data.pop("send_digital_now", None))
         new_digital = None
         if digital_raw is not None:
             try:
@@ -602,9 +614,12 @@ async def update_user(
         db.commit()
         result = {"message": "Actualizado correctamente"}
         if new_digital and event.digital_badge_enabled:
-            att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
-            result["digital"] = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url))
-            db.commit()
+            if send_now:
+                att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+                result["digital"] = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url))
+                db.commit()
+            else:
+                result["digital"] = {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
         return result
     return {"error": "Usuario no encontrado"}
 
@@ -778,7 +793,7 @@ async def update_registration_status(
 async def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
-    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None),
+    email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
@@ -831,7 +846,7 @@ async def manual_register(
         db.commit()
         reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
         if contact_clean and event.digital_badge_enabled:
-            reply["digital"] = _send_digital(db, event, existing, request)
+            reply["digital"] = _send_digital(db, event, existing, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
         return reply
 
     field_configs = parametros.field_configs_for_event(db, event)
@@ -887,7 +902,7 @@ async def manual_register(
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo."}
     if contact_clean and event.digital_badge_enabled:
-        reply["digital"] = _send_digital(db, event, user, request)
+        reply["digital"] = _send_digital(db, event, user, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
     return reply
 
 def _carry_source_events(db: Session, event: Event, source_event_ids: list, staff: StaffUser):

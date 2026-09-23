@@ -155,7 +155,7 @@
       if (cfg.key === 'id') return cedulaRow(cfg.label);
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
-      if (cfg.field_type === 'digital_contact') return configuredFieldRow(cfg, user.digital_contact || '');
+      if (cfg.field_type === 'digital_contact') return configuredFieldRow({ ...cfg, __sentAt: user.digital_sent_at }, user.digital_contact || '');
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
     }).join('');
@@ -292,7 +292,10 @@
         else newExtras[cfg.key] = val(cfg.key);
       });
       payload.extra_fields = newExtras;
-      if (fieldConfigs.some((cfg) => cfg.field_type === 'digital_contact')) payload.digital_contact = val('digital_contact');
+      if (fieldConfigs.some((cfg) => cfg.field_type === 'digital_contact')) {
+        payload.digital_contact = val('digital_contact');
+        payload.send_digital_now = !!form.querySelector('input[name="send_digital_now"]:checked');  // casilla «Enviar ahora»
+      }
       if (fieldConfigs.some((cfg) => cfg.field_type === 'certificate')) {
         payload.certificate = !!form.querySelector('input[name="certificate"]:checked');
       }
