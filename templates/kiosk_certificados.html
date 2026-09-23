@@ -15,6 +15,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <script src="{{ url_for('static', path='js/certificate-link.js') }}"></script>
     <style>
         .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; }
         .progress { height:10px; background:#eee; border-radius:6px; overflow:hidden; margin-top:0.8rem; }
@@ -34,7 +35,7 @@
       </div>
       <div class="app-container">
         <div class="card" id="statusCard"></div>
-        <div class="card" id="linkCard" style="display:none;"></div>
+        <div class="card" id="linkCard"></div>
         <div id="renderStage" style="position:fixed; left:-20000px; top:0; background:#fff;"></div>
       </div>
     </div>
@@ -46,33 +47,9 @@ const card = document.getElementById('statusCard');
 const stage = document.getElementById('renderStage');
 const safe = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '');
 
-async function loadPublicLink(regenerate) {
-  const box = document.getElementById('linkCard');
-  const res = await fetch(`/api/events/${EVENT_ID}/certificates/public-link${regenerate ? '?regenerate=true' : ''}`);
-  if (!res.ok) { box.style.display = 'none'; return; }
-  const { url } = await res.json();
-  box.style.display = 'block';
-  box.innerHTML = `
-    <h4 style="margin:0 0 0.5rem; color:var(--golden-dark);">Enlace para que cada persona descargue su certificado</h4>
-    <p style="margin:0 0 0.6rem; font-size:0.85rem; color:#666;">Compártelo con los asistentes: cada uno escribe su cédula, confirma que es él/ella y descarga su propio certificado (solo quienes tengan Certificado = Sí, y cuando el evento esté Finalizado).</p>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <input type="text" id="publicLinkInput" readonly value="${url}" style="flex:1 1 280px; padding:0.6rem; border:1px solid #ddd; border-radius:10px; font-size:0.85rem;">
-      <button type="button" id="copyLinkBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;">Copiar enlace</button>
-      <button type="button" id="regenLinkBtn" class="golden-btn" style="width:auto; padding:0.6rem 1rem; background:#f0f0f0; color:var(--golden-dark);" title="El enlace anterior deja de funcionar">Cambiar enlace</button>
-    </div>`;
-  document.getElementById('copyLinkBtn').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(url); } catch (e) { document.getElementById('publicLinkInput').select(); document.execCommand('copy'); }
-    showToast('Enlace copiado', 'success');
-  });
-  document.getElementById('regenLinkBtn').addEventListener('click', async () => {
-    if (!(await showConfirm('Se creará un enlace nuevo y el anterior dejará de funcionar. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, cambiar enlace' }))) return;
-    loadPublicLink(true);
-  });
-}
-
 async function init() {
   if (!CERT_ENABLED) { card.innerHTML = '<p>El módulo de certificados no está activado en este evento (Parámetros del Evento).</p>'; return; }
-  loadPublicLink(false);
+  CertificateLink.mount(document.getElementById('linkCard'), EVENT_ID);
   if (!EVENT_FINALIZED) { card.innerHTML = '<p>Esta sección se habilita cuando el evento está <strong>Finalizado</strong>. Cambia el estado del evento y vuelve aquí.</p>'; return; }
   const users = await (await fetch(`/api/users?event_id=${EVENT_ID}`)).json();
   const recipients = users.filter(u => u.certificate);

@@ -114,18 +114,32 @@ async def certificate_asset(token: str, tenant_id: str, filename: str, db: Sessi
     return FileResponse(path)
 
 
+def _public_url(request: Request, event: Event) -> str:
+    base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    return f"{base}/c/{event.certificates_token}"
+
+
 @staff_router.get("/events/{event_id}/certificates/public-link")
 async def get_public_link(
+    event_id: int, request: Request, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """El enlace público del evento (o `null` si todavía no se ha generado)."""
+    event = get_event_for_staff(event_id, db, staff)
+    return {"url": _public_url(request, event) if event.certificates_token else None}
+
+
+@staff_router.post("/events/{event_id}/certificates/public-link")
+async def create_public_link(
     event_id: int, request: Request, regenerate: bool = False, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
-    """El enlace público del evento para que cada persona descargue su certificado. Se crea la primera vez
-    que se pide; con `regenerate=true` se cambia (el enlace anterior deja de funcionar)."""
+    """Genera el enlace público para que cada persona descargue su certificado. Si ya existe se devuelve el
+    mismo; con `regenerate=true` se cambia (el enlace anterior deja de funcionar)."""
     event = get_event_for_staff(event_id, db, staff)
     if not event.certificates_enabled:
         raise HTTPException(status_code=400, detail="El módulo de certificados no está activado en este evento")
     if regenerate or not event.certificates_token:
         event.certificates_token = secrets.token_urlsafe(18)
         db.commit()
-    base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
-    return {"url": f"{base}/c/{event.certificates_token}"}
+    return {"url": _public_url(request, event)}

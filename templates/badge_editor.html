@@ -118,6 +118,13 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       <h2>Diseñador de <span class="gradient-text">{{ 'Certificado' if template_kind == 'certificate' else 'Escarapela' }}</span></h2>
     </div>
 
+    {% if template_kind == 'certificate' %}
+    <div class="badge-toolbar" style="flex-direction:column; align-items:stretch;">
+      <div id="publicLinkBox"></div>
+    </div>
+    <script src="{{ url_for('static', path='js/certificate-link.js') }}"></script>
+    <script>document.addEventListener('DOMContentLoaded', () => CertificateLink.mount(document.getElementById('publicLinkBox'), window.EVENT_ID));</script>
+    {% endif %}
     <div class="badge-toolbar" id="categoryBar" style="display:none;">
       <!-- Categorías (ítem 14, reunión 2026-09-21): solo aparece si el evento tiene categorías. -->
       <div class="toolbar-group">
