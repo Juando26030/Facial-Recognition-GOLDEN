@@ -2,9 +2,10 @@ name: Deploy to production
 
 # Sprint 4, ítem 2. Cambios frente a la versión anterior:
 # - Pruebas primero (ci.yml): si fallan, no se toca producción.
-# - Se quitó `sudo apt-get`: el usuario del runner tiene sudo sin contraseña SOLO para reiniciar el servicio, así
-#   que ese paso fallaba en cada deploy ("sudo: I'm sorry ... I'm afraid I can't do that") y dejaba a medias
-#   pip / alembic / reinicio. Tesseract ya está instalado en la VM; ahora solo se VERIFICA (y avisa claro si falta).
+# - Se quitó `sudo apt-get`: en el runner ese sudo se negaba ("sudo: I'm sorry ... I'm afraid I can't do that") y
+#   dejaba a medias pip / alembic / reinicio en cada deploy. Lo único que la VM permite SIN contraseña de forma
+#   explícita (regla de sudoers) es `systemctl restart|is-active|status facial-recognition`, y eso es lo único que
+#   este workflow usa con sudo. Tesseract ya está instalado en la VM; ahora solo se VERIFICA.
 # - Un solo deploy a la vez, y el reinicio comprueba que la app responde 200 (si no, el deploy queda en rojo).
 
 on:
@@ -62,5 +63,5 @@ jobs:
             sleep 2
           done
           echo "::error::La app no respondió 200 tras reiniciar (último código: $code)"
-          sudo -n systemctl status facial-recognition --no-pager | tail -20 || true
+          sudo -n /usr/bin/systemctl status facial-recognition | tail -20 || true
           exit 1

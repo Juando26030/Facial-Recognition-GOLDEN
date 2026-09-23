@@ -39,7 +39,7 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: "Instalar dependencias (sin dlib/face-recognition; las pruebas usan un doble del motor biométrico)"
         run: |
-          grep -viE '^(face-recognition|dlib)' requirements.txt > /tmp/requirements-ci.txt
+          grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/requirements-ci.txt
           pip install -r /tmp/requirements-ci.txt pytest httpx
       - name: Pruebas
         run: python -m pytest -q

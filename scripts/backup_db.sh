@@ -10,7 +10,8 @@
 #   BACKUP_DIR       carpeta local (~/backups).
 #   LOCAL_KEEP_DAYS  días que se conserva la copia local (7). La retención en el bucket la define su regla de
 #                    ciclo de vida (deploy/gcs-lifecycle.json, 60 días), no este script.
-#   PG_DUMP          comando de pg_dump (por defecto "sudo -u postgres pg_dump", como en la VM).
+#   PG_DUMP          comando de pg_dump (por defecto "pg_dump -U golden_app -h localhost", el mismo que ya usaba el
+#                    cron de la VM; la contraseña sale de ~/.pgpass). No usa sudo: un cron no lo necesita.
 #
 # Cada corrida: (1) vuelca la base a .sql.gz de forma atómica, (2) verifica que el archivo sea válido y esté
 # completo, (3) lo sube a  <bucket>/db/AAAA/MM/  y confirma que el objeto existe y pesa lo mismo, (4) rota lo local.
@@ -21,7 +22,7 @@ BACKUP_DIR="${BACKUP_DIR:-$HOME/backups}"
 DB_NAME="${DB_NAME:-golden_db}"
 LOCAL_KEEP_DAYS="${LOCAL_KEEP_DAYS:-7}"
 GCS_BUCKET="${GCS_BUCKET:-}"
-PG_DUMP="${PG_DUMP:-sudo -u postgres pg_dump}"
+PG_DUMP="${PG_DUMP:-pg_dump -U golden_app -h localhost}"
 
 mkdir -p "$BACKUP_DIR"
 LOG="$BACKUP_DIR/backup.log"

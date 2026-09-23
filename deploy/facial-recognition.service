@@ -1,0 +1,17 @@
+# Unit de systemd de la VM: /etc/systemd/system/facial-recognition.service  (copia de referencia, Sprint 4 — antes
+# solo existía en la VM; si se pierde la VM se reconstruye desde aquí). Si cambias algo en la VM, actualiza esta copia.
+#   sudo cp deploy/facial-recognition.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl enable --now facial-recognition
+# `--workers 1` es a propósito: la app se apoya en un solo proceso (ver CLAUDE.md, Infraestructura).
+[Unit]
+Description=FastAPI Biometric Facial Recognition
+After=network.target postgresql.service
+
+[Service]
+User=juando02603
+WorkingDirectory=/home/juando02603/Facial-Recognition
+ExecStart=/home/juando02603/Facial-Recognition/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
