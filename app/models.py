@@ -183,6 +183,7 @@ class StaffUser(Base):
     email = Column(String, nullable=True)  # correo para notificaciones (informe final del evento a la comercial) — reunión 2026-09-21, ítem 6
     phone = Column(String, nullable=True, unique=True)  # Sprint 2.4, 2026-09-16: WhatsApp; Fase 4: obligatorio+único salvo cliente/digitador (ver routers/staff.py, routers/events.py)
     is_active = Column(Boolean, default=True, nullable=False)
+    must_change_password = Column(Boolean, default=False, server_default='false', nullable=False)  # Sprint 4: tras un restablecimiento por un admin/coordinador, en el próximo ingreso debe elegir su propia contraseña
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -372,6 +373,30 @@ class SavedBadgeTemplate(Base):
 
     def set_elements(self, data: list) -> None:
         self.elements_json = json.dumps(data) if data else None
+
+class RateLimitEvent(Base):
+    """Intentos registrados para limitar abuso (Sprint 4): login fallido, solicitud de restablecer contraseña,
+    consulta pública de certificados. Vive en Postgres (no en memoria) para que el límite valga aunque haya
+    varios procesos/workers y sobreviva a un reinicio. `key` = usuario o token según `kind`."""
+    __tablename__ = 'rate_limit_events'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String, nullable=False)
+    key = Column(String, nullable=False)
+    ip = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PasswordResetToken(Base):
+    """Enlace de "olvidé mi contraseña" (Sprint 4): de un solo uso y con vencimiento. Solo se guarda el hash
+    del token (si alguien lee la base, no puede usar los enlaces)."""
+    __tablename__ = 'password_reset_tokens'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
+    token_hash = Column(String, nullable=False, unique=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class SavedColor(Base):
     """Librería de colores de pañoleta (2026-09-23): se define una vez ("Rojo Golden" = #C0392B) y se elige

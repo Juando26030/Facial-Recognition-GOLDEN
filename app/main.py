@@ -2,7 +2,9 @@ import os
 import json
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from urllib.parse import urlsplit
+
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -38,12 +40,34 @@ app = FastAPI(
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
 
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=SECRET_KEY or "dev-only-insecure-key-do-not-use-in-production",
-    same_site="lax",
-    https_only=IS_PRODUCTION,
-)
+_MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+_ALLOWED_WHEN_MUST_CHANGE = ("/cambiar-contrasena", "/logout", "/static/", "/login")
+
+
+@app.middleware("http")
+async def csrf_and_password_gate(request, call_next):
+    """(1) CSRF (Sprint 4): además de la cookie SameSite=Lax, toda petición que cambia estado y trae `Origin`
+    debe venir del MISMO sitio; una página de otro dominio no puede hacer que el navegador de un usuario con
+    sesión modifique datos. Sin `Origin` (curl, pruebas, apps) no se rechaza: no es un navegador. La
+    comparación usa el Host que reenvía Nginx/Cloudflare. (2) Quien entró con una contraseña temporal
+    (`must_change_password`) no puede usar nada más hasta cambiarla."""
+    if request.method in _MUTATING:
+        origin = request.headers.get("origin")
+        if origin and origin != "null":
+            allowed = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
+            public = os.getenv("PUBLIC_BASE_URL")
+            if public:
+                allowed.add(urlsplit(public).netloc)
+            if urlsplit(origin).netloc not in allowed:
+                return JSONResponse({"detail": "Origen no permitido"}, status_code=403)
+        elif origin == "null":
+            return JSONResponse({"detail": "Origen no permitido"}, status_code=403)
+    if request.scope.get("session") and request.session.get("must_change_password") and not request.url.path.startswith(_ALLOWED_WHEN_MUST_CHANGE):
+        if request.method == "GET" and "text/html" in request.headers.get("accept", "text/html"):
+            return RedirectResponse("/cambiar-contrasena", status_code=302)
+        return JSONResponse({"detail": "Debes cambiar tu contraseña antes de continuar"}, status_code=403)
+    return await call_next(request)
+
 
 @app.middleware("http")
 async def no_cache_html(request, call_next):
@@ -55,6 +79,15 @@ async def no_cache_html(request, call_next):
         response.headers["Cache-Control"] = "no-store"
     return response
 
+
+# La sesión se registra DESPUÉS de los middlewares de arriba a propósito: en Starlette el último registrado es el
+# más externo, y csrf_and_password_gate necesita leer `request.session` ya cargada.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY or "dev-only-insecure-key-do-not-use-in-production",
+    same_site="lax",
+    https_only=IS_PRODUCTION,
+)
 
 app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")

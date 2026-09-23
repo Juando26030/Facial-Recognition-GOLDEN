@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
+from app import security
 from app.auth import effective_roles, hash_password, require_role
 
 router = APIRouter()
@@ -178,6 +179,67 @@ async def assign_secondary_role(
     target.secondary_role = secondary
     db.commit()
     return _serialize(target)
+
+
+def _manageable_roles(actor: StaffUser) -> set:
+    """Roles de cuenta que `actor` puede administrar (cambiar rol / restablecer contraseña): los mismos que
+    puede borrar (DELETABLE_ROLES_BY), siguiendo el principio "todo lo que está por debajo de mí"."""
+    roles = set()
+    for r in effective_roles(actor):
+        roles |= set(DELETABLE_ROLES_BY.get(r, ()))
+    return roles
+
+
+@router.patch("/staff/{staff_id}/role")
+async def change_staff_role(
+    staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin")),
+):
+    """Cambia el rol de una cuenta ya creada (Sprint 4). Solo entre los roles que se crean desde Configuración >
+    Staff (coordinador / comercial / admin); digitador y cliente son de un evento y no cambian de rol. Un admin
+    solo puede tocar cuentas que estén por debajo de él, y solo el Super Admin puede nombrar admins. Al cambiar el
+    rol se limpia un rol secundario que ya no encaje (el único doble rol válido es coordinador+comercial)."""
+    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    new_role = data.get("role")
+    if new_role not in ("coordinador", "comercial", "admin"):
+        raise HTTPException(status_code=400, detail="El rol debe ser coordinador, comercial o admin")
+    if target.id == staff.id:
+        raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol")
+    if target.role not in _manageable_roles(staff) or target.role in ("digitador", "cliente"):
+        raise HTTPException(status_code=403, detail=f"No puedes cambiar el rol de una cuenta '{target.role}'")
+    if new_role == "admin" and staff.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Solo el Super Admin puede nombrar cuentas Admin")
+    target.role = new_role
+    if target.secondary_role and (new_role not in DUAL_ROLE_PAIR or target.secondary_role == new_role):
+        target.secondary_role = None
+    db.commit()
+    return _serialize(target)
+
+
+@router.put("/staff/{staff_id}/password")
+async def reset_staff_password(
+    staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
+):
+    """Restablece la contraseña de una cuenta que `staff` puede administrar (un coordinador, las de digitador; un
+    admin, las de abajo). Por defecto la persona debe elegir su propia contraseña al ingresar
+    (`must_change_password`)."""
+    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    if target.id == staff.id:
+        raise HTTPException(status_code=400, detail="Para cambiar tu propia contraseña usa \"Cambiar contraseña\"")
+    if target.role not in _manageable_roles(staff):
+        raise HTTPException(status_code=403, detail=f"No puedes restablecer la contraseña de una cuenta '{target.role}'")
+    new_password = str(data.get("new_password") or "")
+    problem = security.password_problem(new_password)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    target.password_hash = hash_password(new_password)
+    target.must_change_password = bool(data.get("must_change", True))
+    db.commit()
+    security.clear_events(db, "login_fail", target.username)  # por si estaba bloqueada por intentos fallidos
+    return {"message": f"Contraseña de {target.username} restablecida" + (" — deberá elegir la suya al ingresar" if target.must_change_password else "")}
 
 
 @router.patch("/staff/{staff_id}/deactivate")

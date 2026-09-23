@@ -127,6 +127,8 @@ async function loadStaff() {
       <td>
         ${s.role === "super_admin" || s.username === staffUsername ? '<span style="color:#aaa; font-size:0.8rem;">—</span>' : `
           ${dualRoleBtn}
+          ${(staffRole === "admin" || staffRole === "super_admin") && ["coordinador", "comercial", "admin"].includes(s.role) ? `<button class="btn-table-action" onclick="changeRole(${s.id}, '${s.username}', '${s.role}')">Cambiar rol</button>` : ""}
+          ${DELETABLE_ROLES.includes(s.role) ? `<button class="btn-table-action" onclick="resetPassword(${s.id}, '${s.username}')">Restablecer contraseña</button>` : ""}
           ${s.is_active
             ? `<button class="btn-table-action" style="background:#dc3545;" onclick="toggleStaff(${s.id}, false)">Desactivar</button>`
             : `<button class="btn-table-action btn-save" onclick="toggleStaff(${s.id}, true)">Reactivar</button>`}
@@ -157,6 +159,23 @@ async function setSecondaryRole(id, secondaryRole) {
   });
   if (res.ok) { loadStaff(); showToast(secondaryRole ? `Ahora también es ${secondaryRole}` : "Rol secundario quitado", "success"); }
   else { const err = await res.json(); showToast(err.detail || "No se pudo actualizar", "error"); }
+}
+
+async function changeRole(id, username, current) {
+  const options = staffRole === "super_admin" ? "coordinador, comercial o admin" : "coordinador o comercial";
+  const role = await showPrompt(`Nuevo rol para "${username}" (${options}):`, { defaultValue: current, confirmLabel: "Cambiar" });
+  if (role === null || role.trim() === current) return;
+  const res = await fetch(`/api/staff/${id}/role`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: role.trim().toLowerCase() }) });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) { loadStaff(); showToast("Rol actualizado", "success"); } else showToast(data.detail || "No se pudo cambiar el rol", "error");
+}
+
+async function resetPassword(id, username) {
+  const pwd = await showPrompt(`Contraseña temporal para "${username}" (mínimo 8 caracteres). Al ingresar, tendrá que elegir la suya:`, { confirmLabel: "Restablecer" });
+  if (pwd === null) return;
+  const res = await fetch(`/api/staff/${id}/password`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ new_password: pwd, must_change: true }) });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) showToast(data.message || "Contraseña restablecida", "success"); else showToast(data.detail || "No se pudo restablecer", "error");
 }
 
 async function deleteStaff(id, username) {

@@ -1,3 +1,4 @@
+from app.timeutil import to_local
 import os
 
 import pandas as pd
@@ -149,8 +150,9 @@ class ReportManager:
             log = row["log"]
             if log:
                 out["Tipo de Registro"] = REGISTRATION_METHOD_LABELS.get(log.registration_method, log.registration_method or "Sin especificar")
-                out["Fecha de Registro"] = log.timestamp.strftime("%Y-%m-%d")
-                out["Hora de Registro"] = log.timestamp.strftime("%H:%M:%S")
+                local = to_local(log.timestamp)  # la base guarda UTC; el reporte se lee en hora local (Sprint 4)
+                out["Fecha de Registro"] = local.strftime("%Y-%m-%d")
+                out["Hora de Registro"] = local.strftime("%H:%M:%S")
             else:
                 out["Tipo de Registro"] = "No registrado"
                 out["Fecha de Registro"] = ""

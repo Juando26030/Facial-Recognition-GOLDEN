@@ -129,6 +129,7 @@
                 <td>${u.username}</td><td>${u.full_name || "-"}</td><td>${u.role}</td>
                 <td>${u.is_active ? "Activo" : "Inactivo"}</td>
                 <td>
+                    ${u.role === "digitador" ? `<button class="btn-table-delete" style="background:#555;" onclick="resetTempPassword(${u.id}, '${u.username}')">Restablecer contraseña</button>` : ""}
                     <button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button>
                     <button class="btn-table-delete" style="background:#6c1c1c;" onclick="deleteTempUser(${u.id}, '${u.username}')">Borrar permanente</button>
                 </td>
@@ -171,6 +172,14 @@
         const res = await fetch(`/api/events/${window.EVENT_ID}/staff-users/${staffId}`, {method: "DELETE"});
         loadTempUsers();
         showToast(res.ok ? "Acceso revocado" : "No se pudo revocar el acceso", res.ok ? "success" : "error");
+    };
+
+    window.resetTempPassword = async (staffId, username) => {
+        const pwd = await showPrompt(`Contraseña temporal para "${username}" (mínimo 8 caracteres). Al ingresar, tendrá que elegir la suya:`, { confirmLabel: "Restablecer" });
+        if (pwd === null) return;
+        const res = await fetch(`/api/staff/${staffId}/password`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ new_password: pwd, must_change: true })});
+        const data = await res.json().catch(() => ({}));
+        showToast(res.ok ? (data.message || "Contraseña restablecida") : (data.detail || "No se pudo restablecer"), res.ok ? "success" : "error");
     };
 
     window.deleteTempUser = async (staffId, username) => {

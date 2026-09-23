@@ -5,16 +5,17 @@ navegador con la misma plantilla del editor, igual que el ZIP del coordinador).
 
 Qué se expone: solo el nombre/entidad para confirmar y los campos que la plantilla del certificado realmente
 usa — nunca la foto biométrica ni el resto de datos de la persona. El enlace es inadivinable y las consultas
-por cédula tienen tope por IP. Solo se genera para quienes tienen Certificado = Sí, y solo con el evento Finalizado. Si la cédula es de alguien del evento sin certificado se le dice "no pidió"; si no está en la base, "no encontramos" (decisión explícita 2026-09-23: se prefirió claridad para el asistente a esconder quién está en el evento)."""
+por cédula tienen tope por IP (guardado en Postgres, vale con varios procesos). Solo se genera para quienes tienen Certificado = Sí, y solo con el evento Finalizado. Si la cédula es de alguien del evento sin certificado se le dice "no pidió"; si no está en la base, "no encontramos" (decisión explícita 2026-09-23: se prefirió claridad para el asistente a esconder quién está en el evento)."""
 import os
 import re
 import secrets
-import time
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
+from app import security
 from app.auth import get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import Event, EventAttendee, StaffUser, User
@@ -25,19 +26,7 @@ staff_router = APIRouter()  # con login, bajo /api
 
 NOT_FOUND = "No encontramos un certificado para esa cédula en este evento. Revisa el número o consulta con los organizadores."
 NOT_REQUESTED = "Usted no pidió certificado para este evento. Si crees que es un error, comunícate con los organizadores."
-_WINDOW_SECONDS, _MAX_LOOKUPS = 600, 30
-_hits: dict = {}  # (ip, token) -> [instantes de las últimas consultas]
-
-
-def _rate_limit(request: Request, token: str) -> None:
-    ip = (request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-          or (request.client.host if request.client else "?"))
-    now = time.time()
-    recent = [t for t in _hits.get((ip, token), []) if now - t < _WINDOW_SECONDS]
-    if len(recent) >= _MAX_LOOKUPS:
-        raise HTTPException(status_code=429, detail="Demasiadas consultas seguidas — espera unos minutos e intenta de nuevo.")
-    recent.append(now)
-    _hits[(ip, token)] = recent
+_MAX_LOOKUPS, _LOOKUP_WINDOW = 30, timedelta(minutes=10)
 
 
 def _event_by_token(db: Session, token: str) -> Event:
@@ -71,7 +60,7 @@ async def certificate_page(token: str, request: Request, db: Session = Depends(g
 
 @router.get("/c/{token}/lookup")
 async def certificate_lookup(token: str, id: str, request: Request, db: Session = Depends(get_db)):
-    _rate_limit(request, token)
+    security.enforce_public_limit(db, request, "cert_lookup", token, _MAX_LOOKUPS, _LOOKUP_WINDOW)
     event = _event_by_token(db, token)
     if event.status != "finalizado":
         raise HTTPException(status_code=409, detail="Los certificados estarán disponibles cuando el evento haya finalizado.")
