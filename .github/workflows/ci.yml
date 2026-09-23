@@ -1,0 +1,45 @@
+name: CI (pruebas)
+
+# Corre las pruebas automáticas en cada push a cualquier rama y en cada PR (Sprint 4, ítem 4). Usa runners de GitHub
+# (NO el runner self-hosted de producción), así un PR externo nunca ejecuta código en la VM. También lo invoca el
+# deploy: si las pruebas fallan, no se llega ni a migrar ni a reiniciar.
+on:
+  push:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # La base de pruebas se crea sola (golden_test); nunca se toca ninguna otra.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/golden_db
+      SECRET_KEY: ci-only-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: "Instalar dependencias (sin dlib/face-recognition; las pruebas usan un doble del motor biométrico)"
+        run: |
+          grep -viE '^(face-recognition|dlib)' requirements.txt > /tmp/requirements-ci.txt
+          pip install -r /tmp/requirements-ci.txt pytest httpx
+      - name: Pruebas
+        run: python -m pytest -q

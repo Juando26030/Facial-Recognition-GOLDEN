@@ -1,12 +1,27 @@
 name: Deploy to production
 
+# Sprint 4, ítem 2. Cambios frente a la versión anterior:
+# - Pruebas primero (ci.yml): si fallan, no se toca producción.
+# - Se quitó `sudo apt-get`: el usuario del runner tiene sudo sin contraseña SOLO para reiniciar el servicio, así
+#   que ese paso fallaba en cada deploy ("sudo: I'm sorry ... I'm afraid I can't do that") y dejaba a medias
+#   pip / alembic / reinicio. Tesseract ya está instalado en la VM; ahora solo se VERIFICA (y avisa claro si falta).
+# - Un solo deploy a la vez, y el reinicio comprueba que la app responde 200 (si no, el deploy queda en rojo).
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: test
     runs-on: self-hosted
     steps:
       - name: Pull latest main
@@ -16,11 +31,13 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-      - name: Install system dependencies (Tesseract OCR)
+      - name: Verify system dependencies (Tesseract OCR)
         run: |
-          set -e
-          sudo apt-get update -qq
-          sudo apt-get install -y tesseract-ocr
+          if ! command -v tesseract >/dev/null 2>&1; then
+            echo "::error::tesseract-ocr no está instalado en la VM. Instálalo UNA vez a mano: sudo apt-get install -y tesseract-ocr"
+            exit 1
+          fi
+          tesseract --version | head -1
 
       - name: Install dependencies
         run: |
@@ -33,11 +50,17 @@ jobs:
           set -e
           cd ~/Facial-Recognition
           venv/bin/alembic upgrade head
+          venv/bin/alembic current
 
       - name: Restart service
         run: |
           set -e
-          sudo systemctl restart facial-recognition
-          sleep 5
-          sudo systemctl is-active facial-recognition
-          curl -s -o /dev/null -w "app respondiendo: %{http_code}\n" http://localhost:8000/login
+          sudo -n systemctl restart facial-recognition
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/login || true)
+            if [ "$code" = "200" ]; then echo "app respondiendo: 200 (intento $i)"; sudo -n systemctl is-active facial-recognition; exit 0; fi
+            sleep 2
+          done
+          echo "::error::La app no respondió 200 tras reiniciar (último código: $code)"
+          sudo -n systemctl status facial-recognition --no-pager | tail -20 || true
+          exit 1
