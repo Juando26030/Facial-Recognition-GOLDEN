@@ -112,7 +112,7 @@ async def state(event_id: int, slug: str, k: Optional[str] = None, i: Optional[s
     settings = formsvc.get_settings(form)
     design = formsvc.get_design(form)
     theme = design["theme"]
-    base = {"theme": theme, "is_test": access == "pruebas", "title": form.name}
+    base = {"theme": theme, "is_test": access == "pruebas", "title": form.name, "ui": {"language": settings["language"], "translate": settings["translate"]}}
     if access in ("cerrado", "cupo_lleno"):
         return {**base, "stage": "closed", "reason": access, "template": settings["closed_template"]}
 

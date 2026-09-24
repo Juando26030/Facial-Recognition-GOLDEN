@@ -33,6 +33,7 @@ FONTS = (
     "Merriweather", "Nunito", "Ubuntu", "Rubik", "Comfortaa", "Space Grotesk", "Manrope", "Zilla Slab",
 )
 MAX_FIELDS, MAX_OPTIONS = 80, 200
+LANGUAGES = ("es", "en", "pt")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _PHONE = re.compile(r"^[+\d][\d\s().-]{5,19}$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
@@ -48,6 +49,8 @@ DEFAULT_SETTINGS = {
     "thanks": {"mode": "template", "title": "¡Gracias por inscribirte!", "text": "Recibimos tus datos correctamente.", "image": "", "url": ""},
     "feed": "manual",                                                # realtime | on_close | manual
     "max_mb": 10,
+    "language": "es",                                                # idioma en que está escrito (<html lang>): el navegador ofrece traducir desde ahí
+    "translate": True,                                               # mostrar el botón «Translate» para quien no habla ese idioma
 }
 
 
@@ -328,6 +331,8 @@ def sanitize_settings(settings: dict) -> dict:
         out["max_mb"] = max(1, min(20, int(s_in.get("max_mb") or 10)))
     except (TypeError, ValueError):
         out["max_mb"] = 10
+    out["language"] = s_in.get("language") if s_in.get("language") in LANGUAGES else "es"
+    out["translate"] = bool(s_in.get("translate", True))
     return out
 
 

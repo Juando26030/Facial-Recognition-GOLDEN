@@ -100,6 +100,11 @@
           <div class="fld" id="preSrcBox"><label>¿De dónde salen los datos?</label><select id="preSrc"><option value="event">La base de este evento</option><option value="upload">Una base subida aparte solo para este formulario</option></select></div>
           <div class="fld" id="preUpBox" style="display:none;"><label>Archivo (.xlsx / .csv, con columna de cédula)</label><input type="file" id="preFile" accept=".xlsx,.csv"></div></div>
       </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Idioma y traducción</h4>
+        <div class="bar"><div class="fld"><label>Idioma en que está escrito el formulario</label><select id="langSel"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option></select></div>
+          <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="trOn"> Mostrar el botón «Translate» (con instrucciones) a quienes no hablan ese idioma</label></div>
+        <p class="hint">El formulario se traduce con el traductor del propio navegador de cada persona (Chrome, Edge, Safari, Firefox): no se envía nada a terceros desde aquí. Marcar el idioma correcto hace que el navegador ofrezca traducirlo solo. Un formulario con pago muestra además el precio en COP, USD o EUR (solo de referencia: el cobro siempre es en pesos colombianos).</p>
+      </div>
       <div class="card"><h4 style="margin:0 0 8px;">Al terminar el registro</h4>
         <div class="bar"><div class="fld"><label>Qué pasa</label><select id="thMode"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
           <div class="fld" id="thUrlBox" style="display:none;"><label>Dirección (https://…)</label><input type="text" id="thUrl" style="width:320px;"></div></div>
@@ -480,6 +485,7 @@ function paintConfig() {
   $('thUrlBox').style.display = s.thanks.mode === 'redirect' ? '' : 'none'; $('thTplBox').style.display = s.thanks.mode === 'redirect' ? 'none' : '';
   $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
+  $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
 }
 $('cfgStatusSave').addEventListener('click', async () => {
   try { form = await jput(`${api}/status`, { manual_status: $('cfgStatus').value, capacity: $('cfgCap').value === '' ? null : +$('cfgCap').value }); settings = form.settings; paintHeader(); paintConfig(); showToast('Estado y cupo aplicados', 'success'); } catch (e) { showToast(e.message, 'error'); }
@@ -507,6 +513,7 @@ $('cfgSave').addEventListener('click', async () => {
     thanks: { ...settings.thanks, mode: $('thMode').value, url: $('thUrl').value, title: $('thTitle').value, text: $('thText').value },
     closed_template: { ...settings.closed_template, title: $('clTitle').value, text: $('clText').value },
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
+    language: $('langSel').value, translate: $('trOn').checked,
   };
   try { form = await jput(api, { settings: payload }); settings = form.settings; paintHeader(); paintConfig(); showToast('Configuración guardada', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });

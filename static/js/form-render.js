@@ -34,6 +34,8 @@
     const assetUrl = opts.assetUrl || ((p) => p);
     const readonly = new Set(opts.readonly || []);
     const prefill = opts.prefill || {};
+    let cur = 'COP', rates = null, lastQuote = null;   // moneda en que se MUESTRA el precio; el cobro es siempre en COP
+    try { const c = localStorage.getItem('gw_cur'); if (['COP', 'USD', 'EUR'].includes(c)) cur = c; } catch (e) { /* sin almacenamiento: COP */ }
     container.innerHTML = '';
     container.style.fontFamily = `'${theme.font || 'Montserrat'}', sans-serif`;
     container.style.color = theme.text_color || '#0A0E2E';
@@ -61,7 +63,10 @@
       .fr-btn { width:100%; padding:13px; border:none; border-radius:26px; background:${accent}; color:#111; font:inherit; font-weight:800; font-size:1rem; cursor:pointer; margin-top:6px; }
       .fr-btn:disabled { opacity:.6; cursor:default; }
       .fr-pay { border:2px dashed ${accent}; border-radius:14px; padding:14px 16px; background:rgba(0,0,0,.03); }
-      .fr-pay .fr-total { font-size:1.5rem; font-weight:800; } .fr-pay ul { margin:6px 0 0; padding-left:18px; font-size:.8rem; opacity:.8; }`;
+      .fr-pay .fr-total { font-size:1.5rem; font-weight:800; } .fr-pay ul { margin:6px 0 0; padding-left:18px; font-size:.8rem; opacity:.8; }
+      .fr-chip { border:1px solid ${accent}; background:#fff; color:#111; border-radius:14px; padding:2px 11px; font:inherit; font-size:.75rem; font-weight:700; cursor:pointer; margin-right:4px; }
+      .fr-chip.on { background:${accent}; } .fr-charge { font-size:.8rem; opacity:.85; }
+      .fr-safe { margin-top:10px; padding-top:8px; border-top:1px solid rgba(0,0,0,.1); font-size:.72rem; line-height:1.4; opacity:.85; } .fr-safe [data-fxnote] { display:block; opacity:.7; margin-top:3px; }`;
     card.appendChild(style);
 
     const form = document.createElement('form');
@@ -105,8 +110,8 @@
       switch (f.type) {
         case 'heading': return `<h3 style="margin:8px 0 2px;">${esc(f.content)}</h3>`;
         case 'paragraph': return `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(f.content)}</p>`;
-        case 'payment': { const base = (f.pay && f.pay.amount) || 0; const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
-          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-total" data-total>${opts.previewOnly ? cop(base) : 'Calculando…'}</div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<ul data-applied></ul><div class="fr-help">Pagas con tarjeta (nacional o internacional) o PSE, sin salir de esta página.</div></div>`; }
+        case 'payment': { const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
+          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div><div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span></div></div>`; }
         case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="" style="max-width:100%; border-radius:12px; display:block; margin:0 auto;">` : '';
         case 'text_long': control = `<textarea ${name} rows="4" placeholder="${esc(f.placeholder)}" ${roAttr}>${esc(val)}</textarea>`; break;
         case 'select': control = `<select ${name} ${ro ? 'disabled class="fr-ro"' : ''}><option value="">Selecciona…</option>${(f.options || []).map((o) => `<option ${String(val) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>${ro ? `<input type="hidden" ${name} value="${esc(val)}">` : ''}`; break;
@@ -199,17 +204,45 @@
       return Object.keys(errors).length === 0;
     }
 
-    function setQuote(q) {
-      const pays = form.querySelectorAll('.fr-pay');
+    const money = (v, c) => new Intl.NumberFormat(navigator.language || 'es-CO', { style: 'currency', currency: c, maximumFractionDigits: 2 }).format(v);
+    function paintPay() {
+      const q = lastQuote, pays = form.querySelectorAll('.fr-pay');
+      const usable = rates && rates.rates && rates.rates.USD && rates.rates.EUR;
+      if (!usable && cur !== 'COP') cur = 'COP';
       pays.forEach((box) => {
-        box.querySelector('[data-total]').textContent = q && q.has_payment !== false ? (q.amount > 0 ? cop(q.amount) : 'Sin costo') : '';
+        box.querySelectorAll('[data-cur]').forEach((b) => { b.hidden = b.dataset.cur !== 'COP' && !usable; b.classList.toggle('on', b.dataset.cur === cur); });
+        const total = box.querySelector('[data-total]'), charge = box.querySelector('[data-charge]');
+        if (!q || q.has_payment === false) { total.textContent = q ? '' : 'Calculando…'; charge.textContent = ''; }
+        else if (!(q.amount > 0)) { total.textContent = 'Sin costo'; charge.textContent = ''; }
+        else if (cur === 'COP') { total.textContent = cop(q.amount); charge.textContent = ''; }
+        else {
+          total.textContent = '≈ ' + money(q.amount * rates.rates[cur], cur);
+          charge.textContent = `Se te cobrará ${cop(q.amount)} (pesos colombianos). Referencia: 1 ${cur} ≈ ${Math.round(1 / rates.rates[cur]).toLocaleString('es-CO')} COP.`;
+        }
         box.querySelector('[data-applied]').innerHTML = ((q && q.applied) || []).map((a) => `<li>${esc(a.label)}: ${esc(a.effect)}</li>`).join('');
+        box.querySelector('[data-fxnote]').textContent = usable ? `Tasas de referencia: exchangerate-api.com${rates.as_of ? ' · ' + rates.as_of : ''}.` : '';
       });
-      const paying = pays.length && pays[0].closest('.fr-item').style.display !== 'none' && q && q.amount > 0;
-      btn.textContent = paying ? `Continuar al pago · ${cop(q.amount)}` : (theme.button_text || 'Enviar');
     }
+    form.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('[data-cur]');
+      if (!b) return;
+      cur = b.dataset.cur;
+      try { localStorage.setItem('gw_cur', cur); } catch (err) { /* opcional */ }
+      paintPay();
+    });
 
-    return { collect, validate, setErrors, setQuote, form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
+    function setQuote(q) {
+      lastQuote = q;
+      paintPay();
+      const pays = form.querySelectorAll('.fr-pay');
+      const paying = pays.length && pays[0].closest('.fr-item').style.display !== 'none' && q && q.amount > 0;
+      btn.textContent = paying ? `Continuar al pago · ${cop(q.amount)}` : (theme.button_text || 'Enviar');   // el botón siempre dice el cobro real: COP
+    }
+    function setRates(r) { rates = r; paintPay(); }
+    if (opts.previewOnly) { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) lastQuote = { has_payment: true, amount: (pf.pay && pf.pay.amount) || 0, applied: [] }; }
+    paintPay();
+
+    return { collect, validate, setErrors, setQuote, setRates, form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
   }
 
   if (typeof window !== 'undefined') window.FormRender = { render, conditionMet };

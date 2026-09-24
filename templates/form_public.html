@@ -18,6 +18,21 @@
     </style>
 </head>
 <body>
+<button id="tr-btn" type="button" translate="no" style="display:none; position:fixed; top:10px; right:10px; z-index:40; background:#fff; border:1px solid #c9ccd6; border-radius:20px; padding:7px 14px; font:inherit; font-size:.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.15);">🌐 Translate</button>
+<div id="tr-modal" translate="no" style="display:none; position:fixed; inset:0; background:rgba(10,14,46,.55); z-index:60; align-items:center; justify-content:center; padding:16px;">
+  <div class="box" style="text-align:left; max-width:460px; margin:0; max-height:90vh; overflow:auto;">
+    <h3 style="margin:0 0 6px;">🌐 Read this form in your language</h3>
+    <p style="margin:0 0 10px; font-size:.9rem; opacity:.85;">This form is written in <b id="tr-lang">Spanish</b>. Your browser can translate it for you:</p>
+    <ul style="margin:0 0 10px; padding-left:20px; font-size:.88rem; line-height:1.55;">
+      <li><b>Chrome / Edge (computer):</b> click the translate icon in the address bar, or right-click the page → <i>Translate to English</i>.</li>
+      <li><b>Chrome (Android):</b> menu ⋮ → <i>Translate</i>.</li>
+      <li><b>Safari (iPhone / Mac):</b> tap <i>aA</i> (or the address bar) → <i>Translate to English</i>.</li>
+      <li><b>Firefox:</b> click the translate icon in the address bar.</li>
+    </ul>
+    <p style="margin:0 0 10px; font-size:.84rem; opacity:.85;">💡 After translating, double-check the amount and the currency before you pay. Payments are always charged in <b>Colombian pesos (COP)</b>; you can view the price in USD or EUR as a reference.</p>
+    <div style="text-align:right;"><button type="button" id="tr-close" style="margin:0;">OK</button></div>
+  </div>
+</div>
 <div id="test-banner">🧪 <strong>Modo de pruebas:</strong> lo que envíes aquí queda marcado como prueba y no cuenta en el reporte oficial.</div>
 <div id="app"><div class="box">Cargando…</div></div>
 
@@ -45,6 +60,18 @@ function applyTheme(t) {
   if (theme.bg_image) { document.body.style.backgroundImage = `url(${assetUrl(theme.bg_image)})`; document.body.style.backgroundSize = "cover"; document.body.style.backgroundAttachment = "fixed"; }
   document.getElementById("fontsLink").href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font || "Montserrat").replace(/%20/g, "+")}:wght@400;700&display=swap`;
 }
+const LANG_NAMES = { es: "Spanish", en: "English", pt: "Portuguese" };
+function applyUi(ui) {
+  ui = ui || {};
+  document.documentElement.lang = ui.language || "es";        // el navegador decide si ofrece traducir según este idioma
+  const mine = (navigator.language || "en").toLowerCase();
+  const btn = document.getElementById("tr-btn");
+  btn.style.display = ui.translate && !mine.startsWith(ui.language || "es") ? "block" : "none";   // solo a quien no habla el idioma del formulario
+  document.getElementById("tr-lang").textContent = LANG_NAMES[ui.language] || "Spanish";
+}
+document.getElementById("tr-btn").addEventListener("click", () => { document.getElementById("tr-modal").style.display = "flex"; });
+document.getElementById("tr-close").addEventListener("click", () => { document.getElementById("tr-modal").style.display = "none"; });
+
 function box(html) { app.innerHTML = `<div class="box">${html}</div>`; }
 function templateHtml(tpl) {
   return `${tpl.image ? `<img src="${esc(assetUrl(tpl.image))}" alt="" style="max-width:100%; max-height:220px; border-radius:12px; margin-bottom:14px;">` : ""}
@@ -58,6 +85,7 @@ async function load() {
   if (!res.ok) { box("<h3>Este formulario no está disponible</h3>"); return; }
   const st = await res.json();
   applyTheme(st.theme);
+  applyUi(st.ui);
   if (st.is_test) document.getElementById("test-banner").style.display = "block";
   if (st.token) token = st.token;
   if (st.stage === "closed") { box(templateHtml(st.template)); return; }
@@ -109,7 +137,11 @@ function showForm(st) {
     const { res, data } = await api("/quote", { values: fr.collect().values });
     if (res.ok) fr.setQuote(data);
   }
-  if (fr.hasPayment) quote();
+  if (fr.hasPayment) {
+    quote();
+    // Tasas de REFERENCIA para ver el precio en USD/EUR; si no hay, el selector simplemente no aparece (el cobro es siempre COP).
+    fetch(`${BASE}/rates${K ? "?k=" + encodeURIComponent(K) : ""}`).then((r) => (r.ok ? r.json() : null)).then((r) => { if (r && r.rates && r.rates.USD) fr.setRates(r); }).catch(() => {});
+  }
   if (st.capacity_left !== null && st.capacity_left !== undefined && st.capacity_left <= 10 && !st.is_test) {
     host.insertAdjacentHTML("afterbegin", `<p style="text-align:center; font-size:.85rem; color:#b26a00;">Quedan ${st.capacity_left} cupo(s)</p>`);
   }

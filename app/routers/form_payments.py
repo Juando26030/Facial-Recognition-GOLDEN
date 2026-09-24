@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, wompi
+from app import formlib, formsvc, fx, wompi
 from app.database import get_db
 from app.models import FormPayment, FormSubmission, WebForm
 from app.routers import forms_public as fp
@@ -74,6 +74,15 @@ async def quote(event_id: int, slug: str, data: dict, request: Request, db: Sess
         return {"has_payment": False}
     q = formlib.compute_amount(field["pay"], formlib.priced_values(design, values), formsvc.now_local().date())
     return {"has_payment": True, "amount": q["amount"], "base": q["base"], "applied": q["applied"], "description": field["pay"].get("description", "")}
+
+
+@router.get("/f/{event_id}/{slug}/rates")
+async def rates(event_id: int, slug: str, request: Request, k: Optional[str] = None, db: Session = Depends(get_db)):
+    """Tasas de REFERENCIA COP→USD/EUR para que la persona vea el precio en su moneda. El cobro es siempre en COP."""
+    form = fp._load(db, event_id, slug)
+    fp._access(db, form, k)
+    fp._limit(db, request, "form_rates", form, 300)
+    return fx.get_rates()
 
 
 @router.post("/f/{event_id}/{slug}/pay/confirm")

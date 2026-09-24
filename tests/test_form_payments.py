@@ -350,3 +350,45 @@ def test_a_form_in_pruebas_never_uses_real_keys(client, factory, monkeypatch):
     key = client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["test_key"]
     client.post("/logout")
     assert _submit(client, ev, form, _values(), key=key).status_code == 503
+
+
+# ------------------------------- precio de referencia en USD/EUR y traducción -------------------------------
+def test_reference_rates_endpoint_and_fx_fallback(client, factory, keys, monkeypatch):
+    from app import fx
+    ev = _event(client, factory)
+    form = _with_payment(client, ev)
+    good = {"base": "COP", "rates": {"USD": 0.0003, "EUR": 0.00027}, "as_of": "Thu, 24 Sep 2026", "source": "exchangerate-api.com"}
+    monkeypatch.setattr(fx, "_fetch", lambda: good)
+    monkeypatch.setitem(fx._cache, "data", None)
+    monkeypatch.setitem(fx._cache, "at", 0.0)
+    assert client.get(f"{_url(ev, form)}/rates").json()["rates"] == good["rates"]
+    monkeypatch.setattr(fx, "_fetch", lambda: None)                       # la fuente cae: se sigue con la última tasa buena (< 48 h)
+    monkeypatch.setitem(fx._cache, "at", fx._cache["at"] - 7 * 3600)
+    assert client.get(f"{_url(ev, form)}/rates").json()["rates"] == good["rates"]
+    monkeypatch.setitem(fx._cache, "at", fx._cache["at"] - 50 * 3600)     # demasiado vieja: se oculta el selector, el cobro sigue en COP
+    assert client.get(f"{_url(ev, form)}/rates").json()["rates"] == {}
+
+
+def test_fx_ignores_garbage_from_the_source(monkeypatch):
+    from app import fx
+    class R:
+        def __init__(self, body): self.body = body
+        def read(self): return self.body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setattr(fx.urllib.request, "urlopen", lambda *a, **k: R(b'{"result":"success","rates":{"USD":0,"EUR":1}}'))
+    assert fx._fetch() is None                                            # una tasa en 0 nunca debe usarse
+    monkeypatch.setattr(fx.urllib.request, "urlopen", lambda *a, **k: R(b'{"result":"success","rates":{"USD":0.0003,"EUR":0.00027},"time_last_update_utc":"Thu, 24 Sep 2026 00:02:32 +0000"}'))
+    assert fx._fetch()["rates"] == {"USD": 0.0003, "EUR": 0.00027}
+
+
+def test_language_and_translate_settings_reach_the_public_page(client, factory, keys):
+    ev = _event(client, factory)
+    form = _with_payment(client, ev)
+    assert client.get(f"{_url(ev, form)}/state").json()["ui"] == {"language": "es", "translate": True}
+    _staff(client)
+    assert _put(client, ev, form, settings={"language": "en", "translate": False}).json()["settings"]["language"] == "en"
+    assert _put(client, ev, form, settings={"language": "klingon"}).json()["settings"]["language"] == "es"      # idioma inválido: vuelve al predeterminado
+    _put(client, ev, form, settings={"language": "pt", "translate": False})
+    client.post("/logout")
+    assert client.get(f"{_url(ev, form)}/state").json()["ui"] == {"language": "pt", "translate": False}
