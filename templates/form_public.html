@@ -176,9 +176,12 @@ async function pay(data, reset, fr) {
   const p = data.payment;
   fr.button.textContent = "Abriendo el pago…";
   try { await loadWidget(p.widget_url); } catch (e) { return reset("No pudimos cargar el medio de pago. Revisa tu conexión e intenta de nuevo.", true); }
+  // PSE y las transferencias sacan a la persona de esta página (van al banco): Wompi la devuelve a `redirectUrl` con `?id=<transacción>`,
+  // y ahí la página verifica el pago sola (ver resume()). Con tarjeta o Nequi el widget responde en el callback y no hace falta.
+  const back = `${location.origin}${location.pathname}?pt=${encodeURIComponent(data.pay_token)}${K ? "&k=" + encodeURIComponent(K) : ""}`;
   const checkout = new WidgetCheckout({
     currency: p.currency, amountInCents: p.amount_in_cents, reference: p.reference, publicKey: p.public_key,
-    signature: { integrity: p.integrity }, customerData: p.customer && p.customer.email ? p.customer : undefined,
+    signature: { integrity: p.integrity }, redirectUrl: location.protocol === "https:" ? back : undefined, customerData: p.customer && p.customer.email ? p.customer : undefined,
   });
   checkout.open(async (result) => {
     const tx = result && result.transaction;
@@ -186,22 +189,52 @@ async function pay(data, reset, fr) {
     const { res, data: r } = await api("/pay/confirm", { pt: data.pay_token, transaction_id: tx && tx.id ? tx.id : "" });
     if (!res.ok) return reset(r.detail || "No pudimos verificar el pago. Si te cobraron, escríbenos con tu comprobante.", true);
     if (r.status === "approved") return done(r.thanks);
-    if (r.status === "pending" && tx && tx.id) return waitApproval(data.pay_token, reset, fr);
+    if (r.status === "pending" && tx && tx.id) {
+      fr.button.textContent = "Esperando la confirmación de tu banco…";
+      const end = await pollApproval(data.pay_token);
+      if (end.status === "approved") return done(end.thanks);
+      return reset(end.status === "timeout" ? "Todavía no recibimos la confirmación. Si ya pagaste, tu inscripción se confirmará sola; si no, intenta de nuevo." : "El pago no fue aprobado. Puedes intentarlo de nuevo.", true);
+    }
     if (r.status === "pending") return reset("No completaste el pago. Puedes intentarlo de nuevo cuando quieras.", true);
     reset("El pago no fue aprobado. Revisa los datos o prueba con otro medio de pago.", true);
   });
 }
-async function waitApproval(pt, reset, fr) {
-  fr.button.textContent = "Esperando la confirmación de tu banco…";
+async function pollApproval(pt) {
   const until = Date.now() + 10 * 60 * 1000;
   while (Date.now() < until) {
     await new Promise((r) => setTimeout(r, 3000));
-    let r;
-    try { r = await (await fetch(`${BASE}/pay/status?pt=${encodeURIComponent(pt)}${K ? "&k=" + encodeURIComponent(K) : ""}`)).json(); } catch (e) { continue; }
-    if (r.status === "approved") return done(r.thanks);
-    if (["declined", "error", "voided"].includes(r.status)) return reset("El pago no fue aprobado. Puedes intentarlo de nuevo.", true);
+    try {
+      const r = await (await fetch(`${BASE}/pay/status?pt=${encodeURIComponent(pt)}${K ? "&k=" + encodeURIComponent(K) : ""}`)).json();
+      if (r.status === "approved" || ["declined", "error", "voided"].includes(r.status)) return r;
+    } catch (e) { /* sin conexión un momento: se sigue esperando */ }
   }
-  reset("Todavía no recibimos la confirmación. Si ya pagaste, tu inscripción se confirmará sola; si no, intenta de nuevo.", true);
+  return { status: "timeout" };
+}
+
+// Regreso desde el banco (PSE / transferencia): la URL trae ?pt=<pago>&id=<transacción de Wompi>. Se verifica contra Wompi en el servidor.
+const PT = qs.get("pt"), TXN = qs.get("id") || "";
+async function resume() {
+  const retry = `<a class="btn" href="${location.pathname}${K ? "?k=" + encodeURIComponent(K) : ""}">Volver al formulario</a>`;
+  box(`<h3 style="margin-top:0;">Verificando tu pago…</h3><p style="opacity:.8;">No cierres esta ventana.</p>`);
+  const { res, data: r } = await api("/pay/confirm", { pt: PT, transaction_id: TXN });
+  if (!res.ok) return box(`<h3 style="margin-top:0;">No pudimos verificar el pago</h3><p style="opacity:.8;">${esc(r.detail || "Intenta de nuevo.")}</p>${retry}`);
+  if (r.status === "approved") return done(r.thanks);
+  if (r.status === "pending") {
+    box(`<h3 style="margin-top:0;">Esperando la confirmación de tu banco…</h3><p style="opacity:.8;">Puede tardar unos minutos. No cierres esta ventana.</p>`);
+    const end = await pollApproval(PT);
+    if (end.status === "approved") return done(end.thanks);
+    if (end.status === "timeout") return box(`<h3 style="margin-top:0;">Todavía no recibimos la confirmación</h3><p style="opacity:.8;">Si ya pagaste, tu inscripción se confirmará sola en unos minutos.</p>`);
+  }
+  box(`<h3 style="margin-top:0;">El pago no fue aprobado</h3><p style="opacity:.8;">No se te cobró. Puedes intentarlo de nuevo.</p>${retry}`);
+}
+async function boot() {
+  if (!PT) return load();
+  try {   // el tema y el idioma del formulario, para que el regreso se vea igual
+    const st = await (await fetch(`${BASE}/state${K ? "?k=" + encodeURIComponent(K) : ""}`)).json();
+    applyTheme(st.theme); applyUi(st.ui);
+    if (st.is_test) document.getElementById("test-banner").style.display = "block";
+  } catch (e) { /* sin tema: se ve con el predeterminado */ }
+  return resume();
 }
 
 function done(thanks) {
@@ -209,7 +242,7 @@ function done(thanks) {
   box(templateHtml(thanks));
 }
 
-load();
+boot();
 </script>
 </body>
 </html>

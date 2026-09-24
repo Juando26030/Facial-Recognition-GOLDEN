@@ -27,7 +27,11 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
     navegador pueden llegar a la vez: se bloquea la fila del pago)."""
     pay = db.query(FormPayment).filter(FormPayment.id == pay_id).with_for_update().first()
     new = _STATUS.get(str(wompi_status).upper())
-    if not pay or not new or pay.status == "approved":
+    if pay and new == "voided" and pay.status == "approved":      # anulado (p. ej. desde el panel de Wompi): reembolso completo
+        from app.routers.form_refunds import complete_external_void
+        complete_external_void(db, pay)
+        return pay
+    if not pay or not new or pay.status in ("approved", "refunded"):
         db.rollback()
         return pay
     pay.status = new
@@ -94,7 +98,7 @@ async def confirm(event_id: int, slug: str, data: dict, request: Request, db: Se
     fp._limit(db, request, "form_pay", form, 120)
     pay = _pay_from_token(db, form, data.get("pt"))
     txn_id = str(data.get("transaction_id") or "").strip()
-    if pay.status != "approved" and txn_id:
+    if pay.status not in ("approved", "refunded") and txn_id:
         cfg = wompi.config(pay.is_test)
         txn = wompi.fetch_transaction(cfg, txn_id) if cfg else None
         if txn and txn.get("reference") == pay.reference and int(txn.get("amount_in_cents") or -1) == pay.amount_cents and txn.get("currency") == pay.currency:

@@ -19,7 +19,7 @@ from app import bulk_jobs, formlib, formsvc, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
-from app.models import Event, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, SavedFormTemplate, StaffUser, WebForm
+from app.models import Event, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, WebForm
 from app.routers import parametros
 from app.routers.badges import ALLOWED_IMAGE_EXT, _badge_assets_dir
 from app.timeutil import to_local
@@ -183,8 +183,9 @@ async def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db)
 
 def delete_form_rows(db: Session, form: WebForm) -> None:
     import shutil
-    if db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "approved", FormPayment.is_test == False).first():  # noqa: E712
+    if db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status.in_(("approved", "refunded")), FormPayment.is_test == False).first():  # noqa: E712
         raise HTTPException(status_code=409, detail=f"El formulario «{form.name}» tiene pagos aprobados: son registros financieros y no se pueden borrar. Ciérralo o finalízalo en su lugar.")
+    db.query(FormRefund).filter(FormRefund.payment_id.in_(db.query(FormPayment.id).filter(FormPayment.form_id == form.id))).delete(synchronize_session=False)
     db.query(FormPayment).filter(FormPayment.form_id == form.id).delete()
     db.query(FormSubmission).filter(FormSubmission.form_id == form.id).delete()
     db.query(FormEvent).filter(FormEvent.form_id == form.id).delete()
@@ -424,7 +425,7 @@ async def report(event_id: int, form_id: int, include_tests: bool = False, reque
     ws.title = "Inscripciones"
     ws.append([f"{form.name} — {event.name} ({event.event_code})"])
     ws["A1"].font = Font(bold=True, size=13, color="0A0E2E")
-    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "En la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos"] if has_pay else [])
+    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "En la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos", "Reembolsado (COP)"] if has_pay else [])
     ws.append(headers)
     for c in ws[2]:
         c.font = Font(color="FFFFFF", bold=True)
@@ -449,9 +450,9 @@ def _approved_by_submission(db: Session, form: WebForm) -> dict:
 
 def _pay_cells(p: Optional[FormPayment]) -> list:
     if not p:
-        return ["", "", "", "", ""]
+        return ["", "", "", "", "", ""]
     applied = "; ".join(f"{a['label']} ({a['effect']})" for a in json.loads(p.breakdown_json or "{}").get("applied", []))
-    return [p.amount_cents // 100, p.reference, p.payment_method or "", p.transaction_id or "", applied]
+    return [p.amount_cents // 100, p.reference, p.payment_method or "", p.transaction_id or "", applied, (p.refunded_cents or 0) // 100]
 
 
 def _pay_label(p: FormPayment) -> str:
@@ -471,11 +472,18 @@ async def list_payments(event_id: int, form_id: int, include_tests: bool = False
     if not include_tests:
         q = q.filter(FormPayment.is_test == False)  # noqa: E712
     rows = q.order_by(FormPayment.id.desc()).limit(2000).all()
-    approved = [p for p in rows if p.status == "approved"]
+    paid = [p for p in rows if p.status in ("approved", "refunded")]
+    refunds = {}
+    for r in db.query(FormRefund).filter(FormRefund.payment_id.in_([p.id for p in rows] or [0])).order_by(FormRefund.id):
+        refunds.setdefault(r.payment_id, []).append(r)
     return {
-        "total_cop": sum(p.amount_cents for p in approved) // 100, "approved": len(approved),
+        "total_cop": (sum(p.amount_cents for p in paid) - sum(p.refunded_cents or 0 for p in paid)) // 100, "approved": len(paid),
+        "refunded_cop": sum(p.refunded_cents or 0 for p in paid) // 100,
         "rows": [{"id": p.id, "reference": p.reference, "amount": p.amount_cents // 100, "status": _pay_label(p), "method": p.payment_method or "", "transaction_id": p.transaction_id or "",
-                  "person_id": p.person_id or "", "is_test": p.is_test, "submission_id": p.submission_id, "orphan": p.status == "approved" and not p.submission_id,
+                  "person_id": p.person_id or "", "is_test": p.is_test, "submission_id": p.submission_id, "orphan": p.status in ("approved", "refunded") and not p.submission_id and not (p.refunded_cents or 0),
+                  "refunded": (p.refunded_cents or 0) // 100, "remaining": (p.amount_cents - (p.refunded_cents or 0)) // 100 if p.status == "approved" else 0,
+                  "auto_refund": p.status == "approved" and (p.payment_method or "").upper() == "CARD" and not p.refunded_cents,
+                  "refunds": [{"amount": r.amount_cents // 100, "kind": r.kind, "status": r.status, "reason": r.reason, "note": r.note or "", "at": r.created_at.strftime("%Y-%m-%d %H:%M")} for r in refunds.get(p.id, [])],
                   "created_at": to_local(p.created_at).strftime("%Y-%m-%d %H:%M:%S"), "confirmed_at": to_local(p.confirmed_at).strftime("%Y-%m-%d %H:%M:%S") if p.confirmed_at else "",
                   "applied": json.loads(p.breakdown_json or "{}").get("applied", [])} for p in rows]}
 
@@ -661,13 +669,17 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
     if not pays:
         return
     pesos = lambda n: "$" + f"{n:,}".replace(",", ".")
-    approved = [p for p in pays if p.status == "approved"]
+    approved = [p for p in pays if p.status in ("approved", "refunded")]
     total = sum(p.amount_cents for p in approved) // 100
+    refunded = sum(p.refunded_cents or 0 for p in approved) // 100
     failed = [p for p in pays if p.status in ("declined", "error", "voided")]
     abandoned = [p for p in pays if _pay_label(p) == "abandoned"]
     kpis += [an.kpi("Ingresos (aprobados)", pesos(total), f"{len(approved)} pago(s) aprobado(s)", "good"),
              an.kpi("Pago promedio", pesos(total // len(approved) if approved else 0), "por inscripción pagada"),
              an.kpi("Pagos no completados", len(failed) + len(abandoned), f"{len(failed)} rechazados · {len(abandoned)} abandonados", "warn" if failed or abandoned else "")]
+    if refunded:
+        kpis += [an.kpi("Reembolsos", pesos(refunded), f"{sum(1 for p in approved if p.refunded_cents)} pago(s) reembolsado(s)", "warn"),
+                 an.kpi("Ingresos netos", pesos(total - refunded), "aprobados menos reembolsos", "good")]
     orphans = sum(1 for p in pays if p.status == "approved" and not p.submission_id)
     if orphans:
         kpis.append(an.kpi("Pagos sin inscripción", orphans, "aprobados pero sin inscripción: revisar en la lista de pagos", "warn"))
@@ -677,7 +689,7 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
     if per_day:
         days = sorted(per_day)
         charts.append(an.chart("revenue_by_day", "Ingresos por día (COP)", "bar", days, [{"label": "Ingresos aprobados", "data": [per_day[d] for d in days]}]))
-    names = {"approved": "Aprobado", "declined": "Rechazado", "error": "Error", "voided": "Anulado", "pending": "En espera", "abandoned": "Abandonado"}
+    names = {"refunded": "Reembolsado", "approved": "Aprobado", "declined": "Rechazado", "error": "Error", "voided": "Anulado", "pending": "En espera", "abandoned": "Abandonado"}
     charts.append(an.counter_chart("payment_status", "Resultado de los intentos de pago", [names.get(_pay_label(p), _pay_label(p)) for p in pays], kind="pie", label="Pagos"))
     applied = Counter()
     for p in approved:

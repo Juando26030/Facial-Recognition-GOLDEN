@@ -47,7 +47,7 @@
 </head>
 <body class="has-sidebar">
 {% include "_kiosk_top.html" %}
-<script>window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
+<script>window.STAFF_ROLE = "{{ staff_role }}"; window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
 <main class="golden-main">
   <section class="golden-section"><div class="golden-container" style="max-width:1400px;">
     <div class="card">
@@ -135,7 +135,7 @@
       <h4 style="margin:0 0 6px;">Pagos con Wompi</h4>
       <div id="payCfg" class="hint" style="margin-bottom:10px;"></div>
       <div class="bar" style="margin-bottom:8px;"><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="payTests"> Incluir pagos de prueba</label><span id="payTotal" style="font-weight:700;"></span></div>
-      <div style="overflow-x:auto;"><table class="ans"><thead><tr><th>Fecha</th><th>Referencia</th><th>Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th></tr></thead><tbody id="payBody"></tbody></table></div>
+      <div style="overflow-x:auto;"><table class="ans"><thead><tr><th>Fecha</th><th>Referencia</th><th>Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th><th>Reembolso</th></tr></thead><tbody id="payBody"></tbody></table></div>
       <p class="hint">La referencia (<code>GW-evento-formulario-inscripción-código</code>) identifica a qué evento pertenece cada pago: la separación por evento se hace aquí y en el reporte, no en el panel de Wompi. «Sin inscripción» = pago aprobado cuya inscripción ya no existe: revísalo a mano.</p>
     </div></div>
 
@@ -155,6 +155,21 @@
     </div></div>
   </div></section>
 </main>
+
+<div id="refundOverlay" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9995; display:none; align-items:center; justify-content:center; padding:16px;">
+  <div class="card" style="max-width:480px; width:100%; margin:0; max-height:92vh; overflow:auto;">
+    <h4 style="margin:0 0 4px;">Reembolsar un pago</h4>
+    <p id="rfInfo" class="hint" style="margin-top:0;"></p>
+    <div class="fld" style="margin-bottom:8px;"><label>Cómo se devuelve</label>
+      <label style="display:flex; gap:6px; font-size:0.82rem;"><input type="radio" name="rfKind" value="auto" id="rfAuto"> Anular la transacción en Wompi (el dinero vuelve a la tarjeta; solo tarjeta y por el valor completo)</label>
+      <label style="display:flex; gap:6px; font-size:0.82rem;"><input type="radio" name="rfKind" value="manual" id="rfManual"> Ya lo devolví por fuera (panel de Wompi o transferencia): solo registrarlo</label></div>
+    <div class="fld" style="margin-bottom:8px;"><label>Monto a devolver (COP)</label><input type="number" id="rfAmount" min="1" style="width:100%;"></div>
+    <div class="fld" style="margin-bottom:8px;"><label>Motivo *</label><input type="text" id="rfReason" maxlength="500" style="width:100%;" placeholder="Ej. La persona no puede asistir"></div>
+    <div class="fld" id="rfNoteBox" style="margin-bottom:8px;"><label>Nota del reembolso manual * (cómo y dónde se devolvió: banco, comprobante…)</label><input type="text" id="rfNote" maxlength="500" style="width:100%;"></div>
+    <label style="display:flex; gap:6px; font-size:0.82rem; margin-bottom:10px;"><input type="checkbox" id="rfCancel"> Cancelar también la inscripción (sale de las listas y libera el cupo)</label>
+    <div style="display:flex; gap:8px; justify-content:flex-end;"><button class="small-btn" id="rfClose">Cancelar</button><button class="small-btn danger" id="rfGo">Reembolsar</button></div>
+  </div>
+</div>
 
 <div id="previewOverlay"><div style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
 
@@ -536,16 +551,47 @@ async function loadAnswers() {
 $('ansTests').addEventListener('change', loadAnswers);
 
 // ---------------------------------------------------------------- pagos (Wompi)
-const PAY_STATES = { approved: 'Aprobado', declined: 'Rechazado', error: 'Error', voided: 'Anulado', pending: 'En espera', abandoned: 'Abandonado' };
+const PAY_STATES = { refunded: 'Reembolsado', approved: 'Aprobado', declined: 'Rechazado', error: 'Error', voided: 'Anulado', pending: 'En espera', abandoned: 'Abandonado' };
 async function loadPayments() {
   const d = await j(`${api}/payments?include_tests=${$('payTests').checked}`);
   const okc = (v) => (v ? '✅' : '⚠️ sin configurar');
   $('payCfg').innerHTML = `Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="small-btn" id="copyHook">Copiar</button>`;
   $('copyHook').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${location.origin}/webhooks/wompi`); } catch (e) {} showToast('URL copiada', 'success'); });
   $('payTotal').textContent = `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;
-  $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' 🧪' : ''}</td><td>${cop(r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ' <b title="Aprobado pero sin inscripción">⚠️ sin inscripción</b>' : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td></tr>`).join('') || '<tr><td colspan="8" style="color:#999;">Todavía no hay pagos.</td></tr>';
+  $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' 🧪' : ''}</td><td>${cop(r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ' <b title="Aprobado pero sin inscripción">⚠️ sin inscripción</b>' : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td>
+    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">💸 ${cop(r.refunded)}</span> ` : ''}${r.refunds.some((x) => x.status === 'pending') ? '⏳ en proceso ' : ''}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="small-btn danger" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" style="color:#999;">Todavía no hay pagos.</td></tr>';
+  window.__pays = Object.fromEntries(d.rows.map((r) => [r.id, r]));
+  document.querySelectorAll('[data-refund]').forEach((b) => b.addEventListener('click', () => openRefund(window.__pays[b.dataset.refund])));
 }
 $('payTests').addEventListener('change', loadPayments);
+let refunding = null;
+function openRefund(r) {
+  refunding = r;
+  $('rfInfo').textContent = `${r.reference} · pagado ${cop(r.amount)} · por devolver ${cop(r.remaining)} · medio: ${r.method || 'desconocido'}`;
+  $('rfAuto').disabled = !r.auto_refund; $('rfAuto').checked = r.auto_refund; $('rfManual').checked = !r.auto_refund;
+  $('rfAmount').value = r.remaining; $('rfReason').value = ''; $('rfNote').value = '';
+  syncRefund(); $('refundOverlay').style.display = 'flex';
+}
+function syncRefund() {
+  const auto = $('rfAuto').checked;
+  $('rfAmount').disabled = auto; if (auto) $('rfAmount').value = refunding.remaining;     // la anulación por API es siempre por el valor completo
+  $('rfNoteBox').style.display = auto ? 'none' : '';
+  $('rfCancel').checked = !auto ? Number($('rfAmount').value) >= refunding.remaining : true;
+}
+['rfAuto', 'rfManual'].forEach((id) => $(id).addEventListener('change', syncRefund));
+$('rfAmount').addEventListener('input', () => { $('rfCancel').checked = Number($('rfAmount').value) >= refunding.remaining; });
+$('rfClose').addEventListener('click', () => { $('refundOverlay').style.display = 'none'; });
+$('rfGo').addEventListener('click', async () => {
+  const auto = $('rfAuto').checked;
+  const ok = await showConfirm(auto ? `Se anulará el pago de ${cop(refunding.remaining)} en Wompi y el dinero volverá a la tarjeta. Esto no se puede deshacer. ¿Continuar?` : `Se registrará un reembolso manual de ${cop($('rfAmount').value)}. ¿Confirmas que ya se devolvió ese dinero?`, { confirmLabel: 'Sí, reembolsar' });
+  if (!ok) return;
+  try {
+    const d = await jpost(`${api}/payments/${refunding.id}/refund`, { reason: $('rfReason').value, manual: !auto, note: $('rfNote').value, amount: $('rfAmount').value, cancel_registration: $('rfCancel').checked });
+    $('refundOverlay').style.display = 'none';
+    showToast(d.message + (d.warning ? ' — ' + d.warning : ''), d.warning ? 'error' : 'success');
+    loadPayments();
+  } catch (e) { showToast(e.message, 'error'); }
+});
 
 // ---------------------------------------------------------------- analítica
 let dash = null;

@@ -463,6 +463,27 @@ class FormPayment(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     confirmed_at = Column(DateTime, nullable=True)
+    refunded_cents = Column(Integer, nullable=False, default=0, server_default='0')   # suma de reembolsos HECHOS (done)
+
+
+class FormRefund(Base):
+    """Un reembolso de un pago (auditoría completa: quién, cuándo, por qué). `kind`: `void` (anulación de una transacción de
+    TARJETA por el valor completo, hecha por la API de Wompi) o `manual` (parcial, o de otro medio — PSE, Nequi…: la
+    plata se devolvió por fuera —panel de Wompi o transferencia— y aquí solo se registra). `status`: pending (Wompi la
+    aceptó pero aún no confirma) | done | failed."""
+    __tablename__ = 'form_refunds'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    payment_id = Column(Integer, ForeignKey('form_payments.id'), nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    kind = Column(String, nullable=False)
+    status = Column(String, nullable=False, default='pending')
+    reason = Column(Text, nullable=False)
+    note = Column(Text, nullable=True)                       # manual: cómo/dónde se devolvió (comprobante, banco…)
+    cancel_registration = Column(Boolean, nullable=False, default=True)   # al completarse, la inscripción queda cancelada (libera el cupo)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)   # NULL = lo registró el webhook (anulada desde el panel de Wompi)
+    wompi_response = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    done_at = Column(DateTime, nullable=True)
 
 
 class FormEvent(Base):

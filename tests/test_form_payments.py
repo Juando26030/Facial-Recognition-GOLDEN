@@ -392,3 +392,135 @@ def test_language_and_translate_settings_reach_the_public_page(client, factory, 
     _put(client, ev, form, settings={"language": "pt", "translate": False})
     client.post("/logout")
     assert client.get(f"{_url(ev, form)}/state").json()["ui"] == {"language": "pt", "translate": False}
+
+
+# ------------------------------- reembolsos -------------------------------
+def _approved(client, factory, method="CARD", txn="T1", capacity=None):
+    """Formulario con pago y UNA inscripción ya pagada; deja la sesión de un admin abierta."""
+    ev = _event(client, factory)
+    factory.staff("admin", "adm1")
+    form = _with_payment(client, ev)
+    if capacity:
+        _staff(client)
+        _status(client, ev, form, capacity=capacity)
+        client.post("/logout")
+    ref = _submit(client, ev, form, _values()).json()["payment"]["reference"]
+    client.post("/webhooks/wompi", json=_event_for("prod", ref, 15000000, "APPROVED", txn=txn, method=method))
+    login(client, "adm1")
+    pay = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]
+    return ev, form, pay
+
+
+def _refund(client, ev, form, pay, **body):
+    return client.post(f"/api/events/{ev.id}/forms/{form['id']}/payments/{pay['id']}/refund", json=body)
+
+
+def _regs(client, ev, form):
+    return client.get(f"/api/events/{ev.id}/forms/{form['id']}/submissions").json()["rows"]
+
+
+def test_full_card_refund_voids_at_wompi_cancels_the_registration_and_frees_the_seat(client, factory, keys, monkeypatch):
+    ev, form, pay = _approved(client, factory, capacity=1)
+    assert pay["auto_refund"] is True and pay["remaining"] == 150000
+    called = []
+    monkeypatch.setattr("app.routers.form_refunds.wompi.void_transaction", lambda cfg, txn: (called.append((cfg["test"], txn)) or True, {"data": {"transaction": {"status": "VOIDED"}}}))
+    monkeypatch.setattr("app.routers.form_refunds.wompi.fetch_transaction", lambda cfg, txn: None)
+    r = _refund(client, ev, form, pay, reason="La persona no puede asistir")
+    assert r.status_code == 200 and r.json()["status"] == "done", r.text
+    assert called == [(False, "T1")]                                        # la anulación fue por la API, con el id de la transacción
+    assert _regs(client, ev, form) == []                                    # inscripción cancelada: sale de las listas
+    p = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()
+    assert p["total_cop"] == 0 and p["refunded_cop"] == 150000 and p["rows"][0]["status"] == "refunded" and p["rows"][0]["refunds"][0]["kind"] == "void"
+    kpis = {k["label"]: k["value"] for k in client.get(f"/api/events/{ev.id}/forms/{form['id']}/analytics").json()["kpis"]}
+    assert kpis["Reembolsos"] == "$150.000" and kpis["Ingresos netos"] == "$0"
+    client.post("/logout")
+    other = {"cedula": "3003", "nombres": "Eva", "apellidos": "Ruiz", "correo": "eva@example.com"}
+    assert _submit(client, ev, form, other, sid="b").status_code == 200        # el cupo quedó libre
+    login(client, "adm1")
+    assert _refund(client, ev, form, pay, reason="otra vez").status_code == 400  # ya no está «aprobado»: no se reembolsa dos veces
+    assert client.delete(f"/api/events/{ev.id}/forms/{form['id']}").status_code == 409   # pagos reembolsados también son registro financiero
+
+
+def test_only_admins_can_refund(client, factory, keys, monkeypatch):
+    ev, form, pay = _approved(client, factory)
+    client.post("/logout")
+    _staff(client)                                                          # coordinador
+    assert _refund(client, ev, form, pay, reason="prueba").status_code == 403
+
+
+def test_a_failed_void_changes_nothing_and_can_be_retried(client, factory, keys, monkeypatch):
+    ev, form, pay = _approved(client, factory)
+    monkeypatch.setattr("app.routers.form_refunds.wompi.void_transaction", lambda cfg, txn: (False, "Wompi respondió 422: la transacción no se puede anular"))
+    r = _refund(client, ev, form, pay, reason="error de cobro")
+    assert r.status_code == 502 and "no se puede anular" in r.json()["detail"]
+    assert len(_regs(client, ev, form)) == 1                                # sigue inscrita y pagada
+    row = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]
+    assert row["status"] == "approved" and row["refunded"] == 0 and row["refunds"][0]["status"] == "failed"
+    monkeypatch.setattr("app.routers.form_refunds.wompi.void_transaction", lambda cfg, txn: (True, {"data": {"transaction": {"status": "VOIDED"}}}))
+    monkeypatch.setattr("app.routers.form_refunds.wompi.fetch_transaction", lambda cfg, txn: None)
+    assert _refund(client, ev, form, pay, reason="reintento").json()["status"] == "done"
+
+
+def test_a_void_wompi_has_not_finished_stays_pending_until_the_webhook_confirms(client, factory, keys, monkeypatch):
+    ev, form, pay = _approved(client, factory)
+    monkeypatch.setattr("app.routers.form_refunds.wompi.void_transaction", lambda cfg, txn: (True, {"data": {"transaction": {"status": "PENDING"}}}))
+    monkeypatch.setattr("app.routers.form_refunds.wompi.fetch_transaction", lambda cfg, txn: {"status": "APPROVED"})
+    assert _refund(client, ev, form, pay, reason="anular").json()["status"] == "pending"
+    assert len(_regs(client, ev, form)) == 1                                # todavía cuenta como pagado
+    assert _refund(client, ev, form, pay, reason="doble clic").status_code == 409
+    client.post("/webhooks/wompi", json=_event_for("prod", pay["reference"], 15000000, "VOIDED", txn="T1"))
+    assert _regs(client, ev, form) == []
+    row = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]
+    assert row["status"] == "refunded" and row["refunds"][0]["status"] == "done" and len(row["refunds"]) == 1
+
+
+def test_a_void_done_from_the_wompi_dashboard_is_recorded_by_the_webhook(client, factory, keys):
+    ev, form, pay = _approved(client, factory)
+    client.post("/webhooks/wompi", json=_event_for("prod", pay["reference"], 15000000, "VOIDED", txn="T1"))
+    assert _regs(client, ev, form) == []
+    row = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]
+    assert row["status"] == "refunded" and "panel de Wompi" in row["refunds"][0]["reason"]
+
+
+def test_partial_and_non_card_refunds_are_manual_records(client, factory, keys, monkeypatch):
+    ev, form, pay = _approved(client, factory, method="PSE")
+    assert pay["auto_refund"] is False
+    monkeypatch.setattr("app.routers.form_refunds.wompi.void_transaction", lambda *a: (_ for _ in ()).throw(AssertionError("PSE no se anula por API")))
+    assert _refund(client, ev, form, pay, reason="devolver").status_code == 400          # PSE: no hay anulación automática
+    assert _refund(client, ev, form, pay, reason="devolver", manual=True).status_code == 400   # y lo manual exige nota
+    r = _refund(client, ev, form, pay, reason="Sobrepago", manual=True, note="Transferencia Bancolombia comprobante 991", amount=50000)
+    assert r.status_code == 200 and r.json()["status"] == "done"
+    assert len(_regs(client, ev, form)) == 1                                # parcial: la inscripción sigue
+    row = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]
+    assert row["status"] == "approved" and row["refunded"] == 50000 and row["remaining"] == 100000
+    assert _refund(client, ev, form, pay, reason="x", manual=True, note="nota", amount=200000).status_code == 400   # más de lo que queda
+    assert _refund(client, ev, form, pay, reason="El resto", manual=True, note="Transferencia 992").status_code == 200   # el saldo
+    assert _regs(client, ev, form) == []                                    # ya devuelto todo: la inscripción se cancela
+    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]["status"] == "refunded"
+
+
+def test_partial_card_refund_cannot_use_the_void_api(client, factory, keys):
+    ev, form, pay = _approved(client, factory)
+    r = _refund(client, ev, form, pay, reason="parcial", amount=10000)
+    assert r.status_code == 400 and "valor completo" in r.json()["detail"]
+    assert _refund(client, ev, form, pay, reason="").status_code == 400      # sin motivo no se reembolsa
+
+
+def test_wompi_requests_carry_the_private_key_and_never_without_it(monkeypatch):
+    seen = {}
+
+    class R:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"data": {"status": "APPROVED"}}'
+
+    def fake_open(req, timeout=0):
+        seen["h"], seen["url"], seen["m"] = dict(req.header_items()), req.full_url, req.get_method()
+        return R()
+
+    monkeypatch.setattr(wompi.urllib.request, "urlopen", fake_open)
+    cfg = {"api": "https://sandbox.wompi.co/v1", "private_key": "prv_test_X"}
+    assert wompi.fetch_transaction(cfg, "12-34")["status"] == "APPROVED" and seen["h"]["Authorization"] == "Bearer prv_test_X"
+    assert wompi.void_transaction(cfg, "12-34")[0] is True and seen["m"] == "POST" and seen["url"].endswith("/transactions/12-34/void")
+    assert wompi.void_transaction({"api": "x", "private_key": ""}, "12-34")[0] is False       # sin llave privada no se intenta
+    assert wompi.void_transaction(cfg, "../../etc")[0] is False                                # ids raros no llegan a la URL
