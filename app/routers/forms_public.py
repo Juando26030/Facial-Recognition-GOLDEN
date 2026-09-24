@@ -349,7 +349,7 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
             clean[fid]["stored"] = stored
         sub.data_json = json.dumps(clean)
     if charge:
-        pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test,
+        pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"],
                           reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
                           breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
         db.add(pay)

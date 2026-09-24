@@ -20,13 +20,24 @@ PENDING_STATUSES = ("PENDING",)
 APPROVED, NEGATIVE = "APPROVED", ("DECLINED", "ERROR", "VOIDED")
 
 
-def config(test: bool) -> Optional[dict]:
-    """Llaves del juego de pruebas (`test=True`) o de producción; None si falta la llave pública o el secreto de integridad."""
-    prefix = "WOMPI_SANDBOX_" if test else "WOMPI_"
+def _build(prefix: str) -> Optional[dict]:
     public, integrity = os.getenv(prefix + "PUBLIC_KEY", "").strip(), os.getenv(prefix + "INTEGRITY_SECRET", "").strip()
     if not public or not integrity:
         return None
+    test = public.startswith("pub_test_")      # el ambiente lo dice la propia llave (pub_test_… / pub_prod_…), no el nombre de la variable
     return {"public_key": public, "integrity_secret": integrity, "events_secret": os.getenv(prefix + "EVENTS_SECRET", "").strip(), "api": API[test], "test": test}
+
+
+def config(test: bool) -> Optional[dict]:
+    """Llaves para un formulario en `pruebas` (`test=True`) o en producción. None si falta la llave pública o el secreto
+    de integridad. Regla de seguridad: un formulario en pruebas NUNCA usa llaves reales — si no hay juego SANDBOX, solo
+    sirven las llaves principales cuando son de pruebas (`pub_test_`). Y `cfg["test"]` (deducido de la llave) manda sobre
+    todo lo demás: con llaves de pruebas todo pago es de pruebas aunque el formulario esté «activo»."""
+    cfg = _build("WOMPI_SANDBOX_" if test else "WOMPI_")
+    if test and not cfg:
+        main = _build("WOMPI_")
+        cfg = main if main and main["test"] else None
+    return cfg
 
 
 def integrity_signature(reference: str, amount_cents: int, currency: str, secret: str) -> str:

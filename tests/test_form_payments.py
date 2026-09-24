@@ -318,3 +318,35 @@ def test_payment_field_state_is_reported_to_the_editor(client, factory, keys, mo
     for k in SANDBOX:
         monkeypatch.delenv(k)
     assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"]["sandbox_configured"] is False
+
+
+# ------------------------------- el ambiente lo dice la llave, no el nombre de la variable -------------------------------
+def _only_main(monkeypatch, public):
+    for k in list(PROD) + list(SANDBOX):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("WOMPI_PUBLIC_KEY", public)
+    monkeypatch.setenv("WOMPI_INTEGRITY_SECRET", "integ")
+    monkeypatch.setenv("WOMPI_EVENTS_SECRET", "evt")
+
+
+def test_test_keys_under_the_main_variables_are_treated_as_sandbox(client, factory, monkeypatch):
+    _only_main(monkeypatch, "pub_test_MAIN")
+    assert wompi.config(False)["test"] is True and wompi.config(False)["api"].startswith("https://sandbox.")
+    ev = _event(client, factory)
+    form = _with_payment(client, ev)                                   # formulario ACTIVO, pero con llaves de pruebas
+    body = _submit(client, ev, form, _values()).json()
+    assert body["payment"]["test"] is True and body["payment"]["public_key"] == "pub_test_MAIN"
+    _staff(client)
+    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["payments"]["production_configured"] is False   # no cuenta como producción
+    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"] == []                          # y no suma como ingreso real
+
+
+def test_a_form_in_pruebas_never_uses_real_keys(client, factory, monkeypatch):
+    _only_main(monkeypatch, "pub_prod_REAL")
+    assert wompi.config(True) is None                                   # solo hay llaves reales: el modo pruebas no puede cobrar
+    ev = _event(client, factory)
+    form = _with_payment(client, ev, status="pruebas")
+    _staff(client)
+    key = client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["test_key"]
+    client.post("/logout")
+    assert _submit(client, ev, form, _values(), key=key).status_code == 503

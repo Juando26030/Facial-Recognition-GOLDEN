@@ -97,31 +97,79 @@ function showForm(st) {
   beacon("view");
   app.innerHTML = "";
   const host = document.createElement("div"); app.appendChild(host);
-  let started = false;
+  let started = false, quoteTimer = null;
+  const label = st.design.theme.button_text || "Enviar";
   const fr = FormRender.render(host, st.design, {
     assetUrl, prefill: st.prefill, readonly: st.readonly,
     onFirstInput: () => { if (!started) { started = true; beacon("start"); } },
+    onChange: () => { if (fr && fr.hasPayment) { clearTimeout(quoteTimer); quoteTimer = setTimeout(quote, 250); } },
   });
+  // Campo «Pago»: el total lo calcula SIEMPRE el servidor con lo que la persona lleva escrito.
+  async function quote() {
+    const { res, data } = await api("/quote", { values: fr.collect().values });
+    if (res.ok) fr.setQuote(data);
+  }
+  if (fr.hasPayment) quote();
   if (st.capacity_left !== null && st.capacity_left !== undefined && st.capacity_left <= 10 && !st.is_test) {
     host.insertAdjacentHTML("afterbegin", `<p style="text-align:center; font-size:.85rem; color:#b26a00;">Quedan ${st.capacity_left} cupo(s)</p>`);
   }
+  const msg = document.createElement("div"); msg.style.cssText = "text-align:center; font-size:.88rem; margin-top:10px;"; fr.form.appendChild(msg);
+  const reset = (text, isErr) => { fr.button.disabled = false; msg.style.color = isErr ? "#c0392b" : "inherit"; msg.textContent = text || ""; quote(); if (!fr.hasPayment) fr.button.textContent = label; };
+
   fr.form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!fr.validate()) return;
-    fr.button.disabled = true; fr.button.textContent = "Enviando…";
+    fr.button.disabled = true; fr.button.textContent = "Enviando…"; msg.textContent = "";
     const { values, files } = fr.collect();
     const fd = new FormData();
     fd.append("data", JSON.stringify({ values, k: K, t: token, sid: SID, source: SOURCE }));
     Object.entries(files).forEach(([fid, f]) => fd.append("file:" + fid, f, f.name));
     let res, data;
     try { res = await fetch(BASE + "/submit", { method: "POST", body: fd }); data = await res.json().catch(() => ({})); }
-    catch (err) { fr.button.disabled = false; fr.button.textContent = st.design.theme.button_text || "Enviar"; alert("No hay conexión. Intenta de nuevo."); return; }
+    catch (err) { return reset("No hay conexión. Intenta de nuevo.", true); }
+    if (res.ok && data.payment_required) return pay(data, reset, fr);
     if (res.ok) return done(data.thanks);
-    fr.button.disabled = false; fr.button.textContent = st.design.theme.button_text || "Enviar";
-    if (res.status === 422 && data.errors) return fr.setErrors(data.errors);
+    if (res.status === 422 && data.errors) { reset(""); return fr.setErrors(data.errors); }
     if (res.status === 409 && data.stage === "closed") return load();
-    alert(data.detail || "No se pudo enviar. Intenta de nuevo.");
+    reset(data.detail || "No se pudo enviar. Intenta de nuevo.", true);
   });
+}
+
+// ---- Pago con Wompi (widget embebido: la persona no sale de esta página). La inscripción solo existe cuando Wompi aprueba.
+function loadWidget(url) {
+  if (window.WidgetCheckout) return Promise.resolve();
+  return new Promise((ok, fail) => { const s = document.createElement("script"); s.src = url; s.onload = ok; s.onerror = () => fail(new Error("widget")); document.head.appendChild(s); });
+}
+async function pay(data, reset, fr) {
+  const p = data.payment;
+  fr.button.textContent = "Abriendo el pago…";
+  try { await loadWidget(p.widget_url); } catch (e) { return reset("No pudimos cargar el medio de pago. Revisa tu conexión e intenta de nuevo.", true); }
+  const checkout = new WidgetCheckout({
+    currency: p.currency, amountInCents: p.amount_in_cents, reference: p.reference, publicKey: p.public_key,
+    signature: { integrity: p.integrity }, customerData: p.customer && p.customer.email ? p.customer : undefined,
+  });
+  checkout.open(async (result) => {
+    const tx = result && result.transaction;
+    fr.button.textContent = "Verificando tu pago…";
+    const { res, data: r } = await api("/pay/confirm", { pt: data.pay_token, transaction_id: tx && tx.id ? tx.id : "" });
+    if (!res.ok) return reset(r.detail || "No pudimos verificar el pago. Si te cobraron, escríbenos con tu comprobante.", true);
+    if (r.status === "approved") return done(r.thanks);
+    if (r.status === "pending" && tx && tx.id) return waitApproval(data.pay_token, reset, fr);
+    if (r.status === "pending") return reset("No completaste el pago. Puedes intentarlo de nuevo cuando quieras.", true);
+    reset("El pago no fue aprobado. Revisa los datos o prueba con otro medio de pago.", true);
+  });
+}
+async function waitApproval(pt, reset, fr) {
+  fr.button.textContent = "Esperando la confirmación de tu banco…";
+  const until = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 3000));
+    let r;
+    try { r = await (await fetch(`${BASE}/pay/status?pt=${encodeURIComponent(pt)}${K ? "&k=" + encodeURIComponent(K) : ""}`)).json(); } catch (e) { continue; }
+    if (r.status === "approved") return done(r.thanks);
+    if (["declined", "error", "voided"].includes(r.status)) return reset("El pago no fue aprobado. Puedes intentarlo de nuevo.", true);
+  }
+  reset("Todavía no recibimos la confirmación. Si ya pagaste, tu inscripción se confirmará sola; si no, intenta de nuevo.", true);
 }
 
 function done(thanks) {

@@ -64,7 +64,7 @@
     </div>
     <div class="tabs-f" id="tabs">
       <button data-tab="design" class="active">🎨 Diseño</button><button data-tab="config">⚙️ Configuración</button><button data-tab="answers">📥 Respuestas</button>
-      <button data-tab="analytics">📊 Analítica</button><button data-tab="invites" id="invTab" style="display:none;">✉️ Invitaciones</button>
+      <button data-tab="payments" id="payTab" style="display:none;">💳 Pagos</button><button data-tab="analytics">📊 Analítica</button><button data-tab="invites" id="invTab" style="display:none;">✉️ Invitaciones</button>
     </div>
 
     <!-- ===================== DISEÑO ===================== -->
@@ -125,6 +125,15 @@
       <div style="overflow-x:auto;"><table class="ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
     </div></div>
 
+    <!-- ===================== PAGOS ===================== -->
+    <div class="pane" id="pane-payments"><div class="card">
+      <h4 style="margin:0 0 6px;">Pagos con Wompi</h4>
+      <div id="payCfg" class="hint" style="margin-bottom:10px;"></div>
+      <div class="bar" style="margin-bottom:8px;"><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="payTests"> Incluir pagos de prueba</label><span id="payTotal" style="font-weight:700;"></span></div>
+      <div style="overflow-x:auto;"><table class="ans"><thead><tr><th>Fecha</th><th>Referencia</th><th>Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th></tr></thead><tbody id="payBody"></tbody></table></div>
+      <p class="hint">La referencia (<code>GW-evento-formulario-inscripción-código</code>) identifica a qué evento pertenece cada pago: la separación por evento se hace aquí y en el reporte, no en el panel de Wompi. «Sin inscripción» = pago aprobado cuya inscripción ya no existe: revísalo a mano.</p>
+    </div></div>
+
     <!-- ===================== ANALÍTICA ===================== -->
     <div class="pane" id="pane-analytics">
       <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;"><input type="checkbox" id="anTests"> Incluir las inscripciones de prueba</label>
@@ -157,7 +166,7 @@ const FONTS = ['Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald', 'Raleway',
 const TYPES = {
   text_short: ['Texto corto', '✏️'], text_long: ['Texto largo', '📄'], email: ['Correo', '✉️'], phone: ['Teléfono', '📞'], number: ['Número', '🔢'], date: ['Fecha', '📅'],
   checkbox: ['Casilla sí/no', '☑️'], select: ['Lista desplegable', '▾'], radio: ['Opción única', '◉'], multiselect: ['Selección múltiple', '☰'], file: ['Archivo adjunto', '📎'],
-  heading: ['Título', 'H'], paragraph: ['Texto informativo', '¶'], image: ['Imagen', '🖼️'],
+  heading: ['Título', 'H'], paragraph: ['Texto informativo', '¶'], image: ['Imagen', '🖼️'], payment: ['Pago (Wompi)', '💳'],
 };
 const CHOICE = ['select', 'radio', 'multiselect'], STATIC = ['heading', 'paragraph', 'image'];
 const EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
@@ -170,7 +179,9 @@ window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault()
 // ---------------------------------------------------------------- utilidades del diseño
 function locate(id) { for (let r = 0; r < design.rows.length; r++) { const i = design.rows[r].items.indexOf(id); if (i >= 0) return [r, i]; } return null; }
 function detach(id) { const at = locate(id); if (!at) return; design.rows[at[0]].items.splice(at[1], 1); if (!design.rows[at[0]].items.length) design.rows.splice(at[0], 1); }
+const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 });
 function newField(type, evField) {
+  if (type === 'payment' && Object.values(design.fields).some((x) => x.type === 'payment')) { showToast('Un formulario admite un solo campo de pago', 'error'); return null; }
   const id = uid();
   const f = { id, type, label: evField ? evField.label : (type === 'heading' ? '' : TYPES[type][0]), required: evField ? !!evField.required && false : false, stats: false, help: '', placeholder: '', key: evField ? evField.key : null };
   if (CHOICE.includes(type)) f.options = evField && evField.options && evField.options.length ? [...evField.options] : ['Opción 1', 'Opción 2'];
@@ -178,6 +189,7 @@ function newField(type, evField) {
   if (type === 'heading') f.content = 'Título de sección';
   if (type === 'paragraph') f.content = 'Escribe aquí un texto informativo.';
   if (type === 'image') f.src = '';
+  if (type === 'payment') { f.label = 'Pago de inscripción'; f.pay = { mode: 'fixed', amount: 150000, description: '', rules: [], discounts: [] }; }
   design.fields[id] = f;
   return f;
 }
@@ -196,7 +208,7 @@ function renderPalette() {
   $('palEvent').innerHTML = free.map((f) => `<button type="button" draggable="true" data-ev="${esc(f.key)}">🔗 ${esc(f.label)}</button>`).join('') || '<span class="hint">Todos los campos del evento ya están en el formulario.</span>';
   document.querySelectorAll('[data-new],[data-ev]').forEach((b) => {
     b.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', JSON.stringify(b.dataset.new ? { kind: 'new', type: b.dataset.new } : { kind: 'event', key: b.dataset.ev })); e.dataTransfer.effectAllowed = 'copy'; });
-    b.addEventListener('click', () => { const f = b.dataset.new ? newField(b.dataset.new) : newField(eventFields.find((x) => x.key === b.dataset.ev).type, eventFields.find((x) => x.key === b.dataset.ev)); place(f.id, { gap: design.rows.length }); selected = f.id; markDirty(); renderAll(); });
+    b.addEventListener('click', () => { const f = b.dataset.new ? newField(b.dataset.new) : newField(eventFields.find((x) => x.key === b.dataset.ev).type, eventFields.find((x) => x.key === b.dataset.ev)); if (!f) return; place(f.id, { gap: design.rows.length }); selected = f.id; markDirty(); renderAll(); });
   });
 }
 
@@ -218,7 +230,9 @@ function onDrop(target, raw) {
     else if (target.row != null && !design.rows[target.row]) return;
     if (target.row != null && at && at[0] < target.row && !design.rows.some((r) => r.items.includes(id))) { /* fila de origen quedó vacía y se eliminó: se corrige el índice */ }
   } else {
-    id = (p.kind === 'event' ? newField(eventFields.find((x) => x.key === p.key).type, eventFields.find((x) => x.key === p.key)) : newField(p.type)).id;
+    const made = p.kind === 'event' ? newField(eventFields.find((x) => x.key === p.key).type, eventFields.find((x) => x.key === p.key)) : newField(p.type);
+    if (!made) return;
+    id = made.id;
   }
   if (!place(id, target)) { if (p.kind !== 'move') delete design.fields[id]; renderAll(); return; }
   selected = id; markDirty(); renderAll();
@@ -249,7 +263,7 @@ function renderCanvas() {
 }
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
-  const label = STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
+  const label = f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
   return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
@@ -259,11 +273,13 @@ function renderProps() {
   const box = $('propsBox');
   const f = selected && design.fields[selected];
   if (!f) { box.innerHTML = '<p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p>'; return; }
-  const isInput = !STATIC.includes(f.type);
-  const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type));
+  const isPay = f.type === 'payment';
+  const isInput = !STATIC.includes(f.type) && !isPay;
+  const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && x.type !== 'payment');
   const used = usedKeys();
   let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
   if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
+  if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + payHtml(f);
   if (f.type === 'heading' || f.type === 'paragraph') html += `<div class="fld"><label>Texto</label><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>`;
   if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
@@ -294,6 +310,7 @@ function renderProps() {
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
   const upd = (fn) => () => { fn(); markDirty(); renderCanvas(); };
+  if (isPay) bindPay(box, f);
   on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pHelp', 'input', upd(() => { f.help = $('pHelp').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
   on('pContent', 'input', upd(() => { f.content = $('pContent').value; }));
   on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
@@ -309,7 +326,68 @@ function renderProps() {
   on('cVal', 'change', () => { cond.value = $('cVal').value; markDirty(); });
   const shift = (d) => { const at = locate(f.id); const row = design.rows[at[0]]; const n = at[1] + d; if (n < 0 || n >= row.items.length) return; [row.items[at[1]], row.items[n]] = [row.items[n], row.items[at[1]]]; markDirty(); renderCanvas(); };
   on('pUp', 'click', () => shift(-1)); on('pDown', 'click', () => shift(1));
-  on('pDel', 'click', () => { const dependents = Object.values(design.fields).filter((x) => x.show_if && x.show_if.field === f.id); dependents.forEach((x) => { x.show_if = null; }); detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+  on('pDel', 'click', () => { const dependents = Object.values(design.fields).filter((x) => x.show_if && x.show_if.field === f.id); dependents.forEach((x) => { x.show_if = null; }); dropPriceConditions(f.id); detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+}
+
+// ---------------------------------------------------------------- campo Pago: monto, reglas y descuentos
+const OPS = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
+const getPath = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
+function setPath(o, path, v) { const ks = path.split('.'); const last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; }
+function dropPriceConditions(fieldId) {
+  const pf = Object.values(design.fields).find((x) => x.type === 'payment');
+  if (!pf) return;
+  [...pf.pay.rules, ...pf.pay.discounts].forEach((r) => { r.when = (r.when || []).filter((c) => c.field !== fieldId); });
+}
+function condsHtml(path, list, exceptId) {
+  const inputs = Object.values(design.fields).filter((x) => x.id !== exceptId && !STATIC.includes(x.type) && x.type !== 'payment');
+  return `<div style="margin:4px 0;">${(list || []).map((c, i) => {
+    const isDate = c.field === '@date', parent = design.fields[c.field], p = `${path}.${i}`;
+    const opSel = isDate ? `<select data-bind="${p}.op" data-rerender><option value="before" ${c.op === 'before' ? 'selected' : ''}>antes de</option><option value="on_or_after" ${c.op === 'on_or_after' ? 'selected' : ''}>desde (incluye el día)</option></select>`
+      : `<select data-bind="${p}.op" data-rerender>${OPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+    const val = isDate ? `<input type="date" data-bind="${p}.value" value="${esc(c.value)}">`
+      : c.op === 'filled' ? '' : (parent && parent.options && c.op !== 'in' ? `<select data-bind="${p}.value"><option value=""></option>${parent.options.map((o) => `<option ${c.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
+        : `<input type="text" data-bind="${p}.value" data-list="${c.op === 'in' ? 1 : 0}" value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores, separados, por coma' : 'valor'}">`);
+    return `<div style="display:grid; gap:3px; background:#f6f7fb; padding:5px; border-radius:8px; margin-bottom:4px;">
+      <select data-bind="${p}.field" data-rerender data-resetvalue><option value="@date" ${isDate ? 'selected' : ''}>📅 Fecha de la inscripción (hoy)</option>${inputs.map((o) => `<option value="${o.id}" ${o.id === c.field ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+      ${opSel}${val}<button type="button" class="small-btn danger" data-del="${p}" style="justify-self:end; padding:0 8px;">Quitar condición</button></div>`;
+  }).join('')}<button type="button" class="small-btn" data-addcond="${path}">+ Condición</button></div>`;
+}
+function payHtml(f) {
+  const pay = f.pay;
+  const rules = pay.mode === 'rules' ? `<div class="fld"><label>Montos según respuestas <span class="hint">(gana la primera que se cumpla; si ninguna, el monto base)</span></label>${pay.rules.map((r, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
+      <input type="text" data-bind="rules.${i}.label" value="${esc(r.label)}" placeholder="Nombre (ej. Entrada VIP)"><input type="number" min="0" data-num data-bind="rules.${i}.amount" value="${r.amount}" placeholder="Monto COP" style="width:100%; margin-top:3px;">
+      <div class="hint" style="margin-top:4px;">Cuando se cumpla TODO esto:</div>${condsHtml(`rules.${i}.when`, r.when, f.id)}<button type="button" class="small-btn danger" data-del="rules.${i}">Quitar regla</button></div>`).join('')}
+      <button type="button" class="small-btn" data-addrule>+ Agregar monto por regla</button></div>` : '';
+  const disc = `<div class="fld"><label>Descuentos <span class="hint">(se aplican todos los que se cumplan, en este orden)</span></label>${pay.discounts.map((d, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
+      <input type="text" data-bind="discounts.${i}.label" value="${esc(d.label)}" placeholder="Nombre (ej. Estudiante)">
+      <div style="display:flex; gap:4px; margin-top:3px;"><select data-bind="discounts.${i}.kind"><option value="percent" ${d.kind === 'percent' ? 'selected' : ''}>% de descuento</option><option value="amount" ${d.kind === 'amount' ? 'selected' : ''}>$ COP menos</option></select><input type="number" min="0" step="any" data-num data-bind="discounts.${i}.value" value="${d.value}"></div>
+      <div class="hint" style="margin-top:4px;">Cuando se cumpla TODO esto (vacío = siempre):</div>${condsHtml(`discounts.${i}.when`, d.when, f.id)}<button type="button" class="small-btn danger" data-del="discounts.${i}">Quitar descuento</button></div>`).join('')}
+      <button type="button" class="small-btn" data-adddisc>+ Agregar descuento</button></div>`;
+  return `<div class="fld"><label>Descripción (opcional)</label><input type="text" data-bind="description" value="${esc(pay.description)}" placeholder="Ej. Inscripción Feria 2026"></div>
+    <div class="fld"><label>Cómo se define el monto</label><select data-bind="mode" data-rerender><option value="fixed" ${pay.mode === 'fixed' ? 'selected' : ''}>Monto fijo</option><option value="rules" ${pay.mode === 'rules' ? 'selected' : ''}>Depende de otras respuestas</option></select></div>
+    <div class="fld"><label>Monto ${pay.mode === 'rules' ? 'base (si no se cumple ninguna regla)' : ''} en pesos colombianos</label><input type="number" min="0" data-num data-bind="amount" value="${pay.amount}"></div>${rules}${disc}
+    <p class="hint">Wompi: mínimo $1.500 y máximo $10.000.000 COP por pago. Si el total queda en $0 no se cobra y la inscripción se confirma sola. Acepta tarjeta (también internacional) y PSE.</p>`;
+}
+function bindPay(box, f) {
+  const rerender = () => { markDirty(); renderCanvas(); renderProps(); };
+  box.querySelectorAll('[data-bind]').forEach((el) => {
+    const path = el.dataset.bind;
+    const commit = () => {
+      let v = el.value;
+      if (el.hasAttribute('data-num')) v = v === '' ? 0 : Number(v);
+      else if (el.dataset.list === '1') v = v.split(',').map((x) => x.trim()).filter(Boolean);
+      setPath(f.pay, path, v);
+      if (el.hasAttribute('data-resetvalue')) { setPath(f.pay, path.replace(/field$/, 'value'), ''); setPath(f.pay, path.replace(/field$/, 'op'), v === '@date' ? 'before' : 'equals'); }
+      if (el.hasAttribute('data-rerender')) rerender(); else { markDirty(); renderCanvas(); }
+    };
+    el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', commit);
+  });
+  const arr = (path) => getPath(f.pay, path);
+  box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { const ks = b.dataset.del.split('.'); const idx = +ks.pop(); arr(ks.join('.')).splice(idx, 1); rerender(); }));
+  box.querySelectorAll('[data-addcond]').forEach((b) => b.addEventListener('click', () => { const first = Object.values(design.fields).find((x) => x.id !== f.id && !STATIC.includes(x.type) && x.type !== 'payment'); arr(b.dataset.addcond).push(first ? { field: first.id, op: 'equals', value: '' } : { field: '@date', op: 'before', value: '' }); rerender(); }));
+  const add = (sel, list, item) => { const b = box.querySelector(sel); if (b) b.addEventListener('click', () => { f.pay[list].push(item()); rerender(); }); };
+  add('[data-addrule]', 'rules', () => ({ label: '', when: [], amount: f.pay.amount }));
+  add('[data-adddisc]', 'discounts', () => ({ label: 'Descuento', kind: 'percent', value: 10, when: [] }));
 }
 
 // ---------------------------------------------------------------- apariencia
@@ -329,7 +407,7 @@ function renderTheme() {
   up('tLogo', 'logo'); up('tBg', 'bg_image');
   on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
 }
-function renderAll() { renderPalette(); renderCanvas(); renderProps(); }
+function renderAll() { renderPalette(); renderCanvas(); renderProps(); $('payTab').style.display = Object.values(design.fields).some((x) => x.type === 'payment') ? '' : 'none'; }
 
 // ---------------------------------------------------------------- guardar / previsualizar / plantilla
 async function saveDesign() {
@@ -371,7 +449,7 @@ $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-tab]'); if (!b) return;
   document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('active', x === b));
   document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + b.dataset.tab));
-  if (b.dataset.tab === 'answers') loadAnswers(); if (b.dataset.tab === 'analytics') mountAnalytics(); if (b.dataset.tab === 'invites') loadInvites();
+  if (b.dataset.tab === 'payments') loadPayments(); if (b.dataset.tab === 'answers') loadAnswers(); if (b.dataset.tab === 'analytics') mountAnalytics(); if (b.dataset.tab === 'invites') loadInvites();
 });
 
 // ---------------------------------------------------------------- configuración
@@ -442,13 +520,25 @@ async function loadAnswers() {
   const d = await j(`${api}/submissions?include_tests=${withTests}`);
   $('repBtn').href = `${api}/report`; $('repBtnAll').href = `${api}/report?include_tests=true`;
   $('ansInfo').textContent = `${d.rows.length} inscripción(es)`;
-  $('ansHead').innerHTML = `<tr><th>#</th><th>Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}<th>Origen</th><th>En la base</th><th></th></tr>`;
+  $('ansHead').innerHTML = `<tr><th>#</th><th>Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th>Pagado</th>' : ''}<th>Origen</th><th>En la base</th><th></th></tr>`;
   $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' 🧪' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
-    const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
-    <td><button class="small-btn danger" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 5}" style="color:#999;">Todavía no hay inscripciones.</td></tr>`;
+    const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
+    <td><button class="small-btn danger" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" style="color:#999;">Todavía no hay inscripciones.</td></tr>`;
   document.querySelectorAll('[data-delsub]').forEach((b) => b.addEventListener('click', async () => { if (!(await showConfirm('¿Eliminar esta inscripción?', { confirmLabel: 'Eliminar' }))) return; await j(`${api}/submissions/${b.dataset.delsub}`, { method: 'DELETE' }); loadAnswers(); }));
 }
 $('ansTests').addEventListener('change', loadAnswers);
+
+// ---------------------------------------------------------------- pagos (Wompi)
+const PAY_STATES = { approved: 'Aprobado', declined: 'Rechazado', error: 'Error', voided: 'Anulado', pending: 'En espera', abandoned: 'Abandonado' };
+async function loadPayments() {
+  const d = await j(`${api}/payments?include_tests=${$('payTests').checked}`);
+  const okc = (v) => (v ? '✅' : '⚠️ sin configurar');
+  $('payCfg').innerHTML = `Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="small-btn" id="copyHook">Copiar</button>`;
+  $('copyHook').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${location.origin}/webhooks/wompi`); } catch (e) {} showToast('URL copiada', 'success'); });
+  $('payTotal').textContent = `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;
+  $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' 🧪' : ''}</td><td>${cop(r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ' <b title="Aprobado pero sin inscripción">⚠️ sin inscripción</b>' : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td></tr>`).join('') || '<tr><td colspan="8" style="color:#999;">Todavía no hay pagos.</td></tr>';
+}
+$('payTests').addEventListener('change', loadPayments);
 
 // ---------------------------------------------------------------- analítica
 let dash = null;
