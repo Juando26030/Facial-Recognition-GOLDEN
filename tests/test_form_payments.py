@@ -502,7 +502,7 @@ def test_partial_and_non_card_refunds_are_manual_records(client, factory, keys, 
 def test_partial_card_refund_cannot_use_the_void_api(client, factory, keys):
     ev, form, pay = _approved(client, factory)
     r = _refund(client, ev, form, pay, reason="parcial", amount=10000)
-    assert r.status_code == 400 and "valor completo" in r.json()["detail"]
+    assert r.status_code == 400 and "valor original completo" in r.json()["detail"]
     assert _refund(client, ev, form, pay, reason="").status_code == 400      # sin motivo no se reembolsa
 
 
@@ -524,3 +524,86 @@ def test_wompi_requests_carry_the_private_key_and_never_without_it(monkeypatch):
     assert wompi.void_transaction(cfg, "12-34")[0] is True and seen["m"] == "POST" and seen["url"].endswith("/transactions/12-34/void")
     assert wompi.void_transaction({"api": "x", "private_key": ""}, "12-34")[0] is False       # sin llave privada no se intenta
     assert wompi.void_transaction(cfg, "../../etc")[0] is False                                # ids raros no llegan a la URL
+
+
+# ------------------------------- reembolsos por API (V2), errores suaves, verificar/descartar y comisión neta -------------------------------
+def test_wompi_http_200_with_an_error_inside_is_not_a_success(monkeypatch):
+    class R:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return rb'{"data": {"type": "unprocessable", "reason": "S\u00f3lo las transacciones con el mismo monto original pueden ser potencialmente anuladas."}, "meta": {}}'
+
+    monkeypatch.setattr(wompi.urllib.request, "urlopen", lambda *a, **k: R())
+    ok, detail = wompi.void_transaction({"api": "https://sandbox.wompi.co/v1", "private_key": "prv_test_X"}, "12-34")
+    assert ok is False and "mismo monto original" in detail
+
+
+def test_fee_estimate_follows_the_plan_and_can_be_tuned(monkeypatch):
+    assert wompi.estimate_fee(500000, "PSE") == 99068           # $5.000: (2,65 % + $700) + IVA 19 % = $990,68
+    assert wompi.estimate_fee(500000, "BANCOLOMBIA_QR") == 5950  # QR: 1 % + IVA
+    monkeypatch.setenv("WOMPI_FEE_PERCENT", "3")
+    monkeypatch.setenv("WOMPI_FEE_FIXED_COP", "0")
+    monkeypatch.setenv("WOMPI_FEE_IVA_PERCENT", "0")
+    assert wompi.estimate_fee(10000000, "CARD") == 300000
+
+
+def test_payments_list_report_and_analytics_offer_the_net_of_fees_view(client, factory, keys):
+    from openpyxl import load_workbook
+    import io
+    ev, form, pay = _approved(client, factory, method="PSE")
+    base = f"/api/events/{ev.id}/forms/{form['id']}"
+    d = client.get(f"{base}/payments").json()
+    fee = wompi.estimate_fee(15000000, "PSE") // 100
+    assert d["fees_cop"] == fee and d["total_cop"] == 150000 and d["net_after_fees_cop"] == 150000 - fee
+    assert d["rows"][0]["fee"] == fee and d["rows"][0]["net"] == 150000 - fee
+    plain = {k["label"]: k["value"] for k in client.get(f"{base}/analytics").json()["kpis"]}
+    assert "Ingresos netos de comisión" not in plain                     # por defecto se ve el bruto
+    net = {k["label"]: k["value"] for k in client.get(f"{base}/analytics", params={"net_fees": True}).json()["kpis"]}
+    assert net["Ingresos netos de comisión"] == "$" + f"{150000 - fee:,}".replace(",", ".") and "Comisión Wompi (estimada)" in net
+    ws = load_workbook(io.BytesIO(client.get(f"{base}/report").content)).active
+    header = [c.value for c in ws[2]]
+    row = [c.value for c in ws[3]]
+    assert row[header.index("Comisión Wompi estimada (COP)")] == fee and row[header.index("Neto estimado de comisión (COP)")] == 150000 - fee
+
+
+def test_v2_refund_in_sandbox_can_be_partial_and_is_confirmed_with_verify(client, factory, monkeypatch):
+    for k in list(PROD) + list(SANDBOX):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("WOMPI_PUBLIC_KEY", "pub_test_MAIN")             # llaves de pruebas: V2 disponible (sandbox)
+    for k, v in (("WOMPI_INTEGRITY_SECRET", "integ"), ("WOMPI_EVENTS_SECRET", "prod_events_x"), ("WOMPI_PRIVATE_KEY", "prv_test_x")):
+        monkeypatch.setenv(k, v)
+    ev = _event(client, factory)
+    factory.staff("admin", "adm1")
+    form = _with_payment(client, ev)
+    ref = _submit(client, ev, form, _values()).json()["payment"]["reference"]
+    client.post("/webhooks/wompi", json=_event_for("test", ref, 15000000, "APPROVED", txn="T1", method="NEQUI") | {"signature": {"properties": ["transaction.id", "transaction.status", "transaction.amount_in_cents"], "checksum": hashlib.sha256(f"T1APPROVED150000001700000000prod_events_x".encode()).hexdigest()}})
+    login(client, "adm1")
+    pay = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments?include_tests=true").json()["rows"][0]
+    assert pay["status"] == "approved" and pay["auto_refund"] is True and pay["auto_partial"] is True
+    calls = []
+    monkeypatch.setattr("app.routers.form_refunds.wompi.create_refund_v2", lambda cfg, txn, cents, reason="", reference="": (calls.append((txn, cents)) or True, {"data": {"id": 777, "status": "PENDING", "amount_in_cents": cents}}))
+    r = _refund(client, ev, form, pay, reason="Sobrepago", amount=30000)
+    assert r.json()["status"] == "pending" and calls == [("T1", 3000000)]
+    assert client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments?include_tests=true").json()["rows"][0]["refunded"] == 0      # todavía no cuenta
+    rid = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments?include_tests=true").json()["rows"][0]["refunds"][0]["id"]
+    url = f"/api/events/{ev.id}/forms/{form['id']}/payments/{pay['id']}/refunds/{rid}/check"
+    monkeypatch.setattr("app.routers.form_refunds.wompi.get_refund_v2", lambda cfg, i: {"id": i, "status": "PENDING"})
+    assert client.post(url).json()["status"] == "pending"
+    monkeypatch.setattr("app.routers.form_refunds.wompi.get_refund_v2", lambda cfg, i: {"id": i, "status": "APPROVED"})
+    assert client.post(url).json()["status"] == "done"
+    row = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments?include_tests=true").json()["rows"][0]
+    assert row["refunded"] == 30000 and row["status"] == "approved" and len(_regs(client, ev, form)) == 1     # parcial: la inscripción sigue
+
+
+def test_a_pending_refund_can_be_discarded_and_a_declined_one_is_marked_failed(client, factory, keys, monkeypatch):
+    ev, form, pay = _approved(client, factory)
+    monkeypatch.setattr("app.routers.form_refunds.wompi.void_transaction", lambda cfg, txn, *a: (True, {"data": {"transaction": {"status": "PENDING"}}}))
+    monkeypatch.setattr("app.routers.form_refunds.wompi.fetch_transaction", lambda cfg, txn: {"status": "APPROVED"})
+    assert _refund(client, ev, form, pay, reason="anular").json()["status"] == "pending"
+    rid = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]["refunds"][0]["id"]
+    base = f"/api/events/{ev.id}/forms/{form['id']}/payments/{pay['id']}/refunds/{rid}"
+    assert client.post(f"{base}/check").json()["status"] == "pending"                       # Wompi aún no la anula
+    assert client.post(f"{base}/discard").json()["status"] == "failed"
+    assert client.post(f"{base}/discard").status_code == 404                                # ya no está pendiente
+    assert client.post(f"{base}/explota").status_code == 404
+    assert _refund(client, ev, form, pay, reason="otra vez", manual=True, note="transferencia 1").status_code == 200   # y ya se puede registrar a mano

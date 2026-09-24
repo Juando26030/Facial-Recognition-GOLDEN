@@ -425,7 +425,7 @@ async def report(event_id: int, form_id: int, include_tests: bool = False, reque
     ws.title = "Inscripciones"
     ws.append([f"{form.name} — {event.name} ({event.event_code})"])
     ws["A1"].font = Font(bold=True, size=13, color="0A0E2E")
-    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "En la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos", "Reembolsado (COP)"] if has_pay else [])
+    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "En la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos", "Reembolsado (COP)", "Comisión Wompi estimada (COP)", "Neto estimado de comisión (COP)"] if has_pay else [])
     ws.append(headers)
     for c in ws[2]:
         c.font = Font(color="FFFFFF", bold=True)
@@ -450,9 +450,35 @@ def _approved_by_submission(db: Session, form: WebForm) -> dict:
 
 def _pay_cells(p: Optional[FormPayment]) -> list:
     if not p:
-        return ["", "", "", "", "", ""]
+        return ["", "", "", "", "", "", "", ""]
     applied = "; ".join(f"{a['label']} ({a['effect']})" for a in json.loads(p.breakdown_json or "{}").get("applied", []))
-    return [p.amount_cents // 100, p.reference, p.payment_method or "", p.transaction_id or "", applied, (p.refunded_cents or 0) // 100]
+    return [p.amount_cents // 100, p.reference, p.payment_method or "", p.transaction_id or "", applied, (p.refunded_cents or 0) // 100,
+            _fee_cop(p), _net_cop(p)]
+
+
+def _fee_cop(p: FormPayment) -> int:
+    """Comisión Wompi ESTIMADA de un pago, en pesos (ver wompi.estimate_fee)."""
+    return wompi.estimate_fee(p.amount_cents, p.payment_method or "") // 100
+
+
+def _net_cop(p: FormPayment) -> int:
+    """Lo que queda de un pago aprobado: pagado − reembolsado − comisión estimada (la comisión no se devuelve al reembolsar)."""
+    return p.amount_cents // 100 - (p.refunded_cents or 0) // 100 - _fee_cop(p)
+
+
+def _auto_refund_possible(p: FormPayment) -> bool:
+    """¿Hay reembolso automático por API para este pago? Tarjeta (anulación) siempre; otros medios solo con la API V2 (sandbox)."""
+    if (p.payment_method or "").upper() == "CARD":
+        return True
+    cfg = wompi.config(p.is_test)
+    return bool(cfg and wompi.refunds_v2_enabled(cfg))
+
+
+def _auto_partial_possible(p: FormPayment) -> bool:
+    """Reembolso parcial automático: solo con la API V2 y fuera de tarjeta (la anulación de tarjeta es solo por el valor completo)."""
+    if (p.payment_method or "").upper() == "CARD":
+        return False
+    return _auto_refund_possible(p)
 
 
 def _pay_label(p: FormPayment) -> str:
@@ -478,12 +504,16 @@ async def list_payments(event_id: int, form_id: int, include_tests: bool = False
         refunds.setdefault(r.payment_id, []).append(r)
     return {
         "total_cop": (sum(p.amount_cents for p in paid) - sum(p.refunded_cents or 0 for p in paid)) // 100, "approved": len(paid),
+        "fees_cop": sum(_fee_cop(p) for p in paid),
+        "net_after_fees_cop": sum(_net_cop(p) for p in paid),
         "refunded_cop": sum(p.refunded_cents or 0 for p in paid) // 100,
         "rows": [{"id": p.id, "reference": p.reference, "amount": p.amount_cents // 100, "status": _pay_label(p), "method": p.payment_method or "", "transaction_id": p.transaction_id or "",
                   "person_id": p.person_id or "", "is_test": p.is_test, "submission_id": p.submission_id, "orphan": p.status in ("approved", "refunded") and not p.submission_id and not (p.refunded_cents or 0),
+                  "fee": _fee_cop(p) if p.status in ("approved", "refunded") else 0,
+                  "net": _net_cop(p) if p.status in ("approved", "refunded") else 0,
                   "refunded": (p.refunded_cents or 0) // 100, "remaining": (p.amount_cents - (p.refunded_cents or 0)) // 100 if p.status == "approved" else 0,
-                  "auto_refund": p.status == "approved" and (p.payment_method or "").upper() == "CARD" and not p.refunded_cents,
-                  "refunds": [{"amount": r.amount_cents // 100, "kind": r.kind, "status": r.status, "reason": r.reason, "note": r.note or "", "at": r.created_at.strftime("%Y-%m-%d %H:%M")} for r in refunds.get(p.id, [])],
+                  "auto_refund": p.status == "approved" and _auto_refund_possible(p) and not p.refunded_cents, "auto_partial": p.status == "approved" and _auto_partial_possible(p),
+                  "refunds": [{"amount": r.amount_cents // 100, "kind": r.kind, "status": r.status, "reason": r.reason, "note": r.note or "", "at": r.created_at.strftime("%Y-%m-%d %H:%M"), "id": r.id, "response": (r.wompi_response or "")[:600]} for r in refunds.get(p.id, [])],
                   "created_at": to_local(p.created_at).strftime("%Y-%m-%d %H:%M:%S"), "confirmed_at": to_local(p.confirmed_at).strftime("%Y-%m-%d %H:%M:%S") if p.confirmed_at else "",
                   "applied": json.loads(p.breakdown_json or "{}").get("applied", [])} for p in rows]}
 
@@ -580,7 +610,7 @@ async def send_invites(event_id: int, form_id: int, data: dict, request: Request
 
 
 # ------------------------------------------------------------------ analítica (módulo compartido, app/analytics.py)
-def form_dashboard(db: Session, form: WebForm, include_tests: bool = False) -> dict:
+def form_dashboard(db: Session, form: WebForm, include_tests: bool = False, net_fees: bool = False) -> dict:
     from collections import Counter
     from app import analytics as an
 
@@ -620,7 +650,7 @@ def form_dashboard(db: Session, form: WebForm, include_tests: bool = False) -> d
               an.counter_chart("by_source", "¿De dónde llegaron? (enlaces con utm_source)", [s.source or "Directo" for s in subs], kind="pie", label="Inscripciones")]
 
     if formlib.payment_field(design):
-        _payment_analytics(db, form, include_tests, kpis, charts)
+        _payment_analytics(db, form, include_tests, kpis, charts, net_fees)
 
     # Campos con más y con menos respuesta (sobre las inscripciones, contando solo las que tenían el campo visible: aproximación por valor presente)
     if subs:
@@ -657,7 +687,7 @@ def form_dashboard(db: Session, form: WebForm, include_tests: bool = False) -> d
     return an.dashboard(f"Formulario: {form.name}", kpis, [c for c in charts if c])
 
 
-def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: list, charts: list) -> None:
+def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: list, charts: list, net_fees: bool = False) -> None:
     """Ingresos del formulario (solo los pagos aprobados cuentan como ingreso) y cómo se resolvieron los intentos."""
     from collections import Counter, defaultdict
     from app import analytics as an
@@ -674,6 +704,10 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
     refunded = sum(p.refunded_cents or 0 for p in approved) // 100
     failed = [p for p in pays if p.status in ("declined", "error", "voided")]
     abandoned = [p for p in pays if _pay_label(p) == "abandoned"]
+    fees = sum(_fee_cop(p) for p in approved)
+    if net_fees:
+        kpis += [an.kpi("Comisión Wompi (estimada)", pesos(fees), "2,65 % + $700 + IVA por pago (QR 1 %); estimación según tu plan", "warn"),
+                 an.kpi("Ingresos netos de comisión", pesos(total - refunded - fees), "aprobados − reembolsos − comisión estimada", "good")]
     kpis += [an.kpi("Ingresos (aprobados)", pesos(total), f"{len(approved)} pago(s) aprobado(s)", "good"),
              an.kpi("Pago promedio", pesos(total // len(approved) if approved else 0), "por inscripción pagada"),
              an.kpi("Pagos no completados", len(failed) + len(abandoned), f"{len(failed)} rechazados · {len(abandoned)} abandonados", "warn" if failed or abandoned else "")]
@@ -685,10 +719,10 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
         kpis.append(an.kpi("Pagos sin inscripción", orphans, "aprobados pero sin inscripción: revisar en la lista de pagos", "warn"))
     per_day = defaultdict(int)
     for p in approved:
-        per_day[to_local(p.confirmed_at or p.created_at).strftime("%Y-%m-%d")] += p.amount_cents // 100
+        per_day[to_local(p.confirmed_at or p.created_at).strftime("%Y-%m-%d")] += (p.amount_cents // 100 - _fee_cop(p)) if net_fees else p.amount_cents // 100
     if per_day:
         days = sorted(per_day)
-        charts.append(an.chart("revenue_by_day", "Ingresos por día (COP)", "bar", days, [{"label": "Ingresos aprobados", "data": [per_day[d] for d in days]}]))
+        charts.append(an.chart("revenue_by_day", "Ingresos por día (COP" + (", netos de comisión estimada)" if net_fees else ")"), "bar", days, [{"label": "Ingresos netos de comisión" if net_fees else "Ingresos aprobados", "data": [per_day[d] for d in days]}]))
     names = {"refunded": "Reembolsado", "approved": "Aprobado", "declined": "Rechazado", "error": "Error", "voided": "Anulado", "pending": "En espera", "abandoned": "Abandonado"}
     charts.append(an.counter_chart("payment_status", "Resultado de los intentos de pago", [names.get(_pay_label(p), _pay_label(p)) for p in pays], kind="pie", label="Pagos"))
     applied = Counter()
@@ -700,6 +734,6 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
 
 
 @router.get("/events/{event_id}/forms/{form_id}/analytics")
-async def form_analytics(event_id: int, form_id: int, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+async def form_analytics(event_id: int, form_id: int, include_tests: bool = False, net_fees: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
-    return form_dashboard(db, _get_form(db, event, form_id), include_tests)
+    return form_dashboard(db, _get_form(db, event, form_id), include_tests, net_fees)

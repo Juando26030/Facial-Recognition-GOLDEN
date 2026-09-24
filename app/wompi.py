@@ -73,6 +73,24 @@ def verify_event(event: dict, header_checksum: Optional[str] = None) -> Optional
     return bool(given) and any(hmac.compare_digest(event_checksum(event, s).lower(), given) for s in secrets)
 
 
+def estimate_fee(amount_cents: int, method: str = "") -> int:
+    """Comisión ESTIMADA de Wompi sobre un pago aprobado, en centavos. Plan Avanzado (wompi.com/es/co/planes-tarifas, 2026-09):
+    2,65 % + $700 + IVA por transacción exitosa (tarjeta, PSE, Nequi…); Código QR: 1 %. Se asume IVA (19 %) sobre la comisión y que la
+    comisión NO se devuelve al reembolsar. Es una estimación para reportes: la cifra exacta está en Wompi → Reportes. Se ajusta con
+    WOMPI_FEE_PERCENT, WOMPI_FEE_FIXED_COP, WOMPI_FEE_QR_PERCENT y WOMPI_FEE_IVA_PERCENT si el plan cambia."""
+    def env(name, default):
+        try:
+            return float(os.getenv(name, "").replace(",", ".") or default)
+        except ValueError:
+            return default
+
+    qr = "QR" in (method or "").upper()
+    pct = env("WOMPI_FEE_QR_PERCENT", 1.0) if qr else env("WOMPI_FEE_PERCENT", 2.65)
+    fixed = 0.0 if qr else env("WOMPI_FEE_FIXED_COP", 700.0) * 100
+    base = amount_cents * pct / 100 + fixed
+    return int(round(base * (1 + env("WOMPI_FEE_IVA_PERCENT", 19.0) / 100)))
+
+
 def _headers(cfg: dict, json_body: bool = False) -> dict:
     h = {"Accept": "application/json"}
     if cfg.get("private_key"):
@@ -98,24 +116,70 @@ def fetch_transaction(cfg: dict, transaction_id: str) -> Optional[dict]:
         return None
 
 
-def void_transaction(cfg: dict, transaction_id: str) -> tuple:
-    """Anula una transacción de TARJETA (`POST /transactions/<id>/void`, llave privada): devuelve el dinero a la tarjeta por el
-    valor completo. Devuelve (ok, detalle): `detalle` es la respuesta de Wompi si salió bien, o un mensaje legible si no."""
+def _soft_error(body) -> Optional[str]:
+    """Wompi a veces responde HTTP 200 con el error DENTRO (`{"data": {"type": "unprocessable", "reason": "…"}}`): no es un éxito."""
+    d = body.get("data") if isinstance(body, dict) else None
+    if isinstance(d, dict) and (d.get("type") in ("unprocessable", "error", "invalid") or (d.get("reason") and not d.get("id") and not d.get("transaction"))):
+        return str(d.get("reason") or d.get("type"))
+    return None
+
+
+def _post(cfg: dict, path: str, body: dict) -> tuple:
+    """POST autenticado con la llave privada. (ok, respuesta) o (False, mensaje legible)."""
     if not cfg.get("private_key"):
         return False, "Falta la llave privada de Wompi (WOMPI_PRIVATE_KEY) en el servidor"
-    if not _safe_id(transaction_id):
-        return False, "Identificador de transacción inválido"
-    req = urllib.request.Request(f"{cfg['api']}/transactions/{transaction_id}/void", data=b"{}", method="POST", headers=_headers(cfg, json_body=True))
+    req = urllib.request.Request(f"{cfg['api']}{path}", data=json.dumps(body).encode(), method="POST", headers=_headers(cfg, json_body=True))
     try:
         with urllib.request.urlopen(req, timeout=15) as res:
-            return True, json.loads(res.read().decode() or "{}")
+            body_ok = json.loads(res.read().decode() or "{}")
+            soft = _soft_error(body_ok)
+            return (False, f"Wompi no lo procesó: {soft}") if soft else (True, body_ok)
     except urllib.error.HTTPError as e:
         try:
-            body = json.loads(e.read().decode())
-            err = body.get("error") or {}
-            detail = "; ".join(f"{k}: {v}" for k, v in (err.get("messages") or {}).items()) if isinstance(err.get("messages"), dict) else (err.get("reason") or str(err.get("messages") or body))
+            body_err = json.loads(e.read().decode())
+            err = body_err.get("error") or {}
+            detail = "; ".join(f"{k}: {v}" for k, v in (err.get("messages") or {}).items()) if isinstance(err.get("messages"), dict) else (err.get("reason") or str(err.get("messages") or body_err))
         except (ValueError, OSError):
             detail = e.reason
         return False, f"Wompi respondió {e.code}: {detail}"
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         return False, f"No se pudo contactar a Wompi: {e}"
+
+
+def void_transaction(cfg: dict, transaction_id: str, amount_cents: Optional[int] = None) -> tuple:
+    """Anula una transacción de TARJETA (`POST /transactions/<id>/void`, llave privada): devuelve el dinero a la tarjeta. Sin
+    `amount_cents` anula el valor completo. OJO: la especificación acepta `amount_in_cents`, pero el sandbox respondió (2026-09-24)
+    «Sólo las transacciones con el mismo monto original pueden ser potencialmente anuladas»: la anulación parcial NO existe.
+    Devuelve (ok, detalle): la respuesta de Wompi si salió bien, o un mensaje legible si no."""
+    if not _safe_id(transaction_id):
+        return False, "Identificador de transacción inválido"
+    return _post(cfg, f"/transactions/{transaction_id}/void", {"amount_in_cents": int(amount_cents)} if amount_cents else {})
+
+
+def refunds_v2_enabled(cfg: dict) -> bool:
+    """La API de reembolsos V2 (`POST /refunds`, cualquier medio, con parciales) es hoy SOLO de sandbox según la documentación de
+    Wompi. Se usa siempre en sandbox; en producción solo si se activa con WOMPI_REFUNDS_V2=1 (cuando Wompi la habilite)."""
+    return bool(cfg.get("test")) or os.getenv("WOMPI_REFUNDS_V2", "").strip() == "1"
+
+
+def get_refund_v2(cfg: dict, refund_id) -> Optional[dict]:
+    """Consulta un reembolso V2 (`GET /refunds/<id>`, llave privada). None si no se pudo."""
+    if not str(refund_id).isdigit():
+        return None
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/refunds/{refund_id}", headers=_headers(cfg)), timeout=8) as res:
+            return (json.loads(res.read().decode()) or {}).get("data")
+    except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+        return None
+
+
+def create_refund_v2(cfg: dict, transaction_id: str, amount_cents: int, reason: str = "", reference: str = "") -> tuple:
+    """Reembolso V2 (`POST /refunds`, llave privada): parcial o total, para transacciones de cualquier medio."""
+    if not _safe_id(transaction_id):
+        return False, "Identificador de transacción inválido"
+    body = {"transaction_id": transaction_id, "amount_in_cents": int(amount_cents)}
+    if reason:
+        body["reason"] = reason[:200]
+    if reference:
+        body["reference"] = reference[:60]
+    return _post(cfg, "/refunds", body)

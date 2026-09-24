@@ -134,14 +134,14 @@
     <div class="pane" id="pane-payments"><div class="card">
       <h4 style="margin:0 0 6px;">Pagos con Wompi</h4>
       <div id="payCfg" class="hint" style="margin-bottom:10px;"></div>
-      <div class="bar" style="margin-bottom:8px;"><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="payTests"> Incluir pagos de prueba</label><span id="payTotal" style="font-weight:700;"></span></div>
-      <div style="overflow-x:auto;"><table class="ans"><thead><tr><th>Fecha</th><th>Referencia</th><th>Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th><th>Reembolso</th></tr></thead><tbody id="payBody"></tbody></table></div>
+      <div class="bar" style="margin-bottom:8px;"><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem;"><input type="checkbox" id="payTests"> Incluir pagos de prueba</label><select id="payView" title="La comisión es una ESTIMACIÓN según tu plan (2,65 % + $700 + IVA; QR 1 %). La cifra exacta está en Wompi → Reportes."><option value="gross">Ver montos brutos</option><option value="net">Ver netos de comisión Wompi (estimada)</option></select><span id="payTotal" style="font-weight:700;"></span></div>
+      <div style="overflow-x:auto;"><table class="ans"><thead><tr><th>Fecha</th><th>Referencia</th><th id="payAmtHead">Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th><th>Reembolso</th></tr></thead><tbody id="payBody"></tbody></table></div>
       <p class="hint">La referencia (<code>GW-evento-formulario-inscripción-código</code>) identifica a qué evento pertenece cada pago: la separación por evento se hace aquí y en el reporte, no en el panel de Wompi. «Sin inscripción» = pago aprobado cuya inscripción ya no existe: revísalo a mano.</p>
     </div></div>
 
     <!-- ===================== ANALÍTICA ===================== -->
     <div class="pane" id="pane-analytics">
-      <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;"><input type="checkbox" id="anTests"> Incluir las inscripciones de prueba</label>
+      <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;"><input type="checkbox" id="anTests"> Incluir las inscripciones de prueba</label><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;" title="Estimación según tu plan de Wompi (2,65 % + $700 + IVA; QR 1 %)"><input type="checkbox" id="anNet"> Descontar la comisión estimada de Wompi (ver ingresos netos)</label>
       <div id="anHost" style="background:#f6f7fb; padding:1rem; border-radius:16px;"></div>
       <div class="card" style="margin-top:1rem;"><h4 style="margin:0 0 6px;">Enlaces por red social</h4><p class="hint" style="margin-top:0;">Agrega <code>?utm_source=…</code> al enlace y la analítica te dirá de dónde llegó cada inscripción (Instagram, TikTok, WhatsApp…). Es un conteo de origen; no requiere conectar cuentas.</p><div class="bar" id="utmBox"></div></div>
     </div>
@@ -161,7 +161,7 @@
     <h4 style="margin:0 0 4px;">Reembolsar un pago</h4>
     <p id="rfInfo" class="hint" style="margin-top:0;"></p>
     <div class="fld" style="margin-bottom:8px;"><label>Cómo se devuelve</label>
-      <label style="display:flex; gap:6px; font-size:0.82rem;"><input type="radio" name="rfKind" value="auto" id="rfAuto"> Anular la transacción en Wompi (el dinero vuelve a la tarjeta; solo tarjeta y por el valor completo)</label>
+      <label style="display:flex; gap:6px; font-size:0.82rem;"><input type="radio" name="rfKind" value="auto" id="rfAuto"> Hacerlo por la API de Wompi (tarjeta: anulación por el valor completo; otros medios: reembolso V2, hoy solo sandbox)</label>
       <label style="display:flex; gap:6px; font-size:0.82rem;"><input type="radio" name="rfKind" value="manual" id="rfManual"> Ya lo devolví por fuera (panel de Wompi o transferencia): solo registrarlo</label></div>
     <div class="fld" style="margin-bottom:8px;"><label>Monto a devolver (COP)</label><input type="number" id="rfAmount" min="1" style="width:100%;"></div>
     <div class="fld" style="margin-bottom:8px;"><label>Motivo *</label><input type="text" id="rfReason" maxlength="500" style="width:100%;" placeholder="Ej. La persona no puede asistir"></div>
@@ -567,24 +567,34 @@ async function loadPayments() {
   const okc = (v) => (v ? '✅' : '⚠️ sin configurar');
   $('payCfg').innerHTML = `Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="small-btn" id="copyHook">Copiar</button>`;
   $('copyHook').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${location.origin}/webhooks/wompi`); } catch (e) {} showToast('URL copiada', 'success'); });
-  $('payTotal').textContent = `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;
-  $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' 🧪' : ''}</td><td>${cop(r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ' <b title="Aprobado pero sin inscripción">⚠️ sin inscripción</b>' : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td>
-    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">💸 ${cop(r.refunded)}</span> ` : ''}${r.refunds.some((x) => x.status === 'pending') ? '⏳ en proceso ' : ''}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="small-btn danger" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" style="color:#999;">Todavía no hay pagos.</td></tr>';
+  const net = $('payView').value === 'net';
+  $('payAmtHead').textContent = net ? 'Neto estimado (COP)' : 'Monto (COP)';
+  $('payTotal').textContent = net ? `Ingresos netos de comisión (estimada): ${cop(d.net_after_fees_cop)} COP · comisión Wompi estimada ${cop(d.fees_cop)} COP` : `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;
+  $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' 🧪' : ''}</td><td title="Pagado ${cop(r.amount)} · comisión estimada ${cop(r.fee)} · neto estimado ${cop(r.net)}">${cop(net ? r.net : r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ' <b title="Aprobado pero sin inscripción">⚠️ sin inscripción</b>' : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td>
+    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : x.kind === 'api' ? 'reembolso API Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">💸 ${cop(r.refunded)}</span> ` : ''}${r.refunds.filter((x) => x.status === 'pending').map((x) => `⏳ en proceso <button class="small-btn" data-rf-check="${r.id}:${x.id}">Verificar</button> <button class="small-btn danger" data-rf-discard="${r.id}:${x.id}">Descartar</button> `).join('')}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="small-btn danger" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" style="color:#999;">Todavía no hay pagos.</td></tr>';
   window.__pays = Object.fromEntries(d.rows.map((r) => [r.id, r]));
+  const resolve = (attr, action) => document.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
+    const [pid, rid] = b.getAttribute(attr).split(':');
+    if (action === 'discard' && !(await showConfirm('¿Descartar este reembolso pendiente? Solo hazlo si Wompi no lo va a completar; luego podrás intentarlo de nuevo o registrarlo como manual.', { confirmLabel: 'Sí, descartar' }))) return;
+    try { const r = await jpost(`${api}/payments/${pid}/refunds/${rid}/${action}`, {}); showToast(r.message, r.status === 'done' ? 'success' : 'error'); loadPayments(); } catch (e) { showToast(e.message, 'error'); }
+  }));
+  resolve('data-rf-check', 'check'); resolve('data-rf-discard', 'discard');
   document.querySelectorAll('[data-refund]').forEach((b) => b.addEventListener('click', () => openRefund(window.__pays[b.dataset.refund])));
 }
 $('payTests').addEventListener('change', loadPayments);
+$('payView').addEventListener('change', loadPayments);
 let refunding = null;
 function openRefund(r) {
   refunding = r;
   $('rfInfo').textContent = `${r.reference} · pagado ${cop(r.amount)} · por devolver ${cop(r.remaining)} · medio: ${r.method || 'desconocido'}`;
-  $('rfAuto').disabled = !r.auto_refund; $('rfAuto').checked = r.auto_refund; $('rfManual').checked = !r.auto_refund;
+  const canAuto = r.auto_refund || r.auto_partial;
+  $('rfAuto').disabled = !canAuto; $('rfAuto').checked = canAuto; $('rfManual').checked = !canAuto;
   $('rfAmount').value = r.remaining; $('rfReason').value = ''; $('rfNote').value = '';
   syncRefund(); $('refundOverlay').style.display = 'flex';
 }
 function syncRefund() {
   const auto = $('rfAuto').checked;
-  $('rfAmount').disabled = auto; if (auto) $('rfAmount').value = refunding.remaining;     // la anulación por API es siempre por el valor completo
+  $('rfAmount').disabled = auto && !refunding.auto_partial; if (auto && !refunding.auto_partial) $('rfAmount').value = refunding.remaining;     // la anulación de tarjeta por API es siempre por el valor completo
   $('rfNoteBox').style.display = auto ? 'none' : '';
   $('rfCancel').checked = !auto ? Number($('rfAmount').value) >= refunding.remaining : true;
 }
@@ -593,7 +603,7 @@ $('rfAmount').addEventListener('input', () => { $('rfCancel').checked = Number($
 $('rfClose').addEventListener('click', () => { $('refundOverlay').style.display = 'none'; });
 $('rfGo').addEventListener('click', async () => {
   const auto = $('rfAuto').checked;
-  const ok = await showConfirm(auto ? `Se anulará el pago de ${cop(refunding.remaining)} en Wompi y el dinero volverá a la tarjeta. Esto no se puede deshacer. ¿Continuar?` : `Se registrará un reembolso manual de ${cop($('rfAmount').value)}. ¿Confirmas que ya se devolvió ese dinero?`, { confirmLabel: 'Sí, reembolsar' });
+  const ok = await showConfirm(auto ? `Se pedirá a Wompi devolver ${cop($('rfAmount').value)} por su API. Esto no se puede deshacer. ¿Continuar?` : `Se registrará un reembolso manual de ${cop($('rfAmount').value)}. ¿Confirmas que ya se devolvió ese dinero?`, { confirmLabel: 'Sí, reembolsar' });
   if (!ok) return;
   try {
     const d = await jpost(`${api}/payments/${refunding.id}/refund`, { reason: $('rfReason').value, manual: !auto, note: $('rfNote').value, amount: $('rfAmount').value, cancel_registration: $('rfCancel').checked });
@@ -607,11 +617,12 @@ $('rfGo').addEventListener('click', async () => {
 let dash = null;
 function mountAnalytics() {
   $('anHost').innerHTML = '';
-  AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}`, { refreshSeconds: 30 });
+  AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}&net_fees=${$('anNet').checked}`, { refreshSeconds: 30 });
   $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<button class="small-btn" data-utm="${s}">📋 Copiar enlace para ${s}</button>`).join('');
   $('utmBox').querySelectorAll('[data-utm]').forEach((b) => b.addEventListener('click', async () => { const url = `${form.public_url}?utm_source=${b.dataset.utm}`; try { await navigator.clipboard.writeText(url); } catch (e) {} showToast('Enlace copiado: ' + url, 'success'); }));
 }
 $('anTests').addEventListener('change', mountAnalytics);
+$('anNet').addEventListener('change', mountAnalytics);
 
 // ---------------------------------------------------------------- invitaciones
 async function loadInvites() {
