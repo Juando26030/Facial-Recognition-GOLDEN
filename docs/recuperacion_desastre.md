@@ -67,7 +67,7 @@ Recuperar solo unas filas borradas por error: restaurar la copia en una base apa
      --scopes=storage-rw,logging-write,monitoring-write,service-control,service-management,trace
    ```
    (El tipo de máquina: `gcloud compute instances describe` de la VM anterior, o la consola.)
-4. Esperar ~2 min y abrir https://golden.juandajuzga.com. Todo debe estar como en el snapshot: si algo falta de las últimas horas, aplicar el Caso A (restaurar el volcado de la base más reciente) y `scripts/restore_data.sh` para los archivos.
+4. Esperar ~2 min y abrir https://app.golden-eventos.com. Todo debe estar como en el snapshot: si algo falta de las últimas horas, aplicar el Caso A (restaurar el volcado de la base más reciente) y `scripts/restore_data.sh` para los archivos.
 
 ## Caso C — reconstruir desde cero (sin snapshot utilizable)
 
@@ -76,7 +76,7 @@ Recuperar solo unas filas borradas por error: restaurar la copia en una base apa
 3. Código: `git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN.git ~/Facial-Recognition`, luego `python3 -m venv venv && venv/bin/pip install -r requirements.txt` (las versiones están fijas; `dlib` tarda en compilar).
 4. Base: crear el usuario y la base (`sudo -u postgres psql -c "CREATE ROLE golden_app LOGIN PASSWORD '...';"` y `createdb -O golden_app golden_db`), restaurar el volcado (Caso A, pasos 1 y 3, con destino `golden_db`; usa `FORCE_PRODUCTION=1` porque es una base vacía nueva).
 5. Archivos y secretos: `RESTORE_ENV=1 bash scripts/restore_data.sh gs://golden-datos-analisis-de-imagen-id` (revisa que `DATABASE_URL` del `.env` apunte a la base nueva).
-6. Servicios: `sudo cp deploy/facial-recognition.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now facial-recognition`; Nginx: copiar `deploy/nginx-golden.conf` a `/etc/nginx/sites-enabled/golden` y emitir el certificado (`sudo certbot --nginx -d golden.juandajuzga.com`).
+6. Servicios: `sudo cp deploy/facial-recognition.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now facial-recognition`; Nginx: copiar `deploy/nginx-golden.conf` a `/etc/nginx/sites-enabled/golden` y emitir el certificado (`sudo certbot --nginx -d app.golden-eventos.com`).
 7. Permiso para el deploy y el cron: reglas de `sudoers` para `systemctl restart|is-active|status facial-recognition`, el cron de arriba, y volver a registrar el runner de GitHub Actions (GitHub → Settings → Actions → Runners → New self-hosted runner).
 8. `venv/bin/alembic upgrade head` y verificar.
 

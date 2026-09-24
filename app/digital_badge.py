@@ -7,7 +7,7 @@ en app/routers/parametros.py deja el campo marcado `required` por defecto al act
 
 Sin correo configurado (ver app/mailer.py) NADA sale al exterior: el mensaje queda como archivo en
 `data/outbox/`. Variable opcional: PUBLIC_BASE_URL (dominio público para armar el enlace, confirmado
-como https://golden.juandajuzga.com; por defecto el de la petición)."""
+como https://app.golden-eventos.com; por defecto el de la petición)."""
 import os
 import re
 import secrets
