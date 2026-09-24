@@ -435,7 +435,34 @@ class FormSubmission(Base):
     sid = Column(String, nullable=True)          # sesión del navegador (para medir tiempos y abandono)
     started_at = Column(DateTime, nullable=True)
     fed = Column(Boolean, nullable=False, default=False)   # ya se cargó a la base del evento
+    # `confirmed` = inscripción real. `awaiting_payment` = transitoria mientras se espera a Wompi: NUNCA se ve en listas,
+    # reportes, analítica ni se carga a la base del evento (solo aparta cupo unos minutos). Ver app/routers/form_payments.py.
+    status = Column(String, nullable=False, default='confirmed', server_default='confirmed')
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FormPayment(Base):
+    """Un intento de pago de un formulario con campo «Pago» (Wompi). `reference` codifica evento + formulario +
+    inscripción y es única: es la trazabilidad por evento (Wompi no organiza por proyecto). El registro de pago se
+    conserva aunque la inscripción no llegue a confirmarse (rechazado/abandonado) — es un registro financiero."""
+    __tablename__ = 'form_payments'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(Integer, ForeignKey('web_forms.id'), nullable=False)
+    event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
+    submission_id = Column(Integer, ForeignKey('form_submissions.id'), nullable=True)
+    reference = Column(String, nullable=False, unique=True)
+    amount_cents = Column(Integer, nullable=False)          # centavos de COP (Wompi los pide en centavos)
+    currency = Column(String, nullable=False, default='COP')
+    status = Column(String, nullable=False, default='pending')   # pending | approved | declined | error | voided
+    is_test = Column(Boolean, nullable=False, default=False)     # hecho con las llaves de pruebas (sandbox) de Wompi
+    transaction_id = Column(String, nullable=True)
+    payment_method = Column(String, nullable=True)               # CARD | PSE | ...
+    breakdown_json = Column(Text, nullable=True)                 # monto base, reglas y descuentos aplicados
+    person_id = Column(String, nullable=True)
+    payer_email = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    confirmed_at = Column(DateTime, nullable=True)
 
 
 class FormEvent(Base):

@@ -15,12 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from PIL import Image
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, security
+from app import formlib, formsvc, security, wompi
 from app.database import get_db
 from app.email_check import check_email
-from app.models import Event, FormEvent, FormInvite, FormSubmission, WebForm
+from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
 from app.routers.badges import ALLOWED_IMAGE_EXT
 import io
 
@@ -89,7 +90,7 @@ def _payload_form(db: Session, form: WebForm, claims: dict) -> dict:
         if person:
             prefill = formsvc.prefill_values(design, person)
             readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
-    return {"design": design, "prefill": prefill, "readonly": readonly, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.real_submissions(db, form).count())}
+    return {"design": design, "prefill": prefill, "readonly": readonly, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
 
 
 # ------------------------------------------------------------------ páginas y estado
@@ -295,8 +296,31 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
             person_id = str(clean[fid]).strip()
     is_test = access == "pruebas"
 
+    # Campo «Pago»: si está visible y el monto (según reglas y descuentos) es mayor que 0, la inscripción NO se confirma
+    # aquí: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
+    quote = charge = cfg = None
+    pay_field = formlib.payment_field(design, {**values, **{k: True for k in uploaded}})
+    if pay_field:
+        quote = formlib.compute_amount(pay_field["pay"], formlib.priced_values(design, clean), formsvc.now_local().date())
+        if quote["amount"] > 0:
+            if quote["amount"] < formlib.MIN_PAYMENT_COP:
+                return JSONResponse({"detail": f"El monto a pagar (${quote['amount']}) es menor al mínimo de ${formlib.MIN_PAYMENT_COP} COP por transacción. Avisa a los organizadores."}, status_code=422)
+            cfg = wompi.config(is_test)
+            if not cfg:
+                return JSONResponse({"detail": "El pago en línea todavía no está disponible para este formulario. Intenta más tarde."}, status_code=503)
+            charge = quote["amount"]
+
     # Cupo y duplicados, con la fila del formulario BLOQUEADA: dos personas enviando el último cupo a la vez no lo llenan dos veces.
     locked = db.query(WebForm).filter(WebForm.id == form.id).with_for_update().first()
+    formsvc.purge_stale_pending(db, form)
+    if charge and (person_id or payload.get("sid")):      # reintento de pago: el intento anterior de esta persona/sesión se descarta
+        prior = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.PENDING)
+        cond = [FormSubmission.sid == str(payload["sid"])[:40]] if payload.get("sid") else []
+        if person_id:
+            cond.append(FormSubmission.person_id == person_id)
+        for old in prior.filter(or_(*cond)).all():
+            formsvc.discard_submission(db, form, old)
+        db.flush()
     if formsvc.is_full(db, locked) and not is_test:
         db.rollback()
         return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
@@ -311,6 +335,7 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
     sub = FormSubmission(
         form_id=form.id, event_id=form.event_id, data_json=json.dumps(clean), is_test=is_test, person_id=person_id, invite_id=claims.get("inv"),
         source=str(payload.get("source") or "")[:40] or None, sid=sid, started_at=started.created_at if started else None,
+        status=formsvc.PENDING if charge else "confirmed",
     )
     db.add(sub)
     db.flush()
@@ -323,15 +348,29 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
                 fh.write(content)
             clean[fid]["stored"] = stored
         sub.data_json = json.dumps(clean)
-    db.add(FormEvent(form_id=form.id, sid=sid or secrets.token_hex(8), kind="submit", source=sub.source, is_test=is_test))
-    if claims.get("inv"):
-        inv = db.query(FormInvite).filter_by(id=claims["inv"]).first()
-        if inv:
-            inv.used_at = datetime.utcnow()
-    db.commit()
-
-    if settings["feed"] == "realtime" and not is_test:
-        from app.routers.api import _upsert_attendee
-        err = formsvc.feed_submission(db, form, sub, _upsert_attendee)
+    if charge:
+        pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test,
+                          reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
+                          breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
+        db.add(pay)
         db.commit()
+        return {"ok": True, "payment_required": True, "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
+    formsvc.finalize_submission(db, form, sub)
     return {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
+
+
+def _widget_params(pay: FormPayment, cfg: dict, design: dict, clean: dict, quote: dict) -> dict:
+    """Lo que el navegador necesita para abrir el widget de Wompi (llave PÚBLICA y firma de integridad; el secreto nunca sale)."""
+    customer, first, last = {}, "", ""
+    for fid, f in design["fields"].items():
+        if f.get("key") == "email" and clean.get(fid):
+            customer["email"] = str(clean[fid])
+        elif f.get("key") == "first_name" and clean.get(fid):
+            first = str(clean[fid])
+        elif f.get("key") == "last_name" and clean.get(fid):
+            last = str(clean[fid])
+    if first or last:
+        customer["fullName"] = f"{first} {last}".strip()
+    return {"reference": pay.reference, "amount_in_cents": pay.amount_cents, "currency": pay.currency, "public_key": cfg["public_key"],
+            "integrity": wompi.integrity_signature(pay.reference, pay.amount_cents, pay.currency, cfg["integrity_secret"]),
+            "widget_url": wompi.WIDGET_URL, "test": cfg["test"], "amount": quote["amount"], "applied": quote["applied"], "customer": customer}

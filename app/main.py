@@ -12,7 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, forms, forms_public, roulette, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, forms, forms_public, roulette, event_docs, event_report, events, parametros, signatures, staff, stats, super_events, tenants
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
@@ -125,6 +125,7 @@ app.include_router(areas_inventory.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(forms.router, prefix="/api")
 app.include_router(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
+app.include_router(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
 app.include_router(roulette.router, prefix="/api")
 app.include_router(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
 app.include_router(certificates_public.router)  # /c/<token>, público (sin login) a propósito

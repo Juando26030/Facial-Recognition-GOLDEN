@@ -3,13 +3,13 @@ pre-llenado, carga de inscripciones a la base del evento y rutas de archivos. La
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app import formlib
-from app.models import AccessLog, Event, EventAttendee, FormPerson, FormSubmission, User, WebForm
+from app.models import AccessLog, Event, EventAttendee, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
 from app.timeutil import to_local
 
 # columnas de un Excel de pre-llenado (en minúscula) -> clave del campo del evento
@@ -47,12 +47,62 @@ def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
     return formlib.effective_status(form.manual_status, form.use_schedule, get_schedule(form), at or now_local())
 
 
+PENDING = "awaiting_payment"          # FormSubmission.status mientras se espera la confirmación de Wompi
+PENDING_HOLD = timedelta(minutes=30)  # una inscripción esperando pago aparta su cupo este tiempo
+PENDING_PURGE = timedelta(hours=24)   # y se borra pasado este (antes podría llegar una aprobación tardía)
+
+
 def real_submissions(db: Session, form: WebForm):
-    return db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False)  # noqa: E712
+    """Inscripciones REALES confirmadas (sin pruebas y sin las que esperan un pago)."""
+    return db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed")  # noqa: E712
+
+
+def held_count(db: Session, form: WebForm) -> int:
+    """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min)."""
+    holding = db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
+                                           FormPayment.submission_id != None, FormPayment.created_at > datetime.utcnow() - PENDING_HOLD).count()  # noqa: E711
+    return real_submissions(db, form).count() + holding
 
 
 def is_full(db: Session, form: WebForm) -> bool:
-    return form.capacity is not None and real_submissions(db, form).count() >= form.capacity
+    return form.capacity is not None and held_count(db, form) >= form.capacity
+
+
+def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
+    """Borra una inscripción (y sus archivos) que nunca llegó a confirmarse. Los pagos que la referenciaban quedan
+    como registro financiero, sin inscripción."""
+    event = db.query(Event).filter(Event.id == form.event_id).first()
+    for v in json.loads(sub.data_json).values():
+        if isinstance(v, dict) and v.get("stored") and event:
+            try:
+                os.remove(os.path.join(form_files_dir(event.tenant_id, form.id), os.path.basename(v["stored"])))
+            except OSError:
+                pass
+    db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
+    db.delete(sub)
+
+
+def purge_stale_pending(db: Session, form: WebForm) -> None:
+    """Quita las inscripciones en espera de pago de más de 24 h (abandonadas). Se llama de forma perezosa al enviar."""
+    for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == PENDING,
+                                               FormSubmission.created_at < datetime.utcnow() - PENDING_PURGE):
+        discard_submission(db, form, sub)
+
+
+def finalize_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
+    """Todo lo que ocurre cuando una inscripción queda CONFIRMADA (sin pago: al enviar; con pago: al aprobarse):
+    marca de envío para la analítica, invitación usada y —si el formulario lo pide— carga a la base del evento."""
+    sub.status = "confirmed"
+    db.add(FormEvent(form_id=form.id, sid=sub.sid or os.urandom(4).hex(), kind="submit", source=sub.source, is_test=sub.is_test))
+    if sub.invite_id:
+        inv = db.query(FormInvite).filter_by(id=sub.invite_id).first()
+        if inv:
+            inv.used_at = datetime.utcnow()
+    db.commit()
+    if get_settings(form)["feed"] == "realtime" and not sub.is_test:
+        from app.routers.api import _upsert_attendee
+        feed_submission(db, form, sub, _upsert_attendee)
+        db.commit()
 
 
 def public_state(db: Session, form: WebForm) -> str:

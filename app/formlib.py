@@ -14,12 +14,16 @@ Diseño (JSON):
 import re
 import unicodedata
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Callable, Optional
 
 INPUT_TYPES = ("text_short", "text_long", "email", "phone", "number", "date", "checkbox", "select", "radio", "multiselect", "file")
 STATIC_TYPES = ("heading", "paragraph", "image")
-ALL_TYPES = INPUT_TYPES + STATIC_TYPES
+PAYMENT_TYPE = "payment"      # «Pago» (Wompi): máximo uno por formulario; no guarda un valor, cobra un monto
+ALL_TYPES = INPUT_TYPES + STATIC_TYPES + (PAYMENT_TYPE,)
+DATE_FIELD = "@date"          # en una condición de precio: la fecha de HOY (hora local) en vez de un campo
+DATE_OPS = ("before", "on_or_after")
+MIN_PAYMENT_COP, MAX_PAYMENT_COP = 1500, 10_000_000   # Wompi: mínimo por transacción y tope por transacción (persona jurídica)
 IDENTITY_KEYS = ("id", "first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
 STATUSES = ("pruebas", "activo", "cerrado", "finalizado")
 CONDITION_OPS = ("equals", "not_equals", "contains", "in", "filled")
@@ -140,11 +144,16 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                     raise ValueError(f"«{clean['label']}»: el tamaño máximo debe ser un número de MB")
         elif kind in ("heading", "paragraph"):
             clean["content"] = _text(f.get("content"), 2000)
+        elif kind == PAYMENT_TYPE:
+            clean["label"] = clean["label"] or "Pago"
+            clean["pay"] = sanitize_payment(f.get("pay"), fields_in, fid)
         else:  # image
             clean["src"] = _text(f.get("src"), 200)
         clean["show_if"] = _sanitize_condition(f.get("show_if"), fields_in, fid)
         fields[fid] = clean
 
+    if sum(1 for f in fields.values() if f["type"] == PAYMENT_TYPE) > 1:
+        raise ValueError("Un formulario admite un solo campo de pago")
     rows, placed = [], set()
     for row in design.get("rows") or []:
         items = [i for i in (row.get("items") or []) if i in fields and i not in placed]
@@ -182,6 +191,113 @@ def _check_condition_cycles(fields: dict) -> None:
             seen.add(cur)
             cond = fields[cur].get("show_if")
             cur = cond["field"] if cond else None
+
+
+# ------------------------------------------------------------------ campo de pago: monto, reglas y descuentos
+def _pesos(n: int) -> str:
+    return "$" + f"{n:,}".replace(",", ".")
+
+
+def _money(value, what: str) -> int:
+    try:
+        n = int(round(float(str(value).replace(",", ".")))) if value not in (None, "") else 0
+    except (TypeError, ValueError):
+        raise ValueError(f"{what}: escribe un monto en pesos (número)")
+    if n < 0 or n > MAX_PAYMENT_COP:
+        raise ValueError(f"{what}: el monto debe estar entre 0 y {_pesos(MAX_PAYMENT_COP)} COP (tope de Wompi por transacción)")
+    if 0 < n < MIN_PAYMENT_COP:
+        raise ValueError(f"{what}: el monto mínimo por transacción es {_pesos(MIN_PAYMENT_COP)} COP")
+    return n
+
+
+def _sanitize_price_conditions(conds, fields_in: dict, own_id: str) -> list:
+    out = []
+    for c in (conds or [])[:5]:
+        if not isinstance(c, dict):
+            raise ValueError("Una condición de precio no es válida")
+        op, value = c.get("op", "equals"), c.get("value")
+        if c.get("field") == DATE_FIELD:
+            if op not in DATE_OPS:
+                raise ValueError("Una condición de fecha debe ser «antes de» o «desde»")
+            try:
+                datetime.strptime(str(value), "%Y-%m-%d")
+            except ValueError:
+                raise ValueError("Una condición de fecha necesita una fecha válida")
+            out.append({"field": DATE_FIELD, "op": op, "value": str(value)})
+            continue
+        ref = fields_in.get(c.get("field"))
+        if not ref or c.get("field") == own_id or ref.get("type") not in INPUT_TYPES:
+            raise ValueError("Una regla de precio apunta a un campo que no existe (o no guarda respuestas)")
+        if op not in CONDITION_OPS:
+            raise ValueError("Operador de regla de precio no válido")
+        out.append({"field": c["field"], "op": op, "value": [str(v) for v in value] if isinstance(value, list) else _text(value, 200)})
+    return out
+
+
+def sanitize_payment(pay, fields_in: dict, own_id: str) -> dict:
+    """Configuración del campo «Pago»: `mode` fixed (un monto) o rules (el monto depende de otras respuestas: la primera
+    regla que se cumple manda; si ninguna, el monto base) y `discounts` (todos los que se cumplen se aplican en orden;
+    porcentaje sobre el monto vigente, o valor fijo). Un monto final de 0 = no hay nada que cobrar."""
+    pay = pay if isinstance(pay, dict) else {}
+    mode = pay.get("mode") if pay.get("mode") in ("fixed", "rules") else "fixed"
+    out = {"currency": "COP", "mode": mode, "description": _text(pay.get("description"), 120), "amount": _money(pay.get("amount"), "Monto del pago"), "rules": [], "discounts": []}
+    if not out["amount"] and mode == "fixed":
+        raise ValueError("El campo de pago necesita un monto")
+    if mode == "rules":
+        for r in (pay.get("rules") or [])[:20]:
+            out["rules"].append({"label": _text(r.get("label"), 80), "when": _sanitize_price_conditions(r.get("when"), fields_in, own_id), "amount": _money(r.get("amount"), "Monto de una regla")})
+    for d in (pay.get("discounts") or [])[:20]:
+        kind = d.get("kind") if d.get("kind") in ("percent", "amount") else "percent"
+        try:
+            value = float(str(d.get("value")).replace(",", "."))
+        except (TypeError, ValueError):
+            raise ValueError("Un descuento necesita un valor numérico")
+        if kind == "percent" and not (0 < value <= 100):
+            raise ValueError("Un descuento en porcentaje debe estar entre 0 y 100")
+        if kind == "amount" and not (0 < value <= MAX_PAYMENT_COP):
+            raise ValueError("Un descuento en pesos debe ser mayor que 0")
+        out["discounts"].append({"label": _text(d.get("label"), 80) or "Descuento", "kind": kind, "value": round(value, 2) if kind == "percent" else int(round(value)),
+                                 "when": _sanitize_price_conditions(d.get("when"), fields_in, own_id)})
+    return out
+
+
+def payment_field(design: dict, values: Optional[dict] = None) -> Optional[dict]:
+    """El campo de pago del formulario (con `values`, solo si está visible según las reglas), o None."""
+    for fid, f in design["fields"].items():
+        if f["type"] == PAYMENT_TYPE:
+            return f if values is None or fid in visible_ids(design, values) else None
+    return None
+
+
+def _price_cond_met(c: dict, values: dict, today: date) -> bool:
+    if c["field"] == DATE_FIELD:
+        limit = datetime.strptime(c["value"], "%Y-%m-%d").date()
+        return today < limit if c["op"] == "before" else today >= limit
+    return condition_met(c, values)
+
+
+def compute_amount(pay: dict, values: dict, today: date) -> dict:
+    """Monto en pesos según las respuestas (`values`: solo campos VISIBLES, ver `priced_values`) y la fecha de hoy.
+    Devuelve {"amount", "base", "applied": [{"label", "kind": "rule|discount", "effect"}]}: `applied` explica el total."""
+    amount, applied = pay["amount"], []
+    for r in pay.get("rules", []):
+        if all(_price_cond_met(c, values, today) for c in r["when"]):
+            amount = r["amount"]
+            applied.append({"label": r["label"] or "Regla de precio", "kind": "rule", "effect": f"monto {_pesos(amount)}"})
+            break
+    base = amount
+    for d in pay.get("discounts", []):
+        if all(_price_cond_met(c, values, today) for c in d["when"]):
+            cut = amount * d["value"] / 100 if d["kind"] == "percent" else d["value"]
+            amount = max(0, int(amount - cut + 0.5))
+            applied.append({"label": d["label"], "kind": "discount", "effect": f"-{d['value']:g}%" if d["kind"] == "percent" else f"-{_pesos(d['value'])}"})
+    return {"amount": amount, "base": base, "applied": applied}
+
+
+def priced_values(design: dict, values: dict) -> dict:
+    """Solo las respuestas de campos visibles: un campo oculto por una regla no puede cambiar el precio."""
+    shown = visible_ids(design, values)
+    return {k: v for k, v in values.items() if k in shown}
 
 
 def sanitize_settings(settings: dict) -> dict:

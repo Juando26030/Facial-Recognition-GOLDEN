@@ -15,11 +15,11 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc
+from app import bulk_jobs, formlib, formsvc, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
-from app.models import Event, FormEvent, FormInvite, FormPerson, FormSubmission, SavedFormTemplate, StaffUser, WebForm
+from app.models import Event, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, SavedFormTemplate, StaffUser, WebForm
 from app.routers import parametros
 from app.routers.badges import ALLOWED_IMAGE_EXT, _badge_assets_dir
 from app.timeutil import to_local
@@ -80,7 +80,7 @@ def _allocate_event_fields(event: Event, design: dict) -> dict:
 
 def _summary(db: Session, form: WebForm, request: Request) -> dict:
     real = formsvc.real_submissions(db, form).count()
-    tests = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == True).count()  # noqa: E712
+    tests = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == True, FormSubmission.status == "confirmed").count()  # noqa: E712
     return {
         "id": form.id, "name": form.name, "slug": form.slug, "manual_status": form.manual_status, "use_schedule": form.use_schedule,
         "status": formsvc.status_of(form), "public_state": formsvc.public_state(db, form), "capacity": form.capacity,
@@ -91,7 +91,8 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
 
 def _detail(db: Session, form: WebForm, request: Request) -> dict:
     return {**_summary(db, form, request), "design": formsvc.get_design(form), "settings": formsvc.get_settings(form),
-            "schedule": formsvc.get_schedule(form), "test_key": form.test_key, "fed_at": form.fed_at.isoformat() if form.fed_at else None}
+            "schedule": formsvc.get_schedule(form), "test_key": form.test_key, "fed_at": form.fed_at.isoformat() if form.fed_at else None,
+            "payments": {"has_field": bool(formlib.payment_field(formsvc.get_design(form))), "sandbox_configured": bool(wompi.config(True)), "production_configured": bool(wompi.config(False))}}
 
 
 # ------------------------------------------------------------------ CRUD
@@ -182,6 +183,9 @@ async def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db)
 
 def delete_form_rows(db: Session, form: WebForm) -> None:
     import shutil
+    if db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "approved", FormPayment.is_test == False).first():  # noqa: E712
+        raise HTTPException(status_code=409, detail=f"El formulario «{form.name}» tiene pagos aprobados: son registros financieros y no se pueden borrar. Ciérralo o finalízalo en su lugar.")
+    db.query(FormPayment).filter(FormPayment.form_id == form.id).delete()
     db.query(FormSubmission).filter(FormSubmission.form_id == form.id).delete()
     db.query(FormEvent).filter(FormEvent.form_id == form.id).delete()
     db.query(FormInvite).filter(FormInvite.form_id == form.id).delete()
@@ -358,13 +362,14 @@ async def list_submissions(event_id: int, form_id: int, include_tests: bool = Tr
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
-    q = db.query(FormSubmission).filter(FormSubmission.form_id == form.id)
+    q = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
     if not include_tests:
         q = q.filter(FormSubmission.is_test == False)  # noqa: E712
     rows = q.order_by(FormSubmission.id.desc()).limit(2000).all()
-    return {"columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)], "rows": [
+    paid = _approved_by_submission(db, form)
+    return {"has_payment": bool(formlib.payment_field(design)), "columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)], "rows": [
         {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "source": s.source or "",
-         "data": {k: _display(v) for k, v in json.loads(s.data_json).items()}} for s in rows]}
+         "paid": paid[s.id].amount_cents // 100 if s.id in paid else None, "data": {k: _display(v) for k, v in json.loads(s.data_json).items()}} for s in rows]}
 
 
 @router.delete("/events/{event_id}/forms/{form_id}/submissions/{submission_id}")
@@ -380,9 +385,10 @@ async def delete_submission(event_id: int, form_id: int, submission_id: int, db:
                 os.remove(os.path.join(formsvc.form_files_dir(event.tenant_id, form.id), v["stored"]))
             except OSError:
                 pass
+    db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
     db.commit()
-    return {"message": "Inscripción eliminada"}
+    return {"message": "Inscripción eliminada (si tenía un pago, ese registro financiero se conserva)"}
 
 
 @router.get("/events/{event_id}/forms/{form_id}/files/{submission_id}/{field_id}")
@@ -407,16 +413,18 @@ async def report(event_id: int, form_id: int, include_tests: bool = False, reque
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
     cols = _column_defs(design)
-    q = db.query(FormSubmission).filter(FormSubmission.form_id == form.id)
+    q = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
     if not include_tests:
         q = q.filter(FormSubmission.is_test == False)  # noqa: E712
     subs = q.order_by(FormSubmission.id).all()
+    has_pay = bool(formlib.payment_field(design))
+    paid = _approved_by_submission(db, form) if has_pay else {}
     wb = Workbook()
     ws = wb.active
     ws.title = "Inscripciones"
     ws.append([f"{form.name} — {event.name} ({event.event_code})"])
     ws["A1"].font = Font(bold=True, size=13, color="0A0E2E")
-    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "En la base del evento"]
+    headers = ["N°", "Fecha", "Hora"] + [l for _, l, _ in cols] + ["Origen", "Prueba", "En la base del evento"] + (["Monto pagado (COP)", "Referencia de pago", "Método de pago", "ID transacción Wompi", "Reglas y descuentos"] if has_pay else [])
     ws.append(headers)
     for c in ws[2]:
         c.font = Font(color="FFFFFF", bold=True)
@@ -425,7 +433,7 @@ async def report(event_id: int, form_id: int, include_tests: bool = False, reque
     for n, s in enumerate(subs, start=1):
         data = json.loads(s.data_json)
         local = to_local(s.created_at)
-        ws.append([n, local.strftime("%Y-%m-%d"), local.strftime("%H:%M:%S")] + [_display(data.get(fid)) for fid, _, _ in cols] + [s.source or "Directo", "Sí" if s.is_test else "No", "Sí" if s.fed else "No"])
+        ws.append([n, local.strftime("%Y-%m-%d"), local.strftime("%H:%M:%S")] + [_display(data.get(fid)) for fid, _, _ in cols] + [s.source or "Directo", "Sí" if s.is_test else "No", "Sí" if s.fed else "No"] + (_pay_cells(paid.get(s.id)) if has_pay else []))
     ws.auto_filter.ref = f"A2:{get_column_letter(len(headers))}{max(ws.max_row, 2)}"
     for i in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(i)].width = 24 if i > 3 else 10
@@ -433,6 +441,43 @@ async def report(event_id: int, form_id: int, include_tests: bool = False, reque
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
     wb.save(tmp.name)
     return FileResponse(tmp.name, filename=f"Formulario_{form.slug}.xlsx")
+
+
+def _approved_by_submission(db: Session, form: WebForm) -> dict:
+    return {p.submission_id: p for p in db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "approved", FormPayment.submission_id != None)}  # noqa: E711
+
+
+def _pay_cells(p: Optional[FormPayment]) -> list:
+    if not p:
+        return ["", "", "", "", ""]
+    applied = "; ".join(f"{a['label']} ({a['effect']})" for a in json.loads(p.breakdown_json or "{}").get("applied", []))
+    return [p.amount_cents // 100, p.reference, p.payment_method or "", p.transaction_id or "", applied]
+
+
+def _pay_label(p: FormPayment) -> str:
+    if p.status == "pending" and p.created_at < datetime.utcnow() - formsvc.PENDING_HOLD:
+        return "abandoned"      # pendiente y ya pasó el tiempo de espera: la persona no terminó de pagar
+    return p.status
+
+
+# ------------------------------------------------------------------ pagos (campo «Pago», Wompi)
+@router.get("/events/{event_id}/forms/{form_id}/payments")
+async def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Pagos del formulario con su referencia (evento + formulario + inscripción): la conciliación por evento vive aquí, no
+    en el dashboard de Wompi. `orphan` = aprobado pero sin inscripción (revisar a mano)."""
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    q = db.query(FormPayment).filter(FormPayment.form_id == form.id)
+    if not include_tests:
+        q = q.filter(FormPayment.is_test == False)  # noqa: E712
+    rows = q.order_by(FormPayment.id.desc()).limit(2000).all()
+    approved = [p for p in rows if p.status == "approved"]
+    return {
+        "total_cop": sum(p.amount_cents for p in approved) // 100, "approved": len(approved),
+        "rows": [{"id": p.id, "reference": p.reference, "amount": p.amount_cents // 100, "status": _pay_label(p), "method": p.payment_method or "", "transaction_id": p.transaction_id or "",
+                  "person_id": p.person_id or "", "is_test": p.is_test, "submission_id": p.submission_id, "orphan": p.status == "approved" and not p.submission_id,
+                  "created_at": to_local(p.created_at).strftime("%Y-%m-%d %H:%M:%S"), "confirmed_at": to_local(p.confirmed_at).strftime("%Y-%m-%d %H:%M:%S") if p.confirmed_at else "",
+                  "applied": json.loads(p.breakdown_json or "{}").get("applied", [])} for p in rows]}
 
 
 # ------------------------------------------------------------------ base para pre-llenar y invitaciones
@@ -532,7 +577,7 @@ def form_dashboard(db: Session, form: WebForm, include_tests: bool = False) -> d
     from app import analytics as an
 
     design = formsvc.get_design(form)
-    q_sub = db.query(FormSubmission).filter(FormSubmission.form_id == form.id)
+    q_sub = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
     q_evt = db.query(FormEvent).filter(FormEvent.form_id == form.id)
     if not include_tests:
         q_sub, q_evt = q_sub.filter(FormSubmission.is_test == False), q_evt.filter(FormEvent.is_test == False)  # noqa: E712
@@ -565,6 +610,9 @@ def form_dashboard(db: Session, form: WebForm, include_tests: bool = False) -> d
     charts = [an.time_series("timeline", "Inscripciones en el tiempo", [s.created_at for s in subs], label="Inscripciones"),
               an.hour_histogram("by_hour", "Inscripciones por hora del día", [s.created_at for s in subs], label="Inscripciones"),
               an.counter_chart("by_source", "¿De dónde llegaron? (enlaces con utm_source)", [s.source or "Directo" for s in subs], kind="pie", label="Inscripciones")]
+
+    if formlib.payment_field(design):
+        _payment_analytics(db, form, include_tests, kpis, charts)
 
     # Campos con más y con menos respuesta (sobre las inscripciones, contando solo las que tenían el campo visible: aproximación por valor presente)
     if subs:
@@ -599,6 +647,44 @@ def form_dashboard(db: Session, form: WebForm, include_tests: bool = False) -> d
             if c:
                 charts.append(c)
     return an.dashboard(f"Formulario: {form.name}", kpis, [c for c in charts if c])
+
+
+def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: list, charts: list) -> None:
+    """Ingresos del formulario (solo los pagos aprobados cuentan como ingreso) y cómo se resolvieron los intentos."""
+    from collections import Counter, defaultdict
+    from app import analytics as an
+
+    q = db.query(FormPayment).filter(FormPayment.form_id == form.id)
+    if not include_tests:
+        q = q.filter(FormPayment.is_test == False)  # noqa: E712
+    pays = q.order_by(FormPayment.id).all()
+    if not pays:
+        return
+    pesos = lambda n: "$" + f"{n:,}".replace(",", ".")
+    approved = [p for p in pays if p.status == "approved"]
+    total = sum(p.amount_cents for p in approved) // 100
+    failed = [p for p in pays if p.status in ("declined", "error", "voided")]
+    abandoned = [p for p in pays if _pay_label(p) == "abandoned"]
+    kpis += [an.kpi("Ingresos (aprobados)", pesos(total), f"{len(approved)} pago(s) aprobado(s)", "good"),
+             an.kpi("Pago promedio", pesos(total // len(approved) if approved else 0), "por inscripción pagada"),
+             an.kpi("Pagos no completados", len(failed) + len(abandoned), f"{len(failed)} rechazados · {len(abandoned)} abandonados", "warn" if failed or abandoned else "")]
+    orphans = sum(1 for p in pays if p.status == "approved" and not p.submission_id)
+    if orphans:
+        kpis.append(an.kpi("Pagos sin inscripción", orphans, "aprobados pero sin inscripción: revisar en la lista de pagos", "warn"))
+    per_day = defaultdict(int)
+    for p in approved:
+        per_day[to_local(p.confirmed_at or p.created_at).strftime("%Y-%m-%d")] += p.amount_cents // 100
+    if per_day:
+        days = sorted(per_day)
+        charts.append(an.chart("revenue_by_day", "Ingresos por día (COP)", "bar", days, [{"label": "Ingresos aprobados", "data": [per_day[d] for d in days]}]))
+    names = {"approved": "Aprobado", "declined": "Rechazado", "error": "Error", "voided": "Anulado", "pending": "En espera", "abandoned": "Abandonado"}
+    charts.append(an.counter_chart("payment_status", "Resultado de los intentos de pago", [names.get(_pay_label(p), _pay_label(p)) for p in pays], kind="pie", label="Pagos"))
+    applied = Counter()
+    for p in approved:
+        for a in json.loads(p.breakdown_json or "{}").get("applied", []):
+            applied[f"{a['label']} ({a['effect']})"] += 1
+    if applied:
+        charts.append(an.counter_chart("price_rules", "Reglas de precio y descuentos aplicados", list(applied.elements()), kind="bar", label="Pagos"))
 
 
 @router.get("/events/{event_id}/forms/{form_id}/analytics")
