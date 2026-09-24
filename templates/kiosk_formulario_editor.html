@@ -440,6 +440,13 @@ async function saveDesign() {
   } catch (e) { showToast(e.message, 'error'); return false; }
 }
 $('saveBtn').addEventListener('click', saveDesign);
+$('testBtn').addEventListener('click', async (e) => {
+  if (form.public_state === 'pruebas') return;          // el enlace de pruebas es seguro
+  e.preventDefault();
+  const pays = Object.values(design.fields).some((f) => f.type === 'payment');
+  const msg = `El formulario está en «${STATUS_LABEL[form.public_state] || form.public_state}», no en «Pruebas»: «Probar» abre el enlace PÚBLICO real${pays ? ' y cualquier pago se cobra de verdad' : ''}, y lo que envíes cuenta como inscripción real. ¿Abrirlo de todos modos?`;
+  if (await showConfirm(msg, { variant: 'warning', confirmLabel: 'Sí, abrir' })) window.open(form.public_url, '_blank', 'noopener');
+});
 $('previewBtn').addEventListener('click', () => {
   const host = $('previewHost');
   RenderPreview(host);
@@ -460,7 +467,8 @@ $('tplBtn').addEventListener('click', async () => {
 function paintHeader() {
   $('fname').value = form.name; $('fslug').value = form.slug;
   $('statusPill').innerHTML = `Estado: <b>${STATUS_LABEL[form.public_state] || form.public_state}</b> · ${form.submissions} inscripción(es)`;
-  $('testBtn').href = form.test_url;
+  $('testBtn').href = form.public_state === 'pruebas' ? form.test_url : form.public_url;
+  $('testBtn').title = form.public_state === 'pruebas' ? 'Abre el enlace de pruebas (sandbox, no cobra)' : 'El formulario NO está en Pruebas: abre el enlace público real';
   $('invTab').style.display = settings.prefill.mode === 'invite' ? '' : 'none';
 }
 
@@ -491,7 +499,9 @@ function paintConfig() {
   $('cfgUseSched').checked = form.use_schedule; $('schedBox').style.display = form.use_schedule ? 'block' : 'none';
   schedule = (form.schedule || []).map((x) => ({ ...x })); bindSched();
   $('linksBox').innerHTML = `<div class="hint" style="margin-bottom:4px;">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" style="width:min(460px,100%);"><button class="small-btn" data-c="${esc(form.public_url)}">Copiar</button></div>
-    <div class="hint" style="margin:8px 0 4px;">Enlace de pruebas (funciona en estado «Pruebas»; lo que se envíe queda marcado como prueba):</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" style="width:min(460px,100%);"><button class="small-btn" data-c="${esc(form.test_url)}">Copiar</button></div>`;
+    ${form.public_state === 'pruebas'
+      ? `<div class="hint" style="margin:8px 0 4px;">🧪 Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" style="width:min(460px,100%);"><button class="small-btn" data-c="${esc(form.test_url)}">Copiar</button></div>`
+      : `<div class="hint" style="margin:8px 0 4px; color:#8a5a00; background:#fff8e1; padding:8px 10px; border-radius:10px;">⚠️ Con el formulario en «${STATUS_LABEL[form.public_state] || form.public_state}» <b>no hay enlace de pruebas</b>: el enlace público es el real${form.payments && form.payments.has_field ? ' y <b>COBRA DE VERDAD</b>' : ''}. Para probar sin cobrar ni contar inscripciones, cambia el estado a «Pruebas».</div>`}`;
   $('linksBox').querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.c); } catch (e) {} showToast('Enlace copiado', 'success'); }));
   $('secOn').checked = s.security.enabled; $('secBox').style.display = s.security.enabled ? 'flex' : 'none'; $('secType').value = s.security.type; $('secCode').value = s.security.code; $('secCodeBox').style.display = s.security.type === 'code' ? '' : 'none';
   $('preMode').value = s.prefill.mode; $('preSrc').value = s.prefill.source === 'upload' ? 'upload' : (s.prefill.source.startsWith('event:') ? s.prefill.source : 'event');
