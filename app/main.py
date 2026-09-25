@@ -93,25 +93,9 @@ app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-# Versión en la URL de cada archivo estático (`/static/js/x.js?v=<fecha del archivo>`): Cloudflare y el navegador guardan los .js/.css hasta 4 h
-# (Cache-Control: max-age=14400) y, sin esto, tras un deploy la gente sigue usando el JS viejo y «no pasa nada» con lo nuevo.
-from jinja2 import pass_context as _pass_context  # noqa: E402
+from app import staticver  # noqa: E402
 
-
-@_pass_context
-def _static_aware_url_for(context, name, /, **path_params):
-    request = context["request"]
-    url = request.url_for(name, **path_params)
-    if name == "static":
-        try:
-            version = int(os.path.getmtime(os.path.join("static", str(path_params.get("path", "")))))
-            return f"{url}?v={version}"
-        except OSError:
-            pass
-    return url
-
-
-templates.env.globals["url_for"] = _static_aware_url_for
+staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
 
 DEFAULT_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"

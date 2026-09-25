@@ -616,3 +616,8 @@ def test_static_files_carry_a_version_so_a_deploy_is_never_hidden_by_the_cache(c
     html = client.get(f"/f/{ev.id}/{form['slug']}").text
     import re
     assert re.search(r'/static/js/form-render\.js\?v=\d{9,}', html)
+
+
+def test_login_page_static_files_are_versioned_too(client):
+    import re
+    assert re.search(r'/static/css/style\.css\?v=\d{9,}', client.get("/login").text)
