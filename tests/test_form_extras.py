@@ -609,3 +609,10 @@ def test_a_quota_needs_no_total_capacity(client, factory):
     assert _submit(client, ev, form, {**_who(1), "cat": "VIP"}, sid="a").status_code == 200
     assert _submit(client, ev, form, {**_who(2), "cat": "VIP"}, sid="b").status_code == 409
     assert _submit(client, ev, form, {**_who(3), "cat": "General"}, sid="c").status_code == 200
+
+
+def test_static_files_carry_a_version_so_a_deploy_is_never_hidden_by_the_cache(client, factory):
+    ev, form, _ = _disc_form(client, factory, [])
+    html = client.get(f"/f/{ev.id}/{form['slug']}").text
+    import re
+    assert re.search(r'/static/js/form-render\.js\?v=\d{9,}', html)
