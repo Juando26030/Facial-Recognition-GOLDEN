@@ -27,6 +27,7 @@ COMPANION_FIELD_TYPES = ("text_short", "email", "phone", "number")
 ALL_TYPES = INPUT_TYPES + STATIC_TYPES + (PAYMENT_TYPE, COMPANIONS_TYPE)
 DATE_FIELD = "@date"          # en una condición de precio: la fecha de HOY (hora local) en vez de un campo
 DATE_OPS = ("before", "on_or_after")
+TAX_RATE = 19      # IVA en Colombia (%)
 MIN_PAYMENT_COP, MAX_PAYMENT_COP = 1500, 10_000_000   # Wompi: mínimo por transacción y tope por transacción (persona jurídica)
 IDENTITY_KEYS = ("id", "first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
 STATUSES = ("pruebas", "activo", "cerrado", "finalizado")
@@ -315,7 +316,8 @@ def sanitize_payment(pay, fields_in: dict, own_id: str) -> dict:
     pay = pay if isinstance(pay, dict) else {}
     mode = pay.get("mode") if pay.get("mode") in ("fixed", "rules") else "fixed"
     out = {"currency": "COP", "mode": mode, "description": _text(pay.get("description"), 120), "amount": _money(pay.get("amount"), "Monto del pago"), "rules": [], "discounts": [],
-           "companions_charge": bool(pay.get("companions_charge"))}      # cobrar el mismo valor por cada acompañante (tú + N)
+           "companions_charge": bool(pay.get("companions_charge")),
+           "tax": pay.get("tax") if pay.get("tax") in ("add", "none") else ""}      # IVA: "add" = se suma el 19 % y se aclara «con IVA»; "none" = «precio sin IVA» (no se suma); "" = no se menciona      # cobrar el mismo valor por cada acompañante (tú + N)
     if not out["amount"] and mode == "fixed":
         raise ValueError("El campo de pago necesita un monto")
     used_ids: set = set()
@@ -384,7 +386,11 @@ def compute_amount(pay: dict, values: dict, today: date, people: int = 1, ctx: O
     n = max(1, int(people or 1)) if pay.get("companions_charge") else 1
     if n > 1:
         applied.append({"label": f"{n} personas (tú + {n - 1} acompañante{'s' if n > 2 else ''})", "kind": "people", "effect": f"× {n}"})
-    return {"amount": amount * n, "unit": amount, "people": n, "base": base, "applied": applied}
+    total = amount * n
+    tax = int(total * TAX_RATE / 100 + 0.5) if pay.get("tax") == "add" and total > 0 else 0
+    if tax:
+        applied.append({"label": f"IVA {TAX_RATE}%", "kind": "tax", "effect": f"+{_pesos(tax)}"})
+    return {"amount": total + tax, "subtotal": total, "tax": tax, "unit": amount, "people": n, "base": base, "applied": applied}
 
 
 def priced_values(design: dict, values: dict) -> dict:

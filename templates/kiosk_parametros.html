@@ -63,6 +63,29 @@
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
           <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo sale por SMTP y el SMS por Twilio si están configurados (ver <code>.env.example</code>); si no, el mensaje queda guardado en <code>data/outbox/</code> y NO sale a nadie.</p>
+          {% if event.digital_badge_enabled %}
+          <div id="mailEditor" style="margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
+            <h5 style="margin:0 0 0.4rem;">✉️ Correo que recibe la persona</h5>
+            <p style="color:#888; font-size:0.78rem; margin:0 0 0.5rem;">Escribe el correo como quieras (negritas, enlaces, imágenes). Las <b>variables</b> se reemplazan por los datos de cada persona. Debe llevar el <b>Botón</b> o el <b>Enlace</b> a la escarapela.</p>
+            <input type="text" id="mailSubject" placeholder="Asunto" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; margin-bottom:6px;">
+            <div id="mailBar" style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-bottom:4px;">
+              <button type="button" data-cmd="bold" title="Negrita"><b>B</b></button><button type="button" data-cmd="italic" title="Cursiva"><i>I</i></button><button type="button" data-cmd="underline" title="Subrayado"><u>U</u></button>
+              <button type="button" data-cmd="insertUnorderedList" title="Lista">• Lista</button><button type="button" data-cmd="justifyCenter" title="Centrar">↔ Centrar</button>
+              <input type="color" id="mailColor" title="Color del texto" value="#222222" style="width:32px; height:28px; padding:0; border:1px solid #ccc; border-radius:6px;">
+              <button type="button" id="mailLink">🔗 Enlace</button><button type="button" id="mailImg">🖼️ Imagen</button><input type="file" id="mailImgFile" accept="image/*" hidden>
+              <select id="mailVar" style="padding:5px; border:1px solid #ccc; border-radius:6px;"><option value="">+ Insertar variable…</option></select>
+            </div>
+            <div id="mailBody" contenteditable="true" style="min-height:200px; border:1px solid #ccc; border-radius:8px; padding:12px; background:#fff; font-family:Arial,sans-serif; font-size:15px; line-height:1.5;"></div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;">
+              <button type="button" id="mailSave" style="padding:8px 16px; font-weight:700;">Guardar correo</button>
+              <button type="button" id="mailPreview" style="padding:8px 14px;">👁 Vista previa</button>
+              <button type="button" id="mailReset" style="padding:8px 14px;">Volver al texto por defecto</button>
+              <input type="email" id="mailTo" placeholder="correo para la prueba" style="padding:7px; border:1px solid #ccc; border-radius:8px;"><button type="button" id="mailTest" style="padding:8px 14px;">Enviar prueba</button>
+            </div>
+            <div id="mailStatus" style="font-size:0.8rem; margin-top:6px;"></div>
+            <iframe id="mailFrame" sandbox="" style="display:none; width:100%; height:420px; border:1px solid #ddd; border-radius:8px; margin-top:8px; background:#fff;"></iframe>
+          </div>
+          {% endif %}
         </div>
         <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
@@ -253,6 +276,55 @@
     });
     loadAreas().catch(() => {}); loadItems().catch(() => {});
 
+
+    // ---- Correo de la escarapela virtual (editor visual)
+    (function () {
+        const box = document.getElementById('mailEditor');
+        if (!box) return;
+        const api = `/api/events/${window.EVENT_ID}/digital-email`;
+        const body = document.getElementById('mailBody'), subj = document.getElementById('mailSubject'), status = document.getElementById('mailStatus');
+        const say = (t, err) => { status.style.color = err ? '#c0392b' : '#1e7e34'; status.textContent = t; };
+        const post = async (url, data) => { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; };
+        const current = () => ({ subject: subj.value, body: body.innerHTML });
+        fetch(api).then((r) => r.json()).then((d) => {
+            subj.value = d.subject; body.innerHTML = d.body;
+            const sel = document.getElementById('mailVar');
+            d.variables.forEach((v) => sel.insertAdjacentHTML('beforeend', `<option value="${v.key}">${v.label} — {${v.key}}</option>`));
+            say(d.custom ? 'Este evento usa un correo personalizado.' : 'Ahora se usa el texto por defecto; edítalo y guárdalo para personalizarlo.');
+        });
+        document.getElementById('mailBar').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });   // no pierde la selección del texto
+        document.querySelectorAll('#mailBar [data-cmd]').forEach((b) => b.addEventListener('click', () => { body.focus(); document.execCommand(b.dataset.cmd, false, null); }));
+        document.getElementById('mailColor').addEventListener('input', (e) => { body.focus(); document.execCommand('foreColor', false, e.target.value); });
+        document.getElementById('mailVar').addEventListener('change', (e) => { if (!e.target.value) return; body.focus(); document.execCommand('insertText', false, `{${e.target.value}}`); e.target.value = ''; });
+        document.getElementById('mailLink').addEventListener('click', async () => {
+            const sel = window.getSelection(); const range = sel.rangeCount ? sel.getRangeAt(0) : null;
+            const url = await showPrompt('Dirección del enlace (https://…)', { placeholder: 'https://' });
+            if (!url) return; body.focus(); if (range) { sel.removeAllRanges(); sel.addRange(range); }
+            document.execCommand('createLink', false, url);
+        });
+        document.getElementById('mailImg').addEventListener('click', () => document.getElementById('mailImgFile').click());
+        document.getElementById('mailImgFile').addEventListener('change', async (e) => {
+            const f = e.target.files[0]; if (!f) return; const fd = new FormData(); fd.append('file', f);
+            const r = await fetch(`${api}/upload-image`, { method: 'POST', body: fd }); const d = await r.json().catch(() => ({}));
+            e.target.value = ''; if (!r.ok) return say(d.detail || 'No se pudo subir la imagen', true);
+            body.focus(); document.execCommand('insertImage', false, d.url); say('Imagen agregada.');
+        });
+        document.getElementById('mailSave').addEventListener('click', async () => {
+            const r = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(current()) }); const d = await r.json().catch(() => ({}));
+            r.ok ? say('Correo guardado. Se usará para las próximas escarapelas que se envíen.') : say(d.detail || 'No se pudo guardar', true);
+        });
+        document.getElementById('mailReset').addEventListener('click', async () => {
+            if (!(await showConfirm('¿Volver al texto por defecto? Se pierde el correo que escribiste.'))) return;
+            await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) });
+            const d = await (await fetch(api)).json(); subj.value = d.subject; body.innerHTML = d.body; say('Se restauró el texto por defecto.');
+        });
+        document.getElementById('mailPreview').addEventListener('click', async () => {
+            try { const d = await post(`${api}/preview`, current()); const fr = document.getElementById('mailFrame'); fr.style.display = 'block'; fr.srcdoc = `<div style="font:14px Arial;padding:6px 10px;background:#f1f3f4;">Asunto: <b>${d.subject.replace(/</g, '&lt;')}</b></div>` + d.html; } catch (e) { say(e.message, true); }
+        });
+        document.getElementById('mailTest').addEventListener('click', async () => {
+            try { const d = await post(`${api}/test`, { ...current(), to: document.getElementById('mailTo').value }); say(d.sent ? d.detail : 'No se envió: ' + d.detail, !d.sent); } catch (e) { say(e.message, true); }
+        });
+    })();
     document.getElementById('digitalEnabled').addEventListener('change', async (e) => {
         const res = await fetch(`/api/events/${window.EVENT_ID}/digital-badge-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
         if (res.ok) location.reload(); else { e.target.checked = !e.target.checked; showToast('No se pudo cambiar la escarapela digital', 'error'); }

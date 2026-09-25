@@ -46,11 +46,11 @@ def _graph_token() -> str:
     return _graph_token_cache["token"]
 
 
-def _send_via_graph(to: str, subject: str, body: str, attachments: list) -> dict:
+def _send_via_graph(to: str, subject: str, body: str, attachments: list, html: Optional[str] = None) -> dict:
     sender = os.environ["GRAPH_SENDER"]
     message = {
         "subject": subject,
-        "body": {"contentType": "Text", "content": body},
+        "body": {"contentType": "HTML", "content": html} if html else {"contentType": "Text", "content": body},
         "toRecipients": [{"emailAddress": {"address": to}}],
     }
     if attachments:
@@ -84,19 +84,21 @@ def _outbox_fallback(msg: EmailMessage, to: str, reason: str) -> dict:
     return {"sent": False, "detail": f"{reason} — el correo quedó guardado en {path}"}
 
 
-def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = None) -> dict:
+def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = None, html: Optional[str] = None) -> dict:
     """`attachments`: lista de (nombre_archivo, bytes, mime "tipo/subtipo"). Devuelve
-    {"sent": bool, "detail": str} — nunca lanza: quien llama decide qué mostrar."""
+    {"sent": bool, "detail": str} — nunca lanza: quien llama decide qué mostrar. `html`: versión con formato (el `body` queda como texto alterno)."""
     attachments = attachments or []
 
     if all(os.getenv(k) for k in ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "GRAPH_SENDER")):
-        return _send_via_graph(to, subject, body, attachments)
+        return _send_via_graph(to, subject, body, attachments, html)
 
     msg = EmailMessage()
     host = os.getenv("SMTP_HOST", "").strip()
     sender = os.getenv("SMTP_FROM") or os.getenv("SMTP_USER") or "no-reply@golden.local"
     msg["From"], msg["To"], msg["Subject"] = sender, to, subject
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     for filename, content, mime in attachments:
         maintype, _, subtype = mime.partition("/")
         msg.add_attachment(content, maintype=maintype, subtype=subtype or "octet-stream", filename=filename)

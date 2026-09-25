@@ -16,6 +16,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app import email_template
 from app.mailer import send_mail
 from app.models import EventAttendee
 
@@ -40,18 +41,18 @@ def ensure_token(db: Session, attendee: EventAttendee) -> str:
     return attendee.digital_token
 
 
-def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name: str, base_url: str) -> dict:
+DEFAULT_BASE_URL = "https://app.golden-eventos.com"      # último recurso: un enlace relativo («/b/…») no sirve en un correo
+
+
+def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name: str, base_url: str, last_name: str = "") -> dict:
     """Envía el enlace de la escarapela digital al correo guardado y marca el envío. Devuelve
     {"sent": bool, "detail": str} — nunca lanza (el alta de la persona no debe fallar por el envío)."""
     contact = attendee.digital_contact
     if not contact:
         return {"sent": False, "detail": "Sin correo para enviar"}
-    link = f"{(os.getenv('PUBLIC_BASE_URL') or base_url).rstrip('/')}/b/{ensure_token(db, attendee)}"
-    result = send_mail(
-        contact, f"Tu escarapela digital — {event.name}",
-        f"Hola {person_name}, esta es tu escarapela digital para {event.name}. Ábrela desde tu celular el día del evento:\n\n{link}\n\n"
-        "Es personal: no compartas el enlace ni capturas de pantalla (la escarapela muestra una animación y la hora en vivo).",
-    )
+    link = f"{(os.getenv('PUBLIC_BASE_URL') or base_url or DEFAULT_BASE_URL).rstrip('/')}/b/{ensure_token(db, attendee)}"
+    subject, html_body, text_body = email_template.render(event, person_name, last_name, link)
+    result = send_mail(contact, subject, text_body, html=html_body)
     attendee.digital_sent_at = datetime.utcnow()
     db.flush()
     return result

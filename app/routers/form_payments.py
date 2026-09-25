@@ -80,7 +80,7 @@ async def quote(event_id: int, slug: str, data: dict, request: Request, db: Sess
     q = formlib.compute_amount(field["pay"], formlib.priced_values(design, values), formsvc.now_local().date(), 1 + formlib.companions_count(design, values), ctx)
     if code_row and not any(a.get("id") == code_row.discount_id for a in q["applied"]):
         problem = "not_applicable"
-    out = {"has_payment": True, "amount": q["amount"], "unit": q["unit"], "people": q["people"], "base": q["base"], "applied": q["applied"], "description": field["pay"].get("description", "")}
+    out = {"has_payment": True, "amount": q["amount"], "subtotal": q["subtotal"], "tax": q["tax"], "unit": q["unit"], "people": q["people"], "base": q["base"], "applied": q["applied"], "description": field["pay"].get("description", "")}
     if formsvc.normalize_code(data.get("code")):
         out["code"] = {"status": problem or "ok", "message": formsvc.CODE_MESSAGES.get(problem, "Código aplicado")}
     problem = wompi.service_problem()          # solo si Wompi reporta una incidencia: el formulario avisa antes de que la persona intente pagar

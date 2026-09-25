@@ -229,7 +229,7 @@ def _known_faces_dir(tenant_id: str) -> str:
 def _send_digital(db: Session, event: Event, user: User, request: Optional[Request]) -> dict:
     """Envío automático de la escarapela digital (ítem 17) tras guardar a la persona."""
     att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
-    result = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url) if request else "")
+    result = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url) if request else "", user.last_name or "")
     db.commit()
     return result
 
@@ -616,7 +616,7 @@ async def update_user(
         if new_digital and event.digital_badge_enabled:
             if send_now:
                 att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
-                result["digital"] = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url))
+                result["digital"] = digital_badge.send_digital_badge(db, event, att, user.first_name or "", str(request.base_url), user.last_name or "")
                 db.commit()
             else:
                 result["digital"] = {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}

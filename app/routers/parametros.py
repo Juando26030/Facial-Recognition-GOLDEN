@@ -9,11 +9,14 @@ manual_register y update_user (routers/api.py) — NO en bulk_register, que sigu
 comportamiento tolerante de siempre; forzar esto ahí arriesgaba romper cargas reales con datos
 incompletos que hoy funcionan.
 """
+import io
 import os
+import re
 import uuid
+from types import SimpleNamespace
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -317,3 +320,98 @@ async def upsert_field_config(
     db.commit()
 
     return _serialize(field_key, dict(_configurable_fields(event))[field_key], row)
+
+
+# ------------------------------------------------------------------ correo de la escarapela virtual (editable por evento)
+from app import email_template  # noqa: E402
+from app.mailer import send_mail  # noqa: E402
+
+_EMAIL_IMG = re.compile(r"^[0-9a-f]{32}\.(png|jpg|jpeg|gif|webp)$")
+_DIGITAL_MAIL = require_role_excluding("coordinador", ("comercial",))
+
+
+def _public_base(request: Request) -> str:
+    return (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+
+
+@router.get("/events/{event_id}/digital-email")
+async def get_digital_email(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+    event = get_event_for_staff(event_id, db, staff)
+    return {"subject": event.digital_email_subject or email_template.DEFAULT_SUBJECT, "body": event.digital_email_body or email_template.DEFAULT_BODY,
+            "custom": bool(event.digital_email_body or event.digital_email_subject), "variables": [{"key": k, "label": l} for k, l in email_template.VARIABLES]}
+
+
+@router.put("/events/{event_id}/digital-email")
+async def put_digital_email(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+    """Guarda la plantilla (saneada). Vacía o `reset` = vuelve a la de siempre."""
+    event = get_event_for_staff(event_id, db, staff)
+    subject = " ".join(str(data.get("subject") or "").split())[:200]
+    body = email_template.sanitize(str(data.get("body") or ""))
+    if data.get("reset") or not email_template.to_text(body).strip() and "<img" not in body:
+        event.digital_email_subject = event.digital_email_body = None
+    else:
+        if not subject:
+            raise HTTPException(status_code=400, detail="Escribe el asunto del correo")
+        if "{enlace}" not in body and "{boton}" not in body:
+            raise HTTPException(status_code=400, detail="El correo debe incluir el enlace a la escarapela: inserta la variable «Botón» o «Enlace»")
+        event.digital_email_subject, event.digital_email_body = subject, body
+    db.commit()
+    return {"custom": bool(event.digital_email_body)}
+
+
+def _sample(event: Event, data: dict, link: str):
+    return email_template.render(SimpleNamespace(name=event.name, start_date=event.start_date, location=event.location, city=event.city,
+                                                 digital_email_subject=str(data.get("subject") or "")[:200] or None,
+                                                 digital_email_body=email_template.sanitize(str(data.get("body") or "")) or None), "María", "Pérez", link)
+
+
+@router.post("/events/{event_id}/digital-email/preview")
+async def preview_digital_email(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+    event = get_event_for_staff(event_id, db, staff)
+    subject, html_body, _ = _sample(event, data, f"{_public_base(request)}/b/EJEMPLO")
+    return {"subject": subject, "html": html_body}
+
+
+@router.post("/events/{event_id}/digital-email/test")
+async def test_digital_email(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+    """Envía el correo con datos de ejemplo a UNA dirección que escribe quien edita (para verlo como lo verá el asistente)."""
+    event = get_event_for_staff(event_id, db, staff)
+    to = str(data.get("to") or "").strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", to):
+        raise HTTPException(status_code=400, detail="Escribe un correo válido para la prueba")
+    subject, html_body, text = _sample(event, data, f"{_public_base(request)}/b/EJEMPLO")
+    result = send_mail(to, f"[PRUEBA] {subject}", text, html=html_body)
+    return {"sent": result["sent"], "detail": result["detail"]}
+
+
+@router.post("/events/{event_id}/digital-email/upload-image")
+async def upload_email_image(event_id: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+    event = get_event_for_staff(event_id, db, staff)
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+        raise HTTPException(status_code=400, detail="La imagen debe ser PNG, JPG, GIF o WEBP")
+    content = await file.read()
+    if len(content) > 3 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="La imagen pesa más de 3 MB")
+    try:
+        from PIL import Image
+        Image.open(io.BytesIO(content)).verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ese archivo no es una imagen válida")
+    folder = os.path.join("data", event.tenant_id, "email_assets")
+    os.makedirs(folder, exist_ok=True)
+    name = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(folder, name), "wb") as fh:
+        fh.write(content)
+    return {"url": f"{_public_base(request)}/api/email-assets/{event.tenant_id}/{name}"}
+
+
+@router.get("/email-assets/{tenant_id}/{filename}")
+async def email_asset(tenant_id: str, filename: str):
+    """Imágenes de los correos: públicas a propósito (el lector de correo no tiene sesión); el nombre es un UUID no adivinable."""
+    if not _EMAIL_IMG.match(filename) or "/" in tenant_id or ".." in tenant_id:
+        raise HTTPException(status_code=404)
+    path = os.path.join("data", tenant_id, "email_assets", filename)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404)
+    return FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})

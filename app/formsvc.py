@@ -253,7 +253,7 @@ def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmi
         att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
         if att and not att.digital_sent_at:
             user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
-            digital_badge.send_digital_badge(db, event, att, (user.first_name if user else "") or "", "")
+            digital_badge.send_digital_badge(db, event, att, (user.first_name if user else "") or "", "", (user.last_name if user else "") or "")
     except Exception:       # noqa: BLE001 — ver docstring
         pass
 

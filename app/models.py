@@ -226,6 +226,8 @@ class Event(Base):
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
+    digital_email_subject = Column(String, nullable=True)  # plantilla propia del correo de la escarapela virtual (NULL = la de siempre)
+    digital_email_body = Column(Text, nullable=True)       # HTML ya saneado (app/email_template.py)
     report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente
     report_uploaded_at = Column(DateTime, nullable=True)
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1

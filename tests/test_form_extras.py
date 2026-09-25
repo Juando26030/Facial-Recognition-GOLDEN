@@ -289,3 +289,86 @@ def test_value_suggestions_offer_what_the_base_already_has(client, factory, keys
     assert client.get(url, params={"key": "entity"}).json() == {"values": ["ACME", "Globex"], "total": 2}          # pocos valores: el editor los ofrece como lista
     assert client.get(url, params={"key": "categories"}).json()["values"] == ["Speaker", "Visitante"]
     assert client.get(url, params={"key": "email"}).json() == {"values": [], "total": 0}                          # lo único por persona no se sugiere
+
+from tests.test_digital_badge import _register, _setup  # noqa: E402
+
+# ------------------------------- IVA en el campo de pago -------------------------------
+def test_tax_option_adds_19_percent_or_only_states_it(client, factory, keys):
+    ev, form, _ = _disc_form(client, factory, [], amount=5000)
+    login(client, "coord1")
+    for mode, expected in (("add", 5950), ("none", 5000), ("", 5000)):
+        pay = _pay(amount=5000, tax=mode)
+        r = _put(client, ev, form, design=_design(_basic_fields() + [pay]))
+        assert r.status_code == 200 and r.json()["design"]["fields"]["pago"]["pay"]["tax"] == mode
+        q = _q(client, ev, form)
+        assert q["amount"] == expected, mode
+    pay = _pay(amount=5000, tax="add", companions_charge=True, discounts=[{"label": "10", "kind": "percent", "value": 10, "when": []}])
+    _put(client, ev, form, design=_design(_basic_fields() + [dict(COMP), pay]))
+    q = _q(client, ev, form, values={"acomp": _people(2)})
+    assert (q["unit"], q["subtotal"], q["tax"], q["amount"]) == (4500, 13500, 2565, 16065)         # descuento por persona, × 3 personas, y el IVA al final
+    assert q["applied"][-1] == {"label": "IVA 19%", "kind": "tax", "effect": "+$2.565"}
+    assert _put(client, ev, form, design=_design(_basic_fields() + [_pay(amount=5000, tax="raro")])).json()["design"]["fields"]["pago"]["pay"]["tax"] == ""
+
+
+# ------------------------------- correo de la escarapela virtual -------------------------------
+def test_email_sanitizer_keeps_formatting_and_drops_anything_dangerous():
+    from app import email_template as et
+    dirty = ('<p style="color:red;background:url(http://x)" onclick="x()">Hola <b>{nombre}</b></p><script>alert(1)</script>'
+             '<a href="javascript:alert(1)">malo</a><a href="https://ok.com/x">bueno</a><img src="https://ok.com/i.png" onerror="x()"><img src="javascript:1"><iframe src="x"></iframe>')
+    clean = et.sanitize(dirty)
+    assert "script" not in clean and "onclick" not in clean and "onerror" not in clean and "javascript" not in clean and "iframe" not in clean and "url(" not in clean
+    assert 'style="color:red"' in clean and "<b>{nombre}</b>" in clean and 'href="https://ok.com/x"' in clean and 'src="https://ok.com/i.png"' in clean
+    assert et.sanitize("<p>sin cerrar <b>negrita") == "<p>sin cerrar <b>negrita</b></p>"
+
+
+def test_email_render_replaces_variables_and_escapes_the_values(factory):
+    from types import SimpleNamespace
+    from app import email_template as et
+    ev = SimpleNamespace(name="Feria <X>", start_date=None, location="Sede", city="Bogotá", digital_email_subject="Hola {nombre} - {evento}",
+                         digital_email_body='<p>{nombre_completo}</p><a href="{enlace}">entra</a> {boton}')
+    subject, html_body, text = et.render(ev, "Ana", "<b>Mora</b>", "https://x.com/b/T")
+    assert subject == "Hola Ana - Feria <X>"
+    assert "&lt;b&gt;Mora&lt;/b&gt;" in html_body and "<b>Mora</b>" not in html_body and 'href="https://x.com/b/T"' in html_body and "Abrir mi escarapela" in html_body
+    assert "https://x.com/b/T" in text
+
+
+def test_badge_email_link_is_absolute_and_uses_the_events_own_template(client, factory, outbox, monkeypatch):
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    ev = _setup(client, factory, role="coordinador")
+    _register(client, ev, "1001", send="true")
+    import re
+    assert re.search(r"https?://\S+/b/\w+", outbox[0]["body"]) and 'href="http' in outbox[0]["html"]           # nunca «/b/…» a secas (no sirve en un correo)
+    r = client.put(f"/api/events/{ev.id}/digital-email", json={"subject": "Tu pase, {nombre}", "body": "<p>Entra: {boton}</p>"})
+    assert r.status_code == 200 and client.get(f"/api/events/{ev.id}/digital-email").json()["custom"] is True
+    outbox.clear()
+    _register(client, ev, "1002", send="true")
+    assert outbox[0]["subject"] == "Tu pase, Ana" and "Entra:" in outbox[0]["body"]
+
+
+def test_email_template_editing_rules(client, factory, outbox):
+    ev = _setup(client, factory, role="coordinador")
+    url = f"/api/events/{ev.id}/digital-email"
+    assert client.get(url).json()["custom"] is False and "{boton}" in client.get(url).json()["body"]
+    assert client.put(url, json={"subject": "", "body": "<p>{boton}</p>"}).status_code == 400              # sin asunto
+    assert client.put(url, json={"subject": "Hola", "body": "<p>sin enlace</p>"}).status_code == 400        # sin el enlace a la escarapela
+    assert client.put(url, json={"subject": "Hola", "body": "<p>{boton}</p><script>x</script>"}).status_code == 200
+    assert "script" not in client.get(url).json()["body"]
+    pv = client.post(f"{url}/preview", json={"subject": "Hola {nombre}", "body": "<p>{enlace}</p>"}).json()
+    assert pv["subject"] == "Hola María" and "/b/EJEMPLO" in pv["html"]
+    assert client.post(f"{url}/test", json={"to": "no-es-correo", "body": "<p>{boton}</p>", "subject": "x"}).status_code == 400
+    assert client.put(url, json={"reset": True}).json()["custom"] is False
+
+
+def test_email_images_are_public_but_only_real_unguessable_images(client, factory, tmp_path, monkeypatch):
+    import io
+    from PIL import Image
+    ev = _setup(client, factory, role="coordinador")
+    buf = io.BytesIO(); Image.new("RGB", (4, 4), "red").save(buf, "PNG")
+    r = client.post(f"/api/events/{ev.id}/digital-email/upload-image", files={"file": ("logo.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 200
+    path = "/" + r.json()["url"].split("/", 3)[3]
+    bad = client.post(f"/api/events/{ev.id}/digital-email/upload-image", files={"file": ("x.png", b"no soy imagen", "image/png")})
+    assert bad.status_code == 400
+    client.post("/logout")
+    assert client.get(path).status_code == 200                                                            # el lector de correo no tiene sesión
+    assert client.get(path.replace(".png", "x.png")).status_code == 404 and client.get(f"/api/email-assets/{ev.tenant_id}/../.env").status_code == 404

@@ -104,8 +104,8 @@ def outbox(monkeypatch):
     """Correos que la app intentó enviar (no sale nada al exterior)."""
     sent = []
 
-    def fake_send_mail(to, subject, body, attachments=None):
-        sent.append({"to": to, "subject": subject, "body": body})
+    def fake_send_mail(to, subject, body, attachments=None, html=None):
+        sent.append({"to": to, "subject": subject, "body": body, "html": html})
         return {"sent": True, "detail": "prueba"}
 
     monkeypatch.setattr("app.routers.auth.send_mail", fake_send_mail)
