@@ -15,24 +15,31 @@
         .box input { width:100%; box-sizing:border-box; padding:12px; border:1px solid #c9ccd6; border-radius:10px; font:inherit; font-size:1.05rem; text-align:center; }
         .box button, .box a.btn { display:inline-block; margin-top:14px; padding:12px 30px; border:none; border-radius:26px; background:#D4AF37; color:#111; font:inherit; font-weight:800; cursor:pointer; text-decoration:none; }
         .msg { margin-top:10px; color:#c0392b; font-size:.88rem; min-height:1.2em; }
+      .skiptranslate iframe, .goog-te-banner-frame, .VIpgJd-ZVi9od-ORHb-OEVmcd, .VIpgJd-ZVi9od-aZ2wEe-wOHMyf { display:none !important; }
+      body { top:0 !important; } .goog-tooltip, .goog-tooltip:hover { display:none !important; } .goog-text-highlight { background:none !important; box-shadow:none !important; }
+      .tr-lang { background:#fff; color:#222; border:1px solid #c9ccd6; border-radius:10px; padding:8px 6px; font:inherit; font-size:.85rem; cursor:pointer; margin:0; }
+      .tr-lang.on { background:#1a237e; color:#fff; border-color:#1a237e; }
     </style>
 </head>
 <body>
 <button id="tr-btn" type="button" translate="no" style="display:none; position:fixed; top:10px; right:10px; z-index:40; background:#fff; border:1px solid #c9ccd6; border-radius:20px; padding:7px 14px; font:inherit; font-size:.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.15);">🌐 Translate</button>
 <div id="tr-modal" translate="no" style="display:none; position:fixed; inset:0; background:rgba(10,14,46,.55); z-index:60; align-items:center; justify-content:center; padding:16px;">
-  <div class="box" style="text-align:left; max-width:460px; margin:0; max-height:90vh; overflow:auto;">
-    <h3 style="margin:0 0 6px;">🌐 Read this form in your language</h3>
-    <p style="margin:0 0 10px; font-size:.9rem; opacity:.85;">This form is written in <b id="tr-lang">Spanish</b>. Your browser can translate it for you:</p>
-    <ul style="margin:0 0 10px; padding-left:20px; font-size:.88rem; line-height:1.55;">
-      <li><b>Chrome / Edge (computer):</b> click the translate icon in the address bar, or right-click the page → <i>Translate to English</i>.</li>
-      <li><b>Chrome (Android):</b> menu ⋮ → <i>Translate</i>.</li>
-      <li><b>Safari (iPhone / Mac):</b> tap <i>aA</i> (or the address bar) → <i>Translate to English</i>.</li>
-      <li><b>Firefox:</b> click the translate icon in the address bar.</li>
-    </ul>
-    <p style="margin:0 0 10px; font-size:.84rem; opacity:.85;">💡 After translating, double-check the amount and the currency before you pay. Payments are always charged in <b>Colombian pesos (COP)</b>; you can view the price in USD or EUR as a reference.</p>
+  <div class="box" style="text-align:left; max-width:520px; margin:0; max-height:90vh; overflow:auto;">
+    <h3 style="margin:0 0 6px;">🌐 Translate this form</h3>
+    <p style="margin:0 0 10px; font-size:.9rem; opacity:.85;">This form is written in <b id="tr-lang">Spanish</b>. Choose your language:</p>
+    <div id="tr-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:6px; margin-bottom:10px;"></div>
+    <div id="tr-status" style="font-size:.82rem; min-height:1.2em; margin-bottom:6px;"></div>
+    <p style="margin:0 0 8px; font-size:.78rem; opacity:.75;">The text of the form is translated by Google Translate. What you type in the fields is <b>not</b> translated or sent. Machine translation can contain mistakes.</p>
+    <p style="margin:0 0 10px; font-size:.84rem; opacity:.85;">💡 Before you pay, double-check the amount and the currency. Payments are always charged in <b>Colombian pesos (COP)</b>; you can view the price in USD or EUR as a reference.</p>
+    <details style="margin:0 0 10px; font-size:.8rem; opacity:.85;"><summary style="cursor:pointer;">It does not work? Use your browser's translator</summary>
+      <ul style="margin:6px 0 0; padding-left:20px; line-height:1.5;">
+        <li><b>Chrome / Edge:</b> translate icon in the address bar, or right-click → <i>Translate</i>.</li>
+        <li><b>Safari:</b> tap <i>aA</i> → <i>Translate</i>. <b>Firefox:</b> translate icon in the address bar.</li>
+      </ul></details>
     <div style="text-align:right;"><button type="button" id="tr-close" style="margin:0;">OK</button></div>
   </div>
 </div>
+<div id="gt-host" translate="no" style="display:none;"></div>
 <div id="test-banner">🧪 <strong>Modo de pruebas:</strong> lo que envíes aquí queda marcado como prueba y no cuenta en el reporte oficial.</div>
 <div id="app"><div class="box">Cargando…</div></div>
 
@@ -61,16 +68,52 @@ function applyTheme(t) {
   document.getElementById("fontsLink").href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font || "Montserrat").replace(/%20/g, "+")}:wght@400;700&display=swap`;
 }
 const LANG_NAMES = { es: "Spanish", en: "English", pt: "Portuguese" };
+const TR_LANGS = [["en", "English"], ["es", "Español"], ["pt", "Português"], ["fr", "Français"], ["de", "Deutsch"], ["it", "Italiano"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"],
+  ["ja", "日本語"], ["ko", "한국어"], ["ar", "العربية"], ["hi", "हिन्दी"], ["ru", "Русский"], ["tr", "Türkçe"], ["nl", "Nederlands"], ["pl", "Polski"], ["sv", "Svenska"],
+  ["uk", "Українська"], ["vi", "Tiếng Việt"], ["th", "ไทย"], ["id", "Bahasa Indonesia"], ["he", "עברית"], ["el", "Ελληνικά"], ["ro", "Română"], ["cs", "Čeština"]];
+let SRC_LANG = "es", trPromise = null;
 function applyUi(ui) {
   ui = ui || {};
-  document.documentElement.lang = ui.language || "es";        // el navegador decide si ofrece traducir según este idioma
-  const mine = (navigator.language || "en").toLowerCase();
-  const btn = document.getElementById("tr-btn");
-  btn.style.display = ui.translate && !mine.startsWith(ui.language || "es") ? "block" : "none";   // solo a quien no habla el idioma del formulario
-  document.getElementById("tr-lang").textContent = LANG_NAMES[ui.language] || "Spanish";
+  SRC_LANG = ui.language || "es";
+  document.documentElement.lang = SRC_LANG;
+  document.getElementById("tr-btn").style.display = ui.translate ? "block" : "none";   // siempre visible para todos (si el organizador lo dejó activo)
+  document.getElementById("tr-lang").textContent = LANG_NAMES[SRC_LANG] || "Spanish";
+  document.getElementById("tr-grid").innerHTML = `<button type="button" class="tr-lang on" data-tr="${SRC_LANG}">↩ Original</button>` + TR_LANGS.filter(([c]) => c !== SRC_LANG).map(([c, n]) => `<button type="button" class="tr-lang" data-tr="${c}">${n}</button>`).join("");
+}
+function loadTranslator() {   // Google Translate (widget de página): traduce los textos del formulario; lo que la persona escribe en los campos no se envía
+  if (trPromise) return trPromise;
+  trPromise = new Promise((ok, fail) => {
+    window.gtInit = () => { try { new google.translate.TranslateElement({ pageLanguage: SRC_LANG, autoDisplay: false, includedLanguages: TR_LANGS.map((l) => l[0]).join(",") }, "gt-host"); ok(); } catch (e) { fail(e); } };
+    const sc = document.createElement("script"); sc.src = "https://translate.google.com/translate_a/element.js?cb=gtInit"; sc.onerror = () => fail(new Error("load")); document.head.appendChild(sc);
+    setTimeout(() => fail(new Error("timeout")), 15000);
+  }).catch((e) => { trPromise = null; throw e; });
+  return trPromise;
+}
+async function translateTo(code) {
+  const st = document.getElementById("tr-status");
+  document.querySelectorAll(".tr-lang").forEach((b) => b.classList.toggle("on", b.dataset.tr === code));
+  st.style.color = "inherit"; st.textContent = "…";
+  try {
+    await loadTranslator();
+    let combo = null;
+    for (let i = 0; i < 30 && !(combo = document.querySelector("select.goog-te-combo")); i++) await new Promise((r) => setTimeout(r, 100));
+    if (!combo) throw new Error("combo");
+    if (code === SRC_LANG) {   // volver al original: el botón «Mostrar original» de la barra (oculta) de Google
+      const fr = document.querySelector("iframe.VIpgJd-ZVi9od-ORHb-OEVmcd, iframe.goog-te-banner-frame");
+      const back = fr && fr.contentDocument && fr.contentDocument.querySelector('[id$="restore"]');
+      if (back) back.click();
+      st.textContent = ""; return;
+    }
+    const fire = () => { combo.value = code; combo.dispatchEvent(new Event("change")); };
+    await new Promise((r) => setTimeout(r, 400)); fire();      // la primera vez Google aún está enganchando su escucha
+    await new Promise((r) => setTimeout(r, 2500));
+    if (!document.documentElement.className.includes("translated")) fire();
+    st.textContent = "✓";
+  } catch (e) { st.style.color = "#c0392b"; st.textContent = "Could not load the translator. Please use your browser's translator (see below)."; }
 }
 document.getElementById("tr-btn").addEventListener("click", () => { document.getElementById("tr-modal").style.display = "flex"; });
 document.getElementById("tr-close").addEventListener("click", () => { document.getElementById("tr-modal").style.display = "none"; });
+document.getElementById("tr-grid").addEventListener("click", (e) => { const b = e.target.closest("[data-tr]"); if (b) translateTo(b.dataset.tr); });
 
 function box(html) { app.innerHTML = `<div class="box">${html}</div>`; }
 function templateHtml(tpl) {
