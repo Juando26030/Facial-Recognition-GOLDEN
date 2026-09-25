@@ -39,10 +39,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
-    if(video) {
+    // Cámara: solo se enciende DESPUÉS de que la persona autoriza el escaneo de su rostro (dato biométrico sensible, Ley 1581).
+    // El reconocimiento queda «recordado» únicamente en esta sesión del navegador; quien no autoriza se registra por cédula.
+    function startCamera() {
         navigator.mediaDevices.getUserMedia({ video: true })
             .then(stream => { video.srcObject = stream; })
             .catch(err => console.error("Sin acceso a cámara", err));
+    }
+    if (video) {
+        const gate = document.getElementById('bioGate');
+        const ackKey = 'bio_ack_' + EVENT_ID;
+        const goCedula = (e) => { if (e) e.preventDefault(); const tab = document.querySelector('.tab[data-tab="directorio"]'); if (tab) tab.click(); };
+        const altLink = document.getElementById('bioAltLink');
+        if (altLink) altLink.addEventListener('click', goCedula);
+        let acked = false;
+        try { acked = sessionStorage.getItem(ackKey) === '1'; } catch (err) { /* sin almacenamiento: se vuelve a pedir */ }
+        if (acked || !gate) startCamera();
+        else {
+            gate.style.display = 'block';
+            const scanBtn = document.getElementById('escanearBtn'), wasDisabled = !!(scanBtn && scanBtn.disabled);
+            if (scanBtn) scanBtn.disabled = true;
+            document.getElementById('bioGateAccept').addEventListener('click', () => {
+                try { sessionStorage.setItem(ackKey, '1'); } catch (err) { /* opcional */ }
+                gate.style.display = 'none';
+                if (scanBtn) scanBtn.disabled = wasDisabled;      // vuelve a como estaba (deshabilitado si el evento no está en proceso)
+                startCamera();
+            });
+            document.getElementById('bioGateDecline').addEventListener('click', goCedula);
+        }
     }
 
     const escanearBtn = document.getElementById('escanearBtn');
@@ -298,6 +322,11 @@ document.addEventListener("DOMContentLoaded", () => {
             // / "Guardar Perfil Biométrico" después de cada alta exitosa (bug real, encontrado en
             // testing de producción 2026-09-15). Hay que pedir el submit explícitamente.
             const btn = e.target.querySelector('button[type="submit"]');
+            const photo = e.target.querySelector('#regPhotoInput'), consent = e.target.querySelector('#regBioConsent');
+            if (photo && photo.files && photo.files.length && consent && !consent.checked) {   // Ley 1581: sin autorización expresa no se guarda el rostro
+                showToast('Para guardar la foto, marca que la persona autoriza el uso de su rostro. Si no la autoriza, quita la foto y registra solo por cédula.', 'error');
+                return;
+            }
             setButtonLoading(btn, true, "Guardando...");
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);

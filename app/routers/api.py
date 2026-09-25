@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import re
 import json
 from typing import List, Optional
@@ -218,6 +219,8 @@ def _extract_identificador(clean_row: dict, header_columns: dict, row_num: int):
 
 
 router = APIRouter()
+
+BIOMETRIC_CONSENT_REQUIRED = "Falta la autorización expresa de la persona para guardar su rostro (dato biométrico sensible, Ley 1581). Si no la da, regístrala por cédula, sin foto."
 
 
 def _known_faces_dir(tenant_id: str) -> str:
@@ -657,6 +660,7 @@ async def update_user_cedula(
         id=new_id, tenant_id=user.tenant_id, first_name=user.first_name, last_name=user.last_name,
         role=user.role, entity=user.entity, phone=user.phone, email=user.email,
         opt_1=user.opt_1, opt_2=user.opt_2, extra_fields=user.extra_fields, face_encoding=user.face_encoding,
+        biometric_consent_at=user.biometric_consent_at, biometric_consent_source=user.biometric_consent_source,
     )
     db.add(new_user)
     db.flush()  # el nuevo User debe existir antes de reapuntar las filas hijas hacia él
@@ -795,7 +799,7 @@ async def manual_register(
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
-    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False),
+    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -865,6 +869,8 @@ async def manual_register(
     # también, si no, `file.read()` da bytes vacíos y `Image.open()` truena (500) en vez de
     # tratarlo como "no se adjuntó foto" (CEDULA-08, bug real encontrado en testing 2026-09-21).
     if file is not None and file.filename:
+        if not _truthy(biometric_consent):      # Ley 1581 (dato sensible): sin autorización expresa de la persona NO se guarda su rostro; puede registrarse por cédula
+            raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
         img_array = BiometricEngine.process_image_stream(await file.read())
         encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
         if not encodings:
@@ -873,7 +879,8 @@ async def manual_register(
 
     user = User(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
-        role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json
+        role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json,
+        biometric_consent_at=datetime.utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
     )
     user.set_extras(extras)
     db.add(user)
@@ -943,7 +950,7 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 @router.post("/bulk_register")
 async def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
-    field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False),
+    field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
@@ -953,6 +960,8 @@ async def bulk_register(
     get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
     content = await roster_file.read() if (roster_file is not None and roster_file.filename) else None
     zip_bytes = await zip_file.read() if (zip_file is not None and zip_file.filename) else None
+    if zip_bytes is not None and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
+        raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     args = dict(event_id=event_id, roster_filename=roster_file.filename if content is not None else None,
                 content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id)
     if not background:
@@ -1243,6 +1252,7 @@ def _bulk_register_impl(
 
                 if face_enc_json:
                     user.face_encoding = face_enc_json
+                    user.biometric_consent_at, user.biometric_consent_source = datetime.utcnow(), "carga_masiva"
 
                 db.flush()
                 # Categorías (ítem 14): columna "categoria"/"categorias" (con o sin tilde), varias

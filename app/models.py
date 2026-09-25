@@ -49,6 +49,8 @@ class User(Base):
     opt_2 = Column(String)  # deprecado (2026-09-20, era "cantidad de empl") — ya no se escribe, reemplazado por extra_fields. Se deja la columna para no perder datos históricos.
     extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
     face_encoding = Column(Text)
+    biometric_consent_at = Column(DateTime, nullable=True)      # cuándo se autorizó guardar el rostro (Ley 1581: dato sensible, autorización previa y expresa)
+    biometric_consent_source = Column(String, nullable=True)    # 'kiosko' (la persona autorizó ante el digitador) | 'carga_masiva' (declaración del organizador) | 'copiado' (heredado de otro evento)
 
     tenant = relationship("Tenant", back_populates="users", overlaps="tenant,users,logs")
     logs = relationship("AccessLog", back_populates="user", cascade="all, delete", overlaps="tenant,users,logs")
@@ -226,6 +228,7 @@ class Event(Base):
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
+    biometrics_purged_at = Column(DateTime, nullable=True)     # última vez que se borraron los datos biométricos de este evento (privacidad)
     digital_email_subject = Column(String, nullable=True)  # plantilla propia del correo de la escarapela virtual (NULL = la de siempre)
     digital_email_body = Column(Text, nullable=True)       # HTML ya saneado (app/email_template.py)
     report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente

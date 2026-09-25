@@ -24,7 +24,7 @@ def _post(client, ev, csv=CSV, zip_bytes=None, background=True, **extra):
     files = {"roster_file": ("base.csv", csv.encode(), "text/csv")}
     if zip_bytes:
         files["zip_file"] = ("fotos.zip", zip_bytes, "application/zip")
-    data = {"event_id": str(ev.id), **extra}
+    data = {"event_id": str(ev.id), **({"photos_authorized": "true"} if zip_bytes else {}), **extra}
     if background:
         data["background"] = "true"
     return client.post("/api/bulk_register", data=data, files=files)

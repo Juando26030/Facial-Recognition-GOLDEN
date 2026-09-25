@@ -135,10 +135,21 @@
         <div id="scanner" class="section active">
             <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
                 <div class="camera-wrapper">
-                    <video id="video" autoplay playsinline></video>
+                    <!-- Aviso y autorización previa para el dato biométrico (Ley 1581 de 2012, dato sensible): la cámara NO se enciende hasta que la persona autoriza;
+                         quien no quiera se registra por cédula. Se recuerda solo en esta sesión del navegador. -->
+                    <div id="bioGate" role="dialog" aria-modal="false" aria-labelledby="bioGateTitle" style="display:none; background:#fff8e1; border:2px solid var(--golden-primary); border-radius:14px; padding:16px; margin-bottom:12px;">
+                        <h4 id="bioGateTitle" style="margin:0 0 6px;">🔒 Reconocimiento facial — aviso y autorización</h4>
+                        <p style="font-size:0.88rem; line-height:1.5; margin:0 0 8px;">Este evento identifica a las personas por su rostro. Tu rostro es un <b>dato biométrico sensible</b> (Ley 1581 de 2012). Se usa solo para identificarte en este evento. Puedes negarte: te registramos por cédula, sin usar tu rostro. Más información en la <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</p>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <button type="button" id="bioGateAccept" class="golden-btn golden-btn-primary" style="width:auto;">La persona autoriza el escaneo de su rostro</button>
+                            <button type="button" id="bioGateDecline" class="golden-btn" style="width:auto; background:#f0f0f0; color:var(--golden-dark);">No autoriza — registrar por cédula</button>
+                        </div>
+                    </div>
+                    <video id="video" autoplay playsinline aria-label="Vista de la cámara para el reconocimiento facial"></video>
                     <canvas id="canvas" style="display:none;"></canvas>
                     <button id="escanearBtn" class="golden-btn golden-btn-primary full-width" {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>📸 Escanear Rostro</button>
-                    <h3 id="resultadoTexto" style="text-align:center; margin-top: 15px; height: 30px;"></h3>
+                    <p style="font-size:0.78rem; color:#555; margin:8px 0 0; text-align:center;">Si la persona no desea el reconocimiento facial, <a href="#" id="bioAltLink">regístrala por cédula</a> (sin usar su rostro).</p>
+                    <h3 id="resultadoTexto" style="text-align:center; margin-top: 15px; height: 30px;" role="status" aria-live="polite"></h3>
                     <button id="printScanBtn" class="golden-btn" style="display:none; width:100%; background:#f0f0f0; color:var(--golden-dark); margin-top:0.5rem;">🖨️ Imprimir Escarapela</button>
                 </div>
 
@@ -319,12 +330,16 @@
                     </div>
                     {% if event.facial_enabled %}
                     <div class="badge-input-group" style="margin-top:1.2rem;">
-                        <label>Fotografía Oficial</label>
+                        <label>Fotografía Oficial <span style="font-weight:400; font-size:0.78rem; color:#666;">(opcional: solo si la persona lo autoriza)</span></label>
                         <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                            <input type="file" name="file" id="regPhotoInput" accept="image/*" required style="flex:1 1 200px; min-width:0;">
+                            <input type="file" name="file" id="regPhotoInput" accept="image/*" aria-label="Fotografía de la persona (opcional, solo con su autorización)" style="flex:1 1 200px; min-width:0;">
                             <button type="button" id="regPhotoCameraBtn" class="golden-btn" style="width:auto; white-space:nowrap; background:#f0f0f0; color:var(--golden-dark); flex:0 0 auto;">📸 Usar cámara</button>
                         </div>
                     </div>
+                    <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.82rem; line-height:1.4; margin-top:8px; background:#fff8e1; padding:8px 10px; border-radius:10px;">
+                        <input type="checkbox" name="biometric_consent" id="regBioConsent" value="true" style="width:auto; margin-top:3px;">
+                        <span><b>La persona autoriza de forma expresa</b> el uso de su fotografía y su rostro (dato biométrico sensible) para identificarla en este evento. Sin esta autorización no se guarda la foto: se registra solo por cédula. <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
+                    </label>
                     {% endif %}
 
                     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1.2rem;">

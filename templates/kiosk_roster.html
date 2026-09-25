@@ -88,6 +88,10 @@
         <div id="facialZipGroup" class="badge-input-group" style="display:none; margin-top:0.8rem;">
           <label>Fotos de las personas (.zip, cada foto nombrada como la cédula, ej. 123456.jpg)</label>
           <input type="file" name="zip_file" accept=".zip">
+          <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; line-height:1.4; margin-top:10px; background:#fff8e1; padding:10px 12px; border-radius:10px;">
+            <input type="checkbox" name="photos_authorized" id="photosAuthorized" value="true" style="width:auto; margin-top:3px;">
+            <span><b>Declaro que cuento con la autorización previa, expresa e informada de cada persona</b> para tratar su fotografía y su rostro (dato biométrico sensible, Ley 1581 de 2012) para identificarla en este evento, y que las personas que no la dieron no están en el zip (se registran por cédula). <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
+          </label>
         </div>
 
         <button type="submit" class="golden-btn golden-btn-primary" style="margin-top: 1.5rem;">Cargar Base de Datos</button>
@@ -407,7 +411,7 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
         if (i === 0) (sourceEventIds || []).forEach(id => fd.append("source_event_id", id));  // los eventos anteriores entran una sola vez, con el primer lote
         fd.append("roster_file", buildRosterBlob(kind, header, group.rows), `lote_${i + 1}.${kind}`);
         const zipBlob = await buildBatchZip(zip, group.ids);
-        if (zipBlob) fd.append("zip_file", zipBlob, `lote_${i + 1}.zip`);
+        if (zipBlob) { fd.append("zip_file", zipBlob, `lote_${i + 1}.zip`); fd.append("photos_authorized", "true"); }
         const data = await submitChunkWithLabels(fd, makeUi(bar, i, groups.length, `Lote ${i + 1} de ${groups.length} — `));
         if (!data) { bar.fail("La carga se detuvo en el lote " + (i + 1) + " de " + groups.length); return null; }
         totalCount += data.count || 0;
@@ -445,6 +449,11 @@ rosterForm.addEventListener("submit", async (e) => {
 
     const rosterFile = formData.get("roster_file");
     const zipFile = formData.get("zip_file");
+    if (zipFile && zipFile.size && !formData.get("photos_authorized")) {
+        showToast("Para cargar fotos debes marcar la declaración de autorización de las personas (dato biométrico).", "error");
+        setButtonLoading(btn, false);
+        return;
+    }
     const totalBytes = (rosterFile && rosterFile.size || 0) + (zipFile && zipFile.size || 0);
 
     try {
