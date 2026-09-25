@@ -20,7 +20,9 @@ from typing import Callable, Optional
 INPUT_TYPES = ("text_short", "text_long", "email", "phone", "number", "date", "checkbox", "select", "radio", "multiselect", "file")
 STATIC_TYPES = ("heading", "paragraph", "image")
 PAYMENT_TYPE = "payment"      # «Pago» (Wompi): máximo uno por formulario; no guarda un valor, cobra un monto
-ALL_TYPES = INPUT_TYPES + STATIC_TYPES + (PAYMENT_TYPE,)
+COMPANIONS_TYPE = "companions"   # «Acompañantes»: la persona elige cuántos (0…N) y por cada uno se despliega un mini-formulario; puede cobrarse por cada uno
+COMPANION_FIELD_TYPES = ("text_short", "email", "phone", "number")
+ALL_TYPES = INPUT_TYPES + STATIC_TYPES + (PAYMENT_TYPE, COMPANIONS_TYPE)
 DATE_FIELD = "@date"          # en una condición de precio: la fecha de HOY (hora local) en vez de un campo
 DATE_OPS = ("before", "on_or_after")
 MIN_PAYMENT_COP, MAX_PAYMENT_COP = 1500, 10_000_000   # Wompi: mínimo por transacción y tope por transacción (persona jurídica)
@@ -51,6 +53,7 @@ DEFAULT_SETTINGS = {
     "max_mb": 10,
     "language": "es",                                                # idioma en que está escrito (<html lang>): el navegador ofrece traducir desde ahí
     "translate": True,                                               # mostrar el botón «Translate» para quien no habla ese idioma
+    "send_digital_badge": False,                                     # enviar la escarapela virtual al correo del inscrito cuando entra a la base del evento
 }
 
 
@@ -150,6 +153,8 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         elif kind == PAYMENT_TYPE:
             clean["label"] = clean["label"] or "Pago"
             clean["pay"] = sanitize_payment(f.get("pay"), fields_in, fid)
+        elif kind == COMPANIONS_TYPE:
+            clean.update(_sanitize_companions(f))
         else:  # image
             clean["src"] = _text(f.get("src"), 200)
         clean["show_if"] = _sanitize_condition(f.get("show_if"), fields_in, fid)
@@ -157,6 +162,11 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
 
     if sum(1 for f in fields.values() if f["type"] == PAYMENT_TYPE) > 1:
         raise ValueError("Un formulario admite un solo campo de pago")
+    if sum(1 for f in fields.values() if f["type"] == COMPANIONS_TYPE) > 1:
+        raise ValueError("Un formulario admite un solo campo de acompañantes")
+    for f in fields.values():
+        if f["type"] == PAYMENT_TYPE and f["pay"].get("companions_charge") and not any(x["type"] == COMPANIONS_TYPE for x in fields.values()):
+            raise ValueError("Para cobrar por los acompañantes agrega también el campo «Acompañantes»")
     rows, placed = [], set()
     for row in design.get("rows") or []:
         items = [i for i in (row.get("items") or []) if i in fields and i not in placed]
@@ -237,13 +247,46 @@ def _sanitize_price_conditions(conds, fields_in: dict, own_id: str) -> list:
     return out
 
 
+def _sanitize_companions(f: dict) -> dict:
+    """Configuración del campo «Acompañantes»: cuántos como máximo/mínimo y qué se pide de CADA acompañante."""
+    try:
+        mx = max(1, min(20, int(f.get("max") or 5)))
+        mn = max(0, min(mx, int(f.get("min") or 0)))
+    except (TypeError, ValueError):
+        raise ValueError("«Acompañantes»: el máximo y el mínimo deben ser números")
+    people, seen = [], set()
+    for p in (f.get("person_fields") or [])[:6]:
+        pid = str(p.get("id") or "")
+        ptype = p.get("type") if p.get("type") in COMPANION_FIELD_TYPES else "text_short"
+        label = _text(p.get("label"), 80)
+        if not label or not re.fullmatch(r"[A-Za-z0-9_]{1,20}", pid) or pid in seen:
+            raise ValueError("«Acompañantes»: cada dato que se pide necesita un nombre y no puede repetirse")
+        seen.add(pid)
+        people.append({"id": pid, "label": label, "type": ptype, "required": bool(p.get("required"))})
+    if not people:
+        people = [{"id": "nombre", "label": "Nombre completo", "type": "text_short", "required": True}]
+    return {"max": mx, "min": mn, "person_fields": people}
+
+
+def companions_count(design: dict, values: dict) -> int:
+    """Cuántos acompañantes trae esta respuesta (0 si no hay campo, si está oculto por una regla o si vino vacío)."""
+    for fid, f in design["fields"].items():
+        if f["type"] == COMPANIONS_TYPE:
+            if fid not in visible_ids(design, values):
+                return 0
+            v = values.get(fid)
+            return max(0, min(len(v) if isinstance(v, list) else 0, f["max"]))
+    return 0
+
+
 def sanitize_payment(pay, fields_in: dict, own_id: str) -> dict:
     """Configuración del campo «Pago»: `mode` fixed (un monto) o rules (el monto depende de otras respuestas: la primera
     regla que se cumple manda; si ninguna, el monto base) y `discounts` (todos los que se cumplen se aplican en orden;
     porcentaje sobre el monto vigente, o valor fijo). Un monto final de 0 = no hay nada que cobrar."""
     pay = pay if isinstance(pay, dict) else {}
     mode = pay.get("mode") if pay.get("mode") in ("fixed", "rules") else "fixed"
-    out = {"currency": "COP", "mode": mode, "description": _text(pay.get("description"), 120), "amount": _money(pay.get("amount"), "Monto del pago"), "rules": [], "discounts": []}
+    out = {"currency": "COP", "mode": mode, "description": _text(pay.get("description"), 120), "amount": _money(pay.get("amount"), "Monto del pago"), "rules": [], "discounts": [],
+           "companions_charge": bool(pay.get("companions_charge"))}      # cobrar el mismo valor por cada acompañante (tú + N)
     if not out["amount"] and mode == "fixed":
         raise ValueError("El campo de pago necesita un monto")
     if mode == "rules":
@@ -279,9 +322,10 @@ def _price_cond_met(c: dict, values: dict, today: date) -> bool:
     return condition_met(c, values)
 
 
-def compute_amount(pay: dict, values: dict, today: date) -> dict:
+def compute_amount(pay: dict, values: dict, today: date, people: int = 1) -> dict:
     """Monto en pesos según las respuestas (`values`: solo campos VISIBLES, ver `priced_values`) y la fecha de hoy.
-    Devuelve {"amount", "base", "applied": [{"label", "kind": "rule|discount", "effect"}]}: `applied` explica el total."""
+    Devuelve {"amount", "unit", "people", "base", "applied": [{"label", "kind": "rule|discount|people", "effect"}]}: `applied` explica el total.
+    Con `pay.companions_charge`, el precio por persona (con reglas y descuentos ya aplicados) se multiplica por `people` (quien se inscribe + sus acompañantes)."""
     amount, applied = pay["amount"], []
     for r in pay.get("rules", []):
         if all(_price_cond_met(c, values, today) for c in r["when"]):
@@ -294,7 +338,10 @@ def compute_amount(pay: dict, values: dict, today: date) -> dict:
             cut = amount * d["value"] / 100 if d["kind"] == "percent" else d["value"]
             amount = max(0, int(amount - cut + 0.5))
             applied.append({"label": d["label"], "kind": "discount", "effect": f"-{d['value']:g}%" if d["kind"] == "percent" else f"-{_pesos(d['value'])}"})
-    return {"amount": amount, "base": base, "applied": applied}
+    n = max(1, int(people or 1)) if pay.get("companions_charge") else 1
+    if n > 1:
+        applied.append({"label": f"{n} personas (tú + {n - 1} acompañante{'s' if n > 2 else ''})", "kind": "people", "effect": f"× {n}"})
+    return {"amount": amount * n, "unit": amount, "people": n, "base": base, "applied": applied}
 
 
 def priced_values(design: dict, values: dict) -> dict:
@@ -333,6 +380,7 @@ def sanitize_settings(settings: dict) -> dict:
         out["max_mb"] = 10
     out["language"] = s_in.get("language") if s_in.get("language") in LANGUAGES else "es"
     out["translate"] = bool(s_in.get("translate", True))
+    out["send_digital_badge"] = bool(s_in.get("send_digital_badge", False))
     return out
 
 
@@ -397,6 +445,9 @@ def validate_submission(design: dict, values: dict, uploaded: dict, email_checke
     for fid in visible:
         f = fields[fid]
         kind = f["type"]
+        if kind == COMPANIONS_TYPE:
+            _validate_companions(f, fid, values.get(fid), clean, errors, email_checker)
+            continue
         if kind not in INPUT_TYPES:
             continue
         raw = values.get(fid)
@@ -459,6 +510,45 @@ def validate_submission(design: dict, values: dict, uploaded: dict, email_checke
         if fid not in errors and fid not in clean:
             clean[fid] = text
     return clean, errors
+
+
+def _validate_companions(f: dict, fid: str, raw, clean: dict, errors: dict, email_checker=None) -> None:
+    items = raw if isinstance(raw, list) else []
+    if len(items) > f["max"]:
+        errors[fid] = f"«{f['label']}»: máximo {f['max']}"
+        return
+    if len(items) < f["min"]:
+        errors[fid] = f"«{f['label']}»: agrega al menos {f['min']}"
+        return
+    out = []
+    for i, item in enumerate(items, start=1):
+        item = item if isinstance(item, dict) else {}
+        row = {}
+        for pf in f["person_fields"]:
+            text = str(item.get(pf["id"]) if item.get(pf["id"]) is not None else "").strip()[:200]
+            who = f"Acompañante {i}: «{pf['label']}»"
+            if not text:
+                if pf["required"]:
+                    errors[fid] = f"{who} es obligatorio"
+                    return
+                continue
+            if pf["type"] == "email":
+                if not _EMAIL.match(text):
+                    errors[fid] = f"{who}: escribe un correo con formato válido"
+                    return
+                text = text.lower()
+            elif pf["type"] == "phone" and not _PHONE.match(text):
+                errors[fid] = f"{who}: escribe un teléfono válido"
+                return
+            elif pf["type"] == "number":
+                try:
+                    float(text.replace(",", "."))
+                except ValueError:
+                    errors[fid] = f"{who}: debe ser un número"
+                    return
+            row[pf["id"]] = text
+        out.append(row)
+    clean[fid] = out
 
 
 # ------------------------------------------------------------------ estados y calendario

@@ -236,7 +236,7 @@ def test_price_from_rules_and_free_when_discount_covers_everything(client, facto
                discounts=[{"label": "Invitado", "kind": "percent", "value": 100, "when": [{"field": "tipo", "op": "equals", "value": "Estudiante"}]}])
     form = _with_payment(client, ev, pay=pay, extra=[TIPO])
     q = client.post(f"{_url(ev, form)}/quote", json={"values": {"tipo": "VIP"}}).json()
-    assert q == {"has_payment": True, "amount": 300000, "base": 300000, "applied": [{"label": "VIP", "kind": "rule", "effect": "monto $300.000"}], "description": ""}
+    assert q == {"has_payment": True, "amount": 300000, "unit": 300000, "people": 1, "base": 300000, "applied": [{"label": "VIP", "kind": "rule", "effect": "monto $300.000"}], "description": ""}
     assert client.post(f"{_url(ev, form)}/quote", json={"values": {"tipo": "General"}}).json()["amount"] == 100000
     # el servidor calcula el precio: lo que el navegador diga no cambia nada
     r = _submit(client, ev, form, _values(tipo="VIP"), sid="a", amount=1).json()

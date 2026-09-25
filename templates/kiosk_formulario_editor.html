@@ -118,6 +118,9 @@
         <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="on_close"> Al cerrar el formulario: se cargan todas juntas cuando pasa a cerrado o finalizado</label></div>
         <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="manual"> Manual: no se integra sola (descargas el reporte y lo subes como Excel)</label></div>
         <p class="hint">Requiere un campo de cédula vinculado al campo «Cédula» del evento. Las inscripciones de prueba nunca se cargan.</p>
+        <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem; margin-top:8px;"><input type="checkbox" id="sendBadge"> Enviar la escarapela virtual al correo del inscrito</label>
+        <p class="hint" id="sendBadgeWarn" style="margin-top:2px; color:#8a5a00; background:#fff8e1; padding:6px 10px; border-radius:10px; display:none;">⚠️ <b>Este evento no tiene activada la escarapela digital</b> (Parámetros del Evento): mientras tanto no se enviará nada.</p>
+        <p class="hint" id="sendBadgeHint" style="margin-top:2px;">Se envía cuando la inscripción entra a la base del evento (según el modo de arriba: en tiempo real, al cerrar o al pulsar «Cargar a la base ahora»). Usa el campo de correo del formulario y le agrega la aclaración «(a este correo se le enviará su escarapela virtual)». Requiere el módulo de escarapela digital activado en Parámetros del Evento.</p>
         <button class="small-btn" id="feedNow">Cargar a la base ahora las que falten</button> <span class="hint" id="feedInfo"></span>
       </div>
       <div style="margin-bottom:2rem;"><button class="small-btn primary" id="cfgSave" style="padding:10px 26px;">💾 Guardar configuración</button></div>
@@ -186,9 +189,9 @@ const FONTS = ['Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald', 'Raleway',
 const TYPES = {
   text_short: ['Texto corto', '✏️'], text_long: ['Texto largo', '📄'], email: ['Correo', '✉️'], phone: ['Teléfono', '📞'], number: ['Número', '🔢'], date: ['Fecha', '📅'],
   checkbox: ['Casilla sí/no', '☑️'], select: ['Lista desplegable', '▾'], radio: ['Opción única', '◉'], multiselect: ['Selección múltiple', '☰'], file: ['Archivo adjunto', '📎'],
-  heading: ['Título', 'H'], paragraph: ['Texto informativo', '¶'], image: ['Imagen', '🖼️'], payment: ['Pago (Wompi)', '💳'],
+  heading: ['Título', 'H'], paragraph: ['Texto informativo', '¶'], image: ['Imagen', '🖼️'], payment: ['Pago (Wompi)', '💳'], companions: ['Acompañantes', '👥'],
 };
-const CHOICE = ['select', 'radio', 'multiselect'], STATIC = ['heading', 'paragraph', 'image'];
+const CHOICE = ['select', 'radio', 'multiselect'], STATIC = ['heading', 'paragraph', 'image'], NOCOND = ['payment', 'companions'];
 const EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
 const STATUS_LABEL = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrado', cupo_lleno: 'Cupo lleno', finalizado: 'Finalizado' };
 
@@ -202,6 +205,7 @@ function detach(id) { const at = locate(id); if (!at) return; design.rows[at[0]]
 const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 });
 function newField(type, evField) {
   if (type === 'payment' && Object.values(design.fields).some((x) => x.type === 'payment')) { showToast('Un formulario admite un solo campo de pago', 'error'); return null; }
+  if (type === 'companions' && Object.values(design.fields).some((x) => x.type === 'companions')) { showToast('Un formulario admite un solo campo de acompañantes', 'error'); return null; }
   const id = uid();
   const f = { id, type, label: evField ? evField.label : (type === 'heading' ? '' : TYPES[type][0]), required: evField ? !!evField.required && false : false, stats: false, help: '', placeholder: '', key: evField ? evField.key : null };
   if (CHOICE.includes(type)) f.options = evField && evField.options && evField.options.length ? [...evField.options] : ['Opción 1', 'Opción 2'];
@@ -209,7 +213,8 @@ function newField(type, evField) {
   if (type === 'heading') f.content = 'Título de sección';
   if (type === 'paragraph') f.content = 'Escribe aquí un texto informativo.';
   if (type === 'image') f.src = '';
-  if (type === 'payment') { f.label = 'Pago de inscripción'; f.pay = { mode: 'fixed', amount: 150000, description: '', rules: [], discounts: [] }; }
+  if (type === 'companions') { f.label = '¿Cuántos acompañantes traes?'; f.max = 5; f.min = 0; f.person_fields = [{ id: 'nombre', label: 'Nombre completo', type: 'text_short', required: true }]; }
+  if (type === 'payment') { f.label = 'Pago de inscripción'; f.pay = { mode: 'fixed', amount: 150000, description: '', rules: [], discounts: [], companions_charge: false }; }
   design.fields[id] = f;
   return f;
 }
@@ -283,7 +288,7 @@ function renderCanvas() {
 }
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
-  const label = f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
+  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
   return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
@@ -294,12 +299,14 @@ function renderProps() {
   const f = selected && design.fields[selected];
   if (!f) { box.innerHTML = '<p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p>'; return; }
   const isPay = f.type === 'payment';
-  const isInput = !STATIC.includes(f.type) && !isPay;
-  const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && x.type !== 'payment');
+  const isComp = f.type === 'companions';
+  const isInput = !STATIC.includes(f.type) && !isPay && !isComp;
+  const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   const used = usedKeys();
   let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
   if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + payHtml(f);
+  if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + compHtml(f);
   if (f.type === 'heading' || f.type === 'paragraph') html += `<div class="fld"><label>Texto</label><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>`;
   if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
@@ -331,6 +338,7 @@ function renderProps() {
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
   const upd = (fn) => () => { fn(); markDirty(); renderCanvas(); };
   if (isPay) bindPay(box, f);
+  if (isComp) bindComp(box, f);
   on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pHelp', 'input', upd(() => { f.help = $('pHelp').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
   on('pContent', 'input', upd(() => { f.content = $('pContent').value; }));
   on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
@@ -346,7 +354,7 @@ function renderProps() {
   on('cVal', 'change', () => { cond.value = $('cVal').value; markDirty(); });
   const shift = (d) => { const at = locate(f.id); const row = design.rows[at[0]]; const n = at[1] + d; if (n < 0 || n >= row.items.length) return; [row.items[at[1]], row.items[n]] = [row.items[n], row.items[at[1]]]; markDirty(); renderCanvas(); };
   on('pUp', 'click', () => shift(-1)); on('pDown', 'click', () => shift(1));
-  on('pDel', 'click', () => { const dependents = Object.values(design.fields).filter((x) => x.show_if && x.show_if.field === f.id); dependents.forEach((x) => { x.show_if = null; }); dropPriceConditions(f.id); detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+  on('pDel', 'click', () => { const dependents = Object.values(design.fields).filter((x) => x.show_if && x.show_if.field === f.id); dependents.forEach((x) => { x.show_if = null; }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
 }
 
 // ---------------------------------------------------------------- campo Pago: monto, reglas y descuentos
@@ -359,7 +367,7 @@ function dropPriceConditions(fieldId) {
   [...pf.pay.rules, ...pf.pay.discounts].forEach((r) => { r.when = (r.when || []).filter((c) => c.field !== fieldId); });
 }
 function condsHtml(path, list, exceptId) {
-  const inputs = Object.values(design.fields).filter((x) => x.id !== exceptId && !STATIC.includes(x.type) && x.type !== 'payment');
+  const inputs = Object.values(design.fields).filter((x) => x.id !== exceptId && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   return `<div style="margin:4px 0;">${(list || []).map((c, i) => {
     const isDate = c.field === '@date', parent = design.fields[c.field], p = `${path}.${i}`;
     const opSel = isDate ? `<select data-bind="${p}.op" data-rerender><option value="before" ${c.op === 'before' ? 'selected' : ''}>antes de</option><option value="on_or_after" ${c.op === 'on_or_after' ? 'selected' : ''}>desde (incluye el día)</option></select>`
@@ -386,9 +394,44 @@ function payHtml(f) {
   return `<div class="fld"><label>Descripción (opcional)</label><input type="text" data-bind="description" value="${esc(pay.description)}" placeholder="Ej. Inscripción Feria 2026"></div>
     <div class="fld"><label>Cómo se define el monto</label><select data-bind="mode" data-rerender><option value="fixed" ${pay.mode === 'fixed' ? 'selected' : ''}>Monto fijo</option><option value="rules" ${pay.mode === 'rules' ? 'selected' : ''}>Depende de otras respuestas</option></select></div>
     <div class="fld"><label>Monto ${pay.mode === 'rules' ? 'base (si no se cumple ninguna regla)' : ''} en pesos colombianos</label><input type="number" min="0" data-num data-bind="amount" value="${pay.amount}"></div>${rules}${disc}
+    <label style="display:flex; gap:6px; font-size:0.82rem; margin:0.5rem 0;"><input type="checkbox" id="pCompCharge" ${pay.companions_charge ? 'checked' : ''}> <span><b>Cobrar también por los acompañantes</b><br><span class="hint">El precio de arriba (con sus reglas y descuentos) es POR PERSONA: se cobra a quien se inscribe + cada acompañante. Agrega solo el campo «Acompañantes».</span></span></label>
     <p class="hint">Wompi: mínimo $1.500 y máximo $10.000.000 COP por pago. Si el total queda en $0 no se cobra y la inscripción se confirma sola. Acepta tarjeta (también internacional) y PSE.</p>`;
 }
+const PERSON_TYPES = [['text_short', 'Texto'], ['email', 'Correo'], ['phone', 'Teléfono'], ['number', 'Número']];
+function compHtml(f) {
+  return `<div class="fld"><label>Cuántos acompañantes se permiten (máximo, hasta 20)</label><input type="number" min="1" max="20" id="cMax" value="${f.max}"></div>
+    <div class="fld"><label>Mínimo</label><input type="number" min="0" id="cMin" value="${f.min || 0}"></div>
+    <div class="fld"><label>Qué se pide de CADA acompañante (hasta 6 datos)</label>${(f.person_fields || []).map((p, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
+      <input type="text" data-pf="${i}.label" value="${esc(p.label)}" placeholder="Ej. Nombre completo">
+      <div style="display:flex; gap:4px; margin-top:3px; align-items:center;"><select data-pf="${i}.type">${PERSON_TYPES.map(([v, l]) => `<option value="${v}" ${p.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label style="font-size:0.78rem; display:flex; gap:3px;"><input type="checkbox" data-pf="${i}.required" ${p.required ? 'checked' : ''}> obligatorio</label>
+      ${f.person_fields.length > 1 ? `<button type="button" class="small-btn danger" data-pfdel="${i}" style="padding:0 8px;">✕</button>` : ''}</div></div>`).join('')}
+      ${(f.person_fields || []).length < 6 ? '<button type="button" class="small-btn" id="pfAdd">+ Agregar dato</button>' : ''}</div>
+    <p class="hint">Al elegir N acompañantes, la persona ve N mini-formularios con estos datos. Si el pago cobra por acompañante, el total sube solo (tú + N). Los acompañantes quedan en las respuestas y el Excel, pero no se cargan a la base del evento.</p>`;
+}
+function bindComp(box, f) {
+  const rer = () => { markDirty(); renderCanvas(); renderProps(); };
+  const num = (id, key, lo, hi) => { const el = box.querySelector('#' + id); el.addEventListener('input', () => { f[key] = Math.max(lo, Math.min(hi, Number(el.value) || lo)); if (f.min > f.max) f.min = f.max; markDirty(); renderCanvas(); }); };
+  num('cMax', 'max', 1, 20); num('cMin', 'min', 0, 20);
+  box.querySelectorAll('[data-pf]').forEach((el) => {
+    const [i, key] = el.dataset.pf.split('.');
+    el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input', () => { f.person_fields[+i][key] = el.type === 'checkbox' ? el.checked : el.value; markDirty(); });
+  });
+  box.querySelectorAll('[data-pfdel]').forEach((b) => b.addEventListener('click', () => { f.person_fields.splice(+b.dataset.pfdel, 1); rer(); }));
+  const add = box.querySelector('#pfAdd');
+  if (add) add.addEventListener('click', () => { let n = f.person_fields.length + 1; while (f.person_fields.some((p) => p.id === 'd' + n)) n++; f.person_fields.push({ id: 'd' + n, label: '', type: 'text_short', required: false }); rer(); });
+}
 function bindPay(box, f) {
+  const cc = box.querySelector('#pCompCharge');
+  if (cc) cc.addEventListener('change', () => {
+    f.pay.companions_charge = cc.checked;
+    if (cc.checked && !Object.values(design.fields).some((x) => x.type === 'companions')) {   // se crea solo el campo «Acompañantes», justo antes del pago
+      const c = newField('companions');
+      const at = locate(f.id); design.rows.splice(at ? at[0] : design.rows.length, 0, { align: 'left', items: [c.id] });
+      showToast('Se agregó el campo «Acompañantes» al formulario', 'success');
+    }
+    markDirty(); renderAll();
+  });
   const rerender = () => { markDirty(); renderCanvas(); renderProps(); };
   box.querySelectorAll('[data-bind]').forEach((el) => {
     const path = el.dataset.bind;
@@ -404,7 +447,7 @@ function bindPay(box, f) {
   });
   const arr = (path) => getPath(f.pay, path);
   box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { const ks = b.dataset.del.split('.'); const idx = +ks.pop(); arr(ks.join('.')).splice(idx, 1); rerender(); }));
-  box.querySelectorAll('[data-addcond]').forEach((b) => b.addEventListener('click', () => { const first = Object.values(design.fields).find((x) => x.id !== f.id && !STATIC.includes(x.type) && x.type !== 'payment'); arr(b.dataset.addcond).push(first ? { field: first.id, op: 'equals', value: '' } : { field: '@date', op: 'before', value: '' }); rerender(); }));
+  box.querySelectorAll('[data-addcond]').forEach((b) => b.addEventListener('click', () => { const first = Object.values(design.fields).find((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type)); arr(b.dataset.addcond).push(first ? { field: first.id, op: 'equals', value: '' } : { field: '@date', op: 'before', value: '' }); rerender(); }));
   const add = (sel, list, item) => { const b = box.querySelector(sel); if (b) b.addEventListener('click', () => { f.pay[list].push(item()); rerender(); }); };
   add('[data-addrule]', 'rules', () => ({ label: '', when: [], amount: f.pay.amount }));
   add('[data-adddisc]', 'discounts', () => ({ label: 'Descuento', kind: 'percent', value: 10, when: [] }));
@@ -452,9 +495,14 @@ $('previewBtn').addEventListener('click', () => {
   RenderPreview(host);
   $('previewOverlay').style.display = 'block';
 });
+function badgeEmailFieldId() {   // el mismo criterio que el servidor: el correo vinculado al «Correo» del evento o el primer campo de tipo correo
+  const f = Object.values(design.fields);
+  const hit = f.find((x) => x.type === 'email' && x.key === 'email') || f.find((x) => x.type === 'email');
+  return hit ? hit.id : null;
+}
 function RenderPreview(host) {
   host.style.background = design.theme.bg_color; if (design.theme.bg_image) { host.style.backgroundImage = `url(${assetUrl(design.theme.bg_image)})`; host.style.backgroundSize = 'cover'; } else host.style.backgroundImage = 'none';
-  FormRender.render(host, design, { assetUrl, previewOnly: true });
+  FormRender.render(host, design, { assetUrl, previewOnly: true, badgeEmailField: (settings && settings.send_digital_badge) ? badgeEmailFieldId() : null });
 }
 $('closePreview').addEventListener('click', () => { $('previewOverlay').style.display = 'none'; });
 $('tplBtn').addEventListener('click', async () => {
@@ -511,6 +559,8 @@ function paintConfig() {
   $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
+  $('sendBadge').checked = !!s.send_digital_badge;
+  $('sendBadgeWarn').style.display = form.digital_badge_enabled ? 'none' : 'block';
 }
 $('cfgStatusSave').addEventListener('click', async () => {
   try { form = await jput(`${api}/status`, { manual_status: $('cfgStatus').value, capacity: $('cfgCap').value === '' ? null : +$('cfgCap').value }); settings = form.settings; paintHeader(); paintConfig(); showToast('Estado y cupo aplicados', 'success'); } catch (e) { showToast(e.message, 'error'); }
@@ -538,7 +588,7 @@ $('cfgSave').addEventListener('click', async () => {
     thanks: { ...settings.thanks, mode: $('thMode').value, url: $('thUrl').value, title: $('thTitle').value, text: $('thText').value },
     closed_template: { ...settings.closed_template, title: $('clTitle').value, text: $('clText').value },
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
-    language: $('langSel').value, translate: $('trOn').checked,
+    language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
   };
   try { form = await jput(api, { settings: payload }); settings = form.settings; paintHeader(); paintConfig(); showToast('Configuración guardada', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });

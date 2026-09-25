@@ -76,8 +76,8 @@ async def quote(event_id: int, slug: str, data: dict, request: Request, db: Sess
     field = formlib.payment_field(design, values)
     if not field:
         return {"has_payment": False}
-    q = formlib.compute_amount(field["pay"], formlib.priced_values(design, values), formsvc.now_local().date())
-    out = {"has_payment": True, "amount": q["amount"], "base": q["base"], "applied": q["applied"], "description": field["pay"].get("description", "")}
+    q = formlib.compute_amount(field["pay"], formlib.priced_values(design, values), formsvc.now_local().date(), 1 + formlib.companions_count(design, values))
+    out = {"has_payment": True, "amount": q["amount"], "unit": q["unit"], "people": q["people"], "base": q["base"], "applied": q["applied"], "description": field["pay"].get("description", "")}
     problem = wompi.service_problem()          # solo si Wompi reporta una incidencia: el formulario avisa antes de que la persona intente pagar
     if problem:
         out["service"] = problem

@@ -189,6 +189,44 @@ def key_values(design: dict, data: dict) -> dict:
     return out
 
 
+def badge_email_field(design: dict) -> Optional[str]:
+    """El campo de correo al que se asocia la escarapela virtual: el vinculado al «Correo» del evento, o el primer campo de tipo correo."""
+    fields = design["fields"]
+    for fid, f in fields.items():
+        if f["type"] == "email" and f.get("key") == "email":
+            return fid
+    return next((fid for fid, f in fields.items() if f["type"] == "email"), None)
+
+
+def wants_digital_badge(db: Session, form: WebForm) -> bool:
+    """¿Este formulario envía la escarapela virtual? Solo si la casilla está marcada Y el evento tiene activado el módulo (Parámetros)."""
+    if not get_settings(form)["send_digital_badge"]:
+        return False
+    event = db.query(Event).filter(Event.id == form.event_id).first()
+    return bool(event and event.digital_badge_enabled)
+
+
+def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmission, person_id: str, upsert_attendee) -> None:
+    """Asocia el correo de la inscripción a la escarapela virtual de la persona y se la envía (una sola vez). Nunca lanza: la inscripción
+    ya quedó cargada y un fallo de correo no debe deshacerla; el resultado queda en el registro del envío (`digital_sent_at`)."""
+    from app import digital_badge
+    try:
+        design = get_design(form)
+        fid = badge_email_field(design)
+        email = str(json.loads(sub.data_json).get(fid) or "").strip() if fid else ""
+        contact = digital_badge.normalize_contact(email)
+        if not contact:
+            return
+        upsert_attendee(db, event.id, person_id, event.tenant_id, digital_contact=contact)
+        db.flush()
+        att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
+        if att and not att.digital_sent_at:
+            user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
+            digital_badge.send_digital_badge(db, event, att, (user.first_name if user else "") or "", "")
+    except Exception:       # noqa: BLE001 — ver docstring
+        pass
+
+
 def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_attendee) -> Optional[str]:
     """Carga UNA inscripción a la base del evento como «No registrado» (Usuario + asistente del evento). Devuelve un
     mensaje de error si no se pudo (p. ej. no trae cédula) o None. No toca AccessLog: no queda registrado."""
@@ -211,7 +249,10 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     user.set_extras(extras)
     db.flush()
     upsert_attendee(db, event.id, person_id, event.tenant_id)
+    db.flush()          # autoflush=False: sin esto, el segundo upsert (correo de la escarapela) no vería la fila y la duplicaría
     sub.fed = True
+    if not sub.is_test and wants_digital_badge(db, form):
+        _send_digital_badge(db, form, event, sub, person_id, upsert_attendee)
     return None
 
 

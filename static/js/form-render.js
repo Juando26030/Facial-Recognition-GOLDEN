@@ -65,6 +65,8 @@
       .fr-pay { border:2px dashed ${accent}; border-radius:14px; padding:14px 16px; background:rgba(0,0,0,.03); }
       .fr-pay .fr-total { font-size:1.5rem; font-weight:800; } .fr-pay ul { margin:6px 0 0; padding-left:18px; font-size:.8rem; opacity:.8; }
       .fr-svc { margin-top:6px; padding:7px 10px; border-radius:10px; background:#fff3cd; color:#664d03; font-size:.78rem; }
+      .fr-comp-group { border:1px solid rgba(0,0,0,.14); border-radius:12px; padding:10px 12px; margin-top:8px; background:rgba(0,0,0,.025); }
+      .fr-comp-title { font-size:.8rem; font-weight:800; margin-bottom:6px; } .fr-comp-group input { margin-bottom:6px; }
       .fr-chip { border:1px solid ${accent}; background:#fff; color:#111; border-radius:14px; padding:2px 11px; font:inherit; font-size:.75rem; font-weight:700; cursor:pointer; margin-right:4px; }
       .fr-chip.on { background:${accent}; } .fr-charge { font-size:.8rem; opacity:.85; }
       .fr-safe { margin-top:10px; padding-top:8px; border-top:1px solid rgba(0,0,0,.1); font-size:.72rem; line-height:1.4; opacity:.85; } .fr-safe [data-fxnote] { display:block; opacity:.7; margin-top:3px; }`;
@@ -98,11 +100,15 @@
     form.appendChild(btn);
 
     let started = false;
-    form.addEventListener('input', () => { if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); if (opts.onChange) opts.onChange(); });
-    form.addEventListener('change', () => { applyConditions(); if (opts.onChange) opts.onChange(); });
+    form.addEventListener('input', (e) => { syncComp(e.target); if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); if (opts.onChange) opts.onChange(); });
+    form.addEventListener('change', (e) => {
+      if (e.target && e.target.dataset && e.target.dataset.compCount) renderGroups(design.fields[e.target.dataset.compCount]);
+      applyConditions(); if (opts.onChange) opts.onChange();
+    });
 
     function fieldHtml(f, pre, ro, assetUrl) {
-      const label = f.label ? `<label class="fr-l">${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}</label>` : '';
+      const badgeNote = opts.badgeEmailField && opts.badgeEmailField === f.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
+      const label = f.label ? `<label class="fr-l">${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}${badgeNote}</label>` : '';
       const help = f.help ? `<div class="fr-help">${esc(f.help)}</div>` : '';
       const val = pre == null ? '' : pre;
       const roAttr = ro ? 'readonly class="fr-ro" tabindex="-1"' : '';
@@ -113,6 +119,11 @@
         case 'paragraph': return `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(f.content)}</p>`;
         case 'payment': { const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
           return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div><div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span></div></div>`; }
+        case 'companions': {
+          const lo = f.min || 0;
+          const opts = Array.from({ length: f.max - lo + 1 }, (_, i) => lo + i).map((n) => `<option value="${n}">${n === 0 ? 'Ninguno (voy solo/a)' : n === 1 ? '1 acompañante' : n + ' acompañantes'}</option>`).join('');
+          return `<label class="fr-l">${esc(f.label)}</label><select data-comp-count="${esc(f.id)}">${opts}</select><div data-comp-list="${esc(f.id)}"></div>${help}<div class="fr-err"></div>`;
+        }
         case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="" style="max-width:100%; border-radius:12px; display:block; margin:0 auto;">` : '';
         case 'text_long': control = `<textarea ${name} rows="4" placeholder="${esc(f.placeholder)}" ${roAttr}>${esc(val)}</textarea>`; break;
         case 'select': control = `<select ${name} ${ro ? 'disabled class="fr-ro"' : ''}><option value="">Selecciona…</option>${(f.options || []).map((o) => `<option ${String(val) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>${ro ? `<input type="hidden" ${name} value="${esc(val)}">` : ''}`; break;
@@ -125,9 +136,42 @@
       return `${label}${control}${help}<div class="fr-err"></div>`;
     }
 
+    // ---- Acompañantes: un mini-formulario por acompañante; lo escrito se conserva si cambia la cantidad
+    const compData = {};
+    const compCount = (f) => { const sel = form.querySelector(`[data-comp-count="${f.id}"]`); return sel ? Number(sel.value) || 0 : 0; };
+    const compList = (f) => { const n = compCount(f); const d = compData[f.id] || []; return Array.from({ length: n }, (_, i) => ({ ...(d[i] || {}) })); };
+    function renderGroups(f) {
+      const host = form.querySelector(`[data-comp-list="${f.id}"]`);
+      const n = compCount(f);
+      const d = (compData[f.id] = compData[f.id] || []);
+      host.innerHTML = Array.from({ length: n }, (_, i) => `<div class="fr-comp-group"><div class="fr-comp-title">Acompañante ${i + 1}</div>${(f.person_fields || []).map((pf) => {
+        const type = { email: 'email', phone: 'tel', number: 'number' }[pf.type] || 'text';
+        return `<label class="fr-l" style="font-weight:600;">${esc(pf.label)}${pf.required ? ' <span style="color:#c0392b">*</span>' : ''}</label><input type="${type}" data-comp="${esc(f.id)}" data-i="${i}" data-sid="${esc(pf.id)}" value="${esc((d[i] || {})[pf.id] || '')}" autocomplete="off" ${type === 'number' ? 'step="any"' : ''}>`;
+      }).join('')}</div>`).join('');
+    }
+    function syncComp(target) {
+      if (!target || !target.dataset || target.dataset.comp === undefined) return;
+      const d = (compData[target.dataset.comp] = compData[target.dataset.comp] || []);
+      const i = Number(target.dataset.i);
+      d[i] = { ...(d[i] || {}), [target.dataset.sid]: target.value };
+    }
+    function checkComp(f, list) {
+      for (let i = 0; i < list.length; i++) {
+        for (const pf of f.person_fields || []) {
+          const v = String(list[i][pf.id] || '').trim();
+          const who = `Acompañante ${i + 1}: «${pf.label}»`;
+          if (!v) { if (pf.required) return `${who} es obligatorio`; continue; }
+          if (pf.type === 'email' && !EMAIL.test(v)) return `${who}: escribe un correo con formato válido`;
+          if (pf.type === 'number' && isNaN(Number(v.replace(',', '.')))) return `${who}: debe ser un número`;
+        }
+      }
+      return '';
+    }
+
     function rawValues() {
       const out = {};
       Object.values(els).forEach(({ f, wrap }) => {
+        if (f.type === 'companions') { out[f.id] = compList(f); return; }
         if (!['text_short', 'text_long', 'email', 'phone', 'number', 'date', 'select', 'radio', 'multiselect', 'checkbox', 'file'].includes(f.type)) return;
         const inputs = Array.from(wrap.querySelectorAll(`[name="${f.id}"]`));
         if (f.type === 'multiselect') out[f.id] = inputs.filter((i) => i.checked).map((i) => i.value);
@@ -156,6 +200,7 @@
       Object.entries(els).forEach(([fid, { wrap }]) => { wrap.style.display = vis.has(fid) ? '' : 'none'; });
       return vis;
     }
+    Object.values(els).forEach(({ f }) => { if (f.type === 'companions') renderGroups(f); });
     applyConditions();
 
     function setErrors(errors) {
@@ -189,6 +234,7 @@
       const errors = {};
       Object.entries(els).forEach(([fid, { f }]) => {
         if (!vis.has(fid) || !(fid in raw)) return;
+        if (f.type === 'companions') { const msg = checkComp(f, raw[fid]); if (msg) errors[fid] = msg; return; }
         const v = raw[fid];
         const empty = f.type === 'multiselect' ? v.length === 0 : (f.type === 'checkbox' ? v !== 'true' : v === '');
         if (f.required && empty) errors[fid] = f.type === 'checkbox' ? 'Debes marcar esta casilla' : (f.type === 'file' ? 'Adjunta el archivo' : 'Este campo es obligatorio');

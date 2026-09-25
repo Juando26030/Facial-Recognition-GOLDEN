@@ -92,6 +92,7 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
 def _detail(db: Session, form: WebForm, request: Request) -> dict:
     return {**_summary(db, form, request), "design": formsvc.get_design(form), "settings": formsvc.get_settings(form),
             "schedule": formsvc.get_schedule(form), "test_key": form.test_key, "fed_at": form.fed_at.isoformat() if form.fed_at else None,
+            "digital_badge_enabled": bool(getattr(db.query(Event).filter(Event.id == form.event_id).first(), "digital_badge_enabled", False)),
             "payments": {"has_field": bool(formlib.payment_field(formsvc.get_design(form))), "sandbox_configured": bool(wompi.config(True)), "production_configured": bool((wompi.config(False) or {}).get("test") is False)}}
 
 
@@ -341,12 +342,14 @@ def _column_defs(design: dict) -> list:
     for row in design["rows"]:
         for fid in row["items"]:
             f = design["fields"][fid]
-            if f["type"] in formlib.INPUT_TYPES:
+            if f["type"] in formlib.INPUT_TYPES or f["type"] == formlib.COMPANIONS_TYPE:
                 out.append((fid, f["label"], f["type"]))
     return out
 
 
 def _display(value):
+    if isinstance(value, list) and value and isinstance(value[0], dict):      # acompañantes: «3: Ana Ruiz / a@x.com; Luis Paz; …»
+        return f"{len(value)}: " + "; ".join(" / ".join(str(v) for v in d.values() if v) for d in value)
     if isinstance(value, dict):
         return value.get("filename", "")
     if isinstance(value, list):
@@ -642,6 +645,10 @@ def form_dashboard(db: Session, form: WebForm, include_tests: bool = False, net_
         kpis.append(an.kpi("Tiempo promedio", an.fmt_duration(sum(durations) / len(durations)), f"mediana {an.fmt_duration(durations[len(durations) // 2])}"))
     if form.capacity:
         kpis.append(an.kpi("Cupo", f"{len(subs) if include_tests else formsvc.real_submissions(db, form).count()} / {form.capacity}", "inscripciones reales / cupo", "warn" if formsvc.is_full(db, form) else ""))
+    cf = next((fid for fid, f in design["fields"].items() if f["type"] == formlib.COMPANIONS_TYPE), None)
+    if cf:
+        total_c = sum(len(json.loads(x.data_json).get(cf) or []) for x in subs)
+        kpis.append(an.kpi("Acompañantes", total_c, f"personas en total (inscritos + acompañantes): {len(subs) + total_c}"))
     if subs:
         kpis.append(an.kpi("Última inscripción", an.fmt_local(subs[-1].created_at), "hora local"))
 

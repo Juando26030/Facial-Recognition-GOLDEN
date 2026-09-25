@@ -90,7 +90,7 @@ def _payload_form(db: Session, form: WebForm, claims: dict) -> dict:
         if person:
             prefill = formsvc.prefill_values(design, person)
             readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
-    return {"design": design, "prefill": prefill, "readonly": readonly, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
+    return {"design": design, "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
 
 
 # ------------------------------------------------------------------ páginas y estado
@@ -301,7 +301,9 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
     quote = charge = cfg = None
     pay_field = formlib.payment_field(design, {**values, **{k: True for k in uploaded}})
     if pay_field:
-        quote = formlib.compute_amount(pay_field["pay"], formlib.priced_values(design, clean), formsvc.now_local().date())
+        quote = formlib.compute_amount(pay_field["pay"], formlib.priced_values(design, clean), formsvc.now_local().date(), 1 + formlib.companions_count(design, clean))
+        if quote["amount"] > formlib.MAX_PAYMENT_COP:
+            return JSONResponse({"detail": f"El total a pagar (${quote['amount']:,}) supera el máximo de ${formlib.MAX_PAYMENT_COP:,} COP por pago de Wompi. Reduce el número de acompañantes.".replace(",", ".")}, status_code=422)
         if quote["amount"] > 0:
             if quote["amount"] < formlib.MIN_PAYMENT_COP:
                 return JSONResponse({"detail": f"El monto a pagar (${quote['amount']}) es menor al mínimo de ${formlib.MIN_PAYMENT_COP} COP por transacción. Avisa a los organizadores."}, status_code=422)
