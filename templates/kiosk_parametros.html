@@ -93,6 +93,7 @@
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">🔒 Privacidad de datos biométricos</h4>
           <p id="privInfo" style="font-size:0.85rem; margin:0 0 0.5rem;">Cargando…</p>
           <p style="color:#888; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y encoding) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
+          <p style="color:#555; font-size:0.78rem; margin:0 0 0.8rem;">💡 Para autorizar el uso del rostro en los formularios web, crea (más abajo, en los campos del evento) un campo <b>de consentimiento aparte</b> y usa «Insertar texto tipo → Autorización del dato biométrico». Debe ser una casilla separada de la autorización general de datos.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <input type="text" id="privCedula" placeholder="Cédula de la persona" aria-label="Cédula de la persona a la que se le borrará el rostro" style="padding:8px; border:1px solid #ccc; border-radius:8px; max-width:200px;">
             <button type="button" id="privPerson" style="padding:8px 14px;">Borrar solo el rostro de esta persona</button>
@@ -298,6 +299,11 @@
 
 
 
+    // Textos tipo de autorización (borradores: los debe revisar un abogado). El del rostro debe ir en un campo de consentimiento APARTE (autorización separada, Ley 1581).
+    const CONSENT_TEMPLATES = {
+        general: 'Autorizo de manera previa, expresa e informada a Golden Eventos y Logística SAS y al organizador de este evento para tratar mis datos personales (identificación, contacto y los demás que suministre) con la finalidad de inscribirme y acreditarme en el evento, enviarme comunicaciones del evento y elaborar reportes, conforme a la Política de Privacidad (/privacidad) y la Ley 1581 de 2012. Conozco mis derechos como titular: conocer, actualizar, rectificar y suprimir mis datos y revocar esta autorización.',
+        bio: 'Autorizo de forma expresa, previa, informada y separada el tratamiento de mi fotografía y de mi rostro (dato biométrico sensible) únicamente para identificarme en este evento. Sé que es facultativo: no estoy obligado a autorizarlo y, si no lo hago, puedo registrarme con mi cédula sin ninguna consecuencia. Mis datos biométricos se borrarán según la Política de Privacidad (/privacidad) y puedo pedir su supresión en cualquier momento.'
+    };
     // ---- Privacidad de datos biométricos
     (function () {
         const card = document.getElementById('privacyCard');
@@ -414,7 +420,8 @@
             <td><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-field-type">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
             <td><textarea class="cfg-options" placeholder="Una opción por línea" style="display:${cfg.field_type === 'select' ? 'block' : 'none'};">${esc((cfg.options || []).join('\n'))}</textarea>
-                <textarea class="cfg-help" placeholder="Texto de la política / consentimiento (se muestra junto al check o a la firma)" style="display:${['consent', 'signature'].includes(cfg.field_type) ? 'block' : 'none'};">${esc(cfg.help_text || '')}</textarea></td>
+                <textarea class="cfg-help" placeholder="Texto de la política / consentimiento (se muestra junto al check o a la firma)" style="display:${['consent', 'signature'].includes(cfg.field_type) ? 'block' : 'none'};">${esc(cfg.help_text || '')}</textarea>
+                <select class="cfg-tpl" aria-label="Insertar un texto de autorización tipo" style="display:${['consent'].includes(cfg.field_type) ? 'block' : 'none'}; margin-top:4px; max-width:100%;"><option value="">Insertar texto tipo…</option><option value="general">Autorización de datos personales</option><option value="bio">Autorización del dato biométrico (rostro) — usar en un campo aparte</option></select></td>
             <td><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-chart-type" style="display:${cfg.default_stat_enabled ? 'block' : 'none'};">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
         `;
@@ -428,9 +435,17 @@
         const typeSelect = tr.querySelector('.cfg-field-type');
         const optionsBox = tr.querySelector('.cfg-options');
         const helpBox = tr.querySelector('.cfg-help');
+        const tplBox = tr.querySelector('.cfg-tpl');
+        if (tplBox) tplBox.addEventListener('change', async () => {
+            const text = CONSENT_TEMPLATES[tplBox.value]; tplBox.value = '';
+            if (!text) return;
+            if (helpBox.value.trim() && !(await showConfirm('¿Reemplazar el texto actual por el texto tipo?'))) return;
+            helpBox.value = text;
+        });
         typeSelect.addEventListener('change', () => {
             optionsBox.style.display = typeSelect.value === 'select' ? 'block' : 'none';
             helpBox.style.display = ['consent', 'signature'].includes(typeSelect.value) ? 'block' : 'none';
+            if (tplBox) tplBox.style.display = typeSelect.value === 'consent' ? 'block' : 'none';
         });
         const statCheck = tr.querySelector('.cfg-stat-enabled');
         const chartSelect = tr.querySelector('.cfg-chart-type');

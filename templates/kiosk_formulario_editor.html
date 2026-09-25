@@ -218,7 +218,7 @@ function newField(type, evField) {
   if (type === 'payment' && Object.values(design.fields).some((x) => x.type === 'payment')) { showToast('Un formulario admite un solo campo de pago', 'error'); return null; }
   if (type === 'companions' && Object.values(design.fields).some((x) => x.type === 'companions')) { showToast('Un formulario admite un solo campo de acompañantes', 'error'); return null; }
   const id = uid();
-  const f = { id, type, label: evField ? evField.label : (type === 'heading' ? '' : TYPES[type][0]), required: evField ? !!evField.required && false : false, stats: false, help: '', placeholder: '', key: evField ? evField.key : null };
+  const f = { id, type, label: evField ? evField.label : (type === 'heading' ? '' : TYPES[type][0]), required: evField ? !!evField.required && false : false, stats: false, help: evField ? (evField.help || '') : '', placeholder: '', key: evField ? evField.key : null };
   if (CHOICE.includes(type)) f.options = evField && evField.options && evField.options.length ? [...evField.options] : ['Opción 1', 'Opción 2'];
   if (type === 'file') { f.accept = ['pdf', 'docx', 'xlsx', 'png', 'jpg']; f.max_mb = 10; }
   if (type === 'heading') f.content = 'Título de sección';

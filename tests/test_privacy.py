@@ -178,3 +178,16 @@ def test_public_pages_carry_the_legal_footer_and_the_cookie_notice(client, facto
     assert "/terminos" in login_html and "NIT 901542833" in login_html
     js = client.get("/static/js/form-render.js").text
     assert "/reembolsos" in js                                                                            # el cuadro de pago enlaza los términos y los reembolsos
+
+
+def test_consent_text_configured_in_parameters_reaches_the_form_editor(client, factory, db):
+    from app.models import EventFieldConfig
+    factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso", facial_enabled=True)
+    db.add(EventFieldConfig(event_id=ev.id, field_key="opcional_1", field_type="consent", help_text="Autorizo el tratamiento de mi rostro...", required=True))
+    ev.set_optional_labels({"opcional_1": "Autorización biométrica"})
+    db.commit()
+    login(client, "coord1")
+    fields = client.get(f"/api/events/{ev.id}/form-event-fields").json()
+    bio = next(f for f in fields if f["key"] == "opcional_1")
+    assert bio["type"] == "checkbox" and bio["required"] and bio["help"].startswith("Autorizo el tratamiento de mi rostro")

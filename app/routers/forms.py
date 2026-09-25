@@ -284,7 +284,7 @@ async def event_fields(event_id: int, db: Session = Depends(get_db), staff: Staf
             kind = "email"
         if key == "phone":
             kind = "phone"
-        out.append({"key": key, "label": cfg["label"], "type": kind if kind in formlib.INPUT_TYPES else "text_short", "options": cfg.get("options") or [], "required": bool(cfg.get("required"))})
+        out.append({"key": key, "label": cfg["label"], "type": kind if kind in formlib.INPUT_TYPES else "text_short", "options": cfg.get("options") or [], "required": bool(cfg.get("required")), "help": cfg.get("help_text") or ""})
     return out
 
 
