@@ -2,11 +2,12 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 
+from app import crypto
 from app.database import get_db
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
@@ -326,7 +327,10 @@ async def get_user_photo(
     path = os.path.join('data', event.tenant_id, 'known_people', f"{user_id}.jpg")
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
-    return FileResponse(path)
+    content = crypto.read_bytes(path)                       # la foto puede estar cifrada en reposo
+    if content is None:
+        raise HTTPException(status_code=404, detail="No se pudo leer la foto")
+    return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/users/{user_id}/print-count")

@@ -54,6 +54,7 @@ DEFAULT_SETTINGS = {
     "prefill": {"mode": "none", "source": "event"},                  # mode: none | cedula | invite ; source: event | event:<id> | upload
     "closed_template": {"title": "Este formulario ya cerró", "text": "Lo sentimos, ya no estamos recibiendo inscripciones.", "image": ""},
     "thanks": {"mode": "template", "title": "¡Gracias por inscribirte!", "text": "Recibimos tus datos correctamente.", "image": "", "url": ""},
+    "refunds": {"days": None, "note": ""},                           # condiciones de reembolso de ESTE formulario: plazo para pedirlo (días) y una nota (ej. quién asume la comisión)
     "quotas": {"rules": []},                                         # cupos: [{id, label, match: all|any, conds: [{field, op, value}], limit}]
     "feed": "manual",                                                # realtime | on_close | manual
     "max_mb": 10,
@@ -584,6 +585,12 @@ def sanitize_settings(settings: dict) -> dict:
     if out["thanks"]["mode"] == "redirect" and not re.match(r"^https?://[^\s]+$", out["thanks"]["url"] or ""):
         raise ValueError("La dirección a la que se redirige debe empezar con http:// o https://")
     out["quotas"] = {"rules": _sanitize_quota_rules(s_in.get("quotas"))}
+    r_in = s_in.get("refunds") or {}
+    try:
+        r_days = int(r_in.get("days")) if r_in.get("days") not in (None, "") else None
+    except (TypeError, ValueError):
+        r_days = None
+    out["refunds"] = {"days": r_days if r_days and 1 <= r_days <= 365 else None, "note": _text(r_in.get("note"), 600)}
     out["feed"] = s_in.get("feed") if s_in.get("feed") in ("realtime", "on_close", "manual") else "manual"
     try:
         out["max_mb"] = max(1, min(20, int(s_in.get("max_mb") or 10)))

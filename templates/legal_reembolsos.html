@@ -4,6 +4,13 @@
 <h1>Política de Reembolsos y Devoluciones</h1>
 <p><small>Última actualización: {{ L.updated }}</small></p>
 
+{% if form_refund %}
+<div style="background:#e8f5e9; border:1px solid #81c784; border-radius:10px; padding:10px 14px; margin-bottom:1rem;">
+  <b>Condiciones de este formulario: «{{ form_refund.name }}»</b><br>
+  {% if form_refund.days %}Puedes solicitar el reembolso hasta <b>{{ form_refund.days }} días</b> después del pago.{% else %}Este formulario no fijó un plazo propio: aplica lo general de esta política.{% endif %}
+  {% if form_refund.note %}<br>{{ form_refund.note }}{% endif %}
+</div>
+{% endif %}
 <h2>1. Quién cobra</h2>
 <p>El cobro de la inscripción lo procesa <b>{{ L.name }}</b> (NIT {{ L.nit }}) a través de Wompi, en pesos colombianos (COP). Los pagos con tarjeta no muestran a Golden tus datos de tarjeta.</p>
 
@@ -16,13 +23,13 @@
 <p><span class="pending">[pendiente de revisión legal: derecho de retracto en compras a distancia (Ley 1480 de 2011, art. 47) y sus excepciones para servicios con fecha determinada]</span></p>
 
 <h2>3. Cómo solicitarlo</h2>
-<p>Escribe a <a href="mailto:{{ L.email }}">{{ L.email }}</a> con: nombre y documento, el evento, la <b>referencia del pago</b> (empieza por «GW-») y el motivo. Puedes hacerlo hasta {{ L.refund_days }} después del pago.</p>
+<p>Escribe a <a href="mailto:{{ L.email }}">{{ L.email }}</a> con: nombre y documento, el evento, la <b>referencia del pago</b> (empieza por «GW-») y el motivo. Puedes hacerlo hasta {{ form_refund.days ~ ' días calendario' if form_refund and form_refund.days else L.refund_days }} después del pago.</p>
 
 <h2>4. Cómo se devuelve el dinero</h2>
 <ul>
 <li><b>Pago con tarjeta, reembolso total:</b> se anula la transacción y el banco emisor devuelve el valor a tu tarjeta (suele tardar entre unos días y un ciclo de facturación, según el banco).</li>
 <li><b>PSE, Nequi, Bancolombia, Daviplata y otros medios, o reembolsos parciales:</b> se devuelve por transferencia a una cuenta que tú indiques, a nombre del pagador.</li>
-<li>Las comisiones de la pasarela de pagos <span class="pending">[pendiente: confirmar con Wompi y definir si Golden las devuelve]</span>.</li>
+<li>Las comisiones de la pasarela de pagos: si se devuelven o no lo indica cada formulario (ver arriba); por defecto, la comisión de la pasarela <b>no</b> se devuelve. <span class="pending">[pendiente: confirmar con Wompi si la devuelve al anular]</span></li>
 </ul>
 
 <h2>5. Qué pasa con tu inscripción</h2>

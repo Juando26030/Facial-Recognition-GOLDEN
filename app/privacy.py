@@ -5,8 +5,8 @@ Una persona (`User`) vive a nivel de CLIENTE y puede estar en varios eventos, as
 quienes siguen en otro evento que no ha finalizado (se cuentan aparte para avisarlo). El derecho de supresión de UNA persona (`purge_person`) no tiene esa
 salvedad: si la persona lo pide, se borra su rostro.
 
-Retención automática: `BIOMETRIC_RETENTION_DAYS` (variable de entorno). Sin ella NO se borra nada solo (el plazo lo define Golden y debe coincidir con la
-Política de Privacidad publicada). `scripts/purge_biometrics.py` la aplica (cron diario).
+Retención automática: 180 días (6 meses) después del fin de un evento finalizado, por decisión de Golden (2026-09-25); se puede cambiar con la variable
+`BIOMETRIC_RETENTION_DAYS` (`0` la apaga) y debe coincidir con la Política de Privacidad publicada. `scripts/purge_biometrics.py` la aplica (cron diario).
 """
 import os
 from datetime import date, datetime, timedelta
@@ -16,10 +16,15 @@ from sqlalchemy.orm import Session
 from app.models import Event, EventAttendee, User
 
 
+DEFAULT_RETENTION_DAYS = 180
+
+
 def retention_days():
-    """Días de retención tras la fecha de fin de un evento finalizado, o None si no está definido."""
+    """Días de retención tras la fecha de fin de un evento finalizado (180 por defecto), o None si se apagó con BIOMETRIC_RETENTION_DAYS=0."""
     raw = os.getenv("BIOMETRIC_RETENTION_DAYS", "").strip()
-    return int(raw) if raw.isdigit() and int(raw) > 0 else None
+    if raw == "0":
+        return None
+    return int(raw) if raw.isdigit() else DEFAULT_RETENTION_DAYS
 
 
 def photo_path(tenant_id: str, user_id: str) -> str:
@@ -31,7 +36,8 @@ def stats(db: Session, event: Event) -> dict:
     people = (db.query(User).join(EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id))
               .filter(EventAttendee.event_id == event.id).all())
     with_face = [u for u in people if u.face_encoding or os.path.isfile(photo_path(u.tenant_id, u.id))]
-    return {"attendees": len(people), "with_biometrics": len(with_face),
+    from app import crypto
+    return {"attendees": len(people), "with_biometrics": len(with_face), "encrypted": crypto.enabled(),
             "with_consent": sum(1 for u in with_face if u.biometric_consent_at), "without_consent": sum(1 for u in with_face if not u.biometric_consent_at)}
 
 

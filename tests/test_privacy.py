@@ -138,9 +138,10 @@ def test_automatic_retention_only_runs_when_configured_and_only_on_old_finalized
     _with_face(db, ev_recent, "2002")
     _with_face(db, ev_live, "3003")
     monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS", raising=False)
-    assert privacy.retention_days() is None                                                                      # sin plazo definido: nada se borra solo
+    assert privacy.retention_days() == 180                                                                       # decisión de Golden: 6 meses por defecto
+    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "0")
+    assert privacy.retention_days() is None                                                                      # 0 apaga el borrado automático
     monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "180")
-    assert privacy.retention_days() == 180
     r = privacy.purge_expired(db, 180)
     assert r == {"events": 1, "deleted": 1, "kept_in_other_events": 0}                                           # solo el evento finalizado hace más de 180 días
     assert privacy.purge_expired(db, 180)["events"] == 0                                                          # ya purgado: no se repite
@@ -159,14 +160,24 @@ def test_legal_pages_are_public_marked_as_drafts_and_show_the_business_data(clie
 
 
 def test_business_data_and_retention_come_from_the_environment(client, monkeypatch):
+    monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS", raising=False)
+    home = client.get("/terminos").text
+    assert "Carrera 14a # 71a - 59, Bogotá" in home and "+57 317 427 6073" in home and "info@goldenlogisticas.com" in home      # los datos reales de Golden
+    assert "6 meses (180 días) después de la fecha de finalización" in client.get("/privacidad").text                         # retención por defecto: 6 meses
     monkeypatch.setenv("LEGAL_ADDRESS", "Calle 1 # 2-3")
     monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "90")
     monkeypatch.setenv("REFUND_REQUEST_DAYS", "15")
     assert "Calle 1 # 2-3" in client.get("/terminos").text
-    assert "90 días después de la fecha de finalización" in client.get("/privacidad").text
+    assert "3 meses (90 días)" in client.get("/privacidad").text
     assert "15 días calendario" in client.get("/reembolsos").text
-    monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS")
-    assert "pendiente de definir por Golden" in client.get("/privacidad").text                          # sin plazo definido no se inventa uno
+    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "0")
+    assert "hasta que solicites su supresión" in client.get("/privacidad").text                                                 # apagada explícitamente
+
+
+def test_jurisdiction_is_bogota_and_international_events_are_covered(client):
+    t = client.get("/terminos").text
+    assert "Bogotá D.C." in t and "Eventos fuera de Colombia" in t
+    assert "fuera de Colombia" in client.get("/privacidad").text
 
 
 def test_public_pages_carry_the_legal_footer_and_the_cookie_notice(client, factory):
@@ -191,3 +202,114 @@ def test_consent_text_configured_in_parameters_reaches_the_form_editor(client, f
     fields = client.get(f"/api/events/{ev.id}/form-event-fields").json()
     bio = next(f for f in fields if f["key"] == "opcional_1")
     assert bio["type"] == "checkbox" and bio["required"] and bio["help"].startswith("Autorizo el tratamiento de mi rostro")
+
+
+# ------------------------------- cifrado en reposo del dato biométrico -------------------------------
+@pytest.fixture()
+def face_key(monkeypatch):
+    from cryptography.fernet import Fernet
+    key = Fernet.generate_key().decode()
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", key)
+    return key
+
+
+def test_face_encoding_is_stored_encrypted_but_the_app_reads_it_in_the_clear(factory, db, face_key):
+    from sqlalchemy import text
+    from app.models import User
+    ev = factory.event("en_proceso")
+    db.add(User(id="1001", tenant_id=ev.tenant_id, first_name="A", last_name="B", face_encoding="[[0.1, 0.2]]"))
+    db.commit()
+    raw = db.execute(text("SELECT face_encoding FROM users WHERE id='1001'")).scalar()
+    assert raw.startswith("enc1:") and "0.1" not in raw                                                    # en la base NO se ve el dato
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").first().face_encoding == "[[0.1, 0.2]]"                     # el código lo lee normal
+    assert db.query(User).filter(User.face_encoding != None).count() == 1                                  # noqa: E711 — y los filtros por «tiene rostro» siguen sirviendo
+
+
+def test_without_a_key_data_stays_readable_and_old_plaintext_coexists_with_encrypted(factory, db, monkeypatch):
+    from cryptography.fernet import Fernet
+    from sqlalchemy import text
+    from app.models import User
+    monkeypatch.delenv("FACE_ENCRYPTION_KEY", raising=False)
+    ev = factory.event("en_proceso")
+    db.add(User(id="1001", tenant_id=ev.tenant_id, first_name="A", last_name="B", face_encoding="[[1]]"))
+    db.commit()
+    assert db.execute(text("SELECT face_encoding FROM users WHERE id='1001'")).scalar() == "[[1]]"        # sin llave: en claro (como hasta ahora)
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    db.add(User(id="1002", tenant_id=ev.tenant_id, first_name="C", last_name="D", face_encoding="[[2]]"))
+    db.commit()
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").first().face_encoding == "[[1]]"                             # lo viejo en claro se sigue leyendo
+    assert db.query(User).filter_by(id="1002").first().face_encoding == "[[2]]"
+    monkeypatch.delenv("FACE_ENCRYPTION_KEY")
+    db.expire_all()
+    assert db.query(User).filter_by(id="1002").first().face_encoding is None                                # sin la llave lo cifrado NO se lee (y no rompe nada)
+
+
+def test_key_rotation_reads_data_written_with_the_old_key(monkeypatch):
+    from cryptography.fernet import Fernet
+    from app import crypto
+    old, new = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", old)
+    token = crypto.encrypt_text("secreto")
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", f"{new},{old}")                                               # la primera cifra, todas descifran
+    assert crypto.decrypt_text(token) == "secreto" and crypto.encrypt_text("otro") != token
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", new)
+    assert crypto.decrypt_text(token) is None                                                               # si se quita la llave vieja, lo viejo ya no se lee
+
+
+def test_photos_are_encrypted_on_disk_and_served_decrypted(client, factory, faces, face_key, db):
+    import os
+    ev = _kiosk(client, factory, role="coordinador")
+    assert _register(client, ev, consent="true").status_code == 200
+    path = f"data/{ev.tenant_id}/known_people/1001.jpg"
+    with open(path, "rb") as fh:
+        head = fh.read(20)
+    assert head.startswith(b"GWENC1:") and b"JFIF" not in head and not head.startswith(b"\xff\xd8")         # en disco no es un JPEG legible
+    from app import crypto
+    raw = crypto.read_bytes(path)
+    assert raw[:2] == b"\xff\xd8"                                                                           # al leerla con la llave vuelve a ser JPEG
+    r = client.get(f"/api/users/1001/photo?event_id={ev.id}")
+    assert r.status_code == 200 and r.content[:2] == b"\xff\xd8" and r.headers["content-type"] == "image/jpeg"
+
+
+def test_encrypt_faces_script_encrypts_what_was_left_in_the_clear(factory, db, monkeypatch, tmp_path):
+    import os
+    import subprocess
+    import sys
+    from cryptography.fernet import Fernet
+    from sqlalchemy import text
+    from app.models import User
+    monkeypatch.delenv("FACE_ENCRYPTION_KEY", raising=False)
+    ev = factory.event("en_proceso")
+    db.add(User(id="1001", tenant_id=ev.tenant_id, first_name="A", last_name="B", face_encoding="[[1]]"))
+    db.commit()
+    os.makedirs(f"data/{ev.tenant_id}/known_people", exist_ok=True)
+    with open(f"data/{ev.tenant_id}/known_people/1001.jpg", "wb") as fh:
+        fh.write(b"\xff\xd8plano")
+    env = {**os.environ, "FACE_ENCRYPTION_KEY": Fernet.generate_key().decode()}
+    out = subprocess.run([sys.executable, "scripts/encrypt_faces.py"], capture_output=True, text=True, env=env)
+    assert out.returncode == 0 and "quedó cifrado" in out.stdout, out.stdout + out.stderr
+    db.expire_all()
+    assert db.execute(text("SELECT face_encoding FROM users WHERE id='1001'")).scalar().startswith("enc1:")
+    with open(f"data/{ev.tenant_id}/known_people/1001.jpg", "rb") as fh:
+        assert fh.read(7) == b"GWENC1:"
+    again = subprocess.run([sys.executable, "scripts/encrypt_faces.py", "--dry-run"], capture_output=True, text=True, env=env)
+    assert "En claro: 0 encoding(s) y 0 foto(s)" in again.stdout                                            # idempotente
+
+
+# ------------------------------- reembolsos editables por formulario -------------------------------
+def test_refund_terms_are_configured_per_form_and_shown_on_the_refund_page(client, factory):
+    from tests.test_form_extras import _disc_form
+    from tests.test_forms import _put
+    ev, form, _ = _disc_form(client, factory, [])
+    login(client, "coord1")
+    r = _put(client, ev, form, settings={"refunds": {"days": "10", "note": "La comisión de Wompi no se devuelve."}})
+    assert r.status_code == 200 and r.json()["settings"]["refunds"] == {"days": 10, "note": "La comisión de Wompi no se devuelve."}
+    assert _put(client, ev, form, settings={"refunds": {"days": 9999, "note": ""}}).json()["settings"]["refunds"]["days"] is None      # fuera de rango: se ignora
+    _put(client, ev, form, settings={"refunds": {"days": 10, "note": "La comisión de Wompi no se devuelve."}})
+    client.post("/logout")
+    page = client.get(f"/reembolsos?e={ev.id}&f={form['slug']}").text
+    assert "Condiciones de este formulario" in page and "hasta <b>10 días</b>" in page and "La comisión de Wompi no se devuelve." in page
+    assert "Condiciones de este formulario" not in client.get("/reembolsos").text                                          # la página general no las muestra
+    assert client.get(f"{'/f/%d/%s' % (ev.id, form['slug'])}/state").json()["refund"]["days"] == 10                       # y el formulario público las recibe

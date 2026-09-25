@@ -1,5 +1,5 @@
 """Aplica la política de retención de datos biométricos: borra el rostro (encoding + foto) de las personas de eventos FINALIZADOS hace más de
-`BIOMETRIC_RETENTION_DAYS` días. Sin esa variable no borra nada (el plazo lo define Golden y debe coincidir con la Política de Privacidad).
+`BIOMETRIC_RETENTION_DAYS` días (180 = 6 meses por defecto; `0` apaga el borrado automático). Debe coincidir con la Política de Privacidad publicada.
 
     0 4 * * * cd /home/juando02603/Facial-Recognition && venv/bin/python scripts/purge_biometrics.py >> ~/backups/purge.log 2>&1
 
@@ -22,7 +22,7 @@ from app.models import Event  # noqa: E402
 def main() -> int:
     days = privacy.retention_days()
     if not days:
-        print("BIOMETRIC_RETENTION_DAYS no está definido: no se borra nada.")
+        print("BIOMETRIC_RETENTION_DAYS=0: el borrado automático está apagado, no se borra nada.")
         return 0
     db = SessionLocal()
     try:

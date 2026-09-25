@@ -313,7 +313,7 @@
         async function load() {
             const d = await (await fetch(`${base}/privacy`)).json();
             const ret = d.retention_days ? `Retención automática: ${d.retention_days} días después de finalizado el evento.` : 'Retención automática: NO definida todavía (no se borra nada solo).';
-            document.getElementById('privInfo').innerHTML = `<b>${d.with_biometrics}</b> de ${d.attendees} personas tienen rostro guardado (<b>${d.with_consent}</b> con constancia de autorización, <b>${d.without_consent}</b> sin constancia — anteriores a este control). ${ret}${d.purged_at ? ' Último borrado: ' + d.purged_at.slice(0, 10) + '.' : ''}`;
+            document.getElementById('privInfo').innerHTML = `<b>${d.with_biometrics}</b> de ${d.attendees} personas tienen rostro guardado (<b>${d.with_consent}</b> con constancia de autorización, <b>${d.without_consent}</b> sin constancia — anteriores a este control). ${ret} Cifrado del rostro en reposo: <b>${d.encrypted ? 'activo' : 'NO activo (falta FACE_ENCRYPTION_KEY)'}</b>.${d.purged_at ? ' Último borrado: ' + d.purged_at.slice(0, 10) + '.' : ''}`;
         }
         load();
         document.getElementById('privPerson').addEventListener('click', async () => {

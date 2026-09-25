@@ -20,7 +20,7 @@ from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUse
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, digital_badge
+from app import bulk_jobs, crypto, digital_badge
 from app.email_check import check_email
 from app.routers import parametros, signatures
 from app.routers.super_events import sibling_attendance
@@ -905,7 +905,7 @@ async def manual_register(
 
     if img_array is not None:
         img_path = os.path.join(_known_faces_dir(event.tenant_id), f"{id}.jpg")
-        Image.fromarray(img_array).save(img_path)
+        crypto.save_image(Image.fromarray(img_array), img_path)      # cifrada en reposo si hay llave
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo."}
     if contact_clean and event.digital_badge_enabled:
@@ -1139,7 +1139,7 @@ def _bulk_register_impl(
                     if not encodings:
                         errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
                         continue
-                    Image.fromarray(img_array).save(os.path.join(known_faces_dir, basename))
+                    crypto.save_image(Image.fromarray(img_array), os.path.join(known_faces_dir, basename))
                     zip_encodings[os.path.splitext(basename)[0]] = encodings
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
@@ -1214,9 +1214,9 @@ def _bulk_register_impl(
             else:
                 img_path = os.path.join(known_faces_dir, f"{identificador}.jpg")
                 if os.path.exists(img_path):
+                    stored = crypto.read_array(img_path)          # la foto guardada puede estar cifrada
                     enc = BiometricEngine.extract_encoding(
-                        face_recognition.load_image_file(img_path),
-                        jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
+                        stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
                     if enc:
                         face_enc_json = json.dumps(enc)
 

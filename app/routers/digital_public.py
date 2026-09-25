@@ -5,9 +5,10 @@ aleatorio y por persona/evento; solo sirve para ver esa escarapela (nunca datos 
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy.orm import Session
 
+from app import crypto
 from app.database import get_db
 from app.models import Event, EventAttendee, User
 from app.routers.badges import ALLOWED_IMAGE_EXT, _get_or_create_template, _serialize_template, template_category_for_user
@@ -72,4 +73,7 @@ async def digital_badge_photo(token: str, db: Session = Depends(get_db)):
     path = os.path.join("data", event.tenant_id, "known_people", f"{user.id}.jpg")
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Sin foto")
-    return FileResponse(path)
+    content = crypto.read_bytes(path)                       # la foto puede estar cifrada en reposo
+    if content is None:
+        raise HTTPException(status_code=404, detail="Sin foto")
+    return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})

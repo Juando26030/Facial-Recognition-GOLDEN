@@ -6,19 +6,21 @@ LEGAL_PRIVACY_EMAIL, BIOMETRIC_RETENTION_DAYS, REFUND_REQUEST_DAYS.
 """
 import os
 
+from app import privacy
+
 
 def info() -> dict:
     email = os.getenv("LEGAL_EMAIL", "info@goldenlogisticas.com")
-    days = os.getenv("BIOMETRIC_RETENTION_DAYS", "").strip()
+    days = privacy.retention_days()
     refund = os.getenv("REFUND_REQUEST_DAYS", "").strip()
     return {
         "name": os.getenv("LEGAL_NAME", "GOLDEN EVENTOS Y LOGISTICA SAS"),
         "nit": os.getenv("LEGAL_NIT", "901542833"),
-        "address": os.getenv("LEGAL_ADDRESS", "[DIRECCIÓN — completar]"),
-        "phone": os.getenv("LEGAL_PHONE", "[TELÉFONO — completar]"),
+        "address": os.getenv("LEGAL_ADDRESS", "Carrera 14a # 71a - 59, Bogotá, Colombia"),
+        "phone": os.getenv("LEGAL_PHONE", "+57 317 427 6073"),
         "email": email,
         "privacy_email": os.getenv("LEGAL_PRIVACY_EMAIL", email),
-        "retention": f"{days} días después de la fecha de finalización del evento" if days.isdigit() else "[PLAZO DE RETENCIÓN — pendiente de definir por Golden]",
-        "refund_days": f"{refund} días calendario" if refund.isdigit() else "[PLAZO — pendiente de definir por Golden]",
+        "retention": (f"{days // 30} meses ({days} días) después de la fecha de finalización del evento" if days % 30 == 0 else f"{days} días después de la fecha de finalización del evento") if days else "hasta que solicites su supresión o el Organizador lo borre",
+        "refund_days": f"{refund} días calendario" if refund.isdigit() else "el plazo que indique cada formulario",
         "updated": "25 de septiembre de 2026",
     }

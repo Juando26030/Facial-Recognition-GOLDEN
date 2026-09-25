@@ -1,6 +1,7 @@
 import json
 from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
+from app.crypto import EncryptedText
 from datetime import datetime
 
 Base = declarative_base()
@@ -48,7 +49,7 @@ class User(Base):
     opt_1 = Column(String)  # "Tipo de asistente" (2026-09-20; antes "tipo de empresa") — único campo opcional fijo, el resto son extra_fields
     opt_2 = Column(String)  # deprecado (2026-09-20, era "cantidad de empl") — ya no se escribe, reemplazado por extra_fields. Se deja la columna para no perder datos históricos.
     extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
-    face_encoding = Column(Text)
+    face_encoding = Column(EncryptedText)      # cifrado en reposo si hay FACE_ENCRYPTION_KEY (app/crypto.py); el código lo usa en claro
     biometric_consent_at = Column(DateTime, nullable=True)      # cuándo se autorizó guardar el rostro (Ley 1581: dato sensible, autorización previa y expresa)
     biometric_consent_source = Column(String, nullable=True)    # 'kiosko' (la persona autorizó ante el digitador) | 'carga_masiva' (declaración del organizador) | 'copiado' (heredado de otro evento)
 
