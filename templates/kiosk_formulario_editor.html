@@ -80,10 +80,12 @@
 
     <!-- ===================== CONFIGURACIÓN ===================== -->
     <div class="pane" id="pane-config">
-      <div class="card"><h4 style="margin:0 0 8px;">Cupo por categoría</h4>
-        <div class="fld"><label>Campo que define la categoría (lista desplegable u opción única)</label><select id="qField" style="max-width:360px;"></select></div>
-        <div id="qRows" style="margin-top:6px;"></div>
-        <p class="hint">Escribe cuántas inscripciones admite cada opción (vacío = sin límite). Cuando una se llena, esa opción sale «(agotado)» y no se puede elegir. Es aparte del cupo total de arriba: se aplican los dos. Se guarda con «Guardar configuración».</p>
+      <div class="card"><h4 style="margin:0 0 8px;">Cupos por variables</h4>
+        <p class="hint" style="margin:0 0 8px;">Cada cupo pone un máximo de inscripciones a quienes cumplan una o varias condiciones (por ejemplo «Categoría = VIP» y «País = Colombia»). Funciona aunque no pongas cupo total; si pones los dos, se aplican los dos. Una inscripción cuenta en TODOS los cupos que cumple.</p>
+        <div id="qRules"></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;"><button type="button" class="small-btn" id="qAdd">+ Agregar cupo</button>
+          <select id="qQuickField" style="max-width:240px;"></select><button type="button" class="small-btn" id="qQuick">Un cupo por cada opción del campo</button></div>
+        <p class="hint">Se guardan con «Guardar configuración» (más abajo).</p>
       </div>
       <div class="card"><h4 style="margin:0 0 8px;">Estado y enlaces</h4>
         <div class="bar"><div class="fld"><label>Estado</label><select id="cfgStatus"><option value="pruebas">Pruebas (solo con el enlace de pruebas)</option><option value="activo">Activo (abierto al público)</option><option value="cerrado">Cerrado (muestra la plantilla de cierre)</option><option value="finalizado">Finalizado (el enlace deja de existir)</option></select></div>
@@ -679,13 +681,50 @@ function paintConfig() {
   paintQuotas();
   $('sendBadgeWarn').style.display = form.digital_badge_enabled ? 'none' : 'block';
 }
-function paintQuotas() {
-  const q = (settings && settings.quotas) || { field: '', limits: {} }, choices = Object.values(design.fields).filter((f) => ['select', 'radio'].includes(f.type));
-  $('qField').innerHTML = `<option value="">— Sin cupo por categoría —</option>` + choices.map((f) => `<option value="${f.id}" ${q.field === f.id ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
-  const f = design.fields[$('qField').value], used = form.quota_used || {};
-  $('qRows').innerHTML = f ? f.options.map((o) => `<div style="display:flex; gap:8px; align-items:center; margin-bottom:4px;"><span style="min-width:220px; font-size:0.85rem;">${esc(o)}</span><input type="number" min="1" data-qopt="${esc(o)}" value="${(q.limits || {})[o] || ''}" placeholder="sin límite" style="width:110px;"><span class="hint">${used[o] || 0} inscritos</span></div>`).join('') : '';
+const QOPS = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
+const qFields = () => Object.values(design.fields).filter((f) => !STATIC.includes(f.type) && !NOCOND.includes(f.type) && f.type !== 'file');
+function qValueHtml(c, ri, ci) {
+  if (c.op === 'filled') return '';
+  const parent = design.fields[c.field], opts = parent && (parent.options || (parent.type === 'checkbox' ? ['true', 'false'] : null));
+  if (opts && c.op === 'in') { const sel = Array.isArray(c.value) ? c.value : (c.value ? [c.value] : []); return `<div style="max-height:130px; overflow:auto;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-qin="${ri}.${ci}" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div>`; }
+  if (opts) return `<select data-qv="${ri}.${ci}"><option value=""></option>${opts.map((o) => `<option ${c.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  return `<input type="text" data-qv="${ri}.${ci}" value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
 }
-$('qField').addEventListener('change', () => { settings.quotas = { field: $('qField').value, limits: {} }; paintQuotas(); });
+function paintQuotas() {
+  const rules = ((settings && settings.quotas) || {}).rules || [], st = Object.fromEntries((form.quota_status || []).map((x) => [x.id, x])), fields = qFields();
+  $('qRules').innerHTML = rules.map((r, ri) => `<div style="border:1px solid #e3e5ec; border-radius:12px; padding:8px; margin-bottom:8px; display:grid; gap:5px;">
+    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><input type="text" data-ql="${ri}" value="${esc(r.label)}" placeholder="Nombre del cupo (ej. VIP Colombia)" style="flex:1; min-width:180px;">
+      <span style="font-size:0.8rem;">máximo</span><input type="number" min="1" data-qn="${ri}" value="${r.limit || ''}" style="width:90px;">
+      ${st[r.id] ? `<span class="hint">${st[r.id].used} inscritos · quedan ${st[r.id].left}</span>` : ''}<button type="button" class="small-btn danger" data-qdel="${ri}">Quitar cupo</button></div>
+    ${r.conds.length > 1 ? `<select data-qm="${ri}" style="max-width:300px;"><option value="all" ${r.match !== 'any' ? 'selected' : ''}>Cuenta a quien cumpla TODAS las condiciones</option><option value="any" ${r.match === 'any' ? 'selected' : ''}>Cuenta a quien cumpla ALGUNA condición</option></select>` : ''}
+    ${r.conds.map((c, ci) => `<div style="display:grid; gap:3px; background:#f6f7fb; padding:5px; border-radius:8px;"><select data-qf="${ri}.${ci}">${fields.map((f) => `<option value="${f.id}" ${f.id === c.field ? 'selected' : ''}>${esc(f.label || TYPES[f.type][0])}</option>`).join('')}</select>
+      <select data-qo="${ri}.${ci}">${QOPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${qValueHtml(c, ri, ci)}
+      ${r.conds.length > 1 ? `<button type="button" class="small-btn danger" data-qcd="${ri}.${ci}" style="justify-self:end;">Quitar condición</button>` : ''}</div>`).join('')}
+    ${r.conds.length < 6 ? `<button type="button" class="small-btn" data-qca="${ri}" style="justify-self:start;">+ Otra condición</button>` : ''}</div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
+  $('qQuickField').innerHTML = '<option value="">Campo de lista/opción única…</option>' + fields.filter((f) => ['select', 'radio'].includes(f.type)).map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join('');
+  const R = () => settings.quotas.rules, ix = (v) => v.split('.').map(Number);
+  const box = $('qRules');
+  box.querySelectorAll('[data-ql]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.ql].label = el.value; }));
+  box.querySelectorAll('[data-qn]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qn].limit = +el.value || 0; }));
+  box.querySelectorAll('[data-qm]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qm].match = el.value; }));
+  box.querySelectorAll('[data-qdel]').forEach((el) => el.addEventListener('click', () => { R().splice(+el.dataset.qdel, 1); paintQuotas(); }));
+  box.querySelectorAll('[data-qca]').forEach((el) => el.addEventListener('click', () => { R()[+el.dataset.qca].conds.push({ field: fields[0].id, op: 'equals', value: '' }); paintQuotas(); }));
+  box.querySelectorAll('[data-qcd]').forEach((el) => el.addEventListener('click', () => { const [r, c] = ix(el.dataset.qcd); R()[r].conds.splice(c, 1); paintQuotas(); }));
+  box.querySelectorAll('[data-qf]').forEach((el) => el.addEventListener('change', () => { const [r, c] = ix(el.dataset.qf), cd = R()[r].conds[c]; cd.field = el.value; cd.value = cd.op === 'in' ? [] : ''; paintQuotas(); }));
+  box.querySelectorAll('[data-qo]').forEach((el) => el.addEventListener('change', () => { const [r, c] = ix(el.dataset.qo), cd = R()[r].conds[c]; const was = cd.op === 'in'; cd.op = el.value; if (cd.op === 'in' && !Array.isArray(cd.value)) cd.value = cd.value ? [cd.value] : []; else if (was && cd.op !== 'in') cd.value = Array.isArray(cd.value) ? (cd.value[0] || '') : cd.value; paintQuotas(); }));
+  box.querySelectorAll('[data-qv]').forEach((el) => { const [r, c] = ix(el.dataset.qv); el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { const cd = R()[r].conds[c]; cd.value = cd.op === 'in' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value; }); });
+  box.querySelectorAll('[data-qin]').forEach((el) => el.addEventListener('change', () => { const [r, c] = ix(el.dataset.qin); R()[r].conds[c].value = Array.from(box.querySelectorAll(`[data-qin="${el.dataset.qin}"]:checked`)).map((x) => x.value); }));
+}
+$('qAdd').addEventListener('click', () => {
+  const fields = qFields(); if (!fields.length) { showToast('Agrega primero campos al formulario', 'error'); return; }
+  settings.quotas = settings.quotas || { rules: [] }; settings.quotas.rules.push({ label: '', match: 'all', limit: 50, conds: [{ field: fields[0].id, op: 'equals', value: '' }] }); paintQuotas();
+});
+$('qQuick').addEventListener('click', () => {
+  const f = design.fields[$('qQuickField').value]; if (!f) { showToast('Elige el campo', 'error'); return; }
+  settings.quotas = settings.quotas || { rules: [] };
+  f.options.forEach((o) => { if (!settings.quotas.rules.some((r) => r.conds.length === 1 && r.conds[0].field === f.id && r.conds[0].value === o)) settings.quotas.rules.push({ label: o, match: 'all', limit: 50, conds: [{ field: f.id, op: 'equals', value: o }] }); });
+  paintQuotas(); showToast('Se crearon los cupos: ajusta el máximo de cada uno', 'success');
+});
 $('cfgStatusSave').addEventListener('click', async () => {
   try { form = await jput(`${api}/status`, { manual_status: $('cfgStatus').value, capacity: $('cfgCap').value === '' ? null : +$('cfgCap').value }); settings = form.settings; paintHeader(); paintConfig(); showToast('Estado y cupo aplicados', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });
@@ -713,7 +752,7 @@ $('cfgSave').addEventListener('click', async () => {
     closed_template: { ...settings.closed_template, title: $('clTitle').value, text: $('clText').value },
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
-    quotas: { field: $('qField').value, limits: Object.fromEntries(Array.from(document.querySelectorAll('[data-qopt]')).filter((i) => i.value !== '').map((i) => [i.dataset.qopt, +i.value])) },
+    quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => r.limit > 0) },
   };
   try { form = await jput(api, { settings: payload }); settings = form.settings; paintHeader(); paintConfig(); showToast('Configuración guardada', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });

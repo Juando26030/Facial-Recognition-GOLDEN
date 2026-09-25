@@ -54,7 +54,7 @@ DEFAULT_SETTINGS = {
     "prefill": {"mode": "none", "source": "event"},                  # mode: none | cedula | invite ; source: event | event:<id> | upload
     "closed_template": {"title": "Este formulario ya cerró", "text": "Lo sentimos, ya no estamos recibiendo inscripciones.", "image": ""},
     "thanks": {"mode": "template", "title": "¡Gracias por inscribirte!", "text": "Recibimos tus datos correctamente.", "image": "", "url": ""},
-    "quotas": {"field": "", "limits": {}},                           # cupo por categoría: {campo (lista/opción única), limits: {opción: máximo}}
+    "quotas": {"rules": []},                                         # cupos: [{id, label, match: all|any, conds: [{field, op, value}], limit}]
     "feed": "manual",                                                # realtime | on_close | manual
     "max_mb": 10,
     "language": "es",                                                # idioma en que está escrito (<html lang>): el navegador ofrece traducir desde ahí
@@ -528,6 +528,37 @@ def priced_values(design: dict, values: dict) -> dict:
     return {k: v for k, v in values.items() if k in shown}
 
 
+def _sanitize_quota_rules(q_in) -> list:
+    """Cupos por combinación de variables: cada regla = condiciones sobre campos del formulario (todas o alguna) + un máximo de inscripciones.
+    Acepta también el formato anterior {field, limits: {opción: máximo}} (un cupo por opción de un campo) y lo convierte."""
+    q_in = q_in if isinstance(q_in, dict) else {}
+    rules_in = q_in.get("rules")
+    if rules_in is None and q_in.get("limits"):
+        rules_in = [{"label": str(o), "limit": n, "conds": [{"field": q_in.get("field"), "op": "equals", "value": o}]} for o, n in (q_in.get("limits") or {}).items()]
+    out, used = [], set()
+    for r in (rules_in or [])[:30]:
+        if not isinstance(r, dict):
+            continue
+        try:
+            limit = int(r.get("limit"))
+        except (TypeError, ValueError):
+            continue
+        conds = []
+        for c in (r.get("conds") or [])[:6]:
+            if isinstance(c, dict) and c.get("field") and c.get("op", "equals") in CONDITION_OPS:
+                v = c.get("value")
+                conds.append({"field": _text(c["field"], 40), "op": c.get("op", "equals"), "value": [str(x) for x in v] if isinstance(v, list) else _text(v, 200)})
+        if not (0 < limit <= 1_000_000) or not conds:
+            continue
+        rid = str(r.get("id") or "")
+        while not re.fullmatch(r"[a-z0-9]{4,12}", rid) or rid in used:
+            rid = secrets.token_hex(3)
+        used.add(rid)
+        label = _text(r.get("label"), 120) or f"Cupo {len(out) + 1}"
+        out.append({"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit})
+    return out
+
+
 def sanitize_settings(settings: dict) -> dict:
     s_in = settings or {}
     out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in DEFAULT_SETTINGS.items()}
@@ -551,16 +582,7 @@ def sanitize_settings(settings: dict) -> dict:
         out["thanks"]["mode"] = "template"
     if out["thanks"]["mode"] == "redirect" and not re.match(r"^https?://[^\s]+$", out["thanks"]["url"] or ""):
         raise ValueError("La dirección a la que se redirige debe empezar con http:// o https://")
-    q_in = s_in.get("quotas") or {}
-    limits = {}
-    for opt, n in list((q_in.get("limits") or {}).items())[:50]:
-        try:
-            n = int(n)
-        except (TypeError, ValueError):
-            continue
-        if 0 < n <= 1_000_000 and str(opt).strip():
-            limits[_text(opt, 120)] = n
-    out["quotas"] = {"field": _text(q_in.get("field"), 40) if limits else "", "limits": limits}
+    out["quotas"] = {"rules": _sanitize_quota_rules(s_in.get("quotas"))}
     out["feed"] = s_in.get("feed") if s_in.get("feed") in ("realtime", "on_close", "manual") else "manual"
     try:
         out["max_mb"] = max(1, min(20, int(s_in.get("max_mb") or 10)))

@@ -508,13 +508,13 @@ def _quota_form(client, factory, limits, capacity=None):
 def test_category_quota_blocks_a_full_category_but_not_the_others(client, factory):
     ev, form = _quota_form(client, factory, {"VIP": 2, "Estudiante": 1, "Basura": "x", "General": 0})
     st = client.get(f"{_url(ev, form)}/state").json()
-    assert st["quota_left"] == {"cat": {"VIP": 2, "Estudiante": 1}}                                   # lo inválido/0 se descarta; General queda sin límite
+    assert st["quota"]["left"] == {"cat": {"VIP": 2, "Estudiante": 1}}                                   # lo inválido/0 se descarta; General queda sin límite
     assert _submit(client, ev, form, {**_who(1), "cat": "Estudiante"}, sid="a").status_code == 200
     r = _submit(client, ev, form, {**_who(2), "cat": "Estudiante"}, sid="b")
     assert r.status_code == 409 and r.json()["stage"] == "quota" and "Estudiante" in r.json()["detail"]
     assert _submit(client, ev, form, {**_who(3), "cat": "VIP"}, sid="c").status_code == 200           # otra categoría sigue abierta
     assert _submit(client, ev, form, {**_who(4), "cat": "General"}, sid="d").status_code == 200       # sin límite
-    assert client.get(f"{_url(ev, form)}/state").json()["quota_left"] == {"cat": {"VIP": 1, "Estudiante": 0}}
+    assert client.get(f"{_url(ev, form)}/state").json()["quota"]["left"] == {"cat": {"VIP": 1, "Estudiante": 0}}
 
 
 def test_category_quota_does_not_count_tests_and_frees_up_when_a_registration_is_cancelled(client, factory):
@@ -528,7 +528,7 @@ def test_category_quota_does_not_count_tests_and_frees_up_when_a_registration_is
     login(client, "coord1")
     _status(client, ev, form, manual_status="activo")
     used = client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()
-    assert used["quota_used"] == {}                                                                              # sin inscripciones reales
+    assert [x["used"] for x in used["quota_status"]] == [0]                                                                              # sin inscripciones reales
     client.post("/logout")
     assert _submit(client, ev, form, {**_who(3), "cat": "VIP"}, sid="a").status_code == 200
     assert _submit(client, ev, form, {**_who(4), "cat": "VIP"}, sid="b").status_code == 409
@@ -569,3 +569,43 @@ def test_event_logo_height_and_banner_mode_reach_the_event_pages(client, factory
     assert 'style="height:40px;"' in client.get(f"/kiosk/{ev.id}").text
     client.put(f"/api/events/{ev.id}/logo", json={"mode": "default"})
     assert "height:40px" not in client.get(f"/kiosk/{ev.id}").text                                                   # el logo de Golden no se toca
+
+
+def test_quotas_can_combine_several_variables_and_answers(client, factory):
+    if not getattr(factory, "_coord", None):
+        factory._coord = factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso")
+    login(client, "coord1")
+    form = _create(client, ev)
+    cat = {"id": "cat", "type": "select", "label": "Categoría", "options": ["VIP", "General"]}
+    pais = {"id": "pais", "type": "select", "label": "País", "options": ["Colombia", "Perú", "Chile"]}
+    rules = [{"label": "VIP Colombia", "limit": 1, "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "VIP"}, {"field": "pais", "op": "equals", "value": "Colombia"}]},
+             {"label": "Andinos", "limit": 2, "match": "all", "conds": [{"field": "pais", "op": "in", "value": ["Perú", "Chile"]}]},
+             {"label": "Malo", "limit": 5, "conds": [{"field": "no_existe", "op": "not_equals", "value": "x"}]},
+             {"label": "Sin límite", "limit": 0, "conds": [{"field": "cat", "op": "equals", "value": "VIP"}]}]
+    r = _put(client, ev, form, design=_design(_basic_fields() + [cat, pais]), settings={"quotas": {"rules": rules}})
+    assert r.status_code == 200, r.text
+    assert [x["label"] for x in r.json()["settings"]["quotas"]["rules"]] == ["VIP Colombia", "Andinos", "Malo"]                 # sin límite válido → se descarta
+    _open(client, ev, form)
+    client.post("/logout")
+    ok = lambda n, c, p: _submit(client, ev, form, {**_who(n), "cat": c, "pais": p}, sid=f"s{n}")
+    assert ok(1, "VIP", "Colombia").status_code == 200
+    r = ok(2, "VIP", "Colombia")                                                                                              # el cupo combinado se llenó
+    assert r.status_code == 409 and "VIP Colombia" in r.json()["detail"]
+    assert ok(3, "General", "Colombia").status_code == 200 and ok(4, "VIP", "Perú").status_code == 200                       # otras combinaciones siguen abiertas
+    assert ok(5, "General", "Chile").status_code == 200
+    r = ok(6, "General", "Perú")                                                                                             # «Andinos» (Perú o Chile) ya tiene 2
+    assert r.status_code == 409 and "Andinos" in r.json()["detail"]
+    pub = client.get(f"{_url(ev, form)}/state").json()["quota"]
+    assert [f["label"] for f in pub["full"]] == ["VIP Colombia", "Andinos"] and pub["left"] == {}                            # el navegador recibe cuáles están llenas (no hay opciones simples)
+    login(client, "coord1")
+    status = {x["id"]: x for x in client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["quota_status"]}
+    assert sorted((x["used"], x["left"]) for x in status.values()) == [(1, 0), (2, 0)]                                      # la regla sobre un campo inexistente no cuenta ni bloquea
+
+
+def test_a_quota_needs_no_total_capacity(client, factory):
+    ev, form = _quota_form(client, factory, {"VIP": 1})
+    assert client.get(f"{_url(ev, form)}/state").json()["capacity_left"] is None                                            # sin cupo total
+    assert _submit(client, ev, form, {**_who(1), "cat": "VIP"}, sid="a").status_code == 200
+    assert _submit(client, ev, form, {**_who(2), "cat": "VIP"}, sid="b").status_code == 409
+    assert _submit(client, ev, form, {**_who(3), "cat": "General"}, sid="c").status_code == 200

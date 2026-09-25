@@ -88,34 +88,70 @@ def price_context(db: Session, form: WebForm, pay: dict, link, code):
     return ctx, row, None
 
 
-def quota_config(form: WebForm):
-    """(id del campo, {opción: máximo}) del cupo por categoría; solo cuenta si el campo existe, es lista/opción única y la opción sigue existiendo."""
-    q = get_settings(form)["quotas"]
-    f = get_design(form)["fields"].get(q.get("field"))
-    if not f or f["type"] not in ("select", "radio"):
-        return None, {}
-    return f["id"], {o: n for o, n in q["limits"].items() if o in f["options"]}
+def quota_rules(form: WebForm) -> list:
+    """Reglas de cupo vigentes: solo cuentan las condiciones sobre campos que existen y guardan respuestas (una sobre un campo borrado no debe
+    bloquear —ni liberar— a nadie por accidente)."""
+    design = get_design(form)
+    ok = {fid for fid, f in design["fields"].items() if f["type"] in formlib.INPUT_TYPES}
+    out = []
+    for r in get_settings(form)["quotas"].get("rules", []):
+        conds = [c for c in r["conds"] if c["field"] in ok]
+        if conds and len(conds) == len(r["conds"]):
+            out.append({**r, "conds": conds})
+    return out
 
 
-def quota_used(db: Session, form: WebForm, fid: str) -> dict:
-    """Inscritos por opción del campo: confirmadas reales + las que están pagando ahora (mismo criterio que el cupo total)."""
+def quota_match(rule: dict, values: dict) -> bool:
+    met = [formlib.condition_met(c, values) for c in rule["conds"]]
+    return any(met) if rule["match"] == "any" else all(met)
+
+
+def quota_counts(db: Session, form: WebForm, rules: list) -> dict:
+    """{id de la regla: inscripciones que la cumplen}: confirmadas reales + las que están pagando ahora (30 min), sin pruebas."""
+    if not rules:
+        return {}
     hold = datetime.utcnow() - PENDING_HOLD
     rows = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
                                            or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold)))
-    used: dict = {}
+    counts = {r["id"]: 0 for r in rules}
     for sub in rows:
-        v = json.loads(sub.data_json).get(fid)
-        if isinstance(v, str) and v:
-            used[v] = used.get(v, 0) + 1
-    return used
+        values = json.loads(sub.data_json)
+        for r in rules:
+            if quota_match(r, values):
+                counts[r["id"]] += 1
+    return counts
 
 
-def quota_left(db: Session, form: WebForm) -> dict:
-    fid, limits = quota_config(form)
-    if not fid or not limits:
-        return {}
-    used = quota_used(db, form, fid)
-    return {fid: {o: max(0, n - used.get(o, 0)) for o, n in limits.items()}}
+def quota_status(db: Session, form: WebForm) -> list:
+    rules = quota_rules(form)
+    counts = quota_counts(db, form, rules)
+    return [{"id": r["id"], "used": counts[r["id"]], "left": max(0, r["limit"] - counts[r["id"]])} for r in rules]
+
+
+def quota_full_rule(db: Session, form: WebForm, values: dict):
+    """La primera regla YA llena que esta inscripción también cumpliría (o None)."""
+    rules = quota_rules(form)
+    counts = quota_counts(db, form, rules)
+    return next((r for r in rules if counts[r["id"]] >= r["limit"] and quota_match(r, values)), None)
+
+
+def quota_public(db: Session, form: WebForm) -> dict:
+    """Para el formulario público: `left` {campo: {opción: cupos que quedan}} de los cupos simples (una sola condición «es igual a» → se deshabilita la
+    opción) y `full` las reglas llenas (el navegador avisa si lo que la persona lleva escrito cae en una de ellas)."""
+    rules = quota_rules(form)
+    if not rules:
+        return {"left": {}, "full": []}
+    counts = quota_counts(db, form, rules)
+    left: dict = {}
+    full = []
+    for r in rules:
+        remaining = max(0, r["limit"] - counts[r["id"]])
+        if len(r["conds"]) == 1 and r["conds"][0]["op"] == "equals" and isinstance(r["conds"][0]["value"], str):
+            c = r["conds"][0]
+            left.setdefault(c["field"], {})[c["value"]] = min(remaining, left.get(c["field"], {}).get(c["value"], remaining))
+        if remaining == 0:
+            full.append({"label": r["label"], "match": r["match"], "conds": r["conds"]})
+    return {"left": left, "full": full}
 
 
 def held_count(db: Session, form: WebForm) -> int:

@@ -93,7 +93,7 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
 def _detail(db: Session, form: WebForm, request: Request) -> dict:
     return {**_summary(db, form, request), "design": formsvc.get_design(form), "settings": formsvc.get_settings(form),
             "schedule": formsvc.get_schedule(form), "test_key": form.test_key, "fed_at": form.fed_at.isoformat() if form.fed_at else None,
-            "quota_used": (lambda cfg: formsvc.quota_used(db, form, cfg[0]) if cfg[0] else {})(formsvc.quota_config(form)),
+            "quota_status": formsvc.quota_status(db, form),
             "digital_badge_enabled": bool(getattr(db.query(Event).filter(Event.id == form.event_id).first(), "digital_badge_enabled", False)),
             "payments": {"has_field": bool(formlib.payment_field(formsvc.get_design(form))), "sandbox_configured": bool(wompi.config(True)), "production_configured": bool((wompi.config(False) or {}).get("test") is False)}}
 

@@ -78,7 +78,7 @@
     card.appendChild(style);
 
     // Cupo por categoría: las opciones agotadas salen deshabilitadas «(agotado)»; con pocos cupos se avisa «(quedan N)».
-    const quotaLeft = (f, o) => { const q = (opts.quotaLeft || {})[f.id]; return q && o in q ? q[o] : null; };
+    const quotaLeft = (f, o) => { const q = ((opts.quota || {}).left || {})[f.id]; return q && o in q ? q[o] : null; };
     const quotaNote = (f, o) => { const n = quotaLeft(f, o); return n === 0 ? ' (agotado)' : (n !== null && n <= 10 ? ` (quedan ${n})` : ''); };
     const docByCode = Object.fromEntries((opts.idDocs || []).map((d) => [d.code, d]));
     const form = document.createElement('form');
@@ -109,8 +109,9 @@
     form.appendChild(btn);
 
     let started = false;
-    form.addEventListener('input', (e) => { syncComp(e.target); if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); if (opts.onChange) opts.onChange(); });
+    form.addEventListener('input', (e) => { syncComp(e.target); paintQuotaWarn(); if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); if (opts.onChange) opts.onChange(); });
     form.addEventListener('change', (e) => {
+      paintQuotaWarn();
       if (e.target && e.target.dataset && e.target.dataset.compCount) renderGroups(design.fields[e.target.dataset.compCount]);
       applyConditions(); if (opts.onChange) opts.onChange();
     });
@@ -251,6 +252,22 @@
       return new Set(Object.keys(els).filter(vis));
     }
 
+    // Cupos por combinación de variables: si lo que la persona lleva escrito cae en un cupo YA lleno, se avisa antes de enviar.
+    function fullQuota() {
+      const values = rawValues(), vis = visibleSet();
+      const shown = Object.fromEntries(Object.entries(values).filter(([k]) => vis.has(k)));
+      return ((opts.quota || {}).full || []).find((r) => { const met = r.conds.map((c) => conditionMet(c, shown)); return r.match === 'any' ? met.some(Boolean) : met.every(Boolean); });
+    }
+    const quotaWarn = document.createElement('div');
+    quotaWarn.style.cssText = 'display:none; margin:8px 0; padding:9px 12px; border-radius:10px; background:#fdecea; color:#a1261b; font-size:.85rem;';
+    form.insertBefore(quotaWarn, btn);
+    function paintQuotaWarn() {
+      const r = fullQuota();
+      quotaWarn.style.display = r ? 'block' : 'none';
+      quotaWarn.textContent = r ? `El cupo «${r.label}» ya se completó. Cambia tu elección para poder inscribirte.` : '';
+      return !!r;
+    }
+
     function applyConditions() {
       const vis = visibleSet();
       Object.entries(els).forEach(([fid, { wrap }]) => { wrap.style.display = vis.has(fid) ? '' : 'none'; });
@@ -309,7 +326,7 @@
         }
       });
       setErrors(errors);
-      return Object.keys(errors).length === 0;
+      return Object.keys(errors).length === 0 && !paintQuotaWarn();
     }
 
     const money = (v, c) => new Intl.NumberFormat(navigator.language || 'es-CO', { style: 'currency', currency: c, maximumFractionDigits: 2 }).format(v);
