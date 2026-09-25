@@ -72,6 +72,7 @@
       .fr-safe { margin-top:10px; padding-top:8px; border-top:1px solid rgba(0,0,0,.1); font-size:.72rem; line-height:1.4; opacity:.85; } .fr-safe [data-fxnote] { display:block; opacity:.7; margin-top:3px; }`;
     card.appendChild(style);
 
+    const docByCode = Object.fromEntries((opts.idDocs || []).map((d) => [d.code, d]));
     const form = document.createElement('form');
     form.noValidate = true;
     card.appendChild(form);
@@ -106,6 +107,40 @@
       applyConditions(); if (opts.onChange) opts.onChange();
     });
 
+    // ---- Validación de tipo: los campos numéricos/teléfono/documento no dejan escribir letras; el servidor vuelve a validar todo.
+    function docSpec(fid) {
+      const sel = form.querySelector(`[data-doctype="${fid}"]`), f = design.fields[fid];
+      return docByCode[sel ? sel.value : (f.doc_types || [])[0]];
+    }
+    function docNormalize(mode, raw) {   // el mismo criterio del servidor (formlib.id_doc_normalize)
+      let t = String(raw || '').trim().toUpperCase();
+      if (mode === 'digits' || mode === 'alnum') return t.replace(/[\s.\-]/g, '');
+      if (mode === 'nit') return t.replace(/[\s.]/g, '');
+      if (mode === 'rut') { t = t.replace(/[\s.]/g, ''); return t.includes('-') || t.length < 2 ? t : t.slice(0, -1) + '-' + t.slice(-1); }
+      return t;
+    }
+    function applyFilter(t) {
+      const kind = t && t.dataset && t.dataset.filter;
+      if (!kind) return;
+      let re = kind === 'number' ? /[^0-9.,-]/g : /[^0-9+()\-.\s]/g, upper = false;
+      if (kind === 'doc') {
+        const sp = docSpec(t.dataset.docfor);
+        const digitsOnly = sp && (sp.mode === 'digits' || sp.mode === 'nit');
+        re = digitsOnly ? /[^0-9\s.\-]/g : /[^A-Za-z0-9\s.\-]/g; upper = !digitsOnly;
+      }
+      const nv = t.value.replace(re, '');
+      const out = upper ? nv.toUpperCase() : nv;
+      if (out !== t.value) t.value = out;
+    }
+    form.addEventListener('input', (e) => applyFilter(e.target), true);   // en captura: se limpia antes de que la página lea el valor
+    form.addEventListener('change', (e) => {
+      const d = e.target && e.target.dataset && e.target.dataset.doctype;
+      if (!d) return;
+      const sp = docSpec(d), hint = form.querySelector(`[data-dochint="${d}"]`), box = form.querySelector(`[data-docfor="${d}"]`);
+      if (hint && sp) hint.textContent = `${sp.label}: ${sp.hint}`;
+      if (box) applyFilter(box);
+    });
+
     function fieldHtml(f, pre, ro, assetUrl) {
       const badgeNote = opts.badgeEmailField && opts.badgeEmailField === f.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
       const label = f.label ? `<label class="fr-l">${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}${badgeNote}</label>` : '';
@@ -131,7 +166,17 @@
         case 'multiselect': { const sel = asList(val); control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="checkbox" ${name} value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''} ${ro ? 'disabled' : ''}> ${esc(o)}</label>`).join('')}</div>`; break; }
         case 'checkbox': return `<div class="fr-opts"><label><input type="checkbox" ${name} value="true" ${val === true || String(val) === 'true' ? 'checked' : ''} ${ro ? 'disabled' : ''}> ${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}</label></div>${help}<div class="fr-err"></div>`;
         case 'file': control = `<input type="file" ${name} accept="${(f.accept || []).map((a) => '.' + a).join(',')}" style="width:100%;"><div class="fr-help">Formatos: ${esc((f.accept || []).join(', '))} · máximo ${f.max_mb || 10} MB</div>`; break;
-        default: { const type = { email: 'email', phone: 'tel', number: 'number', date: 'date' }[f.type] || 'text'; control = `<input type="${type}" ${name} value="${esc(val)}" placeholder="${esc(f.placeholder)}" autocomplete="off" ${type === 'number' ? 'step="any"' : ''} ${roAttr}>`; }
+        default: {
+          const docs = f.type === 'text_short' ? (f.doc_types || []).map((c) => docByCode[c]).filter(Boolean) : [];
+          if (docs.length) {   // documento de identidad: tipo (si hay varios) + número validado según el tipo elegido
+            const sel = docs.length > 1 ? `<select name="${esc(f.id)}__tipo" data-doctype="${esc(f.id)}" style="margin-bottom:6px;">${docs.map((d) => `<option value="${d.code}">${esc(d.label)}</option>`).join('')}</select>` : '';
+            control = `${sel}<input type="text" ${name} data-filter="doc" data-docfor="${esc(f.id)}" value="${esc(val)}" placeholder="${esc(f.placeholder)}" autocomplete="off" ${roAttr}><div class="fr-help" data-dochint="${esc(f.id)}">${esc(docs[0].label)}: ${esc(docs[0].hint)}</div>`;
+          } else {
+            const type = { email: 'email', phone: 'tel', date: 'date' }[f.type] || 'text';
+            const filter = f.type === 'number' ? 'data-filter="number" inputmode="decimal"' : f.type === 'phone' ? 'data-filter="phone"' : '';
+            control = `<input type="${type}" ${name} ${filter} value="${esc(val)}" placeholder="${esc(f.placeholder)}" autocomplete="off" ${roAttr}>`;
+          }
+        }
       }
       return `${label}${control}${help}<div class="fr-err"></div>`;
     }
@@ -179,6 +224,7 @@
         else if (f.type === 'radio') { const c = inputs.find((i) => i.checked); out[f.id] = c ? c.value : ''; }
         else if (f.type === 'file') out[f.id] = inputs[0] && inputs[0].files && inputs[0].files.length ? '__file__' : '';
         else out[f.id] = inputs.length ? inputs[inputs.length - 1].value : '';   // select solo lectura: el input oculto va después
+        if (f.type === 'text_short' && (f.doc_types || []).length) { const sp = docSpec(f.id); out[f.id + '__tipo'] = sp ? sp.code : ''; }
       });
       return out;
     }
@@ -239,7 +285,12 @@
         const empty = f.type === 'multiselect' ? v.length === 0 : (f.type === 'checkbox' ? v !== 'true' : v === '');
         if (f.required && empty) errors[fid] = f.type === 'checkbox' ? 'Debes marcar esta casilla' : (f.type === 'file' ? 'Adjunta el archivo' : 'Este campo es obligatorio');
         else if (!empty && f.type === 'email' && !EMAIL.test(v)) errors[fid] = 'Escribe un correo con formato válido';
-        else if (!empty && f.type === 'number' && isNaN(Number(String(v).replace(',', '.')))) errors[fid] = 'Debe ser un número';
+        else if (!empty && f.type === 'number' && !/^-?\d+([.,]\d+)?$/.test(String(v).trim())) errors[fid] = 'Debe ser un número (solo dígitos)';
+        else if (!empty && f.type === 'phone' && !/^[+\d][\d\s().-]{5,19}$/.test(String(v).trim())) errors[fid] = 'Escribe un teléfono válido';
+        else if (!empty && f.type === 'text_short' && (f.doc_types || []).length) {
+          const sp = docSpec(f.id);
+          if (sp && !new RegExp('^(?:' + sp.pattern + ')$').test(docNormalize(sp.mode, v))) errors[fid] = `${sp.label}: ${sp.hint}`;
+        }
         else if (f.type === 'file' && !empty) {
           const file = els[fid].wrap.querySelector('input[type=file]').files[0];
           const ext = (file.name.split('.').pop() || '').toLowerCase();

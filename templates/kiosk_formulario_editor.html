@@ -195,6 +195,7 @@ const CHOICE = ['select', 'radio', 'multiselect'], STATIC = ['heading', 'paragra
 const EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
 const STATUS_LABEL = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrado', cupo_lleno: 'Cupo lleno', finalizado: 'Finalizado' };
 
+let ID_DOCS = [];
 let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
 const markDirty = () => { dirty = true; $('saveBtn').textContent = '💾 Guardar diseño *'; };
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
@@ -287,7 +288,7 @@ function renderCanvas() {
   $('canvas').querySelectorAll('[data-rowdown]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowdown, 1)));
 }
 function cardHtml(f) {
-  const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
+  const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
   const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
   return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
@@ -314,6 +315,15 @@ function renderProps() {
   if (isInput) {
     const keyOpts = `<option value="">— Solo en este formulario —</option>` + eventFields.filter((e) => e.key === f.key || !used.has(e.key)).map((e) => `<option value="${esc(e.key)}" ${f.key === e.key ? 'selected' : ''}>🔗 ${esc(e.label)}</option>`).join('');
     html += `<div class="fld"><label>Vinculado al campo del evento</label><select id="pKey">${keyOpts}</select></div>`;
+    if (f.type === 'text_short') {
+      const on = (f.doc_types || []).length > 0;
+      html += `<div class="fld"><label>Tipo de dato</label><select id="pDocOn"><option value="">Texto libre</option><option value="1" ${on ? 'selected' : ''}>🪪 Documento de identidad (se valida según el tipo)</option></select>
+        ${!on && f.key === 'id' ? '<div class="hint">Este es el campo de cédula: elige «Documento de identidad» para permitir cédula de extranjería, pasaporte, NIT, etc. y validarlos.</div>' : ''}</div>`;
+      if (on) html += `<div class="fld"><label>Tipos de documento que se aceptan</label><div style="max-height:220px; overflow:auto; border:1px solid #e3e5ec; border-radius:8px; padding:6px;">${ID_DOCS.map((d) => `<label style="display:flex; gap:6px; font-size:0.78rem; margin-bottom:3px;"><input type="checkbox" data-doc="${d.code}" ${f.doc_types.includes(d.code) ? 'checked' : ''}> <span><b>${esc(d.label)}</b><br><span class="hint">${esc(d.hint)}</span></span></label>`).join('')}</div>
+        <div class="hint">Si marcas varios, la persona elige el tipo y el número se valida según lo que elija; si marcas uno solo, se usa ese.</div></div>`;
+    }
+    if (f.type === 'number') html += '<div class="hint" style="margin-bottom:6px;">🔢 Este campo solo acepta números: no deja escribir letras.</div>';
+    if (f.type === 'phone') html += '<div class="hint" style="margin-bottom:6px;">📞 Este campo solo acepta dígitos, +, espacios, paréntesis y guiones.</div>';
     if (!f.key) html += `<label style="display:flex; gap:6px; font-size:0.78rem; margin-bottom:0.6rem;"><input type="checkbox" id="pSync" ${f.sync ? 'checked' : ''}> Crear también este campo en Parámetros del Evento (entra a la base)</label>`;
     html += `<label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pReq" ${f.required ? 'checked' : ''}> Obligatorio</label>
       <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
@@ -345,6 +355,11 @@ function renderProps() {
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
   box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
   on('pKey', 'change', () => { f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false; markDirty(); renderAll(); });
+  on('pDocOn', 'change', () => { if ($('pDocOn').value) f.doc_types = ['CC']; else delete f.doc_types; markDirty(); renderCanvas(); renderProps(); });
+  box.querySelectorAll('[data-doc]').forEach((c) => c.addEventListener('change', () => {
+    const picked = Array.from(box.querySelectorAll('[data-doc]:checked')).map((x) => x.dataset.doc);
+    f.doc_types = picked.length ? picked : ['CC']; markDirty(); renderCanvas(); renderProps();
+  }));
   on('pSync', 'change', upd(() => { f.sync = $('pSync').checked; })); on('pReq', 'change', upd(() => { f.required = $('pReq').checked; }));
   on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; }));
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
@@ -562,7 +577,7 @@ function badgeEmailFieldId() {   // el mismo criterio que el servidor: el correo
 }
 function RenderPreview(host) {
   host.style.background = design.theme.bg_color; if (design.theme.bg_image) { host.style.backgroundImage = `url(${assetUrl(design.theme.bg_image)})`; host.style.backgroundSize = 'cover'; } else host.style.backgroundImage = 'none';
-  FormRender.render(host, design, { assetUrl, previewOnly: true, badgeEmailField: (settings && settings.send_digital_badge) ? badgeEmailFieldId() : null });
+  FormRender.render(host, design, { assetUrl, idDocs: ID_DOCS, previewOnly: true, badgeEmailField: (settings && settings.send_digital_badge) ? badgeEmailFieldId() : null });
 }
 $('closePreview').addEventListener('click', () => { $('previewOverlay').style.display = 'none'; });
 $('tplBtn').addEventListener('click', async () => {
@@ -761,6 +776,7 @@ $('invSend').addEventListener('click', async () => {
 (async function init() {
   form = await j(api); design = form.design; settings = form.settings;
   eventFields = await j(`/api/events/${EV}/form-event-fields`);
+  try { ID_DOCS = await j("/api/form-id-docs"); } catch (e) { ID_DOCS = []; }
   paintHeader(); renderTheme(); renderAll(); paintConfig();
   // origen "otro evento": se ofrece cada evento anterior del mismo cliente
   try {

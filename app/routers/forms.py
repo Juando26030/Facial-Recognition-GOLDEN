@@ -426,6 +426,12 @@ async def export_codes(event_id: int, form_id: int, db: Session = Depends(get_db
     return FileResponse(handle.name, filename=f"codigos_{form.slug}.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+@router.get("/form-id-docs")
+async def form_id_docs(staff: StaffUser = Depends(STAFF)):
+    """Tipos de documento de identidad que se pueden ofrecer en un campo (con su regla de validación)."""
+    return formlib.id_docs_public()
+
+
 @router.get("/events/{event_id}/form-templates")
 async def list_templates(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
@@ -485,6 +491,8 @@ def _column_defs(design: dict) -> list:
             f = design["fields"][fid]
             if f["type"] in formlib.INPUT_TYPES or f["type"] == formlib.COMPANIONS_TYPE:
                 out.append((fid, f["label"], f["type"]))
+                if len(f.get("doc_types") or []) > 1:
+                    out.append((fid + "__tipo", f"{f['label']} — tipo de documento", "text_short"))
     return out
 
 

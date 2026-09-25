@@ -41,6 +41,7 @@ MAX_FIELDS, MAX_OPTIONS = 80, 200
 LANGUAGES = ("es", "en", "pt")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _PHONE = re.compile(r"^[+\d][\d\s().-]{5,19}$")
+_NUMBER = re.compile(r"^-?\d+([.,]\d+)?$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
 DEFAULT_THEME = {
@@ -83,6 +84,93 @@ def default_design(name: str = "Inscripción") -> dict:
 # ------------------------------------------------------------------ sanitizar (lo que llega del editor)
 def _text(value, limit=300) -> str:
     return str(value if value is not None else "").strip()[:limit]
+
+
+# ------------------------------------------------------------------ documentos de identidad (Colombia y los más frecuentes en el mundo)
+def _nit_ok(v: str) -> bool:
+    if "-" not in v:
+        return True                                    # sin dígito de verificación: solo se comprueba el formato
+    num, dv = v.split("-")
+    weights = (3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71)
+    total = sum(int(d) * w for d, w in zip(reversed(num), weights))
+    r = total % 11
+    return int(dv) == (r if r < 2 else 11 - r)
+
+
+def _rut_ok(v: str) -> bool:
+    num, dv = v.split("-")
+    total = sum(int(d) * (2 + i % 6) for i, d in enumerate(reversed(num)))
+    r = 11 - total % 11
+    return dv == ("0" if r == 11 else "K" if r == 10 else str(r))
+
+
+def _cpf_ok(v: str) -> bool:
+    if len(set(v)) == 1:
+        return False
+    for n in (9, 10):
+        total = sum(int(v[i]) * (n + 1 - i) for i in range(n))
+        if int(v[n]) != (total * 10 % 11) % 10:
+            return False
+    return True
+
+
+def _nie_ok(v: str) -> bool:
+    n = int(str("XYZ".index(v[0])) + v[1:8])
+    return v[8] == "TRWAGMYFPDXBNJZSQVHLCKE"[n % 23]
+
+
+# mode: cómo se normaliza lo escrito ANTES de comprobar el patrón (digits: solo números, sin puntos/espacios/guiones; alnum: mayúsculas sin separadores).
+ID_DOCS = [
+    {"code": "CC", "label": "Cédula de ciudadanía (Colombia)", "mode": "digits", "pattern": r"\d{6,10}", "hint": "solo números, de 6 a 10 dígitos"},
+    {"code": "TI", "label": "Tarjeta de identidad (Colombia)", "mode": "digits", "pattern": r"\d{10,11}", "hint": "solo números, 10 u 11 dígitos"},
+    {"code": "CE", "label": "Cédula de extranjería (Colombia)", "mode": "digits", "pattern": r"\d{6,10}", "hint": "solo números, de 6 a 10 dígitos"},
+    {"code": "RC", "label": "Registro civil (Colombia)", "mode": "digits", "pattern": r"\d{6,12}", "hint": "solo números, de 6 a 12 dígitos"},
+    {"code": "PPT", "label": "Permiso por Protección Temporal — PPT (Colombia)", "mode": "digits", "pattern": r"\d{5,10}", "hint": "solo números, de 5 a 10 dígitos"},
+    {"code": "PEP", "label": "Permiso Especial de Permanencia — PEP (Colombia)", "mode": "digits", "pattern": r"\d{8,15}", "hint": "solo números, de 8 a 15 dígitos"},
+    {"code": "NIT", "label": "NIT (Colombia)", "mode": "nit", "pattern": r"\d{8,10}(-\d)?", "hint": "8 a 10 dígitos, con o sin guion y dígito de verificación (ej. 900123456-8)", "check": _nit_ok},
+    {"code": "PA", "label": "Pasaporte", "mode": "alnum", "pattern": r"[A-Z0-9]{5,15}", "hint": "letras y números, de 5 a 15 caracteres, sin espacios"},
+    {"code": "DNI", "label": "DNI / documento nacional (España, Perú, Argentina…)", "mode": "alnum", "pattern": r"[A-Z0-9]{6,12}", "hint": "letras y números, de 6 a 12 caracteres"},
+    {"code": "NIE", "label": "NIE (España)", "mode": "alnum", "pattern": r"[XYZ]\d{7}[A-Z]", "hint": "X, Y o Z + 7 números + letra (ej. X1234567L)", "check": _nie_ok},
+    {"code": "CPF", "label": "CPF (Brasil)", "mode": "digits", "pattern": r"\d{11}", "hint": "11 números (con o sin puntos y guion)", "check": _cpf_ok},
+    {"code": "RUT", "label": "RUT (Chile)", "mode": "rut", "pattern": r"\d{7,8}-[\dK]", "hint": "7 u 8 números y dígito verificador (ej. 12345678-5)", "check": _rut_ok},
+    {"code": "CI_EC", "label": "Cédula de identidad (Ecuador)", "mode": "digits", "pattern": r"\d{10}", "hint": "10 números"},
+    {"code": "CI_VE", "label": "Cédula de identidad (Venezuela)", "mode": "alnum", "pattern": r"[VE]\d{6,9}", "hint": "V o E + de 6 a 9 números (ej. V12345678)"},
+    {"code": "CURP", "label": "CURP (México)", "mode": "alnum", "pattern": r"[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d", "hint": "18 caracteres (ej. GOMC800101HDFRRL09)"},
+    {"code": "OTRO", "label": "Otro documento", "mode": "alnum", "pattern": r"[A-Z0-9]{4,20}", "hint": "letras y números, de 4 a 20 caracteres"},
+]
+ID_DOC_BY_CODE = {d["code"]: d for d in ID_DOCS}
+
+
+def id_docs_public() -> list:
+    """Lo que el navegador necesita (sin las funciones de verificación, que solo corren en el servidor)."""
+    return [{k: v for k, v in d.items() if k != "check"} for d in ID_DOCS]
+
+
+def id_doc_normalize(mode: str, raw: str) -> str:
+    text = str(raw or "").strip().upper()
+    if mode == "digits":
+        return re.sub(r"[\s.\-]", "", text)
+    if mode == "alnum":
+        return re.sub(r"[\s.\-]", "", text)
+    if mode == "nit":
+        return re.sub(r"[\s.]", "", text)
+    if mode == "rut":
+        text = re.sub(r"[\s.]", "", text)
+        return text if "-" in text or len(text) < 2 else f"{text[:-1]}-{text[-1]}"
+    return text
+
+
+def validate_id_doc(code: str, raw: str):
+    """(ok, número normalizado, mensaje). El servidor es quien manda: el navegador solo avisa antes."""
+    spec = ID_DOC_BY_CODE.get(code)
+    if not spec:
+        return False, "", "tipo de documento no válido"
+    value = id_doc_normalize(spec["mode"], raw)
+    if not re.fullmatch(spec["pattern"], value):
+        return False, value, f"{spec['label']}: {spec['hint']}"
+    if spec.get("check") and not spec["check"](value):
+        return False, value, f"{spec['label']}: el número no es válido (revisa los dígitos)"
+    return True, value, ""
 
 
 def sanitize_design(design: dict, optional_keys: set) -> dict:
@@ -134,6 +222,10 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                 "readonly_when_prefilled": bool(f.get("readonly_when_prefilled")), "placeholder": _text(f.get("placeholder"), 120),
                 "sync": bool(f.get("sync")) and not key,      # pedir que se cree también en Parámetros del Evento
             })
+            if kind == "text_short" and f.get("doc_types"):      # el campo es un documento de identidad: tipos permitidos (validación por tipo)
+                types = list(dict.fromkeys(str(c) for c in (f.get("doc_types") or []) if str(c) in ID_DOC_BY_CODE))
+                if types:
+                    clean["doc_types"] = types
             if kind in ("select", "radio", "multiselect"):
                 options = [_text(o, 120) for o in (f.get("options") or []) if _text(o, 120)]
                 if not options:
@@ -528,6 +620,17 @@ def validate_submission(design: dict, values: dict, uploaded: dict, email_checke
             if f.get("required"):
                 errors[fid] = f"«{label}»: es obligatorio"
             continue
+        if f.get("doc_types"):
+            chosen = str(values.get(fid + "__tipo") or "") or f["doc_types"][0]
+            if chosen not in f["doc_types"]:
+                errors[fid] = f"«{label}»: elige un tipo de documento válido"
+            else:
+                ok, number, message = validate_id_doc(chosen, text)
+                if ok:
+                    clean[fid], clean[fid + "__tipo"] = number, chosen
+                else:
+                    errors[fid] = f"«{label}»: {message}"
+            continue
         limit = 5000 if kind == "text_long" else 300
         if len(text) > limit:
             errors[fid] = f"«{label}»: es demasiado largo (máximo {limit} caracteres)"
@@ -547,10 +650,8 @@ def validate_submission(design: dict, values: dict, uploaded: dict, email_checke
         elif kind == "phone" and not _PHONE.match(text):
             errors[fid] = f"«{label}»: escribe un teléfono válido"
         elif kind == "number":
-            try:
-                float(text.replace(",", "."))
-            except ValueError:
-                errors[fid] = f"«{label}»: debe ser un número"
+            if not _NUMBER.match(text):
+                errors[fid] = f"«{label}»: debe ser un número (solo dígitos, con punto o coma decimal si hace falta)"
         elif kind == "date":
             try:
                 datetime.strptime(text, "%Y-%m-%d")
@@ -590,9 +691,7 @@ def _validate_companions(f: dict, fid: str, raw, clean: dict, errors: dict, emai
                 errors[fid] = f"{who}: escribe un teléfono válido"
                 return
             elif pf["type"] == "number":
-                try:
-                    float(text.replace(",", "."))
-                except ValueError:
+                if not _NUMBER.match(text):
                     errors[fid] = f"{who}: debe ser un número"
                     return
             row[pf["id"]] = text

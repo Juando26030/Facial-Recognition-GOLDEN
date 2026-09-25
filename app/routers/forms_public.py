@@ -90,7 +90,7 @@ def _payload_form(db: Session, form: WebForm, claims: dict) -> dict:
         if person:
             prefill = formsvc.prefill_values(design, person)
             readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
-    return {"design": formlib.public_design(design), "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
+    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
 
 
 # ------------------------------------------------------------------ páginas y estado

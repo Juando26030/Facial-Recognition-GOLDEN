@@ -372,3 +372,55 @@ def test_email_images_are_public_but_only_real_unguessable_images(client, factor
     client.post("/logout")
     assert client.get(path).status_code == 200                                                            # el lector de correo no tiene sesión
     assert client.get(path.replace(".png", "x.png")).status_code == 404 and client.get(f"/api/email-assets/{ev.tenant_id}/../.env").status_code == 404
+
+
+# ------------------------------- validación de tipo de datos y documentos de identidad -------------------------------
+def test_id_documents_are_validated_by_type_including_check_digits():
+    from app import formlib as fl
+    good = [("CC", "1.020.304.050"), ("CE", "1234567"), ("TI", "1020304050"), ("PPT", "1234567"), ("NIT", "899999068-1"), ("NIT", "900.123.456"), ("PA", "ab 123456"),
+            ("RUT", "12.345.678-5"), ("RUT", "123456785"), ("CPF", "529.982.247-25"), ("NIE", "X1234567L"), ("CI_VE", "V-12345678"), ("CURP", "GOMC800101HDFRRL09"), ("OTRO", "AB-1234")]
+    bad = [("CC", "12ab"), ("CC", "12345"), ("CC", "12345678901"), ("NIT", "899999068-2"), ("PA", "12"), ("RUT", "12345678-4"), ("CPF", "111.111.111-11"), ("CPF", "529.982.247-24"),
+           ("NIE", "X1234567A"), ("CI_VE", "12345678"), ("XX", "123")]
+    assert [c for c, v in good if not fl.validate_id_doc(c, v)[0]] == []
+    assert [c for c, v in bad if fl.validate_id_doc(c, v)[0]] == []
+    assert fl.validate_id_doc("CC", "1.020.304.050")[1] == "1020304050" and fl.validate_id_doc("PA", "ab 123456")[1] == "AB123456" and fl.validate_id_doc("RUT", "123456785")[1] == "12345678-5"
+    assert len(fl.id_docs_public()) >= 15 and all("check" not in d for d in fl.id_docs_public())
+
+
+def test_numeric_and_phone_fields_reject_letters_on_the_server_too():
+    from app import formlib as fl
+    design = {"theme": {}, "rows": [], "fields": {"n": {"id": "n", "type": "number", "label": "Edad"}, "t": {"id": "t", "type": "phone", "label": "Tel"}}}
+    design = fl.sanitize_design(design, set())
+    for raw in ("abc", "12a", "inf", "nan", "1e5", "1,2,3", "--4"):
+        assert "n" in fl.validate_submission(design, {"n": raw, "t": "3001234567"}, {})[1], raw
+    assert fl.validate_submission(design, {"n": "12,5", "t": "+57 300 123 4567"}, {})[1] == {}
+    assert "t" in fl.validate_submission(design, {"n": "1", "t": "abc123456"}, {})[1]
+
+
+def test_a_form_id_field_can_offer_several_document_types_and_validates_the_chosen_one(client, factory):
+    if not getattr(factory, "_coord", None):
+        factory._coord = factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso")
+    login(client, "coord1")
+    form = _create(client, ev)
+    fields = _basic_fields()
+    fields[0] = {**fields[0], "doc_types": ["CC", "CE", "PA", "NIT", "XX"]}
+    r = _put(client, ev, form, design=_design(fields))
+    assert r.status_code == 200 and r.json()["design"]["fields"]["cedula"]["doc_types"] == ["CC", "CE", "PA", "NIT"]          # los tipos inventados se descartan
+    _open(client, ev, form)
+    login(client, "coord1")
+    r = client.get("/api/form-id-docs")
+    assert r.status_code == 200 and r.json()[0]["code"] == "CC", r.text
+    client.post("/logout")
+    assert client.get(f"{_url(ev, form)}/state").json()["id_docs"][0]["pattern"]
+    base = {"nombres": "Ana", "apellidos": "Mora", "correo": "ana@example.com"}
+    r = _submit(client, ev, form, {**base, "cedula": "AB123", "cedula__tipo": "CC"}, sid="a")
+    assert r.status_code == 422 and "Cédula de ciudadanía" in r.json()["errors"]["cedula"]                                        # letras en una cédula
+    assert _submit(client, ev, form, {**base, "cedula": "1234", "cedula__tipo": "PA"}, sid="b").status_code == 422              # pasaporte muy corto
+    assert _submit(client, ev, form, {**base, "cedula": "1234567", "cedula__tipo": "RUT"}, sid="c").status_code == 422           # tipo no permitido en este formulario
+    ok = _submit(client, ev, form, {**base, "cedula": "ab 123456", "cedula__tipo": "PA"}, sid="d")
+    assert ok.status_code == 200, ok.text
+    login(client, "coord1")
+    rows = client.get(f"/api/events/{ev.id}/forms/{form['id']}/submissions").json()["rows"]
+    assert rows[0]["data"]["cedula"] == "AB123456" and rows[0]["data"]["cedula__tipo"] == "PA"                                    # guarda el número normalizado y el tipo
+    assert any(c["label"].endswith("tipo de documento") for c in client.get(f"/api/events/{ev.id}/forms/{form['id']}/submissions").json()["columns"])
