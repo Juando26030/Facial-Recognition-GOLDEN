@@ -25,7 +25,7 @@ import re
 import secrets
 import tempfile
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -34,6 +34,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy.orm import Session
 
+from app import security
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import AccessLog, Event, EventAttendee, RouletteConfig, RouletteDraw, StaffUser, User
@@ -45,7 +46,8 @@ public_router = APIRouter()  # /r/<token> (sin login)
 
 MODES = ("single_fixed", "ordered", "shuffled", "all", "filter_manual", "filter_random")
 _RNG = secrets.SystemRandom()
-POOL_SIZE = 60  # nombres que se mandan a la pantalla para llenar la ruleta
+POOL_SIZE = 300  # nombres que se mandan a la pantalla (la ruleta circular usa hasta 24; el estilo «casino» los recorre todos)
+AUTH_MAX_AGE = timedelta(minutes=30)   # una autorización de giro que nadie usa caduca
 
 ALLOWED_FONTS = [
     "Roboto", "Open Sans", "Lato", "Montserrat", "Oswald", "Raleway", "Poppins", "Playfair Display", "Inter",
@@ -58,6 +60,7 @@ DEFAULT_STYLE = {
     "colors": ["#D4AF37", "#0A0E2E", "#B8941F", "#1B2456", "#E8C766", "#141B47"],
     "background_color": "#0A0E2E", "background_image": "", "logo": "", "pointer_color": "#FF4D6D",
     "winner_bg": "#D4AF37", "winner_color": "#0A0E2E", "spin_seconds": 6,
+    "wheel_style": "circular",   # circular | jackpot (columna vertical estilo casino: para muchos nombres)
 }
 DEFAULT_BEHAVIOR = {"mode": "single_fixed", "winners": [], "count": 1, "batch_size": 1,
                     "filter": {"conditions": []}, "exclude_previous_winners": True, "all_reset_at": None}
@@ -181,7 +184,7 @@ async def get_roulette(event_id: int, db: Session = Depends(get_db), staff: Staf
     people = candidates(db, event)
     return {
         "behavior": _behavior(cfg), "style": _style(cfg), "fonts": ALLOWED_FONTS, "modes": MODES,
-        "has_display_link": bool(cfg.display_token), "candidates_total": len(people), "event_status": event.status,
+        "has_display_link": bool(cfg.display_token), "candidates_total": len(people), "event_status": event.status, "authorized": bool(_authorization(cfg)),
     }
 
 
@@ -291,6 +294,10 @@ async def save_style(event_id: int, data: dict, db: Session = Depends(get_db), s
         if not isinstance(colors, list) or not (2 <= len(colors) <= 12) or not all(_HEX.match(str(c)) for c in colors):
             raise HTTPException(status_code=400, detail="Elige entre 2 y 12 colores válidos para los segmentos")
         style["colors"] = colors
+    if "wheel_style" in data:
+        if data["wheel_style"] not in ("circular", "jackpot"):
+            raise HTTPException(status_code=400, detail="Tipo de ruleta no válido")
+        style["wheel_style"] = data["wheel_style"]
     if "spin_seconds" in data:
         try:
             style["spin_seconds"] = max(2, min(20, int(data["spin_seconds"])))
@@ -344,19 +351,15 @@ async def get_display_link(event_id: int, request: Request, db: Session = Depend
 
 
 # ------------------------------------------------------------------ ejecución
-@router.post("/events/{event_id}/roulette/execute")
-async def execute(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
-    """Ejecuta el sorteo con la configuración de comportamiento guardada. Devuelve los ganadores y guarda el registro;
-    la pantalla de visualización lo recoge por sondeo y anima la ruleta."""
-    event = get_event_for_staff(event_id, db, staff)
-    cfg = _get_config(db, event)
+def _run_draw(db: Session, event: Event, cfg: RouletteConfig, label: str, created_by_id: Optional[int], dry_run: bool = False) -> dict:
+    """Decide el/los ganador(es) según el comportamiento guardado y (salvo `dry_run`) guarda el registro del sorteo. `dry_run` solo
+    valida que el sorteo se PUEDA hacer (sin ganadores válidos, sin candidatos…) para avisar al autorizar y no al girar."""
     b = _behavior(cfg)
     mode = b["mode"]
     people = candidates(db, event)
     if not people:
         raise HTTPException(status_code=400, detail="Este evento todavía no tiene personas cargadas")
     by_id = {p["id"]: p for p in people}
-    label = str(data.get("label") or "").strip()[:120]
     is_random, pool_people = False, people
 
     if mode in ("single_fixed", "ordered", "shuffled", "filter_manual"):
@@ -387,16 +390,68 @@ async def execute(event_id: int, data: dict, db: Session = Depends(get_db), staf
         is_random = True
 
     winners = [_person_out(p, i) for i, p in enumerate(chosen, start=1)]
+    if dry_run:
+        return {"mode": mode, "is_random": is_random}
     draw = RouletteDraw(
         event_id=event.id, label=label, mode=mode, is_random=is_random, candidates_count=len(pool_people),
         filter_json=json.dumps(b["filter"]) if mode in ("filter_manual", "filter_random") else None,
-        winners_json=json.dumps(winners), created_by_id=staff.id,
+        winners_json=json.dumps(winners), created_by_id=created_by_id,
     )
     db.add(draw)
     db.commit()
     names = [p["name"] for p in pool_people]
     _RNG.shuffle(names)
     return {"draw_id": draw.id, "mode": mode, "is_random": is_random, "winners": winners, "pool": names[:POOL_SIZE], "label": label}
+
+
+@router.post("/events/{event_id}/roulette/execute")
+async def execute(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """Ejecuta el sorteo YA (sin esperar el botón de la pantalla pública). La interfaz normal usa `authorize`: el giro lo dispara el
+    botón de la pantalla de visualización. Se conserva por compatibilidad."""
+    event = get_event_for_staff(event_id, db, staff)
+    return _run_draw(db, event, _get_config(db, event), str(data.get("label") or "").strip()[:120], staff.id)
+
+
+def _authorization(cfg: RouletteConfig) -> Optional[dict]:
+    """La autorización de giro vigente (no vencida), o None."""
+    if not cfg.authorized_json:
+        return None
+    auth = json.loads(cfg.authorized_json)
+    if datetime.utcnow() - datetime.fromisoformat(auth["at"]) > AUTH_MAX_AGE:
+        return None
+    return auth
+
+
+@router.post("/events/{event_id}/roulette/authorize")
+async def authorize_spin(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    """El operador AUTORIZA un giro: se valida ahora (para que los errores salgan aquí y no frente al público) y se activa el botón
+    «Girar» de la pantalla de visualización. El ganador se decide al girar, en el servidor."""
+    event = get_event_for_staff(event_id, db, staff)
+    cfg = _get_config(db, event)
+    if not cfg.display_token:
+        raise HTTPException(status_code=400, detail="Primero genera el enlace de la pantalla de visualización: el botón de girar vive allá")
+    _run_draw(db, event, cfg, "", staff.id, dry_run=True)
+    label = str(data.get("label") or "").strip()[:120]
+    cfg.authorized_json = json.dumps({"label": label, "by": staff.id, "at": datetime.utcnow().isoformat()})
+    db.commit()
+    return {"authorized": True, "label": label}
+
+
+@router.delete("/events/{event_id}/roulette/authorize")
+async def cancel_authorization(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    event = get_event_for_staff(event_id, db, staff)
+    cfg = _get_config(db, event)
+    cfg.authorized_json = None
+    db.commit()
+    return {"authorized": False}
+
+
+@router.get("/events/{event_id}/roulette/authorization")
+async def get_authorization(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+    event = get_event_for_staff(event_id, db, staff)
+    auth = _authorization(_get_config(db, event))
+    return {"authorized": bool(auth), "label": auth["label"] if auth else "", "since": auth["at"] if auth else None}
+
 
 
 @router.post("/events/{event_id}/roulette/reset-round")
@@ -493,12 +548,36 @@ async def display_state(token: str, after: Optional[int] = None, db: Session = D
     cfg = _cfg_by_token(db, token)
     event = db.query(Event).filter(Event.id == cfg.event_id).first()
     last = db.query(RouletteDraw).filter_by(event_id=cfg.event_id).order_by(RouletteDraw.id.desc()).first()
-    out = {"style": _style(cfg), "event_name": event.name, "latest_id": last.id if last else 0, "draw": None}
+    auth = _authorization(cfg)
+    out = {"style": _style(cfg), "event_name": event.name, "latest_id": last.id if last else 0, "draw": None,
+           "authorized": bool(auth), "authorized_label": auth["label"] if auth else ""}
     if last and after is not None and last.id > after:
         names = [p["name"] for p in candidates(db, event)]
         _RNG.shuffle(names)
         out["draw"] = {"id": last.id, "label": last.label, "mode": last.mode, "winners": json.loads(last.winners_json), "pool": names[:POOL_SIZE]}
     return out
+
+
+@public_router.post("/r/{token}/spin")
+async def spin(token: str, request: Request, db: Session = Depends(get_db)):
+    """El botón «Girar» de la pantalla de visualización: solo funciona si el operador AUTORIZÓ un giro, y lo consume (una autorización =
+    un giro). Con la fila bloqueada, dos pantallas que pulsen a la vez no giran dos veces. Devuelve el sorteo para animarlo al instante."""
+    cfg = _cfg_by_token(db, token)
+    security.enforce_public_limit(db, request, "roulette_spin", str(cfg.id), 40, timedelta(minutes=10))
+    locked = db.query(RouletteConfig).filter(RouletteConfig.id == cfg.id).with_for_update().first()
+    auth = _authorization(locked)
+    if not auth:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="El operador todavía no autorizó el giro")
+    event = db.query(Event).filter(Event.id == locked.event_id).first()
+    locked.authorized_json = None                        # se consume antes de sortear: pase lo que pase no se puede repetir
+    db.commit()
+    try:
+        return _run_draw(db, event, locked, auth["label"], auth["by"])
+    except HTTPException:
+        locked.authorized_json = json.dumps(auth)        # el sorteo no se pudo hacer: la autorización sigue vigente
+        db.commit()
+        raise
 
 
 @public_router.get("/r/{token}/asset/{tenant_id}/{filename}")

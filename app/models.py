@@ -543,6 +543,7 @@ class RouletteConfig(Base):
     behavior_json = Column(Text, nullable=True)
     style_json = Column(Text, nullable=True)
     display_token = Column(String, unique=True, nullable=True)
+    authorized_json = Column(Text, nullable=True)   # {"label", "by", "at"}: el operador AUTORIZÓ un giro; el botón de la pantalla pública lo consume
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

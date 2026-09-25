@@ -70,10 +70,11 @@
       </div>
 
       <div class="card">
-        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Ejecutar</h4>
+        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Autorizar el giro</h4>
         <div class="row" style="margin-top:0;"><div style="flex:1 1 300px;"><label>Nombre del sorteo (opcional — queda en el registro, ej. «Sorteo iPhone»)</label><input type="text" id="label" maxlength="120" style="width:100%; box-sizing:border-box;"></div></div>
         <p class="hint" id="runHint"></p>
-        <button type="button" class="big-run" id="runBtn">🎡 Ejecutar sorteo</button>
+        <button type="button" class="big-run" id="runBtn">🔓 Autorizar giro</button>
+        <div id="authBox" style="margin-top:0.8rem; display:none; background:#fff8e1; border:1px solid #ffe69c; border-radius:14px; padding:0.9rem 1.1rem;"></div>
         <div id="resultBox" style="margin-top:1rem;"></div>
       </div>
 
@@ -125,8 +126,8 @@ function render() {
   $('pickedHint').textContent = m === 'ordered' ? 'Elegidos, en orden (usa ↑ ↓)' : 'Elegidos';
   $('filterHint').textContent = m === 'filter_random' ? 'El sistema sorteará entre quienes cumplan TODAS las condiciones.' : 'Solo se listarán como candidatos quienes cumplan TODAS las condiciones.';
   renderCands(); renderPicked(); renderConds();
-  $('runBtn').textContent = m === 'filter_random' ? '🎲 Sortear entre los que cumplen el filtro' : m === 'all' ? '🎡 Sacar al siguiente' : '🎡 Ejecutar sorteo (ganador elegido)';
-  $('runHint').textContent = m === 'filter_random' || m === 'all' ? 'El resultado lo decide el sistema al azar al pulsar: nadie lo conoce antes.' : 'La ruleta girará y revelará al ganador que dejaste elegido.';
+  $('runBtn').textContent = m === 'filter_random' ? '🔓 Autorizar sorteo entre los que cumplen el filtro' : m === 'all' ? '🔓 Autorizar: sacar al siguiente' : '🔓 Autorizar giro';
+  $('runHint').textContent = (m === 'filter_random' || m === 'all' ? 'El resultado lo decide el sistema al azar en el momento de girar: nadie lo conoce antes. ' : 'La ruleta revelará al ganador que dejaste elegido. ') + 'Aquí solo AUTORIZAS: el giro se dispara con el botón «Girar» de la pantalla de visualización (la que ve la gente).';
 }
 function renderCands() {
   const q = $('pickerSearch').value.trim().toLowerCase();
@@ -188,14 +189,41 @@ $('saveBtn').addEventListener('click', async () => {
 $('resetRound').addEventListener('click', async () => { await j(`${api}/reset-round`, { method: 'POST' }); showToast('Ronda reiniciada', 'success'); loadRound(); });
 async function loadRound() { if (state.mode !== 'all') return; const r = await j(`${api}/round`); $('roundText').textContent = `Ronda actual: han salido ${r.drawn} de ${r.total} personas.`; }
 
+let authTimer = null, lastDrawCount = null;
+function paintAuth(a) {
+  const box = $('authBox');
+  $('runBtn').disabled = dirty || a.authorized;
+  if (!a.authorized) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = `<b>🔓 Giro autorizado${a.label ? ' — «' + esc(a.label) + '»' : ''}.</b> El botón <b>«¡GIRAR!»</b> ya está activo en la pantalla de visualización: quien la maneja lo pulsa cuando quiera. <button type="button" class="small-btn" id="cancelAuth" style="margin-left:8px;">Cancelar autorización</button>`;
+  $('cancelAuth').addEventListener('click', async () => { await j(`${api}/authorize`, { method: 'DELETE' }); watchAuth(); });
+}
+async function watchAuth() {
+  clearTimeout(authTimer);
+  try {
+    const a = await j(`${api}/authorization`);
+    paintAuth(a);
+    if (a.authorized) authTimer = setTimeout(watchAuth, 2000);                // mientras esté autorizado, se vigila si ya lo giraron
+    else if (lastDrawCount !== null) { await loadHistory(); loadRound(); showLatest(); }
+  } catch (e) { authTimer = setTimeout(watchAuth, 4000); }
+}
+async function showLatest() {
+  const draws = await j(`${api}/draws`);
+  if (lastDrawCount !== null && draws.length > lastDrawCount) {
+    const d = draws[0];
+    $('resultBox').innerHTML = `<div style="background:#d1e7dd; border-radius:14px; padding:1rem 1.2rem;"><b>${d.is_random ? '🎲 Sorteo real' : '✅ Ganador(es) elegido(s)'}</b> — ya se giró en la pantalla de visualización.<ol style="margin:0.5rem 0 0; padding-left:1.2rem;">${d.winners.map((w) => `<li><b>${esc(w.name)}</b> <small>· ${esc(w.id)}${w.entity ? ' · ' + esc(w.entity) : ''}</small></li>`).join('')}</ol></div>`;
+  }
+  lastDrawCount = draws.length;
+}
 $('runBtn').addEventListener('click', async () => {
   const btn = $('runBtn'); btn.disabled = true;
   try {
-    const r = await j(`${api}/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: $('label').value }) });
-    $('resultBox').innerHTML = `<div style="background:#d1e7dd; border-radius:14px; padding:1rem 1.2rem;"><b>${r.is_random ? '🎲 Sorteo real' : '✅ Ganador(es) elegido(s)'}</b> — la pantalla de visualización ya está girando.<ol style="margin:0.5rem 0 0; padding-left:1.2rem;">${r.winners.map((w) => `<li><b>${esc(w.name)}</b> <small>· ${esc(w.id)}${w.entity ? ' · ' + esc(w.entity) : ''}</small></li>`).join('')}</ol></div>`;
-    loadHistory(); loadRound();
-  } catch (e) { showToast(e.message, 'error'); }
-  btn.disabled = dirty;
+    lastDrawCount = (await j(`${api}/draws`)).length;
+    await j(`${api}/authorize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: $('label').value }) });
+    $('resultBox').innerHTML = '';
+    showToast('Giro autorizado: ya se puede girar desde la pantalla de visualización', 'success');
+    watchAuth();
+  } catch (e) { showToast(e.message, 'error'); btn.disabled = dirty; }
 });
 
 async function loadHistory() {
@@ -206,7 +234,7 @@ async function loadHistory() {
 async function loadDisplayLink() {
   const { url } = await j(`${api}/display-link`);
   const box = $('displayCard');
-  const head = `<h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Pantalla de visualización (para el proyector)</h4><p class="hint" style="margin-top:0;">Abre este enlace en la pantalla que verá la gente (sin iniciar sesión). Cuando tú ejecutas el sorteo aquí, allá gira la ruleta y se revela el ganador.</p>`;
+  const head = `<h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Pantalla de visualización (para el proyector)</h4><p class="hint" style="margin-top:0;">Abre este enlace en la pantalla que verá la gente (sin iniciar sesión). Tú autorizas el giro desde aquí; allá se activa el botón «¡GIRAR!» y, al pulsarlo, gira la ruleta y se revela el ganador.</p>`;
   if (!url) { box.innerHTML = head + `<button type="button" class="small-btn primary" id="genLink">🔗 Generar enlace de la pantalla</button>`; $('genLink').addEventListener('click', async () => { await j(`${api}/display-link`, { method: 'POST' }); loadDisplayLink(); }); return; }
   box.innerHTML = head + `<div class="row" style="margin-top:0;"><input type="text" readonly value="${esc(url)}" id="linkInput" style="flex:1 1 300px;"><button type="button" class="small-btn primary" id="copyLink">Copiar</button><a class="small-btn" href="${esc(url)}" target="_blank" rel="noopener">Abrir pantalla</a><button type="button" class="small-btn" id="regenLink">Cambiar enlace</button></div>`;
   $('copyLink').addEventListener('click', async () => { try { await navigator.clipboard.writeText(url); } catch (e) { $('linkInput').select(); document.execCommand('copy'); } showToast('Enlace copiado', 'success'); });
@@ -223,6 +251,7 @@ async function loadDisplayLink() {
   // nombres de los ganadores ya elegidos (aunque no estén en la lista visible)
   try { const all = await j(`${api}/candidates`); all.people.forEach((p) => { nameOf[p.id] = p.name; }); } catch (e) {}
   render(); markDirty(false); loadDisplayLink(); loadHistory(); loadRound();
+  lastDrawCount = (await j(`${api}/draws`)).length; watchAuth();
 })();
 </script>
 </body>

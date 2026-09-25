@@ -13,25 +13,31 @@
         #logo { max-height:90px; max-width:40vw; margin-bottom:8px; display:none; }
         h1 { margin:0 0 6px; font-size:clamp(2rem,6vw,4.4rem); letter-spacing:2px; font-weight:400; }
         .label { font-size:clamp(1rem,2.4vw,1.8rem); opacity:.9; min-height:1.6em; margin-bottom:8px; }
-        canvas { width:min(78vh, 92vw); height:min(78vh, 92vw); }
-        #result { position:fixed; left:0; right:0; bottom:5vh; display:flex; justify-content:center; gap:14px; flex-wrap:wrap; pointer-events:none; }
+        #stage { width:min(66vh, 92vw); }
+        #stage.jackpot { width:auto; }
+        #result { position:fixed; left:0; right:0; bottom:13vh; display:flex; justify-content:center; gap:14px; flex-wrap:wrap; pointer-events:none; }
+        #spinBtn { margin-top:14px; padding:16px 54px; font:inherit; font-size:clamp(1.2rem,3vw,2rem); font-weight:800; letter-spacing:2px; border:none; border-radius:60px; cursor:pointer; transition:transform .15s, opacity .3s; }
+        #spinBtn:disabled { opacity:.45; cursor:default; }
+        #spinBtn.ready { animation:rr-pulse 1.1s infinite; }
         #hint { position:fixed; bottom:8px; right:12px; font-size:0.7rem; opacity:.35; }
         @keyframes rr-pop { from { transform:scale(.6); opacity:0; } to { transform:scale(1); opacity:1; } }
+        @keyframes rr-pulse { 0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(255,255,255,.55); } 50% { transform:scale(1.06); box-shadow:0 0 0 18px rgba(255,255,255,0); } }
     </style>
 </head>
 <body>
 <img id="logo" alt="">
 <h1 id="title">{{ event_name }}</h1>
 <div class="label" id="label"></div>
-<canvas id="wheel" width="900" height="900"></canvas>
+<div id="stage"></div>
+<button id="spinBtn" type="button" disabled>Esperando autorización…</button>
 <div id="result"></div>
-<div id="hint">Pantalla de sorteo · el operador lanza el sorteo desde su equipo</div>
+<div id="hint">Pantalla de sorteo · el operador autoriza el giro y aquí se pulsa «Girar»</div>
 
 <script>
 const TOKEN = "{{ token }}";
 const base = `/r/${TOKEN}`;
 const assetUrl = (p) => `${base}/asset/${p}`;
-let style = null, wheel = null, lastSeen = null, busy = false, idleNames = [];
+let style = null, stage = null, lastSeen = null, busy = false, authorized = false, authLabel = "", idleNames = [];
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -42,8 +48,19 @@ function paintStyle(s) {
     $('title').textContent = s.title || '';
     $('title').style.fontFamily = `'${s.title_font}', sans-serif`; $('title').style.color = s.title_color;
     const logo = $('logo'); logo.style.display = s.logo ? 'block' : 'none'; if (s.logo) logo.src = assetUrl(s.logo);
-    wheel = RouletteRender.wheel($('wheel'), s);
-    wheel.draw(idleNames.length ? idleNames : ['?', '?', '?', '?', '?', '?'], 0);
+    $('stage').className = s.wheel_style === 'jackpot' ? 'jackpot' : '';
+    stage = RouletteRender.stage($('stage'), s);
+    stage.idle(idleNames.length ? idleNames : ['?', '?', '?', '?', '?', '?']);
+    $('spinBtn').style.background = s.winner_bg; $('spinBtn').style.color = s.winner_color;
+    paintButton();
+}
+
+function paintButton() {
+    const b = $('spinBtn');
+    if (busy) { b.disabled = true; b.classList.remove('ready'); b.textContent = 'Girando…'; }
+    else if (authorized) { b.disabled = false; b.classList.add('ready'); b.textContent = '🎡 ¡GIRAR!'; }
+    else { b.disabled = true; b.classList.remove('ready'); b.textContent = 'Esperando autorización…'; }
+    if (!busy && authorized && authLabel) $('label').textContent = authLabel;
 }
 
 async function poll() {
@@ -51,26 +68,39 @@ async function poll() {
         const url = `${base}/state` + (lastSeen === null ? '' : `?after=${lastSeen}`);
         const st = await (await fetch(url)).json();
         if (!style || JSON.stringify(st.style) !== JSON.stringify(style)) paintStyle(st.style);
+        authorized = !!st.authorized; authLabel = st.authorized_label || '';
         if (lastSeen === null) { lastSeen = st.latest_id; }          // lo que ya estaba: no se re-anima
-        else if (st.draw && !busy) { lastSeen = st.draw.id; run(st.draw); }
+        else if (st.draw && !busy) { lastSeen = st.draw.id; run(st.draw); }   // otro giro (p. ej. desde otra pantalla)
+        if (!busy) paintButton();
     } catch (e) { /* sin red por un momento: se reintenta */ }
 }
 
 // Un giro por ganador; entre giro y giro se muestra a quien acaba de salir.
 async function run(draw) {
-    busy = true;
+    busy = true; paintButton();
     $('label').textContent = draw.label || '';
     $('result').innerHTML = '';
     for (const winner of draw.winners) {
-        const seg = RouletteRender.buildSegments(draw.pool, winner.name, 24);
-        wheel.draw(seg.names, 0);
-        await wheel.spinTo(seg.names, seg.winnerIndex, style.spin_seconds);
+        await stage.spin(draw.pool, winner.name, style.spin_seconds);
         const card = document.createElement('div'); $('result').appendChild(card);
         RouletteRender.reveal(card, winner, style);
         if (draw.winners.length > 1) await sleep(2200);
     }
-    busy = false;
+    busy = false; authorized = false; paintButton();
 }
+
+// El botón «Girar»: pide al servidor el giro autorizado (el ganador lo decide el servidor) y lo anima de inmediato.
+$('spinBtn').addEventListener('click', async () => {
+    if (busy || !authorized) return;
+    busy = true; paintButton();
+    try {
+        const res = await fetch(`${base}/spin`, { method: 'POST' });
+        const draw = await res.json().catch(() => ({}));
+        if (!res.ok) { busy = false; authorized = false; paintButton(); $('label').textContent = draw.detail || 'No se pudo girar'; return; }
+        lastSeen = draw.draw_id;                                        // este giro ya lo vamos a animar aquí: que el sondeo no lo repita
+        busy = false; run(draw);
+    } catch (e) { busy = false; paintButton(); }
+});
 
 poll(); setInterval(poll, 1500);
 </script>

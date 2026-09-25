@@ -40,6 +40,7 @@
       <div class="split">
         <div class="card">
           <div class="grid">
+            <div style="grid-column:1/-1;"><label>Tipo de ruleta</label><select id="wheel_style"><option value="circular">Circular (la clásica: hasta 24 nombres legibles)</option><option value="jackpot">Estilo casino (columna vertical de nombres: ideal para muchos, 200 o más)</option></select></div>
             <div><label>Título en pantalla</label><input type="text" id="title" maxlength="80"></div>
             <div><label>Fuente del título</label><select id="title_font"></select></div>
             <div><label>Color del título</label><input type="color" id="title_color"></div>
@@ -59,9 +60,9 @@
             <div><label>Imagen de fondo</label><input type="file" id="bgFile" accept="image/*"><button type="button" class="small-btn" id="bgClear" style="margin-top:4px;">Quitar imagen</button></div>
             <div><label>Logo (arriba del título)</label><input type="file" id="logoFile" accept="image/*"><button type="button" class="small-btn" id="logoClear" style="margin-top:4px;">Quitar logo</button></div>
           </div>
-          <div style="margin-top:1.2rem; display:flex; gap:8px; flex-wrap:wrap;"><button type="button" class="small-btn primary" id="saveBtn">Guardar apariencia</button><button type="button" class="small-btn" id="spinBtn">▶ Probar animación</button></div>
+          <div style="margin-top:1.2rem; display:flex; gap:8px; flex-wrap:wrap;"><button type="button" class="small-btn primary" id="saveBtn">Guardar apariencia</button><button type="button" class="small-btn" id="spinBtn">▶ Probar animación</button><button type="button" class="small-btn" id="spinManyBtn">▶ Probar con 200 nombres</button></div>
         </div>
-        <div><div id="preview"><h1 id="pTitle" style="margin:0 0 8px; font-weight:400; font-size:2.4rem;"></h1><img id="pLogo" alt="" style="max-height:70px; margin-bottom:6px; display:none;"><canvas id="pWheel" width="700" height="700"></canvas><div id="pResult" style="margin-top:12px; min-height:90px;"></div></div></div>
+        <div><div id="preview"><h1 id="pTitle" style="margin:0 0 8px; font-weight:400; font-size:2.4rem;"></h1><img id="pLogo" alt="" style="max-height:70px; margin-bottom:6px; display:none;"><div id="pStage" style="width:min(440px, 100%);"></div><div id="pResult" style="margin-top:12px; min-height:90px;"></div></div></div>
       </div>
     </div>
   </div></section>
@@ -70,7 +71,8 @@
 const EV = window.EVENT_ID, api = `/api/events/${EV}/roulette`;
 const $ = (id) => document.getElementById(id);
 const SAMPLE = ['Ana Pérez', 'Luis Gómez', 'Marta Ruiz', 'Juan Mora', 'Sofía Díaz', 'Pedro Cruz', 'Laura Vega', 'Diego Rey', 'Carla Sosa', 'Iván León', 'Elena Paz', 'Tomás Gil'];
-let style = null, wheel = null, busy = false;
+let style = null, stage = null, busy = false;
+const MANY = Array.from({ length: 200 }, (_, i) => `Asistente ${String(i + 1).padStart(3, "0")}`);
 const staffAsset = (p) => `/api/badge-assets/${p}`;
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
 
@@ -79,8 +81,9 @@ function paintPreview() {
   RouletteRender.applyBackground($('preview'), style, staffAsset);
   $('pTitle').textContent = style.title; $('pTitle').style.fontFamily = `'${style.title_font}', sans-serif`; $('pTitle').style.color = style.title_color;
   $('pLogo').style.display = style.logo ? 'inline' : 'none'; if (style.logo) $('pLogo').src = staffAsset(style.logo);
-  wheel = RouletteRender.wheel($('pWheel'), style);
-  wheel.draw(SAMPLE, 0);
+  $('pStage').style.width = style.wheel_style === 'jackpot' ? 'min(760px, 100%)' : 'min(440px, 100%)';
+  stage = RouletteRender.stage($('pStage'), style);
+  stage.idle(SAMPLE);
 }
 function bindColor(id) { $(id).value = style[id]; $(id).addEventListener('input', () => { style[id] = $(id).value; paintPreview(); }); }
 function renderPalette() {
@@ -102,6 +105,7 @@ async function upload(input, key) {
   fill('title_font'); fill('font_family');
   $('title').value = style.title; $('title').addEventListener('input', () => { style.title = $('title').value; paintPreview(); });
   ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach(bindColor);
+  $('wheel_style').value = style.wheel_style || 'circular'; $('wheel_style').addEventListener('change', () => { style.wheel_style = $('wheel_style').value; paintPreview(); });
   $('spin_seconds').value = style.spin_seconds; $('spin_seconds').addEventListener('input', () => { style.spin_seconds = +$('spin_seconds').value || 6; });
   $('fontsLink').href = RouletteRender.fontsUrl(cfg.fonts);   // carga todas para que el selector se vea bien
   renderPalette(); paintPreview();
@@ -112,9 +116,13 @@ async function upload(input, key) {
   $('saveBtn').addEventListener('click', async () => { try { style = await j(`${api}/style`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(style) }); showToast('Apariencia guardada — la pantalla del sorteo la toma sola', 'success'); } catch (e) { showToast(e.message, 'error'); } });
   $('spinBtn').addEventListener('click', async () => {
     if (busy) return; busy = true; $('pResult').innerHTML = '';
-    const seg = RouletteRender.buildSegments(SAMPLE, 'Ana Pérez', 12);
-    await wheel.spinTo(seg.names, seg.winnerIndex, style.spin_seconds);
+    await stage.spin(SAMPLE, 'Ana Pérez', style.spin_seconds);
     RouletteRender.reveal($('pResult'), { position: 1, name: 'Ana Pérez', entity: 'Ejemplo S.A.S.' }, style); busy = false;
+  });
+  $('spinManyBtn').addEventListener('click', async () => {
+    if (busy) return; busy = true; $('pResult').innerHTML = '';
+    await stage.spin(MANY, 'Asistente 137', style.spin_seconds);
+    RouletteRender.reveal($('pResult'), { position: 1, name: 'Asistente 137', entity: '200 nombres de prueba' }, style); busy = false;
   });
 })();
 </script>

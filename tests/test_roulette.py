@@ -237,3 +237,91 @@ def test_deleting_an_event_removes_its_roulette_data(client, factory, db):
     login(client, "root")
     assert client.delete(f"/api/events/{ev.id}").status_code == 200
     assert db.query(RouletteDraw).count() == 0 and db.query(RouletteConfig).count() == 0
+
+
+# ------------------------------- autorizar el giro / girar desde la pantalla pública / estilo casino -------------------------------
+def _token(client, ev):
+    return client.post(f"/api/events/{ev.id}/roulette/display-link").json()["url"].rsplit("/r/", 1)[1]
+
+
+def test_the_operator_only_authorizes_and_the_public_screen_spins(client, factory, db):
+    ev = _setup(client, factory, db)
+    _save(client, ev, mode="single_fixed", winners=["1003"])
+    token = _token(client, ev)
+    api = f"/api/events/{ev.id}/roulette"
+    assert client.get(f"{api}/authorization").json() == {"authorized": False, "label": "", "since": None}
+    assert client.get(f"/r/{token}/state").json()["authorized"] is False
+    client.post("/logout")
+    assert client.post(f"/r/{token}/spin").status_code == 409                     # sin autorización el botón no hace nada
+    login(client, "coord1")
+    assert client.post(f"{api}/authorize", json={"label": "Sorteo iPhone"}).json() == {"authorized": True, "label": "Sorteo iPhone"}
+    assert client.get(f"{api}/draws").json() == []                                # autorizar NO sortea todavía
+    state = client.get(f"/r/{token}/state").json()
+    assert state["authorized"] is True and state["authorized_label"] == "Sorteo iPhone"
+    client.post("/logout")
+    r = client.post(f"/r/{token}/spin")                                           # la pantalla pública, sin login
+    assert r.status_code == 200 and [w["id"] for w in r.json()["winners"]] == ["1003"] and r.json()["label"] == "Sorteo iPhone"
+    assert client.post(f"/r/{token}/spin").status_code == 409                     # una autorización = un giro
+    assert client.get(f"/r/{token}/state").json()["authorized"] is False
+    login(client, "coord1")
+    draws = client.get(f"{api}/draws").json()
+    assert len(draws) == 1 and draws[0]["label"] == "Sorteo iPhone" and draws[0]["created_by"]      # queda a nombre de quien autorizó
+
+
+def test_authorization_needs_a_display_link_can_be_cancelled_and_expires(client, factory, db):
+    from datetime import timedelta
+    from app.models import RouletteConfig
+    ev = _setup(client, factory, db)
+    _save(client, ev, mode="single_fixed", winners=["1003"])
+    api = f"/api/events/{ev.id}/roulette"
+    r = client.post(f"{api}/authorize", json={})
+    assert r.status_code == 400 and "enlace" in r.json()["detail"]                # el botón de girar vive en la pantalla: hay que generarla
+    token = _token(client, ev)
+    client.post(f"{api}/authorize", json={})
+    assert client.delete(f"{api}/authorize").json() == {"authorized": False}
+    client.post("/logout")
+    assert client.post(f"/r/{token}/spin").status_code == 409                     # cancelada
+    login(client, "coord1")
+    client.post(f"{api}/authorize", json={})
+    cfg = db.query(RouletteConfig).filter_by(event_id=ev.id).first()
+    import json as _json
+    auth = _json.loads(cfg.authorized_json)
+    auth["at"] = (datetime.utcnow() - timedelta(minutes=31)).isoformat()
+    cfg.authorized_json = _json.dumps(auth)
+    db.commit()
+    assert client.get(f"{api}/authorization").json()["authorized"] is False         # caducó (30 min sin usar)
+    client.post("/logout")
+    assert client.post(f"/r/{token}/spin").status_code == 409
+
+
+def test_authorizing_validates_now_and_a_failed_spin_keeps_the_authorization(client, factory, db):
+    ev = _setup(client, factory, db)
+    token = _token(client, ev)
+    api = f"/api/events/{ev.id}/roulette"
+    _save(client, ev, mode="single_fixed", winners=["1003"])
+    db.query(__import__("app.models", fromlist=["EventAttendee"]).EventAttendee).delete()          # la base queda vacía
+    db.commit()
+    r = client.post(f"{api}/authorize", json={})
+    assert r.status_code == 400 and "todavía no tiene personas" in r.json()["detail"]      # el error sale al autorizar, no frente al público
+    assert client.get(f"{api}/authorization").json()["authorized"] is False
+
+
+def test_wheel_style_is_validated_and_reaches_the_public_screen(client, factory, db):
+    ev = _setup(client, factory, db)
+    token = _token(client, ev)
+    api = f"/api/events/{ev.id}/roulette"
+    assert client.get(api).json()["style"]["wheel_style"] == "circular"
+    assert client.put(f"{api}/style", json={"wheel_style": "espiral"}).status_code == 400
+    assert client.put(f"{api}/style", json={"wheel_style": "jackpot"}).json()["wheel_style"] == "jackpot"
+    client.post("/logout")
+    assert client.get(f"/r/{token}/state").json()["style"]["wheel_style"] == "jackpot"
+
+
+def test_the_pool_sent_to_the_screen_covers_big_events(client, factory, db):
+    ev = _setup(client, factory, db, n=80)
+    _save(client, ev, mode="all", batch_size=1)
+    token = _token(client, ev)
+    client.post(f"/api/events/{ev.id}/roulette/authorize", json={})
+    client.post("/logout")
+    r = client.post(f"/r/{token}/spin").json()
+    assert len(r["pool"]) == 80 and r["winners"][0]["name"] in r["pool"]           # todos los nombres, para que la columna del casino los recorra
