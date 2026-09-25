@@ -87,6 +87,20 @@
           </div>
           {% endif %}
         </div>
+        {% if event.facial_enabled %}
+        <!-- Privacidad de datos biométricos (Ley 1581 de 2012: dato sensible). -->
+        <div id="privacyCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">🔒 Privacidad de datos biométricos</h4>
+          <p id="privInfo" style="font-size:0.85rem; margin:0 0 0.5rem;">Cargando…</p>
+          <p style="color:#888; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y encoding) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <input type="text" id="privCedula" placeholder="Cédula de la persona" aria-label="Cédula de la persona a la que se le borrará el rostro" style="padding:8px; border:1px solid #ccc; border-radius:8px; max-width:200px;">
+            <button type="button" id="privPerson" style="padding:8px 14px;">Borrar solo el rostro de esta persona</button>
+            {% if staff_role in ["admin", "super_admin"] %}<button type="button" id="privEvent" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px;">Borrar los datos biométricos de TODO el evento</button>{% endif %}
+          </div>
+          <div id="privStatus" role="status" aria-live="polite" style="font-size:0.82rem; margin-top:8px;"></div>
+        </div>
+        {% endif %}
         <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Áreas</h4>
@@ -283,6 +297,33 @@
     loadAreas().catch(() => {}); loadItems().catch(() => {});
 
 
+
+    // ---- Privacidad de datos biométricos
+    (function () {
+        const card = document.getElementById('privacyCard');
+        if (!card) return;
+        const base = `/api/events/${window.EVENT_ID}`;
+        const say = (t, err) => { const el = document.getElementById('privStatus'); el.style.color = err ? '#c0392b' : '#1e7e34'; el.textContent = t; };
+        async function load() {
+            const d = await (await fetch(`${base}/privacy`)).json();
+            const ret = d.retention_days ? `Retención automática: ${d.retention_days} días después de finalizado el evento.` : 'Retención automática: NO definida todavía (no se borra nada solo).';
+            document.getElementById('privInfo').innerHTML = `<b>${d.with_biometrics}</b> de ${d.attendees} personas tienen rostro guardado (<b>${d.with_consent}</b> con constancia de autorización, <b>${d.without_consent}</b> sin constancia — anteriores a este control). ${ret}${d.purged_at ? ' Último borrado: ' + d.purged_at.slice(0, 10) + '.' : ''}`;
+        }
+        load();
+        document.getElementById('privPerson').addEventListener('click', async () => {
+            const id = document.getElementById('privCedula').value.trim();
+            if (!id) return say('Escribe la cédula', true);
+            if (!(await showConfirm(`¿Borrar el rostro (foto y encoding) de la persona con cédula ${id}? No se puede deshacer; su registro de asistencia se conserva.`))) return;
+            const r = await fetch(`${base}/users/${encodeURIComponent(id)}/biometrics`, { method: 'DELETE' }); const d = await r.json().catch(() => ({}));
+            r.ok ? (say(d.message), load()) : say(d.detail || 'No se pudo borrar', true);
+        });
+        const ev = document.getElementById('privEvent');
+        if (ev) ev.addEventListener('click', async () => {
+            if (!(await showConfirm('¿Borrar los datos biométricos de TODAS las personas de este evento? No se puede deshacer. Quienes siguen en otro evento activo del cliente se conservan.'))) return;
+            const r = await fetch(`${base}/biometrics/purge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) }); const d = await r.json().catch(() => ({}));
+            r.ok ? (say(`Se borraron ${d.deleted} rostro(s); ${d.kept_in_other_events} se conservan por estar en otro evento activo.`), load()) : say(d.detail || 'No se pudo borrar', true);
+        });
+    })();
     // ---- Correo de la escarapela virtual (editor visual)
     (function () {
         const box = document.getElementById('mailEditor');
