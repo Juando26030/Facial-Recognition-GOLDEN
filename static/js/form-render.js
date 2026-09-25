@@ -235,7 +235,9 @@
       const vis = (fid) => {
         if (fid in memo) return memo[fid];
         const cond = design.fields[fid].show_if;
-        memo[fid] = !cond || (design.fields[cond.field] && vis(cond.field) && conditionMet(cond, values));
+        const rules = !cond ? [] : (cond.rules || [cond]);
+        const met = rules.map((r) => design.fields[r.field] && vis(r.field) && conditionMet(r, values));
+        memo[fid] = !cond || (cond.match === 'any' ? met.some(Boolean) : met.every(Boolean));
         return memo[fid];
       };
       return new Set(Object.keys(els).filter(vis));

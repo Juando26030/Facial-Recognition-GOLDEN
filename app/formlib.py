@@ -9,7 +9,8 @@ Diseño (JSON):
    "fields": {"f1": {"id","type","key","label","required","stats","readonly_when_prefilled","placeholder","help",
                      "options","accept","max_mb","show_if","content","src","sync"}}}
   `key`: si el campo alimenta la base del evento — una clave de identidad (id, first_name, ...) o `opcional_N`.
-  `show_if`: {"field": id, "op": "equals|not_equals|contains|in|filled", "value": ...} — mostrar solo si se cumple.
+  `show_if`: {"field": id, "op": "equals|not_equals|contains|in|filled", "value": ...} — mostrar solo si se cumple; o un grupo
+  {"match": "all|any", "rules": [ ...hasta 6 reglas como la anterior ]} — todas (y) o alguna (o).
 """
 import json
 import re
@@ -278,9 +279,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
     return {"theme": theme, "rows": rows, "fields": fields}
 
 
-def _sanitize_condition(cond, fields_in: dict, own_id: str):
-    if not cond:
-        return None
+def _sanitize_rule(cond, fields_in: dict, own_id: str) -> dict:
     if not isinstance(cond, dict) or cond.get("field") not in fields_in or cond.get("field") == own_id:
         raise ValueError("Una regla condicional apunta a un campo que no existe")
     op = cond.get("op", "equals")
@@ -290,15 +289,37 @@ def _sanitize_condition(cond, fields_in: dict, own_id: str):
     return {"field": cond["field"], "op": op, "value": [str(v) for v in value] if isinstance(value, list) else _text(value, 200)}
 
 
+def _sanitize_condition(cond, fields_in: dict, own_id: str):
+    """Regla de visibilidad: una sola regla {field, op, value} o un GRUPO {match: all|any, rules: [...]} (hasta 6 reglas; «all» = todas, «any» = alguna)."""
+    if not cond:
+        return None
+    if isinstance(cond, dict) and "rules" in cond:
+        rules = [_sanitize_rule(r, fields_in, own_id) for r in (cond.get("rules") or [])[:6]]
+        if not rules:
+            return None
+        return rules[0] if len(rules) == 1 else {"match": "any" if cond.get("match") == "any" else "all", "rules": rules}
+    return _sanitize_rule(cond, fields_in, own_id)
+
+
+def cond_rules(cond) -> list:
+    return [] if not cond else (cond["rules"] if "rules" in cond else [cond])
+
+
 def _check_condition_cycles(fields: dict) -> None:
-    for start in fields:
-        seen, cur = set(), start
-        while cur:
-            if cur in seen:
-                raise ValueError("Las reglas condicionales se apuntan en círculo")
-            seen.add(cur)
-            cond = fields[cur].get("show_if")
-            cur = cond["field"] if cond else None
+    state = {}
+
+    def walk(fid):
+        if state.get(fid) == 1:
+            raise ValueError("Las reglas condicionales se apuntan en círculo")
+        if state.get(fid) == 2:
+            return
+        state[fid] = 1
+        for r in cond_rules(fields[fid].get("show_if")):
+            walk(r["field"])
+        state[fid] = 2
+
+    for fid in fields:
+        walk(fid)
 
 
 # ------------------------------------------------------------------ campo de pago: monto, reglas y descuentos
@@ -567,8 +588,8 @@ def visible_ids(design: dict, values: dict) -> set:
         cond = fields[fid].get("show_if")
         result = True
         if cond:
-            parent = cond["field"]
-            result = parent in fields and visible(parent) and condition_met(cond, values)
+            met = [r["field"] in fields and visible(r["field"]) and condition_met(r, values) for r in cond_rules(cond)]
+            result = any(met) if cond.get("match") == "any" else all(met)
         memo[fid] = result
         return result
 

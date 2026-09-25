@@ -424,3 +424,37 @@ def test_a_form_id_field_can_offer_several_document_types_and_validates_the_chos
     rows = client.get(f"/api/events/{ev.id}/forms/{form['id']}/submissions").json()["rows"]
     assert rows[0]["data"]["cedula"] == "AB123456" and rows[0]["data"]["cedula__tipo"] == "PA"                                    # guarda el número normalizado y el tipo
     assert any(c["label"].endswith("tipo de documento") for c in client.get(f"/api/events/{ev.id}/forms/{form['id']}/submissions").json()["columns"])
+
+
+# ------------------------------- reglas de visibilidad con varias reglas -------------------------------
+def _vis_design(show_if_x, show_if_y=None):
+    from app import formlib as fl
+    fields = {"cat": {"id": "cat", "type": "select", "label": "Categoría", "options": ["A", "B", "C", "D", "E"]},
+              "otro": {"id": "otro", "type": "text_short", "label": "Otro"},
+              "x": {"id": "x", "type": "text_short", "label": "X", "show_if": show_if_x}}
+    if show_if_y is not None:
+        fields["y"] = {"id": "y", "type": "text_short", "label": "Y", "show_if": show_if_y}
+    return fl.sanitize_design({"theme": {}, "rows": [], "fields": fields}, set())
+
+
+def test_visibility_supports_several_rules_all_or_any_and_several_values():
+    from app import formlib as fl
+    grupo = {"match": "any", "rules": [{"field": "cat", "op": "in", "value": ["A", "B", "C"]}, {"field": "otro", "op": "filled"}]}
+    d = _vis_design(grupo, {"field": "cat", "op": "in", "value": ["D", "E"]})
+    assert fl.visible_ids(d, {"cat": "B"}) >= {"x"} and "y" not in fl.visible_ids(d, {"cat": "B"})          # A, B o C → X; D, E → Y
+    assert "x" not in fl.visible_ids(d, {"cat": "D"}) and "y" in fl.visible_ids(d, {"cat": "E"})
+    assert "x" in fl.visible_ids(d, {"cat": "D", "otro": "hola"})                                            # «alguna»: la segunda regla también basta
+    todas = _vis_design({"match": "all", "rules": [{"field": "cat", "op": "in", "value": ["A", "B"]}, {"field": "otro", "op": "filled"}]})
+    assert "x" not in fl.visible_ids(todas, {"cat": "A"}) and "x" in fl.visible_ids(todas, {"cat": "A", "otro": "hola"})
+    assert "x" not in fl.visible_ids(todas, {"cat": "C", "otro": "hola"})
+
+
+def test_a_one_rule_group_collapses_and_bad_groups_are_rejected():
+    import pytest
+    d = _vis_design({"match": "any", "rules": [{"field": "cat", "op": "equals", "value": "A"}]})
+    assert d["fields"]["x"]["show_if"] == {"field": "cat", "op": "equals", "value": "A"}                     # una sola regla queda como siempre (compatible)
+    assert _vis_design({"match": "any", "rules": []})["fields"]["x"].get("show_if") is None
+    with pytest.raises(ValueError):
+        _vis_design({"match": "all", "rules": [{"field": "cat", "op": "equals", "value": "A"}, {"field": "nope", "op": "filled"}]})
+    with pytest.raises(ValueError):                                                                           # x depende de y y y de x, ahora también dentro de un grupo
+        _vis_design({"match": "all", "rules": [{"field": "y", "op": "filled"}, {"field": "cat", "op": "filled"}]}, {"field": "x", "op": "filled"})

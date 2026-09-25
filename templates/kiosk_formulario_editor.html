@@ -201,6 +201,9 @@ const markDirty = () => { dirty = true; $('saveBtn').textContent = '💾 Guardar
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------------------------------------------------------------- utilidades del diseño
+const rulesOf = (c) => (!c ? [] : (c.rules || [c]));
+const matchOf = (c) => (c && c.rules && c.match) || 'all';
+const setRules = (f, rs, match) => { f.show_if = !rs.length ? null : (rs.length === 1 ? rs[0] : { match: match || 'all', rules: rs }); };
 function locate(id) { for (let r = 0; r < design.rows.length; r++) { const i = design.rows[r].items.indexOf(id); if (i >= 0) return [r, i]; } return null; }
 function detach(id) { const at = locate(id); if (!at) return; design.rows[at[0]].items.splice(at[1], 1); if (!design.rows[at[0]].items.length) design.rows.splice(at[0], 1); }
 const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 });
@@ -329,18 +332,25 @@ function renderProps() {
       <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
       <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
   }
-  // regla condicional
-  const cond = f.show_if;
-  const parent = cond && design.fields[cond.field];
-  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label><select id="cOn"><option value="">Siempre visible</option><option value="1" ${cond ? 'selected' : ''}>Mostrar solo si…</option></select></div>`;
-  if (cond) {
-    html += `<div class="fld"><select id="cField">${others.map((o) => `<option value="${o.id}" ${o.id === cond.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select></div>
-      <div class="fld"><select id="cOp">${[['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']].map(([v, l]) => `<option value="${v}" ${cond.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
-    if (cond.op !== 'filled') {
-      const opts = parent && (parent.options || (parent.type === 'checkbox' ? ['true', 'false'] : null));
-      html += cond.op === 'in' || !opts ? `<div class="fld"><input type="text" id="cVal" value="${esc(Array.isArray(cond.value) ? cond.value.join(', ') : cond.value)}" placeholder="${cond.op === 'in' ? 'valores separados por coma' : 'valor'}"></div>`
-        : `<div class="fld"><select id="cVal">${opts.map((o) => `<option ${cond.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
-    }
+  // regla de visibilidad: una o VARIAS reglas, combinadas con «todas» (y) o «alguna» (o)
+  const rules = rulesOf(f.show_if), OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
+  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label><select id="cOn"><option value="">Siempre visible</option><option value="1" ${rules.length ? 'selected' : ''}>Mostrar solo si…</option></select></div>`;
+  if (rules.length) {
+    if (rules.length > 1) html += `<div class="fld"><label>Se muestra cuando se cumplan</label><select id="cMatch"><option value="all" ${matchOf(f.show_if) === 'all' ? 'selected' : ''}>TODAS las reglas (y)</option><option value="any" ${matchOf(f.show_if) === 'any' ? 'selected' : ''}>ALGUNA de las reglas (o)</option></select></div>`;
+    rules.forEach((r, i) => {
+      const parent = design.fields[r.field], opts = parent && (parent.options || (parent.type === 'checkbox' ? ['true', 'false'] : null));
+      let val = '';
+      if (r.op !== 'filled') {
+        if (opts && r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-rvin="${i}" value="${esc(o)}" ${(Array.isArray(r.value) ? r.value : [r.value]).includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
+        else if (opts) val = `<select data-rv="${i}"><option value=""></option>${opts.map((o) => `<option ${r.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+        else val = `<input type="text" data-rv="${i}" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
+      }
+      html += `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px; display:grid; gap:4px;"><div class="hint">Regla ${i + 1}</div>
+        <select data-rf="${i}">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select>
+        <select data-ro="${i}">${OPS_ALL.map(([v, l]) => `<option value="${v}" ${r.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${val}
+        ${rules.length > 1 ? `<button type="button" class="small-btn danger" data-rdel="${i}" style="justify-self:end;">Quitar regla</button>` : ''}</div>`;
+    });
+    if (rules.length < 6) html += '<button type="button" class="small-btn" id="cAdd">+ Agregar otra regla</button>';
   }
   html += `<div style="display:flex; gap:6px; margin-top:0.8rem; flex-wrap:wrap;"><button class="small-btn" id="pUp">← Antes</button><button class="small-btn" id="pDown">Después →</button><button class="small-btn danger" id="pDel">Eliminar</button></div>`;
   box.innerHTML = html;
@@ -363,13 +373,23 @@ function renderProps() {
   on('pSync', 'change', upd(() => { f.sync = $('pSync').checked; })); on('pReq', 'change', upd(() => { f.required = $('pReq').checked; }));
   on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; }));
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
-  on('cOn', 'change', () => { f.show_if = $('cOn').value ? { field: others[0] ? others[0].id : '', op: 'equals', value: '' } : null; if (f.show_if && !f.show_if.field) { f.show_if = null; showToast('Agrega primero otro campo para usarlo como condición', 'error'); } markDirty(); renderCanvas(); renderProps(); });
-  on('cField', 'change', () => { cond.field = $('cField').value; cond.value = ''; markDirty(); renderProps(); }); on('cOp', 'change', () => { cond.op = $('cOp').value; markDirty(); renderProps(); });
-  on('cVal', 'input', () => { const v = $('cVal').value; cond.value = cond.op === 'in' ? v.split(',').map((s) => s.trim()).filter(Boolean) : v; markDirty(); });
-  on('cVal', 'change', () => { cond.value = $('cVal').value; markDirty(); });
+  const saveRules = (rs, match) => { setRules(f, rs, match); markDirty(); renderCanvas(); };
+  on('cOn', 'change', () => {
+    if (!$('cOn').value) { f.show_if = null; markDirty(); renderCanvas(); renderProps(); return; }
+    if (!others[0]) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); renderProps(); return; }
+    setRules(f, [{ field: others[0].id, op: 'equals', value: '' }]); markDirty(); renderCanvas(); renderProps();
+  });
+  const cur = () => rulesOf(f.show_if).map((r) => ({ ...r })), match = matchOf(f.show_if);
+  on('cMatch', 'change', () => { f.show_if.match = $('cMatch').value; markDirty(); });
+  on('cAdd', 'click', () => { const rs = cur(); rs.push({ field: others[0].id, op: 'equals', value: '' }); saveRules(rs, match); renderProps(); });
+  box.querySelectorAll('[data-rdel]').forEach((b) => b.addEventListener('click', () => { const rs = cur(); rs.splice(+b.dataset.rdel, 1); saveRules(rs, match); renderProps(); }));
+  box.querySelectorAll('[data-rf]').forEach((el) => el.addEventListener('change', () => { const rs = cur(), r = rs[+el.dataset.rf]; r.field = el.value; r.value = r.op === 'in' ? [] : ''; saveRules(rs, match); renderProps(); }));
+  box.querySelectorAll('[data-ro]').forEach((el) => el.addEventListener('change', () => { const rs = cur(), r = rs[+el.dataset.ro]; const wasIn = r.op === 'in'; r.op = el.value; if (r.op === 'in' && !Array.isArray(r.value)) r.value = r.value ? [r.value] : []; else if (wasIn && r.op !== 'in') r.value = Array.isArray(r.value) ? (r.value[0] || '') : r.value; saveRules(rs, match); renderProps(); }));
+  box.querySelectorAll('[data-rv]').forEach((el) => { const i = +el.dataset.rv, h = () => { const rs = cur(), r = rs[i]; r.value = r.op === 'in' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value; saveRules(rs, match); }; el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', h); });
+  box.querySelectorAll('[data-rvin]').forEach((el) => el.addEventListener('change', () => { const i = +el.dataset.rvin, rs = cur(); rs[i].value = Array.from(box.querySelectorAll(`[data-rvin="${i}"]:checked`)).map((x) => x.value); saveRules(rs, match); }));
   const shift = (d) => { const at = locate(f.id); const row = design.rows[at[0]]; const n = at[1] + d; if (n < 0 || n >= row.items.length) return; [row.items[at[1]], row.items[n]] = [row.items[n], row.items[at[1]]]; markDirty(); renderCanvas(); };
   on('pUp', 'click', () => shift(-1)); on('pDown', 'click', () => shift(1));
-  on('pDel', 'click', () => { const dependents = Object.values(design.fields).filter((x) => x.show_if && x.show_if.field === f.id); dependents.forEach((x) => { x.show_if = null; }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+  on('pDel', 'click', () => { Object.values(design.fields).forEach((x) => { if (x.show_if) setRules(x, rulesOf(x.show_if).filter((r) => r.field !== f.id), matchOf(x.show_if)); }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
 }
 
 // ---------------------------------------------------------------- campo Pago: monto, reglas y descuentos
