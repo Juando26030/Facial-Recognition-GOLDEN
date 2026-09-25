@@ -118,7 +118,7 @@
         case 'heading': return `<h3 style="margin:8px 0 2px;">${esc(f.content)}</h3>`;
         case 'paragraph': return `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(f.content)}</p>`;
         case 'payment': { const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
-          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div><div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span></div></div>`; }
+          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div>${f.pay && f.pay.codes && !opts.previewOnly ? '<div class="fr-code" style="margin:8px 0 2px;"><div style="display:flex; gap:6px;"><input type="text" data-code placeholder="¿Tienes un código de descuento?" autocomplete="off" style="flex:1; margin:0;"><button type="button" class="fr-chip" data-applycode>Aplicar</button></div><div data-codemsg style="font-size:.78rem; margin-top:3px;"></div></div>' : (f.pay && f.pay.codes ? '<div class="fr-help">🎟️ Aquí la persona podrá escribir un código de descuento.</div>' : '')}<div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span></div></div>`; }
         case 'companions': {
           const lo = f.min || 0;
           const opts = Array.from({ length: f.max - lo + 1 }, (_, i) => lo + i).map((n) => `<option value="${n}">${n === 0 ? 'Ninguno (voy solo/a)' : n === 1 ? '1 acompañante' : n + ' acompañantes'}</option>`).join('');
@@ -278,8 +278,16 @@
       paintPay();
     });
 
+    const codeBox = () => form.querySelector('[data-code]');
+    form.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-applycode]') && opts.onChange) opts.onChange(); });
+    form.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && e.target.matches && e.target.matches('[data-code]')) { e.preventDefault(); if (opts.onChange) opts.onChange(); } });
     function setQuote(q) {
       lastQuote = q;
+      form.querySelectorAll('[data-codemsg]').forEach((m) => {   // resultado del código escrito (lo valida el servidor)
+        const has = codeBox() && codeBox().value.trim() && q && q.code;
+        m.textContent = has ? (q.code.status === 'ok' ? '✓ ' : '✗ ') + q.code.message : '';
+        m.style.color = has && q.code.status === 'ok' ? '#1e7e34' : '#c0392b';
+      });
       paintPay();
       form.querySelectorAll('[data-svc]').forEach((el) => {   // Wompi reporta una incidencia en su página de estado
         el.hidden = !(q && q.service);
@@ -293,7 +301,7 @@
     if (opts.previewOnly) { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) lastQuote = { has_payment: true, amount: (pf.pay && pf.pay.amount) || 0, applied: [] }; }
     paintPay();
 
-    return { collect, validate, setErrors, setQuote, setRates, form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
+    return { collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
   }
 
   if (typeof window !== 'undefined') window.FormRender = { render, conditionMet };

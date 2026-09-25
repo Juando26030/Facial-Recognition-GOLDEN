@@ -438,6 +438,20 @@ class FormSubmission(Base):
     # `confirmed` = inscripción real. `awaiting_payment` = transitoria mientras se espera a Wompi: NUNCA se ve en listas,
     # reportes, analítica ni se carga a la base del evento (solo aparta cupo unos minutos). Ver app/routers/form_payments.py.
     status = Column(String, nullable=False, default='confirmed', server_default='confirmed')
+    discount_code_id = Column(Integer, ForeignKey('form_discount_codes.id'), nullable=True)   # código de descuento con el que se inscribió (cuenta como un uso)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FormDiscountCode(Base):
+    """Un código de descuento de un formulario. `discount_id` apunta al descuento (`how: code`) del diseño. Un código compartido
+    tiene `max_uses` = N usos; los «N códigos distintos de un solo uso» son N filas con `max_uses` = 1."""
+    __tablename__ = 'form_discount_codes'
+    __table_args__ = (UniqueConstraint('form_id', 'code', name='uq_form_discount_code'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(Integer, ForeignKey('web_forms.id'), nullable=False)
+    discount_id = Column(String, nullable=False)
+    code = Column(String, nullable=False)          # siempre en MAYÚSCULAS y sin espacios
+    max_uses = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 

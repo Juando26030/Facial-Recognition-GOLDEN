@@ -11,7 +11,9 @@ Diseño (JSON):
   `key`: si el campo alimenta la base del evento — una clave de identidad (id, first_name, ...) o `opcional_N`.
   `show_if`: {"field": id, "op": "equals|not_equals|contains|in|filled", "value": ...} — mostrar solo si se cumple.
 """
+import json
 import re
+import secrets
 import unicodedata
 import uuid
 from datetime import date, datetime
@@ -279,6 +281,33 @@ def companions_count(design: dict, values: dict) -> int:
     return 0
 
 
+def _price_meta(item: dict, allowed: tuple, used: set) -> dict:
+    """Identidad y «cómo se aplica» de una regla de precio o descuento: `category` (por lo que la persona responde: variable + contenido),
+    `link` (solo quien entra por el enlace propio de ese precio/descuento, `?d=<link_key>`) o `code` (solo quien escribe un código válido)."""
+    how = item.get("how") if item.get("how") in allowed else "category"
+    pid = str(item.get("id") or "")
+    while not re.fullmatch(r"[a-z0-9]{4,12}", pid) or pid in used:
+        pid = secrets.token_hex(3)
+    used.add(pid)
+    meta = {"id": pid, "how": how}
+    if how == "link":
+        key = str(item.get("link_key") or "")
+        meta["link_key"] = key if re.fullmatch(r"[A-Za-z0-9]{6,24}", key) else secrets.token_hex(5)
+    return meta
+
+
+def public_design(design: dict) -> dict:
+    """El diseño que ve el público: sin las claves de los enlaces de descuento (si no, cualquiera las leería) y con `pay.codes`
+    para que se muestre la casilla del código."""
+    out = json.loads(json.dumps(design))
+    for f in out["fields"].values():
+        if f.get("type") == PAYMENT_TYPE and isinstance(f.get("pay"), dict):
+            f["pay"]["codes"] = any(d.get("how") == "code" for d in f["pay"].get("discounts", []))
+            for item in f["pay"].get("rules", []) + f["pay"].get("discounts", []):
+                item.pop("link_key", None)
+    return out
+
+
 def sanitize_payment(pay, fields_in: dict, own_id: str) -> dict:
     """Configuración del campo «Pago»: `mode` fixed (un monto) o rules (el monto depende de otras respuestas: la primera
     regla que se cumple manda; si ninguna, el monto base) y `discounts` (todos los que se cumplen se aplican en orden;
@@ -289,9 +318,11 @@ def sanitize_payment(pay, fields_in: dict, own_id: str) -> dict:
            "companions_charge": bool(pay.get("companions_charge"))}      # cobrar el mismo valor por cada acompañante (tú + N)
     if not out["amount"] and mode == "fixed":
         raise ValueError("El campo de pago necesita un monto")
+    used_ids: set = set()
     if mode == "rules":
         for r in (pay.get("rules") or [])[:20]:
-            out["rules"].append({"label": _text(r.get("label"), 80), "when": _sanitize_price_conditions(r.get("when"), fields_in, own_id), "amount": _money(r.get("amount"), "Monto de una regla")})
+            out["rules"].append({"label": _text(r.get("label"), 80), "when": _sanitize_price_conditions(r.get("when"), fields_in, own_id), "amount": _money(r.get("amount"), "Monto de una regla"),
+                                 **_price_meta(r, ("category", "link"), used_ids)})
     for d in (pay.get("discounts") or [])[:20]:
         kind = d.get("kind") if d.get("kind") in ("percent", "amount") else "percent"
         try:
@@ -303,7 +334,7 @@ def sanitize_payment(pay, fields_in: dict, own_id: str) -> dict:
         if kind == "amount" and not (0 < value <= MAX_PAYMENT_COP):
             raise ValueError("Un descuento en pesos debe ser mayor que 0")
         out["discounts"].append({"label": _text(d.get("label"), 80) or "Descuento", "kind": kind, "value": round(value, 2) if kind == "percent" else int(round(value)),
-                                 "when": _sanitize_price_conditions(d.get("when"), fields_in, own_id)})
+                                 "when": _sanitize_price_conditions(d.get("when"), fields_in, own_id), **_price_meta(d, ("category", "link", "code"), used_ids)})
     return out
 
 
@@ -322,22 +353,34 @@ def _price_cond_met(c: dict, values: dict, today: date) -> bool:
     return condition_met(c, values)
 
 
-def compute_amount(pay: dict, values: dict, today: date, people: int = 1) -> dict:
+def _applies(item: dict, values: dict, today: date, ctx: dict) -> bool:
+    """¿Esta regla/descuento cuenta ahora? `ctx`: {"links": claves de enlace con las que entró la persona, "codes": ids de descuento
+    cuyo código escribió y es válido}. Además de eso, siempre se piden sus condiciones (si tiene)."""
+    how = item.get("how", "category")
+    if how == "link" and item.get("link_key") not in ctx["links"]:
+        return False
+    if how == "code" and item.get("id") not in ctx["codes"]:
+        return False
+    return all(_price_cond_met(c, values, today) for c in item["when"])
+
+
+def compute_amount(pay: dict, values: dict, today: date, people: int = 1, ctx: Optional[dict] = None) -> dict:
     """Monto en pesos según las respuestas (`values`: solo campos VISIBLES, ver `priced_values`) y la fecha de hoy.
     Devuelve {"amount", "unit", "people", "base", "applied": [{"label", "kind": "rule|discount|people", "effect"}]}: `applied` explica el total.
     Con `pay.companions_charge`, el precio por persona (con reglas y descuentos ya aplicados) se multiplica por `people` (quien se inscribe + sus acompañantes)."""
+    ctx = ctx or {"links": set(), "codes": set()}
     amount, applied = pay["amount"], []
     for r in pay.get("rules", []):
-        if all(_price_cond_met(c, values, today) for c in r["when"]):
+        if _applies(r, values, today, ctx):
             amount = r["amount"]
-            applied.append({"label": r["label"] or "Regla de precio", "kind": "rule", "effect": f"monto {_pesos(amount)}"})
+            applied.append({"label": r["label"] or "Regla de precio", "kind": "rule", "effect": f"monto {_pesos(amount)}", "id": r.get("id")})
             break
     base = amount
     for d in pay.get("discounts", []):
-        if all(_price_cond_met(c, values, today) for c in d["when"]):
+        if _applies(d, values, today, ctx):
             cut = amount * d["value"] / 100 if d["kind"] == "percent" else d["value"]
             amount = max(0, int(amount - cut + 0.5))
-            applied.append({"label": d["label"], "kind": "discount", "effect": f"-{d['value']:g}%" if d["kind"] == "percent" else f"-{_pesos(d['value'])}"})
+            applied.append({"label": d["label"], "kind": "discount", "effect": f"-{d['value']:g}%" if d["kind"] == "percent" else f"-{_pesos(d['value'])}", "id": d.get("id")})
     n = max(1, int(people or 1)) if pay.get("companions_charge") else 1
     if n > 1:
         applied.append({"label": f"{n} personas (tú + {n - 1} acompañante{'s' if n > 2 else ''})", "kind": "people", "effect": f"× {n}"})

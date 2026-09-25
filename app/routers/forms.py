@@ -3,6 +3,7 @@ plantillas, respuestas, archivos, invitaciones, reporte y carga a la base. Todo 
 La página pública que llena la gente vive en `forms_public.py` (`/f/<evento>/<formulario>`, sin login)."""
 import json
 import os
+import re
 import secrets
 import tempfile
 from datetime import datetime
@@ -19,7 +20,7 @@ from app import bulk_jobs, formlib, formsvc, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
-from app.models import Event, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, WebForm
+from app.models import Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
 from app.routers import parametros
 from app.routers.badges import ALLOWED_IMAGE_EXT, _badge_assets_dir
 from app.timeutil import to_local
@@ -189,6 +190,7 @@ def delete_form_rows(db: Session, form: WebForm) -> None:
     db.query(FormRefund).filter(FormRefund.payment_id.in_(db.query(FormPayment.id).filter(FormPayment.form_id == form.id))).delete(synchronize_session=False)
     db.query(FormPayment).filter(FormPayment.form_id == form.id).delete()
     db.query(FormSubmission).filter(FormSubmission.form_id == form.id).delete()
+    db.query(FormDiscountCode).filter(FormDiscountCode.form_id == form.id).delete()
     db.query(FormEvent).filter(FormEvent.form_id == form.id).delete()
     db.query(FormInvite).filter(FormInvite.form_id == form.id).delete()
     db.query(FormPerson).filter(FormPerson.form_id == form.id).delete()
@@ -283,6 +285,145 @@ async def event_fields(event_id: int, db: Session = Depends(get_db), staff: Staf
             kind = "phone"
         out.append({"key": key, "label": cfg["label"], "type": kind if kind in formlib.INPUT_TYPES else "text_short", "options": cfg.get("options") or [], "required": bool(cfg.get("required"))})
     return out
+
+
+# ------------------------------------------------------------------ descuentos: sugerencias de valores y códigos
+@router.get("/events/{event_id}/forms/{form_id}/value-suggestions")
+async def value_suggestions(event_id: int, form_id: int, key: str = "", fid: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Los valores que ya existen para una variable, para ofrecerlos como lista en las condiciones de precio/descuento en vez de
+    pedir escribirlos (si son pocos). `key`: campo del evento (base de asistentes); `fid`: campo del formulario (inscripciones hechas)."""
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    values: dict = {}
+    if key in ("role", "entity", "opt_1") or key.startswith("opcional_") or key == "categories":
+        for att, user in db.query(EventAttendee, User).join(User, (User.id == EventAttendee.user_id) & (User.tenant_id == EventAttendee.tenant_id)).filter(EventAttendee.event_id == event.id).limit(20000):
+            found = att.get_categories() if key == "categories" else [user.get_extras().get(key) if key.startswith("opcional_") else getattr(user, key, None)]
+            for v in found:
+                v = str(v or "").strip()
+                if v:
+                    values[v] = values.get(v, 0) + 1
+    field = formsvc.get_design(form)["fields"].get(fid) if fid else None
+    if field and field["type"] in ("text_short", "select", "radio", "number"):
+        for sub in formsvc.real_submissions(db, form).limit(20000):
+            v = json.loads(sub.data_json).get(fid)
+            v = str(v or "").strip() if not isinstance(v, (dict, list)) else ""
+            if v:
+                values[v] = values.get(v, 0) + 1
+    ordered = sorted(values, key=lambda x: (-values[x], x.lower()))
+    return {"values": ordered[:200], "total": len(ordered)}
+
+
+CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"        # sin 0/O/1/I/L: se dictan y se copian sin equivocarse
+MAX_CODES_PER_FORM = 20000
+
+
+def _discount_of(form: WebForm, discount_id: str) -> dict:
+    for f in formsvc.get_design(form)["fields"].values():
+        if f["type"] == formlib.PAYMENT_TYPE:
+            for d in f["pay"].get("discounts", []):
+                if d.get("id") == discount_id and d.get("how") == "code":
+                    return d
+    raise HTTPException(status_code=400, detail="Ese descuento no es «con código» o todavía no está guardado en el diseño. Guarda el diseño primero.")
+
+
+def _code_rows(db: Session, form: WebForm) -> list:
+    labels = {}
+    for f in formsvc.get_design(form)["fields"].values():
+        if f["type"] == formlib.PAYMENT_TYPE:
+            labels = {d.get("id"): d["label"] for d in f["pay"].get("discounts", [])}
+    out = []
+    for c in db.query(FormDiscountCode).filter_by(form_id=form.id).order_by(FormDiscountCode.id):
+        used = formsvc.code_uses(db, c)
+        out.append({"id": c.id, "code": c.code, "discount_id": c.discount_id, "discount": labels.get(c.discount_id, "(descuento eliminado)"), "max_uses": c.max_uses, "used": used, "left": max(0, c.max_uses - used)})
+    return out
+
+
+@router.get("/events/{event_id}/forms/{form_id}/discount-codes")
+async def list_codes(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    event = get_event_for_staff(event_id, db, staff)
+    return _code_rows(db, _get_form(db, event, form_id))
+
+
+@router.post("/events/{event_id}/forms/{form_id}/discount-codes")
+async def create_codes(event_id: int, form_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Crea códigos para un descuento «con código»: `shared` = UN código válido `max_uses` veces (ej. 3000 y luego deja de servir);
+    `unique` = `count` códigos distintos de un solo uso (uno por persona)."""
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    disc = _discount_of(form, str(data.get("discount_id") or ""))
+    mode = data.get("mode")
+    if db.query(FormDiscountCode).filter_by(form_id=form.id).count() >= MAX_CODES_PER_FORM:
+        raise HTTPException(status_code=400, detail=f"Un formulario admite hasta {MAX_CODES_PER_FORM} códigos")
+
+    def number(key, lo, hi, what):
+        try:
+            n = int(data.get(key))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{what}: escribe un número")
+        if not lo <= n <= hi:
+            raise HTTPException(status_code=400, detail=f"{what}: entre {lo} y {hi:,}".replace(",", "."))
+        return n
+
+    def fresh(prefix=""):
+        while True:
+            code = prefix + "".join(secrets.choice(CODE_ALPHABET) for _ in range(8 - len(prefix) if len(prefix) < 6 else 4))
+            if not db.query(FormDiscountCode).filter_by(form_id=form.id, code=code).first() and code not in seen:
+                seen.add(code)
+                return code
+    seen: set = set()
+    made = []
+    if mode == "shared":
+        uses = number("max_uses", 1, 1_000_000, "Cuántas veces se puede usar")
+        custom = formsvc.normalize_code(data.get("code"))
+        if custom and not re.fullmatch(r"[A-Z0-9_-]{3,40}", custom):
+            raise HTTPException(status_code=400, detail="El código solo puede llevar letras, números, guion y guion bajo (3 a 40 caracteres)")
+        if custom and db.query(FormDiscountCode).filter_by(form_id=form.id, code=custom).first():
+            raise HTTPException(status_code=409, detail="Ese código ya existe en este formulario")
+        made.append(FormDiscountCode(form_id=form.id, discount_id=disc["id"], code=custom or fresh(), max_uses=uses))
+    elif mode == "unique":
+        count = number("count", 1, 5000, "Cuántos códigos")
+        prefix = re.sub(r"[^A-Z0-9]", "", str(data.get("prefix") or "").upper())[:6]
+        made = [FormDiscountCode(form_id=form.id, discount_id=disc["id"], code=fresh(prefix), max_uses=1) for _ in range(count)]
+    else:
+        raise HTTPException(status_code=400, detail="Elige si es un código con varios usos o códigos de un solo uso")
+    db.add_all(made)
+    db.commit()
+    return {"created": len(made), "codes": [c.code for c in made[:50]]}
+
+
+@router.delete("/events/{event_id}/forms/{form_id}/discount-codes/{code_id}")
+async def delete_code(event_id: int, form_id: int, code_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    code = db.query(FormDiscountCode).filter_by(id=code_id, form_id=form.id).first()
+    if not code:
+        raise HTTPException(status_code=404, detail="Código no encontrado")
+    if db.query(FormSubmission).filter(FormSubmission.discount_code_id == code.id).first():
+        raise HTTPException(status_code=409, detail="Ese código ya se usó: no se puede borrar (queda como registro). Si no quieres que se use más, quita el descuento del diseño.")
+    db.delete(code)
+    db.commit()
+    return {"message": "Código eliminado"}
+
+
+@router.get("/events/{event_id}/forms/{form_id}/discount-codes/export")
+async def export_codes(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Excel con todos los códigos y su uso, para repartirlos."""
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Códigos"
+    ws.append(["Código", "Descuento", "Usos permitidos", "Usos", "Disponibles"])
+    for c in _code_rows(db, form):
+        ws.append([c["code"], c["discount"], c["max_uses"], c["used"], c["left"]])
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="2C3E50")
+    for i, w in enumerate((18, 30, 16, 8, 12), start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    handle = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    wb.save(handle.name)
+    return FileResponse(handle.name, filename=f"codigos_{form.slug}.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @router.get("/events/{event_id}/form-templates")

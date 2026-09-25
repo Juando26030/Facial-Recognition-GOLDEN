@@ -6,10 +6,11 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app import formlib
-from app.models import AccessLog, Event, EventAttendee, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
+from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
 from app.timeutil import to_local
 
 # columnas de un Excel de pre-llenado (en minúscula) -> clave del campo del evento
@@ -55,6 +56,36 @@ PENDING_PURGE = timedelta(hours=24)   # y se borra pasado este (antes podría ll
 def real_submissions(db: Session, form: WebForm):
     """Inscripciones REALES confirmadas (sin pruebas y sin las que esperan un pago)."""
     return db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed")  # noqa: E712
+
+
+CODE_MESSAGES = {"invalid": "Ese código no es válido", "exhausted": "Ese código ya se agotó", "not_applicable": "Ese código no aplica con lo que respondiste"}
+
+
+def normalize_code(raw) -> str:
+    return re.sub(r"\s+", "", str(raw or "")).upper()[:40]
+
+
+def code_uses(db: Session, code: FormDiscountCode) -> int:
+    """Usos de un código: inscripciones reales confirmadas + las que están pagando ahora (mismo criterio que el cupo)."""
+    return db.query(FormSubmission).filter(
+        FormSubmission.discount_code_id == code.id, FormSubmission.is_test == False,  # noqa: E712
+        or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > datetime.utcnow() - PENDING_HOLD))).count()
+
+
+def price_context(db: Session, form: WebForm, pay: dict, link, code):
+    """Lo que la persona trae para el precio: la clave del enlace por el que entró (`?d=`) y el código que escribió.
+    Devuelve (ctx para `compute_amount`, fila del código o None, problema: None|invalid|exhausted)."""
+    ctx = {"links": {str(link)[:40]} if link else set(), "codes": set()}
+    norm = normalize_code(code)
+    if not norm:
+        return ctx, None, None
+    row = db.query(FormDiscountCode).filter_by(form_id=form.id, code=norm).first()
+    if not row or not any(d.get("id") == row.discount_id and d.get("how") == "code" for d in pay.get("discounts", [])):
+        return ctx, None, "invalid"
+    if code_uses(db, row) >= row.max_uses:
+        return ctx, None, "exhausted"
+    ctx["codes"].add(row.discount_id)
+    return ctx, row, None
 
 
 def held_count(db: Session, form: WebForm) -> int:

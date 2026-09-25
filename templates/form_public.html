@@ -39,7 +39,7 @@
 <script>
 const BASE = "/f/{{ event_id }}/{{ slug }}";
 const qs = new URLSearchParams(location.search);
-const K = qs.get("k"), INVITE = qs.get("i"), SOURCE = qs.get("utm_source") || qs.get("src") || "";
+const K = qs.get("k"), D = qs.get("d") || "", INVITE = qs.get("i"), SOURCE = qs.get("utm_source") || qs.get("src") || "";
 const SID = (() => { try { let s = sessionStorage.getItem("sid_" + BASE); if (!s) { s = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem("sid_" + BASE, s); } return s; } catch (e) { return Math.random().toString(36).slice(2); } })();
 const app = document.getElementById("app");
 let token = null, theme = null;
@@ -47,7 +47,7 @@ let token = null, theme = null;
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const assetUrl = (p) => `${BASE}/asset/${p}` + (K ? `?k=${encodeURIComponent(K)}` : "");
 async function api(path, body) {
-  const res = await fetch(BASE + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ k: K, t: token, sid: SID, source: SOURCE, ...body }) });
+  const res = await fetch(BASE + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ k: K, d: D, t: token, sid: SID, source: SOURCE, ...body }) });
   return { res, data: await res.json().catch(() => ({})) };
 }
 function beacon(kind) { fetch(BASE + "/beacon", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ k: K, sid: SID, kind, source: SOURCE }) }).catch(() => {}); }
@@ -134,7 +134,7 @@ function showForm(st) {
   });
   // Campo «Pago»: el total lo calcula SIEMPRE el servidor con lo que la persona lleva escrito.
   async function quote() {
-    const { res, data } = await api("/quote", { values: fr.collect().values });
+    const { res, data } = await api("/quote", { values: fr.collect().values, code: fr.code() });
     if (res.ok) fr.setQuote(data);
   }
   if (fr.hasPayment) {
@@ -154,7 +154,7 @@ function showForm(st) {
     fr.button.disabled = true; fr.button.textContent = "Enviando…"; msg.textContent = "";
     const { values, files } = fr.collect();
     const fd = new FormData();
-    fd.append("data", JSON.stringify({ values, k: K, t: token, sid: SID, source: SOURCE }));
+    fd.append("data", JSON.stringify({ values, k: K, d: D, code: fr.code(), t: token, sid: SID, source: SOURCE }));
     Object.entries(files).forEach(([fid, f]) => fd.append("file:" + fid, f, f.name));
     let res, data;
     try { res = await fetch(BASE + "/submit", { method: "POST", body: fd }); data = await res.json().catch(() => ({})); }

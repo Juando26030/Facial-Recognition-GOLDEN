@@ -366,31 +366,80 @@ function dropPriceConditions(fieldId) {
   if (!pf) return;
   [...pf.pay.rules, ...pf.pay.discounts].forEach((r) => { r.when = (r.when || []).filter((c) => c.field !== fieldId); });
 }
+// Valores que YA existen para una variable (opciones del campo, o lo que hay en la base del evento / en las inscripciones): si son pocos se ofrecen
+// como lista para elegir; si son muchos, se escribe con sugerencias.
+const SUG = {};
+function suggestFor(parent) {
+  if (!parent) return null;
+  if (parent.options && parent.options.length) return { values: parent.options, total: parent.options.length };
+  const k = `${parent.key || ''}|${parent.id}`;
+  if (!(k in SUG)) {
+    SUG[k] = null;
+    j(`${api}/value-suggestions?key=${encodeURIComponent(parent.key || '')}&fid=${encodeURIComponent(parent.id)}`).then((d) => { SUG[k] = d; renderProps(); }).catch(() => {});
+  }
+  return SUG[k];
+}
+function valueControl(c, parent, p) {
+  const sug = suggestFor(parent), has = sug && sug.values.length > 0, few = has && sug.total <= 8;
+  if (c.op !== 'in' && few) {
+    const vals = !c.value || sug.values.includes(c.value) ? sug.values : [...sug.values, c.value];
+    return `<select data-bind="${p}.value"><option value=""></option>${vals.map((o) => `<option ${c.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select><div class="hint">Estos son los valores que ya existen.</div>`;
+  }
+  const dl = `dl_${p.replace(/\./g, '_')}`;
+  return `<input type="text" data-bind="${p}.value" data-list="${c.op === 'in' ? 1 : 0}" ${has && c.op !== 'in' ? `list="${dl}"` : ''} value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores, separados, por coma' : 'valor'}">`
+    + (has ? `<datalist id="${dl}">${sug.values.map((o) => `<option value="${esc(o)}">`).join('')}</datalist><div class="hint">${sug.total} valores detectados${c.op === 'in' ? ': ' + esc(sug.values.slice(0, 8).join(', ')) + (sug.total > 8 ? '…' : '') : ' — empieza a escribir para ver sugerencias'}.</div>` : '');
+}
 function condsHtml(path, list, exceptId) {
   const inputs = Object.values(design.fields).filter((x) => x.id !== exceptId && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   return `<div style="margin:4px 0;">${(list || []).map((c, i) => {
     const isDate = c.field === '@date', parent = design.fields[c.field], p = `${path}.${i}`;
     const opSel = isDate ? `<select data-bind="${p}.op" data-rerender><option value="before" ${c.op === 'before' ? 'selected' : ''}>antes de</option><option value="on_or_after" ${c.op === 'on_or_after' ? 'selected' : ''}>desde (incluye el día)</option></select>`
       : `<select data-bind="${p}.op" data-rerender>${OPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
-    const val = isDate ? `<input type="date" data-bind="${p}.value" value="${esc(c.value)}">`
-      : c.op === 'filled' ? '' : (parent && parent.options && c.op !== 'in' ? `<select data-bind="${p}.value"><option value=""></option>${parent.options.map((o) => `<option ${c.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
-        : `<input type="text" data-bind="${p}.value" data-list="${c.op === 'in' ? 1 : 0}" value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores, separados, por coma' : 'valor'}">`);
+    const val = isDate ? `<input type="date" data-bind="${p}.value" value="${esc(c.value)}">` : c.op === 'filled' ? '' : valueControl(c, parent, p);
     return `<div style="display:grid; gap:3px; background:#f6f7fb; padding:5px; border-radius:8px; margin-bottom:4px;">
       <select data-bind="${p}.field" data-rerender data-resetvalue><option value="@date" ${isDate ? 'selected' : ''}>📅 Fecha de la inscripción (hoy)</option>${inputs.map((o) => `<option value="${o.id}" ${o.id === c.field ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
       ${opSel}${val}<button type="button" class="small-btn danger" data-del="${p}" style="justify-self:end; padding:0 8px;">Quitar condición</button></div>`;
   }).join('')}<button type="button" class="small-btn" data-addcond="${path}">+ Condición</button></div>`;
 }
+let CODES = [], codesLoaded = false;
+async function loadCodes() { try { CODES = await j(`${api}/discount-codes`); } catch (e) { CODES = []; } codesLoaded = true; renderProps(); }
+function linkBox(item, what) {
+  if (!item.link_key) return `<div class="hint" style="background:#fff8e1; padding:5px 8px; border-radius:8px; margin-top:4px;">🔗 Guarda el diseño para generar el enlace de este ${what}.</div>`;
+  const url = `${location.origin}/f/${EV}/${($('fslug') && $('fslug').value) || form.slug}?d=${item.link_key}`;
+  return `<div style="display:flex; gap:4px; margin-top:4px;"><input type="text" readonly value="${esc(url)}" style="font-size:0.72rem;"><button type="button" class="small-btn" data-copy="${esc(url)}">Copiar</button></div>
+    <div class="hint">Solo quien entre por este enlace tendrá este ${what}. Compártelo únicamente con quien deba recibirlo. (Si el formulario está en «Pruebas», el enlace real necesita además <code>&amp;k=…</code>).</div>`;
+}
+function codeBox(d, i) {
+  if (!d.id || dirty) return `<div class="hint" style="background:#fff8e1; padding:5px 8px; border-radius:8px; margin-top:4px;">🎟️ Guarda el diseño para poder generar los códigos de este descuento.</div>`;
+  if (!codesLoaded) { loadCodes(); return '<div class="hint">Cargando códigos…</div>'; }
+  const mine = CODES.filter((c) => c.discount_id === d.id), used = mine.reduce((a, c) => a + c.used, 0), cap = mine.reduce((a, c) => a + c.max_uses, 0);
+  return `<div style="background:#f6f7fb; padding:6px; border-radius:8px; margin-top:4px;" data-codebox="${d.id}">
+    <b style="font-size:0.78rem;">🎟️ Códigos de este descuento</b>
+    <div class="hint">${mine.length ? `${mine.length} código(s) · ${used} uso(s) de ${cap.toLocaleString('es-CO')}` : 'Aún no hay códigos: sin códigos nadie puede usar este descuento.'}</div>
+    ${mine.slice(0, 8).map((c) => `<div style="display:flex; justify-content:space-between; font-size:0.74rem;"><code>${esc(c.code)}</code><span>${c.used}/${c.max_uses} usos</span></div>`).join('')}${mine.length > 8 ? `<div class="hint">… y ${mine.length - 8} más (están en el Excel)</div>` : ''}
+    <label style="font-size:0.78rem; display:flex; gap:4px; margin-top:6px;"><input type="radio" name="cm${i}" data-cmode="shared" checked> Un solo código, válido N veces</label>
+    <label style="font-size:0.78rem; display:flex; gap:4px;"><input type="radio" name="cm${i}" data-cmode="unique"> N códigos distintos, de un solo uso</label>
+    <div data-cshared><input type="text" data-ccode placeholder="Código (opcional; si lo dejas vacío se inventa uno)" style="margin-top:3px;"><input type="number" min="1" data-cuses value="100" style="margin-top:3px;" title="Cuántas veces se puede usar"><div class="hint">Cuántas veces se puede usar en total; al llegar a ese número deja de servir.</div></div>
+    <div data-cunique hidden><input type="number" min="1" max="5000" data-ccount value="100" style="margin-top:3px;" title="Cuántos códigos"><input type="text" data-cprefix maxlength="6" placeholder="Prefijo (opcional, ej. VIP)" style="margin-top:3px;"><div class="hint">Cada código sirve una sola vez (uno por persona).</div></div>
+    <div style="display:flex; gap:4px; margin-top:5px;"><button type="button" class="small-btn" data-gen="${d.id}">Generar</button>${mine.length ? `<a class="small-btn" href="${api}/discount-codes/export" style="text-decoration:none;">⬇ Excel de códigos</a>` : ''}</div></div>`;
+}
 function payHtml(f) {
   const pay = f.pay;
-  const rules = pay.mode === 'rules' ? `<div class="fld"><label>Montos según respuestas <span class="hint">(gana la primera que se cumpla; si ninguna, el monto base)</span></label>${pay.rules.map((r, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
+  const HOW_RULE = [['category', 'Según lo que responda la persona (categoría / variable)'], ['link', 'Con un enlace propio']];
+  const HOW_DISC = [...HOW_RULE, ['code', 'Con un código de descuento']];
+  const howSel = (path, cur, opts) => `<select data-bind="${path}.how" data-rerender style="width:100%; margin-top:3px;">${opts.map(([v, l]) => `<option value="${v}" ${(cur || 'category') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const when = (path, item, what) => `<div class="hint" style="margin-top:4px;">${(item.how || 'category') === 'category' ? `Cuando se cumpla TODO esto${what}:` : 'Condiciones extra (opcional, además de ' + ((item.how) === 'link' ? 'entrar por el enlace' : 'tener un código válido') + '):'}</div>${condsHtml(path, item.when, f.id)}`;
+  const rules = pay.mode === 'rules' ? `<div class="fld"><label>Montos según respuestas o enlaces <span class="hint">(gana el primero que se cumpla; si ninguno, el monto base)</span></label>${pay.rules.map((r, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
       <input type="text" data-bind="rules.${i}.label" value="${esc(r.label)}" placeholder="Nombre (ej. Entrada VIP)"><input type="number" min="0" data-num data-bind="rules.${i}.amount" value="${r.amount}" placeholder="Monto COP" style="width:100%; margin-top:3px;">
-      <div class="hint" style="margin-top:4px;">Cuando se cumpla TODO esto:</div>${condsHtml(`rules.${i}.when`, r.when, f.id)}<button type="button" class="small-btn danger" data-del="rules.${i}">Quitar regla</button></div>`).join('')}
+      ${howSel(`rules.${i}`, r.how, HOW_RULE)}${r.how === 'link' ? linkBox(r, 'precio') : ''}
+      ${when(`rules.${i}.when`, r, '')}<button type="button" class="small-btn danger" data-del="rules.${i}">Quitar regla</button></div>`).join('')}
       <button type="button" class="small-btn" data-addrule>+ Agregar monto por regla</button></div>` : '';
   const disc = `<div class="fld"><label>Descuentos <span class="hint">(se aplican todos los que se cumplan, en este orden)</span></label>${pay.discounts.map((d, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
       <input type="text" data-bind="discounts.${i}.label" value="${esc(d.label)}" placeholder="Nombre (ej. Estudiante)">
       <div style="display:flex; gap:4px; margin-top:3px;"><select data-bind="discounts.${i}.kind"><option value="percent" ${d.kind === 'percent' ? 'selected' : ''}>% de descuento</option><option value="amount" ${d.kind === 'amount' ? 'selected' : ''}>$ COP menos</option></select><input type="number" min="0" step="any" data-num data-bind="discounts.${i}.value" value="${d.value}"></div>
-      <div class="hint" style="margin-top:4px;">Cuando se cumpla TODO esto (vacío = siempre):</div>${condsHtml(`discounts.${i}.when`, d.when, f.id)}<button type="button" class="small-btn danger" data-del="discounts.${i}">Quitar descuento</button></div>`).join('')}
-      <button type="button" class="small-btn" data-adddisc>+ Agregar descuento</button></div>`;
+      ${howSel(`discounts.${i}`, d.how, HOW_DISC)}${d.how === 'link' ? linkBox(d, 'descuento') : ''}${d.how === 'code' ? codeBox(d, i) : ''}
+      ${when(`discounts.${i}.when`, d, ' (vacío = siempre)')}<button type="button" class="small-btn danger" data-del="discounts.${i}">Quitar descuento</button></div>`).join('')}
+      <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" data-adddisc="category">+ Por categoría / variable</button><button type="button" class="small-btn" data-adddisc="link">+ Con enlace propio</button><button type="button" class="small-btn" data-adddisc="code">+ Con código</button></div></div>`;
   return `<div class="fld"><label>Descripción (opcional)</label><input type="text" data-bind="description" value="${esc(pay.description)}" placeholder="Ej. Inscripción Feria 2026"></div>
     <div class="fld"><label>Cómo se define el monto</label><select data-bind="mode" data-rerender><option value="fixed" ${pay.mode === 'fixed' ? 'selected' : ''}>Monto fijo</option><option value="rules" ${pay.mode === 'rules' ? 'selected' : ''}>Depende de otras respuestas</option></select></div>
     <div class="fld"><label>Monto ${pay.mode === 'rules' ? 'base (si no se cumple ninguna regla)' : ''} en pesos colombianos</label><input type="number" min="0" data-num data-bind="amount" value="${pay.amount}"></div>${rules}${disc}
@@ -450,7 +499,16 @@ function bindPay(box, f) {
   box.querySelectorAll('[data-addcond]').forEach((b) => b.addEventListener('click', () => { const first = Object.values(design.fields).find((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type)); arr(b.dataset.addcond).push(first ? { field: first.id, op: 'equals', value: '' } : { field: '@date', op: 'before', value: '' }); rerender(); }));
   const add = (sel, list, item) => { const b = box.querySelector(sel); if (b) b.addEventListener('click', () => { f.pay[list].push(item()); rerender(); }); };
   add('[data-addrule]', 'rules', () => ({ label: '', when: [], amount: f.pay.amount }));
-  add('[data-adddisc]', 'discounts', () => ({ label: 'Descuento', kind: 'percent', value: 10, when: [] }));
+  box.querySelectorAll('[data-adddisc]').forEach((b) => b.addEventListener('click', () => { f.pay.discounts.push({ label: 'Descuento', kind: 'percent', value: 10, when: [], how: b.dataset.adddisc }); rerender(); }));
+  box.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => { navigator.clipboard.writeText(b.dataset.copy).then(() => showToast('Enlace copiado', 'success')).catch(() => showToast('Selecciona el enlace y cópialo a mano', 'error')); }));
+  box.querySelectorAll('[data-codebox]').forEach((cb) => {
+    cb.querySelectorAll('[data-cmode]').forEach((r) => r.addEventListener('change', () => { const u = cb.querySelector('[data-cmode="unique"]').checked; cb.querySelector('[data-cshared]').hidden = u; cb.querySelector('[data-cunique]').hidden = !u; }));
+    cb.querySelector('[data-gen]').addEventListener('click', async () => {
+      const unique = cb.querySelector('[data-cmode="unique"]').checked;
+      const body = unique ? { mode: 'unique', count: +cb.querySelector('[data-ccount]').value, prefix: cb.querySelector('[data-cprefix]').value } : { mode: 'shared', max_uses: +cb.querySelector('[data-cuses]').value, code: cb.querySelector('[data-ccode]').value };
+      try { const r = await jpost(`${api}/discount-codes`, { discount_id: cb.dataset.codebox, ...body }); showToast(unique ? `Se crearon ${r.created} códigos` : `Código creado: ${r.codes[0]}`, 'success'); await loadCodes(); } catch (e) { showToast(e.message, 'error'); }
+    });
+  });
 }
 
 // ---------------------------------------------------------------- apariencia
