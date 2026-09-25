@@ -90,7 +90,7 @@ def _payload_form(db: Session, form: WebForm, claims: dict) -> dict:
         if person:
             prefill = formsvc.prefill_values(design, person)
             readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
-    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
+    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota_left": formsvc.quota_left(db, form), "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
 
 
 # ------------------------------------------------------------------ páginas y estado
@@ -331,6 +331,10 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
     if code_row and formsvc.code_uses(db, code_row) >= code_row.max_uses:        # otra persona se llevó el último uso mientras esta escribía
         db.rollback()
         return JSONResponse({"detail": formsvc.CODE_MESSAGES["exhausted"], "code_error": True}, status_code=422)
+    q_fid, q_limits = formsvc.quota_config(form)
+    if q_fid and not is_test and clean.get(q_fid) in q_limits and formsvc.quota_used(db, form, q_fid).get(clean[q_fid], 0) >= q_limits[clean[q_fid]]:
+        db.rollback()
+        return JSONResponse({"detail": f"El cupo para «{clean[q_fid]}» ya se completó. Elige otra opción.", "stage": "quota"}, status_code=409)
     if formsvc.is_full(db, locked) and not is_test:
         db.rollback()
         return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)

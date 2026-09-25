@@ -80,6 +80,11 @@
 
     <!-- ===================== CONFIGURACIÓN ===================== -->
     <div class="pane" id="pane-config">
+      <div class="card"><h4 style="margin:0 0 8px;">Cupo por categoría</h4>
+        <div class="fld"><label>Campo que define la categoría (lista desplegable u opción única)</label><select id="qField" style="max-width:360px;"></select></div>
+        <div id="qRows" style="margin-top:6px;"></div>
+        <p class="hint">Escribe cuántas inscripciones admite cada opción (vacío = sin límite). Cuando una se llena, esa opción sale «(agotado)» y no se puede elegir. Es aparte del cupo total de arriba: se aplican los dos. Se guarda con «Guardar configuración».</p>
+      </div>
       <div class="card"><h4 style="margin:0 0 8px;">Estado y enlaces</h4>
         <div class="bar"><div class="fld"><label>Estado</label><select id="cfgStatus"><option value="pruebas">Pruebas (solo con el enlace de pruebas)</option><option value="activo">Activo (abierto al público)</option><option value="cerrado">Cerrado (muestra la plantilla de cierre)</option><option value="finalizado">Finalizado (el enlace deja de existir)</option></select></div>
           <div class="fld"><label>Cupo de inscripciones (vacío = sin límite)</label><input type="number" id="cfgCap" min="1" style="width:130px;"></div>
@@ -665,8 +670,16 @@ function paintConfig() {
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
+  paintQuotas();
   $('sendBadgeWarn').style.display = form.digital_badge_enabled ? 'none' : 'block';
 }
+function paintQuotas() {
+  const q = (settings && settings.quotas) || { field: '', limits: {} }, choices = Object.values(design.fields).filter((f) => ['select', 'radio'].includes(f.type));
+  $('qField').innerHTML = `<option value="">— Sin cupo por categoría —</option>` + choices.map((f) => `<option value="${f.id}" ${q.field === f.id ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
+  const f = design.fields[$('qField').value], used = form.quota_used || {};
+  $('qRows').innerHTML = f ? f.options.map((o) => `<div style="display:flex; gap:8px; align-items:center; margin-bottom:4px;"><span style="min-width:220px; font-size:0.85rem;">${esc(o)}</span><input type="number" min="1" data-qopt="${esc(o)}" value="${(q.limits || {})[o] || ''}" placeholder="sin límite" style="width:110px;"><span class="hint">${used[o] || 0} inscritos</span></div>`).join('') : '';
+}
+$('qField').addEventListener('change', () => { settings.quotas = { field: $('qField').value, limits: {} }; paintQuotas(); });
 $('cfgStatusSave').addEventListener('click', async () => {
   try { form = await jput(`${api}/status`, { manual_status: $('cfgStatus').value, capacity: $('cfgCap').value === '' ? null : +$('cfgCap').value }); settings = form.settings; paintHeader(); paintConfig(); showToast('Estado y cupo aplicados', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });
@@ -694,6 +707,7 @@ $('cfgSave').addEventListener('click', async () => {
     closed_template: { ...settings.closed_template, title: $('clTitle').value, text: $('clText').value },
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
+    quotas: { field: $('qField').value, limits: Object.fromEntries(Array.from(document.querySelectorAll('[data-qopt]')).filter((i) => i.value !== '').map((i) => [i.dataset.qopt, +i.value])) },
   };
   try { form = await jput(api, { settings: payload }); settings = form.settings; paintHeader(); paintConfig(); showToast('Configuración guardada', 'success'); } catch (e) { showToast(e.message, 'error'); }
 });

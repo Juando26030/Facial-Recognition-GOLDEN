@@ -171,7 +171,7 @@ function showForm(st) {
   let started = false, quoteTimer = null;
   const label = st.design.theme.button_text || "Enviar";
   const fr = FormRender.render(host, st.design, {
-    assetUrl, prefill: st.prefill, readonly: st.readonly, badgeEmailField: st.badge_email_field, idDocs: st.id_docs,
+    assetUrl, prefill: st.prefill, readonly: st.readonly, badgeEmailField: st.badge_email_field, idDocs: st.id_docs, quotaLeft: st.quota_left,
     onFirstInput: () => { if (!started) { started = true; beacon("start"); } },
     onChange: () => { if (fr && fr.hasPayment) { clearTimeout(quoteTimer); quoteTimer = setTimeout(quote, 250); } },
   });

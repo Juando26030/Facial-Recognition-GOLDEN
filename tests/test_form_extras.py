@@ -485,3 +485,57 @@ def test_an_unconditional_rule_never_hides_a_more_specific_one_and_a_link_wins_t
     assert _q(client, ev, form, values={"cat": "Y"})["amount"] == 70000 and _q(client, ev, form, values={"cat": "X"})["amount"] == 100000
     key = saved["rules"][2]["link_key"]
     assert _q(client, ev, form, values={"cat": "X"}, d=key)["amount"] == 20000                                                   # el enlace gana el empate (1 condición cada uno)
+
+
+# ------------------------------- cupo por categoría -------------------------------
+def _quota_form(client, factory, limits, capacity=None):
+    if not getattr(factory, "_coord", None):
+        factory._coord = factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso")
+    login(client, "coord1")
+    form = _create(client, ev)
+    cat = {"id": "cat", "type": "select", "label": "Categoría", "options": ["VIP", "General", "Estudiante"]}
+    r = _put(client, ev, form, design=_design(_basic_fields() + [cat]), settings={"quotas": {"field": "cat", "limits": limits}})
+    assert r.status_code == 200, r.text
+    if capacity:
+        r = _status(client, ev, form, capacity=capacity)
+        assert r.status_code == 200, r.text
+    _open(client, ev, form)
+    client.post("/logout")
+    return ev, form
+
+
+def test_category_quota_blocks_a_full_category_but_not_the_others(client, factory):
+    ev, form = _quota_form(client, factory, {"VIP": 2, "Estudiante": 1, "Basura": "x", "General": 0})
+    st = client.get(f"{_url(ev, form)}/state").json()
+    assert st["quota_left"] == {"cat": {"VIP": 2, "Estudiante": 1}}                                   # lo inválido/0 se descarta; General queda sin límite
+    assert _submit(client, ev, form, {**_who(1), "cat": "Estudiante"}, sid="a").status_code == 200
+    r = _submit(client, ev, form, {**_who(2), "cat": "Estudiante"}, sid="b")
+    assert r.status_code == 409 and r.json()["stage"] == "quota" and "Estudiante" in r.json()["detail"]
+    assert _submit(client, ev, form, {**_who(3), "cat": "VIP"}, sid="c").status_code == 200           # otra categoría sigue abierta
+    assert _submit(client, ev, form, {**_who(4), "cat": "General"}, sid="d").status_code == 200       # sin límite
+    assert client.get(f"{_url(ev, form)}/state").json()["quota_left"] == {"cat": {"VIP": 1, "Estudiante": 0}}
+
+
+def test_category_quota_does_not_count_tests_and_frees_up_when_a_registration_is_cancelled(client, factory):
+    ev, form = _quota_form(client, factory, {"VIP": 1})
+    login(client, "coord1")
+    _status(client, ev, form, manual_status="pruebas")
+    key = client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()["test_key"]
+    client.post("/logout")
+    for n in (1, 2):
+        assert _submit(client, ev, form, {**_who(n), "cat": "VIP"}, key=key, sid=f"t{n}").status_code == 200          # las pruebas ni cuentan ni se bloquean
+    login(client, "coord1")
+    _status(client, ev, form, manual_status="activo")
+    used = client.get(f"/api/events/{ev.id}/forms/{form['id']}").json()
+    assert used["quota_used"] == {}                                                                              # sin inscripciones reales
+    client.post("/logout")
+    assert _submit(client, ev, form, {**_who(3), "cat": "VIP"}, sid="a").status_code == 200
+    assert _submit(client, ev, form, {**_who(4), "cat": "VIP"}, sid="b").status_code == 409
+
+
+def test_category_quota_and_total_capacity_apply_together(client, factory):
+    ev, form = _quota_form(client, factory, {"VIP": 5}, capacity=1)
+    assert _submit(client, ev, form, {**_who(1), "cat": "General"}, sid="a").status_code == 200
+    r = _submit(client, ev, form, {**_who(2), "cat": "VIP"}, sid="b")                                             # VIP tiene cupo, pero el total ya se llenó
+    assert r.status_code == 409

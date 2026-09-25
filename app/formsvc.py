@@ -88,6 +88,36 @@ def price_context(db: Session, form: WebForm, pay: dict, link, code):
     return ctx, row, None
 
 
+def quota_config(form: WebForm):
+    """(id del campo, {opción: máximo}) del cupo por categoría; solo cuenta si el campo existe, es lista/opción única y la opción sigue existiendo."""
+    q = get_settings(form)["quotas"]
+    f = get_design(form)["fields"].get(q.get("field"))
+    if not f or f["type"] not in ("select", "radio"):
+        return None, {}
+    return f["id"], {o: n for o, n in q["limits"].items() if o in f["options"]}
+
+
+def quota_used(db: Session, form: WebForm, fid: str) -> dict:
+    """Inscritos por opción del campo: confirmadas reales + las que están pagando ahora (mismo criterio que el cupo total)."""
+    hold = datetime.utcnow() - PENDING_HOLD
+    rows = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
+                                           or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold)))
+    used: dict = {}
+    for sub in rows:
+        v = json.loads(sub.data_json).get(fid)
+        if isinstance(v, str) and v:
+            used[v] = used.get(v, 0) + 1
+    return used
+
+
+def quota_left(db: Session, form: WebForm) -> dict:
+    fid, limits = quota_config(form)
+    if not fid or not limits:
+        return {}
+    used = quota_used(db, form, fid)
+    return {fid: {o: max(0, n - used.get(o, 0)) for o, n in limits.items()}}
+
+
 def held_count(db: Session, form: WebForm) -> int:
     """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min)."""
     holding = db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712

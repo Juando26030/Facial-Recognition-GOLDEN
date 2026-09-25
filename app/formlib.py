@@ -54,6 +54,7 @@ DEFAULT_SETTINGS = {
     "prefill": {"mode": "none", "source": "event"},                  # mode: none | cedula | invite ; source: event | event:<id> | upload
     "closed_template": {"title": "Este formulario ya cerró", "text": "Lo sentimos, ya no estamos recibiendo inscripciones.", "image": ""},
     "thanks": {"mode": "template", "title": "¡Gracias por inscribirte!", "text": "Recibimos tus datos correctamente.", "image": "", "url": ""},
+    "quotas": {"field": "", "limits": {}},                           # cupo por categoría: {campo (lista/opción única), limits: {opción: máximo}}
     "feed": "manual",                                                # realtime | on_close | manual
     "max_mb": 10,
     "language": "es",                                                # idioma en que está escrito (<html lang>): el navegador ofrece traducir desde ahí
@@ -538,6 +539,16 @@ def sanitize_settings(settings: dict) -> dict:
         out["thanks"]["mode"] = "template"
     if out["thanks"]["mode"] == "redirect" and not re.match(r"^https?://[^\s]+$", out["thanks"]["url"] or ""):
         raise ValueError("La dirección a la que se redirige debe empezar con http:// o https://")
+    q_in = s_in.get("quotas") or {}
+    limits = {}
+    for opt, n in list((q_in.get("limits") or {}).items())[:50]:
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            continue
+        if 0 < n <= 1_000_000 and str(opt).strip():
+            limits[_text(opt, 120)] = n
+    out["quotas"] = {"field": _text(q_in.get("field"), 40) if limits else "", "limits": limits}
     out["feed"] = s_in.get("feed") if s_in.get("feed") in ("realtime", "on_close", "manual") else "manual"
     try:
         out["max_mb"] = max(1, min(20, int(s_in.get("max_mb") or 10)))
