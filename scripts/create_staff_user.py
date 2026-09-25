@@ -1,7 +1,7 @@
 """Crea una cuenta de staff (típicamente el primer Super Admin, para arrancar el sistema).
 
 Uso:
-    python scripts/create_staff_user.py --username juando --role super_admin --full-name "Juan David"
+    python scripts/create_staff_user.py --username juando --role super_admin --full-name "Juan David" --email correo@dominio.com --phone +573001234567
 
 Pide la contraseña de forma interactiva (no queda en el historial de la shell). Requiere que las
 migraciones ya estén aplicadas (`alembic upgrade head`) y que exista `.env` con DATABASE_URL.
@@ -28,6 +28,8 @@ def main():
     parser.add_argument("--role", required=True, choices=STAFF_ROLES)
     parser.add_argument("--full-name", default=None)
     parser.add_argument("--tenant-id", default=None)
+    parser.add_argument("--email", default=None, help="Necesario para «olvidé mi contraseña» y para recibir avisos")
+    parser.add_argument("--phone", default=None)
     args = parser.parse_args()
 
     db = SessionLocal()
@@ -51,6 +53,8 @@ def main():
             full_name=args.full_name,
             role=args.role,
             tenant_id=args.tenant_id,
+            email=args.email,
+            phone=args.phone,
         )
         db.add(staff)
         db.commit()
