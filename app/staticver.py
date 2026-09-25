@@ -7,6 +7,8 @@ import os
 
 from jinja2 import pass_context
 
+from app import legal
+
 
 @pass_context
 def _url_for(context, name, /, **path_params):
@@ -21,3 +23,4 @@ def _url_for(context, name, /, **path_params):
 
 def install(templates) -> None:
     templates.env.globals["url_for"] = _url_for
+    templates.env.globals["legal"] = legal.info      # datos legales del negocio para el pie de las páginas públicas

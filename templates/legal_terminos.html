@@ -1,0 +1,40 @@
+{% extends "legal_base.html" %}
+{% block content %}
+{% set L = legal() %}
+<h1>Términos y Condiciones de Uso</h1>
+<p><small>Última actualización: {{ L.updated }}</small></p>
+
+<h2>1. Quiénes somos</h2>
+<p>La plataforma es operada por <b>{{ L.name }}</b>, NIT {{ L.nit }}, dirección {{ L.address }}, correo <a href="mailto:{{ L.email }}">{{ L.email }}</a> («Golden»). Al usarla aceptas estos términos.</p>
+
+<h2>2. Qué es la plataforma</h2>
+<p>Un servicio para organizar eventos: inscripción en línea (formularios web), control de acceso y registro de asistentes, escarapelas y certificados, sorteos y reportes. Los eventos son organizados por terceros («el Organizador»); Golden provee la tecnología.</p>
+
+<h2>3. Uso aceptable</h2>
+<ul>
+<li>Usa la plataforma solo para fines lícitos y con datos verdaderos.</li>
+<li>No intentes acceder a información de otras personas, saltarte controles de seguridad, sobrecargar el servicio ni copiar el contenido de forma automática.</li>
+<li>Las cuentas de personal son personales e intransferibles; quien las use es responsable de lo que se haga con ellas.</li>
+</ul>
+
+<h2>4. Responsabilidad del Organizador</h2>
+<p>El Organizador es responsable de (a) las condiciones de su evento (fechas, precios, cancelaciones, contenido), (b) contar con la <b>autorización de los titulares</b> para tratar sus datos —en especial los biométricos— antes de cargarlos a la plataforma, y (c) el contenido que configure o suba. Golden no es responsable por el contenido, la realización ni la cancelación del evento.</p>
+
+<h2>5. Contenido y derechos de autor</h2>
+<p>Quien sube logos, imágenes, fondos, plantillas, textos u otros archivos <b>declara que tiene los derechos necesarios para usarlos</b> y mantiene indemne a Golden frente a reclamaciones de terceros por ese contenido. Golden conserva la propiedad de la plataforma, su software y su marca.</p>
+
+<h2>6. Pagos</h2>
+<p>Los pagos de inscripción se procesan mediante Wompi. El valor y los descuentos los define el Organizador y se muestran antes de pagar (con o sin IVA, según se indique). Los pagos se cobran en pesos colombianos (COP); cualquier conversión de moneda que veas es solo de referencia. Los reembolsos se rigen por la <a href="/reembolsos">Política de Reembolsos</a>.</p>
+
+<h2>7. Datos personales</h2>
+<p>El tratamiento de datos se rige por la <a href="/privacidad">Política de Privacidad</a>.</p>
+
+<h2>8. Disponibilidad y límites de responsabilidad</h2>
+<p>Hacemos lo razonable por mantener el servicio disponible, pero puede haber interrupciones por mantenimiento o por causas ajenas (incluidos proveedores como Wompi, bancos o servicios en la nube). En la medida permitida por la ley, Golden no responde por daños indirectos ni por la pérdida de oportunidades derivada de una interrupción. <span class="pending">[pendiente de revisión legal: alcance de la limitación]</span></p>
+
+<h2>9. Cambios</h2>
+<p>Podemos actualizar estos términos; la versión vigente es la publicada aquí con su fecha.</p>
+
+<h2>10. Ley aplicable y jurisdicción</h2>
+<p>Estos términos se rigen por las leyes de la República de Colombia. Las controversias se someterán a los jueces competentes de <span class="pending">[ciudad — pendiente de definir]</span>, sin perjuicio de los derechos del consumidor ante la Superintendencia de Industria y Comercio.</p>
+{% endblock %}

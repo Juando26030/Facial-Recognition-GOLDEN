@@ -1,0 +1,33 @@
+{% extends "legal_base.html" %}
+{% block content %}
+{% set L = legal() %}
+<h1>Política de Reembolsos y Devoluciones</h1>
+<p><small>Última actualización: {{ L.updated }}</small></p>
+
+<h2>1. Quién cobra</h2>
+<p>El cobro de la inscripción lo procesa <b>{{ L.name }}</b> (NIT {{ L.nit }}) a través de Wompi, en pesos colombianos (COP). Los pagos con tarjeta no muestran a Golden tus datos de tarjeta.</p>
+
+<h2>2. Cuándo procede un reembolso</h2>
+<ul>
+<li><b>Cancelación del evento</b> por parte del Organizador: reembolso del 100 % de lo pagado.</li>
+<li><b>Cobro duplicado o error de la plataforma</b> (te cobraron dos veces, un monto distinto al mostrado, o pagaste y no quedaste inscrito): reembolso del valor cobrado de más o del pago completo.</li>
+<li><b>Otras causas</b> (no puedes asistir, cambio de opinión): dependen de las condiciones del Organizador y de la fecha. <span class="pending">[pendiente: definir la regla por defecto y si el Organizador puede fijar la suya]</span></li>
+</ul>
+<p><span class="pending">[pendiente de revisión legal: derecho de retracto en compras a distancia (Ley 1480 de 2011, art. 47) y sus excepciones para servicios con fecha determinada]</span></p>
+
+<h2>3. Cómo solicitarlo</h2>
+<p>Escribe a <a href="mailto:{{ L.email }}">{{ L.email }}</a> con: nombre y documento, el evento, la <b>referencia del pago</b> (empieza por «GW-») y el motivo. Puedes hacerlo hasta {{ L.refund_days }} después del pago.</p>
+
+<h2>4. Cómo se devuelve el dinero</h2>
+<ul>
+<li><b>Pago con tarjeta, reembolso total:</b> se anula la transacción y el banco emisor devuelve el valor a tu tarjeta (suele tardar entre unos días y un ciclo de facturación, según el banco).</li>
+<li><b>PSE, Nequi, Bancolombia, Daviplata y otros medios, o reembolsos parciales:</b> se devuelve por transferencia a una cuenta que tú indiques, a nombre del pagador.</li>
+<li>Las comisiones de la pasarela de pagos <span class="pending">[pendiente: confirmar con Wompi y definir si Golden las devuelve]</span>.</li>
+</ul>
+
+<h2>5. Qué pasa con tu inscripción</h2>
+<p>Al reembolsarte el 100 %, tu inscripción se cancela y el cupo queda libre. Si ya te habían cargado a la base del evento, el Organizador la actualiza.</p>
+
+<h2>6. Quejas</h2>
+<p>Si no estás de acuerdo con la respuesta, puedes acudir a la Superintendencia de Industria y Comercio.</p>
+{% endblock %}

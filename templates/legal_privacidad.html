@@ -1,0 +1,69 @@
+{% extends "legal_base.html" %}
+{% block content %}
+{% set L = legal() %}
+<h1>Política de Privacidad y Tratamiento de Datos Personales</h1>
+<p><small>Última actualización: {{ L.updated }} · Conforme a la Ley 1581 de 2012, el Decreto 1377 de 2013 y demás normas de protección de datos de Colombia.</small></p>
+
+<h2>1. Responsable del tratamiento</h2>
+<p><b>{{ L.name }}</b>, NIT {{ L.nit }}. Dirección: {{ L.address }}. Teléfono: {{ L.phone }}. Correo para asuntos de datos personales: <a href="mailto:{{ L.privacy_email }}">{{ L.privacy_email }}</a>.</p>
+<p><span class="pending">[pendiente de revisión legal]</span> Golden presta esta plataforma a organizadores de eventos («el Organizador»). Según el caso, el Organizador y Golden actúan como responsables o Golden como encargada del tratamiento; la calificación exacta de cada rol debe confirmarla el abogado.</p>
+
+<h2>2. Qué datos recolectamos</h2>
+<table>
+<tr><th>Tipo de dato</th><th>Ejemplos</th></tr>
+<tr><td>Identificación</td><td>Número y tipo de documento (cédula, pasaporte, etc.), nombres y apellidos.</td></tr>
+<tr><td>Contacto</td><td>Correo electrónico, teléfono, ciudad, país y dirección (cuando el formulario los pide).</td></tr>
+<tr><td>Datos del evento</td><td>Entidad o empresa, cargo o profesión, tipo de asistente, categoría de participación, acompañantes y los campos adicionales que defina el Organizador.</td></tr>
+<tr><td>Firmas y documentos</td><td>Firmas manuscritas digitales y archivos adjuntos (PDF, Office, imágenes) que la persona suba.</td></tr>
+<tr><td><b>Datos biométricos (sensibles)</b></td><td>Fotografía y rostro (representación numérica del rostro) cuando el evento usa reconocimiento facial.</td></tr>
+<tr><td>Datos de pago</td><td>El pago lo procesa Wompi. Golden <b>no ve ni guarda</b> el número de tu tarjeta; guarda la referencia del pago, el monto, el método, el estado y el evento al que corresponde.</td></tr>
+<tr><td>Datos técnicos</td><td>Cookies de sesión y seguridad, dirección IP para limitar abusos, origen de la visita (por ejemplo, la red social del enlace), registros de acceso a la plataforma.</td></tr>
+</table>
+
+<h2>3. Para qué usamos los datos (finalidades)</h2>
+<ul>
+<li>Inscribir y acreditar a las personas en el evento y controlar el acceso (entrada, zonas e inventario).</li>
+<li>Emitir escarapelas físicas o digitales, certificados y comunicaciones del evento (por correo).</li>
+<li>Procesar y conciliar pagos de inscripción y, si aplica, reembolsos.</li>
+<li>Generar reportes y estadísticas del evento para el Organizador.</li>
+<li>Cumplir obligaciones legales y atender consultas, reclamos y solicitudes de los titulares.</li>
+<li>Seguridad de la plataforma y prevención de fraude o abuso.</li>
+</ul>
+
+<h2>4. Autorización</h2>
+<p>Tratamos tus datos con tu autorización previa, expresa e informada (Ley 1581, art. 9), que se obtiene al marcar la casilla de autorización del formulario o ante el personal del evento. Responder a preguntas sobre datos sensibles es <b>facultativo</b>: nadie está obligado a autorizar su tratamiento (art. 6).</p>
+
+<h2>5. Datos biométricos (rostro): reglas especiales</h2>
+<ul>
+<li><b>Autorización previa, expresa y separada.</b> Solo guardamos tu fotografía o rostro si tú lo autorizas de forma explícita, aparte de cualquier otro texto. Queda constancia de cuándo y cómo se dio (ante el personal del evento o por declaración del Organizador en cargas masivas).</li>
+<li><b>Alternativa sin rostro.</b> Si no quieres que se use tu rostro, te registras <b>por cédula</b> (o documento) y accedes al evento igual, sin ninguna consecuencia.</li>
+<li><b>Para qué.</b> Solo para identificarte en el evento en el que te inscribiste.</li>
+<li><b>Cuánto tiempo.</b> Conservamos el dato biométrico <b>{{ L.retention }}</b>; después se borra (foto y representación numérica). Puedes pedir el borrado antes en cualquier momento.</li>
+<li><b>Seguridad.</b> Acceso restringido al personal autorizado, conexión cifrada y respaldos protegidos.</li>
+</ul>
+
+<h2>6. Con quién compartimos datos (encargados y terceros)</h2>
+<table>
+<tr><th>Tercero</th><th>Para qué</th></tr>
+<tr><td>Wompi (Bancolombia)</td><td>Procesar pagos en línea.</td></tr>
+<tr><td>Microsoft (Microsoft 365 / Graph)</td><td>Enviar correos (escarapela digital, notificaciones).</td></tr>
+<tr><td>Google Cloud</td><td>Alojamiento de la plataforma y copias de seguridad.</td></tr>
+<tr><td>Cloudflare</td><td>Seguridad y entrega de la página.</td></tr>
+<tr><td>Google (traducción, fuentes)</td><td>Solo si usas el botón «Translate» (se traduce el texto del formulario, no lo que escribes) y para las tipografías.</td></tr>
+<tr><td>El Organizador del evento</td><td>Recibe los datos de sus propios asistentes.</td></tr>
+</table>
+<p>Algunos de estos proveedores están fuera de Colombia, por lo que puede haber <b>transferencia internacional</b> de datos a países con niveles adecuados de protección o con las garantías contractuales que exige la ley. <span class="pending">[pendiente: confirmar los acuerdos de tratamiento de datos con cada proveedor]</span></p>
+
+<h2>7. Tus derechos (habeas data)</h2>
+<p>Como titular puedes: <b>conocer, actualizar y rectificar</b> tus datos; <b>solicitar prueba de la autorización</b>; ser informado del uso que se les da; <b>revocar la autorización y solicitar la supresión</b> (incluido tu rostro); presentar quejas ante la Superintendencia de Industria y Comercio; y acceder gratuitamente a tus datos.</p>
+<p>Escribe a <a href="mailto:{{ L.privacy_email }}">{{ L.privacy_email }}</a> indicando tu nombre, documento, el evento y lo que solicitas. Respondemos las consultas en máximo 10 días hábiles y los reclamos en máximo 15 días hábiles (prorrogables según la ley).</p>
+
+<h2>8. Menores de edad</h2>
+<p>No tratamos datos de menores de edad sin la autorización de su representante legal y sin que se respete el interés superior del menor. <span class="pending">[pendiente de revisión legal: eventos con menores]</span></p>
+
+<h2>9. Cookies</h2>
+<p>Usamos únicamente cookies <b>necesarias</b> (sesión y seguridad). No usamos cookies de publicidad ni de rastreo de terceros. Si usas la traducción, Google puede guardar sus propias cookies. Puedes borrar las cookies desde tu navegador.</p>
+
+<h2>10. Cambios a esta política</h2>
+<p>Publicaremos aquí cualquier cambio y actualizaremos la fecha. Si el cambio es sustancial para datos sensibles, volveremos a pedir tu autorización.</p>
+{% endblock %}

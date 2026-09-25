@@ -1,0 +1,6 @@
+<!-- Pie legal de las páginas públicas: identificación del vendedor/responsable (Ley 1480 de 2011, art. 50) y enlaces a los documentos legales. -->
+{% set L = legal() %}
+<footer role="contentinfo" style="text-align:center; font-family:Arial,Helvetica,sans-serif; font-size:.78rem; line-height:1.6; color:#4a4a55; padding:16px 12px 24px;">
+    <div><a href="/privacidad" style="color:inherit;">Política de Privacidad</a> · <a href="/terminos" style="color:inherit;">Términos y Condiciones</a> · <a href="/reembolsos" style="color:inherit;">Política de Reembolsos</a></div>
+    <div>{{ L.name }} · NIT {{ L.nit }} · {{ L.address }} · <a href="mailto:{{ L.email }}" style="color:inherit;">{{ L.email }}</a> · {{ L.phone }}</div>
+</footer>

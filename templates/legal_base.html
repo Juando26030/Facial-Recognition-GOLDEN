@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} | Golden Eventos y Logística</title>
+    <style>
+        body { font-family: Arial, Helvetica, sans-serif; color: #1d1d1f; background: #f4f5f9; margin: 0; line-height: 1.65; }
+        main { max-width: 860px; margin: 0 auto; padding: 24px 16px 40px; }
+        article { background: #fff; border-radius: 16px; padding: 28px 30px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+        h1 { font-size: 1.7rem; margin: 0 0 6px; } h2 { font-size: 1.15rem; margin: 1.6rem 0 .4rem; } h3 { font-size: 1rem; margin: 1rem 0 .3rem; }
+        a { color: #1a237e; } a:focus-visible, button:focus-visible { outline: 3px solid #1a237e; outline-offset: 2px; }
+        .draft { background: #fff3cd; border: 2px solid #e0a800; color: #664d03; border-radius: 12px; padding: 10px 14px; font-size: .9rem; margin-bottom: 1.2rem; }
+        .pending { background: #fff3cd; padding: 0 4px; border-radius: 4px; }
+        table { border-collapse: collapse; width: 100%; font-size: .9rem; } th, td { border: 1px solid #d5d8e3; padding: 6px 8px; text-align: left; vertical-align: top; }
+        nav.legal-nav { font-size: .9rem; margin-bottom: 14px; } nav.legal-nav a { margin-right: 14px; }
+        @media (max-width: 600px) { article { padding: 18px 16px; } }
+    </style>
+</head>
+<body>
+<main>
+    <nav class="legal-nav" aria-label="Documentos legales">
+        <a href="/privacidad">Política de Privacidad</a><a href="/terminos">Términos y Condiciones</a><a href="/reembolsos">Política de Reembolsos</a>
+    </nav>
+    <article>
+        <div class="draft" role="note"><b>BORRADOR — PENDIENTE DE REVISIÓN LEGAL.</b> Este texto es un borrador de trabajo y no es asesoría legal: debe ser revisado por un abogado especializado en protección de datos y comercio electrónico antes de considerarse definitivo. Lo marcado como <span class="pending">[pendiente]</span> falta por definir.</div>
+        {% block content %}{% endblock %}
+    </article>
+    {% include "_legal_footer.html" %}
+</main>
+</body>
+</html>

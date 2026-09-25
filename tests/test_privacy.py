@@ -144,3 +144,37 @@ def test_automatic_retention_only_runs_when_configured_and_only_on_old_finalized
     r = privacy.purge_expired(db, 180)
     assert r == {"events": 1, "deleted": 1, "kept_in_other_events": 0}                                           # solo el evento finalizado hace más de 180 días
     assert privacy.purge_expired(db, 180)["events"] == 0                                                          # ya purgado: no se repite
+
+
+# ------------------------------- páginas legales públicas -------------------------------
+def test_legal_pages_are_public_marked_as_drafts_and_show_the_business_data(client):
+    for path, title in (("/privacidad", "Política de Privacidad"), ("/terminos", "Términos y Condiciones"), ("/reembolsos", "Política de Reembolsos")):
+        r = client.get(path)                                                                          # sin sesión
+        assert r.status_code == 200 and title in r.text
+        assert "PENDIENTE DE REVISIÓN LEGAL" in r.text                                                # borrador hasta que un abogado lo revise
+        assert "901542833" in r.text and "GOLDEN EVENTOS Y LOGISTICA SAS" in r.text                   # identificación del vendedor/responsable
+    p = client.get("/privacidad").text
+    for needle in ("Wompi", "Microsoft", "Google Cloud", "biométric", "cédula", "10 días hábiles"):
+        assert needle in p
+
+
+def test_business_data_and_retention_come_from_the_environment(client, monkeypatch):
+    monkeypatch.setenv("LEGAL_ADDRESS", "Calle 1 # 2-3")
+    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "90")
+    monkeypatch.setenv("REFUND_REQUEST_DAYS", "15")
+    assert "Calle 1 # 2-3" in client.get("/terminos").text
+    assert "90 días después de la fecha de finalización" in client.get("/privacidad").text
+    assert "15 días calendario" in client.get("/reembolsos").text
+    monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS")
+    assert "pendiente de definir por Golden" in client.get("/privacidad").text                          # sin plazo definido no se inventa uno
+
+
+def test_public_pages_carry_the_legal_footer_and_the_cookie_notice(client, factory):
+    from tests.test_form_extras import _disc_form
+    ev, form, _ = _disc_form(client, factory, [])
+    html = client.get(f"/f/{ev.id}/{form['slug']}").text
+    assert "/privacidad" in html and "NIT 901542833" in html and "js/cookie-notice.js" in html
+    login_html = client.get("/login").text
+    assert "/terminos" in login_html and "NIT 901542833" in login_html
+    js = client.get("/static/js/form-render.js").text
+    assert "/reembolsos" in js                                                                            # el cuadro de pago enlaza los términos y los reembolsos
