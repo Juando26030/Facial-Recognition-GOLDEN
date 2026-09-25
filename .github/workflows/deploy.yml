@@ -6,6 +6,7 @@ name: Deploy to production
 #   dejaba a medias pip / alembic / reinicio en cada deploy. Lo único que la VM permite SIN contraseña de forma
 #   explícita (regla de sudoers) es `systemctl restart|is-active|status facial-recognition`, y eso es lo único que
 #   este workflow usa con sudo. Tesseract ya está instalado en la VM; ahora solo se VERIFICA.
+# - Backup automático de la base (local + bucket) antes de migrar; si falla, no se despliega.
 # - Un solo deploy a la vez, y el reinicio comprueba que la app responde 200 (si no, el deploy queda en rojo).
 
 on:
@@ -31,6 +32,17 @@ jobs:
           cd ~/Facial-Recognition
           git fetch origin main
           git reset --hard origin/main
+
+      - name: Backup de la base ANTES de tocar nada (local + bucket)
+        # Si este paso falla, el deploy se detiene: nunca se migra sin una copia externa reciente. Nombres de bucket: no son secretos.
+        env:
+          GCS_BUCKET: gs://golden-backups-analisis-de-imagen-id
+          DB_ONLY: "1"
+          TAG: pre_deploy
+        run: |
+          set -e
+          cd ~/Facial-Recognition
+          bash scripts/backup_db.sh
 
       - name: Verify system dependencies (Tesseract OCR)
         run: |

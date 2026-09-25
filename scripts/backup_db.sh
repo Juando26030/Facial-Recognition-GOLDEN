@@ -11,6 +11,8 @@
 #   BACKUP_DIR       carpeta local (~/backups).
 #   LOCAL_KEEP_DAYS  días que se conserva la copia local (7). La retención en el bucket la define su regla de
 #                    ciclo de vida (deploy/gcs-lifecycle.json, 60 días), no este script.
+#   DB_ONLY          si no está vacío, solo respalda la base (sin data/ ni .env): para correr CADA HORA. La corrida completa es la de las 3 a.m.
+#   TAG              etiqueta que se agrega al nombre del volcado (ej. pre_deploy).
 #   PG_DUMP          comando de pg_dump (por defecto "pg_dump -U golden_app -h localhost", el mismo que ya usaba el
 #                    cron de la VM; la contraseña sale de ~/.pgpass). No usa sudo: un cron no lo necesita.
 #
@@ -25,13 +27,15 @@ LOCAL_KEEP_DAYS="${LOCAL_KEEP_DAYS:-7}"
 GCS_BUCKET="${GCS_BUCKET:-}"
 GCS_DATA_BUCKET="${GCS_DATA_BUCKET:-}"
 PG_DUMP="${PG_DUMP:-pg_dump -U golden_app -h localhost}"
+DB_ONLY="${DB_ONLY:-}"
+TAG="${TAG:-}"
 
 mkdir -p "$BACKUP_DIR"
 LOG="$BACKUP_DIR/backup.log"
 log() { echo "$(date '+%F %T') $*" | tee -a "$LOG"; }
 
 stamp="$(date +%Y%m%d_%H%M%S)"
-final="$BACKUP_DIR/${DB_NAME}_${stamp}.sql.gz"
+final="$BACKUP_DIR/${DB_NAME}_${stamp}${TAG:+_$TAG}.sql.gz"
 tmp="$final.partial"
 trap 'rm -f "$tmp"' EXIT
 
@@ -74,7 +78,9 @@ fi
 # (claves): se copian a un SEGUNDO bucket (GCS_DATA_BUCKET) con versionado, para poder reconstruir la VM completa.
 # Es incremental (solo sube lo nuevo o cambiado) y NO borra nada del bucket aunque se borre en la VM. Si falla,
 # sale con error pero no bloquea lo de arriba. Ver docs/recuperacion_desastre.md.
-if [ -n "$GCS_DATA_BUCKET" ]; then
+if [ -n "$DB_ONLY" ]; then
+  :   # corrida horaria: solo la base
+elif [ -n "$GCS_DATA_BUCKET" ]; then
   DATA_DIR="${DATA_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data}"
   APP_DIR="$(dirname "$DATA_DIR")"
   data_dest="${GCS_DATA_BUCKET%/}"

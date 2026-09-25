@@ -12,7 +12,37 @@ Qué copias existen, dónde están y cómo se usan. Última verificación de una
 | **Archivos y `.env`** | `data/` (fotos, firmas, logos, plantillas de escarapela, informes, documentos) y el `.env` | `gs://<bucket-de-datos>/data/` y `/config/.env` (con versionado) | Diario 03:00, incremental | Armar una VM desde cero; recuperar un archivo puntual |
 | **Código y configuración** | Código, migraciones, `requirements.txt` con versiones fijas, `deploy/nginx-golden.conf`, `deploy/facial-recognition.service`, scripts | GitHub | Cada push | Siempre |
 
-Pérdida máxima de datos (RPO): lo ocurrido desde las 03:00 de ese día. Para bajarla, se puede correr `scripts/backup_db.sh` más seguido.
+Pérdida máxima de datos (RPO): con el volcado horario (abajo), lo ocurrido en la última hora; el snapshot y el volcado nocturno completo siguen igual. Además, cada deploy hace solo un volcado `…_pre_deploy.sql.gz` antes de migrar (si falla, no se despliega).
+
+## Endurecimiento (2026-09-25)
+
+**1. Cron recomendado** (`crontab -e`; reemplaza la línea anterior):
+```
+# cada hora: solo la base (pesa muy poco)
+5 * * * * GCS_BUCKET=gs://golden-backups-analisis-de-imagen-id DB_ONLY=1 bash /home/juando02603/Facial-Recognition/scripts/backup_db.sh >> /home/juando02603/backups/cron.log 2>&1
+# 3 a.m.: base + data/ + .env
+0 3 * * * GCS_BUCKET=gs://golden-backups-analisis-de-imagen-id GCS_DATA_BUCKET=gs://golden-datos-analisis-de-imagen-id bash /home/juando02603/Facial-Recognition/scripts/backup_db.sh >> /home/juando02603/backups/cron.log 2>&1
+# vigilante: avisa por correo si algo falla o se atrasa (definir ALERT_EMAIL en el .env)
+35 * * * * cd /home/juando02603/Facial-Recognition && GCS_BUCKET=gs://golden-backups-analisis-de-imagen-id GCS_DATA_BUCKET=gs://golden-datos-analisis-de-imagen-id venv/bin/python scripts/check_backups.py >> /home/juando02603/backups/check.log 2>&1
+```
+Probar el aviso una vez: `venv/bin/python scripts/check_backups.py --test`.
+
+**2. Que nadie pueda borrar las copias por error (en Cloud Shell, una vez):**
+```bash
+# Los volcados no se pueden borrar ni sobrescribir durante 30 días, ni por quien tenga permisos (la regla de 60 días sigue borrándolos después)
+gcloud storage buckets update gs://golden-backups-analisis-de-imagen-id --retention-period=30d
+# Papelera de 30 días en ambos buckets (un objeto borrado se puede recuperar)
+gcloud storage buckets update gs://golden-backups-analisis-de-imagen-id gs://golden-datos-analisis-de-imagen-id --soft-delete-duration=30d
+# Snapshots del disco cada 6 horas en vez de una vez al día (14 días de historial)
+gcloud compute resource-policies create snapshot-schedule golden-6h --region=us-central1 --max-retention-days=14 --on-source-disk-delete=keep-auto-snapshots --hourly-schedule=6 --start-time=07:00
+gcloud compute disks remove-resource-policies golden-biometrics-prod --zone=us-central1-a --resource-policies=golden-diario
+gcloud compute disks add-resource-policies golden-biometrics-prod --zone=us-central1-a --resource-policies=golden-6h
+```
+
+**3. Copia FUERA de Google** (si se pierde la cuenta o el proyecto, todo lo anterior cae con él): cada semana, desde tu PC,
+`gcloud storage cp "gs://golden-backups-analisis-de-imagen-id/db/AAAA/MM/golden_db_XXXX.sql.gz" .` y guardarlo en un disco externo o en otro almacenamiento (OneDrive, otro correo). El `.env` también en un gestor de contraseñas.
+
+**4. Ensayo mensual de restauración:** `bash scripts/restore_db.sh gs://…/golden_db_XXXX.sql.gz golden_db_ensayo` y comparar conteos (Caso A, paso 3); luego `dropdb golden_db_ensayo`. Una copia que nunca se ha restaurado no es una copia.
 
 **Fuera de estas copias:** la cuenta/proyecto de Google Cloud. Si se pierde el proyecto (o alguien accede a la cuenta), los buckets y snapshots caen con él. Guarda además, fuera de Google: el `.env` en un gestor de contraseñas, y de vez en cuando baja un volcado a tu PC (`gcloud storage cp gs://.../golden_db_XXXX.sql.gz .`).
 
