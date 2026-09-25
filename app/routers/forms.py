@@ -504,7 +504,7 @@ async def list_payments(event_id: int, form_id: int, include_tests: bool = False
         refunds.setdefault(r.payment_id, []).append(r)
     return {
         "total_cop": (sum(p.amount_cents for p in paid) - sum(p.refunded_cents or 0 for p in paid)) // 100, "approved": len(paid),
-        "fees_cop": sum(_fee_cop(p) for p in paid),
+        "wompi_status": wompi.service_status(), "fees_cop": sum(_fee_cop(p) for p in paid),
         "net_after_fees_cop": sum(_net_cop(p) for p in paid),
         "refunded_cop": sum(p.refunded_cents or 0 for p in paid) // 100,
         "rows": [{"id": p.id, "reference": p.reference, "amount": p.amount_cents // 100, "status": _pay_label(p), "method": p.payment_method or "", "transaction_id": p.transaction_id or "",

@@ -64,6 +64,7 @@
       .fr-btn:disabled { opacity:.6; cursor:default; }
       .fr-pay { border:2px dashed ${accent}; border-radius:14px; padding:14px 16px; background:rgba(0,0,0,.03); }
       .fr-pay .fr-total { font-size:1.5rem; font-weight:800; } .fr-pay ul { margin:6px 0 0; padding-left:18px; font-size:.8rem; opacity:.8; }
+      .fr-svc { margin-top:6px; padding:7px 10px; border-radius:10px; background:#fff3cd; color:#664d03; font-size:.78rem; }
       .fr-chip { border:1px solid ${accent}; background:#fff; color:#111; border-radius:14px; padding:2px 11px; font:inherit; font-size:.75rem; font-weight:700; cursor:pointer; margin-right:4px; }
       .fr-chip.on { background:${accent}; } .fr-charge { font-size:.8rem; opacity:.85; }
       .fr-safe { margin-top:10px; padding-top:8px; border-top:1px solid rgba(0,0,0,.1); font-size:.72rem; line-height:1.4; opacity:.85; } .fr-safe [data-fxnote] { display:block; opacity:.7; margin-top:3px; }`;
@@ -111,7 +112,7 @@
         case 'heading': return `<h3 style="margin:8px 0 2px;">${esc(f.content)}</h3>`;
         case 'paragraph': return `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(f.content)}</p>`;
         case 'payment': { const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
-          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div><div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span></div></div>`; }
+          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div><div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span></div></div>`; }
         case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="" style="max-width:100%; border-radius:12px; display:block; margin:0 auto;">` : '';
         case 'text_long': control = `<textarea ${name} rows="4" placeholder="${esc(f.placeholder)}" ${roAttr}>${esc(val)}</textarea>`; break;
         case 'select': control = `<select ${name} ${ro ? 'disabled class="fr-ro"' : ''}><option value="">Selecciona…</option>${(f.options || []).map((o) => `<option ${String(val) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>${ro ? `<input type="hidden" ${name} value="${esc(val)}">` : ''}`; break;
@@ -234,6 +235,10 @@
     function setQuote(q) {
       lastQuote = q;
       paintPay();
+      form.querySelectorAll('[data-svc]').forEach((el) => {   // Wompi reporta una incidencia en su página de estado
+        el.hidden = !(q && q.service);
+        el.textContent = q && q.service ? `⚠️ Wompi está reportando problemas en su servicio (${q.service.description || 'incidencia'}). Tu pago podría fallar; si pasa, intenta de nuevo más tarde. No se te cobra si el pago no se aprueba.` : '';
+      });
       const pays = form.querySelectorAll('.fr-pay');
       const paying = pays.length && pays[0].closest('.fr-item').style.display !== 'none' && q && q.amount > 0;
       btn.textContent = paying ? `Continuar al pago · ${cop(q.amount)}` : (theme.button_text || 'Enviar');   // el botón siempre dice el cobro real: COP

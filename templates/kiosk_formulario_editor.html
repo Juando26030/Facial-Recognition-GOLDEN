@@ -565,7 +565,9 @@ const PAY_STATES = { refunded: 'Reembolsado', approved: 'Aprobado', declined: 'R
 async function loadPayments() {
   const d = await j(`${api}/payments?include_tests=${$('payTests').checked}`);
   const okc = (v) => (v ? '✅' : '⚠️ sin configurar');
-  $('payCfg').innerHTML = `Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="small-btn" id="copyHook">Copiar</button>`;
+  const ws = d.wompi_status || {};
+  const wtxt = ws.indicator === 'none' ? '✅ operando con normalidad' : (ws.indicator === 'unknown' || !ws.indicator) ? 'sin datos' : `⚠️ ${esc(ws.description || 'incidencia')}`;
+  $('payCfg').innerHTML = `Estado del servicio de Wompi: <b>${wtxt}</b> (<a href="https://wompi.statuspage.io" target="_blank" rel="noopener">página de estado</a>) · Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="small-btn" id="copyHook">Copiar</button>`;
   $('copyHook').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${location.origin}/webhooks/wompi`); } catch (e) {} showToast('URL copiada', 'success'); });
   const net = $('payView').value === 'net';
   $('payAmtHead').textContent = net ? 'Neto estimado (COP)' : 'Monto (COP)';

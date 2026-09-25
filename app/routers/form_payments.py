@@ -77,7 +77,11 @@ async def quote(event_id: int, slug: str, data: dict, request: Request, db: Sess
     if not field:
         return {"has_payment": False}
     q = formlib.compute_amount(field["pay"], formlib.priced_values(design, values), formsvc.now_local().date())
-    return {"has_payment": True, "amount": q["amount"], "base": q["base"], "applied": q["applied"], "description": field["pay"].get("description", "")}
+    out = {"has_payment": True, "amount": q["amount"], "base": q["base"], "applied": q["applied"], "description": field["pay"].get("description", "")}
+    problem = wompi.service_problem()          # solo si Wompi reporta una incidencia: el formulario avisa antes de que la persona intente pagar
+    if problem:
+        out["service"] = problem
+    return out
 
 
 @router.get("/f/{event_id}/{slug}/rates")

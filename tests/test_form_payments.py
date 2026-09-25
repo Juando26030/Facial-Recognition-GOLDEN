@@ -607,3 +607,39 @@ def test_a_pending_refund_can_be_discarded_and_a_declined_one_is_marked_failed(c
     assert client.post(f"{base}/discard").status_code == 404                                # ya no está pendiente
     assert client.post(f"{base}/explota").status_code == 404
     assert _refund(client, ev, form, pay, reason="otra vez", manual=True, note="transferencia 1").status_code == 200   # y ya se puede registrar a mano
+
+
+# ------------------------------- aviso cuando Wompi reporta una incidencia -------------------------------
+def test_the_form_warns_only_when_wompi_reports_a_problem(client, factory, keys, monkeypatch):
+    ev = _event(client, factory)
+    form = _with_payment(client, ev)
+    monkeypatch.setattr(wompi, "service_status", lambda: {"indicator": "none", "description": "All Systems Operational"})
+    assert "service" not in client.post(f"{_url(ev, form)}/quote", json={"values": {}}).json()
+    monkeypatch.setattr(wompi, "service_status", lambda: {"indicator": "unknown", "description": ""})     # sin datos: nunca se avisa
+    assert "service" not in client.post(f"{_url(ev, form)}/quote", json={"values": {}}).json()
+    monkeypatch.setattr(wompi, "service_status", lambda: {"indicator": "major", "description": "Partial System Outage"})
+    assert client.post(f"{_url(ev, form)}/quote", json={"values": {}}).json()["service"] == {"indicator": "major", "description": "Partial System Outage"}
+
+
+def test_service_status_is_cached_and_never_invents_a_problem(monkeypatch):
+    import json as _json
+    calls = []
+
+    class R:
+        def __init__(self, body): self.body = body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return self.body
+
+    def fake(req, timeout=0):
+        calls.append(1)
+        return R(_json.dumps({"status": {"indicator": "minor", "description": "Degraded"}}).encode())
+
+    monkeypatch.setattr(wompi.urllib.request, "urlopen", fake)
+    monkeypatch.setitem(wompi._status, "data", None)
+    assert wompi.service_status()["indicator"] == "minor" and wompi.service_problem()["description"] == "Degraded"
+    wompi.service_status()
+    assert len(calls) == 1                                                  # segunda consulta: de caché
+    monkeypatch.setitem(wompi._status, "data", None)
+    monkeypatch.setattr(wompi.urllib.request, "urlopen", lambda *a, **k: R(b"esto no es json"))
+    assert wompi.service_status()["indicator"] == "unknown" and wompi.service_problem() is None

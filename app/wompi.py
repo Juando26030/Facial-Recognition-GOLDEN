@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Optional
@@ -71,6 +72,34 @@ def verify_event(event: dict, header_checksum: Optional[str] = None) -> Optional
         return None
     given = str((event.get("signature") or {}).get("checksum") or header_checksum or "").lower()
     return bool(given) and any(hmac.compare_digest(event_checksum(event, s).lower(), given) for s in secrets)
+
+
+STATUS_URL = "https://wompi.statuspage.io/api/v2/status.json"
+_status = {"at": 0.0, "data": None}
+
+
+def service_status() -> dict:
+    """Estado público del servicio de Wompi (su página de estado): {"indicator": none|minor|major|critical|unknown, "description"}.
+    Caché de 60 s; si la página de estado no responde queda «unknown» (nunca se avisa de un problema que no consta)."""
+    now = time.time()
+    if _status["data"] is not None and now - _status["at"] < 60:
+        return _status["data"]
+    data = {"indicator": "unknown", "description": ""}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(STATUS_URL, headers={"Accept": "application/json"}), timeout=4) as res:
+            st = (json.loads(res.read().decode()) or {}).get("status") or {}
+            if st.get("indicator") in ("none", "minor", "major", "critical"):
+                data = {"indicator": st["indicator"], "description": str(st.get("description") or "")[:120]}
+    except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+        pass
+    _status.update(at=now, data=data)
+    return data
+
+
+def service_problem() -> Optional[dict]:
+    """El estado de Wompi solo si reporta un problema (minor/major/critical); None si opera normal o no se sabe."""
+    st = service_status()
+    return st if st["indicator"] in ("minor", "major", "critical") else None
 
 
 def estimate_fee(amount_cents: int, method: str = "") -> int:
