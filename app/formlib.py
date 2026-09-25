@@ -485,11 +485,14 @@ def compute_amount(pay: dict, values: dict, today: date, people: int = 1, ctx: O
     Con `pay.companions_charge`, el precio por persona (con reglas y descuentos ya aplicados) se multiplica por `people` (quien se inscribe + sus acompañantes)."""
     ctx = ctx or {"links": set(), "codes": set()}
     amount, applied = pay["amount"], []
-    for r in pay.get("rules", []):
-        if _applies(r, values, today, ctx):
-            amount = r["amount"]
-            applied.append({"label": r["label"] or "Regla de precio", "kind": "rule", "effect": f"monto {_pesos(amount)}", "id": r.get("id")})
-            break
+    # Entre las reglas de precio que se cumplen manda la MÁS ESPECÍFICA (la que pide más condiciones; un enlace propio cuenta como una más y gana
+    # los empates); si empatan del todo, la primera de la lista. Así «categoría X = 100.000» y «categoría X + respondió Y = 150.000» conviven sin
+    # que la primera tape a la segunda.
+    met = [(len(r["when"]) + (1 if r.get("how") == "link" else 0), r.get("how") == "link", -i, r) for i, r in enumerate(pay.get("rules", [])) if _applies(r, values, today, ctx)]
+    if met:
+        r = max(met, key=lambda m: m[:3])[3]
+        amount = r["amount"]
+        applied.append({"label": r["label"] or "Regla de precio", "kind": "rule", "effect": f"monto {_pesos(amount)}", "id": r.get("id")})
     base = amount
     for d in pay.get("discounts", []):
         if _applies(d, values, today, ctx):

@@ -416,6 +416,11 @@ function suggestFor(parent) {
 }
 function valueControl(c, parent, p) {
   const sug = suggestFor(parent), has = sug && sug.values.length > 0, few = has && sug.total <= 8;
+  if (c.op === 'in' && has && sug.total <= 40) {      // «es alguno de»: se MARCAN los valores en vez de escribirlos
+    const sel = Array.isArray(c.value) ? c.value : (c.value ? [c.value] : []);
+    const vals = [...sug.values, ...sel.filter((v) => !sug.values.includes(v))];
+    return `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${vals.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-bindin="${p}.value" value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
+  }
   if (c.op !== 'in' && few) {
     const vals = !c.value || sug.values.includes(c.value) ? sug.values : [...sug.values, c.value];
     return `<select data-bind="${p}.value"><option value=""></option>${vals.map((o) => `<option ${c.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select><div class="hint">Estos son los valores que ya existen.</div>`;
@@ -464,7 +469,7 @@ function payHtml(f) {
   const HOW_DISC = [...HOW_RULE, ['code', 'Con un código de descuento']];
   const howSel = (path, cur, opts) => `<select data-bind="${path}.how" data-rerender style="width:100%; margin-top:3px;">${opts.map(([v, l]) => `<option value="${v}" ${(cur || 'category') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const when = (path, item, what) => `<div class="hint" style="margin-top:4px;">${(item.how || 'category') === 'category' ? `Cuando se cumpla TODO esto${what}:` : 'Condiciones extra (opcional, además de ' + ((item.how) === 'link' ? 'entrar por el enlace' : 'tener un código válido') + '):'}</div>${condsHtml(path, item.when, f.id)}`;
-  const rules = pay.mode === 'rules' ? `<div class="fld"><label>Montos según respuestas o enlaces <span class="hint">(gana el primero que se cumpla; si ninguno, el monto base)</span></label>${pay.rules.map((r, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
+  const rules = pay.mode === 'rules' ? `<div class="fld"><label>Montos según respuestas o enlaces <span class="hint">(si se cumplen varios gana el MÁS ESPECÍFICO —el que pide más condiciones—; si empatan, el primero; si ninguno, el monto base)</span></label>${pay.rules.map((r, i) => `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px;">
       <input type="text" data-bind="rules.${i}.label" value="${esc(r.label)}" placeholder="Nombre (ej. Entrada VIP)"><input type="number" min="0" data-num data-bind="rules.${i}.amount" value="${r.amount}" placeholder="Monto COP" style="width:100%; margin-top:3px;">
       ${howSel(`rules.${i}`, r.how, HOW_RULE)}${r.how === 'link' ? linkBox(r, 'precio') : ''}
       ${when(`rules.${i}.when`, r, '')}<button type="button" class="small-btn danger" data-del="rules.${i}">Quitar regla</button></div>`).join('')}
@@ -531,6 +536,11 @@ function bindPay(box, f) {
     };
     el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', commit);
   });
+  box.querySelectorAll('[data-bindin]').forEach((el) => el.addEventListener('change', () => {
+    const path = el.dataset.bindin;
+    setPath(f.pay, path, Array.from(box.querySelectorAll('[data-bindin]')).filter((x) => x.dataset.bindin === path && x.checked).map((x) => x.value));
+    markDirty(); renderCanvas();
+  }));
   const arr = (path) => getPath(f.pay, path);
   box.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { const ks = b.dataset.del.split('.'); const idx = +ks.pop(); arr(ks.join('.')).splice(idx, 1); rerender(); }));
   box.querySelectorAll('[data-addcond]').forEach((b) => b.addEventListener('click', () => { const first = Object.values(design.fields).find((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type)); arr(b.dataset.addcond).push(first ? { field: first.id, op: 'equals', value: '' } : { field: '@date', op: 'before', value: '' }); rerender(); }));

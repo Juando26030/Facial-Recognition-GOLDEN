@@ -458,3 +458,30 @@ def test_a_one_rule_group_collapses_and_bad_groups_are_rejected():
         _vis_design({"match": "all", "rules": [{"field": "cat", "op": "equals", "value": "A"}, {"field": "nope", "op": "filled"}]})
     with pytest.raises(ValueError):                                                                           # x depende de y y y de x, ahora también dentro de un grupo
         _vis_design({"match": "all", "rules": [{"field": "y", "op": "filled"}, {"field": "cat", "op": "filled"}]}, {"field": "x", "op": "filled"})
+
+
+# ------------------------------- precios: gana la regla más específica -------------------------------
+def test_the_most_specific_price_rule_wins_even_if_a_broader_one_is_listed_first(client, factory, keys):
+    cat = {"id": "cat", "type": "select", "label": "Categoría", "options": ["X", "Y", "Z"]}
+    extra = {"id": "extra", "type": "text_short", "label": "Extra"}
+    ev, form, _ = _disc_form(client, factory, [], extra=[cat, extra], amount=50000, rules=[
+        {"label": "Cat X", "amount": 100000, "when": [{"field": "cat", "op": "equals", "value": "X"}]},                              # la general va primero
+        {"label": "Cat X + Extra", "amount": 150000, "when": [{"field": "cat", "op": "equals", "value": "X"}, {"field": "extra", "op": "filled"}]},
+        {"label": "Cat Y o Z", "amount": 80000, "when": [{"field": "cat", "op": "in", "value": ["Y", "Z"]}]}])
+    assert _q(client, ev, form, values={"cat": "X"})["amount"] == 100000                                                          # solo la categoría
+    assert _q(client, ev, form, values={"cat": "X", "extra": "algo"})["amount"] == 150000                                         # categoría + respondió: la más específica
+    assert _q(client, ev, form, values={"cat": "Z"})["amount"] == 80000 and _q(client, ev, form, values={"cat": "Y", "extra": "a"})["amount"] == 80000
+    assert _q(client, ev, form)["amount"] == 50000                                                                                # ninguna: monto base
+    r = _submit(client, ev, form, {**_who(1), "cat": "X", "extra": "hola"}, sid="a")
+    assert r.json()["payment"]["amount_in_cents"] == 15000000                                                                     # y el servidor cobra lo mismo
+
+
+def test_an_unconditional_rule_never_hides_a_more_specific_one_and_a_link_wins_ties(client, factory, keys):
+    cat = {"id": "cat", "type": "select", "label": "Categoría", "options": ["X", "Y"]}
+    ev, form, saved = _disc_form(client, factory, [], extra=[cat], amount=50000, rules=[
+        {"label": "Para todos", "amount": 70000, "when": []},
+        {"label": "Cat X", "amount": 100000, "when": [{"field": "cat", "op": "equals", "value": "X"}]},
+        {"label": "Enlace prensa", "amount": 20000, "how": "link", "when": []}])
+    assert _q(client, ev, form, values={"cat": "Y"})["amount"] == 70000 and _q(client, ev, form, values={"cat": "X"})["amount"] == 100000
+    key = saved["rules"][2]["link_key"]
+    assert _q(client, ev, form, values={"cat": "X"}, d=key)["amount"] == 20000                                                   # el enlace gana el empate (1 condición cada uno)
