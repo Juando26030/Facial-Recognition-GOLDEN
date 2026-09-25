@@ -55,7 +55,7 @@
     <form id="rosterForm" class="golden-badge-builder">
       <fieldset {% if event.status == "finalizado" %}disabled{% endif %} style="border:none; padding:0; margin:0;">
         <div class="badge-form-title">Cargar asistentes esperados</div>
-        <p style="text-align:center; color:#888; font-size:0.85rem; margin-bottom:1.5rem;">
+        <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1.5rem;">
           Sube el Excel (.xlsx) o CSV con los datos de las personas. Sirve para cualquier método de registro —
           cédula, facial o QR. No es necesario volver a subir un archivo distinto por cada método.
         </p>
@@ -68,7 +68,7 @@
         <div id="sourceEventGroup" class="badge-input-group" style="display:none; margin:0.6rem 0 1rem;">
           <label>Eventos de los que traer a las personas (solo eventos de {{ event.tenant.name }}) — marca uno o varios</label>
           <div id="sourceEventList" style="max-height:220px; overflow:auto; border:1px solid #ddd; border-radius:10px; padding:0.5rem 0.8rem;"></div>
-          <p style="font-size:0.78rem; color:#888; margin-top:0.4rem;">Entran todas como "No registrado". Si una persona está en varios eventos, o se repite en el Excel, queda un solo registro con los datos del evento anterior. Puedes usar solo esta opción, sin Excel.</p>
+          <p style="font-size:0.78rem; color:#666; margin-top:0.4rem;">Entran todas como "No registrado". Si una persona está en varios eventos, o se repite en el Excel, queda un solo registro con los datos del evento anterior. Puedes usar solo esta opción, sin Excel.</p>
         </div>
 
         <div class="badge-input-group">
@@ -77,7 +77,7 @@
           <p style="font-size:0.8rem; margin-top:0.4rem;">
             ¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download style="color: var(--golden-primary); font-weight:600;">Descarga la plantilla de Excel</a>.
           </p>
-          <p style="font-size:0.78rem; color:#888; margin-top:0.4rem;">Para bases grandes (miles de personas con foto), no hace falta partir el archivo a mano: si el Excel + el zip juntos pesan mucho, el sistema los divide solo en varios envíos seguidos, sin que muevas nada.</p>
+          <p style="font-size:0.78rem; color:#666; margin-top:0.4rem;">Para bases grandes (miles de personas con foto), no hace falta partir el archivo a mano: si el Excel + el zip juntos pesan mucho, el sistema los divide solo en varios envíos seguidos, sin que muevas nada.</p>
         </div>
 
         <div class="badge-input-group" style="display:flex; align-items:center; gap:10px; margin-top:1.2rem;">
@@ -123,7 +123,7 @@ useSourceEvent.addEventListener("change", async () => {
         const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
         sourceEventList.innerHTML = events.length
             ? events.map(e => `<label style="display:flex; gap:8px; align-items:center; font-weight:400; text-transform:none; margin:4px 0;"><input type="checkbox" name="source_event_id" value="${e.id}" style="width:auto;"> ${esc(e.name)} (${esc(e.event_code || "sin código")})</label>`).join("")
-            : '<p style="margin:0.3rem 0; color:#888;">Este cliente no tiene otros eventos</p>';
+            : '<p style="margin:0.3rem 0; color:#666;">Este cliente no tiene otros eventos</p>';
         sourceEventsLoaded = true;
     }
 });

@@ -19,7 +19,7 @@
             padding: 1rem 1.2rem; margin-bottom: 1.2rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;
         }
         .toolbar-group { display:flex; flex-direction:column; gap:4px; }
-        .toolbar-group label { font-size:0.72rem; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.5px; }
+        .toolbar-group label { font-size:0.72rem; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
         .toolbar-group input, .toolbar-group select {
             border:1px solid #ddd; border-radius:8px; padding:6px 10px; font-size:0.85rem; min-width:90px;
         }
@@ -57,9 +57,9 @@
             padding:1.2rem; max-height:75vh; overflow-y:auto;
         }
         .badge-props-panel h4 { margin:0 0 1rem; color: var(--golden-dark); font-size:1rem; }
-        .props-empty { color:#999; font-size:0.85rem; text-align:center; margin-top:2rem; }
+        .props-empty { color:#666; font-size:0.85rem; text-align:center; margin-top:2rem; }
         .prop-field { margin-bottom:0.9rem; }
-        .prop-field label { display:block; font-size:0.75rem; font-weight:700; color:#888; margin-bottom:4px; text-transform:uppercase; }
+        .prop-field label { display:block; font-size:0.75rem; font-weight:700; color:#666; margin-bottom:4px; text-transform:uppercase; }
         .prop-field input, .prop-field select, .prop-field textarea {
             width:100%; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.85rem; box-sizing:border-box;
         }
@@ -138,7 +138,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         <label>Estás editando la de</label>
         <select id="categorySelect"></select>
       </div>
-      <p style="margin:0; font-size:0.75rem; color:#888; align-self:center; max-width:420px;">Con "una distinta por categoría", cada categoría parte como copia de la general; las que no tengan plantilla propia se imprimen con la general.</p>
+      <p style="margin:0; font-size:0.75rem; color:#666; align-self:center; max-width:420px;">Con "una distinta por categoría", cada categoría parte como copia de la general; las que no tengan plantilla propia se imprimen con la general.</p>
     </div>
     <div class="badge-toolbar">
       <div class="toolbar-group">
@@ -213,8 +213,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 <div id="importModal" class="badge-modal-overlay" style="display:none;">
   <div class="badge-modal-box">
     <h4 style="margin-top:0; color: var(--golden-dark);">Importar plantilla guardada</h4>
-    <p style="font-size:0.82rem; color:#888;">Copia el diseño de una plantilla de tu librería a este evento — no queda vinculada, puedes seguir editando aquí sin afectar la original.</p>
-    <div id="savedTplList"><p style="color:#999; font-size:0.85rem;">Cargando…</p></div>
+    <p style="font-size:0.82rem; color:#666;">Copia el diseño de una plantilla de tu librería a este evento — no queda vinculada, puedes seguir editando aquí sin afectar la original.</p>
+    <div id="savedTplList"><p style="color:#666; font-size:0.85rem;">Cargando…</p></div>
     <div style="text-align:right; margin-top:1rem;">
       <button type="button" class="tb-btn ghost" id="importCancelBtn">Cerrar</button>
     </div>
@@ -383,19 +383,19 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   async function openImportModal() {
     document.getElementById('importModal').style.display = 'flex';
     const listEl = document.getElementById('savedTplList');
-    listEl.innerHTML = '<p style="color:#999; font-size:0.85rem;">Cargando…</p>';
+    listEl.innerHTML = '<p style="color:#666; font-size:0.85rem;">Cargando…</p>';
     try {
       const res = await fetch(`/api/events/${window.EVENT_ID}/saved-badge-templates`);
       const list = await res.json();
       if (!list.length) {
-        listEl.innerHTML = '<p style="color:#999; font-size:0.85rem;">Todavía no hay ninguna plantilla guardada en la librería.</p>';
+        listEl.innerHTML = '<p style="color:#666; font-size:0.85rem;">Todavía no hay ninguna plantilla guardada en la librería.</p>';
         return;
       }
       listEl.innerHTML = '';
       list.forEach(s => {
         const row = document.createElement('div');
         row.className = 'saved-tpl-row';
-        row.innerHTML = `<span>${s.name} <small style="color:#999;">(${s.width_mm}×${s.height_mm}mm, ${s.orientation})</small></span>`;
+        row.innerHTML = `<span>${s.name} <small style="color:#666;">(${s.width_mm}×${s.height_mm}mm, ${s.orientation})</small></span>`;
         const btnGroup = document.createElement('div');
         const importB = document.createElement('button');
         importB.className = 'tb-btn primary'; importB.style.padding = '4px 12px'; importB.style.fontSize = '0.75rem';
@@ -461,6 +461,19 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       div.style.outline = (elId === selectedId) ? '2px dashed #D4AF37' : '1px dashed rgba(0,0,0,0.08)';
       div.addEventListener('mousedown', (e) => { if (e.target.classList.contains('resize-handle')) return; startDrag(e, el); });
       div.addEventListener('click', (e) => { e.stopPropagation(); selectElement(elId); });
+      // Alternativa por TECLADO al arrastrar (WCAG 2.1.1): Tab elige, Enter selecciona, flechas mueven (Mayús = 5 mm), Supr borra, Esc suelta.
+      div.tabIndex = 0;
+      div.setAttribute('role', 'button');
+      div.setAttribute('aria-label', 'Elemento ' + ({ text_static: 'de texto', text_variable: 'de dato', image_static: 'de imagen', image_variable: 'de foto', qr: 'QR', barcode: 'de código de barras' }[el.type] || el.type) + (el.content ? ': ' + String(el.content).slice(0, 40) : '') + (elId === selectedId ? ' (seleccionado)' : ''));
+      div.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectElement(elId); refocus(elId); return; }
+        if (e.key === 'Escape') { selectedId = null; renderCanvas(); renderPropsPanel(); return; }
+        if (selectedId !== elId) return;
+        const step = e.shiftKey ? 5 : 0.5;
+        const move = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+        if (move) { e.preventDefault(); el.x = Math.max(0, +(el.x + move[0]).toFixed(1)); el.y = Math.max(0, +(el.y + move[1]).toFixed(1)); renderCanvas(); renderPropsPanel(); refocus(elId); }
+        else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelectedElement(); }
+      });
       if (elId === selectedId) {
         const handle = document.createElement('div');
         handle.className = 'resize-handle';
@@ -470,6 +483,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     });
   }
 
+  function refocus(elId) { const d = canvasEl.querySelector('.badge-element[data-el-id="' + elId + '"]'); if (d) d.focus(); }
+  canvasEl.insertAdjacentHTML('beforebegin', '<p id="kbHint" style="font-size:0.78rem; color:#555; margin:0 0 6px;">⌨️ Con el teclado: <b>Tab</b> para recorrer los elementos, <b>Enter</b> para seleccionar, <b>flechas</b> para moverlo (con <b>Mayús</b>, de 5 en 5 mm), <b>Supr</b> para borrarlo. También puedes escribir la posición exacta en el panel de propiedades.</p>');
   canvasEl.addEventListener('click', () => { selectedId = null; renderCanvas(); renderPropsPanel(); });
 
   function startDrag(e, el) {
@@ -604,7 +619,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     } else if (el.type === 'image_static') {
       typeSpecificHtml = `
         <div class="prop-field"><label>Imagen</label><input type="file" id="p_image" accept="image/*"></div>
-        ${el.storage_path ? `<img src="/api/badge-assets/${el.storage_path}" style="max-width:100%; border-radius:8px; margin-bottom:0.8rem;">` : '<p style="font-size:0.78rem; color:#999;">Sin imagen todavía</p>'}`;
+        ${el.storage_path ? `<img src="/api/badge-assets/${el.storage_path}" style="max-width:100%; border-radius:8px; margin-bottom:0.8rem;">` : '<p style="font-size:0.78rem; color:#666;">Sin imagen todavía</p>'}`;
     } else if (el.type === 'image_variable') {
       // 2026-09-16: aclarado a propósito, tras QA — este elemento NO tiene (ni debe tener) botón
       // de subir imagen: es la foto real de cada persona, se resuelve sola al momento de
@@ -615,7 +630,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         <div class="prop-field"><label>Variable(s) codificadas</label>
           <select id="p_qr_vars" multiple size="4">${ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${(el.variables || []).includes(k) ? 'selected' : ''}>${label}</option>`).join('')}</select>
         </div>
-        <p style="font-size:0.72rem; color:#999;">Ctrl/Cmd + clic para elegir varias — se combinan separadas por "|".</p>`;
+        <p style="font-size:0.72rem; color:#666;">Ctrl/Cmd + clic para elegir varias — se combinan separadas por "|".</p>`;
     } else if (el.type === 'barcode') {
       typeSpecificHtml = `
         <div class="prop-field"><label>Variable</label><select id="p_bvariable">${variableOptionsHtml(el.variable)}</select></div>
@@ -668,8 +683,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         const input = e.target;
         input.disabled = true;
         const status = document.createElement('span');
-        status.innerHTML = '<span class="golden-btn-spinner" style="border-color:rgba(0,0,0,0.15); border-top-color:#888;"></span>Subiendo...';
-        status.style.cssText = 'font-size:0.78rem; color:#888; margin-left:8px;';
+        status.innerHTML = '<span class="golden-btn-spinner" style="border-color:rgba(0,0,0,0.15); border-top-color:#666;"></span>Subiendo...';
+        status.style.cssText = 'font-size:0.78rem; color:#666; margin-left:8px;';
         input.insertAdjacentElement('afterend', status);
         const path = await uploadImage(file);
         status.remove();

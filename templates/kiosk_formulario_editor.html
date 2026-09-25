@@ -34,14 +34,14 @@
         .ccard { flex:1 1 0; min-width:0; background:#fff; border:2px solid #e3e5ec; border-radius:12px; padding:9px 12px; cursor:grab; position:relative; }
         .ccard.sel { border-color:var(--golden-primary); box-shadow:0 0 0 3px rgba(212,175,55,.25); }
         .ccard.dl { box-shadow:inset 5px 0 0 var(--golden-primary); } .ccard.dr { box-shadow:inset -5px 0 0 var(--golden-primary); }
-        .ccard .t { font-size:0.7rem; color:#888; } .ccard .l { font-weight:700; font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ccard .t { font-size:0.7rem; color:#666; } .ccard .l { font-weight:700; font-size:0.86rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .ccard .tags span { font-size:0.62rem; background:#eef; border-radius:8px; padding:1px 6px; margin-right:3px; }
         .gap { height:10px; border-radius:6px; transition:height .1s; } .gap.over { height:26px; background:rgba(212,175,55,.35); }
         .props .fld { margin-bottom:0.7rem; } .props input[type=text], .props select, .props textarea { width:100%; }
         table.ans { width:100%; border-collapse:collapse; font-size:0.8rem; } table.ans th, table.ans td { padding:6px 8px; border-bottom:1px solid #f0f0f0; text-align:left; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
         .test-row { background:#fff8e1; }
         #previewOverlay { position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9990; display:none; overflow:auto; padding:2rem 1rem; }
-        .hint { font-size:0.76rem; color:#888; }
+        .hint { font-size:0.76rem; color:#666; }
         .sched { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:6px; }
     </style>
 </head>
@@ -277,8 +277,8 @@ function renderCanvas() {
   const rows = design.rows;
   const gap = (i) => `<div class="gap" data-gap="${i}"></div>`;
   $('canvas').innerHTML = rows.map((row, ri) => gap(ri) + `<div class="crow" data-ri="${ri}">${row.items.map((id) => cardHtml(design.fields[id])).join('')}
-    <div class="rowtools"><select data-align="${ri}" style="font-size:0.7rem; padding:1px;"><option value="left" ${row.align === 'left' ? 'selected' : ''}>◀ izquierda</option><option value="center" ${row.align === 'center' ? 'selected' : ''}>▬ centro</option><option value="right" ${row.align === 'right' ? 'selected' : ''}>▶ derecha</option></select>
-    <button class="small-btn" data-rowup="${ri}" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" style="padding:0 6px;">↓</button></div></div>`).join('') + gap(rows.length) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
+    <div class="rowtools"><select data-align="${ri}" aria-label="Alineación de la fila" style="font-size:0.7rem; padding:1px;"><option value="left" ${row.align === 'left' ? 'selected' : ''}>◀ izquierda</option><option value="center" ${row.align === 'center' ? 'selected' : ''}>▬ centro</option><option value="right" ${row.align === 'right' ? 'selected' : ''}>▶ derecha</option></select>
+    <button class="small-btn" data-rowup="${ri}" aria-label="Subir esta fila" title="Subir esta fila" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" aria-label="Bajar esta fila" title="Bajar esta fila" style="padding:0 6px;">↓</button></div></div>`).join('') + gap(rows.length) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
   $('canvas').querySelectorAll('.gap').forEach((g) => {
     g.addEventListener('dragover', (e) => { e.preventDefault(); g.classList.add('over'); });
     g.addEventListener('dragleave', () => g.classList.remove('over'));
@@ -287,6 +287,25 @@ function renderCanvas() {
   $('canvas').querySelectorAll('.ccard').forEach((c) => {
     const [ri, pos] = locate(c.dataset.id);
     c.addEventListener('click', () => { selected = c.dataset.id; renderCanvas(); renderProps(); });
+    // Alternativa por TECLADO al arrastrar (WCAG 2.1.1): Enter/Espacio selecciona; con Alt + flechas se mueve (izq./der. dentro de la fila, arriba/abajo cambia de fila).
+    c.addEventListener('keydown', (e) => {
+      const id = c.dataset.id, focusBack = () => { const n = $('canvas').querySelector(`.ccard[data-id="${id}"]`); if (n) n.focus(); };
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selected = id; renderCanvas(); renderProps(); focusBack(); return; }
+      if (!e.altKey) return;
+      const at = locate(id); if (!at) return;
+      const [ri, pos] = at, row = design.rows[ri];
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const n = pos + (e.key === 'ArrowLeft' ? -1 : 1); if (n < 0 || n >= row.items.length) return;
+        e.preventDefault(); [row.items[pos], row.items[n]] = [row.items[n], row.items[pos]];
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const target = ri + (e.key === 'ArrowUp' ? -1 : 1);
+        if (target < 0 || target >= design.rows.length) { if (row.items.length > 1) { detach(id); design.rows.splice(e.key === 'ArrowUp' ? 0 : design.rows.length, 0, { align: 'left', items: [id] }); } else return; }
+        else if (row.items.length === 1) { const t = design.rows[target]; if (t.items.length >= 4) return; detach(id); const ti = design.rows.indexOf(t); design.rows[ti].items.push(id); }
+        else { const t = design.rows[target]; detach(id); const ti = design.rows.indexOf(t); design.rows.splice(e.key === 'ArrowUp' ? ti + 1 : ti, 0, { align: 'left', items: [id] }); }
+      } else return;
+      selected = id; markDirty(); renderAll(); focusBack();
+    });
     c.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'move', id: c.dataset.id })); e.dataTransfer.effectAllowed = 'move'; });
     c.addEventListener('dragover', (e) => { e.preventDefault(); const r = c.getBoundingClientRect(); const left = e.clientX < r.left + r.width / 2; c.classList.toggle('dl', left); c.classList.toggle('dr', !left); });
     c.addEventListener('dragleave', () => { c.classList.remove('dl', 'dr'); });
@@ -300,7 +319,7 @@ function renderCanvas() {
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
   const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
-  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
+  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (label || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
 // ---------------------------------------------------------------- propiedades del elemento
@@ -320,7 +339,8 @@ function renderProps() {
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + compHtml(f);
   if (f.type === 'heading' || f.type === 'paragraph') html += `<div class="fld"><label>Texto</label><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
-    <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>`;
+    <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
+    <div class="fld"><label for="pImgAlt">Texto alternativo (describe la imagen para personas que no la ven)</label><input type="text" id="pImgAlt" value="${esc(f.alt || '')}" placeholder="Ej. Banner del Congreso Cundi 2026"><div class="hint">Déjalo vacío solo si la imagen es decorativa.</div></div>`;
   if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
   if (f.type === 'file') html += `<div class="fld"><label>Formatos permitidos</label><div>${EXTS.map((x) => `<label style="display:inline-flex; gap:3px; margin-right:8px; font-size:0.78rem;"><input type="checkbox" data-ext="${x}" ${(f.accept || []).includes(x) ? 'checked' : ''}>${x}</label>`).join('')}</div></div>${fieldInput('pMax', 'Tamaño máximo (MB, hasta 20)', f.max_mb || 10)}`;
   if (isInput) {
@@ -380,6 +400,7 @@ function renderProps() {
   }));
   on('pSync', 'change', upd(() => { f.sync = $('pSync').checked; })); on('pReq', 'change', upd(() => { f.required = $('pReq').checked; }));
   on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; }));
+  on('pImgAlt', 'input', () => { f.alt = $('pImgAlt').value; markDirty(); });
   on('pImgW', 'input', () => { f.width = +$('pImgW').value; $('pImgWv').textContent = f.width; markDirty(); });
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
   const saveRules = (rs, match) => { setRules(f, rs, match); markDirty(); renderCanvas(); };
@@ -769,7 +790,7 @@ async function loadAnswers() {
   $('ansHead').innerHTML = `<tr><th>#</th><th>Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th>Pagado</th>' : ''}<th>Origen</th><th>En la base</th><th></th></tr>`;
   $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' 🧪' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
     const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
-    <td><button class="small-btn danger" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" style="color:#999;">Todavía no hay inscripciones.</td></tr>`;
+    <td><button class="small-btn danger" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" style="color:#666;">Todavía no hay inscripciones.</td></tr>`;
   document.querySelectorAll('[data-delsub]').forEach((b) => b.addEventListener('click', async () => { if (!(await showConfirm('¿Eliminar esta inscripción?', { confirmLabel: 'Eliminar' }))) return; await j(`${api}/submissions/${b.dataset.delsub}`, { method: 'DELETE' }); loadAnswers(); }));
 }
 $('ansTests').addEventListener('change', loadAnswers);
@@ -787,7 +808,7 @@ async function loadPayments() {
   $('payAmtHead').textContent = net ? 'Neto estimado (COP)' : 'Monto (COP)';
   $('payTotal').textContent = net ? `Ingresos netos de comisión (estimada): ${cop(d.net_after_fees_cop)} COP · comisión Wompi estimada ${cop(d.fees_cop)} COP` : `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;
   $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' 🧪' : ''}</td><td title="Pagado ${cop(r.amount)} · comisión estimada ${cop(r.fee)} · neto estimado ${cop(r.net)}">${cop(net ? r.net : r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ' <b title="Aprobado pero sin inscripción">⚠️ sin inscripción</b>' : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td>
-    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : x.kind === 'api' ? 'reembolso API Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">💸 ${cop(r.refunded)}</span> ` : ''}${r.refunds.filter((x) => x.status === 'pending').map((x) => `⏳ en proceso <button class="small-btn" data-rf-check="${r.id}:${x.id}">Verificar</button> <button class="small-btn danger" data-rf-discard="${r.id}:${x.id}">Descartar</button> `).join('')}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="small-btn danger" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" style="color:#999;">Todavía no hay pagos.</td></tr>';
+    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : x.kind === 'api' ? 'reembolso API Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">💸 ${cop(r.refunded)}</span> ` : ''}${r.refunds.filter((x) => x.status === 'pending').map((x) => `⏳ en proceso <button class="small-btn" data-rf-check="${r.id}:${x.id}">Verificar</button> <button class="small-btn danger" data-rf-discard="${r.id}:${x.id}">Descartar</button> `).join('')}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="small-btn danger" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" style="color:#666;">Todavía no hay pagos.</td></tr>';
   window.__pays = Object.fromEntries(d.rows.map((r) => [r.id, r]));
   const resolve = (attr, action) => document.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
     const [pid, rid] = b.getAttribute(attr).split(':');

@@ -266,6 +266,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         else:  # image
             clean["src"] = _text(f.get("src"), 200)
             clean["width"] = _percent(f.get("width"), 100)             # % del ancho disponible
+            clean["alt"] = _text(f.get("alt"), 200)                    # texto alternativo (accesibilidad); vacío = imagen decorativa
         clean["show_if"] = _sanitize_condition(f.get("show_if"), fields_in, fid)
         fields[fid] = clean
 

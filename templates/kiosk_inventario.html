@@ -45,7 +45,7 @@
             <div class="banner ok" id="personBanner"></div>
           </div>
           <div class="card">
-            <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">2. ¿Qué se le entrega? <span style="font-weight:400; color:#888; font-size:0.8rem;">(uno o varios a la vez — combos)</span></h4>
+            <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">2. ¿Qué se le entrega? <span style="font-weight:400; color:#666; font-size:0.8rem;">(uno o varios a la vez — combos)</span></h4>
             <div id="itemsList"></div>
             <div style="display:flex; justify-content:flex-end; margin-top:1rem;"><button type="button" id="deliverBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Entregar</button></div>
             <div class="banner" id="resultBanner"></div>
@@ -85,12 +85,12 @@ async function loadItems() {
       <div>${i.allow_multiple
         ? `<input type="number" class="qty" min="0" max="${Math.max(i.available, 0)}" value="0" style="width:80px; padding:6px 8px; border:1px solid #ddd; border-radius:8px;" ${i.available <= 0 ? 'disabled' : ''}>`
         : `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" class="qty-check" style="width:18px; height:18px;" ${i.available <= 0 ? 'disabled' : ''}> Entregar 1</label>`}</div>
-    </div>`).join('') : '<p style="color:#999;">No hay ítems: créalos en Parámetros del Evento.</p>';
+    </div>`).join('') : '<p style="color:#666;">No hay ítems: créalos en Parámetros del Evento.</p>';
 }
 
 async function loadDeliveries() {
   const rows = await (await fetch(`/api/events/${EVENT_ID}/inventory/deliveries`)).json();
-  $('delBody').innerHTML = rows.length ? rows.map(r => `<tr><td>${new Date(r.time + 'Z').toLocaleTimeString()}</td><td>${esc(r.name)} <span style="color:#aaa;">(${esc(r.user_id)})</span></td><td>${esc(r.item)}</td><td>${r.qty}</td></tr>`).join('') : '<tr><td colspan="4" style="color:#999;">Sin entregas todavía.</td></tr>';
+  $('delBody').innerHTML = rows.length ? rows.map(r => `<tr><td>${new Date(r.time + 'Z').toLocaleTimeString()}</td><td>${esc(r.name)} <span style="color:#aaa;">(${esc(r.user_id)})</span></td><td>${esc(r.item)}</td><td>${r.qty}</td></tr>`).join('') : '<tr><td colspan="4" style="color:#666;">Sin entregas todavía.</td></tr>';
 }
 
 function setPerson(u) {

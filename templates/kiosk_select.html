@@ -18,7 +18,7 @@
         .mode-card.disabled { opacity:0.5; cursor:not-allowed; }
         .mode-icon { font-size:3rem; margin-bottom:1rem; }
         .mode-title { font-family: var(--font-heading-secondary); font-weight:700; color: var(--golden-dark); font-size:1.1rem; margin-bottom:0.4rem; }
-        .mode-sub { font-size:0.8rem; color:#888; }
+        .mode-sub { font-size:0.8rem; color:#666; }
         .status-pill { display:inline-block; font-size:0.75rem; font-weight:700; padding: 4px 14px; border-radius: 14px; text-transform:uppercase; margin-top:0.6rem; }
         .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
         .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
@@ -54,7 +54,7 @@
   <div class="golden-container" style="padding: 4rem 2rem; text-align:center;">
     <span style="color: var(--golden-primary); font-weight:600; text-transform:uppercase; letter-spacing:2px; font-size:0.85rem;">{{ event.name }}</span>
     <h2 style="font-family: var(--font-heading-primary); font-size:2rem; color: var(--golden-dark); margin-top:10px;">¿Qué vas a hacer hoy?</h2>
-    <p style="color:#888; margin-top:0.5rem;">Distintas personas pueden operar al mismo tiempo en el mismo evento.</p>
+    <p style="color:#666; margin-top:0.5rem;">Distintas personas pueden operar al mismo tiempo en el mismo evento.</p>
     <div>
       <span class="status-pill status-{{ event.status }}">
         {{ {"creado": "Creado", "en_proceso": "En Proceso", "finalizado": "Finalizado"}.get(event.status, event.status) }}

@@ -24,7 +24,7 @@
         .list { max-height:230px; overflow:auto; border:1px solid #eee; border-radius:12px; }
         .list div { display:flex; justify-content:space-between; gap:8px; align-items:center; padding:6px 10px; border-bottom:1px solid #f3f3f3; font-size:0.83rem; }
         .picked div { background:#fffbee; }
-        .hint { font-size:0.78rem; color:#888; margin:0.4rem 0; }
+        .hint { font-size:0.78rem; color:#666; margin:0.4rem 0; }
         .big-run { width:100%; padding:1rem; border:none; border-radius:16px; font-size:1.15rem; font-weight:800; cursor:pointer; background:var(--golden-primary); color:var(--golden-dark); }
         .big-run:disabled { opacity:.5; cursor:default; }
         table.hist { width:100%; border-collapse:collapse; font-size:0.82rem; } table.hist th, table.hist td { text-align:left; padding:7px 8px; border-bottom:1px solid #f0f0f0; }
@@ -43,7 +43,7 @@
       <div class="card" id="displayCard"></div>
 
       <div class="card">
-        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">¿Cómo se elige al ganador? <span style="font-weight:400; font-size:0.8rem; color:#888;">(candidatos: la base ya cargada del evento — <b id="totalCandidates">…</b> personas)</span></h4>
+        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">¿Cómo se elige al ganador? <span style="font-weight:400; font-size:0.8rem; color:#666;">(candidatos: la base ya cargada del evento — <b id="totalCandidates">…</b> personas)</span></h4>
         <div class="modes" id="modes"></div>
 
         <div id="pickerBox" style="display:none;">
@@ -132,15 +132,15 @@ function render() {
 function renderCands() {
   const q = $('pickerSearch').value.trim().toLowerCase();
   const list = people.filter((p) => !state.winners.includes(p.id) && (!q || (p.name + ' ' + p.id).toLowerCase().includes(q))).slice(0, 80);
-  $('candList').innerHTML = list.map((p) => `<div data-id="${esc(p.id)}" style="cursor:pointer;"><span>${esc(p.name)} <small style="color:#999;">· ${esc(p.id)}${p.entity ? ' · ' + esc(p.entity) : ''}</small></span><b>＋</b></div>`).join('') || '<div style="color:#999;">Sin candidatos</div>';
+  $('candList').innerHTML = list.map((p) => `<div data-id="${esc(p.id)}" style="cursor:pointer;"><span>${esc(p.name)} <small style="color:#666;">· ${esc(p.id)}${p.entity ? ' · ' + esc(p.entity) : ''}</small></span><b>＋</b></div>`).join('') || '<div style="color:#666;">Sin candidatos</div>';
   $('candList').querySelectorAll('[data-id]').forEach((el) => el.addEventListener('click', () => {
     if (state.mode === 'single_fixed') state.winners = [el.dataset.id]; else state.winners.push(el.dataset.id);
     markDirty(true); renderCands(); renderPicked();
   }));
 }
 function renderPicked() {
-  $('pickedList').innerHTML = state.winners.map((id, i) => `<div><span>${state.mode === 'ordered' ? (i + 1) + '. ' : ''}${esc(nameOf[id] || id)} <small style="color:#999;">· ${esc(id)}</small></span>
-    <span>${state.mode === 'ordered' ? `<button class="small-btn" data-up="${i}">↑</button> <button class="small-btn" data-down="${i}">↓</button> ` : ''}<button class="small-btn" data-rm="${i}">✕</button></span></div>`).join('') || '<div style="color:#999;">Nadie elegido todavía</div>';
+  $('pickedList').innerHTML = state.winners.map((id, i) => `<div><span>${state.mode === 'ordered' ? (i + 1) + '. ' : ''}${esc(nameOf[id] || id)} <small style="color:#666;">· ${esc(id)}</small></span>
+    <span>${state.mode === 'ordered' ? `<button class="small-btn" data-up="${i}">↑</button> <button class="small-btn" data-down="${i}">↓</button> ` : ''}<button class="small-btn" data-rm="${i}">✕</button></span></div>`).join('') || '<div style="color:#666;">Nadie elegido todavía</div>';
   const move = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= state.winners.length) return; [state.winners[i], state.winners[j2]] = [state.winners[j2], state.winners[i]]; markDirty(true); renderPicked(); };
   $('pickedList').querySelectorAll('[data-up]').forEach((b) => b.addEventListener('click', () => move(+b.dataset.up, -1)));
   $('pickedList').querySelectorAll('[data-down]').forEach((b) => b.addEventListener('click', () => move(+b.dataset.down, 1)));
@@ -228,7 +228,7 @@ $('runBtn').addEventListener('click', async () => {
 
 async function loadHistory() {
   const draws = await j(`${api}/draws`);
-  $('histBody').innerHTML = draws.map((d) => `<tr><td>${esc(d.created_at.replace('T', ' '))}</td><td>${esc(d.label || '—')}</td><td>${esc((MODES[d.mode] || [d.mode])[0])} ${d.is_random ? '<span class="badge rand">aleatorio real</span>' : ''}</td><td>${d.winners.map((w) => esc(w.name)).join(', ')}</td><td>${esc(d.created_by)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:#999;">Todavía no se ha ejecutado ningún sorteo.</td></tr>';
+  $('histBody').innerHTML = draws.map((d) => `<tr><td>${esc(d.created_at.replace('T', ' '))}</td><td>${esc(d.label || '—')}</td><td>${esc((MODES[d.mode] || [d.mode])[0])} ${d.is_random ? '<span class="badge rand">aleatorio real</span>' : ''}</td><td>${d.winners.map((w) => esc(w.name)).join(', ')}</td><td>${esc(d.created_by)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:#666;">Todavía no se ha ejecutado ningún sorteo.</td></tr>';
 }
 
 async function loadDisplayLink() {

@@ -216,3 +216,7 @@ body.has-sidebar .golden-event-strip { margin-left: 220px; }
   body.has-sidebar .golden-event-strip { margin-left: 0; }
   body.has-sidebar .golden-header-container { padding-left: 4.2rem; }
 }
+/* Accesibilidad (WCAG 2.1 AA): foco SIEMPRE visible al navegar con teclado en toda la aplicación. */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--golden-primary, #D4AF37); outline-offset: 2px; box-shadow: 0 0 0 5px rgba(0,0,0,0.85);
+}

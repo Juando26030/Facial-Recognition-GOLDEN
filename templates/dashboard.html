@@ -11,7 +11,7 @@
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
         .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
-        .tenant-head .meta { font-size: 0.8rem; color: #888; }
+        .tenant-head .meta { font-size: 0.8rem; color:#666; }
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
         .small-btn.primary { background: var(--golden-primary); border-color: var(--golden-primary); color: var(--golden-dark); font-weight:700; }
     </style>
@@ -57,8 +57,8 @@ async function loadMyEvents() {
     // "sí te asignaron, pero ese evento todavía no está En Proceso" — antes el mismo mensaje
     // ambiguo cubría los dos casos y generaba confusión (reportado por QA).
     el.innerHTML = has_any_authorization
-      ? '<p style="color:#888;">Ya tienes evento(s) asignado(s), pero ninguno está "En Proceso" todavía — pide a un coordinador que lo active cuando corresponda.</p>'
-      : '<p style="color:#888;">No tienes eventos autorizados todavía. Pide a un coordinador que te asigne desde el evento.</p>';
+      ? '<p style="color:#666;">Ya tienes evento(s) asignado(s), pero ninguno está "En Proceso" todavía — pide a un coordinador que lo active cuando corresponda.</p>'
+      : '<p style="color:#666;">No tienes eventos autorizados todavía. Pide a un coordinador que te asigne desde el evento.</p>';
     return;
   }
   el.innerHTML = events.map(e => `

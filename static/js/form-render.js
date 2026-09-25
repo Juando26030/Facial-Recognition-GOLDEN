@@ -46,26 +46,28 @@
     if (theme.logo) {
       const lw = theme.logo_width || 0;
       card.insertAdjacentHTML('beforeend', theme.logo_full
-        ? `<div style="margin:-28px -30px 16px; overflow:hidden; border-radius:20px 20px 0 0;"><img src="${esc(assetUrl(theme.logo))}" alt="" style="width:100%; height:auto; display:block;"></div>`
-        : `<div style="text-align:center; margin-bottom:10px;"><img src="${esc(assetUrl(theme.logo))}" alt="" style="${lw ? `width:${lw}%; height:auto; max-width:100%;` : 'max-height:80px; max-width:60%;'}"></div>`);
+        ? `<div style="margin:-28px -30px 16px; overflow:hidden; border-radius:20px 20px 0 0;"><img src="${esc(assetUrl(theme.logo))}" alt="${esc(theme.title || 'Logo del evento')}" style="width:100%; height:auto; display:block;"></div>`
+        : `<div style="text-align:center; margin-bottom:10px;"><img src="${esc(assetUrl(theme.logo))}" alt="${esc(theme.title || 'Logo del evento')}" style="${lw ? `width:${lw}%; height:auto; max-width:100%;` : 'max-height:80px; max-width:60%;'}"></div>`);
     }
     if (theme.title) card.insertAdjacentHTML('beforeend', `<h2 style="margin:0 0 4px; text-align:center; font-size:1.7rem;">${esc(theme.title)}</h2>`);
     if (theme.subtitle) card.insertAdjacentHTML('beforeend', `<p style="margin:0 0 18px; text-align:center; opacity:.75;">${esc(theme.subtitle)}</p>`);
 
     const style = document.createElement('style');
     const accent = theme.accent || '#D4AF37';
+    // Texto del botón/fichas: negro o blanco según la luminancia del acento (WCAG: contraste mínimo 4.5:1), en vez de negro fijo.
+    const onAccent = (() => { const m = /^#([0-9a-f]{6})$/i.exec(accent); if (!m) return '#111'; const c = [0, 2, 4].map((i) => { const v = parseInt(m[1].substr(i, 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); const L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? '#111' : '#fff'; })();
     style.textContent = `
       .fr-row { display:flex; gap:14px; margin-bottom:14px; flex-wrap:wrap; }
       .fr-item { flex:1 1 200px; min-width:0; }
       .fr-item label.fr-l { display:block; font-size:.82rem; font-weight:700; margin-bottom:4px; }
-      .fr-item .fr-help { font-size:.74rem; opacity:.65; margin-top:3px; }
+      .fr-item .fr-help { font-size:.78rem; opacity:.85; margin-top:3px; }
       .fr-item input[type=text], .fr-item input[type=email], .fr-item input[type=tel], .fr-item input[type=number], .fr-item input[type=date], .fr-item select, .fr-item textarea {
         width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #c9ccd6; border-radius:10px; font:inherit; background:#fff; color:#111; }
       .fr-item input:focus, .fr-item select:focus, .fr-item textarea:focus { outline:2px solid ${accent}; border-color:${accent}; }
       .fr-item .fr-ro { background:#eef0f4 !important; color:#555 !important; }
       .fr-opts label { display:flex; gap:8px; align-items:center; font-weight:400; margin:4px 0; cursor:pointer; }
       .fr-err { color:#c0392b; font-size:.76rem; margin-top:3px; } .fr-item.has-err input, .fr-item.has-err select, .fr-item.has-err textarea { border-color:#c0392b; }
-      .fr-btn { width:100%; padding:13px; border:none; border-radius:26px; background:${accent}; color:#111; font:inherit; font-weight:800; font-size:1rem; cursor:pointer; margin-top:6px; }
+      .fr-btn { width:100%; padding:13px; border:none; border-radius:26px; background:${accent}; color:${onAccent}; font:inherit; font-weight:800; font-size:1rem; cursor:pointer; margin-top:6px; }
       .fr-btn:disabled { opacity:.6; cursor:default; }
       .fr-pay { border:2px dashed ${accent}; border-radius:14px; padding:14px 16px; background:rgba(0,0,0,.03); }
       .fr-pay .fr-total { font-size:1.5rem; font-weight:800; } .fr-pay ul { margin:6px 0 0; padding-left:18px; font-size:.8rem; opacity:.8; }
@@ -73,7 +75,7 @@
       .fr-comp-group { border:1px solid rgba(0,0,0,.14); border-radius:12px; padding:10px 12px; margin-top:8px; background:rgba(0,0,0,.025); }
       .fr-comp-title { font-size:.8rem; font-weight:800; margin-bottom:6px; } .fr-comp-group input { margin-bottom:6px; }
       .fr-chip { border:1px solid ${accent}; background:#fff; color:#111; border-radius:14px; padding:2px 11px; font:inherit; font-size:.75rem; font-weight:700; cursor:pointer; margin-right:4px; }
-      .fr-chip.on { background:${accent}; } .fr-charge { font-size:.8rem; opacity:.85; }
+      .fr-chip.on { background:${accent}; color:${onAccent}; } .fr-btn:focus-visible, .fr-chip:focus-visible, .fr-item a:focus-visible { outline:3px solid #111; outline-offset:2px; box-shadow:0 0 0 5px #fff; } .fr-charge { font-size:.8rem; opacity:.85; }
       .fr-safe { margin-top:10px; padding-top:8px; border-top:1px solid rgba(0,0,0,.1); font-size:.72rem; line-height:1.4; opacity:.85; } .fr-safe [data-fxnote] { display:block; opacity:.7; margin-top:3px; }`;
     card.appendChild(style);
 
@@ -98,6 +100,15 @@
         wrap.className = 'fr-item'; wrap.dataset.fid = fid;
         if (row.items.length === 1 && row.align !== 'left') wrap.style.cssText = 'flex:0 1 60%;';
         wrap.innerHTML = fieldHtml(f, prefill[fid], readonly.has(fid), assetUrl);
+        // Accesibilidad: cada etiqueta queda asociada a su control (lectores de pantalla) y los grupos de opciones se anuncian como grupo con su título.
+        const lab = wrap.querySelector('label.fr-l'), ctl = wrap.querySelector('input:not([type=hidden]), select, textarea');
+        if (lab) {
+          lab.id = 'frl_' + fid;
+          if (['radio', 'multiselect'].includes(f.type)) { const g = wrap.querySelector('.fr-opts'); if (g) { g.setAttribute('role', 'group'); g.setAttribute('aria-labelledby', lab.id); } }
+          else if (ctl) { ctl.id = 'fr_' + fid; lab.setAttribute('for', ctl.id); }
+        }
+        const eb = wrap.querySelector('.fr-err');
+        if (eb) { eb.id = 'fre_' + fid; eb.setAttribute('role', 'alert'); }
         r.appendChild(wrap);
         els[fid] = { wrap, f };
       });
@@ -168,7 +179,7 @@
           const opts = Array.from({ length: f.max - lo + 1 }, (_, i) => lo + i).map((n) => `<option value="${n}">${n === 0 ? 'Ninguno (voy solo/a)' : n === 1 ? '1 acompañante' : n + ' acompañantes'}</option>`).join('');
           return `<label class="fr-l">${esc(f.label)}</label><select data-comp-count="${esc(f.id)}">${opts}</select><div data-comp-list="${esc(f.id)}"></div>${help}<div class="fr-err"></div>`;
         }
-        case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="" style="width:${f.width || 100}%; max-width:100%; height:auto; border-radius:12px; display:block; margin:0 auto;">` : '';
+        case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="${esc(f.alt || '')}" style="width:${f.width || 100}%; max-width:100%; height:auto; border-radius:12px; display:block; margin:0 auto;">` : '';
         case 'text_long': control = `<textarea ${name} rows="4" placeholder="${esc(f.placeholder)}" ${roAttr}>${esc(val)}</textarea>`; break;
         case 'select': control = `<select ${name} ${ro ? 'disabled class="fr-ro"' : ''}><option value="">Selecciona…</option>${(f.options || []).map((o) => `<option value="${esc(o)}" ${String(val) === o ? 'selected' : ''} ${quotaLeft(f, o) === 0 ? 'disabled' : ''}>${esc(o)}${quotaNote(f, o)}</option>`).join('')}</select>${ro ? `<input type="hidden" ${name} value="${esc(val)}">` : ''}`; break;
         case 'radio': control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="radio" ${name} value="${esc(o)}" ${String(val) === o ? 'checked' : ''} ${ro || quotaLeft(f, o) === 0 ? 'disabled' : ''}> ${esc(o)}${quotaNote(f, o)}</label>`).join('')}</div>`; break;
@@ -259,6 +270,7 @@
       return ((opts.quota || {}).full || []).find((r) => { const met = r.conds.map((c) => conditionMet(c, shown)); return r.match === 'any' ? met.some(Boolean) : met.every(Boolean); });
     }
     const quotaWarn = document.createElement('div');
+    quotaWarn.setAttribute('role', 'alert');
     quotaWarn.style.cssText = 'display:none; margin:8px 0; padding:9px 12px; border-radius:10px; background:#fdecea; color:#a1261b; font-size:.85rem;';
     form.insertBefore(quotaWarn, btn);
     function paintQuotaWarn() {
@@ -282,6 +294,7 @@
         wrap.classList.toggle('has-err', !!msg);
         const box = wrap.querySelector('.fr-err');
         if (box) box.textContent = msg || '';
+        wrap.querySelectorAll('input:not([type=hidden]), select, textarea').forEach((c) => { if (msg) { c.setAttribute('aria-invalid', 'true'); if (box) c.setAttribute('aria-describedby', box.id); } else { c.removeAttribute('aria-invalid'); c.removeAttribute('aria-describedby'); } });
       });
       const first = errors && Object.keys(errors)[0];
       if (first && els[first]) els[first].wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });

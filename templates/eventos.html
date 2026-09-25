@@ -12,7 +12,7 @@
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; }
         .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
-        .tenant-head .meta { font-size: 0.8rem; color: #888; }
+        .tenant-head .meta { font-size: 0.8rem; color:#666; }
         .status-pill { font-size:0.7rem; font-weight:700; padding: 3px 10px; border-radius: 12px; text-transform:uppercase; }
         .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
         .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
@@ -149,7 +149,7 @@ async function runSearch() {
   const res = await fetch(`/api/events/search?${params.toString()}`);
   const events = await res.json();
   eventsCache = events;
-  resultsEl.innerHTML = events.length ? events.map(eventCard).join("") : '<p style="color:#888;">Sin resultados.</p>';
+  resultsEl.innerHTML = events.length ? events.map(eventCard).join("") : '<p style="color:#666;">Sin resultados.</p>';
 }
 
 // "Editar evento": la misma vista que Calendario y la ficha de Cliente/Cuenta (_event_edit_modal.html).

@@ -14,7 +14,7 @@
         .form-grid input, .form-grid textarea { width:100%; box-sizing:border-box; padding:0.6rem 0.8rem; border:1px solid #ddd; border-radius:10px; font-size:0.9rem; font-family:inherit; }
         .doc-row { display:flex; justify-content:space-between; gap:1rem; align-items:center; padding:0.9rem 0; border-bottom:1px solid #f0f0f0; flex-wrap:wrap; }
         .doc-row:last-child { border-bottom:none; }
-        .doc-meta { font-size:0.78rem; color:#888; }
+        .doc-meta { font-size:0.78rem; color:#666; }
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; text-decoration:none; color:inherit; }
         .small-btn.primary { background:var(--golden-primary); border-color:var(--golden-primary); color:var(--golden-dark); font-weight:700; }
         .small-btn.danger { color:#a12631; border-color:#e5b8bd; }
@@ -75,7 +75,7 @@ async function loadDocs() {
         <a class="small-btn" href="/api/events/${EVENT_ID}/documents/${d.id}/download">⬇ Descargar</a>
         <button type="button" class="small-btn danger" data-del="${d.id}" data-name="${esc(d.name)}">Eliminar</button>
       </div>
-    </div>`).join('') : '<p style="color:#888; font-size:0.9rem;">Todavía no hay documentos en este evento.</p>';
+    </div>`).join('') : '<p style="color:#666; font-size:0.9rem;">Todavía no hay documentos en este evento.</p>';
 }
 
 document.getElementById('docForm').addEventListener('submit', async (e) => {

@@ -10,7 +10,7 @@
     <style>
         .params-table { width:100%; border-collapse:collapse; }
         .params-table th, .params-table td { padding:0.7rem 0.6rem; border-bottom:1px solid #eee; vertical-align:top; text-align:left; font-size:0.9rem; }
-        .params-table th { color:#888; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; }
+        .params-table th { color:#666; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; }
         .params-table select, .params-table textarea { width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:6px 8px; font-size:0.88rem; font-family:inherit; }
         .params-table textarea { min-height:60px; }
         .params-table tr.dragging { opacity:0.4; background:#fff8e1; }
@@ -56,17 +56,17 @@
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Certificados</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
-          <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
+          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
         </div>
         <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
-          <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo sale por SMTP y el SMS por Twilio si están configurados (ver <code>.env.example</code>); si no, el mensaje queda guardado en <code>data/outbox/</code> y NO sale a nadie.</p>
+          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo sale por SMTP y el SMS por Twilio si están configurados (ver <code>.env.example</code>); si no, el mensaje queda guardado en <code>data/outbox/</code> y NO sale a nadie.</p>
           {% if event.digital_badge_enabled %}
           <div id="mailEditor" style="margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
             <h5 style="margin:0 0 0.4rem;">✉️ Correo que recibe la persona</h5>
-            <p style="color:#888; font-size:0.78rem; margin:0 0 0.5rem;">Escribe el correo como quieras (negritas, enlaces, imágenes). Las <b>variables</b> se reemplazan por los datos de cada persona. Debe llevar el <b>Botón</b> o el <b>Enlace</b> a la escarapela.</p>
+            <p style="color:#666; font-size:0.78rem; margin:0 0 0.5rem;">Escribe el correo como quieras (negritas, enlaces, imágenes). Las <b>variables</b> se reemplazan por los datos de cada persona. Debe llevar el <b>Botón</b> o el <b>Enlace</b> a la escarapela.</p>
             <input type="text" id="mailSubject" placeholder="Asunto" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; margin-bottom:6px;">
             <div id="mailBar" style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-bottom:4px;">
               <button type="button" data-cmd="bold" title="Negrita"><b>B</b></button><button type="button" data-cmd="italic" title="Cursiva"><i>I</i></button><button type="button" data-cmd="underline" title="Subrayado"><u>U</u></button>
@@ -92,7 +92,7 @@
         <div id="privacyCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">🔒 Privacidad de datos biométricos</h4>
           <p id="privInfo" style="font-size:0.85rem; margin:0 0 0.5rem;">Cargando…</p>
-          <p style="color:#888; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y encoding) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
+          <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y encoding) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
           <p style="color:#555; font-size:0.78rem; margin:0 0 0.8rem;">💡 Para autorizar el uso del rostro en los formularios web, crea (más abajo, en los campos del evento) un campo <b>de consentimiento aparte</b> y usa «Insertar texto tipo → Autorización del dato biométrico». Debe ser una casilla separada de la autorización general de datos.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <input type="text" id="privCedula" placeholder="Cédula de la persona" aria-label="Cédula de la persona a la que se le borrará el rostro" style="padding:8px; border:1px solid #ccc; border-radius:8px; max-width:200px;">
@@ -113,7 +113,7 @@
               <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
               <button type="button" id="addAreaBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar zona</button>
             </div>
-            <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Con "permitir reingresos" apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula/QR/facial) usa el "Modo autoregistro" del evento. <a href="/kiosk/{{ event.id }}/areas" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Áreas →</a></p>
+            <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Con "permitir reingresos" apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula/QR/facial) usa el "Modo autoregistro" del evento. <a href="/kiosk/{{ event.id }}/areas" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Áreas →</a></p>
           </div>
         </div>
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
@@ -127,7 +127,7 @@
               <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
               <button type="button" id="addItemBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar ítem</button>
             </div>
-            <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al entregar, el disponible se descuenta solo. <a href="/kiosk/{{ event.id }}/inventario" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Inventario →</a></p>
+            <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al entregar, el disponible se descuenta solo. <a href="/kiosk/{{ event.id }}/inventario" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Inventario →</a></p>
           </div>
         </div>
         <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE
@@ -146,7 +146,7 @@
             <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="logo" {% if event.logo_fit != "banner" %}checked{% endif %}> Logo completo</label>
             <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="banner" {% if event.logo_fit == "banner" %}checked{% endif %}> Banner (rellena de lado a lado, recorta lo que sobre)</label>
           </div>
-          <p style="color:#888; font-size:0.78rem; margin:0.5rem 0 0;">Al subir una imagen se activa "Usar logo propio" (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia este evento.</p>
+          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al subir una imagen se activa "Usar logo propio" (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia este evento.</p>
         </div>
         <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar
              y las plantillas de escarapela por categoría (editor de escarapelas). -->
@@ -154,10 +154,10 @@
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Categorías del evento</h4>
           <textarea id="categoriesBox" rows="3" placeholder="Una categoría por línea (ej. VIP, Prensa, Staff)" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-family:inherit;">{{ (event.categories | fromjson) | join("\n") if event.categories else "" }}</textarea>
           <div style="display:flex; justify-content:flex-end; margin-top:0.5rem;"><button type="button" id="saveCategoriesBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">Guardar categorías</button></div>
-          <p style="color:#888; font-size:0.78rem; margin:0.3rem 0 0;">Al haber categorías aparece el campo "Categoría" (casillas, se puede marcar más de una) en Registrar/Editar, una columna en el reporte y la columna "categoria" en la carga de base; en el editor de escarapelas podrás usar una plantilla distinta por categoría.</p>
+          <p style="color:#666; font-size:0.78rem; margin:0.3rem 0 0;">Al haber categorías aparece el campo "Categoría" (casillas, se puede marcar más de una) en Registrar/Editar, una columna en el reporte y la columna "categoria" en la carga de base; en el editor de escarapelas podrás usar una plantilla distinta por categoría.</p>
         </div>
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
-          <p style="color:#888; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
+          <p style="color:#666; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
             Define, para cada campo de este evento: cómo se llama (solo aquí, no cambia el nombre en otros eventos), en qué orden aparece en "Registrar nuevo" y "Editar persona" (arrastra las filas con ☰), si es obligatorio, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (nombres, apellidos, cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.
           </p>
           <table class="params-table">
@@ -178,7 +178,7 @@
             <input type="text" id="newOptionalFieldName" placeholder="Nombre del campo nuevo (ej. Alergias, Talla de camisa...)" style="flex:1; min-width:240px; border:1px solid #ccc; border-radius:8px; padding:0.6rem 0.8rem; font-size:0.9rem;">
             <button type="button" id="addOptionalFieldBtn" class="golden-btn" style="width:auto; padding:0.6rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar campo opcional</button>
           </div>
-          <p style="color:#888; font-size:0.78rem; margin-top:0.5rem;">El campo nuevo queda disponible de una en el formulario de alta manual y, si se configura con estadística, en Estadísticas — y siempre aparece como columna en el reporte Excel.</p>
+          <p style="color:#666; font-size:0.78rem; margin-top:0.5rem;">El campo nuevo queda disponible de una en el formulario de alta manual y, si se configura con estadística, en Estadísticas — y siempre aparece como columna en el reporte Excel.</p>
           <div style="display:flex; justify-content:flex-end; margin-top:1.5rem;">
             <button type="button" id="saveParamsBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Guardar cambios</button>
           </div>
@@ -246,7 +246,7 @@
             <tr data-area="${a.id}"><td><input type="text" class="area-name" value="${esc(a.name)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
             <td><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td><button type="button" class="area-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
-            : '<tr><td colspan="3" style="color:#999;">Todavía no hay zonas.</td></tr>';
+            : '<tr><td colspan="3" style="color:#666;">Todavía no hay zonas.</td></tr>';
     }
     document.getElementById('areasBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-area]'); if (!tr) return;
@@ -273,7 +273,7 @@
             <td><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td>${i.delivered} / <strong>${i.available}</strong></td>
             <td><button type="button" class="item-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
-            : '<tr><td colspan="5" style="color:#999;">Todavía no hay ítems.</td></tr>';
+            : '<tr><td colspan="5" style="color:#666;">Todavía no hay ítems.</td></tr>';
     }
     document.getElementById('itemsBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
@@ -415,7 +415,7 @@
         const defaultLabel = cfg.default_label || cfg.label;
         const customLabel = cfg.label !== defaultLabel ? cfg.label : '';
         tr.innerHTML = `
-            <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:#999; text-align:center;">☰</td>
+            <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:#666; text-align:center;">☰</td>
             <td><input type="text" class="cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
             <td><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-field-type">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>

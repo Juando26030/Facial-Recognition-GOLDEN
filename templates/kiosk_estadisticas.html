@@ -73,7 +73,7 @@
 
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;">
             <div class="badge-form-title">Gráficos por variable</div>
-            <p style="text-align:center; color:#888; font-size:0.85rem; margin-top:-0.5rem; margin-bottom:1.2rem;">
+            <p style="text-align:center; color:#666; font-size:0.85rem; margin-top:-0.5rem; margin-bottom:1.2rem;">
                 Elige una variable de la base de este evento — el sistema detecta si es numérica o por categorías y ofrece los tipos de gráfico que aplican. Una variable a la vez (cruces de 2 variables llegan en una fase futura).
             </p>
             <div style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:1.2rem;">
@@ -83,7 +83,7 @@
                 </div>
                 <button type="button" id="addStatsVarBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;">➕ Agregar variable</button>
             </div>
-            <p id="statsEmptyMsg" style="text-align:center; color:#999; font-size:0.85rem;">Agrega una variable para ver su gráfico.</p>
+            <p id="statsEmptyMsg" style="text-align:center; color:#666; font-size:0.85rem;">Agrega una variable para ver su gráfico.</p>
             <div id="statsChartsContainer" style="display:flex; flex-wrap:wrap; gap:1.5rem;"></div>
         </div>
       </div>
@@ -196,7 +196,7 @@ AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `/api/eve
                     <button type="button" class="remove-chart-btn" style="border:none; background:none; color:#dc3545; font-weight:700; cursor:pointer; font-size:1rem;">✕</button>
                 </div>
             </div>
-            <p class="chart-loading" style="color:#999; font-size:0.85rem;">Cargando…</p>
+            <p class="chart-loading" style="color:#666; font-size:0.85rem;">Cargando…</p>
             <canvas style="display:none;"></canvas>
         `;
         container.appendChild(card);

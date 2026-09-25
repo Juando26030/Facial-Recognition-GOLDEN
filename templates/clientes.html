@@ -12,13 +12,13 @@
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
         .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
-        .tenant-head .meta { font-size: 0.8rem; color: #888; }
+        .tenant-head .meta { font-size: 0.8rem; color:#666; }
         .tenant-body { display:none; padding: 0 1.5rem 1.5rem; border-top: 1px solid #f0f0f0; }
         .tenant-body.open { display:block; }
         .event-row { display:flex; justify-content:space-between; align-items:center; padding: 0.8rem 0; border-bottom: 1px solid #f4f4f4; flex-wrap: wrap; gap: 8px; }
         .event-row:last-child { border-bottom:none; }
         .event-name { font-weight:700; color: var(--golden-dark); }
-        .event-meta { font-size: 0.78rem; color:#888; }
+        .event-meta { font-size: 0.78rem; color:#666; }
         .status-pill { font-size:0.7rem; font-weight:700; padding: 3px 10px; border-radius: 12px; text-transform:uppercase; }
         .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
         .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
@@ -102,7 +102,7 @@ async function loadTenants() {
 
 function renderTenants(tenantsData) {
   const el = document.getElementById("tenantsList");
-  if (!tenantsData.length) { el.innerHTML = '<p style="color:#888;">Sin resultados.</p>'; return; }
+  if (!tenantsData.length) { el.innerHTML = '<p style="color:#666;">Sin resultados.</p>'; return; }
   el.innerHTML = tenantsData.map(t => `
     <div class="tenant-card" data-tenant-id="${t.id}">
       <div class="tenant-head" data-action="toggle-tenant">
@@ -132,7 +132,7 @@ async function toggleTenant(tenantId, card) {
 // lo que ya trajo loadEventsForTenant, sin pedir nada nuevo al backend.
 const tenantEventsCache = new WeakMap();
 function renderEventRows(events, el) {
-  if (!events.length) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin resultados.</p>'; return; }
+  if (!events.length) { el.innerHTML = '<p style="color:#666; font-size:0.85rem;">Sin resultados.</p>'; return; }
   el.innerHTML = events.map(e => `
     <div class="event-row">
       <div>
@@ -198,7 +198,7 @@ async function loadEventsForTenant(tenantId, card) {
   const events = await res.json();
   tenantEventsCache.set(card, events);
   const el = card.querySelector("[data-events-container]");
-  if (events.length === 0) { el.innerHTML = '<p style="color:#888; font-size:0.85rem;">Sin eventos todavía.</p>'; return; }
+  if (events.length === 0) { el.innerHTML = '<p style="color:#666; font-size:0.85rem;">Sin eventos todavía.</p>'; return; }
   renderEventRows(events, el);
 }
 

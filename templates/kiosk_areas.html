@@ -63,7 +63,7 @@
               <div class="suggest" id="suggest"></div>
             </div>
             <div class="banner" id="banner"></div>
-            <p style="font-size:0.78rem; color:#888; margin:0.8rem 0 0;">Modo autoregistro: <strong id="autoregLabel"></strong> — con "OFF" hay que confirmar cada movimiento con "Acreditar".</p>
+            <p style="font-size:0.78rem; color:#666; margin:0.8rem 0 0;">Modo autoregistro: <strong id="autoregLabel"></strong> — con "OFF" hay que confirmar cada movimiento con "Acreditar".</p>
           </div>
           <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem;">
@@ -107,7 +107,7 @@ async function loadPresence() {
   if (!areaId()) { $('presBody').innerHTML = ''; $('insideCount').textContent = '0'; return; }
   const rows = await (await fetch(`/api/events/${EVENT_ID}/areas/${areaId()}/presence`)).json();
   $('insideCount').textContent = rows.filter(r => r.direction === 'in').length;
-  $('presBody').innerHTML = rows.length ? rows.map(r => `<tr class="${r.direction}"><td>${esc(r.id)}</td><td>${esc(r.name)}</td><td>${r.direction === 'in' ? '🟢 Entró' : '🔴 Salió'}</td><td>${new Date(r.time + 'Z').toLocaleTimeString()}</td></tr>`).join('') : '<tr><td colspan="4" style="color:#999;">Sin movimientos todavía.</td></tr>';
+  $('presBody').innerHTML = rows.length ? rows.map(r => `<tr class="${r.direction}"><td>${esc(r.id)}</td><td>${esc(r.name)}</td><td>${r.direction === 'in' ? '🟢 Entró' : '🔴 Salió'}</td><td>${new Date(r.time + 'Z').toLocaleTimeString()}</td></tr>`).join('') : '<tr><td colspan="4" style="color:#666;">Sin movimientos todavía.</td></tr>';
 }
 
 function show(cls, html) { const b = $('banner'); b.className = 'banner ' + cls; b.innerHTML = html; b.style.display = 'block'; }
