@@ -85,7 +85,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="#" class="golden-logo">
-      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo">{% endif %}
+      {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>

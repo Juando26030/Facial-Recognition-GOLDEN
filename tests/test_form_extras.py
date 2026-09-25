@@ -539,3 +539,33 @@ def test_category_quota_and_total_capacity_apply_together(client, factory):
     assert _submit(client, ev, form, {**_who(1), "cat": "General"}, sid="a").status_code == 200
     r = _submit(client, ev, form, {**_who(2), "cat": "VIP"}, sid="b")                                             # VIP tiene cupo, pero el total ya se llenó
     assert r.status_code == 409
+
+
+# ------------------------------- tamaño de logos e imágenes -------------------------------
+def test_form_logo_and_image_sizes_are_sanitized():
+    from app import formlib as fl
+    d = fl.sanitize_design({"theme": {"logo": "a.png", "logo_width": "60", "logo_full": 1},
+                            "fields": {"i": {"id": "i", "type": "image", "src": "b.png", "width": 45}}, "rows": []}, set())
+    assert (d["theme"]["logo_width"], d["theme"]["logo_full"], d["fields"]["i"]["width"]) == (60, True, 45)
+    d = fl.sanitize_design({"theme": {"logo_width": 500}, "fields": {"i": {"id": "i", "type": "image", "width": "abc"}}, "rows": []}, set())
+    assert (d["theme"]["logo_width"], d["theme"]["logo_full"], d["fields"]["i"]["width"]) == (0, False, 100)          # fuera de rango: automático / 100 %
+
+
+def test_event_logo_height_and_banner_mode_reach_the_event_pages(client, factory, tmp_path):
+    ev = factory.event("en_proceso")
+    factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    assert client.put(f"/api/events/{ev.id}/logo", json={"height": 20}).status_code == 200                           # se limita a 30–80
+    assert client.put(f"/api/events/{ev.id}/logo", json={"fit": "raro"}).status_code == 400
+    import io
+    from PIL import Image
+    buf = io.BytesIO(); Image.new("RGB", (600, 100), "blue").save(buf, "PNG")
+    assert client.post(f"/api/events/{ev.id}/logo/upload", files={"file": ("banner.png", buf.getvalue(), "image/png")}).status_code == 200
+    r = client.put(f"/api/events/{ev.id}/logo", json={"height": 200, "fit": "banner"}).json()
+    assert (r["logo_height"], r["logo_fit"]) == (80, "banner")
+    page = client.get(f"/kiosk/{ev.id}").text
+    assert 'style="height:80px; width:100%; object-fit:cover;" data-banner="1"' in page
+    client.put(f"/api/events/{ev.id}/logo", json={"height": 40, "fit": "logo"})
+    assert 'style="height:40px;"' in client.get(f"/kiosk/{ev.id}").text
+    client.put(f"/api/events/{ev.id}/logo", json={"mode": "default"})
+    assert "height:40px" not in client.get(f"/kiosk/{ev.id}").text                                                   # el logo de Golden no se toca

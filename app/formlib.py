@@ -175,6 +175,15 @@ def validate_id_doc(code: str, raw: str):
     return True, value, ""
 
 
+def _percent(value, default: int) -> int:
+    """Porcentaje 10–100 (o 0 = automático cuando `default` es 0); lo demás cae al valor por defecto."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return n if 10 <= n <= 100 else default
+
+
 def sanitize_design(design: dict, optional_keys: set) -> dict:
     """Valida y limpia el diseño que manda el editor; lanza ValueError con un mensaje legible si algo no cuadra.
     Solo se conservan las propiedades conocidas."""
@@ -196,6 +205,8 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         theme["font"] = theme_in["font"]
     for key in ("logo", "bg_image"):
         theme[key] = _text(theme_in.get(key), 200)
+    theme["logo_width"] = _percent(theme_in.get("logo_width"), 0)      # % del ancho de la tarjeta; 0 = automático (como antes)
+    theme["logo_full"] = bool(theme_in.get("logo_full"))               # el logo/banner ocupa la tarjeta de lado a lado, sin márgenes
 
     fields_in = design.get("fields") or {}
     if not isinstance(fields_in, dict) or len(fields_in) > MAX_FIELDS:
@@ -254,6 +265,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
             clean.update(_sanitize_companions(f))
         else:  # image
             clean["src"] = _text(f.get("src"), 200)
+            clean["width"] = _percent(f.get("width"), 100)             # % del ancho disponible
         clean["show_if"] = _sanitize_condition(f.get("show_if"), fields_in, fid)
         fields[fid] = clean
 

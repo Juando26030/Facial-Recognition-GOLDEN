@@ -43,7 +43,12 @@
     const card = document.createElement('div');
     card.style.cssText = `background:${theme.card_color || '#fff'}; border-radius:20px; padding:28px 30px; box-shadow:0 12px 40px rgba(0,0,0,.12); max-width:760px; margin:0 auto; box-sizing:border-box;`;
     container.appendChild(card);
-    if (theme.logo) card.insertAdjacentHTML('beforeend', `<div style="text-align:center; margin-bottom:10px;"><img src="${esc(assetUrl(theme.logo))}" alt="" style="max-height:80px; max-width:60%;"></div>`);
+    if (theme.logo) {
+      const lw = theme.logo_width || 0;
+      card.insertAdjacentHTML('beforeend', theme.logo_full
+        ? `<div style="margin:-28px -30px 16px; overflow:hidden; border-radius:20px 20px 0 0;"><img src="${esc(assetUrl(theme.logo))}" alt="" style="width:100%; height:auto; display:block;"></div>`
+        : `<div style="text-align:center; margin-bottom:10px;"><img src="${esc(assetUrl(theme.logo))}" alt="" style="${lw ? `width:${lw}%; height:auto; max-width:100%;` : 'max-height:80px; max-width:60%;'}"></div>`);
+    }
     if (theme.title) card.insertAdjacentHTML('beforeend', `<h2 style="margin:0 0 4px; text-align:center; font-size:1.7rem;">${esc(theme.title)}</h2>`);
     if (theme.subtitle) card.insertAdjacentHTML('beforeend', `<p style="margin:0 0 18px; text-align:center; opacity:.75;">${esc(theme.subtitle)}</p>`);
 
@@ -162,7 +167,7 @@
           const opts = Array.from({ length: f.max - lo + 1 }, (_, i) => lo + i).map((n) => `<option value="${n}">${n === 0 ? 'Ninguno (voy solo/a)' : n === 1 ? '1 acompañante' : n + ' acompañantes'}</option>`).join('');
           return `<label class="fr-l">${esc(f.label)}</label><select data-comp-count="${esc(f.id)}">${opts}</select><div data-comp-list="${esc(f.id)}"></div>${help}<div class="fr-err"></div>`;
         }
-        case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="" style="max-width:100%; border-radius:12px; display:block; margin:0 auto;">` : '';
+        case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="" style="width:${f.width || 100}%; max-width:100%; height:auto; border-radius:12px; display:block; margin:0 auto;">` : '';
         case 'text_long': control = `<textarea ${name} rows="4" placeholder="${esc(f.placeholder)}" ${roAttr}>${esc(val)}</textarea>`; break;
         case 'select': control = `<select ${name} ${ro ? 'disabled class="fr-ro"' : ''}><option value="">Selecciona…</option>${(f.options || []).map((o) => `<option value="${esc(o)}" ${String(val) === o ? 'selected' : ''} ${quotaLeft(f, o) === 0 ? 'disabled' : ''}>${esc(o)}${quotaNote(f, o)}</option>`).join('')}</select>${ro ? `<input type="hidden" ${name} value="${esc(val)}">` : ''}`; break;
         case 'radio': control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="radio" ${name} value="${esc(o)}" ${String(val) === o ? 'checked' : ''} ${ro || quotaLeft(f, o) === 0 ? 'disabled' : ''}> ${esc(o)}${quotaNote(f, o)}</label>`).join('')}</div>`; break;

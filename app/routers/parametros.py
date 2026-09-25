@@ -131,16 +131,26 @@ async def set_event_logo_mode(
     event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
-    """`mode`: 'default' (logo de Golden), 'hidden' (sin logo) o 'custom' (el propio ya subido)."""
+    """`mode`: 'default' (logo de Golden), 'hidden' (sin logo) o 'custom' (el propio ya subido). Opcionales: `height` (30–80 px) y
+    `fit` ('logo' = se ve completo, 'banner' = rellena el ancho del header recortando)."""
     event = get_event_for_staff(event_id, db, staff)
-    mode = data.get("mode")
+    if "height" in data:
+        try:
+            event.logo_height = max(30, min(80, int(data["height"])))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="El alto del logo debe ser un número entre 30 y 80")
+    if "fit" in data:
+        if data["fit"] not in ("logo", "banner"):
+            raise HTTPException(status_code=400, detail="fit debe ser 'logo' o 'banner'")
+        event.logo_fit = data["fit"]
+    mode = data.get("mode", event.logo_mode)
     if mode not in LOGO_MODES:
         raise HTTPException(status_code=400, detail=f"mode debe ser uno de: {', '.join(LOGO_MODES)}")
     if mode == "custom" and not (event.logo_path and os.path.isfile(event.logo_path)):
         raise HTTPException(status_code=400, detail="Primero sube la imagen del logo")
     event.logo_mode = mode
     db.commit()
-    return {"logo_mode": event.logo_mode}
+    return {"logo_mode": event.logo_mode, "logo_height": event.logo_height, "logo_fit": event.logo_fit}
 
 
 @router.post("/events/{event_id}/logo/upload")

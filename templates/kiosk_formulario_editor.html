@@ -317,7 +317,8 @@ function renderProps() {
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + payHtml(f);
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + compHtml(f);
   if (f.type === 'heading' || f.type === 'paragraph') html += `<div class="fld"><label>Texto</label><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
-  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>`;
+  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
+    <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>`;
   if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
   if (f.type === 'file') html += `<div class="fld"><label>Formatos permitidos</label><div>${EXTS.map((x) => `<label style="display:inline-flex; gap:3px; margin-right:8px; font-size:0.78rem;"><input type="checkbox" data-ext="${x}" ${(f.accept || []).includes(x) ? 'checked' : ''}>${x}</label>`).join('')}</div></div>${fieldInput('pMax', 'Tamaño máximo (MB, hasta 20)', f.max_mb || 10)}`;
   if (isInput) {
@@ -377,6 +378,7 @@ function renderProps() {
   }));
   on('pSync', 'change', upd(() => { f.sync = $('pSync').checked; })); on('pReq', 'change', upd(() => { f.required = $('pReq').checked; }));
   on('pStats', 'change', upd(() => { f.stats = $('pStats').checked; })); on('pRo', 'change', upd(() => { f.readonly_when_prefilled = $('pRo').checked; }));
+  on('pImgW', 'input', () => { f.width = +$('pImgW').value; $('pImgWv').textContent = f.width; markDirty(); });
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
   const saveRules = (rs, match) => { setRules(f, rs, match); markDirty(); renderCanvas(); };
   on('cOn', 'change', () => {
@@ -570,7 +572,9 @@ function renderTheme() {
   $('themeBox').innerHTML = fieldInput('tTitle', 'Título', t.title) + fieldInput('tSub', 'Subtítulo', t.subtitle) + fieldInput('tBtn', 'Texto del botón', t.button_text) +
     ['bg_color', 'card_color', 'text_color', 'accent'].map((k) => `<div class="fld"><label>${COLOR_LABELS[k]}</label><input type="color" data-color="${k}" value="${t[k]}" style="width:100%; height:34px; padding:2px;"></div>`).join('') +
     `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${t.font === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
-     <div class="fld"><label>Logo</label><input type="file" id="tLogo" accept="image/*"> <button class="small-btn" id="tLogoX">Quitar</button></div>
+     <div class="fld"><label>Logo o banner</label><input type="file" id="tLogo" accept="image/*"> <button class="small-btn" id="tLogoX">Quitar</button></div>
+     <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" style="width:100%;"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
+     <label style="display:flex; gap:6px; font-size:0.82rem; margin-bottom:0.6rem;"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>
      <div class="fld"><label>Imagen de fondo</label><input type="file" id="tBg" accept="image/*"> <button class="small-btn" id="tBgX">Quitar</button></div>`;
   const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
   on('tTitle', 'input', () => { t.title = $('tTitle').value; markDirty(); }); on('tSub', 'input', () => { t.subtitle = $('tSub').value; markDirty(); }); on('tBtn', 'input', () => { t.button_text = $('tBtn').value; markDirty(); });
@@ -578,6 +582,8 @@ function renderTheme() {
   on('tFont', 'change', () => { t.font = $('tFont').value; markDirty(); });
   const up = (id, key) => on(id, 'change', async () => { const fd = new FormData(); fd.append('file', $(id).files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); t[key] = d.storage_path; markDirty(); showToast('Imagen cargada — guarda el diseño', 'success'); } catch (e) { showToast(e.message, 'error'); } });
   up('tLogo', 'logo'); up('tBg', 'bg_image');
+  on('tLogoW', 'input', () => { const v = +$('tLogoW').value; t.logo_width = v >= 10 ? v : 0; $('tLogoWv').textContent = t.logo_width ? t.logo_width + ' %' : 'automático'; markDirty(); });
+  on('tLogoFull', 'change', () => { t.logo_full = $('tLogoFull').checked; markDirty(); });
   on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
 }
 function renderAll() { renderPalette(); renderCanvas(); renderProps(); $('payTab').style.display = Object.values(design.fields).some((x) => x.type === 'payment') ? '' : 'none'; }

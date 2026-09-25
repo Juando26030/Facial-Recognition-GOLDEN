@@ -230,6 +230,8 @@ class Event(Base):
     digital_email_body = Column(Text, nullable=True)       # HTML ya saneado (app/email_template.py)
     report_pdf_path = Column(String, nullable=True)  # PDF del informe final (ítem 6); NULL = pendiente
     report_uploaded_at = Column(DateTime, nullable=True)
+    logo_height = Column(Integer, default=50, server_default='50', nullable=False)      # alto del logo propio en el header (30–80 px)
+    logo_fit = Column(String, default='logo', server_default='logo', nullable=False)     # 'logo' (se ve completo) | 'banner' (rellena el ancho disponible y recorta)
     logo_mode = Column(String, default='default', server_default='default', nullable=False)  # 'default' (logo de Golden) | 'hidden' | 'custom' — reunión 2026-09-21, ítem 1
     categories = Column(Text, nullable=True)  # JSON: nombres de las categorías del evento (ítem 14)
     badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría

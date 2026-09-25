@@ -107,7 +107,20 @@ def event_logo_url(event):
     return DEFAULT_LOGO_URL
 
 
+def event_logo_attrs(event):
+    """Atributos del <img> del logo propio: alto elegido (30–80 px; el header mide 80) y, en modo «banner», que rellene el ancho disponible
+    del header (recortando lo que sobre). El logo de Golden por defecto no se toca."""
+    from markupsafe import Markup
+    if getattr(event, "logo_mode", "default") != "custom" or not event.logo_path:
+        return Markup("")
+    height = max(30, min(80, int(getattr(event, "logo_height", None) or 50)))
+    if getattr(event, "logo_fit", "logo") == "banner":
+        return Markup(f'style="height:{height}px; width:100%; object-fit:cover;" data-banner="1"')
+    return Markup(f'style="height:{height}px;"')
+
+
 templates.env.globals["event_logo_url"] = event_logo_url
+templates.env.globals["event_logo_attrs"] = event_logo_attrs
 
 app.include_router(auth_router.router)
 app.include_router(api.router, prefix="/api")
