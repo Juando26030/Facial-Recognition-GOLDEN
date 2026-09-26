@@ -62,7 +62,7 @@ def _row(r: FormRefund) -> dict:
 
 
 @router.post("/events/{event_id}/forms/{form_id}/payments/{payment_id}/refund")
-async def refund_payment(event_id: int, form_id: int, payment_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+def refund_payment(event_id: int, form_id: int, payment_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     """Body: `reason` (obligatorio), `amount` (COP; por defecto el saldo), `manual` (true = ya se devolvió por fuera; exige `note`),
     `cancel_registration` (por defecto: sí si el reembolso deja el pago en cero)."""
     event = get_event_for_staff(event_id, db, staff)
@@ -165,7 +165,7 @@ def _verdict(cfg: dict, pay: FormPayment, detail, via: str, full: bool) -> str:
 
 
 @router.post("/events/{event_id}/forms/{form_id}/payments/{payment_id}/refunds/{refund_id}/{action}")
-async def resolve_pending_refund(event_id: int, form_id: int, payment_id: int, refund_id: int, action: str, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+def resolve_pending_refund(event_id: int, form_id: int, payment_id: int, refund_id: int, action: str, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     """Un reembolso `pending` (Wompi lo aceptó pero no confirma): `check` lo vuelve a consultar y lo completa si Wompi ya lo anuló; `discard`
     lo descarta (queda `failed`) para poder intentar de nuevo o registrarlo como manual."""
     if action not in ("check", "discard"):

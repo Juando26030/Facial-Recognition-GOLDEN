@@ -62,7 +62,7 @@ def _value_of(db: Session, event_id: int, user: User, variable: str):
 
 
 @router.get("/events/{event_id}/stats/variables")
-async def list_stats_variables(
+def list_stats_variables(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
@@ -87,7 +87,7 @@ async def list_stats_variables(
 
 
 @router.get("/events/{event_id}/stats/data")
-async def get_stats_data(
+def get_stats_data(
     event_id: int, variable: str, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):

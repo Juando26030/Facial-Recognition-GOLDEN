@@ -7,20 +7,23 @@ import zipfile
 import tempfile
 import csv
 import io
-import face_recognition
+import hashlib
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PIL import Image
 from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, Request
-from fastapi.responses import FileResponse
-from sqlalchemy import func
+from fastapi.responses import FileResponse, JSONResponse, Response
+from PIL import UnidentifiedImageError
+from sqlalchemy import func, or_, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, digital_badge
+from app import bulk_jobs, crypto, digital_badge, faces, heavy
+from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
 from app.routers.super_events import sibling_attendance
@@ -223,10 +226,6 @@ router = APIRouter()
 BIOMETRIC_CONSENT_REQUIRED = "Falta la autorización expresa de la persona para guardar su rostro (dato biométrico sensible, Ley 1581). Si no la da, regístrala por cédula, sin foto."
 
 
-def _known_faces_dir(tenant_id: str) -> str:
-    path = os.path.join('data', tenant_id, 'known_people')
-    os.makedirs(path, exist_ok=True)
-    return path
 
 
 def _send_digital(db: Session, event: Event, user: User, request: Optional[Request]) -> dict:
@@ -322,64 +321,112 @@ def _duplicate_warning(db: Session, event_id: int, user: "User") -> dict:
     }
 
 
-@router.get("/users")
-async def get_all_users(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)
-):
-    """Cualquier staff autenticado con acceso al evento puede VER el directorio (digitador y
-    cliente incluidos) — get_event_for_staff abajo hace el chequeo real de autorización.
-    El directorio es de ESTE evento: roster precargado (EventAttendee) unido con quien de hecho
-    se presentó (AccessLog filtrado por event_id) — ya no todos los User del tenant sin distinguir
-    entre eventos distintos del mismo cliente."""
-    event = get_event_for_staff(event_id, db, staff)
+def _directory_etag(db: Session, event_id: int, tenant_id: str, extra: str = "") -> str:
+    """Huella barata del directorio de un evento: cuantos asistentes/registros hay, el ultimo id y la ultima transaccion que toco alguna de esas filas
+    (`xmin` de Postgres). Cambia con CUALQUIER alta, baja o edicion, asi que un directorio que no cambio se responde con 304 sin construirlo."""
+    att = db.execute(text("SELECT count(*), coalesce(max(id), 0), coalesce(max(xmin::text::bigint), 0) FROM event_attendees WHERE event_id = :e"), {"e": event_id}).one()
+    logs = db.execute(text("SELECT count(*), coalesce(max(id), 0), coalesce(max(xmin::text::bigint), 0) FROM access_logs WHERE event_id = :e"), {"e": event_id}).one()
+    usr = db.execute(text(
+        "SELECT coalesce(max(u.xmin::text::bigint), 0) FROM users u WHERE u.tenant_id = :t AND u.id IN "
+        "(SELECT user_id FROM event_attendees WHERE event_id = :e UNION SELECT user_id FROM access_logs WHERE event_id = :e)"), {"t": tenant_id, "e": event_id}).scalar()
+    return hashlib.md5(f"{tuple(att)}|{tuple(logs)}|{usr}|{extra}".encode()).hexdigest()[:20]
 
-    attendee_ids = {a.user_id for a in db.query(EventAttendee).filter(EventAttendee.event_id == event_id)}
-    log_ids = {l.user_id for l in db.query(AccessLog).filter(AccessLog.event_id == event_id)}
-    all_ids = attendee_ids | log_ids
-    if not all_ids:
+
+def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None) -> list:
+    """Filas del directorio (roster precargado + quien se presento). Un asistente no reconocido como registrado queda «No registrado»; «Actualizado» es una
+    edicion de perfil, no una acreditacion (ver update_user). Sin `face_encoding` (columna diferida): no se descifra nada."""
+    event_id = event.id
+    attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event_id)
+    log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id)
+    query = db.query(User).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids)))
+    if changed_since is not None:          # incremental: solo quien tuvo un registro o entro al evento despues del cursor
+        since_log, since_att = changed_since
+        touched = db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id, AccessLog.id > since_log).union(
+            db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event_id, EventAttendee.id > since_att))
+        query = query.filter(User.id.in_(touched))
+    if limit is not None:
+        query = query.order_by(User.id).offset(offset).limit(limit)
+    users = query.all()
+    if not users:
         return []
-
-    users = db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(all_ids)).all()
-    attendee_rows = db.query(EventAttendee).filter(EventAttendee.event_id == event_id).all()
-    categories_by_user = {a.user_id: a.get_categories() for a in attendee_rows}
-    certificate_by_user = {a.user_id: bool(a.certificate) for a in attendee_rows}
-    digital_by_user = {a.user_id: a.digital_contact or "" for a in attendee_rows}
-    digital_sent_by_user = {a.user_id: a.digital_sent_at.isoformat() if a.digital_sent_at else None for a in attendee_rows}
-    event_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id).all()
-    logs_by_user = {}
-    for log in event_logs:
-        logs_by_user.setdefault(log.user_id, []).append(log)
+    ids = [u.id for u in users] if (limit is not None or changed_since is not None) else None
+    att_q = db.query(EventAttendee).filter(EventAttendee.event_id == event_id)
+    log_q = db.query(AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"),
+                     func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo")).filter(AccessLog.event_id == event_id)
+    if ids is not None:
+        att_q, log_q = att_q.filter(EventAttendee.user_id.in_(ids)), log_q.filter(AccessLog.user_id.in_(ids))
+    attendees = {a.user_id: a for a in att_q}
+    counts = {uid: (real, new) for uid, real, new in log_q.group_by(AccessLog.user_id)}
 
     result = []
     for u in users:
-        # Bug real (2026-09-17, reportado en QA): "Actualizado" es un log de EDICIÓN de perfil,
-        # no de acreditación (ver update_user más abajo) — antes contaba igual que "Nuevo"/
-        # "Existente" para decidir el estado, así que revertir a alguien a "No registrado" desde
-        # el modal de Editar (que en el mismo clic, después del cambio de estado, también guarda
-        # el resto del formulario vía update_user) volvía a dejarlo en "Registrado" de una,
-        # porque ese mismo guardado crea un "Actualizado" nuevo apenas se borran los logs reales.
-        real_logs = [log for log in logs_by_user.get(u.id, []) if log.record_type != "Actualizado"]
-        status = "No registrado"
-        if real_logs:
-            status = "Nuevo" if any(log.record_type == "Nuevo" for log in real_logs) else "Registrado"
-
+        real, new = counts.get(u.id, (0, 0))
+        att = attendees.get(u.id)
+        status = "No registrado" if not real else ("Nuevo" if new else "Registrado")
         result.append({
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "entity": u.entity, "phone": u.phone,
             "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
-            # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta
-            # persona para poder mostrarlos/editarlos (antes se editaba inline, sin necesitarlos).
+            # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta persona.
             "extra_fields": u.get_extras(),
-            "categories": categories_by_user.get(u.id, []),
-            "certificate": certificate_by_user.get(u.id, False),
-            "digital_contact": digital_by_user.get(u.id, ""),
-            "digital_sent_at": digital_sent_by_user.get(u.id),
+            "categories": att.get_categories() if att else [],
+            "certificate": bool(att.certificate) if att else False,
+            "digital_contact": (att.digital_contact or "") if att else "",
+            "digital_sent_at": att.digital_sent_at.isoformat() if att and att.digital_sent_at else None,
         })
-
     return result
 
+
+@router.get("/users")
+def get_all_users(
+    event_id: int, request: Request, limit: Optional[int] = None, offset: int = 0,
+    db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff),
+):
+    """Cualquier staff autenticado con acceso al evento puede VER el directorio (digitador y
+    cliente incluidos) — get_event_for_staff abajo hace el chequeo real de autorizacion.
+    El directorio es de ESTE evento: roster precargado (EventAttendee) unido con quien de hecho
+    se presento (AccessLog filtrado por event_id).
+
+    Fase 0 de escalabilidad: (1) `ETag` + `If-None-Match`: si nada cambio se responde 304 sin construir la lista; (2) `limit`/`offset` opcionales para
+    paginar (sin ellos devuelve todo, como siempre; con ellos, ordenado por cedula y con el total en `X-Total-Count`); (3) la respuesta va comprimida (gzip)."""
+    event = get_event_for_staff(event_id, db, staff)
+    headers = {"Cache-Control": "private, no-cache"}
+    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}")}"'
+    headers["ETag"] = etag
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    rows = _directory_rows(db, event, limit=limit, offset=max(0, offset))
+    if limit is not None:
+        headers["X-Total-Count"] = str(_directory_total(db, event))
+    return JSONResponse(rows, headers=headers)
+
+
+def _directory_total(db: Session, event: Event) -> int:
+    attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
+    log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
+    return db.query(func.count(User.id)).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids))).scalar() or 0
+
+
+@router.get("/users/changes")
+def get_directory_changes(
+    event_id: int, cursor: str = "0:0", db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff),
+):
+    """Directorio INCREMENTAL: solo las personas que tuvieron un registro nuevo (o entraron al evento) despues de `cursor` ("<ultimo log>:<ultimo asistente>",
+    el que devolvio la llamada anterior; "0:0" = todo). Devuelve `total` para que el cliente detecte lo que este metodo no ve (bajas, estados revertidos):
+    si su cuenta no coincide, pide la lista completa."""
+    event = get_event_for_staff(event_id, db, staff)
+    try:
+        since_log, since_att = (int(x) for x in cursor.split(":"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Cursor invalido")
+    last_log = db.query(func.coalesce(func.max(AccessLog.id), 0)).filter(AccessLog.event_id == event.id).scalar()
+    last_att = db.query(func.coalesce(func.max(EventAttendee.id), 0)).filter(EventAttendee.event_id == event.id).scalar()
+    rows = _directory_rows(db, event, changed_since=(since_log, since_att))
+    return {"cursor": f"{last_log}:{last_att}", "total": _directory_total(db, event), "users": rows}
+
+
 @router.get("/email-validate")
-async def email_validate(email: str, staff: StaffUser = Depends(require_role("digitador"))):
+def email_validate(email: str, staff: StaffUser = Depends(require_role("digitador"))):
     """¿Es un correo real (formato + dominio que recibe correo)? Lo usa el formulario al salir del campo,
     para avisar ANTES de guardar; el guardado lo vuelve a comprobar del lado del servidor."""
     ok, reason = check_email(email)
@@ -387,7 +434,7 @@ async def email_validate(email: str, staff: StaffUser = Depends(require_role("di
 
 
 @router.get("/email-check")
-async def email_check(
+def email_check(
     event_id: int, email: str, exclude_id: str = "", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("digitador")),
 ):
@@ -407,51 +454,64 @@ async def email_check(
 
 
 @router.post("/recognize")
-async def recognize(
-    event_id: int = Form(...), file: UploadFile = File(...), force: bool = Form(False),
+def recognize(
+    event_id: int = Form(...), file: Optional[UploadFile] = File(None), match_token: str = Form(""), force: bool = Form(False),
     confirm: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Sprint 2.2 Fase B (2026-09-16): un match facial YA NO acredita solo por defecto — antes
     creaba el AccessLog apenas encontraba la cara, sin que el digitador confirmara nada. Ahora,
-    salvo que `Event.auto_register` esté prendido (switch por evento) o venga `confirm=true` (el
-    digitador ya confirmó en el modal "Guardar y autorizar acceso"), un match devuelve
-    `result: "MATCH_PENDING"` con los datos de la persona SIN crear ningún log todavía — el
-    frontend reenvía la MISMA petición (mismo `file`, vía FormData reusado) con `confirm=true`
-    para recién ahí acreditar de verdad. El flujo DUPLICADO/force sigue exactamente igual, se
-    evalúa ANTES de este chequeo nuevo."""
+    salvo que `Event.auto_register` este prendido (switch por evento) o venga `confirm=true` (el
+    digitador ya confirmo en el modal "Guardar y autorizar acceso"), un match devuelve
+    `result: "MATCH_PENDING"` con los datos de la persona SIN crear ningun log todavia.
+    El flujo DUPLICADO/force sigue exactamente igual, se evalua ANTES de este chequeo nuevo.
+
+    Fase 0 de escalabilidad: cada persona se reconoce UNA vez. La respuesta MATCH_PENDING/DUPLICADO trae un `match_token` (firmado, vale ~2 minutos, solo
+    para este evento y este operador); para confirmar o forzar se manda ese token en vez de reenviar la foto y repetir el calculo facial."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
-    img_array = BiometricEngine.process_image_stream(await file.read())
-    unknown_enc = BiometricEngine.extract_encoding(img_array)
+    if match_token:
+        uid = faces.read_match_token(match_token, event.id, staff.id)
+        user = db.get(User, (uid, event.tenant_id)) if uid else None
+        if not user:
+            raise HTTPException(status_code=400, detail="La coincidencia venció. Escanea de nuevo.")
+    else:
+        if file is None:
+            raise HTTPException(status_code=422, detail="Falta la foto")
+        try:
+            status, uid = faces.identify(db, event, file.file.read())
+        except faces.Busy:
+            raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
+        except UnidentifiedImageError:
+            raise HTTPException(status_code=400, detail="La imagen no es válida")
+        if status == "NO_FACE":
+            return {"result": "NO", "details": "Rostro no detectado"}
+        if status == "NO_MATCH":
+            return {"result": "NO", "details": "Denegado"}
+        user = db.get(User, (uid, event.tenant_id))
+        if not user:
+            return {"result": "NO", "details": "Denegado"}
 
-    if not unknown_enc:
-        return {"result": "NO", "details": "Rostro no detectado"}
+    token = faces.make_match_token(event.id, staff.id, user.id)
+    if not force and _already_checked_in(db, event.id, user.id):
+        return {**_duplicate_warning(db, event.id, user), "match_token": token}
+    data = {
+        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+        "role": user.role, "entity": user.entity, "phone": user.phone,
+        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+    }
+    if not event.auto_register and not confirm:
+        return {"result": "MATCH_PENDING", "data": data, "match_token": token}
+    log = AccessLog(
+        tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
+        event_id=event.id, registered_by_staff_id=staff.id,
+        registration_method="biometrico",  # Fase 16: este endpoint es SIEMPRE reconocimiento facial
+    )
+    db.add(log)
+    _upsert_attendee(db, event.id, user.id, event.tenant_id)
+    db.commit()
+    return {"result": "SÍ", "data": data}
 
-    users = db.query(User).filter(User.tenant_id == event.tenant_id).all()
-    for user in users:
-        known_enc = user.get_encoding()
-        if known_enc and BiometricEngine.compare(known_enc, unknown_enc):
-            if not force and _already_checked_in(db, event.id, user.id):
-                return _duplicate_warning(db, event.id, user)
-            data = {
-                "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
-                "role": user.role, "entity": user.entity, "phone": user.phone,
-                "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
-            }
-            if not event.auto_register and not confirm:
-                return {"result": "MATCH_PENDING", "data": data}
-            log = AccessLog(
-                tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
-                event_id=event.id, registered_by_staff_id=staff.id,
-                registration_method="biometrico",  # Fase 16: este endpoint es SIEMPRE reconocimiento facial
-            )
-            db.add(log)
-            _upsert_attendee(db, event.id, user.id, event.tenant_id)
-            db.commit()
-            return {"result": "SÍ", "data": data}
-
-    return {"result": "NO", "details": "Denegado"}
 
 def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
     """Fuzzy-match de identidad (2026-09-16, Sprint 2.4 Fase 3 — corrección real) — distinto de
@@ -476,9 +536,9 @@ def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
 
 
 @router.post("/checkin-cedula")
-async def checkin_cedula(
+def checkin_cedula(
     event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False), confirm: bool = Form(False),
-    first_name: str = Form(""), last_name: str = Form(""), method: str = Form(""),
+    first_name: str = Form(""), last_name: str = Form(""), method: str = Form(""), client_id: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Acreditación por cédula (lector de código de barras o MRZ de la cédula nueva) — mismo
@@ -505,8 +565,13 @@ async def checkin_cedula(
     decide desde el Directorio filtrado. Sin nombre (cédula suelta sin match), no hay con qué
     intentar el fallback."""
     cedula = cedula.strip()
+    client_id = client_id.strip()[:64]
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
+    if client_id:
+        replay = _replayed_checkin(db, event, client_id)
+        if replay:
+            return replay
 
     user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
     if not user:
@@ -543,14 +608,96 @@ async def checkin_cedula(
         # prendido — misma cédula, la diferencia es si hizo falta que alguien confirmara.
         # "qr" (Sprint 4): el código QR entregó la cédula por la cámara/lector — el mismo flujo, distinto origen.
         registration_method="qr" if method == "qr" else ("autoregistro" if event.auto_register else "tradicional"),
+        client_id=client_id or None,
     )
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:        # dos envios con el mismo client_id a la vez: gana uno, el otro recibe el mismo resultado
+        db.rollback()
+        replay = _replayed_checkin(db, event, client_id) if client_id else None
+        if not replay:
+            raise
+        return replay
     return {"result": "SÍ", "data": data}
 
+
+def _person_data(user: User) -> dict:
+    return {
+        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+        "role": user.role, "entity": user.entity, "phone": user.phone,
+        "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
+    }
+
+
+def _replayed_checkin(db: Session, event: Event, client_id: str) -> Optional[dict]:
+    """Si ese `client_id` ya se registro en este evento, el mismo resultado de la primera vez (sin crear nada): un reintento de red, o la sincronizacion
+    del modo contingencia, nunca duplica un ingreso."""
+    prev = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id).first()
+    if not prev:
+        return None
+    user = db.get(User, (prev.user_id, event.tenant_id))
+    return {"result": "SÍ", "data": _person_data(user) if user else {"id": prev.user_id}, "replayed": True}
+
+
+SYNC_MAX_RECORDS = 500
+SYNC_MAX_AGE = 7 * 24 * 3600
+
+
+@router.post("/events/{event_id}/access-logs/sync")
+def sync_access_logs(
+    event_id: int, body: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
+):
+    """Sincronizacion por LOTES de ingresos que un kiosco guardo mientras no tenia conexion (base del modo contingencia, docs/13 §9). Cada registro trae el
+    `client_id` que el kiosco genero: repetir el envio (o enviar el mismo lote dos veces) nunca duplica nada. Cuerpo:
+    `{"records": [{"client_id", "cedula", "timestamp" (ISO UTC, opcional), "method" ("qr"|"cedula", opcional)}]}` (maximo 500).
+    Cada resultado dice `created` (nuevo), `replayed` (ya estaba), `unknown` (la cedula no existe en este cliente) o `invalid`; `review: true` marca a quien ya
+    tenia una acreditacion con OTRO client_id (la misma persona entro por dos kioscos durante la desconexion): se registra igual y queda para revision."""
+    event = get_event_for_staff(event_id, db, staff)
+    records = body.get("records")
+    if not isinstance(records, list) or not records:
+        raise HTTPException(status_code=400, detail="Falta la lista de registros")
+    if len(records) > SYNC_MAX_RECORDS:
+        raise HTTPException(status_code=400, detail=f"Maximo {SYNC_MAX_RECORDS} registros por lote")
+    now = datetime.utcnow()
+    results = []
+    for rec in records:
+        client_id = str((rec or {}).get("client_id") or "").strip()[:64]
+        cedula = str((rec or {}).get("cedula") or "").strip()
+        if not client_id or not cedula:
+            results.append({"client_id": client_id, "result": "invalid"})
+            continue
+        if db.query(AccessLog.id).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id).first():
+            results.append({"client_id": client_id, "result": "replayed"})
+            continue
+        user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
+        if not user:
+            results.append({"client_id": client_id, "result": "unknown"})
+            continue
+        review = _already_checked_in(db, event.id, user.id)
+        when = now
+        try:
+            parsed = datetime.fromisoformat(str(rec.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
+            if now.timestamp() - SYNC_MAX_AGE <= parsed.timestamp() <= now.timestamp() + 300:
+                when = parsed
+        except (TypeError, ValueError):
+            pass
+        try:
+            with db.begin_nested():
+                db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
+                                 registration_method="qr" if rec.get("method") == "qr" else "tradicional", client_id=client_id, timestamp=when))
+                _upsert_attendee(db, event.id, user.id, event.tenant_id)
+                db.flush()
+        except IntegrityError:
+            results.append({"client_id": client_id, "result": "replayed"})
+            continue
+        results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {})})
+    db.commit()
+    return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results)}
+
 @router.patch("/users/{user_id}")
-async def update_user(
+def update_user(
     user_id: str, data: dict, event_id: int, request: Request, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("digitador")),  # 2026-09-23: el digitador temporal también edita datos (no cédula, estado a "No registrado" ni eliminar)
 ):
@@ -627,7 +774,7 @@ async def update_user(
     return {"error": "Usuario no encontrado"}
 
 @router.put("/users/{user_id}/cedula")
-async def update_user_cedula(
+def update_user_cedula(
     user_id: str, event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("admin")),
 ):
@@ -683,16 +830,15 @@ async def update_user_cedula(
     db.delete(user)
 
     signatures.rename_signatures(event.tenant_id, old_id, new_id)
-    old_photo = os.path.join(_known_faces_dir(event.tenant_id), f"{old_id}.jpg")
-    if os.path.exists(old_photo):
-        os.rename(old_photo, os.path.join(_known_faces_dir(event.tenant_id), f"{new_id}.jpg"))
+    if get_storage().exists(photo_key(event.tenant_id, old_id)):
+        get_storage().move(photo_key(event.tenant_id, old_id), photo_key(event.tenant_id, new_id))
 
     db.commit()
     return {"message": "Cédula actualizada correctamente", "new_id": new_id}
 
 
 @router.delete("/users/{user_id}/logs")
-async def delete_user_logs(
+def delete_user_logs(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("admin")),
 ):
@@ -708,7 +854,7 @@ async def delete_user_logs(
 
 
 @router.delete("/users/{user_id}")
-async def delete_user_from_event(
+def delete_user_from_event(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
@@ -737,9 +883,7 @@ async def delete_user_from_event(
 
     fully_deleted = False
     if not other_attendee and not other_log:
-        photo_path = os.path.join(_known_faces_dir(event.tenant_id), f"{user_id}.jpg")
-        if os.path.exists(photo_path):
-            os.remove(photo_path)
+        get_storage().delete(photo_key(event.tenant_id, user_id))
         db.delete(user)
         fully_deleted = True
 
@@ -754,7 +898,7 @@ async def delete_user_from_event(
 
 
 @router.patch("/events/{event_id}/users/{user_id}/status")
-async def update_registration_status(
+def update_registration_status(
     event_id: int, user_id: str, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("digitador")),
 ):
@@ -794,7 +938,7 @@ async def update_registration_status(
     return {"message": "Estado de registro actualizado", "status": new_status}
 
 @router.post("/register")
-async def manual_register(
+def manual_register(
     event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
@@ -871,7 +1015,7 @@ async def manual_register(
     if file is not None and file.filename:
         if not _truthy(biometric_consent):      # Ley 1581 (dato sensible): sin autorización expresa de la persona NO se guarda su rostro; puede registrarse por cédula
             raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
-        img_array = BiometricEngine.process_image_stream(await file.read())
+        img_array = BiometricEngine.process_image_stream(file.file.read())
         encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
         if not encodings:
             return {"error": "No se detectó un rostro en la fotografía."}
@@ -904,8 +1048,7 @@ async def manual_register(
     db.commit()
 
     if img_array is not None:
-        img_path = os.path.join(_known_faces_dir(event.tenant_id), f"{id}.jpg")
-        crypto.save_image(Image.fromarray(img_array), img_path)      # cifrada en reposo si hay llave
+        crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo."}
     if contact_clean and event.digital_badge_enabled:
@@ -948,7 +1091,7 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 
 
 @router.post("/bulk_register")
-async def bulk_register(
+def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
     field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
@@ -958,8 +1101,8 @@ async def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
-    content = await roster_file.read() if (roster_file is not None and roster_file.filename) else None
-    zip_bytes = await zip_file.read() if (zip_file is not None and zip_file.filename) else None
+    content = roster_file.file.read() if (roster_file is not None and roster_file.filename) else None
+    zip_bytes = zip_file.file.read() if (zip_file is not None and zip_file.filename) else None
     if zip_bytes is not None and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     args = dict(event_id=event_id, roster_filename=roster_file.filename if content is not None else None,
@@ -981,7 +1124,7 @@ async def bulk_register(
 
 
 @router.get("/bulk_jobs/{job_id}")
-async def bulk_job_status(
+def bulk_job_status(
     job_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Avance de una carga en segundo plano: estado, etapa, `done`/`total` (unidades ponderadas) y, al terminar,
@@ -1094,7 +1237,6 @@ def _bulk_register_impl(
     if source_event_id:
         carried_ids, source_name = _carry_source_events(db, event, source_event_id, staff)
 
-    known_faces_dir = _known_faces_dir(event.tenant_id)
     # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
     # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
     # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
@@ -1139,7 +1281,7 @@ def _bulk_register_impl(
                     if not encodings:
                         errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
                         continue
-                    crypto.save_image(Image.fromarray(img_array), os.path.join(known_faces_dir, basename))
+                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, basename))
                     zip_encodings[os.path.splitext(basename)[0]] = encodings
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
@@ -1212,9 +1354,9 @@ def _bulk_register_impl(
             if str(identificador) in zip_encodings:
                 face_enc_json = json.dumps(zip_encodings[str(identificador)])
             else:
-                img_path = os.path.join(known_faces_dir, f"{identificador}.jpg")
-                if os.path.exists(img_path):
-                    stored = crypto.read_array(img_path)          # la foto guardada puede estar cifrada
+                img_key = photo_key(event.tenant_id, f"{identificador}")
+                if get_storage().exists(img_key):
+                    stored = crypto.read_array(img_key)          # la foto guardada puede estar cifrada
                     enc = BiometricEngine.extract_encoding(
                         stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
                     if enc:
@@ -1283,7 +1425,7 @@ def _bulk_register_impl(
     return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels()}
 
 @router.get("/report")
-async def download_report(
+def download_report(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
     # 2026-09-17 (pedido explícito): 'cliente' ve Estadísticas (gráficos, vía
     # require_role_or_client en stats.py) pero YA NO puede exportar la base — antes usaba el mismo
@@ -1291,6 +1433,4 @@ async def download_report(
     # acción operativa, sin la excepción de cliente.
 ):
     event = get_event_for_staff(event_id, db, staff)
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    ReportManager.generate_excel_report(db, event.id, event.tenant_id, temp_file.name)
-    return FileResponse(temp_file.name, filename="Golden_Reporte_Eventos.xlsx")
+    return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), "Golden_Reporte_Eventos.xlsx")

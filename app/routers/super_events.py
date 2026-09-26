@@ -14,13 +14,13 @@ router = APIRouter()
 
 
 @router.get("/super-events")
-async def list_super_events(tenant_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_super_events(tenant_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     rows = db.query(SuperEvent).filter(SuperEvent.tenant_id == tenant_id).order_by(SuperEvent.name).all()
     return [{"id": s.id, "name": s.name, "tenant_id": s.tenant_id, "events": len(s.events)} for s in rows]
 
 
 @router.post("/super-events")
-async def create_super_event(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def create_super_event(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     name = str(data.get("name") or "").strip()
     tenant_id = str(data.get("tenant_id") or "").strip()
     if not name or not tenant_id:
@@ -50,7 +50,7 @@ def sibling_attendance(db: Session, event: Event, user_id: str) -> list:
 
 
 @router.get("/users/{user_id}/sibling-check")
-async def sibling_check(
+def sibling_check(
     user_id: str, event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """¿Esta persona ya asistió a un evento hermano de este (mismo superevento)? Si sí, devuelve sus

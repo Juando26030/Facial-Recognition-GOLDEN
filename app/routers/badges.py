@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app import crypto
+from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
@@ -15,12 +16,6 @@ from app.auth import get_current_staff, get_event_for_staff, require_role_exclud
 router = APIRouter()
 
 ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-
-
-def _badge_assets_dir(tenant_id: str) -> str:
-    path = os.path.join('data', tenant_id, 'badge_assets')
-    os.makedirs(path, exist_ok=True)
-    return path
 
 
 def _serialize_template(t) -> dict:
@@ -32,7 +27,7 @@ def _serialize_template(t) -> dict:
 
 
 @router.put("/events/{event_id}/badge-mode")
-async def set_badge_mode(
+def set_badge_mode(
     event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -138,7 +133,7 @@ def template_category_for_user(event, db: Session, user_id: str) -> Optional[str
 
 
 @router.get("/events/{event_id}/badge-template")
-async def get_badge_template(
+def get_badge_template(
     event_id: int, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
 ):
     """La plantilla ACTIVA del evento — se crea sola con un diseño mínimo por defecto (nombre +
@@ -153,7 +148,7 @@ async def get_badge_template(
 
 
 @router.put("/events/{event_id}/badge-template")
-async def update_badge_template(
+def update_badge_template(
     event_id: int, data: BadgeTemplateIn, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -171,14 +166,14 @@ async def update_badge_template(
 
 
 @router.get("/events/{event_id}/saved-badge-templates")
-async def list_saved_badge_templates(
+def list_saved_badge_templates(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))
 ):
     """Librería reusable — GLOBAL para toda la app (2026-09-16, pedido explícito: antes era por
     tenant, ahora una plantilla guardada desde CUALQUIER evento de CUALQUIER cliente aparece acá
     y se puede importar en cualquier otro, sin importar el cliente). `tenant_id` se sigue
     guardando en la fila (trazabilidad de quién la creó) pero ya no filtra qué se lista."""
-    event = get_event_for_staff(event_id, db, staff)  # valida acceso al evento, no se usa para filtrar
+    get_event_for_staff(event_id, db, staff)  # valida acceso al evento, no se usa para filtrar
     saved = db.query(SavedBadgeTemplate).order_by(SavedBadgeTemplate.name).all()
     return [{
         "id": s.id, "name": s.name, "width_mm": s.width_mm, "height_mm": s.height_mm,
@@ -187,7 +182,7 @@ async def list_saved_badge_templates(
 
 
 @router.post("/events/{event_id}/badge-template/save-as")
-async def save_badge_template_as(
+def save_badge_template_as(
     event_id: int, data: SaveAsIn, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -208,7 +203,7 @@ async def save_badge_template_as(
 
 
 @router.post("/events/{event_id}/badge-template/import/{saved_id}")
-async def import_saved_badge_template(
+def import_saved_badge_template(
     event_id: int, saved_id: int, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -234,7 +229,7 @@ async def import_saved_badge_template(
 
 
 @router.delete("/saved-badge-templates/{saved_id}")
-async def delete_saved_badge_template(
+def delete_saved_badge_template(
     saved_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))
 ):
     saved = db.query(SavedBadgeTemplate).filter(SavedBadgeTemplate.id == saved_id).first()
@@ -257,7 +252,7 @@ async def delete_saved_badge_template(
 
 
 @router.post("/events/{event_id}/badge-template/upload-image")
-async def upload_badge_image(
+def upload_badge_image(
     event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -269,31 +264,23 @@ async def upload_badge_image(
         raise HTTPException(status_code=400, detail=f"Formato no soportado ({ext or 'sin extensión'}) — usa PNG, JPG, WEBP o GIF")
 
     filename = f"{uuid.uuid4().hex}{ext}"
-    dest_dir = _badge_assets_dir(event.tenant_id)
-    dest_path = os.path.join(dest_dir, filename)
-    content = await file.read()
-    with open(dest_path, "wb") as f:
-        f.write(content)
+    get_storage().put(badge_asset_key(event.tenant_id, filename), file.file.read())
 
     return {"storage_path": f"{event.tenant_id}/{filename}"}
 
 
 @router.get("/badge-assets/{tenant_id}/{filename}")
-async def get_badge_asset(
+def get_badge_asset(
     tenant_id: str, filename: str, staff: StaffUser = Depends(get_current_staff)
 ):
     """Sirve una imagen subida para escarapelas — cualquier staff autenticado puede verla (es
     una imagen de fondo/logo, no un dato sensible; el login ya es la barrera real, igual que con
     el resto de la app)."""
-    safe_filename = os.path.basename(filename)  # nunca confiar en el path que manda el cliente
-    path = os.path.join('data', tenant_id, 'badge_assets', safe_filename)
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(path)
+    return get_storage().response(badge_asset_key(tenant_id, filename))         # nunca se confía en la ruta que manda el cliente
 
 
 @router.get("/users/{user_id}/badge-print-data")
-async def get_badge_print_data(
+def get_badge_print_data(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
@@ -303,7 +290,7 @@ async def get_badge_print_data(
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
-    has_photo = os.path.isfile(os.path.join('data', event.tenant_id, 'known_people', f"{user.id}.jpg"))
+    has_photo = get_storage().exists(photo_key(event.tenant_id, user.id))
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     return {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
@@ -317,24 +304,24 @@ async def get_badge_print_data(
 
 
 @router.get("/users/{user_id}/photo")
-async def get_user_photo(
+def get_user_photo(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """La foto biométrica de la persona (si existe) — para el elemento image_variable
     (source: "photo") de la escarapela."""
     event = get_event_for_staff(event_id, db, staff)
-    path = os.path.join('data', event.tenant_id, 'known_people', f"{user_id}.jpg")
-    if not os.path.isfile(path):
+    key = photo_key(event.tenant_id, user_id)
+    if not get_storage().exists(key):
         raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
-    content = crypto.read_bytes(path)                       # la foto puede estar cifrada en reposo
+    content = crypto.read_bytes(key)                       # la foto puede estar cifrada en reposo
     if content is None:
         raise HTTPException(status_code=404, detail="No se pudo leer la foto")
     return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/users/{user_id}/print-count")
-async def get_print_count(
+def get_print_count(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
@@ -348,7 +335,7 @@ async def get_print_count(
 
 
 @router.post("/users/{user_id}/print-log")
-async def log_print(
+def log_print(
     user_id: str, event_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):

@@ -11,17 +11,17 @@ def _page(request: Request, template: str, title: str):
 
 
 @router.get("/privacidad")
-async def privacidad(request: Request):
+def privacidad(request: Request):
     return _page(request, "legal_privacidad.html", "Política de Privacidad")
 
 
 @router.get("/terminos")
-async def terminos(request: Request):
+def terminos(request: Request):
     return _page(request, "legal_terminos.html", "Términos y Condiciones")
 
 
 @router.get("/reembolsos")
-async def reembolsos(request: Request, e: int = 0, f: str = ""):
+def reembolsos(request: Request, e: int = 0, f: str = ""):
     """Con `?e=<evento>&f=<formulario>` (el enlace del cuadro de pago) muestra además las condiciones de reembolso de ESE formulario."""
     from app.database import SessionLocal
     from app.models import WebForm

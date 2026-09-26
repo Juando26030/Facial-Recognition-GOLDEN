@@ -20,7 +20,7 @@ _ROTATIONS = (0, 1, 2, 3)
 
 
 @router.post("/events/{event_id}/cedula-mrz-scan")
-async def scan_cedula_mrz(
+def scan_cedula_mrz(
     event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("digitador")),
 ):
@@ -31,9 +31,9 @@ async def scan_cedula_mrz(
     `checkin-cedula` (quien opera el registro el día del evento). No hace ningún registro por sí
     mismo — solo devuelve la cédula/nombre extraídos para que el frontend siga el mismo flujo de
     dos pasos (cédula exacta, luego nombre) que ya usa la cédula vieja."""
-    event = get_event_for_staff(event_id, db, staff)  # valida acceso al evento, no se usa más
+    get_event_for_staff(event_id, db, staff)  # valida acceso al evento, no se usa más
 
-    img_array = BiometricEngine.process_image_stream(await file.read())
+    img_array = BiometricEngine.process_image_stream(file.file.read())
 
     best_result = None
     any_lines_detected = False

@@ -136,7 +136,7 @@ def test_templates_library_save_and_start_from_one(client, factory):
 
 def test_only_coordinador_plus_manage_forms(client, factory):
     ev = _event(client, factory)
-    f = _create(client, ev)
+    _create(client, ev)
     client.post("/logout")
     dig = factory.staff("digitador", "9990001")
     factory.authorize(ev, dig)
@@ -254,7 +254,7 @@ def test_duplicate_document_number_is_rejected_but_not_in_tests(client, factory)
     f = _create(client, ev)
     _open(client, ev, f)
     assert _submit(client, ev, f, _person_values()).status_code == 200
-    dup = _submit(client, ev, f, _person_values())
+    dup = _submit(client, ev, f, _person_values(), sid="otra-persona")          # otra visita (otra clave de envío) con la misma cédula
     assert dup.status_code == 409 and dup.json()["duplicate"] is True
 
 

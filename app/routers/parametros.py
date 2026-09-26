@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
+from app.storage import get_storage, key_of
 
 router = APIRouter()
 
@@ -117,17 +118,17 @@ LOGO_MODES = ("default", "hidden", "custom")
 
 
 @router.get("/events/{event_id}/logo")
-async def get_event_logo(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+def get_event_logo(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
     """Sirve el logo propio del evento (ítem 1, reunión 2026-09-21) — cualquier staff con acceso al
     evento lo necesita para dibujar el header, no solo quien lo configura."""
     event = get_event_for_staff(event_id, db, staff)
-    if event.logo_mode != "custom" or not event.logo_path or not os.path.isfile(event.logo_path):
+    if event.logo_mode != "custom" or not event.logo_path or not get_storage().exists(event.logo_path):
         raise HTTPException(status_code=404, detail="Este evento no tiene logo propio")
-    return FileResponse(event.logo_path, headers={"Cache-Control": "no-cache"})
+    return get_storage().response(event.logo_path, headers={"Cache-Control": "no-cache"})
 
 
 @router.put("/events/{event_id}/logo")
-async def set_event_logo_mode(
+def set_event_logo_mode(
     event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -146,7 +147,7 @@ async def set_event_logo_mode(
     mode = data.get("mode", event.logo_mode)
     if mode not in LOGO_MODES:
         raise HTTPException(status_code=400, detail=f"mode debe ser uno de: {', '.join(LOGO_MODES)}")
-    if mode == "custom" and not (event.logo_path and os.path.isfile(event.logo_path)):
+    if mode == "custom" and not (event.logo_path and get_storage().exists(event.logo_path)):
         raise HTTPException(status_code=400, detail="Primero sube la imagen del logo")
     event.logo_mode = mode
     db.commit()
@@ -154,7 +155,7 @@ async def set_event_logo_mode(
 
 
 @router.post("/events/{event_id}/logo/upload")
-async def upload_event_logo(
+def upload_event_logo(
     event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -162,23 +163,20 @@ async def upload_event_logo(
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in LOGO_EXT:
         raise HTTPException(status_code=400, detail=f"Formato no permitido — usa uno de: {', '.join(sorted(LOGO_EXT))}")
-    content = await file.read()
+    content = file.file.read()
     if not content or len(content) > 3_000_000:
         raise HTTPException(status_code=400, detail="La imagen está vacía o pesa más de 3 MB")
-    folder = os.path.join("data", event.tenant_id, "event_logos")
-    os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, f"{uuid.uuid4().hex}{ext}")
-    with open(path, "wb") as f:
-        f.write(content)
-    if event.logo_path and os.path.isfile(event.logo_path):
-        os.remove(event.logo_path)
-    event.logo_path, event.logo_mode = path, "custom"
+    key = key_of(event.tenant_id, "event_logos", f"{uuid.uuid4().hex}{ext}")
+    get_storage().put(key, content)
+    if event.logo_path:
+        get_storage().delete(event.logo_path)
+    event.logo_path, event.logo_mode = key, "custom"
     db.commit()
     return {"logo_mode": "custom"}
 
 
 @router.put("/events/{event_id}/digital-badge-enabled")
-async def set_digital_badge_enabled(
+def set_digital_badge_enabled(
     event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -197,7 +195,7 @@ async def set_digital_badge_enabled(
 
 
 @router.put("/events/{event_id}/certificates-enabled")
-async def set_certificates_enabled(
+def set_certificates_enabled(
     event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -210,13 +208,13 @@ async def set_certificates_enabled(
 
 
 @router.get("/events/{event_id}/categories")
-async def get_event_categories(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+def get_event_categories(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
     event = get_event_for_staff(event_id, db, staff)
     return {"categories": event.get_categories(), "badge_per_category": event.badge_per_category}
 
 
 @router.put("/events/{event_id}/categories")
-async def set_event_categories(
+def set_event_categories(
     event_id: int, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -237,7 +235,7 @@ async def set_event_categories(
 
 
 @router.post("/events/{event_id}/optional-fields")
-async def add_optional_field(
+def add_optional_field(
     event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Agrega un campo opcional nuevo directamente desde Parámetros del Evento (2026-09-16,
@@ -264,7 +262,7 @@ async def add_optional_field(
 
 
 @router.get("/events/{event_id}/field-configs")
-async def list_field_configs(
+def list_field_configs(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     event = get_event_for_staff(event_id, db, staff)
@@ -272,7 +270,7 @@ async def list_field_configs(
 
 
 @router.put("/events/{event_id}/field-configs/{field_key}")
-async def upsert_field_config(
+def upsert_field_config(
     event_id: int, field_key: str, data: dict, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -345,14 +343,14 @@ def _public_base(request: Request) -> str:
 
 
 @router.get("/events/{event_id}/digital-email")
-async def get_digital_email(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+def get_digital_email(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
     event = get_event_for_staff(event_id, db, staff)
     return {"subject": event.digital_email_subject or email_template.DEFAULT_SUBJECT, "body": event.digital_email_body or email_template.DEFAULT_BODY,
             "custom": bool(event.digital_email_body or event.digital_email_subject), "variables": [{"key": k, "label": l} for k, l in email_template.VARIABLES]}
 
 
 @router.put("/events/{event_id}/digital-email")
-async def put_digital_email(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+def put_digital_email(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
     """Guarda la plantilla (saneada). Vacía o `reset` = vuelve a la de siempre."""
     event = get_event_for_staff(event_id, db, staff)
     subject = " ".join(str(data.get("subject") or "").split())[:200]
@@ -376,14 +374,14 @@ def _sample(event: Event, data: dict, link: str):
 
 
 @router.post("/events/{event_id}/digital-email/preview")
-async def preview_digital_email(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+def preview_digital_email(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
     event = get_event_for_staff(event_id, db, staff)
     subject, html_body, _ = _sample(event, data, f"{_public_base(request)}/b/EJEMPLO")
     return {"subject": subject, "html": html_body}
 
 
 @router.post("/events/{event_id}/digital-email/test")
-async def test_digital_email(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+def test_digital_email(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
     """Envía el correo con datos de ejemplo a UNA dirección que escribe quien edita (para verlo como lo verá el asistente)."""
     event = get_event_for_staff(event_id, db, staff)
     to = str(data.get("to") or "").strip()
@@ -395,12 +393,12 @@ async def test_digital_email(event_id: int, data: dict, request: Request, db: Se
 
 
 @router.post("/events/{event_id}/digital-email/upload-image")
-async def upload_email_image(event_id: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
+def upload_email_image(event_id: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(_DIGITAL_MAIL)):
     event = get_event_for_staff(event_id, db, staff)
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
         raise HTTPException(status_code=400, detail="La imagen debe ser PNG, JPG, GIF o WEBP")
-    content = await file.read()
+    content = file.file.read()
     if len(content) > 3 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="La imagen pesa más de 3 MB")
     try:
@@ -408,20 +406,17 @@ async def upload_email_image(event_id: int, request: Request, file: UploadFile =
         Image.open(io.BytesIO(content)).verify()
     except Exception:
         raise HTTPException(status_code=400, detail="Ese archivo no es una imagen válida")
-    folder = os.path.join("data", event.tenant_id, "email_assets")
-    os.makedirs(folder, exist_ok=True)
     name = f"{uuid.uuid4().hex}{ext}"
-    with open(os.path.join(folder, name), "wb") as fh:
-        fh.write(content)
+    get_storage().put(key_of(event.tenant_id, "email_assets", name), content)
     return {"url": f"{_public_base(request)}/api/email-assets/{event.tenant_id}/{name}"}
 
 
 @router.get("/email-assets/{tenant_id}/{filename}")
-async def email_asset(tenant_id: str, filename: str):
+def email_asset(tenant_id: str, filename: str):
     """Imágenes de los correos: públicas a propósito (el lector de correo no tiene sesión); el nombre es un UUID no adivinable."""
     if not _EMAIL_IMG.match(filename) or "/" in tenant_id or ".." in tenant_id:
         raise HTTPException(status_code=404)
-    path = os.path.join("data", tenant_id, "email_assets", filename)
-    if not os.path.isfile(path):
+    key = key_of(tenant_id, "email_assets", filename)
+    if not get_storage().exists(key):
         raise HTTPException(status_code=404)
-    return FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
+    return get_storage().response(key, headers={"Cache-Control": "public, max-age=86400"})

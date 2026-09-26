@@ -77,11 +77,9 @@ def _send_via_graph(to: str, subject: str, body: str, attachments: list, html: O
 
 
 def _outbox_fallback(msg: EmailMessage, to: str, reason: str) -> dict:
-    os.makedirs(os.path.join("data", "outbox"), exist_ok=True)
-    path = os.path.join("data", "outbox", f"{int(time.time())}_{to.replace('@', '_at_')}.eml")
-    with open(path, "wb") as f:
-        f.write(bytes(msg))
-    return {"sent": False, "detail": f"{reason} — el correo quedó guardado en {path}"}
+    from app.storage import get_storage, key_of
+    key = get_storage().put(key_of("outbox", f"{int(time.time())}_{to.replace('@', '_at_')}.eml"), bytes(msg))
+    return {"sent": False, "detail": f"{reason} — el correo quedó guardado en {key}"}
 
 
 def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = None, html: Optional[str] = None) -> dict:

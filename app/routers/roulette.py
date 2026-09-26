@@ -23,7 +23,6 @@ import json
 import os
 import re
 import secrets
-import tempfile
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -34,11 +33,12 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy.orm import Session
 
-from app import security
+from app import heavy, security
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import AccessLog, Event, EventAttendee, RouletteConfig, RouletteDraw, StaffUser, User
-from app.routers.badges import ALLOWED_IMAGE_EXT, _badge_assets_dir
+from app.routers.badges import ALLOWED_IMAGE_EXT
+from app.storage import badge_asset_key, get_storage
 from app.timeutil import to_local, _TZ
 
 router = APIRouter()         # bajo /api (coordinador+)
@@ -178,7 +178,7 @@ def _staff_names(db: Session, ids) -> dict:
 
 # ------------------------------------------------------------------ configuración
 @router.get("/events/{event_id}/roulette")
-async def get_roulette(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def get_roulette(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
     people = candidates(db, event)
@@ -189,7 +189,7 @@ async def get_roulette(event_id: int, db: Session = Depends(get_db), staff: Staf
 
 
 @router.get("/events/{event_id}/roulette/fields")
-async def filter_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def filter_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Campos por los que se puede filtrar: los fijos + cada campo opcional rotulado de este evento."""
     event = get_event_for_staff(event_id, db, staff)
     fields = [
@@ -206,7 +206,7 @@ async def filter_fields(event_id: int, db: Session = Depends(get_db), staff: Sta
 
 
 @router.get("/events/{event_id}/roulette/candidates")
-async def list_candidates(
+def list_candidates(
     event_id: int, filter: Optional[str] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Candidatos visibles (con el filtro opcional, JSON `{"conditions":[...]}`) — para elegir a mano (modos 1-3 y
@@ -261,7 +261,7 @@ def _validate_behavior(db: Session, event: Event, data: dict) -> dict:
 
 
 @router.put("/events/{event_id}/roulette/behavior")
-async def save_behavior(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def save_behavior(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
     new = _validate_behavior(db, event, data)
@@ -273,7 +273,7 @@ async def save_behavior(event_id: int, data: dict, db: Session = Depends(get_db)
 
 
 @router.put("/events/{event_id}/roulette/style")
-async def save_style(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def save_style(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
     style = {**_style(cfg)}
@@ -315,22 +315,21 @@ async def save_style(event_id: int, data: dict, db: Session = Depends(get_db), s
 
 
 @router.post("/events/{event_id}/roulette/upload-image")
-async def upload_image(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def upload_image(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=400, detail="Usa una imagen PNG, JPG, WEBP o GIF")
-    content = await file.read()
+    content = file.file.read()
     if len(content) > 8_000_000:
         raise HTTPException(status_code=400, detail="La imagen pesa más de 8 MB")
     name = f"{secrets.token_hex(16)}{ext}"
-    with open(os.path.join(_badge_assets_dir(event.tenant_id), name), "wb") as f:
-        f.write(content)
+    get_storage().put(badge_asset_key(event.tenant_id, name), content)
     return {"storage_path": f"{event.tenant_id}/{name}"}
 
 
 @router.post("/events/{event_id}/roulette/display-link")
-async def display_link(event_id: int, request: Request, regenerate: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def display_link(event_id: int, request: Request, regenerate: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Enlace de la pantalla de visualización (para el proyector): sin login, con código secreto. Se crea la primera
     vez; con `regenerate=true` el anterior deja de funcionar."""
     event = get_event_for_staff(event_id, db, staff)
@@ -343,7 +342,7 @@ async def display_link(event_id: int, request: Request, regenerate: bool = False
 
 
 @router.get("/events/{event_id}/roulette/display-link")
-async def get_display_link(event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def get_display_link(event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
     base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
@@ -405,7 +404,7 @@ def _run_draw(db: Session, event: Event, cfg: RouletteConfig, label: str, create
 
 
 @router.post("/events/{event_id}/roulette/execute")
-async def execute(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def execute(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Ejecuta el sorteo YA (sin esperar el botón de la pantalla pública). La interfaz normal usa `authorize`: el giro lo dispara el
     botón de la pantalla de visualización. Se conserva por compatibilidad."""
     event = get_event_for_staff(event_id, db, staff)
@@ -423,7 +422,7 @@ def _authorization(cfg: RouletteConfig) -> Optional[dict]:
 
 
 @router.post("/events/{event_id}/roulette/authorize")
-async def authorize_spin(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def authorize_spin(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """El operador AUTORIZA un giro: se valida ahora (para que los errores salgan aquí y no frente al público) y se activa el botón
     «Girar» de la pantalla de visualización. El ganador se decide al girar, en el servidor."""
     event = get_event_for_staff(event_id, db, staff)
@@ -438,7 +437,7 @@ async def authorize_spin(event_id: int, data: dict, db: Session = Depends(get_db
 
 
 @router.delete("/events/{event_id}/roulette/authorize")
-async def cancel_authorization(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def cancel_authorization(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
     cfg.authorized_json = None
@@ -447,7 +446,7 @@ async def cancel_authorization(event_id: int, db: Session = Depends(get_db), sta
 
 
 @router.get("/events/{event_id}/roulette/authorization")
-async def get_authorization(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def get_authorization(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     auth = _authorization(_get_config(db, event))
     return {"authorized": bool(auth), "label": auth["label"] if auth else "", "since": auth["at"] if auth else None}
@@ -455,7 +454,7 @@ async def get_authorization(event_id: int, db: Session = Depends(get_db), staff:
 
 
 @router.post("/events/{event_id}/roulette/reset-round")
-async def reset_round(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def reset_round(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Modo «todos»: empieza una ronda nueva (vuelven a poder salir todos)."""
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
@@ -467,7 +466,7 @@ async def reset_round(event_id: int, db: Session = Depends(get_db), staff: Staff
 
 
 @router.get("/events/{event_id}/roulette/round")
-async def round_status(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def round_status(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     b = _behavior(_get_config(db, event))
     since = datetime.fromisoformat(b["all_reset_at"]) if b.get("all_reset_at") else None
@@ -477,7 +476,7 @@ async def round_status(event_id: int, db: Session = Depends(get_db), staff: Staf
 
 # ------------------------------------------------------------------ historial y reporte
 @router.get("/events/{event_id}/roulette/draws")
-async def list_draws(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_draws(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     draws = db.query(RouletteDraw).filter_by(event_id=event.id).order_by(RouletteDraw.id.desc()).all()
     names = _staff_names(db, [d.created_by_id for d in draws])
@@ -491,7 +490,7 @@ MODE_LABELS = {
 
 
 @router.get("/events/{event_id}/roulette/report")
-async def report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Reporte Excel de todos los sorteos del evento (mismo estilo que el resto de reportes)."""
     event = get_event_for_staff(event_id, db, staff)
     draws = db.query(RouletteDraw).filter_by(event_id=event.id).order_by(RouletteDraw.id).all()
@@ -517,9 +516,7 @@ async def report(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
     ws.auto_filter.ref = f"A2:{chr(64 + len(headers))}{ws.max_row}"
     for col, width in zip("ABCDEFGHIJKL", (12, 10, 28, 26, 24, 9, 14, 30, 24, 11, 34, 22)):
         ws.column_dimensions[col].width = width
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    wb.save(tmp.name)
-    return FileResponse(tmp.name, filename=f"Sorteos_{event.event_code}.xlsx")
+    return heavy.workbook_response(wb, f"Sorteos_{event.event_code}.xlsx")
 
 
 # ------------------------------------------------------------------ pantalla pública (proyector)
@@ -531,7 +528,7 @@ def _cfg_by_token(db: Session, token: str) -> RouletteConfig:
 
 
 @public_router.get("/r/{token}", response_class=HTMLResponse)
-async def display_page(token: str, request: Request, db: Session = Depends(get_db)):
+def display_page(token: str, request: Request, db: Session = Depends(get_db)):
     from app.main import templates  # import tardío: main.py importa este módulo
     try:
         cfg = _cfg_by_token(db, token)
@@ -542,7 +539,7 @@ async def display_page(token: str, request: Request, db: Session = Depends(get_d
 
 
 @public_router.get("/r/{token}/state")
-async def display_state(token: str, after: Optional[int] = None, db: Session = Depends(get_db)):
+def display_state(token: str, after: Optional[int] = None, db: Session = Depends(get_db)):
     """Estilo + el `id` del último sorteo. La pantalla recuerda el `id` que ya vio y pide con `?after=<id>`: solo si hay
     uno MÁS NUEVO se arma y devuelve el sorteo (con la lista de nombres), así el sondeo de cada segundo es liviano."""
     cfg = _cfg_by_token(db, token)
@@ -559,7 +556,7 @@ async def display_state(token: str, after: Optional[int] = None, db: Session = D
 
 
 @public_router.post("/r/{token}/spin")
-async def spin(token: str, request: Request, db: Session = Depends(get_db)):
+def spin(token: str, request: Request, db: Session = Depends(get_db)):
     """El botón «Girar» de la pantalla de visualización: solo funciona si el operador AUTORIZÓ un giro, y lo consume (una autorización =
     un giro). Con la fila bloqueada, dos pantallas que pulsen a la vez no giran dos veces. Devuelve el sorteo para animarlo al instante."""
     cfg = _cfg_by_token(db, token)
@@ -581,13 +578,10 @@ async def spin(token: str, request: Request, db: Session = Depends(get_db)):
 
 
 @public_router.get("/r/{token}/asset/{tenant_id}/{filename}")
-async def display_asset(token: str, tenant_id: str, filename: str, db: Session = Depends(get_db)):
+def display_asset(token: str, tenant_id: str, filename: str, db: Session = Depends(get_db)):
     cfg = _cfg_by_token(db, token)
     event = db.query(Event).filter(Event.id == cfg.event_id).first()
     safe = os.path.basename(filename)
     if tenant_id != event.tenant_id or os.path.splitext(safe)[1].lower() not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    path = os.path.join("data", tenant_id, "badge_assets", safe)
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(path)
+    return get_storage().response(badge_asset_key(tenant_id, safe))

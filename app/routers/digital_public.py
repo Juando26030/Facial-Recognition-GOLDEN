@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from app import crypto
+from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import Event, EventAttendee, User
 from app.routers.badges import ALLOWED_IMAGE_EXT, _get_or_create_template, _serialize_template, template_category_for_user
@@ -28,7 +29,7 @@ def _resolve(db: Session, token: str):
 
 
 @router.get("/b/{token}", response_class=HTMLResponse)
-async def digital_badge_page(token: str, request: Request, db: Session = Depends(get_db)):
+def digital_badge_page(token: str, request: Request, db: Session = Depends(get_db)):
     from app.main import templates  # import tardío: main.py importa este módulo
     try:
         _resolve(db, token)
@@ -38,11 +39,11 @@ async def digital_badge_page(token: str, request: Request, db: Session = Depends
 
 
 @router.get("/b/{token}/data")
-async def digital_badge_data(token: str, db: Session = Depends(get_db)):
+def digital_badge_data(token: str, db: Session = Depends(get_db)):
     att, event, user = _resolve(db, token)
     category = template_category_for_user(event, db, user.id)
     template = _serialize_template(_get_or_create_template(event, db, category))
-    has_photo = os.path.isfile(os.path.join("data", event.tenant_id, "known_people", f"{user.id}.jpg"))
+    has_photo = get_storage().exists(photo_key(event.tenant_id, user.id))
     return {
         "event": {"name": event.name, "code": event.event_code},
         "template": template,
@@ -55,25 +56,22 @@ async def digital_badge_data(token: str, db: Session = Depends(get_db)):
 
 
 @router.get("/b/{token}/asset/{tenant_id}/{filename}")
-async def digital_badge_asset(token: str, tenant_id: str, filename: str, db: Session = Depends(get_db)):
+def digital_badge_asset(token: str, tenant_id: str, filename: str, db: Session = Depends(get_db)):
     """Imágenes de la plantilla (fondo/logos) — solo del cliente de esta escarapela."""
     _, event, _ = _resolve(db, token)
     safe = os.path.basename(filename)
     if tenant_id != event.tenant_id or os.path.splitext(safe)[1].lower() not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    path = os.path.join("data", tenant_id, "badge_assets", safe)
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(path)
+    return get_storage().response(badge_asset_key(tenant_id, safe))
 
 
 @router.get("/b/{token}/photo")
-async def digital_badge_photo(token: str, db: Session = Depends(get_db)):
+def digital_badge_photo(token: str, db: Session = Depends(get_db)):
     _, event, user = _resolve(db, token)
-    path = os.path.join("data", event.tenant_id, "known_people", f"{user.id}.jpg")
-    if not os.path.isfile(path):
+    key = photo_key(event.tenant_id, user.id)
+    if not get_storage().exists(key):
         raise HTTPException(status_code=404, detail="Sin foto")
-    content = crypto.read_bytes(path)                       # la foto puede estar cifrada en reposo
+    content = crypto.read_bytes(key)                       # la foto puede estar cifrada en reposo
     if content is None:
         raise HTTPException(status_code=404, detail="Sin foto")
     return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})

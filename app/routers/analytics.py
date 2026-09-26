@@ -68,6 +68,6 @@ def registro_dashboard(db: Session, event: Event) -> dict:
 
 
 @router.get("/events/{event_id}/analytics/registro")
-async def analytics_registro(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador"))):
+def analytics_registro(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     return registro_dashboard(db, event)

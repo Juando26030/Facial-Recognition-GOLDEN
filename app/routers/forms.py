@@ -5,7 +5,6 @@ import json
 import os
 import re
 import secrets
-import tempfile
 from datetime import datetime
 from typing import Optional
 
@@ -16,13 +15,14 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, wompi
+from app import bulk_jobs, formlib, formsvc, heavy, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
 from app.models import Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
 from app.routers import parametros
-from app.routers.badges import ALLOWED_IMAGE_EXT, _badge_assets_dir
+from app.routers.badges import ALLOWED_IMAGE_EXT
+from app.storage import badge_asset_key, form_file_key, get_storage
 from app.timeutil import to_local
 
 router = APIRouter()
@@ -100,7 +100,7 @@ def _detail(db: Session, form: WebForm, request: Request) -> dict:
 
 # ------------------------------------------------------------------ CRUD
 @router.get("/events/{event_id}/forms")
-async def list_forms(event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_forms(event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     forms = db.query(WebForm).filter(WebForm.event_id == event.id).order_by(WebForm.id.desc()).all()
     for f in forms:
@@ -109,7 +109,7 @@ async def list_forms(event_id: int, request: Request, db: Session = Depends(get_
 
 
 @router.post("/events/{event_id}/forms")
-async def create_form(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def create_form(event_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Crea un formulario nuevo (con campos de partida) o, con `template_id`, a partir de una plantilla guardada."""
     event = get_event_for_staff(event_id, db, staff)
     name = str(data.get("name") or "").strip()[:120]
@@ -142,13 +142,13 @@ async def create_form(event_id: int, data: dict, request: Request, db: Session =
 
 
 @router.get("/events/{event_id}/forms/{form_id}")
-async def get_form(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def get_form(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     return _detail(db, _get_form(db, event, form_id), request)
 
 
 @router.put("/events/{event_id}/forms/{form_id}")
-async def update_form(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def update_form(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Guarda nombre, dirección (slug), diseño y/o configuración. El diseño se valida completo en el servidor."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
@@ -171,21 +171,24 @@ async def update_form(event_id: int, form_id: int, data: dict, request: Request,
             form.settings_json = json.dumps(formlib.sanitize_settings(data["settings"]))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if "design" in data or "settings" in data:
+        formsvc.invalidate_quota_keys(db, form)          # los cupos por variables pudieron cambiar: las llaves guardadas se recalculan solas
     db.commit()
+    formsvc.invalidate_public_cache()
     return _detail(db, form, request)
 
 
 @router.delete("/events/{event_id}/forms/{form_id}")
-async def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def delete_form(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     delete_form_rows(db, form)
     db.commit()
+    formsvc.invalidate_public_cache()
     return {"message": "Formulario eliminado con sus inscripciones"}
 
 
 def delete_form_rows(db: Session, form: WebForm) -> None:
-    import shutil
     if db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status.in_(("approved", "refunded")), FormPayment.is_test == False).first():  # noqa: E712
         raise HTTPException(status_code=409, detail=f"El formulario «{form.name}» tiene pagos aprobados: son registros financieros y no se pueden borrar. Ciérralo o finalízalo en su lugar.")
     db.query(FormRefund).filter(FormRefund.payment_id.in_(db.query(FormPayment.id).filter(FormPayment.form_id == form.id))).delete(synchronize_session=False)
@@ -197,12 +200,12 @@ def delete_form_rows(db: Session, form: WebForm) -> None:
     db.query(FormPerson).filter(FormPerson.form_id == form.id).delete()
     event = db.query(Event).filter(Event.id == form.event_id).first()
     if event:
-        shutil.rmtree(os.path.join("data", event.tenant_id, "form_files", str(form.id)), ignore_errors=True)
+        get_storage().delete_prefix(form_file_key(event.tenant_id, form.id))
     db.delete(form)
 
 
 @router.post("/events/{event_id}/forms/{form_id}/duplicate")
-async def duplicate_form(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def duplicate_form(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     src = _get_form(db, event, form_id)
     name = f"{src.name} (copia)"
@@ -215,7 +218,7 @@ async def duplicate_form(event_id: int, form_id: int, request: Request, db: Sess
 
 # ------------------------------------------------------------------ estado, calendario y cupo
 @router.put("/events/{event_id}/forms/{form_id}/status")
-async def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Estado manual, calendario por fechas y cupo (editable en caliente: no se pierde ninguna inscripción)."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
@@ -245,6 +248,7 @@ async def set_status(event_id: int, form_id: int, data: dict, request: Request, 
                 raise HTTPException(status_code=400, detail="El cupo debe ser al menos 1")
             form.capacity = cap
     db.commit()
+    formsvc.invalidate_public_cache()
     _maybe_feed_on_close(db, form)
     return _detail(db, form, request)
 
@@ -262,7 +266,7 @@ def _maybe_feed_on_close(db: Session, form: WebForm) -> None:
 
 
 @router.post("/events/{event_id}/forms/{form_id}/feed-now")
-async def feed_now(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def feed_now(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Carga a la base del evento todas las inscripciones reales aún no cargadas (quedan «No registrado»)."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
@@ -271,7 +275,7 @@ async def feed_now(event_id: int, form_id: int, db: Session = Depends(get_db), s
 
 # ------------------------------------------------------------------ campos del evento (Parámetros) y plantillas
 @router.get("/events/{event_id}/form-event-fields")
-async def event_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def event_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Campos del evento (Parámetros) disponibles para arrastrar al formulario: los de identidad y cada opcional."""
     event = get_event_for_staff(event_id, db, staff)
     out = []
@@ -290,7 +294,7 @@ async def event_fields(event_id: int, db: Session = Depends(get_db), staff: Staf
 
 # ------------------------------------------------------------------ descuentos: sugerencias de valores y códigos
 @router.get("/events/{event_id}/forms/{form_id}/value-suggestions")
-async def value_suggestions(event_id: int, form_id: int, key: str = "", fid: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def value_suggestions(event_id: int, form_id: int, key: str = "", fid: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Los valores que ya existen para una variable, para ofrecerlos como lista en las condiciones de precio/descuento en vez de
     pedir escribirlos (si son pocos). `key`: campo del evento (base de asistentes); `fid`: campo del formulario (inscripciones hechas)."""
     event = get_event_for_staff(event_id, db, staff)
@@ -340,13 +344,13 @@ def _code_rows(db: Session, form: WebForm) -> list:
 
 
 @router.get("/events/{event_id}/forms/{form_id}/discount-codes")
-async def list_codes(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_codes(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     return _code_rows(db, _get_form(db, event, form_id))
 
 
 @router.post("/events/{event_id}/forms/{form_id}/discount-codes")
-async def create_codes(event_id: int, form_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def create_codes(event_id: int, form_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Crea códigos para un descuento «con código»: `shared` = UN código válido `max_uses` veces (ej. 3000 y luego deja de servir);
     `unique` = `count` códigos distintos de un solo uso (uno por persona)."""
     event = get_event_for_staff(event_id, db, staff)
@@ -393,7 +397,7 @@ async def create_codes(event_id: int, form_id: int, data: dict, db: Session = De
 
 
 @router.delete("/events/{event_id}/forms/{form_id}/discount-codes/{code_id}")
-async def delete_code(event_id: int, form_id: int, code_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def delete_code(event_id: int, form_id: int, code_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     code = db.query(FormDiscountCode).filter_by(id=code_id, form_id=form.id).first()
@@ -407,7 +411,7 @@ async def delete_code(event_id: int, form_id: int, code_id: int, db: Session = D
 
 
 @router.get("/events/{event_id}/forms/{form_id}/discount-codes/export")
-async def export_codes(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def export_codes(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Excel con todos los códigos y su uso, para repartirlos."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
@@ -422,26 +426,24 @@ async def export_codes(event_id: int, form_id: int, db: Session = Depends(get_db
         cell.fill = PatternFill("solid", fgColor="2C3E50")
     for i, w in enumerate((18, 30, 16, 8, 12), start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
-    handle = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    wb.save(handle.name)
-    return FileResponse(handle.name, filename=f"codigos_{form.slug}.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return heavy.workbook_response(wb, f"codigos_{form.slug}.xlsx")
 
 
 @router.get("/form-id-docs")
-async def form_id_docs(staff: StaffUser = Depends(STAFF)):
+def form_id_docs(staff: StaffUser = Depends(STAFF)):
     """Tipos de documento de identidad que se pueden ofrecer en un campo (con su regla de validación)."""
     return formlib.id_docs_public()
 
 
 @router.get("/events/{event_id}/form-templates")
-async def list_templates(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_templates(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     rows = db.query(SavedFormTemplate).filter_by(tenant_id=event.tenant_id).order_by(SavedFormTemplate.name).all()
     return [{"id": t.id, "name": t.name, "fields": len(json.loads(t.design_json)["fields"])} for t in rows]
 
 
 @router.post("/events/{event_id}/forms/{form_id}/save-as-template")
-async def save_template(event_id: int, form_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def save_template(event_id: int, form_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     name = str(data.get("name") or "").strip()[:120]
@@ -458,7 +460,7 @@ async def save_template(event_id: int, form_id: int, data: dict, db: Session = D
 
 
 @router.delete("/events/{event_id}/form-templates/{template_id}")
-async def delete_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def delete_template(event_id: int, template_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     tpl = db.query(SavedFormTemplate).filter_by(id=template_id, tenant_id=event.tenant_id).first()
     if not tpl:
@@ -469,17 +471,16 @@ async def delete_template(event_id: int, template_id: int, db: Session = Depends
 
 
 @router.post("/events/{event_id}/forms-upload-image")
-async def upload_image(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def upload_image(event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=400, detail="Usa una imagen PNG, JPG, WEBP o GIF")
-    content = await file.read()
+    content = file.file.read()
     if len(content) > 8_000_000:
         raise HTTPException(status_code=400, detail="La imagen pesa más de 8 MB")
     name = f"{secrets.token_hex(16)}{ext}"
-    with open(os.path.join(_badge_assets_dir(event.tenant_id), name), "wb") as f:
-        f.write(content)
+    get_storage().put(badge_asset_key(event.tenant_id, name), content)
     return {"storage_path": f"{event.tenant_id}/{name}"}
 
 
@@ -512,7 +513,7 @@ def _display(value):
 
 
 @router.get("/events/{event_id}/forms/{form_id}/submissions")
-async def list_submissions(event_id: int, form_id: int, include_tests: bool = True, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_submissions(event_id: int, form_id: int, include_tests: bool = True, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
@@ -527,7 +528,7 @@ async def list_submissions(event_id: int, form_id: int, include_tests: bool = Tr
 
 
 @router.delete("/events/{event_id}/forms/{form_id}/submissions/{submission_id}")
-async def delete_submission(event_id: int, form_id: int, submission_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def delete_submission(event_id: int, form_id: int, submission_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     sub = db.query(FormSubmission).filter_by(id=submission_id, form_id=form.id).first()
@@ -535,10 +536,7 @@ async def delete_submission(event_id: int, form_id: int, submission_id: int, db:
         raise HTTPException(status_code=404, detail="Inscripción no encontrada")
     for v in json.loads(sub.data_json).values():
         if isinstance(v, dict) and v.get("stored"):
-            try:
-                os.remove(os.path.join(formsvc.form_files_dir(event.tenant_id, form.id), v["stored"]))
-            except OSError:
-                pass
+            get_storage().delete(form_file_key(event.tenant_id, form.id, v["stored"]))
     db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
     db.commit()
@@ -546,21 +544,18 @@ async def delete_submission(event_id: int, form_id: int, submission_id: int, db:
 
 
 @router.get("/events/{event_id}/forms/{form_id}/files/{submission_id}/{field_id}")
-async def download_file(event_id: int, form_id: int, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def download_file(event_id: int, form_id: int, submission_id: int, field_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     sub = db.query(FormSubmission).filter_by(id=submission_id, form_id=form.id).first()
     info = json.loads(sub.data_json).get(field_id) if sub else None
     if not isinstance(info, dict) or not info.get("stored"):
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    path = os.path.join(formsvc.form_files_dir(event.tenant_id, form.id), os.path.basename(info["stored"]))
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(path, filename=info.get("filename") or os.path.basename(path))
+    return get_storage().response(form_file_key(event.tenant_id, form.id, info["stored"]), filename=info.get("filename") or os.path.basename(info["stored"]))
 
 
 @router.get("/events/{event_id}/forms/{form_id}/report")
-async def report(event_id: int, form_id: int, include_tests: bool = False, request: Request = None, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def report(event_id: int, form_id: int, include_tests: bool = False, request: Request = None, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Reporte Excel del formulario (mismas convenciones que `app/reports.py`: título arriba, encabezado oscuro,
     autofiltro). Por defecto SIN las inscripciones de prueba."""
     event = get_event_for_staff(event_id, db, staff)
@@ -592,9 +587,7 @@ async def report(event_id: int, form_id: int, include_tests: bool = False, reque
     for i in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(i)].width = 24 if i > 3 else 10
     ws.freeze_panes = "A3"
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-    wb.save(tmp.name)
-    return FileResponse(tmp.name, filename=f"Formulario_{form.slug}.xlsx")
+    return heavy.workbook_response(wb, f"Formulario_{form.slug}.xlsx")
 
 
 def _approved_by_submission(db: Session, form: WebForm) -> dict:
@@ -642,7 +635,7 @@ def _pay_label(p: FormPayment) -> str:
 
 # ------------------------------------------------------------------ pagos (campo «Pago», Wompi)
 @router.get("/events/{event_id}/forms/{form_id}/payments")
-async def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Pagos del formulario con su referencia (evento + formulario + inscripción): la conciliación por evento vive aquí, no
     en el dashboard de Wompi. `orphan` = aprobado pero sin inscripción (revisar a mano)."""
     event = get_event_for_staff(event_id, db, staff)
@@ -673,12 +666,12 @@ async def list_payments(event_id: int, form_id: int, include_tests: bool = False
 
 # ------------------------------------------------------------------ base para pre-llenar y invitaciones
 @router.post("/events/{event_id}/forms/{form_id}/people")
-async def upload_people(event_id: int, form_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def upload_people(event_id: int, form_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Sube (Excel/CSV) la base que pre-llenará SOLO este formulario (fuente «base subida aparte»); reemplaza la anterior."""
     from app.routers.api import _read_roster_rows, _ID_KEYS, _normalize_optional_key
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
-    header, rows = _read_roster_rows(file.filename, await file.read())
+    header, rows = _read_roster_rows(file.filename, file.file.read())
     id_col = next((k for k in header if formsvc.COLUMN_TO_KEY.get(k) == "id"), None)
     if not id_col:
         raise HTTPException(status_code=400, detail="El archivo necesita una columna de cédula (id / cédula)")
@@ -703,7 +696,7 @@ async def upload_people(event_id: int, form_id: int, file: UploadFile = File(...
 
 
 @router.get("/events/{event_id}/forms/{form_id}/invites")
-async def invites_status(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def invites_status(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     rows = db.query(FormInvite).filter_by(form_id=form.id).all()
@@ -711,7 +704,7 @@ async def invites_status(event_id: int, form_id: int, db: Session = Depends(get_
 
 
 @router.post("/events/{event_id}/forms/{form_id}/invites/send")
-async def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Genera el enlace personal de cada persona de la fuente y lo manda por correo (a quien tenga correo) en segundo
     plano, con avance (`GET /api/bulk_jobs/{id}`). `only_unsent` (por defecto sí) no reenvía a quien ya lo recibió."""
     event = get_event_for_staff(event_id, db, staff)
@@ -891,6 +884,6 @@ def _payment_analytics(db: Session, form: WebForm, include_tests: bool, kpis: li
 
 
 @router.get("/events/{event_id}/forms/{form_id}/analytics")
-async def form_analytics(event_id: int, form_id: int, include_tests: bool = False, net_fees: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def form_analytics(event_id: int, form_id: int, include_tests: bool = False, net_fees: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     event = get_event_for_staff(event_id, db, staff)
     return form_dashboard(db, _get_form(db, event, form_id), include_tests, net_fees)

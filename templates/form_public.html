@@ -199,9 +199,21 @@ function showForm(st) {
     const fd = new FormData();
     fd.append("data", JSON.stringify({ values, k: K, d: D, code: fr.code(), t: token, sid: SID, source: SOURCE }));
     Object.entries(files).forEach(([fid, f]) => fd.append("file:" + fid, f, f.name));
-    let res, data;
-    try { res = await fetch(BASE + "/submit", { method: "POST", body: fd }); data = await res.json().catch(() => ({})); }
-    catch (err) { return reset("No hay conexión. Intenta de nuevo.", true); }
+    // Si la red o el servidor fallan a mitad (sin conexión, 502/503/504), lo escrito NO se pierde: se reintenta solo con la MISMA clave de envío (`sid`), así que el
+    // servidor nunca crea dos inscripciones (Fase 0 de escalabilidad, doc 13 §8.9). Se avisa con calma en vez de mostrar un error.
+    const RETRY_WAIT = [1500, 3000, 6000, 10000, 15000];
+    let res, data, lastErr;
+    for (let attempt = 0; attempt <= RETRY_WAIT.length; attempt++) {
+      try {
+        res = await fetch(BASE + "/submit", { method: "POST", body: fd });
+        if (![502, 503, 504].includes(res.status)) { data = await res.json().catch(() => ({})); lastErr = null; break; }
+        lastErr = new Error("busy");
+      } catch (err) { lastErr = err; }
+      if (attempt === RETRY_WAIT.length) break;
+      msg.style.color = "inherit"; msg.textContent = "Estamos procesando tu inscripción, no cierres esta página…";
+      await new Promise((r) => setTimeout(r, RETRY_WAIT[attempt]));
+    }
+    if (lastErr) return reset("No pudimos enviar tu inscripción por un problema de conexión. Lo que escribiste sigue aquí: intenta de nuevo en un momento.", true);
     if (res.ok && data.payment_required) return pay(data, reset, fr);
     if (res.ok) return done(data.thanks);
     if (res.status === 422 && data.errors) { reset(""); return fr.setErrors(data.errors); }

@@ -47,12 +47,12 @@ def _serialize(t: Tenant) -> dict:
 
 
 @router.get("/tenants")
-async def list_tenants(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_tenants(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     return [_serialize(t) for t in db.query(Tenant).order_by(Tenant.name).all()]
 
 
 @router.post("/tenants")
-async def create_tenant(
+def create_tenant(
     data: TenantIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))
 ):
     """Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes pasó a ser comercial+ — antes
@@ -75,7 +75,7 @@ async def create_tenant(
 
 
 @router.patch("/tenants/{tenant_id}")
-async def update_tenant(
+def update_tenant(
     tenant_id: str, data: TenantUpdate, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
@@ -89,7 +89,7 @@ async def update_tenant(
 
 
 @router.delete("/tenants/{tenant_id}")
-async def delete_tenant(
+def delete_tenant(
     tenant_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()

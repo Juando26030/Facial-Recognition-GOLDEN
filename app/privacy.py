@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models import Event, EventAttendee, User
+from app.storage import get_storage, photo_key
 
 
 DEFAULT_RETENTION_DAYS = 180
@@ -27,29 +28,22 @@ def retention_days():
     return int(raw) if raw.isdigit() else DEFAULT_RETENTION_DAYS
 
 
-def photo_path(tenant_id: str, user_id: str) -> str:
-    return os.path.join("data", tenant_id, "known_people", f"{user_id}.jpg")
-
-
 def stats(db: Session, event: Event) -> dict:
     """Cuántas personas de este evento tienen datos biométricos guardados y con qué constancia de autorización."""
     people = (db.query(User).join(EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id))
               .filter(EventAttendee.event_id == event.id).all())
-    with_face = [u for u in people if u.face_encoding or os.path.isfile(photo_path(u.tenant_id, u.id))]
+    with_face = [u for u in people if u.face_encoding or get_storage().exists(photo_key(u.tenant_id, u.id))]
     from app import crypto
     return {"attendees": len(people), "with_biometrics": len(with_face), "encrypted": crypto.enabled(),
             "with_consent": sum(1 for u in with_face if u.biometric_consent_at), "without_consent": sum(1 for u in with_face if not u.biometric_consent_at)}
 
 
 def _erase(user: User) -> bool:
-    had = bool(user.face_encoding) or os.path.isfile(photo_path(user.tenant_id, user.id))
+    had = bool(user.face_encoding) or get_storage().exists(photo_key(user.tenant_id, user.id))
     user.face_encoding = None
     user.biometric_consent_at = None
     user.biometric_consent_source = None
-    try:
-        os.remove(photo_path(user.tenant_id, user.id))
-    except OSError:
-        pass
+    get_storage().delete(photo_key(user.tenant_id, user.id))
     return had
 
 
@@ -69,7 +63,7 @@ def purge_event(db: Session, event: Event) -> dict:
     people = (db.query(User).join(EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id))
               .filter(EventAttendee.event_id == event.id).all())
     for user in people:
-        if not (user.face_encoding or os.path.isfile(photo_path(user.tenant_id, user.id))):
+        if not (user.face_encoding or get_storage().exists(photo_key(user.tenant_id, user.id))):
             continue
         elsewhere = (db.query(EventAttendee.id).join(Event, Event.id == EventAttendee.event_id)
                      .filter(EventAttendee.user_id == user.id, EventAttendee.tenant_id == user.tenant_id, EventAttendee.event_id != event.id, Event.status != "finalizado").first())
@@ -85,7 +79,7 @@ def purge_event(db: Session, event: Event) -> dict:
 
 def purge_expired(db: Session, days: int, today: date = None) -> dict:
     """Aplica la retención: eventos finalizados cuyo fin fue hace más de `days` días y que aún no se han purgado."""
-    limit = (today or date.today()) - timedelta(days=days)
+    limit = (today or datetime.utcnow().date()) - timedelta(days=days)      # todo interno va en UTC
     total = {"events": 0, "deleted": 0, "kept_in_other_events": 0}
     for event in db.query(Event).filter(Event.status == "finalizado", Event.end_date < limit, Event.biometrics_purged_at.is_(None)).all():
         r = purge_event(db, event)

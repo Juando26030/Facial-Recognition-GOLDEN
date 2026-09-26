@@ -74,28 +74,29 @@ def decrypt_bytes(data: bytes) -> Optional[bytes]:
         return None
 
 
-def save_image(pil_image, path: str) -> None:
-    """Guarda una imagen PIL como JPEG, cifrada si hay llave."""
+def save_image(pil_image, key: str) -> None:
+    """Guarda una imagen PIL como JPEG en el almacenamiento (clave, ver app/storage.py), cifrada si hay llave."""
     import io
+
+    from app.storage import get_storage
     buf = io.BytesIO()
     pil_image.save(buf, format="JPEG")
-    with open(path, "wb") as fh:
-        fh.write(encrypt_bytes(buf.getvalue()))
+    get_storage().put(key, encrypt_bytes(buf.getvalue()))
 
 
-def read_bytes(path: str) -> Optional[bytes]:
+def read_bytes(key: str) -> Optional[bytes]:
     """Contenido de una foto ya descifrado (o None si no se puede descifrar)."""
-    with open(path, "rb") as fh:
-        return decrypt_bytes(fh.read())
+    from app.storage import get_storage
+    return decrypt_bytes(get_storage().get(key))
 
 
-def read_array(path: str):
+def read_array(key: str):
     """La foto como arreglo numpy RGB (lo que espera `face_recognition`), o None."""
     import io
 
     import numpy as np
     from PIL import Image
-    raw = read_bytes(path)
+    raw = read_bytes(key)
     return None if raw is None else np.array(Image.open(io.BytesIO(raw)).convert("RGB"))
 
 

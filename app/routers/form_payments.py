@@ -11,9 +11,10 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, fx, wompi
+from app import formlib, formsvc, fx, ops, wompi
 from app.database import get_db
 from app.models import FormPayment, FormSubmission, WebForm
 from app.routers import forms_public as fp
@@ -66,7 +67,7 @@ def _result(db: Session, form: WebForm, pay: FormPayment) -> dict:
 
 
 @router.post("/f/{event_id}/{slug}/quote")
-async def quote(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+def quote(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
     """Monto a pagar según lo que la persona lleva escrito (para mostrar el total en vivo). Solo lee; no guarda nada."""
     form = fp._load(db, event_id, slug)
     fp._access(db, form, data.get("k"))
@@ -90,7 +91,7 @@ async def quote(event_id: int, slug: str, data: dict, request: Request, db: Sess
 
 
 @router.get("/f/{event_id}/{slug}/rates")
-async def rates(event_id: int, slug: str, request: Request, k: Optional[str] = None, db: Session = Depends(get_db)):
+def rates(event_id: int, slug: str, request: Request, k: Optional[str] = None, db: Session = Depends(get_db)):
     """Tasas de REFERENCIA COP→USD/EUR para que la persona vea el precio en su moneda. El cobro es siempre en COP."""
     form = fp._load(db, event_id, slug)
     fp._access(db, form, k)
@@ -99,7 +100,7 @@ async def rates(event_id: int, slug: str, request: Request, k: Optional[str] = N
 
 
 @router.post("/f/{event_id}/{slug}/pay/confirm")
-async def confirm(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+def confirm(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
     """El navegador avisa que el widget se cerró (con el id de la transacción, si la hay). No se le cree: el estado real
     se consulta a Wompi por ese id y solo cuenta si la referencia y el monto coinciden con los de este pago."""
     form = fp._load(db, event_id, slug)
@@ -116,7 +117,7 @@ async def confirm(event_id: int, slug: str, data: dict, request: Request, db: Se
 
 
 @router.get("/f/{event_id}/{slug}/pay/status")
-async def pay_status(event_id: int, slug: str, request: Request, pt: Optional[str] = None, k: Optional[str] = None, db: Session = Depends(get_db)):
+def pay_status(event_id: int, slug: str, request: Request, pt: Optional[str] = None, k: Optional[str] = None, db: Session = Depends(get_db)):
     """Para esperar la confirmación (p. ej. PSE tarda): el navegador consulta hasta que sea aprobado o rechazado."""
     form = fp._load(db, event_id, slug)
     fp._access(db, form, k)
@@ -126,13 +127,18 @@ async def pay_status(event_id: int, slug: str, request: Request, pt: Optional[st
 
 @router.post("/webhooks/wompi")
 async def webhook(request: Request, db: Session = Depends(get_db)):
-    """Eventos de Wompi (`transaction.updated`). Se acepta solo con checksum válido (SHA-256 con el secreto de eventos);
-    sin secreto configurado se rechaza. Responde 200 aun si la referencia no es nuestra, para que Wompi no reintente."""
+    """Eventos de Wompi (`transaction.updated`). Lee el cuerpo (lo único asíncrono) y procesa en un hilo: el bucle de eventos nunca espera a la base."""
     try:
         event = json.loads((await request.body()) or b"{}")
     except ValueError:
         raise HTTPException(status_code=400, detail="Cuerpo inválido")
-    ok = wompi.verify_event(event, request.headers.get("X-Event-Checksum"))
+    return await run_in_threadpool(_process_webhook, db, event, request.headers.get("X-Event-Checksum"))
+
+
+def _process_webhook(db: Session, event: dict, checksum: Optional[str]) -> dict:
+    """Se acepta solo con checksum válido (SHA-256 con el secreto de eventos); sin secreto configurado se rechaza. Responde 200 aun si la referencia no
+    es nuestra, para que Wompi no reintente. Cada evento válido queda anotado para «Estado del sistema» (último webhook recibido)."""
+    ok = wompi.verify_event(event, checksum)
     if ok is None:
         raise HTTPException(status_code=503, detail="Los eventos de Wompi no están configurados")
     if not ok:
@@ -140,6 +146,7 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
     if event.get("event") != "transaction.updated":
         return {"ok": True, "ignored": "evento no manejado"}
     txn = (event.get("data") or {}).get("transaction") or {}
+    ops.record_system_event("wompi_webhook", str(txn.get("reference") or "")[:80], f"estado {txn.get('status')}")
     pay = db.query(FormPayment).filter(FormPayment.reference == str(txn.get("reference") or "")).first()
     if not pay:
         return {"ok": True, "ignored": "referencia desconocida"}

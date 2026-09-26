@@ -1,4 +1,6 @@
+from app.storage import get_storage, key_of
 from app.timeutil import to_local
+import io
 import os
 
 import pandas as pd
@@ -117,8 +119,8 @@ class ReportManager:
         ]
         def _signature_file(user_id, key):
             # Firmas (ítem 10): un archivo PNG por evento/persona/campo, ver routers/signatures.py.
-            path = os.path.join("data", tenant_id, "signatures", str(event_id), f"{user_id}__{key}.png")
-            return path if os.path.isfile(path) else None
+            sig_key = key_of(tenant_id, "signatures", event_id, f"{user_id}__{key}.png")
+            return sig_key if get_storage().exists(sig_key) else None
 
         def _column_used(key):
             if field_types.get(key) == "signature":
@@ -210,7 +212,7 @@ class ReportManager:
                     sig = _signature_file(row["id"], key)
                     if not sig:
                         continue
-                    img = XLImage(sig)
+                    img = XLImage(io.BytesIO(get_storage().get(sig)))
                     img.width, img.height = 150, 56
                     ws.add_image(img, f"{get_column_letter(col_idx)}{header_row + offset}")
                     ws.row_dimensions[header_row + offset].height = 46

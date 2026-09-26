@@ -7,7 +7,7 @@ en app/routers/parametros.py deja el campo marcado `required` por defecto al act
 
 Sin correo configurado (ver app/mailer.py) NADA sale al exterior: el mensaje queda como archivo en
 `data/outbox/`. Variable opcional: PUBLIC_BASE_URL (dominio público para armar el enlace, confirmado
-como https://app.golden-eventos.com; por defecto el de la petición)."""
+el dominio de producción; por defecto el de la petición; sin ninguno de los dos no se envía)."""
 import os
 import re
 import secrets
@@ -41,16 +41,16 @@ def ensure_token(db: Session, attendee: EventAttendee) -> str:
     return attendee.digital_token
 
 
-DEFAULT_BASE_URL = "https://app.golden-eventos.com"      # último recurso: un enlace relativo («/b/…») no sirve en un correo
-
-
 def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name: str, base_url: str, last_name: str = "") -> dict:
     """Envía el enlace de la escarapela digital al correo guardado y marca el envío. Devuelve
     {"sent": bool, "detail": str} — nunca lanza (el alta de la persona no debe fallar por el envío)."""
     contact = attendee.digital_contact
     if not contact:
         return {"sent": False, "detail": "Sin correo para enviar"}
-    link = f"{(os.getenv('PUBLIC_BASE_URL') or base_url or DEFAULT_BASE_URL).rstrip('/')}/b/{ensure_token(db, attendee)}"
+    base = (os.getenv("PUBLIC_BASE_URL") or base_url or "").rstrip("/")
+    if not base:       # un enlace relativo («/b/…») no sirve en un correo: sin dominio público conocido no se envía nada
+        return {"sent": False, "detail": "Falta PUBLIC_BASE_URL: no se puede armar el enlace de la escarapela"}
+    link = f"{base}/b/{ensure_token(db, attendee)}"
     subject, html_body, text_body = email_template.render(event, person_name, last_name, link)
     result = send_mail(contact, subject, text_body, html=html_body)
     attendee.digital_sent_at = datetime.utcnow()

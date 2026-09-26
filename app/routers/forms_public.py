@@ -9,25 +9,30 @@ import json
 import os
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from PIL import Image
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, security, wompi
+from app import formlib, formsvc, jobs, security, wompi
 from app.database import get_db
 from app.email_check import check_email
 from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
 from app.routers.badges import ALLOWED_IMAGE_EXT
+from app.storage import badge_asset_key, form_file_key, get_storage
+from app.ttlcache import SlidingLimiter
 import io
 
 router = APIRouter()
 TOKEN_MAX_AGE = 6 * 3600
 _LIMIT = timedelta(minutes=10)
+_limiter = SlidingLimiter()                                     # en memoria (por proceso): frena abusos sin escribir en la base en cada visita
+LIMIT_FACTOR = float(os.getenv("PUBLIC_LIMIT_FACTOR", "1"))    # subelo (p. ej. 20) si el evento reparte un mismo wifi a mucha gente: ver docs/runbook_evento.md
 
 
 # ------------------------------------------------------------------ tokens de etapa
@@ -57,10 +62,11 @@ def _load(db: Session, event_id: int, slug: str) -> WebForm:
     return form
 
 
-def _access(db: Session, form: WebForm, k: Optional[str]) -> str:
+def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = True) -> str:
     """Estado con el que se atiende esta visita: `activo`, `pruebas` (solo con la clave del enlace de pruebas),
-    `cerrado` o `cupo_lleno`. `finalizado` y `pruebas` sin clave = como si la página no existiera (404)."""
-    state = formsvc.public_state(db, form)
+    `cerrado` o `cupo_lleno`. `finalizado` y `pruebas` sin clave = como si la página no existiera (404).
+    `check_full=False` salta el conteo de cupo (el envío lo comprueba después, ya con el formulario bloqueado)."""
+    state = formsvc.public_state(db, form) if check_full else formsvc.status_of(form)
     if state == "finalizado":
         raise HTTPException(status_code=404, detail="Formulario no disponible")
     if state == "pruebas" and not (k and secrets.compare_digest(str(k), form.test_key)):
@@ -68,8 +74,10 @@ def _access(db: Session, form: WebForm, k: Optional[str]) -> str:
     return state
 
 
-def _limit(db: Session, request: Request, kind: str, form: WebForm, max_hits: int):
-    security.enforce_public_limit(db, request, kind, str(form.id), max_hits, _LIMIT)
+def _limit(db: Optional[Session], request: Request, kind: str, form: WebForm, max_hits: int) -> None:
+    """Limite por IP en memoria (`db` se ignora: se conserva la firma que usan los demas modulos). Con varios procesos cada uno lleva su cuenta."""
+    if not _limiter.hit((kind, form.id, security.client_ip(request)), max(1, int(max_hits * LIMIT_FACTOR)), _LIMIT.total_seconds()):
+        raise HTTPException(status_code=429, detail="Demasiadas consultas seguidas — espera unos minutos e intenta de nuevo.")
 
 
 def _needs(settings: dict):
@@ -90,23 +98,50 @@ def _payload_form(db: Session, form: WebForm, claims: dict) -> dict:
         if person:
             prefill = formsvc.prefill_values(design, person)
             readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
-    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": formsvc.quota_public(db, form), "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
+    quota = formsvc.quota_public(db, form)
+    db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
+    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
 
 
 # ------------------------------------------------------------------ páginas y estado
 @router.get("/f/{event_id}/{slug}", response_class=HTMLResponse)
-async def page(event_id: int, slug: str, request: Request, k: Optional[str] = None, db: Session = Depends(get_db)):
-    from app.main import templates  # import tardío: main.py importa este módulo
-    try:
-        form = _load(db, event_id, slug)
-        _access(db, form, k)
-    except HTTPException:
-        return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Este formulario no está disponible</h3>", status_code=404)
-    return templates.TemplateResponse(request=request, name="form_public.html", context={"event_id": event_id, "slug": slug, "form_title": form.name})
+def page(event_id: int, slug: str, request: Request, k: Optional[str] = None, db: Session = Depends(get_db)):
+    """El cascaron HTML es el mismo para todos: el formulario y su estado llegan por `/state`. Sin clave de pruebas se puede guardar en la cache del
+    navegador/Cloudflare unos segundos (`s-maxage`); con `?k=` (pruebas) nunca."""
+    from app.main import templates  # import tardio: main.py importa este modulo
+    cached = None if k else formsvc.public_cache.get(("page", event_id, slug))
+    if cached is None:
+        try:
+            form = _load(db, event_id, slug)
+            _access(db, form, k)
+            cached = {"title": form.name}
+        except HTTPException:
+            return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Este formulario no está disponible</h3>", status_code=404)
+        if not k:
+            formsvc.public_cache.set(("page", event_id, slug), cached)
+    response = templates.TemplateResponse(request=request, name="form_public.html", context={"event_id": event_id, "slug": slug, "form_title": cached["title"]})
+    if not k:
+        response.headers["Cache-Control"] = "public, max-age=30, s-maxage=60"
+    return response
 
 
 @router.get("/f/{event_id}/{slug}/state")
-async def state(event_id: int, slug: str, k: Optional[str] = None, i: Optional[str] = None, t: Optional[str] = None, db: Session = Depends(get_db)):
+def state(event_id: int, slug: str, k: Optional[str] = None, i: Optional[str] = None, t: Optional[str] = None, db: Session = Depends(get_db)):
+    """Lo que el navegador necesita para dibujar el formulario. Para quien llega «en frio» (sin clave de pruebas, enlace personal ni token) el resultado
+    es identico para todos: se calcula una vez cada pocos segundos y se sirve de la memoria (con 10.000 aperturas, eran 10.000 conteos de cupo)."""
+    anonymous = not (k or i or t)
+    key = ("state", event_id, slug)
+    if anonymous:
+        hit = formsvc.public_cache.get(key)
+        if hit is not None:
+            return hit
+    result = _state(db, event_id, slug, k, i, t)
+    if anonymous:
+        formsvc.public_cache.set(key, result)
+    return result
+
+
+def _state(db: Session, event_id: int, slug: str, k: Optional[str], i: Optional[str], t: Optional[str]) -> dict:
     form = _load(db, event_id, slug)
     access = _access(db, form, k)
     settings = formsvc.get_settings(form)
@@ -135,7 +170,7 @@ async def state(event_id: int, slug: str, k: Optional[str] = None, i: Optional[s
 
 
 @router.post("/f/{event_id}/{slug}/gate")
-async def gate(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+def gate(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
     form = _load(db, event_id, slug)
     _access(db, form, data.get("k"))
     _limit(db, request, "form_gate", form, 15)               # freno a quien intenta adivinar el código
@@ -149,7 +184,7 @@ async def gate(event_id: int, slug: str, data: dict, request: Request, db: Sessi
 
 
 @router.post("/f/{event_id}/{slug}/lookup")
-async def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
     """Autoservicio por cédula: si la persona está en la base elegida, se pre-llenan y bloquean sus datos; si no está, el
     formulario se llena de cero — salvo que la seguridad sea «la propia cédula», que exige estar en la base."""
     form = _load(db, event_id, slug)
@@ -174,7 +209,7 @@ async def lookup(event_id: int, slug: str, data: dict, request: Request, db: Ses
 
 
 @router.post("/f/{event_id}/{slug}/beacon")
-async def beacon(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+def beacon(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
     """Marcas de uso para la analítica: `view` (abrió), `start` (empezó a llenar). Sin datos personales."""
     form = _load(db, event_id, slug)
     access = _access(db, form, data.get("k"))
@@ -191,17 +226,14 @@ async def beacon(event_id: int, slug: str, data: dict, request: Request, db: Ses
 
 
 @router.get("/f/{event_id}/{slug}/asset/{tenant_id}/{filename}")
-async def asset(event_id: int, slug: str, tenant_id: str, filename: str, k: Optional[str] = None, db: Session = Depends(get_db)):
+def asset(event_id: int, slug: str, tenant_id: str, filename: str, k: Optional[str] = None, db: Session = Depends(get_db)):
     form = _load(db, event_id, slug)
     _access(db, form, k)
     event = db.query(Event).filter(Event.id == form.event_id).first()
     safe = os.path.basename(filename)
     if tenant_id != event.tenant_id or os.path.splitext(safe)[1].lower() not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    path = os.path.join("data", tenant_id, "badge_assets", safe)
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(path)
+    return get_storage().response(badge_asset_key(tenant_id, safe))
 
 
 # ------------------------------------------------------------------ envío
@@ -238,15 +270,40 @@ def _safe_name(name: str) -> str:
 
 @router.post("/f/{event_id}/{slug}/submit")
 async def submit(event_id: int, slug: str, request: Request, db: Session = Depends(get_db)):
-    form = _load(db, event_id, slug)
+    """Lee el cuerpo (lo unico asincrono) y pasa el resto —consultas, cupo, insercion— a un hilo: el bucle de eventos nunca espera a la base de datos."""
     ctype = request.headers.get("content-type", "")
-    if "multipart" in ctype:
-        raw_form = await request.form()
-        payload = json.loads(str(raw_form.get("data") or "{}"))
-        files = {k[5:]: v for k, v in raw_form.multi_items() if k.startswith("file:") and hasattr(v, "read")}
-    else:
-        payload, files = await request.json(), {}
-    access = _access(db, form, payload.get("k"))
+    files: Dict[str, Tuple[str, bytes]] = {}
+    try:
+        if "multipart" in ctype:
+            raw_form = await request.form()
+            payload = json.loads(str(raw_form.get("data") or "{}"))
+            for name, value in raw_form.multi_items():
+                if name.startswith("file:") and hasattr(value, "read"):
+                    files[name[5:]] = (value.filename or "", await value.read())
+        else:
+            payload = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="La solicitud no se pudo leer")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="La solicitud no se pudo leer")
+    return await run_in_threadpool(_submit, db, event_id, slug, request, payload, files)
+
+
+def _is_retry(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], clean: dict, is_test: bool) -> bool:
+    """¿Es el reintento de una inscripcion que YA se confirmo con esta misma clave de envio (`sid`)? El navegador reintenta solo si la red o la base
+    fallan a mitad; no debe duplicar ni dar el error de «ya existe»."""
+    if not sid:
+        return False
+    prev = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.sid == sid, FormSubmission.is_test == is_test,
+                                           FormSubmission.status == "confirmed").first()
+    if not prev:
+        return False
+    return prev.person_id == person_id if person_id else json.loads(prev.data_json) == clean
+
+
+def _submit(db: Session, event_id: int, slug: str, request: Request, payload: dict, files: Dict[str, Tuple[str, bytes]]):
+    form = _load(db, event_id, slug)
+    access = _access(db, form, payload.get("k"), check_full=False)      # el cupo se comprueba abajo, con el formulario bloqueado
     if access in ("cerrado", "cupo_lleno"):
         return JSONResponse({"detail": "Este formulario ya no recibe inscripciones", "stage": "closed"}, status_code=409)
     _limit(db, request, "form_submit", form, 60)
@@ -273,16 +330,15 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
     # Archivos
     uploaded, file_errors, pending = {}, {}, {}
     visible = formlib.visible_ids(design, values)
-    for fid, up in files.items():
+    for fid, (filename, content) in files.items():
         f = fields.get(fid)
         if not f or f["type"] != "file" or fid not in visible:
             continue
-        content = await up.read()
-        err = _check_upload(f, up.filename or "", content, settings)
+        err = _check_upload(f, filename, content, settings)
         if err:
             file_errors[fid] = err
         else:
-            uploaded[fid] = {"filename": _safe_name(up.filename), "size": len(content)}
+            uploaded[fid] = {"filename": _safe_name(filename), "size": len(content)}
             pending[fid] = content
 
     clean, errors = formlib.validate_submission(design, values, uploaded, check_email)
@@ -295,9 +351,10 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
         if f.get("key") == "id" and clean.get(fid):
             person_id = str(clean[fid]).strip()
     is_test = access == "pruebas"
+    sid = str(payload.get("sid") or "")[:40] or None
 
-    # Campo «Pago»: si está visible y el monto (según reglas y descuentos) es mayor que 0, la inscripción NO se confirma
-    # aquí: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
+    # Campo «Pago»: si esta visible y el monto (segun reglas y descuentos) es mayor que 0, la inscripcion NO se confirma
+    # aqui: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
     quote = charge = cfg = code_row = None
     pay_field = formlib.payment_field(design, {**values, **{k: True for k in uploaded}})
     if pay_field:
@@ -317,59 +374,68 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
                 return JSONResponse({"detail": "El pago en línea todavía no está disponible para este formulario. Intenta más tarde."}, status_code=503)
             charge = quote["amount"]
 
-    # Cupo y duplicados, con la fila del formulario BLOQUEADA: dos personas enviando el último cupo a la vez no lo llenan dos veces.
-    locked = db.query(WebForm).filter(WebForm.id == form.id).with_for_update().first()
-    formsvc.purge_stale_pending(db, form)
-    if charge and (person_id or payload.get("sid")):      # reintento de pago: el intento anterior de esta persona/sesión se descarta
-        prior = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.PENDING)
-        cond = [FormSubmission.sid == str(payload["sid"])[:40]] if payload.get("sid") else []
-        if person_id:
-            cond.append(FormSubmission.person_id == person_id)
-        for old in prior.filter(or_(*cond)).all():
-            formsvc.discard_submission(db, form, old)
-        db.flush()
-    if code_row and formsvc.code_uses(db, code_row) >= code_row.max_uses:        # otra persona se llevó el último uso mientras esta escribía
-        db.rollback()
-        return JSONResponse({"detail": formsvc.CODE_MESSAGES["exhausted"], "code_error": True}, status_code=422)
-    full_rule = None if is_test else formsvc.quota_full_rule(db, form, clean)
-    if full_rule:
-        db.rollback()
-        return JSONResponse({"detail": f"El cupo «{full_rule['label']}» ya se completó. Cambia tu elección o escribe a los organizadores.", "stage": "quota"}, status_code=409)
-    if formsvc.is_full(db, locked) and not is_test:
-        db.rollback()
-        return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
-    if person_id and not is_test:
-        dup = formsvc.real_submissions(db, form).filter(FormSubmission.person_id == person_id).first()
-        if dup:
-            db.rollback()
-            return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
-
-    sid = str(payload.get("sid") or "")[:40] or None
     started = db.query(FormEvent).filter_by(form_id=form.id, sid=sid, kind="start").first() if sid else None
-    sub = FormSubmission(
-        form_id=form.id, event_id=form.event_id, data_json=json.dumps(clean), is_test=is_test, person_id=person_id, invite_id=claims.get("inv"),
-        source=str(payload.get("source") or "")[:40] or None, sid=sid, started_at=started.created_at if started else None,
-        status=formsvc.PENDING if charge else "confirmed", discount_code_id=code_row.id if code_row else None,
-    )
-    db.add(sub)
-    db.flush()
-    event = db.query(Event).filter(Event.id == form.event_id).first()
-    if pending:
-        directory = formsvc.form_files_dir(event.tenant_id, form.id)
-        for fid, content in pending.items():
-            stored = f"{sub.id}_{fid}_{clean[fid]['filename']}"
-            with open(os.path.join(directory, stored), "wb") as fh:
-                fh.write(content)
-            clean[fid]["stored"] = stored
-        sub.data_json = json.dumps(clean)
-    if charge:
-        pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"],
-                          reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
-                          breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
-        db.add(pay)
+    rules = formsvc.quota_rules(form)
+    try:
+        # Cupo y duplicados, con la fila del formulario BLOQUEADA: dos personas enviando el ultimo cupo a la vez no lo llenan dos veces.
+        # Aqui dentro solo se verifica, se inserta y se confirma; todo lo demas (correo, base del evento) va a la cola.
+        locked = db.query(WebForm).filter(WebForm.id == form.id).with_for_update().first()
+        if _is_retry(db, form, sid, person_id, clean, is_test):
+            db.rollback()
+            return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
+        formsvc.purge_stale_pending(db, form)
+        if charge and (person_id or sid):      # reintento de pago: el intento anterior de esta persona/sesion se descarta
+            prior = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.PENDING)
+            cond = [FormSubmission.sid == sid] if sid else []
+            if person_id:
+                cond.append(FormSubmission.person_id == person_id)
+            for old in prior.filter(or_(*cond)).all():
+                formsvc.discard_submission(db, form, old)
+            db.flush()
+        if code_row and formsvc.code_uses(db, code_row) >= code_row.max_uses:        # otra persona se llevo el ultimo uso mientras esta escribia
+            db.rollback()
+            return JSONResponse({"detail": formsvc.CODE_MESSAGES["exhausted"], "code_error": True}, status_code=422)
+        full_rule = None if is_test else formsvc.quota_full_rule(db, form, clean, rules)
+        if full_rule:
+            db.rollback()
+            return JSONResponse({"detail": f"El cupo «{full_rule['label']}» ya se completó. Cambia tu elección o escribe a los organizadores.", "stage": "quota"}, status_code=409)
+        if formsvc.is_full(db, locked) and not is_test:
+            db.rollback()
+            return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+        if person_id and not is_test:
+            dup = formsvc.real_submissions(db, form).filter(FormSubmission.person_id == person_id).first()
+            if dup:
+                db.rollback()
+                return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
+
+        sub = FormSubmission(
+            form_id=form.id, event_id=form.event_id, data_json=json.dumps(clean), is_test=is_test, person_id=person_id, invite_id=claims.get("inv"),
+            source=str(payload.get("source") or "")[:40] or None, sid=sid, started_at=started.created_at if started else None,
+            status=formsvc.PENDING if charge else "confirmed", discount_code_id=code_row.id if code_row else None,
+            quota_keys=formsvc.quota_keys_for(rules, clean),
+        )
+        db.add(sub)
+        db.flush()
+        event = db.query(Event).filter(Event.id == form.event_id).first()
+        if pending:
+            for fid, content in pending.items():
+                stored = f"{sub.id}_{fid}_{clean[fid]['filename']}"
+                get_storage().put(form_file_key(event.tenant_id, form.id, stored), content)
+                clean[fid]["stored"] = stored
+            sub.data_json = json.dumps(clean)
+        if charge:
+            pay = FormPayment(form_id=form.id, event_id=form.event_id, submission_id=sub.id, amount_cents=charge * 100, currency="COP", is_test=is_test or cfg["test"],
+                              reference=f"GW-{form.event_id}-{form.id}-{sub.id}-{secrets.token_hex(3)}", person_id=person_id,
+                              breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
+            db.add(pay)
+            db.commit()
+            return {"ok": True, "payment_required": True, "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
+        formsvc.confirm_submission(db, form, sub)
         db.commit()
-        return {"ok": True, "payment_required": True, "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
-    formsvc.finalize_submission(db, form, sub)
+    except Exception:
+        db.rollback()                 # nunca dejar la fila del formulario bloqueada
+        raise
+    jobs.kick()
     return {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
 
 

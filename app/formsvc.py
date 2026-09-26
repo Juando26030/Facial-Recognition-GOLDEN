@@ -1,17 +1,32 @@
 """Servicios de los Formularios Web (Sprint 5) que sí tocan la base: estado vigente, resolución de personas para el
 pre-llenado, carga de inscripciones a la base del evento y rutas de archivos. La lógica pura vive en `app/formlib.py`."""
+import hashlib
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from app import formlib
+from app import formlib, jobs
 from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
+from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
+from app.ttlcache import TTLCache
+
+log = logging.getLogger("golden.forms")
+
+# Estado público de un formulario (lo que ven miles de personas al abrir el enlace): se calcula una vez cada pocos segundos, no una vez por visita.
+# Vale solo dentro del proceso; cualquier cosa que importe (cupo, duplicados, precio) se vuelve a comprobar al enviar. Ver docs/14_FASE0_RESULTADOS.md.
+PUBLIC_CACHE_SECONDS = float(os.getenv("FORM_PUBLIC_CACHE_SECONDS", "5"))
+public_cache = TTLCache(PUBLIC_CACHE_SECONDS)
+
+
+def invalidate_public_cache() -> None:
+    public_cache.clear()
 
 # columnas de un Excel de pre-llenado (en minúscula) -> clave del campo del evento
 COLUMN_TO_KEY = {
@@ -20,12 +35,6 @@ COLUMN_TO_KEY = {
     "cargo": "role", "entidad": "entity", "empresa": "entity", "telefono": "phone", "teléfono": "phone", "tel. celular": "phone",
     "correo": "email", "e-mail corporativo": "email", "email": "email", "tipo de asistente": "opt_1", "tipo_asistente": "opt_1",
 }
-
-
-def form_files_dir(tenant_id: str, form_id: int) -> str:
-    path = os.path.join("data", tenant_id, "form_files", str(form_id))
-    os.makedirs(path, exist_ok=True)
-    return path
 
 
 def get_design(form: WebForm) -> dict:
@@ -106,20 +115,42 @@ def quota_match(rule: dict, values: dict) -> bool:
     return any(met) if rule["match"] == "any" else all(met)
 
 
+def rule_sig(rule: dict) -> str:
+    """Firma estable de un cupo: cambia si cambian sus condiciones, así una inscripción vieja no cuenta para un cupo que ya es otro."""
+    digest = hashlib.sha1(json.dumps({"m": rule["match"], "c": rule["conds"]}, sort_keys=True).encode()).hexdigest()[:10]
+    return f"{rule['id']}~{digest}"
+
+
+def quota_keys_for(rules: list, values: dict) -> str:
+    """`|firma|firma|` de los cupos que cumple una inscripción ('' si ninguno). Se guarda en `form_submissions.quota_keys` al insertar, para contar
+    en SQL sin releer ni interpretar el JSON de todas las inscripciones (con miles, hacerlo dentro del bloqueo del cupo era lo más lento del envío)."""
+    sigs = [rule_sig(r) for r in rules if quota_match(r, values)]
+    return f"|{'|'.join(sigs)}|" if sigs else ""
+
+
+def invalidate_quota_keys(db: Session, form: WebForm) -> None:
+    """Las reglas de cupo cambiaron: las llaves guardadas ya no valen; se recalculan solas la próxima vez que se cuente."""
+    db.query(FormSubmission).filter(FormSubmission.form_id == form.id).update({"quota_keys": None}, synchronize_session=False)
+
+
+def rebuild_quota_keys(db: Session, form: WebForm, rules: list) -> None:
+    """Recalcula las llaves de las inscripciones que no las tienen (inscripciones anteriores a esta versión, o reglas editadas)."""
+    for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None):  # noqa: E711
+        sub.quota_keys = quota_keys_for(rules, json.loads(sub.data_json))
+    db.flush()
+
+
 def quota_counts(db: Session, form: WebForm, rules: list) -> dict:
-    """{id de la regla: inscripciones que la cumplen}: confirmadas reales + las que están pagando ahora (30 min), sin pruebas."""
+    """{id de la regla: inscripciones que la cumplen}: confirmadas reales + las que están pagando ahora (30 min), sin pruebas. Una sola consulta."""
     if not rules:
         return {}
+    if db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None).first():  # noqa: E711
+        rebuild_quota_keys(db, form, rules)
     hold = datetime.utcnow() - PENDING_HOLD
-    rows = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
-                                           or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold)))
-    counts = {r["id"]: 0 for r in rules}
-    for sub in rows:
-        values = json.loads(sub.data_json)
-        for r in rules:
-            if quota_match(r, values):
-                counts[r["id"]] += 1
-    return counts
+    cols = [func.count(FormSubmission.id).filter(func.strpos(FormSubmission.quota_keys, f"|{rule_sig(r)}|") > 0) for r in rules]
+    row = db.query(*cols).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
+                                 or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold))).one()
+    return {r["id"]: row[i] for i, r in enumerate(rules)}
 
 
 def quota_status(db: Session, form: WebForm) -> list:
@@ -128,9 +159,9 @@ def quota_status(db: Session, form: WebForm) -> list:
     return [{"id": r["id"], "used": counts[r["id"]], "left": max(0, r["limit"] - counts[r["id"]])} for r in rules]
 
 
-def quota_full_rule(db: Session, form: WebForm, values: dict):
+def quota_full_rule(db: Session, form: WebForm, values: dict, rules: Optional[list] = None):
     """La primera regla YA llena que esta inscripción también cumpliría (o None)."""
-    rules = quota_rules(form)
+    rules = quota_rules(form) if rules is None else rules
     counts = quota_counts(db, form, rules)
     return next((r for r in rules if counts[r["id"]] >= r["limit"] and quota_match(r, values)), None)
 
@@ -171,10 +202,7 @@ def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
     event = db.query(Event).filter(Event.id == form.event_id).first()
     for v in json.loads(sub.data_json).values():
         if isinstance(v, dict) and v.get("stored") and event:
-            try:
-                os.remove(os.path.join(form_files_dir(event.tenant_id, form.id), os.path.basename(v["stored"])))
-            except OSError:
-                pass
+            get_storage().delete(form_file_key(event.tenant_id, form.id, v["stored"]))
     db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
 
@@ -186,20 +214,45 @@ def purge_stale_pending(db: Session, form: WebForm) -> None:
         discard_submission(db, form, sub)
 
 
-def finalize_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
-    """Todo lo que ocurre cuando una inscripción queda CONFIRMADA (sin pago: al enviar; con pago: al aprobarse):
-    marca de envío para la analítica, invitación usada y —si el formulario lo pide— carga a la base del evento."""
+def confirm_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
+    """La parte BARATA de confirmar una inscripción (sin confirmar la transacción: la confirma quien llama, junto con lo demás): estado, marca de envío
+    para la analítica, invitación usada y —si el formulario carga en tiempo real— el trabajo en segundo plano que la pasa a la base del evento y envía
+    la escarapela (correo, base de datos, etc.: nada de eso ocurre dentro de la petición ni dentro del bloqueo del cupo)."""
     sub.status = "confirmed"
     db.add(FormEvent(form_id=form.id, sid=sub.sid or os.urandom(4).hex(), kind="submit", source=sub.source, is_test=sub.is_test))
     if sub.invite_id:
         inv = db.query(FormInvite).filter_by(id=sub.invite_id).first()
         if inv:
             inv.used_at = datetime.utcnow()
-    db.commit()
     if get_settings(form)["feed"] == "realtime" and not sub.is_test:
-        from app.routers.api import _upsert_attendee
-        feed_submission(db, form, sub, _upsert_attendee)
+        db.flush()
+        jobs.enqueue(db, "form_feed", {"submission_id": sub.id}, dedupe_key=str(sub.id))
+
+
+def finalize_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
+    """Todo lo que ocurre cuando una inscripción queda CONFIRMADA cuando no hay nada más que hacer en la misma transacción (el pago aprobado
+    de Wompi lo usa): confirma, guarda y despierta al worker."""
+    confirm_submission(db, form, sub)
+    db.commit()
+    jobs.kick()
+
+
+def run_feed_job(submission_id: int) -> None:
+    """Manejador del trabajo `form_feed`: pasa UNA inscripción a la base del evento y envía la escarapela virtual. Idempotente (`sub.fed`)."""
+    from app.database import SessionLocal
+    from app.routers.api import _upsert_attendee
+    db = SessionLocal()
+    try:
+        sub = db.get(FormSubmission, submission_id)
+        if not sub or sub.fed or sub.status != "confirmed" or sub.is_test:
+            return
+        form = db.get(WebForm, sub.form_id)
+        err = feed_submission(db, form, sub, _upsert_attendee)
+        if err:
+            log.warning("inscripción %s no se cargó a la base: %s", submission_id, err)
         db.commit()
+    finally:
+        db.close()
 
 
 def public_state(db: Session, form: WebForm) -> str:
@@ -321,7 +374,7 @@ def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmi
             user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
             digital_badge.send_digital_badge(db, event, att, (user.first_name if user else "") or "", "", (user.last_name if user else "") or "")
     except Exception:       # noqa: BLE001 — ver docstring
-        pass
+        log.error("no se pudo enviar la escarapela virtual de la inscripción %s", sub.id, exc_info=True)
 
 
 def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_attendee) -> Optional[str]:
@@ -365,3 +418,8 @@ def feed_pending(db: Session, form: WebForm, upsert_attendee) -> dict:
     form.fed_at = datetime.utcnow()
     db.commit()
     return {"fed": done, "problems": problems}
+
+
+@jobs.handler("form_feed")
+def _form_feed_job(payload: dict) -> None:
+    run_feed_job(payload["submission_id"])
