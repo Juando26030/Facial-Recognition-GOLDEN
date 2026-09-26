@@ -2,7 +2,15 @@
 # solo existía en la VM; si se pierde la VM se reconstruye desde aquí). Si cambias algo en la VM, actualiza esta copia.
 #   sudo cp deploy/facial-recognition.service /etc/systemd/system/ && sudo systemctl daemon-reload
 #   sudo systemctl enable --now facial-recognition
-# `--workers 1` es a propósito: la app se apoya en un solo proceso (ver CLAUDE.md, Infraestructura).
+#
+# Fase 0 de escalabilidad (docs/14_FASE0_RESULTADOS.md): antes era `uvicorn ... --workers 1` "a propósito", porque los endpoints
+# bloqueaban el único hilo y se creía que la app dependía de un solo proceso. Se revisó (ver "Estado por proceso" en docs/14):
+# la sesión va firmada en la cookie, los límites de login/certificados y las cargas en segundo plano viven en Postgres, y lo único
+# que queda en memoria son cachés con vencimiento o versión (formularios, matriz facial, tasas de cambio). Por eso ahora hay
+# varios procesos con Gunicorn (config en deploy/gunicorn.conf.py; procesos = WEB_CONCURRENCY, 3 por defecto).
+#
+# Si Gunicorn diera problemas en la VM (Python 3.14 no se pudo probar antes de fusionar), la vuelta atrás inmediata es
+# cambiar ExecStart por:  .../venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 3
 [Unit]
 Description=FastAPI Biometric Facial Recognition
 After=network.target postgresql.service
@@ -10,7 +18,9 @@ After=network.target postgresql.service
 [Service]
 User=juando02603
 WorkingDirectory=/home/juando02603/Facial-Recognition
-ExecStart=/home/juando02603/Facial-Recognition/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+# TimeoutStopSec > GUNICORN_GRACEFUL_TIMEOUT: systemd espera a que terminen las peticiones en curso antes de matar.
+TimeoutStopSec=20
+ExecStart=/home/juando02603/Facial-Recognition/venv/bin/gunicorn -c deploy/gunicorn.conf.py app.main:app
 Restart=always
 
 [Install]

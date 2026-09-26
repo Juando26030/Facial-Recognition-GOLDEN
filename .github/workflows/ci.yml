@@ -43,3 +43,24 @@ jobs:
           pip install -r /tmp/requirements-ci.txt pytest httpx
       - name: Pruebas
         run: python -m pytest -q
+
+  lint:
+    # Ruff con reglas básicas (ruff.toml) SOLO sobre los archivos .py nuevos o modificados respecto a la base: no se reformatea ni se
+    # arregla todo el repo de golpe, pero nada nuevo entra con imports rotos, nombres sin definir o `except:` desnudos.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - name: Ruff (solo archivos nuevos o tocados)
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$base" 2>/dev/null; then base="origin/main"; fi
+          files=$(git diff --name-only --diff-filter=AM "$base"...HEAD -- '*.py' || true)
+          if [ -z "$files" ]; then echo "Sin archivos .py cambiados"; exit 0; fi
+          echo "$files"
+          ruff check $files

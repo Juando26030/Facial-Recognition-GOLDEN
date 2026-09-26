@@ -4,3 +4,4 @@ data/
 .env
 static/.env
 tests/load/.load_env.json
+.build_info
