@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import BulkJob
 
+_active = set()      # ids de las cargas que ESTE proceso está ejecutando (para marcarlas si se apaga a mitad)
+
 PHOTO_WEIGHT = 20   # una foto (encoding facial) pesa ~20 veces más que guardar una fila
 ROW_WEIGHT = 1
 STALE_AFTER = timedelta(minutes=10)
@@ -88,6 +90,7 @@ def start(job_id: str, work):
     def runner():
         db = SessionLocal()
         reporter = Reporter(job_id)
+        _active.add(job_id)
         try:
             reporter("Preparando", 0, 0, force=True)
             _finish(job_id, result=work(db, reporter))
@@ -98,10 +101,20 @@ def start(job_id: str, work):
             db.rollback()
             _finish(job_id, error_status=500, error_detail=f"Error inesperado: {e}")
         finally:
+            _active.discard(job_id)
             reporter.close()
             db.close()
 
     threading.Thread(target=runner, daemon=True, name=f"bulk-{job_id[:8]}").start()
+
+
+def mark_interrupted() -> int:
+    """Apagado ordenado (SIGTERM): las cargas que este proceso tenía en curso se marcan YA como interrumpidas, para que quien las lanzó lo vea al instante y
+    pueda repetirlas — en vez de quedar «en proceso» hasta que se venza el latido (10 min). Devuelve cuántas marcó."""
+    ids = list(_active)
+    for job_id in ids:
+        _finish(job_id, error_status=503, error_detail="La carga se interrumpió porque el servidor se reinició. Vuelve a subirla.")
+    return len(ids)
 
 
 def serialize(job: BulkJob, db: Session) -> dict:

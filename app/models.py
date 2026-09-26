@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
 from datetime import datetime
 
@@ -49,7 +49,7 @@ class User(Base):
     opt_1 = Column(String)  # "Tipo de asistente" (2026-09-20; antes "tipo de empresa") — único campo opcional fijo, el resto son extra_fields
     opt_2 = Column(String)  # deprecado (2026-09-20, era "cantidad de empl") — ya no se escribe, reemplazado por extra_fields. Se deja la columna para no perder datos históricos.
     extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
-    face_encoding = Column(EncryptedText)      # cifrado en reposo si hay FACE_ENCRYPTION_KEY (app/crypto.py); el código lo usa en claro
+    face_encoding = deferred(Column(EncryptedText))      # deferred: no se descifra/carga al leer la persona (directorio, cédula...), solo cuando de verdad se pide; cifrado en reposo si hay FACE_ENCRYPTION_KEY (app/crypto.py); el código lo usa en claro
     biometric_consent_at = Column(DateTime, nullable=True)      # cuándo se autorizó guardar el rostro (Ley 1581: dato sensible, autorización previa y expresa)
     biometric_consent_source = Column(String, nullable=True)    # 'kiosko' (la persona autorizó ante el digitador) | 'carga_masiva' (declaración del organizador) | 'copiado' (heredado de otro evento)
 
@@ -105,6 +105,7 @@ class AccessLog(Base):
     record_type = Column(String)
     event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
     registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    client_id = Column(String, nullable=True)  # identificador generado por el kiosco/navegador: un reintento o una sincronización nunca duplica el ingreso (único por evento, ver 0047)
     registration_method = Column(String, nullable=True)  # Sprint 2.4 Fase 16 (2026-09-17, pedido explícito): 'tradicional' | 'autoregistro' | 'biometrico' | 'qr' — para el reporte, que siempre debe decir CÓMO se registró cada persona (ver reports.py y routers/api.py)
 
     __table_args__ = (
@@ -240,6 +241,7 @@ class Event(Base):
     categories = Column(Text, nullable=True)  # JSON: nombres de las categorías del evento (ítem 14)
     badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría
     logo_path = Column(String, nullable=True)  # archivo del logo propio (solo si logo_mode='custom'), en data/<tenant>/event_logos/
+    faces_version = Column(Integer, default=0, server_default='0', nullable=False)  # sube en cada cambio de rostros del evento (app/faces_version.py); el reconocimiento recarga su matriz en memoria cuando cambia
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
 
     tenant = relationship("Tenant")
@@ -446,6 +448,7 @@ class FormSubmission(Base):
     # `confirmed` = inscripción real. `awaiting_payment` = transitoria mientras se espera a Wompi: NUNCA se ve en listas,
     # reportes, analítica ni se carga a la base del evento (solo aparta cupo unos minutos). Ver app/routers/form_payments.py.
     status = Column(String, nullable=False, default='confirmed', server_default='confirmed')
+    quota_keys = Column(Text, nullable=True)   # `|firma|firma|` de los cupos por variables que esta inscripción cumple (se cuentan en SQL, sin leer el JSON de todas)
     discount_code_id = Column(Integer, ForeignKey('form_discount_codes.id'), nullable=True)   # código de descuento con el que se inscribió (cuenta como un uso)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -718,3 +721,30 @@ class InventoryDelivery(Base):
     delivered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)
+
+
+class Job(Base):
+    """Trabajo en segundo plano (app/jobs.py): tabla en Postgres hoy, Cloud Tasks / Cloud Run Jobs después."""
+    __tablename__ = 'jobs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String, nullable=False)
+    payload_json = Column(Text, nullable=False)
+    dedupe_key = Column(String, nullable=True)
+    status = Column(String, nullable=False, default='queued', server_default='queued')   # queued | running | done | failed
+    attempts = Column(Integer, nullable=False, default=0, server_default='0')
+    max_attempts = Column(Integer, nullable=False, default=5, server_default='5')
+    run_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    locked_until = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+
+
+class SystemEvent(Base):
+    """Hechos del sistema para «Estado del sistema» (errores 5xx, último webhook de Wompi...). Nunca guarda datos personales."""
+    __tablename__ = 'system_events'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String, nullable=False)
+    ref = Column(String, nullable=True)
+    detail = Column(Text, nullable=True)
+    at = Column(DateTime, nullable=False, default=datetime.utcnow)

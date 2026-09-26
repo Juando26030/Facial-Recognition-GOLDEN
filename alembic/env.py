@@ -12,7 +12,9 @@ from app.models import Base  # noqa: E402
 
 config = context.config
 
-database_url = os.getenv("DATABASE_URL")
+# Las migraciones van por conexión DIRECTA (DIRECT_DATABASE_URL); el pooler de Neon (PgBouncer en modo transacción) no es apto para DDL.
+# Sin esa variable se usa DATABASE_URL, como siempre.
+database_url = os.getenv("DIRECT_DATABASE_URL") or os.getenv("DATABASE_URL")
 if not database_url:
     raise RuntimeError("DATABASE_URL no está definida (revisa tu .env).")
 config.set_main_option("sqlalchemy.url", database_url)
