@@ -1,19 +1,27 @@
-import os
+import asyncio
 import json
-
-from fastapi import Depends, FastAPI, HTTPException, Request
+import logging
+import os
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTimeoutError
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app import appmode, bulk_jobs, jobs, obs, ops
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, roulette, event_docs, event_report, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
+
+obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
+log = logging.getLogger("golden.app")
 
 IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -33,7 +41,28 @@ class StaticFilesNoCacheInDev(StaticFiles):
         return response
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Arranque y apagado ordenado. Al recibir SIGTERM (Cloud Run da ~10 s) uvicorn/gunicorn dejan de aceptar peticiones y terminan las que están en curso;
+    aquí, además, se detiene el worker de la cola (termina el trabajo actual, no toma más) y las cargas masivas a medias se marcan como interrumpidas."""
+    worker = None
+    if os.getenv("JOBS_WORKER", "on") != "off":
+        worker = jobs.Worker()
+        worker.start()
+    if appmode.loads_model():
+        await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib: el primer escaneo no paga la carga del modelo
+    log.info("aplicación lista (modo %s)", appmode.MODE)
+    yield
+    log.info("apagando: deteniendo trabajos en segundo plano")
+    if worker:
+        worker.stop()
+    interrupted = bulk_jobs.mark_interrupted()
+    if interrupted:
+        log.warning("%s carga(s) masiva(s) marcadas como interrumpidas por el apagado", interrupted)
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Golden Biometrics SaaS",
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
@@ -75,8 +104,8 @@ async def no_cache_html(request, call_next):
     Certificados según lo activado en Parámetros, etc.) — sin esto, volver con "Atrás" mostraba la
     copia vieja hasta refrescar a mano (bug real, 2026-09-23)."""
     response = await call_next(request)
-    if response.headers.get("content-type", "").startswith("text/html"):
-        response.headers["Cache-Control"] = "no-store"
+    if response.headers.get("content-type", "").startswith("text/html") and "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "no-store"     # salvo que la ruta lo haya decidido (el cascarón del formulario público se guarda unos segundos)
     return response
 
 
@@ -89,6 +118,9 @@ app.add_middleware(
     https_only=IS_PRODUCTION,
 )
 
+app.add_middleware(GZipMiddleware, minimum_size=1024)          # el directorio de miles de personas baja de ~2 MB a ~150 KB
+app.add_middleware(obs.RequestLogMiddleware, on_5xx=ops.record_5xx)     # el más externo: mide y registra TODA petición (incluidos los errores)
+
 app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -98,7 +130,7 @@ from app import staticver  # noqa: E402
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
 
-DEFAULT_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
+DEFAULT_LOGO_URL = os.getenv("DEFAULT_LOGO_URL", "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png")
 
 
 def event_logo_url(event):
@@ -127,33 +159,44 @@ def event_logo_attrs(event):
 templates.env.globals["event_logo_url"] = event_logo_url
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
 
-app.include_router(auth_router.router)
-app.include_router(api.router, prefix="/api")
-app.include_router(events.router, prefix="/api")
-app.include_router(staff.router, prefix="/api")
-app.include_router(tenants.router, prefix="/api")
-app.include_router(badges.router, prefix="/api")
-app.include_router(cedula.router, prefix="/api")
-app.include_router(stats.router, prefix="/api")
-app.include_router(parametros.router, prefix="/api")
-app.include_router(privacy_router.router, prefix="/api")
-app.include_router(legal_public.router)      # /privacidad, /terminos, /reembolsos (públicas)
-app.include_router(event_report.router, prefix="/api")
-app.include_router(event_docs.router, prefix="/api")
-app.include_router(super_events.router, prefix="/api")
-app.include_router(areas_inventory.router, prefix="/api")
-app.include_router(analytics.router, prefix="/api")
-app.include_router(forms.router, prefix="/api")
-app.include_router(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
-app.include_router(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
-app.include_router(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
-app.include_router(roulette.router, prefix="/api")
-app.include_router(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
-app.include_router(certificates_public.router)  # /c/<token>, público (sin login) a propósito
-app.include_router(certificates_public.staff_router, prefix="/api")
-app.include_router(digital_public.router)  # /b/<token>, público (sin login) a propósito
-app.include_router(signatures.router, prefix="/api")
-app.include_router(calendar_router.router, prefix="/api")
+
+def _include(router, prefix: str = "") -> None:
+    """`app.include_router` que respeta APP_MODE: en un modo que no es `all` solo incluye las rutas de ESE servicio (ver app/appmode.py)."""
+    if appmode.MODE != "all":
+        keep = APIRouter()
+        keep.routes.extend(r for r in router.routes if appmode.route_allowed(prefix + getattr(r, "path", "")))
+        router = keep
+    app.include_router(router, prefix=prefix)
+
+_include(auth_router.router)
+_include(api.router, prefix="/api")
+_include(events.router, prefix="/api")
+_include(staff.router, prefix="/api")
+_include(tenants.router, prefix="/api")
+_include(badges.router, prefix="/api")
+_include(cedula.router, prefix="/api")
+_include(stats.router, prefix="/api")
+_include(parametros.router, prefix="/api")
+_include(privacy_router.router, prefix="/api")
+_include(legal_public.router)      # /privacidad, /terminos, /reembolsos (públicas)
+_include(event_report.router, prefix="/api")
+_include(event_docs.router, prefix="/api")
+_include(super_events.router, prefix="/api")
+_include(areas_inventory.router, prefix="/api")
+_include(analytics.router, prefix="/api")
+_include(forms.router, prefix="/api")
+_include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
+_include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
+_include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
+_include(roulette.router, prefix="/api")
+_include(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
+_include(certificates_public.router)  # /c/<token>, público (sin login) a propósito
+_include(certificates_public.staff_router, prefix="/api")
+_include(digital_public.router)  # /b/<token>, público (sin login) a propósito
+_include(signatures.router, prefix="/api")
+_include(calendar_router.router, prefix="/api")
+_include(ops_router.router)          # /healthz, /readyz, /api/ops/*
+_include(ops_router.pages)           # /sistema
 
 
 def _page_staff(request: Request, db: Session):
@@ -198,7 +241,7 @@ def _require_page_role(request: Request, minimum_role: str):
 
 
 @app.get("/")
-async def dashboard(request: Request, db: Session = Depends(get_db)):
+def dashboard(request: Request, db: Session = Depends(get_db)):
     staff_user = _page_staff(request, db)
     if not staff_user:
         return RedirectResponse("/login", status_code=302)
@@ -227,7 +270,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/clientes")
-async def clientes_page(request: Request):
+def clientes_page(request: Request):
     redirect = _require_page_role(request, "coordinador")
     if redirect:
         return redirect
@@ -239,7 +282,7 @@ async def clientes_page(request: Request):
 
 
 @app.get("/clientes/{tenant_id}/nuevo-evento")
-async def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depends(get_db)):
+def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depends(get_db)):
     """Sprint 2.4 Fase 1 (2026-09-16, pedido explícito): "Crear evento" pasa a ser una pantalla
     dedicada en vez del formulario inline que aparecía bajo el cliente expandido en /clientes —
     mismo formulario/JS de siempre (createEvent), reubicado. comercial+ solamente, mismo mínimo
@@ -261,7 +304,7 @@ async def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depe
 
 
 @app.get("/eventos")
-async def eventos_page(request: Request):
+def eventos_page(request: Request):
     redirect = _require_page_role(request, "coordinador")
     if redirect:
         return redirect
@@ -274,7 +317,7 @@ async def eventos_page(request: Request):
 
 
 @app.get("/calendario")
-async def calendario_page(request: Request):
+def calendario_page(request: Request):
     redirect = _require_page_role(request, "coordinador")
     if redirect:
         return redirect
@@ -287,7 +330,7 @@ async def calendario_page(request: Request):
 
 
 @app.get("/configuracion")
-async def configuracion_page(request: Request):
+def configuracion_page(request: Request):
     """Apariencia (color/tipografía, ver static/js/theme.js — preferencia local del navegador, NO
     vive en la base de datos) está disponible para CUALQUIER staff autenticado (Sprint 2.4,
     ronda 2, pedido explícito: "por computador" aplica a todos, no solo admin). La pestaña
@@ -304,7 +347,7 @@ async def configuracion_page(request: Request):
 
 
 @app.get("/kiosk/{event_id}")
-async def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Punto de entrada al evento. 'cliente' no registra nada (solo ve estadísticas/directorio),
     así que va directo a kiosk_registro.html. Todos los demás roles eligen primero entre Registro
     (unificado, ver /kiosk/{event_id}/registro) y Adjuntar Base de Datos — varios operadores
@@ -395,7 +438,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
 
 
 @app.get("/kiosk/{event_id}/registro")
-async def kiosk_registro(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_registro(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Pantalla única de registro (2026-09-21, reemplaza los antiguos /facial y /cedula
     separados) — un solo Directorio en Vivo con búsqueda por cédula/nombre/entidad, y el escáner
     de cámara aparece o no según `event.facial_enabled` (se enciende solo al subir un roster con
@@ -407,14 +450,14 @@ async def kiosk_registro(event_id: int, request: Request, db: Session = Depends(
 
 @app.get("/kiosk/{event_id}/facial")
 @app.get("/kiosk/{event_id}/cedula")
-async def kiosk_registro_legacy_redirect(event_id: int):
+def kiosk_registro_legacy_redirect(event_id: int):
     """Rutas viejas (antes de la unificación Facial/Cédula) — quien tenga un enlace guardado cae
     igual a la pantalla de Registro unificada en vez de un 404."""
     return RedirectResponse(f"/kiosk/{event_id}/registro", status_code=302)
 
 
 @app.get("/kiosk/{event_id}/roster")
-async def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db)):
     # exclude_roles (Sprint 2.4 Fase 6, 2026-09-16, pedido explícito): 'comercial' queda por
     # ENCIMA de 'coordinador' en STAFF_ROLES (hereda su acceso operativo por diseño, Fase 0), pero
     # explícitamente NO debe ver "Adjuntar Base de Datos" — un min_role jerárquico no alcanza para
@@ -423,7 +466,7 @@ async def kiosk_roster(event_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/kiosk/{event_id}/usuarios")
-async def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Gestión de cuentas digitador/cliente de este evento (Sprint 2.2 Fase B, 2026-09-16) — antes
     vivía como pestaña "Usuarios del Evento" dentro de /kiosk/{event_id}/registro; se mueve a su
     propia ruta, mismo patrón que "Escarapelas"/"Adjuntar Base de Datos". Mismo mínimo de rol que
@@ -432,7 +475,7 @@ async def kiosk_usuarios(event_id: int, request: Request, db: Session = Depends(
 
 
 @app.get("/kiosk/{event_id}/estadisticas")
-async def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Reporte + gráficos del evento (Sprint 2.2 Fase B, 2026-09-16) — antes vivía como pestaña
     "Exportar Reporte" dentro de /kiosk/{event_id}/registro; se mueve a su propia ruta.
     Habilitado también para 'cliente' (2026-09-16, pedido explícito: el cliente asignado a un
@@ -449,7 +492,7 @@ async def kiosk_estadisticas(event_id: int, request: Request, db: Session = Depe
 
 
 @app.get("/kiosk/{event_id}/parametros")
-async def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Parámetros del Evento (Sprint 2.2, 2026-09-16, pedido explícito) — coordinador+ define por
     campo si es obligatorio, qué tipo de control usar y si debe generar estadística sola al
     entrar a Estadísticas. Mismo mínimo de rol que Adjuntar Base de Datos/Usuarios del Evento.
@@ -459,43 +502,43 @@ async def kiosk_parametros(event_id: int, request: Request, db: Session = Depend
 
 
 @app.get("/kiosk/{event_id}/documentos")
-async def kiosk_documents(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_documents(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Documentos del Evento (reunión 2026-09-21, ítem 8) — coordinador+ (comercial incluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_documentos.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/ruleta")
-async def kiosk_roulette(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_roulette(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Ruleta — configuración de comportamiento y ejecución (Sprint 5) — coordinador+."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_ruleta.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/ruleta/visual")
-async def kiosk_roulette_visual(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_roulette_visual(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Ruleta — configuración visual (fuente, colores, imagen, fondo) — coordinador+."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_ruleta_visual.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/formularios")
-async def kiosk_forms(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_forms(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Formularios Web del evento — listado (Sprint 5) — coordinador+."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_formularios.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/formularios/{form_id}")
-async def kiosk_form_editor(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_form_editor(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db)):
     """Editor de un formulario web (diseño, campos, estados, respuestas, analítica) — coordinador+."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_formulario_editor.html", min_role="coordinador", extra_context={"form_id": form_id})
 
 
 @app.get("/kiosk/{event_id}/legalizaciones")
-async def kiosk_expenses(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_expenses(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Legalizaciones / gastos del evento (reunión 2026-09-21, ítem 7) — coordinador+ (comercial incluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_legalizaciones.html", min_role="coordinador")
 
 
 @app.get("/kiosk/{event_id}/escarapela")
-async def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Editor visual de la escarapela del evento (Sprint 2, Épico 2) — mismo mínimo de rol que
     Adjuntar Base de Datos (coordinador+); la impresión en sí (no el diseño) se dispara desde
     /kiosk/{event_id}/registro, disponible para digitador+. 'comercial' excluido explícitamente
@@ -504,32 +547,32 @@ async def kiosk_badge_editor(event_id: int, request: Request, db: Session = Depe
 
 
 @app.get("/kiosk/{event_id}/areas")
-async def kiosk_areas(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_areas(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Control de Áreas (ítem 9a): entrada/salida por zona. digitador+ (comercial excluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_areas.html", min_role="digitador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/inventario")
-async def kiosk_inventory(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_inventory(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Control de Inventario (ítem 9b): entrega de ítems/combos. digitador+ (comercial excluida)."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_inventario.html", min_role="digitador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/certificado")
-async def kiosk_certificate_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_certificate_editor(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Diseñador del certificado (reunión 2026-09-21, ítem 5): el MISMO editor de escarapelas, en modo
     certificado (A4 horizontal). Solo si el módulo está activado en Parámetros; comercial excluida."""
     return _resolve_kiosk_page(event_id, request, db, "badge_editor.html", min_role="coordinador", exclude_roles=["comercial"], extra_context={"template_kind": "certificate"})
 
 
 @app.get("/kiosk/{event_id}/certificados")
-async def kiosk_certificates(event_id: int, request: Request, db: Session = Depends(get_db)):
+def kiosk_certificates(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Sección Certificados (ítem 5): con el evento Finalizado, genera el ZIP de PDFs."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_certificados.html", min_role="coordinador", exclude_roles=["comercial"])
 
 
 @app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
-async def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: Session = Depends(get_db)):
+def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: Session = Depends(get_db)):
     """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en
     una pestaña/ventana aparte desde el botón "Imprimir Escarapela" (o sola, si el evento tiene
     auto_print_badge activo) sin sacar al digitador de la pantalla de Registro. 'comercial'
@@ -542,7 +585,7 @@ async def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: S
 
 
 @app.get("/admin/staff")
-async def staff_page(request: Request):
+def staff_page(request: Request):
     redirect = _require_page_role(request, "admin")
     if redirect:
         return redirect
@@ -553,3 +596,50 @@ async def staff_page(request: Request):
         "sidebar_active": "configuracion",
         "embed": embed,
     })
+
+
+# ------------------------------------------------------------------ errores: mensaje amable + identificador; la traza completa solo va al log
+def _request_id(request: Request) -> str:
+    return (request.scope.get("state") or {}).get("request_id") or obs.request_id_var.get()
+
+
+def _wants_json(request: Request) -> bool:
+    return request.url.path.startswith(("/api/", "/f/", "/c/", "/r/", "/webhooks/")) or request.method != "GET" or "application/json" in request.headers.get("accept", "")
+
+
+def _error_response(request: Request, status: int, message: str, headers: dict = None) -> JSONResponse | HTMLResponse:
+    rid = _request_id(request)
+    headers = {**(headers or {}), "X-Request-ID": rid}
+    if _wants_json(request):
+        return JSONResponse({"detail": message, "request_id": rid}, status_code=status, headers=headers)
+    return HTMLResponse(
+        f"<!DOCTYPE html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Algo salió mal</title>"
+        f"<body style='font-family:sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;text-align:center'><h2>Algo salió mal</h2><p>{message}</p>"
+        f"<p style='color:#666'>Si sigue pasando, avisa a soporte con este código: <strong>{rid}</strong></p><p><a href='/'>Volver al inicio</a></p></body></html>",
+        status_code=status, headers=headers)
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    """Cualquier error no controlado: traza completa al log (enmascarada) y un mensaje amable con el identificador para el usuario."""
+    log.error("error no controlado en %s %s", request.method, obs.mask_url(request.url.path), exc_info=exc)
+    return _error_response(request, 500, "Ocurrió un error inesperado. Ya quedó registrado; puedes intentarlo de nuevo en un momento.")
+
+
+@app.exception_handler(OperationalError)
+@app.exception_handler(PoolTimeoutError)
+async def database_unavailable(request: Request, exc: Exception):
+    """La base no respondió (reinicio, cómputo despertando, pool agotado): 503 + Retry-After para que kioscos y formularios reintenten solos."""
+    log.error("base de datos no disponible en %s %s", request.method, obs.mask_url(request.url.path), exc_info=exc)
+    return _error_response(request, 503, "El servicio está ocupado un momento. Reintenta en unos segundos.", {"Retry-After": "3"})
+
+
+# ------------------------------------------------------------------ modo de arranque (APP_MODE): deja solo las rutas de este servicio
+def _apply_mode() -> None:
+    """Las páginas que se declaran directamente en este archivo (`@app.get`) también se filtran por modo; los routers ya se filtraron al incluirlos."""
+    if appmode.MODE == "all":
+        return
+    app.router.routes = [r for r in app.router.routes if type(r).__name__ == "_IncludedRouter" or appmode.route_allowed(getattr(r, "path", ""), is_mount=not hasattr(r, "endpoint"))]
+
+
+_apply_mode()

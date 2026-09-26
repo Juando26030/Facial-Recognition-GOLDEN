@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estado del sistema | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
+        .sys-banner { display:flex; align-items:center; gap:1rem; padding:1.2rem 1.5rem; border-radius:16px; margin-bottom:1.2rem; color:#fff; }
+        .sys-banner.green { background:#1e7e46; } .sys-banner.yellow { background:#8a6100; } .sys-banner.red { background:#b3261e; }
+        .sys-banner strong { font-size:1.15rem; }
+        .sys-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:1rem; }
+        .sys-card { background:white; border-radius:14px; padding:1rem 1.2rem; box-shadow:0 4px 18px rgba(0,0,0,0.07); border-left:6px solid #999; }
+        .sys-card.green { border-left-color:#1e7e46; } .sys-card.yellow { border-left-color:#c98a00; } .sys-card.red { border-left-color:#b3261e; }
+        .sys-card h3 { margin:0 0 0.3rem; font-size:0.95rem; display:flex; align-items:center; gap:0.5rem; }
+        .dot { width:12px; height:12px; border-radius:50%; display:inline-block; background:#999; }
+        .dot.green { background:#1e7e46; } .dot.yellow { background:#c98a00; } .dot.red { background:#b3261e; }
+        .sys-value { font-weight:700; color:#222; }
+        .sys-reason { color:#555; font-size:0.85rem; margin-top:0.4rem; }
+        .sys-action { color:#444; font-size:0.85rem; margin-top:0.3rem; background:#f6f3e8; border-radius:8px; padding:0.4rem 0.6rem; }
+        .sys-meta { color:#666; font-size:0.8rem; margin:0.6rem 0 1rem; }
+    </style>
+</head>
+<body class="has-sidebar">
+{% include "_sidebar.html" %}
+<header class="golden-header">
+  <div class="golden-header-container">
+    <a href="/" class="golden-logo">
+      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+    </a>
+    <nav style="display:flex; gap:14px; align-items:center;">
+      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" style="margin:0;"><button type="submit" class="small-btn">Salir</button></form>
+    </nav>
+  </div>
+</header>
+<div class="golden-content-spacer"></div>
+
+<main class="golden-main">
+  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1200px;">
+    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem;">
+      <span>PANEL</span>
+      <h2>Estado del sistema</h2>
+    </div>
+    <div id="banner" class="sys-banner green" role="status" aria-live="polite"><span class="dot" style="background:#fff"></span><strong>Cargando…</strong></div>
+    <div id="deploy" class="sys-card green" style="margin-bottom:1rem;"></div>
+    <div class="sys-meta"><span id="updated">—</span> · se actualiza solo cada 15 segundos · <button type="button" class="small-btn" id="refreshBtn">Actualizar ahora</button></div>
+    <div id="grid" class="sys-grid"></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  const LABEL = { green: 'Todo bien', yellow: 'Atención', red: 'Problema' };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let last = null;
+
+  async function getJson(url) {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  function render(status, deploy) {
+    const banner = document.getElementById('banner');
+    banner.className = 'sys-banner ' + status.level;
+    const bad = status.items.filter((i) => i.level !== 'green');
+    banner.innerHTML = '<span class="dot" style="background:#fff"></span><strong>' + LABEL[status.level] + '</strong><span>' +
+      (bad.length ? bad.map((i) => esc(i.title)).join(' · ') : 'Todos los chequeos están en verde.') + '</span>';
+    document.getElementById('grid').innerHTML = status.items.map((i) =>
+      '<div class="sys-card ' + i.level + '"><h3><span class="dot ' + i.level + '"></span>' + esc(i.title) + '</h3>' +
+      '<div class="sys-value">' + esc(i.value) + '</div>' +
+      (i.reason ? '<div class="sys-reason">' + esc(i.reason) + '</div>' : '') +
+      (i.action ? '<div class="sys-action"><strong>Qué hacer:</strong> ' + esc(i.action) + '</div>' : '') + '</div>').join('');
+    const d = document.getElementById('deploy');
+    d.className = 'sys-card ' + (deploy.allowed ? 'green' : 'red');
+    d.innerHTML = '<h3><span class="dot ' + (deploy.allowed ? 'green' : 'red') + '"></span>¿Se puede desplegar ahora?</h3><div class="sys-value">' +
+      (deploy.allowed ? 'Sí: no hay eventos en curso ni aperturas en las próximas ' + deploy.hours + ' h.' : 'No, todavía.') + '</div>' +
+      (deploy.reasons.length ? '<div class="sys-reason">' + deploy.reasons.map(esc).join('<br>') + '</div>' : '');
+    last = Date.now();
+  }
+
+  async function refresh() {
+    try {
+      const [status, deploy] = await Promise.all([getJson('/api/ops/status'), getJson('/api/ops/deploy-allowed')]);
+      render(status, deploy);
+    } catch (e) {
+      const banner = document.getElementById('banner');
+      banner.className = 'sys-banner red';
+      banner.innerHTML = '<span class="dot" style="background:#fff"></span><strong>Problema</strong><span>No se pudo consultar el estado (' + esc(e.message) + '). Si esta pantalla no carga, la aplicación misma puede estar caída.</span>';
+    }
+  }
+
+  setInterval(() => { if (last) document.getElementById('updated').textContent = 'Actualizado hace ' + Math.round((Date.now() - last) / 1000) + ' s'; }, 1000);
+  document.getElementById('refreshBtn').addEventListener('click', refresh);
+  refresh();
+  setInterval(refresh, 15000);
+})();
+</script>
+</body>
+</html>
