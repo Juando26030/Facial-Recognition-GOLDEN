@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
 from app import formlib, jobs
@@ -159,13 +159,6 @@ def quota_status(db: Session, form: WebForm) -> list:
     return [{"id": r["id"], "used": counts[r["id"]], "left": max(0, r["limit"] - counts[r["id"]])} for r in rules]
 
 
-def quota_full_rule(db: Session, form: WebForm, values: dict, rules: Optional[list] = None):
-    """La primera regla YA llena que esta inscripción también cumpliría (o None)."""
-    rules = quota_rules(form) if rules is None else rules
-    counts = quota_counts(db, form, rules)
-    return next((r for r in rules if counts[r["id"]] >= r["limit"] and quota_match(r, values)), None)
-
-
 def quota_public(db: Session, form: WebForm) -> dict:
     """Para el formulario público: `left` {campo: {opción: cupos que quedan}} de los cupos simples (una sola condición «es igual a» → se deshabilita la
     opción) y `full` las reglas llenas (el navegador avisa si lo que la persona lleva escrito cae en una de ellas)."""
@@ -194,6 +187,22 @@ def held_count(db: Session, form: WebForm) -> int:
 
 def is_full(db: Session, form: WebForm) -> bool:
     return form.capacity is not None and held_count(db, form) >= form.capacity
+
+
+_RESERVE_SQL = text("SELECT form_reserve_slot(:form_id, :person_id, :sid, :is_test, :hold_from, CAST(:matched AS jsonb))")
+
+
+def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Optional[str], is_test: bool, rules: list, values: dict) -> dict:
+    """Reintento, cupos por variable, cupo total y duplicado en UNA ida y vuelta (función `form_reserve_slot`, migración 0049). Deja la fila del
+    formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
+    Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
+    params = {"form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": datetime.utcnow() - PENDING_HOLD,
+              "matched": json.dumps([{"sig": rule_sig(r), "limit": r["limit"], "label": r["label"]} for r in rules if quota_match(r, values)])}
+    res = db.execute(_RESERVE_SQL, params).scalar()
+    if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
+        rebuild_quota_keys(db, form, rules)
+        res = db.execute(_RESERVE_SQL, params).scalar()
+    return res
 
 
 def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:

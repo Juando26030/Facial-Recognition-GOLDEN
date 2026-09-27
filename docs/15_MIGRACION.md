@@ -6,7 +6,7 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 ## Progreso (se actualiza en cada commit)
 
 ### Sesión 1 — la app queda lista para Cloud Run + Neon
-- [ ] 1. Cupo atómico: `form_reserve_slot()` (migración 0049) + wrapper en `formsvc` + `_submit` + pruebas de concurrencia
+- [x] 1. Cupo atómico: `form_reserve_slot()` (migración 0049) + wrapper en `formsvc` + `_submit` + pruebas de concurrencia
 - [ ] 2. `GcsStorage` en `app/storage.py`
 - [ ] 3. Backend Cloud Tasks en `app/jobs.py` (Postgres sigue como alternativa)
 - [ ] 4. Directorio paginado e incremental en `static/js/directory.js`
@@ -25,3 +25,9 @@ Prueba de carga distribuida, medición de latencia, este documento completo (run
 - Cupo atómico: la función cuenta `form_submissions` directamente (confirmadas + en pago dentro de 30 min), igual que
   `held_count`. Códigos de descuento y la purga de inscripciones abandonadas quedan fuera de la función a propósito
   (no necesitan el bloqueo de la fila del formulario).
+- Con la fila del formulario bloqueada ahora solo corren: `form_reserve_slot()` (1 ida y vuelta: reintento por `sid`, cupos
+  por variable, cupo total contando pagos en espera, duplicado), el INSERT y el commit. Antes eran 5-7 consultas.
+  Fuera de la función, a propósito: descartar el intento de pago anterior de la misma persona (antes del bloqueo), la purga de
+  inscripciones abandonadas (solo en formularios con pago) y la verificación del código de descuento (solo si hay código).
+- Reintento: si ya existe una inscripción confirmada con la misma clave de envío (`sid`) se responde `replayed` sin volver a
+  comparar los datos (el `sid` es aleatorio por carga de página y tras confirmar la página muestra el agradecimiento).

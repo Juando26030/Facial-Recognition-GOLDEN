@@ -289,18 +289,6 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
     return await run_in_threadpool(_submit, db, event_id, slug, request, payload, files)
 
 
-def _is_retry(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], clean: dict, is_test: bool) -> bool:
-    """¿Es el reintento de una inscripcion que YA se confirmo con esta misma clave de envio (`sid`)? El navegador reintenta solo si la red o la base
-    fallan a mitad; no debe duplicar ni dar el error de «ya existe»."""
-    if not sid:
-        return False
-    prev = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.sid == sid, FormSubmission.is_test == is_test,
-                                           FormSubmission.status == "confirmed").first()
-    if not prev:
-        return False
-    return prev.person_id == person_id if person_id else json.loads(prev.data_json) == clean
-
-
 def _submit(db: Session, event_id: int, slug: str, request: Request, payload: dict, files: Dict[str, Tuple[str, bytes]]):
     form = _load(db, event_id, slug)
     access = _access(db, form, payload.get("k"), check_full=False)      # el cupo se comprueba abajo, con el formulario bloqueado
@@ -377,14 +365,9 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     started = db.query(FormEvent).filter_by(form_id=form.id, sid=sid, kind="start").first() if sid else None
     rules = formsvc.quota_rules(form)
     try:
-        # Cupo y duplicados, con la fila del formulario BLOQUEADA: dos personas enviando el ultimo cupo a la vez no lo llenan dos veces.
-        # Aqui dentro solo se verifica, se inserta y se confirma; todo lo demas (correo, base del evento) va a la cola.
-        locked = db.query(WebForm).filter(WebForm.id == form.id).with_for_update().first()
-        if _is_retry(db, form, sid, person_id, clean, is_test):
-            db.rollback()
-            return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
-        formsvc.purge_stale_pending(db, form)
-        if charge and (person_id or sid):      # reintento de pago: el intento anterior de esta persona/sesion se descarta
+        # Reintento, cupos y duplicado en UNA ida y vuelta, que deja la fila del formulario BLOQUEADA hasta el commit: dos personas enviando el
+        # ultimo cupo a la vez no lo llenan dos veces. Despues solo se inserta y se confirma; correo y base del evento van a la cola.
+        if charge and (person_id or sid):      # reintento de pago: el intento anterior de esta persona/sesion se descarta (antes del bloqueo)
             prior = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.PENDING)
             cond = [FormSubmission.sid == sid] if sid else []
             if person_id:
@@ -392,21 +375,22 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
             for old in prior.filter(or_(*cond)).all():
                 formsvc.discard_submission(db, form, old)
             db.flush()
+        res = formsvc.reserve_slot(db, form, person_id, sid, is_test, rules, clean)
+        if not res["ok"]:
+            db.rollback()
+            reason = res["reason"]
+            if reason == "retry":
+                return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
+            if reason == "quota":
+                return JSONResponse({"detail": f"El cupo «{res['label']}» ya se completó. Cambia tu elección o escribe a los organizadores.", "stage": "quota"}, status_code=409)
+            if reason == "duplicate":
+                return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
+            return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+        if pay_field:                          # solo los formularios con pago tienen inscripciones en espera que purgar
+            formsvc.purge_stale_pending(db, form)
         if code_row and formsvc.code_uses(db, code_row) >= code_row.max_uses:        # otra persona se llevo el ultimo uso mientras esta escribia
             db.rollback()
             return JSONResponse({"detail": formsvc.CODE_MESSAGES["exhausted"], "code_error": True}, status_code=422)
-        full_rule = None if is_test else formsvc.quota_full_rule(db, form, clean, rules)
-        if full_rule:
-            db.rollback()
-            return JSONResponse({"detail": f"El cupo «{full_rule['label']}» ya se completó. Cambia tu elección o escribe a los organizadores.", "stage": "quota"}, status_code=409)
-        if formsvc.is_full(db, locked) and not is_test:
-            db.rollback()
-            return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
-        if person_id and not is_test:
-            dup = formsvc.real_submissions(db, form).filter(FormSubmission.person_id == person_id).first()
-            if dup:
-                db.rollback()
-                return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
 
         sub = FormSubmission(
             form_id=form.id, event_id=form.event_id, data_json=json.dumps(clean), is_test=is_test, person_id=person_id, invite_id=claims.get("inv"),
