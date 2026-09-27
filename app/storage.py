@@ -6,15 +6,20 @@ agregando la clase `GcsStorage` con los mismos métodos — el resto del código
 Una CLAVE es una ruta relativa con «/» (por ejemplo `acme/known_people/1001.jpg`). Los valores viejos guardados en la base como
 `data/acme/...` se aceptan igual (se les quita el prefijo `data/`), así que no hace falta migrar nada.
 
-`response()` devuelve la respuesta HTTP que sirve el archivo: en local lo lee del disco; con Cloud Storage sería una redirección
-a una URL firmada de corta vida, sin que las rutas que la usan lo noten."""
+`response()` devuelve la respuesta HTTP que sirve el archivo: en local lo lee del disco; con Cloud Storage lo transmite por la app en
+trozos (sin URLs firmadas: no piden el permiso de firmar a la cuenta de servicio, y fotos/firmas se sirven descifradas por la app de
+todos modos). Las rutas que lo usan no notan la diferencia.
+
+Cloud Storage: `STORAGE_BACKEND=gcs`, `GCS_BUCKET` y, opcional, `GCS_PREFIX` (carpeta dentro del bucket). Credenciales: las de la
+cuenta de servicio del servicio de Cloud Run (nunca una llave en archivo)."""
 import mimetypes
 import os
 import shutil
 from typing import Iterable, List, Optional, Protocol
+from urllib.parse import quote
 
 from fastapi import HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 
 class Storage(Protocol):
@@ -111,6 +116,86 @@ class LocalStorage:
         os.remove(probe)
 
 
+class GcsStorage:
+    """Mismos métodos que LocalStorage sobre un bucket de Cloud Storage (`google-cloud-storage`, importado solo si se usa)."""
+
+    def __init__(self, bucket: str, prefix: str = "", client=None):
+        from google.cloud import storage as gcs
+        from google.cloud.exceptions import NotFound
+        self._missing = NotFound
+        self.client = client or gcs.Client()
+        self.bucket = self.client.bucket(bucket)
+        self.prefix = normalize_key(prefix)
+
+    def _name(self, key: str) -> str:
+        k = normalize_key(key)
+        return f"{self.prefix}/{k}" if self.prefix and k else (self.prefix or k)
+
+    def _folder(self, prefix: str) -> str:
+        name = self._name(prefix)
+        return f"{name}/" if name else ""        # «acme/» y no «acme»: borrar/listar acme nunca toca acme2
+
+    def put(self, key: str, data: bytes) -> str:
+        self.bucket.blob(self._name(key)).upload_from_string(data, content_type=mimetypes.guess_type(key)[0] or "application/octet-stream")
+        return normalize_key(key)                # una subida a Cloud Storage es atómica: nunca queda a medias
+
+    def get(self, key: str) -> bytes:
+        try:
+            return self.bucket.blob(self._name(key)).download_as_bytes()
+        except self._missing:
+            raise FileNotFoundError(key)
+
+    def exists(self, key: str) -> bool:
+        try:
+            return self.bucket.blob(self._name(key)).exists()
+        except ValueError:
+            return False
+
+    def delete(self, key: str) -> None:
+        try:
+            self.bucket.blob(self._name(key)).delete()
+        except self._missing:
+            pass
+
+    def move(self, src: str, dst: str) -> None:
+        try:
+            self.bucket.rename_blob(self.bucket.blob(self._name(src)), self._name(dst))
+        except self._missing:
+            raise FileNotFoundError(src)
+
+    def delete_prefix(self, prefix: str) -> None:
+        for blob in self.client.list_blobs(self.bucket, prefix=self._folder(prefix)):
+            try:
+                blob.delete()
+            except self._missing:
+                pass
+
+    def list(self, prefix: str) -> List[str]:
+        cut = len(self.prefix) + 1 if self.prefix else 0
+        return sorted(b.name[cut:] for b in self.client.list_blobs(self.bucket, prefix=self._folder(prefix)))
+
+    def response(self, key: str, filename: Optional[str] = None, media_type: Optional[str] = None, headers: Optional[dict] = None) -> Response:
+        blob = self.bucket.blob(self._name(key))
+        try:
+            blob.reload()
+        except self._missing:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        out = {"content-length": str(blob.size), **(headers or {})}
+        if filename:                              # mismo encabezado que arma FileResponse
+            quoted = quote(filename)
+            out["content-disposition"] = f"attachment; filename*=utf-8''{quoted}" if quoted != filename else f'attachment; filename="{filename}"'
+
+        def chunks():
+            with blob.open("rb") as fh:
+                while chunk := fh.read(1 << 20):
+                    yield chunk
+        return StreamingResponse(chunks(), media_type=media_type or blob.content_type or mimetypes.guess_type(key)[0], headers=out)
+
+    def ping(self) -> None:
+        """Lectura mínima del bucket (para /readyz; /readyz solo lo usa el arranque, nunca los chequeos frecuentes)."""
+        next(iter(self.client.list_blobs(self.bucket, max_results=1)), None)
+
+
 _storage: Optional[Storage] = None
 
 
@@ -118,9 +203,15 @@ def get_storage() -> Storage:
     global _storage
     if _storage is None:
         backend = os.getenv("STORAGE_BACKEND", "local")
-        if backend != "local":
-            raise RuntimeError(f"STORAGE_BACKEND={backend!r} todavía no está implementado (Fase 1: Cloud Storage)")
-        _storage = LocalStorage(os.getenv("STORAGE_LOCAL_DIR", "data"))
+        if backend == "gcs":
+            bucket = os.getenv("GCS_BUCKET")
+            if not bucket:
+                raise RuntimeError("STORAGE_BACKEND=gcs necesita GCS_BUCKET")
+            _storage = GcsStorage(bucket, os.getenv("GCS_PREFIX", ""))
+        elif backend == "local":
+            _storage = LocalStorage(os.getenv("STORAGE_LOCAL_DIR", "data"))
+        else:
+            raise RuntimeError(f"STORAGE_BACKEND={backend!r} no existe (use local o gcs)")
     return _storage
 
 

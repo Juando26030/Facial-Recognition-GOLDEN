@@ -1,5 +1,6 @@
 """Piezas de plataforma de la Fase 0 pensadas para Cloud Run: cola de trabajos, almacenamiento de archivos, modos de arranque, reportes con tope,
 conciliación de pagos e idempotencia de migraciones/pool."""
+import os
 import subprocess
 import sys
 import threading
@@ -129,13 +130,58 @@ def test_storage_response_serves_the_file_or_404(tmp_path):
     assert exc.value.status_code == 404
 
 
-def test_cloud_storage_backend_is_a_clear_todo(monkeypatch):
+def test_cloud_storage_backend_needs_a_bucket_and_unknown_backends_fail(monkeypatch):
     storage.reset_storage()
     monkeypatch.setenv("STORAGE_BACKEND", "gcs")
-    with pytest.raises(RuntimeError, match="Fase 1"):
+    monkeypatch.delenv("GCS_BUCKET", raising=False)
+    with pytest.raises(RuntimeError, match="GCS_BUCKET"):
+        storage.get_storage()
+    monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    with pytest.raises(RuntimeError, match="no existe"):
         storage.get_storage()
     monkeypatch.delenv("STORAGE_BACKEND")
     storage.reset_storage()
+
+
+@pytest.mark.skipif(not os.getenv("STORAGE_EMULATOR_HOST"), reason="necesita el emulador de Cloud Storage (docker run fsouza/fake-gcs-server; ver docs/15)")
+def test_gcs_storage_behaves_like_local_storage():
+    from fastapi import FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+    from google.auth.credentials import AnonymousCredentials
+    from google.cloud import storage as gcs
+
+    client = gcs.Client(project="test", credentials=AnonymousCredentials())
+    name = f"golden-test-{os.urandom(4).hex()}"
+    client.create_bucket(name)
+    store = storage.GcsStorage(name, "app", client=client)
+    assert store.put("acme/known_people/1.jpg", b"abc") == "acme/known_people/1.jpg"
+    assert client.bucket(name).blob("app/acme/known_people/1.jpg").exists()          # el prefijo es una carpeta dentro del bucket
+    assert store.get("data/acme/known_people/1.jpg") == b"abc"
+    assert store.exists("acme/known_people/1.jpg") and not store.exists("acme/otra.jpg")
+    with pytest.raises(FileNotFoundError):
+        store.get("acme/otra.jpg")
+    store.put("acme/known_people/2.jpg", b"x")
+    store.put("acme2/f.pdf", b"pdf")
+    assert store.list("acme") == ["acme/known_people/1.jpg", "acme/known_people/2.jpg"]
+    store.move("acme/known_people/1.jpg", "acme/known_people/9.jpg")
+    assert not store.exists("acme/known_people/1.jpg") and store.get("acme/known_people/9.jpg") == b"abc"
+    store.delete("acme/known_people/9.jpg")
+    store.delete("acme/known_people/9.jpg")
+    store.delete_prefix("acme")
+    assert store.list("") == ["acme2/f.pdf"]                                            # acme2 no se toca al borrar acme
+    with pytest.raises(ValueError):
+        store.put("../secreto", b"x")
+    store.ping()
+
+    app = FastAPI()
+    app.get("/f/{key:path}")(lambda key: store.response(key, filename="informe final.pdf", headers={"cache-control": "private, no-store"}))
+    with TestClient(app) as c:
+        r = c.get("/f/acme2/f.pdf")
+        assert r.status_code == 200 and r.content == b"pdf" and r.headers["cache-control"] == "private, no-store"
+        assert r.headers["content-disposition"] == "attachment; filename*=utf-8''informe%20final.pdf"
+        assert c.get("/f/acme2/no.pdf").status_code == 404
+    with pytest.raises(HTTPException):
+        store.response("acme2/no.pdf")
 
 
 # ------------------------------- modos de arranque -------------------------------

@@ -16,6 +16,8 @@ et_xmlfile==2.0.0
 face-recognition==1.3.0
 face_recognition_models @ https://github.com/ageitgey/face_recognition_models/archive/master.zip#sha256=d76e8a35f12c1bcb7301be574d5425755a1cae17fdf3a59cb19ff36720a932a8
 fastapi==0.141.1
+google-cloud-storage==3.15.0
+google-cloud-tasks==2.25.0
 greenlet==3.5.5
 gunicorn==23.0.0; sys_platform != "win32"
 h11==0.16.0

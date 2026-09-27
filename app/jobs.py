@@ -1,7 +1,14 @@
 """Cola de trabajos en segundo plano — detrás de una interfaz pequeña para poder cambiar la implementación sin tocar a quien la usa.
 
-Hoy: una tabla en Postgres (`jobs`) + un worker (hilo dentro del proceso web, o `python -m app.worker` aparte).
-Después (Cloud Run): `enqueue()` publicaría en Cloud Tasks y el worker sería el propio endpoint que Cloud Tasks llama, o un Cloud Run Job.
+La tabla `jobs` de Postgres es SIEMPRE la fuente de verdad (encolar dentro de la transacción, reintentos, «Estado del sistema»). Lo que
+cambia según `JOBS_BACKEND` es quién la despierta:
+  * `db` (por defecto, VM): un hilo dentro del proceso web (`JOBS_WORKER`) o `python -m app.worker` aparte, que sondea la tabla.
+  * `cloudtasks` (Cloud Run, donde un hilo en segundo plano se queda sin CPU al terminar la petición): `kick()` crea una tarea de Cloud
+    Tasks que llama a `POST /internal/jobs/run` (routers/ops.py) y ese endpoint ejecuta la cola dentro de su propia petición. Una tarea
+    por segundo como máximo (nombre `kick-<segundo>`, programada al segundo siguiente: mil envíos en el mismo segundo = una tarea). Un
+    reintento programa su propia tarea para cuando vence. Variables: `CLOUD_TASKS_QUEUE` (ruta completa de la cola),
+    `CLOUD_TASKS_URL` (URL del endpoint, también es la audiencia del token OIDC) y `JOBS_INVOKER_SA` (cuenta de servicio del token).
+    Si crear la tarea falla, el trabajo sigue en la tabla y lo toma el siguiente aviso o el barrido programado (Cloud Scheduler).
 
 Reglas de diseño:
   * `enqueue(db, ...)` solo AGREGA la fila a la sesión del que llama: se confirma junto con su transacción (si la inscripción se deshace,
@@ -16,7 +23,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, Optional
 
 from sqlalchemy.orm import Session
@@ -50,9 +57,40 @@ def enqueue(db: Session, kind: str, payload: dict, *, run_at: Optional[datetime]
     db.add(Job(kind=kind, payload_json=json.dumps(payload), dedupe_key=dedupe_key, run_at=run_at or now, max_attempts=max_attempts, created_at=now))
 
 
-def kick() -> None:
-    """Avisa al worker local que hay trabajo nuevo (no espera al siguiente sondeo)."""
-    _wake.set()
+def uses_cloud_tasks() -> bool:
+    return os.getenv("JOBS_BACKEND", "db") == "cloudtasks"
+
+
+_tasks_client = None
+
+
+def _cloud_task(at: datetime) -> None:
+    """Pide a Cloud Tasks que llame a /internal/jobs/run en el segundo siguiente a `at` (UTC). Nombre por segundo = sin tareas repetidas."""
+    global _tasks_client
+    from google.api_core.exceptions import AlreadyExists
+    from google.cloud import tasks_v2
+    if _tasks_client is None:
+        _tasks_client = tasks_v2.CloudTasksClient()
+    queue, url = os.environ["CLOUD_TASKS_QUEUE"], os.environ["CLOUD_TASKS_URL"]
+    second = int(at.replace(tzinfo=timezone.utc).timestamp()) + 1
+    task = {"name": f"{queue}/tasks/kick-{second}", "schedule_time": datetime.fromtimestamp(second, timezone.utc),
+            "http_request": {"http_method": tasks_v2.HttpMethod.POST, "url": url,
+                             "oidc_token": {"service_account_email": os.environ["JOBS_INVOKER_SA"], "audience": url}}}
+    try:
+        _tasks_client.create_task(parent=queue, task=task)
+    except AlreadyExists:
+        pass
+
+
+def kick(at: Optional[datetime] = None) -> None:
+    """Avisa que hay trabajo (nuevo, o que vence en `at`): al hilo local, o con una tarea de Cloud Tasks."""
+    if not uses_cloud_tasks():
+        _wake.set()
+        return
+    try:
+        _cloud_task(at or datetime.utcnow())
+    except Exception:  # noqa: BLE001 — el trabajo ya está a salvo en la tabla; no se tumba la petición de quien encoló
+        log.error("no se pudo crear la tarea de Cloud Tasks; la tomará el siguiente aviso o el barrido programado", exc_info=True)
 
 
 def _claim(limit: int) -> list:
@@ -88,9 +126,12 @@ def _finish(job_id: int, error: Optional[str], attempts: int, max_attempts: int)
         else:
             job.status, job.last_error = "queued", error[:2000]
             job.run_at = now + timedelta(seconds=BACKOFF_SECONDS[min(attempts - 1, len(BACKOFF_SECONDS) - 1)])
+        retry_at = job.run_at if job.status == "queued" else None
         db.commit()
     finally:
         db.close()
+    if retry_at and uses_cloud_tasks():           # con el hilo local no hace falta: el sondeo lo encuentra solo
+        kick(retry_at)
 
 
 def run_once(limit: int = 10) -> int:

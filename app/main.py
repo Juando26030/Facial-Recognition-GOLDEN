@@ -51,7 +51,7 @@ async def lifespan(_app: FastAPI):
     default_threads = int(os.getenv("DB_POOL_SIZE", "10")) + int(os.getenv("DB_MAX_OVERFLOW", "10")) + faces.FACE_CONCURRENCY
     anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.getenv("THREADPOOL_SIZE", default_threads))
     worker = None
-    if os.getenv("JOBS_WORKER", "on") != "off":
+    if os.getenv("JOBS_WORKER", "on") != "off" and not jobs.uses_cloud_tasks():
         worker = jobs.Worker()
         worker.start()
     if appmode.loads_model():

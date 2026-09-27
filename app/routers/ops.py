@@ -44,6 +44,32 @@ def _ops_reader(request: Request, db: Session = Depends(get_db)) -> Optional[obj
     return require_role("admin")(get_current_staff(request, db))
 
 
+def _jobs_invoker(request: Request) -> None:
+    """Quién puede despertar la cola: Cloud Tasks / Cloud Scheduler con un token OIDC de `JOBS_INVOKER_SA` para la audiencia `CLOUD_TASKS_URL`,
+    o el token de operaciones (pruebas y uso manual)."""
+    token, supplied = os.getenv("OPS_TOKEN"), request.headers.get("x-ops-token")
+    if token and supplied and hmac.compare_digest(token, supplied):
+        return
+    auth, sa = request.headers.get("authorization", ""), os.getenv("JOBS_INVOKER_SA")
+    if sa and auth.startswith("Bearer "):
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
+        try:
+            claims = id_token.verify_oauth2_token(auth[7:], google_requests.Request(), os.getenv("CLOUD_TASKS_URL"))
+        except ValueError:
+            claims = {}
+        if claims.get("email") == sa and claims.get("email_verified"):
+            return
+    raise HTTPException(status_code=403, detail="No autorizado")
+
+
+@router.post("/internal/jobs/run")
+def run_jobs(_=Depends(_jobs_invoker)) -> dict:
+    """Ejecuta la cola dentro de ESTA petición (en Cloud Run la CPU solo está garantizada mientras hay una petición en curso)."""
+    from app import jobs, reconcile  # noqa: F401 — registra `payments_reconcile` (form_feed ya lo registra formsvc)
+    return {"ran": jobs.drain()}
+
+
 @router.get("/api/ops/status")
 def status(db: Session = Depends(get_db), staff=Depends(require_role("admin"))) -> dict:
     return ops.system_status(db)

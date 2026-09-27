@@ -7,8 +7,8 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 
 ### Sesión 1 — la app queda lista para Cloud Run + Neon
 - [x] 1. Cupo atómico: `form_reserve_slot()` (migración 0049) + wrapper en `formsvc` + `_submit` + pruebas de concurrencia
-- [ ] 2. `GcsStorage` en `app/storage.py`
-- [ ] 3. Backend Cloud Tasks en `app/jobs.py` (Postgres sigue como alternativa)
+- [x] 2. `GcsStorage` en `app/storage.py`
+- [x] 3. Backend Cloud Tasks en `app/jobs.py` (Postgres sigue como alternativa)
 - [ ] 4. Directorio paginado e incremental en `static/js/directory.js`
 - [ ] 5. Dockerfile multi-etapa + 3 puntos de entrada, construido y probado con Docker en local
 - [ ] 6. `.env.staging.example` + `.env.staging` en `.gitignore` → migraciones y contenedor contra la rama `staging` de Neon
@@ -22,7 +22,7 @@ Prueba de carga distribuida, medición de latencia, este documento completo (run
 
 ## Decisiones tomadas
 - `docs/13` se actualizó con la versión completa que Juan David pegó en el chat (§14-§17); no estaba en el disco.
-- Cupo atómico: la función cuenta `form_submissions` directamente (confirmadas + en pago dentro de 30 min), igual que
+- Cupo atómico: la función replica `held_count` (confirmadas + pagos en espera dentro de 30 min) y `quota_counts`, igual que
   `held_count`. Códigos de descuento y la purga de inscripciones abandonadas quedan fuera de la función a propósito
   (no necesitan el bloqueo de la fila del formulario).
 - Con la fila del formulario bloqueada ahora solo corren: `form_reserve_slot()` (1 ida y vuelta: reintento por `sid`, cupos
@@ -31,3 +31,12 @@ Prueba de carga distribuida, medición de latencia, este documento completo (run
   inscripciones abandonadas (solo en formularios con pago) y la verificación del código de descuento (solo si hay código).
 - Reintento: si ya existe una inscripción confirmada con la misma clave de envío (`sid`) se responde `replayed` sin volver a
   comparar los datos (el `sid` es aleatorio por carga de página y tras confirmar la página muestra el agradecimiento).
+- `GcsStorage` (`STORAGE_BACKEND=gcs`, `GCS_BUCKET`, `GCS_PREFIX`): los archivos se sirven transmitidos por la app, sin URLs
+  firmadas (no hace falta darle a la cuenta de servicio el permiso de firmar, y fotos/firmas cifradas se sirven descifradas por la
+  app de todos modos). `/readyz` hace una lectura mínima del bucket (solo arranque). Prueba contra el emulador
+  `fsouza/fake-gcs-server` (se salta si no está `STORAGE_EMULATOR_HOST`). **Pendiente: correrla** (Docker Desktop no arrancó en
+  este equipo; ver nota de la sesión).
+- Cola con Cloud Tasks (`JOBS_BACKEND=cloudtasks`): la tabla `jobs` sigue siendo la fuente de verdad; Cloud Tasks solo despierta a
+  `POST /internal/jobs/run` (token OIDC de `JOBS_INVOKER_SA`, audiencia `CLOUD_TASKS_URL`, o `X-Ops-Token`). Una tarea por
+  segundo como máximo (`kick-<segundo>`) y cada reintento programa la suya. Sin Cloud Scheduler para la cola: el barrido de
+  seguridad (lo que quede por un fallo al crear la tarea) se engancha en la sesión 2 al trabajo programado de precalentamiento.
