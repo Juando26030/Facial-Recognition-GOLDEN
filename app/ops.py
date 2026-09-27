@@ -265,8 +265,8 @@ def system_status(db: Session) -> dict:
 
 def model_ready() -> None:
     """Levanta si el modelo facial (dlib) no está cargado/instalable — solo el punto de entrada de biometría lo pide."""
-    import face_recognition  # noqa: F401 — importarlo carga los modelos
-    import face_recognition_models  # noqa: F401
+    from app import faces
+    faces.warmup()
 
 
 def readiness(require_model: bool = False) -> Dict[str, dict]:

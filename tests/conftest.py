@@ -24,6 +24,7 @@ assert "test" in TEST_DB_NAME, f"Por seguridad las pruebas solo corren contra un
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ.pop("DIRECT_DATABASE_URL", None)   # las migraciones de las pruebas van siempre a la base de pruebas
 os.environ["FORM_PUBLIC_CACHE_SECONDS"] = "0"   # sin cache del estado publico de formularios: cada prueba ve el estado real (una prueba propia la activa)
+os.environ["FACE_PROCESSES"] = "0"             # el motor facial (doble) corre en el mismo proceso: las pruebas lo reemplazan con monkeypatch
 os.environ["JOBS_WORKER"] = "off"              # sin hilo de trabajos en segundo plano: cada prueba los ejecuta a la vista (ver _jobs_inline)
 os.environ.pop("ENVIRONMENT", None)          # las pruebas corren como desarrollo
 os.environ.pop("PUBLIC_BASE_URL", None)

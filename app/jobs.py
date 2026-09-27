@@ -151,9 +151,10 @@ def stats(db: Session) -> dict:
     from sqlalchemy import func
     now = datetime.utcnow()
     pending = db.query(func.count(Job.id), func.min(Job.run_at)).filter(Job.status == "queued").first()
+    due = db.query(func.min(Job.run_at)).filter(Job.status == "queued", Job.run_at <= now).scalar()      # los que esperan un reintento futuro no cuentan como atrasados
     return {
         "pending": pending[0] or 0,
-        "oldest_pending_seconds": int((now - pending[1]).total_seconds()) if pending[1] else 0,
+        "oldest_pending_seconds": int((now - due).total_seconds()) if due else 0,
         "running": db.query(func.count(Job.id)).filter(Job.status == "running").scalar() or 0,
         "failed": db.query(func.count(Job.id)).filter(Job.status == "failed").scalar() or 0,
     }

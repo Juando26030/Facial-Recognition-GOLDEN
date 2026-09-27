@@ -5,6 +5,7 @@ import os
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +15,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import appmode, bulk_jobs, jobs, obs, ops
+from app import appmode, bulk_jobs, faces, jobs, obs, ops
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants
@@ -45,17 +46,22 @@ class StaticFilesNoCacheInDev(StaticFiles):
 async def lifespan(_app: FastAPI):
     """Arranque y apagado ordenado. Al recibir SIGTERM (Cloud Run da ~10 s) uvicorn/gunicorn dejan de aceptar peticiones y terminan las que están en curso;
     aquí, además, se detiene el worker de la cola (termina el trabajo actual, no toma más) y las cargas masivas a medias se marcan como interrumpidas."""
+    # Hilos para los endpoints síncronos: tantos como conexiones puede abrir el pool de la base (más los cálculos faciales pendientes). Con más, los hilos
+    # sobrantes solo esperarían una conexión libre (y acabarían en 503 tras DB_POOL_TIMEOUT); con menos, la base quedaría subutilizada.
+    default_threads = int(os.getenv("DB_POOL_SIZE", "10")) + int(os.getenv("DB_MAX_OVERFLOW", "10")) + faces.FACE_CONCURRENCY
+    anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.getenv("THREADPOOL_SIZE", default_threads))
     worker = None
     if os.getenv("JOBS_WORKER", "on") != "off":
         worker = jobs.Worker()
         worker.start()
     if appmode.loads_model():
-        await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib: el primer escaneo no paga la carga del modelo
+        await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib (en los procesos hijo): el primer escaneo no paga la carga del modelo
     log.info("aplicación lista (modo %s)", appmode.MODE)
     yield
     log.info("apagando: deteniendo trabajos en segundo plano")
     if worker:
         worker.stop()
+    faces.shutdown()
     interrupted = bulk_jobs.mark_interrupted()
     if interrupted:
         log.warning("%s carga(s) masiva(s) marcadas como interrumpidas por el apagado", interrupted)

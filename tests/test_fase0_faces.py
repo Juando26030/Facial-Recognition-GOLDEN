@@ -187,3 +187,31 @@ def test_face_encoding_column_is_deferred_so_listing_people_does_not_decrypt_or_
     assert "face_encoding" in inspect(u).unloaded                                 # no se cargó
     assert u.face_encoding                                                        # pero se puede pedir cuando de verdad hace falta
     assert isinstance(db.query(Event).first().faces_version, int)
+
+
+# ------------------------------- cálculo en procesos aparte -------------------------------
+def test_face_work_runs_in_a_separate_process_and_survives_a_crash(monkeypatch):
+    import os
+    from tests import _fake_face_worker
+    monkeypatch.setattr(faces, "FACE_PROCESSES", 1)
+    monkeypatch.setattr(faces, "face_worker", _fake_face_worker)
+    faces._reset_pool()
+    try:
+        faces.warmup()
+        first = faces.extract(np.zeros((6, 4, 3), dtype=np.uint8), jitters=7)
+        assert first[:2] == [6.0, 7.0] and int(first[2]) != os.getpid()      # lo calculó OTRO proceso (el web no retiene el GIL)
+        with pytest.raises(faces.Busy):                                                       # el hijo muere: 503 para ese escaneo…
+            faces.extract(np.zeros((2, 2, 3), dtype=np.uint8), crash=True)
+        again = faces.extract(np.zeros((3, 3, 3), dtype=np.uint8), jitters=1)               # …y el motor se reinicia solo para el siguiente
+        assert again[:2] == [3.0, 1.0]
+    finally:
+        faces.shutdown()
+
+
+def test_face_work_in_the_same_process_when_processes_are_zero(monkeypatch):
+    import os
+
+    from tests import _fake_face_worker
+    monkeypatch.setattr(faces, "FACE_PROCESSES", 0)
+    monkeypatch.setattr(faces, "face_worker", _fake_face_worker)
+    assert int(faces.extract(np.zeros((2, 2, 3), dtype=np.uint8))[2]) == os.getpid()

@@ -1016,7 +1016,10 @@ def manual_register(
         if not _truthy(biometric_consent):      # Ley 1581 (dato sensible): sin autorización expresa de la persona NO se guarda su rostro; puede registrarse por cédula
             raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
         img_array = BiometricEngine.process_image_stream(file.file.read())
-        encodings = BiometricEngine.extract_encoding(img_array, is_registration=True)
+        try:
+            encodings = faces.extract(img_array, is_registration=True)
+        except faces.Busy:
+            raise HTTPException(status_code=503, detail="Hay muchos procesos faciales en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
         if not encodings:
             return {"error": "No se detectó un rostro en la fotografía."}
         face_enc_json = json.dumps(encodings)
@@ -1276,8 +1279,7 @@ def _bulk_register_impl(
                     # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
                     # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
                     # persona quedó sin reconocimiento facial funcional).
-                    encodings = BiometricEngine.extract_encoding(
-                        img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
+                    encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
                     if not encodings:
                         errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
                         continue
@@ -1357,8 +1359,7 @@ def _bulk_register_impl(
                 img_key = photo_key(event.tenant_id, f"{identificador}")
                 if get_storage().exists(img_key):
                     stored = crypto.read_array(img_key)          # la foto guardada puede estar cifrada
-                    enc = BiometricEngine.extract_encoding(
-                        stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
+                    enc = faces.extract(stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
                     if enc:
                         face_enc_json = json.dumps(enc)
 

@@ -46,9 +46,10 @@ def main():
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE " + ", ".join(f'"{t}"' for t in tables) + " RESTART IDENTITY CASCADE"))
     removed = []
-    if os.path.isdir("data"):
-        for name in os.listdir("data"):
-            path = os.path.join("data", name)
+    data_dir = os.getenv("STORAGE_LOCAL_DIR", "data")      # solo el almacenamiento LOCAL; con Cloud Storage esto se hace con gcloud
+    if os.path.isdir(data_dir):
+        for name in os.listdir(data_dir):
+            path = os.path.join(data_dir, name)
             if os.path.isdir(path) and name != "backups":
                 shutil.rmtree(path, ignore_errors=True)
                 removed.append(name)

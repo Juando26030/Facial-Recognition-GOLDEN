@@ -42,13 +42,15 @@ def load_db_url() -> str:
     return url
 
 
-def spawn_server(port: int, workers: int, extra_env: dict):
+def spawn_server(port: int, workers: int, extra_env: dict, app_dir: str = ROOT):
     env = {**os.environ, "DATABASE_URL": load_db_url(), "ENVIRONMENT": "development", "PYTHONWARNINGS": "ignore", **extra_env}
     if workers > 1:
         env["WEB_CONCURRENCY"] = str(workers)
     cmd = [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--workers", str(workers), "--log-level", "warning"]
-    proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, cwd=app_dir, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
+        if proc.poll() is not None:                # el proceso murió (p. ej. el puerto seguía ocupado): no dar por bueno a otro servidor
+            sys.exit("El servidor de prueba terminó al arrancar (¿puerto ocupado?).")
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/login", timeout=2).read()
             return proc
@@ -67,8 +69,9 @@ def stop_server(proc) -> None:
 def run(key: str, args, outdir: str):
     cls, users, rate, desc = SCENARIOS[key]
     prefix = os.path.join(outdir, f"{args.label}_{key}")
-    proc = spawn_server(args.port, args.workers, {}) if args.spawn else None
-    host = f"http://127.0.0.1:{args.port}" if args.spawn else args.host
+    port = args.port + list(SCENARIOS).index(key)          # un puerto distinto por escenario: nunca se mezcla con un servidor que se está apagando
+    proc = spawn_server(port, args.workers, {}, args.app_dir or ROOT) if args.spawn else None
+    host = f"http://127.0.0.1:{port}" if args.spawn else args.host
     try:
         cmd = [sys.executable, "-m", "locust", "-f", os.path.join(HERE, "locustfile.py"), cls, "--headless", "--host", host,
                "-u", str(max(1, int(users * args.scale))), "-r", str(rate), "-t", f"{args.duration}s", "--csv", prefix, "--only-summary"]
@@ -92,6 +95,7 @@ def main() -> None:
     ap.add_argument("--spawn", action="store_true", help="arranca y apaga el servidor por cada escenario")
     ap.add_argument("--workers", type=int, default=1, help="procesos del servidor (solo con --spawn)")
     ap.add_argument("--port", type=int, default=5002)
+    ap.add_argument("--app-dir", default="", help="carpeta con OTRA copia del código (p. ej. un `git worktree` de main) para medir la línea base con el mismo método")
     ap.add_argument("--duration", type=int, default=45, help="segundos por escenario")
     ap.add_argument("--only", default="a,b,c,d,e")
     ap.add_argument("--scale", type=float, default=1.0, help="multiplica los usuarios virtuales")

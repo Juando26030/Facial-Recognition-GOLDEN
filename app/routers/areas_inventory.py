@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_event_in_progress, require_role_excluding
-from app.biometrics import BiometricEngine
+from app import faces
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import (
@@ -179,15 +179,15 @@ def area_movement_face(
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
     area = _get_area(db, event, area_id)
-    img_array = BiometricEngine.process_image_stream(file.file.read())
-    unknown = BiometricEngine.extract_encoding(img_array)
-    if not unknown:
+    try:
+        status, uid = faces.identify(db, event, file.file.read())
+    except faces.Busy:
+        raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
+    if status == "NO_FACE":
         return {"result": "NO", "details": "Rostro no detectado"}
-    attendee_ids = {a.user_id for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id)}
-    for user in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(attendee_ids)).all():
-        known = user.get_encoding()
-        if known and BiometricEngine.compare(known, unknown):
-            return _apply_movement(db, event, area, user, direction, confirm, "facial", staff)
+    user = db.get(User, (uid, event.tenant_id)) if uid else None
+    if user:
+        return _apply_movement(db, event, area, user, direction, confirm, "facial", staff)
     return {"result": "NO", "details": "Ninguna persona de este evento coincide"}
 
 
