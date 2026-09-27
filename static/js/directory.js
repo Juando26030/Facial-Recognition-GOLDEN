@@ -515,10 +515,67 @@
       renderRows(opts.tbodyId, filtered);
     }
 
-    async function reload() {
-      allUsers = await loadRows(opts.tbodyId);
+    /* Carga por páginas + incremental (Fase 1-2). La lista completa llega en páginas de PAGE (la primera se ve enseguida) y después cada
+       POLL_MS se piden solo los cambios (/api/users/changes). Lo que el incremental no ve (bajas, estados revertidos) se detecta porque
+       el total no cuadra, y ahí se recarga todo. reload() —lo llaman las acciones locales— siempre recarga completo. */
+    const PAGE = 1000;
+    const POLL_MS = 15000;
+    const NOW_CURSOR = '9007199254740991:9007199254740991';   // cursor «en el futuro»: no trae filas, solo el cursor y el total de ahora
+    let cursor = null;
+    let loading = null;
+
+    async function fullLoad() {
+      const tbody = document.getElementById(opts.tbodyId);
+      if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
+      try {
+        // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
+        const head = await fetch(withEvent('/api/users/changes?cursor=' + NOW_CURSOR));
+        if (!head.ok) throw new Error(head.status);
+        const nextCursor = (await head.json()).cursor;
+        const byId = new Map();
+        for (let offset = 0, total = 1; offset < total; offset += PAGE) {
+          const res = await fetch(withEvent(`/api/users?limit=${PAGE}&offset=${offset}`));
+          if (!res.ok) throw new Error(res.status);
+          total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
+          const page = await res.json();
+          page.forEach(u => byId.set(u.id, u));
+          if (!page.length) break;
+          if (offset + PAGE < total) { allUsers = [...byId.values()]; applyFilters(); }   // se ve lo que ya llegó mientras bajan las demás
+        }
+        allUsers = [...byId.values()];
+        cursor = nextCursor;
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+        return;
+      }
       applyFilters();
     }
+
+    async function refresh() {
+      if (!cursor || loading) return;
+      try {
+        const res = await fetch(withEvent('/api/users/changes?cursor=' + encodeURIComponent(cursor)));
+        if (!res.ok) return;
+        const delta = await res.json();
+        cursor = delta.cursor;
+        if (delta.users.length) {
+          const byId = new Map(allUsers.map(u => [u.id, u]));
+          delta.users.forEach(u => byId.set(u.id, u));
+          allUsers = [...byId.values()];
+        }
+        if (allUsers.length !== delta.total) return reload();
+        if (delta.users.length) applyFilters();
+      } catch (err) { /* sin red: se reintenta en el siguiente ciclo */ }
+    }
+
+    function reload() {
+      if (!loading) loading = fullLoad().finally(() => { loading = null; });
+      return loading;
+    }
+
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && tbodyEl && tbodyEl.offsetParent !== null) refresh();
+    }, POLL_MS);
 
     [cedulaInput, nombreInput, entidadInput].forEach(input => {
       if (input) input.addEventListener('input', applyFilters);

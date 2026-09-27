@@ -9,7 +9,7 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 - [x] 1. Cupo atómico: `form_reserve_slot()` (migración 0049) + wrapper en `formsvc` + `_submit` + pruebas de concurrencia
 - [x] 2. `GcsStorage` en `app/storage.py`
 - [x] 3. Backend Cloud Tasks en `app/jobs.py` (Postgres sigue como alternativa)
-- [ ] 4. Directorio paginado e incremental en `static/js/directory.js`
+- [x] 4. Directorio paginado e incremental en `static/js/directory.js`
 - [ ] 5. Dockerfile multi-etapa + 3 puntos de entrada, construido y probado con Docker en local
 - [ ] 6. `.env.staging.example` + `.env.staging` en `.gitignore` → migraciones y contenedor contra la rama `staging` de Neon
 
@@ -40,3 +40,7 @@ Prueba de carga distribuida, medición de latencia, este documento completo (run
   `POST /internal/jobs/run` (token OIDC de `JOBS_INVOKER_SA`, audiencia `CLOUD_TASKS_URL`, o `X-Ops-Token`). Una tarea por
   segundo como máximo (`kick-<segundo>`) y cada reintento programa la suya. Sin Cloud Scheduler para la cola: el barrido de
   seguridad (lo que quede por un fallo al crear la tarea) se engancha en la sesión 2 al trabajo programado de precalentamiento.
+- Directorio: la lista llega en páginas de 1.000 (la primera se ve enseguida) y cada 15 s, con la pestaña visible, se piden solo los
+  cambios (`/api/users/changes`). Bajas y estados revertidos no salen en el incremental: el total no cuadra y se recarga todo; las
+  acciones locales (editar, eliminar, cambiar estado) siguen recargando completo. Prueba: `node tests/js/directory_paging_check.js`.
+  No se pudo mirar en el navegador (el inicio de sesión automático en la app local quedó bloqueado por permisos): revisarlo a mano.
