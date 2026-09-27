@@ -91,8 +91,18 @@ segundo**. 48.000 personas en 4 horas son solo ~3 personas/s en promedio.
    persona" (fue corregido), pero sigue devolviendo la lista completa en
    cada refresco. Con varios kioscos y eventos, conviene paginar y enviar
    solo lo que cambió.
-7. **App y base de datos en la misma VM** (e2-medium de referencia:
-   núcleo compartido, ~1 vCPU sostenido y 4 GB para todo).
+7. **App y base de datos en la misma VM**: confirmado el 26-sep,
+   `golden-biometrics-prod` es **e2-custom-2-4096** (2 vCPU, 4 GB) en
+   **us-central1-a**, ~US$42/mes solo la máquina según la propia
+   recomendación de Google (que sugiere bajar a e2-medium para ahorrar
+   ~US$17; **no aplicarla**: se basa en el promedio de uso, no en los picos
+   de evento, y la VM se apaga en la Fase 2 de todas formas). **Corrección con la
+   facturación real (27-sep):** la cuenta de facturación ("Pago de
+   Firebase", en pesos) muestra COP 77.346 del 1 al 26 de septiembre (la VM
+   se creó el 9) y ~COP 4.600 por día, o sea **~COP 138.000 por mes
+   completo (~US$33-35)** todo incluido. Está dentro del presupuesto, pero
+   es casi todo costo fijo con la CPU al 0,7% promedio: el cobro por uso
+   sigue siendo más barato y además aguanta los picos.
 
 Los puntos 1-6 son de código: ninguna nube los arregla sola.
 
@@ -397,7 +407,114 @@ que falta está en §8: bloqueo lo más corto posible, cupos restantes sin
 contar en cada apertura, cola para lo pesado, reintento idempotente del
 lado del navegador y conciliación de pagos con Wompi.
 
-## 14. Qué hace Claude Code y qué hace Juan David
+## 14. Salud, estado y diagnóstico (agregado 2026-09-26)
+
+Objetivo: poder ver en cualquier momento qué está funcionando, qué no y
+por qué, sin entrar a los servidores. Todo dentro de capas gratuitas.
+
+**En la app (lo construye Claude Code):**
+- `GET /healthz` — ¿el proceso está vivo? Sin tocar dependencias, responde
+  en milisegundos. Lo usan Cloud Run y los monitores externos.
+- `GET /readyz` — ¿puede atender de verdad? Revisa la base de datos (con
+  tiempo límite), el almacenamiento y, en "biometria", que el modelo esté
+  cargado. Si algo falla responde 503 diciendo qué componente y por qué.
+- `GET /api/ops/status` (solo admin+) y una pantalla **"Estado del
+  sistema"** en el panel: versión desplegada (commit), latencia de la base
+  de datos, conexiones, tareas en cola y la más antigua, tareas fallidas,
+  último backup, cargas masivas en curso, eventos en curso y aperturas de
+  las próximas 24 h, correos pendientes o fallidos, último webhook de Wompi
+  y pagos sin conciliar, errores de los últimos 15 minutos. Cada ítem en
+  verde, amarillo o rojo, con el motivo en español y qué hacer.
+- `GET /api/ops/deploy-allowed` — para el congelamiento de despliegues.
+- Logs estructurados (JSON a la salida estándar, formato que Cloud Logging
+  entiende) con un identificador por petición. Todo error inesperado se
+  registra con su traza (Error Reporting de Google lo agrupa solo, gratis)
+  y al usuario se le muestra un mensaje amable con ese identificador, para
+  poder buscar el caso exacto. **Sin datos personales en los logs**
+  (cédulas, nombres, correos, encodings enmascarados).
+
+**Fuera de la app (lo configura Juan David, gratis):**
+- Chequeo de disponibilidad de Google Cloud Monitoring cada minuto sobre
+  `/healthz` y `/readyz` (1 millón de ejecuciones al mes gratis), con
+  alertas al correo y a la app de Google Cloud en el celular.
+- Un monitor externo independiente (UptimeRobot, plan gratis de 50
+  monitores cada 5 minutos, uso comercial permitido): si el problema es de
+  Google, el monitoreo de Google también podría fallar.
+- Cloud Logging (50 GiB/mes gratis por proyecto) y Error Reporting
+  (gratis) quedan activos automáticamente con Cloud Run.
+
+## 15. Actualización tras la Fase 0 (2026-09-27)
+
+**Resultados de la Fase 0** (rama `perf/fase0-carga`, prueba local con 8.000
+personas sintéticas; detalle en `docs/14_FASE0_RESULTADOS.md` del repo):
+
+| | Antes | Después |
+|---|---|---|
+| Formulario | 0 envíos (servidor colgado) | 4.768 envíos, 0 fallos, p95 380 ms |
+| Cédula (meta ~57/s) | 0,8/s | 56/s, p50 7 ms |
+| Directorio de 8.000 | 36 s | 1,1 s |
+| Facial | ~10 s por escaneo | ~2,4 s, en proceso aparte (0,4-0,7/s por proceso) |
+
+Hallazgos nuevos de Claude Code: el servidor se colgaba con ~30 envíos
+simultáneos (conexiones del pool retenidas mientras se espera el cuerpo de
+la petición) y dlib retiene el GIL (un escaneo facial congelaba todo). Ambos
+resueltos. **El facial sigue siendo el cuello de botella**: depende de bajar
+`num_jitters` (~0,46 s por jitter; con 1-2 sería 5-8 veces más rápido),
+pendiente de medir precisión con fotos reales (`RECOGNITION_JITTERS` en el
+entorno, sin tocar código).
+
+**Decisiones nuevas para la migración:**
+
+1. **Región de Cloud Run: `us-east1` (Carolina del Sur) por defecto, no
+   `us-east4`.** Verificado: `us-east4` tiene precios de Nivel 2 (más caros)
+   y `us-east1` de Nivel 1. La capa gratuita es la misma en ambas. Costo
+   de elegir `us-east1`: más distancia a Neon (Virginia), latencia estimada
+   ~10-15 ms por consulta en vez de ~1-2 ms. Se acepta **solo si** se
+   cumple la condición 2 y la medición en staging lo confirma; si no, se
+   cambia a `us-east4` (es redesplegar, la región queda como parámetro).
+2. **Cupo en una sola sentencia SQL.** Hoy el bloqueo de la fila del
+   formulario dura varias idas y vueltas a la base. Con la base a 10-15 ms,
+   eso limitaría cada formulario a ~25 envíos/s. El control de cupo debe
+   hacerse en una sola sentencia atómica (o función en la base), para que
+   el bloqueo dure una sola ida y vuelta.
+3. **Dominio propio frente a Cloud Run: Firebase Hosting.** Verificado: el
+   balanceador de carga de Google (la opción "recomendada") tiene un costo
+   fijo que rompe el presupuesto; el mapeo de dominios de Cloud Run está en
+   vista previa y Google dice que no es para producción; y el plan gratis de
+   Cloudflare **no** permite cambiar el encabezado Host, que Cloud Run
+   necesita, así que no puede apuntar directo a Cloud Run. Firebase Hosting
+   (del mismo Google, cobro por uso, certificado SSL incluido) recibe el
+   dominio y reenvía a Cloud Run; además sirve los archivos estáticos desde
+   su propia CDN. Cloudflare queda como DNS de esos subdominios. Alternativa
+   si Firebase Hosting no encaja (límite de tiempo por petición, etc.): un
+   Cloudflare Worker como proxy (~US$5/mes).
+4. **Prueba de carga de la Fase 4 distribuida:** desde un solo equipo solo
+   se sostuvieron ~108 envíos/s; la prueba de 10.000/5.000 se corre desde
+   varias instancias temporales (por ejemplo Cloud Run Jobs) contra staging.
+5. **Entorno de staging casi gratis:** servicios `*-staging` en Cloud Run que
+   escalan a cero + una rama `staging` de Neon (copia instantánea de la base
+   que solo cobra cómputo mientras se usa).
+
+## 16. Plan de ejecución acordado (2026-09-27): 3 semanas sin eventos
+
+Sin eventos en las próximas 3 semanas, se hace la migración completa ya,
+con nube y código en paralelo (los recursos de Google se crean con el
+script que escribe Claude Code, no a mano):
+
+- **Semana 1:** cuenta y proyecto de Neon + rama `staging` (manual);
+  merge de la Fase 0 a `main` (su despliegue en la VM sirve de prueba real
+  en Linux de Gunicorn con 3 procesos); Claude Code construye las Fases 1-2.
+- **Semana 2:** correr `deploy/gcp/bootstrap.sh` en Cloud Shell, activar
+  Firebase Hosting, desplegar staging con copia de la base, medir latencia
+  (decidir `us-east1` o `us-east4`), prueba de carga de 10.000/5.000 y
+  simulacros de falla. En paralelo, Claude Code construye la Fase 3 (modo
+  contingencia) en otra rama.
+- **Semana 3:** día del cambio con el runbook (VM apagada, no borrada, como
+  respaldo); prueba de la Fase 3 con un evento simulado.
+- **Después:** borrar la VM, liberar la IP fija, cerrar la cuenta de
+  facturación "Pago de Firebase".
+
+## 17. Qué hace Claude Code y qué hace Juan David
 
 - **Claude Code:** todo el código de las fases 0-3, `Dockerfile`, pruebas
   de carga y simulacros, flujo de despliegue, y documentación con los
@@ -414,6 +531,13 @@ lado del navegador y conciliación de pagos con Wompi.
 
 ## Fuentes
 
+- Google Cloud Observability — capas gratuitas:
+  https://cloud.google.com/products/observability/pricing
+- UptimeRobot — plan gratis y uso comercial:
+  https://flarewarden.com/insights/uptimerobot-free-plan-commercial-use
+- Cloud Run — ubicaciones y niveles de precio: https://docs.cloud.google.com/run/docs/locations
+- Cloud Run — dominios personalizados: https://docs.cloud.google.com/run/docs/mapping-custom-domains
+- Cloudflare — disponibilidad de Origin Rules por plan: https://developers.cloudflare.com/rules/origin-rules/
 - Neon — precios: https://neon.com/pricing
 - Neon — regiones: https://neon.com/docs/introduction/regions
 - Neon — alta disponibilidad y tiempos de recuperación:
