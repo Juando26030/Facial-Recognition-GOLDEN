@@ -27,7 +27,12 @@ os.environ["FORM_PUBLIC_CACHE_SECONDS"] = "0"   # sin cache del estado publico d
 os.environ["FACE_PROCESSES"] = "0"             # el motor facial (doble) corre en el mismo proceso: las pruebas lo reemplazan con monkeypatch
 os.environ["JOBS_WORKER"] = "off"              # sin hilo de trabajos en segundo plano: cada prueba los ejecuta a la vista (ver _jobs_inline)
 os.environ.pop("ENVIRONMENT", None)          # las pruebas corren como desarrollo
-os.environ.pop("PUBLIC_BASE_URL", None)
+os.environ["PUBLIC_BASE_URL"] = "http://test.local"  # fijo y determinista (NO se quita: un simple pop() se reintroducía solo desde el .env
+# local en cuanto algún módulo de la app —p. ej. app/database.py— volvía a llamar load_dotenv(), que con override=False rellena
+# cualquier variable AUSENTE; así, quien tuviera un PUBLIC_BASE_URL real en su .env veía pasar las pruebas de la escarapela
+# digital enviada por la cola de trabajos (Fase 0), y CI —sin ningún .env— las veía fallar con el buzón vacío: bug real
+# encontrado 2026-09-27 al fusionar a main. Los tests que sí necesitan probar "sin PUBLIC_BASE_URL" ya usan
+# monkeypatch.delenv("PUBLIC_BASE_URL") puntualmente (ver test_badge_email_link_is_absolute...).
 for _k in ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "GRAPH_SENDER", "SMTP_HOST"):
     os.environ.pop(_k, None)                 # nunca enviar correo real desde una prueba
 

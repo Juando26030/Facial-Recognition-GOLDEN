@@ -101,7 +101,7 @@ def main() -> None:
     todo = max(0, args.people - have)
     ids = [f"9{i:09d}" for i in range(have, have + todo)]
     now = datetime.utcnow()
-    users_rows, att_rows, enc_rows = [], [], []
+    users_rows, att_rows = [], []
     for uid in ids:
         vec = rng.normal(0, 0.1, 128)
         users_rows.append({"id": uid, "tenant_id": tenant_id, "first_name": "Persona", "last_name": uid[-5:], "entity": "Sintética", "face_encoding": json.dumps(vec.round(6).tolist())})
