@@ -10,8 +10,8 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 - [x] 2. `GcsStorage` en `app/storage.py`
 - [x] 3. Backend Cloud Tasks en `app/jobs.py` (Postgres sigue como alternativa)
 - [x] 4. Directorio paginado e incremental en `static/js/directory.js`
-- [ ] 5. Dockerfile multi-etapa + 3 puntos de entrada, construido y probado con Docker en local
-- [ ] 6. `.env.staging.example` + `.env.staging` en `.gitignore` → migraciones y contenedor contra la rama `staging` de Neon
+- [~] 5. Dockerfile multi-etapa + 3 puntos de entrada — escrito; FALTA construirlo y levantarlo (Docker Desktop no arranca en este equipo)
+- [~] 6. `.env.staging.example` + `.env.staging` en `.gitignore` (hecho) → FALTA: Juan David llena `.env.staging`, luego migraciones y contenedor contra Neon staging
 
 ### Sesión 2 — pendiente
 `deploy/gcp/bootstrap.sh`, staging en Cloud Run + workflow de GitHub Actions, jobs programados (respaldos, purga,
@@ -44,3 +44,10 @@ Prueba de carga distribuida, medición de latencia, este documento completo (run
   cambios (`/api/users/changes`). Bajas y estados revertidos no salen en el incremental: el total no cuadra y se recarga todo; las
   acciones locales (editar, eliminar, cambiar estado) siguen recargando completo. Prueba: `node tests/js/directory_paging_check.js`.
   No se pudo mirar en el navegador (el inicio de sesión automático en la app local quedó bloqueado por permisos): revisarlo a mano.
+- Imagen: UNA para todo (`Dockerfile`, Python 3.14 como la VM). Etapa 1 compila las ruedas (dlib incluido); la final no tiene
+  compiladores, corre como usuario `golden` (uid 10001) y trae `tesseract-ocr` (cédula por foto). `APP_MODULE` elige el servicio
+  (`app.entrypoints.publico|web|biometria:app`); un Job cambia el comando (`alembic upgrade head`). Sin cliente de Postgres
+  (`pg_dump`): los respaldos van en la sesión 2 (imagen o paso aparte con Postgres 18). `deploy/docker-compose.yml` levanta los
+  tres servicios en local con límites parecidos a Cloud Run (publico/web 1 vCPU 1 GB, biometria 2 vCPU 2 GB).
+- Docker Desktop en el equipo de Juan David: falla al arrancar («initializing Inference manager… dockerInference»), un socket
+  viejo del 4-sep que Windows no deja borrar (error 1920). Arreglo: reiniciar Windows.

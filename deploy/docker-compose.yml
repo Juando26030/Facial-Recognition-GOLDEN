@@ -1,0 +1,37 @@
+# Los tres servicios de Cloud Run en local, desde LA MISMA imagen, con límites parecidos a los de Cloud Run.
+#   docker compose -f deploy/docker-compose.yml build
+#   docker compose -f deploy/docker-compose.yml run --rm migrate          # alembic upgrade head (como el Cloud Run Job)
+#   docker compose -f deploy/docker-compose.yml up publico web biometria
+# Variables: ENV_FILE (por defecto ../.env.staging, que NO se versiona; plantilla en .env.staging.example).
+# publico → http://localhost:8081  web → http://localhost:8082  biometria → http://localhost:8083
+x-app: &app
+  image: golden-app:local
+  env_file: ${ENV_FILE:-../.env.staging}
+  environment: &env
+    JOBS_WORKER: "off"
+  restart: "no"
+
+services:
+  publico:
+    <<: *app
+    build: { context: .., args: { APP_COMMIT: local } }
+    environment: { <<: *env, APP_MODULE: app.entrypoints.publico:app, WEB_CONCURRENCY: "2" }
+    ports: ["8081:8080"]
+    cpus: 1
+    mem_limit: 1g
+  web:
+    <<: *app
+    environment: { <<: *env, APP_MODULE: app.entrypoints.web:app, WEB_CONCURRENCY: "2" }
+    ports: ["8082:8080"]
+    cpus: 1
+    mem_limit: 1g
+  biometria:
+    <<: *app
+    environment: { <<: *env, APP_MODULE: app.entrypoints.biometria:app, WEB_CONCURRENCY: "1", FACE_PROCESSES: "2" }
+    ports: ["8083:8080"]
+    cpus: 2
+    mem_limit: 2g
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    profiles: ["job"]
