@@ -194,6 +194,24 @@ def set_digital_badge_enabled(
     return {"digital_badge_enabled": event.digital_badge_enabled}
 
 
+@router.put("/events/{event_id}/facial-enabled")
+def set_facial_enabled(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Interruptor manual (2026-09-27, pedido explícito: "si me equivoqué y ya no quiero facial no puedo
+    quitarlo o viceversa a mitad de un evento que no tenía, poder ponerlo"). Antes `facial_enabled` solo se
+    encendía sola al subir el primer roster con zip de fotos (`bulk_register`) y nunca se apagaba — eso
+    sigue igual (subir un zip la vuelve a encender si estaba apagada), pero ahora coordinador+ también puede
+    prenderla o apagarla a mano en cualquier momento, sin depender de una carga. Apagarla NO borra ningún
+    rostro/encoding ya guardado (si se vuelve a prender, la gente que ya tenía foto se sigue reconociendo);
+    solo decide si `/kiosk/{id}/registro` muestra el escáner de cámara o se comporta como cédula tradicional."""
+    event = get_event_for_staff(event_id, db, staff)
+    event.facial_enabled = bool(data.get("enabled"))
+    db.commit()
+    return {"facial_enabled": event.facial_enabled}
+
+
 @router.put("/events/{event_id}/certificates-enabled")
 def set_certificates_enabled(
     event_id: int, data: dict, db: Session = Depends(get_db),

@@ -52,6 +52,14 @@
       </div>
 
       <div class="app-container">
+        <!-- Reconocimiento facial (2026-09-27, pedido explícito): antes solo se encendía sola al subir un
+             zip de fotos y nunca se apagaba; ahora coordinador+ también puede prenderla/apagarla a mano en
+             cualquier momento del evento, sin perder los rostros ya guardados. -->
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Reconocimiento facial</h4>
+          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="facialEnabled" {% if event.facial_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el escáner de rostro en este evento</label>
+          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Con esto activado, "Registro" muestra la pestaña "Escáner de Acceso" y el alta manual pide foto; apagado, el evento se comporta como cédula tradicional (sin cámara ni foto). Apagarlo NO borra ningún rostro ya guardado — si se vuelve a activar, quienes ya tenían foto se siguen reconociendo. Subir una base con fotos (Adjuntar Base de Datos) lo vuelve a encender solo, así haya quedado apagado aquí.</p>
+        </div>
         <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Certificados</h4>
@@ -378,6 +386,12 @@
             try { const d = await post(`${api}/test`, { ...current(), to: document.getElementById('mailTo').value }); say(d.sent ? d.detail : 'No se envió: ' + d.detail, !d.sent); } catch (e) { say(e.message, true); }
         });
     })();
+    // Reconocimiento facial (2026-09-27): interruptor manual, en cualquier momento del evento.
+    document.getElementById('facialEnabled').addEventListener('change', async (e) => {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/facial-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
+        if (res.ok) location.reload(); else { e.target.checked = !e.target.checked; showToast('No se pudo cambiar el reconocimiento facial', 'error'); }
+    });
+
     document.getElementById('digitalEnabled').addEventListener('change', async (e) => {
         const res = await fetch(`/api/events/${window.EVENT_ID}/digital-badge-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
         if (res.ok) location.reload(); else { e.target.checked = !e.target.checked; showToast('No se pudo cambiar la escarapela digital', 'error'); }
