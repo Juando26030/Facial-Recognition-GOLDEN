@@ -37,7 +37,7 @@ RECOGNITION_JITTERS = int(os.getenv("RECOGNITION_JITTERS", "10"))       # sin ca
 FACE_PROCESSES = max(0, int(os.getenv("FACE_PROCESSES", "1")))          # procesos hijo con dlib por proceso web (0 = en el mismo proceso)
 FACE_CONCURRENCY = max(1, int(os.getenv("FACE_CONCURRENCY", "4")))      # cálculos faciales pendientes (en curso + en cola) por proceso web
 FACE_TASK_TIMEOUT = float(os.getenv("FACE_TASK_TIMEOUT", "180"))
-FACE_QUEUE_TIMEOUT = float(os.getenv("FACE_QUEUE_TIMEOUT", "20"))
+FACE_QUEUE_TIMEOUT = float(os.getenv("FACE_QUEUE_TIMEOUT", "1"))         # espera corta: un hilo esperando turno es un hilo menos para cédulas y formularios; mejor 503 rápido y que el kiosco reintente
 MATCH_TOKEN_TTL = int(os.getenv("MATCH_TOKEN_TTL", "120"))              # segundos que vale una coincidencia para confirmarla sin reenviar la foto
 
 _gate = threading.BoundedSemaphore(FACE_CONCURRENCY)

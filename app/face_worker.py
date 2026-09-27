@@ -38,8 +38,21 @@ def warm() -> None:
     _fr()
 
 
+def _lower_priority() -> None:
+    """Los cálculos faciales son de baja prioridad frente a atender formularios y cédulas: si la máquina se satura, el sistema operativo prefiere al proceso web."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x4000)      # BELOW_NORMAL_PRIORITY_CLASS
+        else:
+            os.nice(10)
+    except OSError:
+        pass                                                                                              # sin permiso para bajar prioridad: se sigue con la normal
+
+
 def child_init() -> None:
     """Se ejecuta una vez al crear cada proceso hijo del pool."""
+    _lower_priority()
     _exit_with_parent()
     warm()
 
