@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get("/cities")
-async def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinador"))):
+def list_cities(country: str, staff: StaffUser = Depends(require_role("coordinador"))):
     """Sugerencias de ciudad para el país dado (dataset GeoNames, ver app/cities_data.py),
     ordenadas por población — se recorta a las primeras 300 para no mandar un <datalist> gigante
     al navegador en países con miles de ciudades. El campo de ciudad siempre acepta texto libre
@@ -124,7 +124,7 @@ def _serialize(e: Event) -> dict:
 
 
 @router.get("/my-events")
-async def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
+def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_current_staff)):
     """Para el dashboard: eventos a los que este staff puede entrar directo. digitador/cliente ->
     solo eventos en_proceso con autorización explícita. coordinador+ -> todos los en_proceso.
 
@@ -201,7 +201,7 @@ def _matches_by_word_prefix(haystack: str, query: str) -> bool:
 
 
 @router.get("/events/search")
-async def search_events(
+def search_events(
     q: str = "", status: Optional[str] = None,
     commercial_staff_id: Optional[int] = None, coordinator_staff_id: Optional[int] = None,
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
@@ -236,7 +236,7 @@ async def search_events(
 
 
 @router.get("/events")
-async def list_events(
+def list_events(
     tenant_id: Optional[str] = None, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
@@ -257,13 +257,13 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 @router.get("/colors")
-async def list_saved_colors(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_saved_colors(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Librería de colores de pañoleta (se define una vez y se elige en cualquier evento)."""
     return [{"id": c.id, "name": c.name, "hex": c.hex} for c in db.query(SavedColor).order_by(SavedColor.name)]
 
 
 @router.post("/colors")
-async def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Crea un color; si ya existe uno con ese nombre, le cambia el tono (así "Rojo Golden" es siempre uno solo)."""
     name = str(data.get("name") or "").strip()[:60]
     hex_value = str(data.get("hex") or "").strip()
@@ -282,7 +282,7 @@ async def save_color(data: dict, db: Session = Depends(get_db), staff: StaffUser
 
 
 @router.delete("/colors/{color_id}")
-async def delete_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def delete_saved_color(color_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     color = db.query(SavedColor).filter(SavedColor.id == color_id).first()
     if not color:
         raise HTTPException(status_code=404, detail="Color no encontrado")
@@ -292,7 +292,7 @@ async def delete_saved_color(color_id: int, db: Session = Depends(get_db), staff
 
 
 @router.post("/events")
-async def create_event(
+def create_event(
     data: EventIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))
 ):
     """Sprint 2.4, 2026-09-16 (pedido explícito): crear eventos pasó a ser comercial+ — antes era
@@ -344,7 +344,7 @@ async def create_event(
 
 
 @router.patch("/events/{event_id}")
-async def update_event(
+def update_event(
     event_id: int, data: EventUpdate, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
@@ -398,7 +398,7 @@ async def update_event(
 
 
 @router.get("/events/{event_id}/staff-users")
-async def list_event_staff(
+def list_event_staff(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
     """digitador + cliente autorizados para ESTE evento."""
@@ -412,7 +412,7 @@ async def list_event_staff(
 
 
 @router.post("/events/{event_id}/staff-users")
-async def create_event_staff(
+def create_event_staff(
     event_id: int, data: EventStaffIn, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
@@ -458,7 +458,7 @@ async def create_event_staff(
 
 
 @router.post("/events/{event_id}/staff-users/assign-existing")
-async def assign_existing_staff(
+def assign_existing_staff(
     event_id: int, data: AssignExistingIn, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("admin")),
 ):
@@ -478,7 +478,7 @@ async def assign_existing_staff(
 
 
 @router.delete("/events/{event_id}/staff-users/{staff_id}")
-async def revoke_event_staff(
+def revoke_event_staff(
     event_id: int, staff_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
@@ -488,7 +488,7 @@ async def revoke_event_staff(
 
 
 @router.delete("/events/{event_id}")
-async def delete_event(
+def delete_event(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
     """Borrado permanente — solo admin+ (coordinador+ avanza el estado del evento vía PATCH status,

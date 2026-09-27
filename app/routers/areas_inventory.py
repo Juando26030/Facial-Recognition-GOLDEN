@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_event_in_progress, require_role_excluding
-from app.biometrics import BiometricEngine
+from app import faces
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import (
@@ -41,7 +41,7 @@ def delete_event_modules(db: Session, event_id: int) -> None:
 
 
 @router.put("/events/{event_id}/modules")
-async def set_modules(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def set_modules(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     """Switches por evento: `areas_enabled` / `inventory_enabled` (solo se cambian los que vengan)."""
     event = get_event_for_staff(event_id, db, staff)
     if "areas_enabled" in data:
@@ -86,13 +86,13 @@ def _get_area(db: Session, event, area_id: int) -> EventArea:
 
 
 @router.get("/events/{event_id}/areas")
-async def list_areas(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def list_areas(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     return [_area_json(db, a) for a in db.query(EventArea).filter(EventArea.event_id == event.id).order_by(EventArea.id)]
 
 
 @router.post("/events/{event_id}/areas")
-async def create_area(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def create_area(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     name = str(data.get("name") or "").strip()
     if not name:
@@ -106,7 +106,7 @@ async def create_area(event_id: int, data: dict, db: Session = Depends(get_db), 
 
 
 @router.patch("/events/{event_id}/areas/{area_id}")
-async def update_area(event_id: int, area_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def update_area(event_id: int, area_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
     if "name" in data and str(data["name"]).strip():
         area.name = str(data["name"]).strip()
@@ -117,7 +117,7 @@ async def update_area(event_id: int, area_id: int, data: dict, db: Session = Dep
 
 
 @router.delete("/events/{event_id}/areas/{area_id}")
-async def delete_area(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def delete_area(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     area = _get_area(db, get_event_for_staff(event_id, db, staff), area_id)
     db.query(AreaMovement).filter(AreaMovement.area_id == area.id).delete()
     db.delete(area)
@@ -161,7 +161,7 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
 
 
 @router.post("/events/{event_id}/areas/{area_id}/movement")
-async def area_movement(event_id: int, area_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def area_movement(event_id: int, area_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     """Entrada/salida por cédula o QR (el QR trae el ID). `direction`: in | out | auto (alterna)."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
@@ -171,7 +171,7 @@ async def area_movement(event_id: int, area_id: int, data: dict, db: Session = D
 
 
 @router.post("/events/{event_id}/areas/{area_id}/movement-face")
-async def area_movement_face(
+def area_movement_face(
     event_id: int, area_id: int, file: UploadFile = File(...), direction: str = Form("auto"), confirm: bool = Form(False),
     db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE),
 ):
@@ -179,20 +179,20 @@ async def area_movement_face(
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
     area = _get_area(db, event, area_id)
-    img_array = BiometricEngine.process_image_stream(await file.read())
-    unknown = BiometricEngine.extract_encoding(img_array)
-    if not unknown:
+    try:
+        status, uid = faces.identify(db, event, file.file.read())
+    except faces.Busy:
+        raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
+    if status == "NO_FACE":
         return {"result": "NO", "details": "Rostro no detectado"}
-    attendee_ids = {a.user_id for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id)}
-    for user in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(attendee_ids)).all():
-        known = user.get_encoding()
-        if known and BiometricEngine.compare(known, unknown):
-            return _apply_movement(db, event, area, user, direction, confirm, "facial", staff)
+    user = db.get(User, (uid, event.tenant_id)) if uid else None
+    if user:
+        return _apply_movement(db, event, area, user, direction, confirm, "facial", staff)
     return {"result": "NO", "details": "Ninguna persona de este evento coincide"}
 
 
 @router.get("/events/{event_id}/areas/{area_id}/presence")
-async def area_presence(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def area_presence(event_id: int, area_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     """Última situación de cada persona en la zona: verde = entró ('in'), rojo = salió ('out')."""
     event = get_event_for_staff(event_id, db, staff)
     area = _get_area(db, event, area_id)
@@ -230,7 +230,7 @@ def _xlsx_response(sheets: dict, filename: str, widths: dict = None) -> Streamin
 
 
 @router.get("/events/{event_id}/areas-report")
-async def areas_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def areas_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     """Todos los movimientos con hora EXACTA (con segundos) y zona."""
     event = get_event_for_staff(event_id, db, staff)
     areas = {a.id: a.name for a in db.query(EventArea).filter(EventArea.event_id == event.id)}
@@ -280,14 +280,14 @@ def _qty(value, minimum: int = 0) -> int:
 
 
 @router.get("/events/{event_id}/inventory")
-async def list_inventory(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def list_inventory(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     delivered = _delivered_by_item(db, event.id)
     return [_item_json(i, delivered.get(i.id, 0)) for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id).order_by(InventoryItem.id)]
 
 
 @router.post("/events/{event_id}/inventory")
-async def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     name = str(data.get("name") or "").strip()
     if not name:
@@ -301,7 +301,7 @@ async def create_item(event_id: int, data: dict, db: Session = Depends(get_db), 
 
 
 @router.patch("/events/{event_id}/inventory/{item_id}")
-async def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def update_item(event_id: int, item_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     item = _get_item(db, event, item_id)
     delivered = _delivered_by_item(db, event.id).get(item.id, 0)
@@ -319,7 +319,7 @@ async def update_item(event_id: int, item_id: int, data: dict, db: Session = Dep
 
 
 @router.delete("/events/{event_id}/inventory/{item_id}")
-async def delete_item(event_id: int, item_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def delete_item(event_id: int, item_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     item = _get_item(db, event, item_id)
     if _delivered_by_item(db, event.id).get(item.id, 0):
@@ -330,7 +330,7 @@ async def delete_item(event_id: int, item_id: int, db: Session = Depends(get_db)
 
 
 @router.post("/events/{event_id}/inventory/deliver")
-async def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     """Entrega uno o varios ítems (combo) a una persona: `{cedula, items: [{item_id, qty}]}`. Todo o
     nada: si algún ítem no alcanza, no se entrega nada. El disponible se descuenta solo."""
     event = get_event_for_staff(event_id, db, staff)
@@ -374,7 +374,7 @@ async def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staf
 
 
 @router.get("/events/{event_id}/inventory/deliveries")
-async def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
+def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATE_ROLE)):
     event = get_event_for_staff(event_id, db, staff)
     items = {i.id: i.name for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id)}
     users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id)}
@@ -387,7 +387,7 @@ async def recent_deliveries(event_id: int, db: Session = Depends(get_db), staff:
 
 
 @router.get("/events/{event_id}/inventory-report")
-async def inventory_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
+def inventory_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(CONFIG_ROLE)):
     """Hoja 'Entregas' (hora, a quién, qué se le entregó) + hoja 'Inventario' (inicial / entregado / disponible)."""
     event = get_event_for_staff(event_id, db, staff)
     items = {i.id: i for i in db.query(InventoryItem).filter(InventoryItem.event_id == event.id).order_by(InventoryItem.id)}

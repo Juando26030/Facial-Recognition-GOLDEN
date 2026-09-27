@@ -145,6 +145,22 @@ def fetch_transaction(cfg: dict, transaction_id: str) -> Optional[dict]:
         return None
 
 
+def fetch_by_reference(cfg: dict, reference: str) -> Optional[dict]:
+    """La transacción MÁS RELEVANTE de una referencia (`GET /transactions?reference=…`): una aprobada si la hay; si no, la más reciente. Sirve para conciliar
+    pagos cuando el webhook se perdió (una caída del servidor o de la red). None si Wompi no tiene ninguna o no se pudo consultar."""
+    if not _safe_id(reference):
+        return None
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/transactions?reference={reference}", headers=_headers(cfg)), timeout=8) as res:
+            rows = (json.loads(res.read().decode()) or {}).get("data") or []
+    except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+        return None
+    if not isinstance(rows, list) or not rows:
+        return None
+    approved = [r for r in rows if str(r.get("status")).upper() == "APPROVED"]
+    return approved[0] if approved else sorted(rows, key=lambda r: str(r.get("created_at") or ""))[-1]
+
+
 def _soft_error(body) -> Optional[str]:
     """Wompi a veces responde HTTP 200 con el error DENTRO (`{"data": {"type": "unprocessable", "reason": "…"}}`): no es un éxito."""
     d = body.get("data") if isinstance(body, dict) else None

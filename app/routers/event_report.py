@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.storage import get_storage, key_of, normalize_key
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -27,12 +28,12 @@ REPORT_TYPES = {
 
 
 @router.post("/events/{event_id}/final-report")
-async def upload_final_report(
+def upload_final_report(
     event_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    content = await file.read()
+    content = file.file.read()
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in REPORT_TYPES or not content.startswith(REPORT_TYPES[ext][1]):
         raise HTTPException(status_code=400, detail="El informe debe ser un archivo PDF o Excel (.xlsx / .xls)")
@@ -40,14 +41,11 @@ async def upload_final_report(
         raise HTTPException(status_code=400, detail="El archivo pesa más de 15 MB")
     mime = REPORT_TYPES[ext][0]
 
-    folder = os.path.join("data", event.tenant_id, "event_reports")
-    os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, f"{event.id}{ext}")
-    with open(path, "wb") as f:
-        f.write(content)
-    if event.report_pdf_path and event.report_pdf_path != path and os.path.isfile(event.report_pdf_path):
-        os.remove(event.report_pdf_path)  # el informe nuevo reemplaza al anterior aunque cambie de formato
-    event.report_pdf_path, event.report_uploaded_at = path, datetime.utcnow()
+    key = key_of(event.tenant_id, "event_reports", f"{event.id}{ext}")
+    get_storage().put(key, content)
+    if event.report_pdf_path and normalize_key(event.report_pdf_path) != key:
+        get_storage().delete(event.report_pdf_path)  # el informe nuevo reemplaza al anterior aunque cambie de formato
+    event.report_pdf_path, event.report_uploaded_at = key, datetime.utcnow()
     db.commit()
 
     commercial = event.commercial
@@ -72,11 +70,11 @@ async def upload_final_report(
 
 
 @router.get("/events/{event_id}/final-report")
-async def download_final_report(
+def download_final_report(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
-    if not event.report_pdf_path or not os.path.isfile(event.report_pdf_path):
+    if not event.report_pdf_path or not get_storage().exists(event.report_pdf_path):
         raise HTTPException(status_code=404, detail="Este evento todavía no tiene informe final")
     ext = os.path.splitext(event.report_pdf_path)[1].lower()
-    return FileResponse(event.report_pdf_path, media_type=REPORT_TYPES.get(ext, ("application/octet-stream",))[0], filename=f"Informe_{event.event_code}{ext}")
+    return get_storage().response(event.report_pdf_path, media_type=REPORT_TYPES.get(ext, ("application/octet-stream",))[0], filename=f"Informe_{event.event_code}{ext}")

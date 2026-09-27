@@ -531,9 +531,26 @@
        paso buscando ese nombre completo entre los ya cargados en el Directorio, reutilizando el
        mismo criterio de prefijo por palabra + insensible a tildes de arriba — recién si ninguno
        de los dos encuentra nada se cae al comportamiento de "no encontrado" de siempre. */
-    async function fastCheckin(cedula, force, nameInfo, confirmFlag, method) {
+    /* Cada intento de acreditar lleva un `client_id` propio (Fase 0 de escalabilidad): si la red falla y se reintenta —o el navegador reenvía— el
+       servidor devuelve el mismo resultado en vez de registrar dos veces. Los reintentos automáticos (red caída, 502/503/504) reusan el MISMO id. */
+    const newClientId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `c${Date.now()}${Math.random().toString(16).slice(2)}`;
+    async function postWithRetry(url, formData, attempts = 3) {
+      for (let i = 1; ; i++) {
+        try {
+          const res = await fetch(url, { method: 'POST', body: formData });
+          if (![502, 503, 504].includes(res.status) || i >= attempts) return res;
+        } catch (e) {
+          if (i >= attempts) throw e;
+        }
+        await new Promise(r => setTimeout(r, 400 * i));
+      }
+    }
+
+    async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
+      const cid = clientId || newClientId();
       const formData = new FormData();
       formData.append('event_id', window.EVENT_ID);
+      formData.append('client_id', cid);
       formData.append('cedula', cedula);
       if (force) formData.append('force', 'true');
       if (confirmFlag) formData.append('confirm', 'true');
@@ -543,12 +560,12 @@
         if (nameInfo.apellidos) formData.append('last_name', nameInfo.apellidos);
       }
       try {
-        const res = await fetch('/api/checkin-cedula', { method: 'POST', body: formData });
+        const res = await postWithRetry('/api/checkin-cedula', formData);
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {
           const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
-          if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method);
+          if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method, cid);
           return;
         }
         if (data.result === 'SÍ') {

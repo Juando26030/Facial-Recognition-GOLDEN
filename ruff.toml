@@ -1,0 +1,9 @@
+# Reglas básicas (errores de sintaxis, nombres sin definir, imports y variables sin usar, except desnudo y mutables por defecto).
+# Solo se exigen en los archivos NUEVOS o TOCADOS de cada cambio (ver el job «lint» de .github/workflows/ci.yml): no se reformatea ni se
+# corrige todo el repo de golpe.
+target-version = "py313"
+line-length = 200
+
+[lint]
+select = ["E9", "F", "E722", "B006"]
+ignore = ["F401"]        # los routers reexportan/importan por efecto lateral en varios sitios; se limpia archivo por archivo

@@ -14,3 +14,8 @@ except Exception:  # sin base de zonas horarias (ej. Windows sin el paquete tzda
 def to_local(dt: datetime) -> datetime:
     """`dt` naive en UTC -> datetime en la zona local configurada."""
     return dt.replace(tzinfo=timezone.utc).astimezone(_TZ)
+
+
+def local_to_utc(dt: datetime) -> datetime:
+    """`dt` naive en hora LOCAL (la que escribe la gente: fecha y hora de un evento) -> naive en UTC (como se guarda todo internamente)."""
+    return dt.replace(tzinfo=_TZ).astimezone(timezone.utc).replace(tzinfo=None)

@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from app import security
+from app.storage import badge_asset_key, get_storage
 from app.auth import get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import Event, EventAttendee, StaffUser, User
@@ -47,7 +48,7 @@ def _variables_used(template: dict) -> set:
 
 
 @router.get("/c/{token}", response_class=HTMLResponse)
-async def certificate_page(token: str, request: Request, db: Session = Depends(get_db)):
+def certificate_page(token: str, request: Request, db: Session = Depends(get_db)):
     from app.main import templates  # import tardío: main.py importa este módulo
     try:
         event = _event_by_token(db, token)
@@ -59,7 +60,7 @@ async def certificate_page(token: str, request: Request, db: Session = Depends(g
 
 
 @router.get("/c/{token}/lookup")
-async def certificate_lookup(token: str, id: str, request: Request, db: Session = Depends(get_db)):
+def certificate_lookup(token: str, id: str, request: Request, db: Session = Depends(get_db)):
     security.enforce_public_limit(db, request, "cert_lookup", token, _MAX_LOOKUPS, _LOOKUP_WINDOW)
     event = _event_by_token(db, token)
     if event.status != "finalizado":
@@ -97,16 +98,13 @@ async def certificate_lookup(token: str, id: str, request: Request, db: Session 
 
 
 @router.get("/c/{token}/asset/{tenant_id}/{filename}")
-async def certificate_asset(token: str, tenant_id: str, filename: str, db: Session = Depends(get_db)):
+def certificate_asset(token: str, tenant_id: str, filename: str, db: Session = Depends(get_db)):
     """Imágenes de la plantilla (fondo/logos) — solo del cliente de este evento."""
     event = _event_by_token(db, token)
     safe = os.path.basename(filename)
     if tenant_id != event.tenant_id or os.path.splitext(safe)[1].lower() not in ALLOWED_IMAGE_EXT:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    path = os.path.join("data", tenant_id, "badge_assets", safe)
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(path)
+    return get_storage().response(badge_asset_key(tenant_id, safe))
 
 
 def _public_url(request: Request, event: Event) -> str:
@@ -115,7 +113,7 @@ def _public_url(request: Request, event: Event) -> str:
 
 
 @staff_router.get("/events/{event_id}/certificates/public-link")
-async def get_public_link(
+def get_public_link(
     event_id: int, request: Request, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
@@ -125,7 +123,7 @@ async def get_public_link(
 
 
 @staff_router.post("/events/{event_id}/certificates/public-link")
-async def create_public_link(
+def create_public_link(
     event_id: int, request: Request, regenerate: bool = False, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):

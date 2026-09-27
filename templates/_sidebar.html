@@ -18,6 +18,7 @@
        tenía forma de llegar ahí. Apariencia es para todos; lo que sigue siendo admin+ es la
        pestaña "Staff y Permisos" DENTRO del propio template, eso no cambia acá. #}
     <a href="/configuracion"{% if sidebar_active == "configuracion" %} class="active"{% endif %}>⚙️ Configuración</a>
+    {% if staff_role in ["admin", "super_admin"] %}<a href="/sistema"{% if sidebar_active == "sistema" %} class="active"{% endif %}>🩺 Estado del sistema</a>{% endif %}
   </nav>
 </aside>
 <script>

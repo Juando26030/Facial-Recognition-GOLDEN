@@ -51,7 +51,7 @@ DUAL_ROLE_PAIR = {"coordinador", "comercial"}
 
 
 @router.get("/staff/coordinators")
-async def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Liviano y accesible desde coordinador+ (a diferencia de /staff, que es admin+) — para
     poblar el selector de 'coordinador asignado' al crear/editar un evento. Incluye a quien tenga
     'coordinador' como rol PRIMARIO o SECUNDARIO (Fase 15: doble rol coordinador+comercial)."""
@@ -63,7 +63,7 @@ async def list_coordinators(db: Session = Depends(get_db), staff: StaffUser = De
 
 
 @router.get("/staff/commercials")
-async def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))):
+def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))):
     """Sprint 2.4 Fase 5 (2026-09-16): mismo patrón que /staff/coordinators — poblar el selector
     de 'comercial asignada' al crear/editar un evento y el filtro de admin+ en /eventos. Incluye a
     quien tenga 'comercial' como rol PRIMARIO o SECUNDARIO (Fase 15)."""
@@ -75,7 +75,7 @@ async def list_commercials(db: Session = Depends(get_db), staff: StaffUser = Dep
 
 
 @router.get("/staff/assignable")
-async def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     """digitador + cliente activos, para el desplegable de 'autorizar/reautorizar para un evento'
     en /admin/staff — independiente del filtro de ROLES_CREATABLE_BY_ADMIN de /staff (que oculta
     digitador/cliente de la tabla general a propósito, pero aquí sí hacen falta)."""
@@ -86,7 +86,7 @@ async def list_assignable_staff(db: Session = Depends(get_db), staff: StaffUser 
 
 
 @router.get("/staff")
-async def list_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+def list_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     query = db.query(StaffUser)
     if staff.role != "super_admin":
         query = query.filter(StaffUser.role.in_(ROLES_CREATABLE_BY_ADMIN))
@@ -94,7 +94,7 @@ async def list_staff(db: Session = Depends(get_db), staff: StaffUser = Depends(r
 
 
 @router.post("/staff")
-async def create_staff(
+def create_staff(
     data: StaffIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
     if data.role not in STAFF_ROLES:
@@ -136,7 +136,7 @@ async def create_staff(
 
 
 @router.patch("/staff/{staff_id}/email")
-async def set_staff_email(
+def set_staff_email(
     staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
     """Completa/corrige el correo de una cuenta (las creadas antes de que existiera el campo no lo tienen)."""
@@ -152,7 +152,7 @@ async def set_staff_email(
 
 
 @router.patch("/staff/{staff_id}/secondary-role")
-async def assign_secondary_role(
+def assign_secondary_role(
     staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin")),
 ):
     """Sprint 2.4 Fase 15 (2026-09-17, pedido explícito): "hay coordinadores que también pueden
@@ -191,7 +191,7 @@ def _manageable_roles(actor: StaffUser) -> set:
 
 
 @router.patch("/staff/{staff_id}/role")
-async def change_staff_role(
+def change_staff_role(
     staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin")),
 ):
     """Cambia el rol de una cuenta ya creada (Sprint 4). Solo entre los roles que se crean desde Configuración >
@@ -218,7 +218,7 @@ async def change_staff_role(
 
 
 @router.put("/staff/{staff_id}/password")
-async def reset_staff_password(
+def reset_staff_password(
     staff_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Restablece la contraseña de una cuenta que `staff` puede administrar (un coordinador, las de digitador; un
@@ -243,7 +243,7 @@ async def reset_staff_password(
 
 
 @router.patch("/staff/{staff_id}/deactivate")
-async def deactivate_staff(
+def deactivate_staff(
     staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
@@ -261,7 +261,7 @@ async def deactivate_staff(
 
 
 @router.patch("/staff/{staff_id}/activate")
-async def activate_staff(
+def activate_staff(
     staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))
 ):
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
@@ -275,7 +275,7 @@ async def activate_staff(
 
 
 @router.delete("/staff/{staff_id}")
-async def delete_staff(
+def delete_staff(
     staff_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
     """Borrado PERMANENTE (no desactivación) — cada rol solo puede borrar lo que tiene

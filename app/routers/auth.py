@@ -20,14 +20,14 @@ staticver.install(templates)
 
 
 @router.get("/login")
-async def login_form(request: Request):
+def login_form(request: Request):
     if request.session.get("staff_user_id"):
         return RedirectResponse("/", status_code=302)
     return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
 
 
 @router.post("/login")
-async def login_submit(
+def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
@@ -64,7 +64,7 @@ async def login_submit(
 
 
 @router.post("/logout")
-async def logout(request: Request):
+def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 
@@ -75,12 +75,12 @@ def _page(request: Request, mode: str, error: str = None, message: str = None, t
 
 
 @router.get("/olvide-contrasena")
-async def forgot_form(request: Request):
+def forgot_form(request: Request):
     return _page(request, "forgot")
 
 
 @router.post("/olvide-contrasena")
-async def forgot_submit(request: Request, username: str = Form(...), db: Session = Depends(get_db)):
+def forgot_submit(request: Request, username: str = Form(...), db: Session = Depends(get_db)):
     """Manda un enlace de un solo uso al correo de la cuenta. La respuesta es SIEMPRE la misma (exista la
     cuenta, tenga o no correo) para no revelar qué usuarios existen; las cuentas sin correo (ej. los
     digitadores temporales) las restablece un admin/coordinador."""
@@ -104,14 +104,14 @@ async def forgot_submit(request: Request, username: str = Form(...), db: Session
 
 
 @router.get("/restablecer/{token}")
-async def reset_form(token: str, request: Request, db: Session = Depends(get_db)):
+def reset_form(token: str, request: Request, db: Session = Depends(get_db)):
     if not security.find_valid_reset_token(db, token):
         return _page(request, "invalid", status_code=410)
     return _page(request, "reset", token=token)
 
 
 @router.post("/restablecer/{token}")
-async def reset_submit(
+def reset_submit(
     token: str, request: Request, password: str = Form(...), confirm: str = Form(...), db: Session = Depends(get_db),
 ):
     row = security.find_valid_reset_token(db, token)
@@ -130,7 +130,7 @@ async def reset_submit(
 
 
 @router.get("/cambiar-contrasena")
-async def change_form(request: Request):
+def change_form(request: Request):
     if not request.session.get("staff_user_id"):
         return RedirectResponse("/login", status_code=302)
     msg = "Debes elegir tu propia contraseña para continuar." if request.session.get("must_change_password") else None
@@ -138,7 +138,7 @@ async def change_form(request: Request):
 
 
 @router.post("/cambiar-contrasena")
-async def change_submit(
+def change_submit(
     request: Request, current: str = Form(...), password: str = Form(...), confirm: str = Form(...), db: Session = Depends(get_db),
 ):
     staff_id = request.session.get("staff_user_id")

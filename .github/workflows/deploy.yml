@@ -9,10 +9,19 @@ name: Deploy to production
 # - Backup automático de la base (local + bucket) antes de migrar; si falla, no se despliega.
 # - Un solo deploy a la vez, y el reinicio comprueba que la app responde 200 (si no, el deploy queda en rojo).
 
+# - Fase 0 de escalabilidad: antes de tocar nada pregunta a la app en marcha si se puede desplegar (`/api/ops/deploy-allowed`: no si hay un evento
+#   en curso o una apertura en las próximas horas; se salta con «force» al lanzarlo a mano). Deja el commit y la fecha en `.build_info` para
+#   «Estado del sistema», y al reiniciar espera a `/readyz` (base + almacenamiento), no solo a la pantalla de login.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Desplegar aunque haya un evento en curso o por abrir (solo si sabes lo que haces)"
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-production
@@ -32,6 +41,25 @@ jobs:
           cd ~/Facial-Recognition
           git fetch origin main
           git reset --hard origin/main
+
+      - name: ¿Hay un evento en curso o por abrir?
+        # Pregunta a la versión que está corriendo. Si todavía no tiene esa ruta (primer despliegue con esta función) o no responde, no bloquea.
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          cd ~/Facial-Recognition
+          token=$(grep -E '^OPS_TOKEN=' .env | head -1 | cut -d= -f2- || true)
+          body=$(curl -s -m 10 -H "X-Ops-Token: $token" http://localhost:8000/api/ops/deploy-allowed || true)
+          echo "deploy-allowed: ${body:-sin respuesta}"
+          if echo "$body" | grep -q '"allowed":false'; then
+            if [ "$FORCE" = "true" ]; then echo "::warning::Hay actividad, pero se desplegó con force"; else
+              echo "::error::No se despliega ahora: hay un evento en curso o una apertura cercana. Reintenta más tarde o lanza el workflow a mano con force."; exit 1; fi
+          fi
+
+      - name: Registrar versión desplegada
+        run: |
+          cd ~/Facial-Recognition
+          printf '{"commit": "%s", "date": "%s"}\n' "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .build_info
 
       - name: Backup de la base ANTES de tocar nada (local + bucket)
         # Si este paso falla, el deploy se detiene: nunca se migra sin una copia externa reciente. Nombres de bucket: no son secretos.
@@ -70,10 +98,10 @@ jobs:
           set -e
           sudo -n systemctl restart facial-recognition
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/login || true)
-            if [ "$code" = "200" ]; then echo "app respondiendo: 200 (intento $i)"; sudo -n systemctl is-active facial-recognition; exit 0; fi
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/readyz || true)
+            if [ "$code" = "200" ]; then echo "app lista (/readyz 200, intento $i)"; sudo -n systemctl is-active facial-recognition; exit 0; fi
             sleep 2
           done
-          echo "::error::La app no respondió 200 tras reiniciar (último código: $code)"
+          echo "::error::La app no quedó lista tras reiniciar (/readyz devolvió $code). Mira: curl -s localhost:8000/readyz"
           sudo -n /usr/bin/systemctl status facial-recognition | tail -20 || true
           exit 1

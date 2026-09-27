@@ -22,6 +22,10 @@ TEST_URL = os.getenv("TEST_DATABASE_URL") or urlunsplit(_parts._replace(path="/g
 TEST_DB_NAME = urlsplit(TEST_URL).path.lstrip("/")
 assert "test" in TEST_DB_NAME, f"Por seguridad las pruebas solo corren contra una base con 'test' en el nombre (es '{TEST_DB_NAME}')"
 os.environ["DATABASE_URL"] = TEST_URL
+os.environ.pop("DIRECT_DATABASE_URL", None)   # las migraciones de las pruebas van siempre a la base de pruebas
+os.environ["FORM_PUBLIC_CACHE_SECONDS"] = "0"   # sin cache del estado publico de formularios: cada prueba ve el estado real (una prueba propia la activa)
+os.environ["FACE_PROCESSES"] = "0"             # el motor facial (doble) corre en el mismo proceso: las pruebas lo reemplazan con monkeypatch
+os.environ["JOBS_WORKER"] = "off"              # sin hilo de trabajos en segundo plano: cada prueba los ejecuta a la vista (ver _jobs_inline)
 os.environ.pop("ENVIRONMENT", None)          # las pruebas corren como desarrollo
 os.environ.pop("PUBLIC_BASE_URL", None)
 for _k in ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "GRAPH_SENDER", "SMTP_HOST"):
@@ -32,6 +36,7 @@ if "face_recognition" not in sys.modules or os.getenv("FORCE_FACE_STUB", "1") ==
     stub = ModuleType("face_recognition")
     stub.face_encodings = MagicMock(return_value=[])
     stub.face_distance = MagicMock(return_value=[0.0])
+    stub.face_locations = MagicMock(return_value=[])
     stub.load_image_file = MagicMock()
     sys.modules["face_recognition"] = stub
 
@@ -86,8 +91,21 @@ def _clean_tables(_database):
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
     _wipe_test_files()
+    from app import faces, formsvc
+    faces.clear_cache()
+    formsvc.invalidate_public_cache()
+    from app.routers import forms_public
+    forms_public._limiter.reset()          # el limite por IP es en memoria: cada prueba empieza de cero
     yield
     _wipe_test_files()
+
+
+@pytest.fixture(autouse=True)
+def _jobs_inline(monkeypatch):
+    """En produccion los trabajos en segundo plano los ejecuta un worker; en las pruebas «despertar al worker» los ejecuta en el acto (asi el
+    comportamiento visible es el de siempre). Las pruebas de la cola usan `jobs.enqueue`/`run_once` directamente."""
+    from app import jobs
+    monkeypatch.setattr(jobs, "kick", lambda: jobs.drain())
 
 
 @pytest.fixture()

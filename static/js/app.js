@@ -104,6 +104,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // Acceso" — reconocer de nuevo desde cero exigiría volver a tomar la foto.
     let pendingRecognizeFormData = null;
 
+    // Fase 0 de escalabilidad: cada persona se reconoce UNA vez. La respuesta MATCH_PENDING/DUPLICADO trae un `match_token`; para confirmar o forzar se
+    // reenvía ese token EN VEZ de la foto (el servidor no repite el cálculo facial). Sin token (servidor viejo) se reenvía la foto como antes.
+    function useMatchToken(formData, token) {
+        if (!token) return;
+        formData.set('match_token', token);
+        formData.delete('file');
+    }
+
     async function submitRecognize(formData) {
         try {
             const res = await fetch('/api/recognize', { method: 'POST', body: formData });
@@ -121,6 +129,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
                 if (confirmado) {
                     formData.set('force', 'true');
+                    useMatchToken(formData, data.match_token);
                     await submitRecognize(formData);
                 }
                 return;
@@ -129,6 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.result === 'MATCH_PENDING') {
                 resTexto.innerText = "🟡 Coincidencia encontrada — confirma para autorizar el acceso";
                 resTexto.style.color = "#f0ad4e";
+                useMatchToken(formData, data.match_token);
                 pendingRecognizeFormData = formData;
                 fillProfileCard(data.data);
                 if (profileCard) profileCard.style.display = 'flex';
@@ -164,8 +174,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if(printScanBtn) printScanBtn.style.display = 'none';
             pendingRecognizeFormData = null;
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            // Se reduce la foto en el navegador (lado mayor ~640 px, JPEG): pesa ~40 KB en vez de varios MB y el servidor no tiene que reducirla él.
+            const MAX_SIDE = 640;
+            const scale = Math.min(1, MAX_SIDE / Math.max(video.videoWidth, video.videoHeight));
+            canvas.width = Math.round(video.videoWidth * scale);
+            canvas.height = Math.round(video.videoHeight * scale);
             canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
             canvas.toBlob((blob) => {
@@ -173,7 +186,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 formData.append('file', blob, 'webcam.jpg');
                 formData.append('event_id', EVENT_ID);
                 submitRecognize(formData);
-            }, 'image/jpeg');
+            }, 'image/jpeg', 0.85);
         });
     }
 

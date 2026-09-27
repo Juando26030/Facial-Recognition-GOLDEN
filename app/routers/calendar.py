@@ -24,7 +24,7 @@ NOTIFIABLE_ROLES = ("coordinador", "comercial", "admin", "super_admin")
 
 
 @router.get("/calendar/notifiable-staff")
-async def list_notifiable_staff(
+def list_notifiable_staff(
     q: str = "", db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Para el buscador de destinatarios al crear un recordatorio — lista desplegable que también
@@ -40,7 +40,7 @@ async def list_notifiable_staff(
 
 
 @router.get("/events/calendar")
-async def calendar_events(
+def calendar_events(
     start: date, end: date,
     commercial_staff_id: Optional[int] = None, coordinator_staff_id: Optional[int] = None,
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
@@ -77,7 +77,7 @@ def _serialize_note(n: CalendarNote) -> dict:
 
 
 @router.get("/calendar/notes")
-async def list_calendar_notes(
+def list_calendar_notes(
     start: date, end: date, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Solo trae los recordatorios que le corresponden a quien pregunta (Fase 14, 2026-09-17,
@@ -89,7 +89,7 @@ async def list_calendar_notes(
 
 
 @router.post("/calendar/notes")
-async def create_calendar_note(
+def create_calendar_note(
     data: CalendarNoteIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     text = data.text.strip()
@@ -113,7 +113,7 @@ async def create_calendar_note(
 
 
 @router.delete("/calendar/notes/{note_id}")
-async def delete_calendar_note(
+def delete_calendar_note(
     note_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     """Solo el autor del recordatorio o admin+ puede borrarlo — es un tablero compartido, pero no

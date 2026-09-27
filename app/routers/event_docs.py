@@ -23,6 +23,7 @@ from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import EventDocument, EventExpense, StaffUser
+from app.storage import get_storage, key_of
 
 router = APIRouter()
 
@@ -33,17 +34,12 @@ MAX_FILE_BYTES = 25_000_000
 
 
 def _store(tenant_id: str, kind: str, event_id: int, upload_name: str, content: bytes) -> str:
-    folder = os.path.join("data", tenant_id, kind, str(event_id))
-    os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, f"{uuid.uuid4().hex}{os.path.splitext(upload_name)[1].lower()}")
-    with open(path, "wb") as f:
-        f.write(content)
-    return path
+    return get_storage().put(key_of(tenant_id, kind, event_id, f"{uuid.uuid4().hex}{os.path.splitext(upload_name)[1].lower()}"), content)
 
 
 def _remove(path: str) -> None:
-    if path and os.path.isfile(path):
-        os.remove(path)
+    if path:
+        get_storage().delete(path)
 
 
 def delete_event_files(db: Session, event_id: int) -> None:
@@ -66,14 +62,14 @@ def _doc_json(d: EventDocument) -> dict:
 
 
 @router.get("/events/{event_id}/documents")
-async def list_documents(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_documents(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     docs = db.query(EventDocument).filter(EventDocument.event_id == event.id).order_by(EventDocument.created_at.desc()).all()
     return [_doc_json(d) for d in docs]
 
 
 @router.post("/events/{event_id}/documents")
-async def add_document(
+def add_document(
     event_id: int, name: str = Form(...), description: str = Form(""), file: UploadFile = File(...),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
@@ -83,7 +79,7 @@ async def add_document(
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in DOC_EXT:
         raise HTTPException(status_code=400, detail=f"Formato no permitido — usa uno de: {', '.join(sorted(DOC_EXT))}")
-    content = await file.read()
+    content = file.file.read()
     if not content or len(content) > MAX_FILE_BYTES:
         raise HTTPException(status_code=400, detail="El archivo está vacío o pesa más de 25 MB")
     doc = EventDocument(
@@ -100,13 +96,13 @@ async def add_document(
 def _get_doc(db: Session, event_id: int, doc_id: int, staff: StaffUser) -> EventDocument:
     event = get_event_for_staff(event_id, db, staff)
     doc = db.query(EventDocument).filter(EventDocument.id == doc_id, EventDocument.event_id == event.id).first()
-    if not doc or not os.path.isfile(doc.stored_path):
+    if not doc or not get_storage().exists(doc.stored_path):
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     return doc
 
 
 @router.get("/events/{event_id}/documents/zip")
-async def download_all_documents(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def download_all_documents(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Todos los documentos del evento en un ZIP (al finalizar el evento). Cada archivo se nombra
     "<referencia> - <archivo original>" y los nombres repetidos se numeran."""
     event = get_event_for_staff(event_id, db, staff)
@@ -116,7 +112,7 @@ async def download_all_documents(event_id: int, db: Session = Depends(get_db), s
     buffer, used = io.BytesIO(), set()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for d in docs:
-            if not os.path.isfile(d.stored_path):
+            if not get_storage().exists(d.stored_path):
                 continue
             entry = f"{d.name} - {d.original_filename}".replace("/", "_").replace("\\", "_")
             base, n = entry, 1
@@ -125,7 +121,7 @@ async def download_all_documents(event_id: int, db: Session = Depends(get_db), s
                 stem, ext = os.path.splitext(base)
                 entry = f"{stem} ({n}){ext}"
             used.add(entry)
-            zf.write(d.stored_path, entry)
+            zf.writestr(entry, get_storage().get(d.stored_path))
     buffer.seek(0)
     return StreamingResponse(
         buffer, media_type="application/zip",
@@ -134,13 +130,13 @@ async def download_all_documents(event_id: int, db: Session = Depends(get_db), s
 
 
 @router.get("/events/{event_id}/documents/{doc_id}/download")
-async def download_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def download_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     doc = _get_doc(db, event_id, doc_id, staff)
-    return FileResponse(doc.stored_path, filename=doc.original_filename, media_type=doc.mime_type or "application/octet-stream")
+    return get_storage().response(doc.stored_path, filename=doc.original_filename, media_type=doc.mime_type or "application/octet-stream")
 
 
 @router.delete("/events/{event_id}/documents/{doc_id}")
-async def delete_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def delete_document(event_id: int, doc_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     doc = _get_doc(db, event_id, doc_id, staff)
     _remove(doc.stored_path)
     db.delete(doc)
@@ -159,14 +155,14 @@ def _expense_json(e: EventExpense) -> dict:
 
 
 @router.get("/events/{event_id}/expenses")
-async def list_expenses(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def list_expenses(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     rows = db.query(EventExpense).filter(EventExpense.event_id == event.id).order_by(EventExpense.created_at).all()
     return {"expenses": [_expense_json(e) for e in rows], "total": float(sum((e.amount or 0) for e in rows))}
 
 
 @router.post("/events/{event_id}/expenses")
-async def add_expense(
+def add_expense(
     event_id: int, category: str = Form(...), responsible: str = Form(...), description: str = Form(""),
     applies_to: str = Form(""), amount: str = Form(...), evidence: UploadFile = File(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
@@ -186,7 +182,7 @@ async def add_expense(
         ext = os.path.splitext(evidence.filename)[1].lower()
         if ext not in IMAGE_EXT:
             raise HTTPException(status_code=400, detail="La evidencia debe ser una imagen (PNG, JPG, WebP o GIF)")
-        content = await evidence.read()
+        content = evidence.file.read()
         if not content or len(content) > MAX_FILE_BYTES:
             raise HTTPException(status_code=400, detail="La imagen está vacía o pesa más de 25 MB")
         try:
@@ -215,7 +211,7 @@ def _get_expense(db: Session, event_id: int, expense_id: int, staff: StaffUser) 
 
 
 @router.get("/events/{event_id}/expenses/report")
-async def expenses_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def expenses_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     """Reporte Excel de legalizaciones: título del evento, una fila por gasto con su evidencia
     incrustada como imagen, y el total al final. Se puede bajar en cualquier momento (normalmente al
     finalizar el evento)."""
@@ -227,7 +223,7 @@ async def expenses_report(event_id: int, db: Session = Depends(get_db), staff: S
           e.applies_to or "", float(e.amount or 0), "" if e.evidence_path else "Sin evidencia"] for e in rows],
         columns=headers,
     )
-    title_rows, header_row = 4, 5
+    header_row = 5
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Legalizaciones", startrow=header_row - 1)
@@ -250,8 +246,8 @@ async def expenses_report(event_id: int, db: Session = Depends(get_db), staff: S
             row = header_row + offset
             ws.cell(row=row, column=6).number_format = "#,##0.00"
             ws.cell(row=row, column=4).alignment = Alignment(wrap_text=True, vertical="top")
-            if e.evidence_path and os.path.isfile(e.evidence_path):
-                thumb = Image.open(e.evidence_path).convert("RGB")
+            if e.evidence_path and get_storage().exists(e.evidence_path):
+                thumb = Image.open(io.BytesIO(get_storage().get(e.evidence_path))).convert("RGB")
                 thumb.thumbnail((220, 165))
                 buf = io.BytesIO()
                 thumb.save(buf, "PNG")
@@ -271,15 +267,15 @@ async def expenses_report(event_id: int, db: Session = Depends(get_db), staff: S
 
 
 @router.get("/events/{event_id}/expenses/{expense_id}/evidence")
-async def expense_evidence(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def expense_evidence(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     exp = _get_expense(db, event_id, expense_id, staff)
-    if not exp.evidence_path or not os.path.isfile(exp.evidence_path):
+    if not exp.evidence_path or not get_storage().exists(exp.evidence_path):
         raise HTTPException(status_code=404, detail="Este gasto no tiene evidencia")
-    return FileResponse(exp.evidence_path, filename=exp.evidence_name)
+    return get_storage().response(exp.evidence_path, filename=exp.evidence_name)
 
 
 @router.delete("/events/{event_id}/expenses/{expense_id}")
-async def delete_expense(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
+def delete_expense(event_id: int, expense_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     exp = _get_expense(db, event_id, expense_id, staff)
     _remove(exp.evidence_path)
     db.delete(exp)
