@@ -30,7 +30,15 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 - [ ] 2. `deploy/gcp/bootstrap.sh` completo e idempotente (con costos al inicio)
 - [ ] 3. Staging en Cloud Run (`*-staging`) + workflow de GitHub Actions; producción preparada pero desactivada
 - [ ] 4. Jobs programados: respaldo completo diario, BD cada hora, check_backups, purge_biometrics, precalentamiento, congelamiento
-- [ ] 5. Rol `golden_app` con mínimos privilegios en Neon (la app usa golden_app; migraciones, el dueño)
+- [x] 5. Rol `golden_app` en Neon (`scripts/neon_app_role.py`, idempotente). La app entra con `golden_app` por el pooler; migraciones,
+  respaldos y restauraciones con el dueño (`golden_db_owner`, conexión directa). Permisos: `CONNECT`, `USAGE` del esquema, DML en
+  todas las tablas, secuencias, `EXECUTE` de funciones, y privilegios por defecto del dueño para lo que creen las migraciones futuras;
+  sin `CREATE`. **Cambio frente a la VM:** allá `golden_app` es DUEÑO de las 66 tablas (el volcado trae `OWNER TO golden_app`); en Neon
+  el dueño es `golden_db_owner` y la migración de datos quita esos `OWNER TO`/`GRANT`. La contraseña se genera en el script (256 bits),
+  va a Neon en claro por TLS (Neon rechaza un verificador SCRAM precalculado: lo sincroniza con su plano de control) y solo se escribe en
+  `.env.staging` o en Secret Manager (`--app-secret`), nunca en pantalla. **Aplicado en la rama staging:** golden_app entra por el pooler,
+  lee, NO puede crear tablas, y la app funcionó con él (cola: encolar/reclamar/terminar; función de cupo; `/readyz` 200). Copia del
+  `.env.staging` anterior fuera del repo
 - [ ] 6. Scripts de migración VM→Neon y archivos VM→Cloud Storage, probados contra la rama staging con el respaldo de producción
 
 ### Sesión 3 — pendiente
