@@ -2,6 +2,8 @@
 
     python scripts/migrate_files_to_gcs.py --source ~/Facial-Recognition/data --bucket <GCS_BUCKET> [--prefix <GCS_PREFIX>] [--dry-run]
     python scripts/migrate_files_to_gcs.py --source ... --bucket ... --verify-only        # solo comparar, no sube nada
+    --biometric-prefix biometric   las fotos biométricas (<cliente>/known_people/…) van a biometric/<cliente>/known_people/…, donde las busca la
+                                   app con BIOMETRIC_KEY_PREFIX=biometric (y donde la regla de ciclo de vida borra sus versiones viejas en 1 día)
 
 Las claves en el bucket son las mismas que usa la app (`<prefijo>/acme/known_people/1001.jpg`, ver app/storage.py), así que con
 `STORAGE_BACKEND=gcs` + `GCS_BUCKET` + `GCS_PREFIX` la app los encuentra sin tocar la base. Se puede repetir las veces que haga falta
@@ -44,6 +46,14 @@ def local_files(root: str) -> dict:
     return out
 
 
+def target_key(key: str, biometric_prefix: str = "") -> str:
+    """Clave en el bucket (sin el prefijo general): las fotos biométricas, bajo su prefijo propio si se pidió."""
+    parts = key.split("/")
+    if biometric_prefix and len(parts) >= 3 and parts[1] == "known_people":
+        return f"{biometric_prefix.strip('/')}/{key}"
+    return key
+
+
 def main(argv=None, client=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", required=True)
@@ -51,6 +61,7 @@ def main(argv=None, client=None) -> int:
     ap.add_argument("--prefix", default="")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--verify-only", action="store_true")
+    ap.add_argument("--biometric-prefix", default="")
     args = ap.parse_args(argv)
     from google.cloud import storage as gcs
 
@@ -59,7 +70,7 @@ def main(argv=None, client=None) -> int:
     prefix = args.prefix.strip("/")
     name = (lambda key: f"{prefix}/{key}") if prefix else (lambda key: key)
 
-    files = local_files(os.path.expanduser(args.source))
+    files = {target_key(k, args.biometric_prefix): p for k, p in local_files(os.path.expanduser(args.source)).items()}
     remote = {b.name: b.md5_hash for b in client.list_blobs(bucket, prefix=f"{prefix}/" if prefix else None)}
     uploaded = skipped = size = 0
     for key, path in sorted(files.items()):

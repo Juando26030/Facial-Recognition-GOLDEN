@@ -2,6 +2,7 @@
   "rule": [
     { "action": { "type": "Delete" }, "condition": { "age": 1, "matchesPrefix": ["uploads/", "app/uploads/"] } },
     { "action": { "type": "Delete" }, "condition": { "daysSinceNoncurrentTime": 1, "matchesPrefix": ["uploads/", "app/uploads/"] } },
+    { "action": { "type": "Delete" }, "condition": { "daysSinceNoncurrentTime": 1, "matchesPrefix": ["biometric/", "app/biometric/"] } },
     { "action": { "type": "Delete" }, "condition": { "daysSinceNoncurrentTime": 30 } }
   ]
 }

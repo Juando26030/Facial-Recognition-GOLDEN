@@ -179,6 +179,11 @@ rules[0]["origin"] = sorted({sys.argv[1]} | ({f"https://{site}.web.app", f"https
 print(json.dumps(rules))
 EOF
 gcloud storage buckets update "gs://$APP_BUCKET" --cors-file "$TMP/cors.json" --versioning --quiet >/dev/null
+# Sin «soft delete» (retención de lo borrado, 7 días por defecto en GCS): la protección contra borrados es el versionado (30 días) y, para
+# fotos biométricas, lo purgado debe desaparecer en ~1 día. En los respaldos tampoco: nadie puede borrarlos (ninguna cuenta de servicio
+# tiene permiso; solo el ciclo de vida), así el tiempo máximo que sobrevive un dato purgado en un respaldo es un número fijo (docs/15).
+gcloud storage buckets update "gs://$APP_BUCKET" --clear-soft-delete --quiet >/dev/null
+gcloud storage buckets update "gs://$BACKUP_BUCKET" --clear-soft-delete --quiet >/dev/null
 if [ "$APP_BUCKET" = "$BACKUP_BUCKET" ]; then        # staging: un solo bucket con las dos reglas
   python3 -c 'import json; a, b = (json.load(open(f)) for f in ("deploy/gcs-app-lifecycle.json", "deploy/gcs-lifecycle.json")); print(json.dumps({"rule": a["rule"] + b["rule"]}))' > "$TMP/lc.json"
   gcloud storage buckets update "gs://$APP_BUCKET" --lifecycle-file "$TMP/lc.json" --quiet >/dev/null

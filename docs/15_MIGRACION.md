@@ -137,6 +137,31 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   este proyecto o de toda la cuenta): solo lo informa (p. ej. «GoldenWeb mensual» 160000 COP). Si no puede leer los presupuestos (falta
   `billing.budgets.list` en la cuenta de la empresa) no crea nada y avisa. Solo sin ninguno pregunta el monto (Enter = no crear)
 
+- [x] R4. **Privacidad: cuánto sobrevive un dato biométrico después de purgado.** Cambios: en la nube las fotos biométricas viven bajo un
+  prefijo común (`BIOMETRIC_KEY_PREFIX=biometric` → `app/biometric/<cliente>/known_people/<cédula>.jpg`; en la VM nada cambia) y
+  `scripts/migrate_files_to_gcs.py --biometric-prefix biometric` las deja ahí. Así una regla de ciclo de vida
+  (`deploy/gcs-app-lifecycle.json`) borra en **1 día** las versiones viejas que dejan la purga, un «eliminar» o una foto corregida (el
+  resto de archivos conserva sus versiones 30 días). Los respaldos (`deploy/gcs-lifecycle.json`) también borran en 1 día cualquier versión
+  vieja. bootstrap.sh desactiva el *soft delete* de GCS (retención oculta de lo borrado, 7 días por defecto) en los dos buckets: la
+  protección de archivos es el versionado, y los respaldos no los puede borrar ninguna cuenta de servicio (solo el ciclo de vida).
+
+  | Dónde | Qué queda tras la purga (`purge_biometrics`, 180 días después del fin del evento) | Máximo que sobrevive |
+  |---|---|---|
+  | Base de datos (Neon, en vivo) | nada: `face_encoding` queda vacío al instante | 0 |
+  | Historial de Neon (restaurar a un minuto pasado) | el encoding (cifrado con la llave de la app) dentro de la ventana de restauración | la ventana configurada en Neon (plan Launch: hasta 7 días). **Recomendado: fijarla en 1 día** (consola de Neon → Settings → Storage → History retention; paso manual) |
+  | Foto en el bucket | versión vieja bajo `app/biometric/…` | ≤ 2 días (regla de 1 día; GCS la aplica de forma asíncrona, hasta ~24 h después) |
+  | Respaldos horarios | el encoding cifrado | 3 días (+ ≤ 1 día de retraso del ciclo de vida) |
+  | Respaldos diarios | el encoding cifrado | **60 días** (+ ≤ 1 día) |
+  | Logs | nada: nunca registran encodings ni fotos | 0 |
+
+  **Número para la política de privacidad: hasta 61 días después de la purga** (la copia más vieja de los respaldos diarios, cifrada con
+  la llave de la app; ~2 días si se trata solo de la foto). Con la ventana de Neon en 1 día el número no cambia (lo manda el respaldo).
+  Si se quisiera acortarlo habría que acortar la retención de los respaldos diarios (hoy 60 días, `deploy/gcs-lifecycle.json`).
+  **Pendiente del mundo VM (limpiar después del cambio):** las copias que hace la VM (`gs://<bucket-datos>/data/`, con versiones: incluye
+  `known_people/`) y sus volcados en `gs://<bucket-respaldos>/db/` siguen su propia retención (60 días los volcados; las versiones viejas
+  de `data/`, hasta 30 días con la regla general). En el runbook del cambio: apagar el cron de la VM y borrar `gs://<bucket-datos>/data/`
+  y `config/.env` una vez verificada la migración
+
 #### Qué corre Juan David después de la sesión 2 (en este orden; nada de esto lo corrió Claude Code)
 1. Revisar `deploy/gcp/bootstrap.sh`, `deploy/gcp/deploy.sh`, `deploy/gcp/config.sh` y `.github/workflows/cloudrun*.yml`.
 2. Cloud Shell: `git clone` del repositorio, `git checkout migra/fase1-2`, `gcloud config set project <ID>` y

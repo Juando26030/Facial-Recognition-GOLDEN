@@ -247,7 +247,9 @@ def delete_many(keys: Iterable[str]) -> None:
 
 # ------------------------------------------------------------------ claves de los archivos de la aplicación (un solo lugar, para no repetir rutas por todo el código)
 def photo_key(tenant_id: str, user_id: str) -> str:
-    return key_of(tenant_id, "known_people", f"{user_id}.jpg")
+    """Foto biométrica. BIOMETRIC_KEY_PREFIX (en la nube «biometric», en la VM vacío) las junta bajo UN prefijo común, para que la regla de
+    ciclo de vida borre en 1 día las versiones viejas que dejan la purga y las correcciones (deploy/gcs-app-lifecycle.json)."""
+    return key_of(os.getenv("BIOMETRIC_KEY_PREFIX", ""), tenant_id, "known_people", f"{user_id}.jpg")
 
 
 def badge_asset_key(tenant_id: str, filename: str) -> str:

@@ -7,6 +7,8 @@ LEGAL_PHONE: "+57 317 427 6073"
 LEGAL_EMAIL: "info@goldenlogisticas.com"
 LEGAL_PRIVACY_EMAIL: "info@goldenlogisticas.com"
 BIOMETRIC_RETENTION_DAYS: "180"
+# Fotos biométricas bajo un prefijo común: la regla de ciclo de vida borra en 1 día sus versiones viejas (docs/15, R4).
+BIOMETRIC_KEY_PREFIX: "biometric"
 RECOGNITION_JITTERS: "2"
 # Detrás de Firebase Hosting solo pasa la cookie «__session», y CF-Connecting-IP no es confiable (Cloudflare solo como DNS).
 SESSION_COOKIE: "__session"
