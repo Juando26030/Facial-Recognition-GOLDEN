@@ -81,6 +81,15 @@ def create(purpose: str, scope: dict, tenant_id: str, filename: str, size: int, 
     return {"url": url, "method": "PUT", "headers": headers, "token": token}
 
 
+def stash(purpose: str, scope: dict, tenant_id: str, filename: str, content: bytes, content_type: str = "application/octet-stream") -> str:
+    """Guarda un archivo que SÍ llegó en la petición (los chicos) como si se hubiera subido directo, y devuelve su token: así quien lo
+    procese en otro contenedor (el Cloud Run Job de la carga masiva) lo lee igual que uno subido por el navegador."""
+    allowed, limit = PURPOSES[purpose]
+    key = key_of("uploads", tenant_id, purpose, uuid.uuid4().hex, safe_name(filename))
+    get_storage().put(key, content)
+    return _serializer().dumps({"k": key, "p": purpose, "s": scope, "m": limit, "n": os.path.basename(filename)[:200], "c": content_type})
+
+
 def read_token(token: str, max_age: int = TOKEN_SECONDS) -> dict:
     try:
         return _serializer().loads(token, max_age=max_age)

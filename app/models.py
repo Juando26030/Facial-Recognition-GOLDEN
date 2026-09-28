@@ -403,6 +403,7 @@ class BulkJob(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     finished_at = Column(DateTime, nullable=True)
+    spec_json = Column(Text, nullable=True)       # carga ejecutada por un Cloud Run Job: qué procesar (ver app/bulk_runner.py)
 
 
 class WebForm(Base):

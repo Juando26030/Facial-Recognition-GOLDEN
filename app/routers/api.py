@@ -8,6 +8,7 @@ import tempfile
 import csv
 import io
 import hashlib
+import logging
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PIL import Image
@@ -28,6 +29,8 @@ from app.email_check import check_email
 from app.routers import parametros, signatures
 from app.routers.super_events import sibling_attendance
 from app.routers.events import _typo_match, _words
+
+log = logging.getLogger("golden.api")
 
 
 def _missing_required_fields(field_configs: list, values: dict) -> list:
@@ -1104,15 +1107,18 @@ def bulk_register(
     (lo que usa la pantalla "Adjuntar Base de Datos", Sprint 5) responde de inmediato con `{job_id}` y el trabajo
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
-    get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    has_zip = bool(zip_upload) or (zip_file is not None and bool(zip_file.filename))
+    if has_zip and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
+        raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
+    if background and bulk_jobs.uses_cloud_run():
+        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id)
     # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
     zip_up = uploads.fetch(zip_upload, "bulk_zip", {"e": event_id})
     content = roster_up.content if roster_up else (roster_file.file.read() if (roster_file is not None and roster_file.filename) else None)
     roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
     zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
-    if zip_bytes is not None and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
-        raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     args = dict(event_id=event_id, roster_filename=roster_filename,
                 content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id)
 
@@ -1136,6 +1142,47 @@ def bulk_register(
 
     bulk_jobs.start(job_id, work)
     return {"background": True, "job_id": job_id}
+
+
+def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id) -> dict:
+    """BULK_BACKEND=cloudrun: la carga la ejecuta un Cloud Run Job. Aquí NO se descargan los archivos (un ZIP de 2 GB no cabe en el
+    servicio web): solo se guardan sus tokens; los que vinieron en la petición se dejan antes en el almacenamiento (`uploads.stash`)."""
+    scope = {"e": event.id}
+
+    def token(upload_token, file, purpose):
+        if upload_token:
+            uploads.read_token(upload_token)                 # firma y vigencia de una vez; propósito y alcance los revisa el Job
+            return upload_token
+        if file is not None and file.filename:
+            return uploads.stash(purpose, scope, event.tenant_id, file.filename, file.file.read(), file.content_type or "application/octet-stream")
+        return None
+
+    spec = {"roster": token(roster_upload, roster_file, "bulk_roster"), "zip": token(zip_upload, zip_file, "bulk_zip"),
+            "field_labels": field_labels, "source_event_id": source_event_id}
+    if bulk_jobs.active_job(db, event.id):
+        raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
+    job_id = bulk_jobs.create_job(db, event.id, staff.id, spec)
+    try:
+        bulk_jobs.launch_cloud_run(job_id)
+    except Exception:  # noqa: BLE001 — la tarea queda marcada con el error y el navegador lo muestra
+        log.error("no se pudo lanzar el Job de la carga %s", job_id, exc_info=True)
+        bulk_jobs._finish(job_id, error_status=503, error_detail="No se pudo iniciar el procesamiento de la carga. Intenta de nuevo en unos minutos.")
+        raise HTTPException(status_code=503, detail="No se pudo iniciar el procesamiento de la carga. Intenta de nuevo en unos minutos.")
+    return {"background": True, "job_id": job_id}
+
+
+def run_bulk_spec(db: Session, job, progress) -> dict:
+    """Lo que ejecuta el Cloud Run Job (`app/bulk_runner.py`) con lo que dejó `_launch_bulk_cloud_run`."""
+    spec, event_id = json.loads(job.spec_json), job.event_id
+    staff = db.query(StaffUser).filter(StaffUser.id == job.staff_user_id).first()
+    roster_up = uploads.fetch(spec.get("roster"), "bulk_roster", {"e": event_id})
+    zip_up = uploads.fetch(spec.get("zip"), "bulk_zip", {"e": event_id})
+    result = _bulk_register_impl(
+        db, staff, event_id=event_id, roster_filename=roster_up.filename if roster_up else None, content=roster_up.content if roster_up else None,
+        zip_bytes=zip_up.content if zip_up else None, field_labels=spec.get("field_labels"), source_event_id=spec.get("source_event_id"), progress=progress)
+    if not (isinstance(result, dict) and result.get("result") == "NEEDS_LABELS"):     # NEEDS_LABELS: la misma carga vuelve con los nombres
+        uploads.discard(roster_up, zip_up)
+    return result
 
 
 @router.get("/bulk_jobs/{job_id}")

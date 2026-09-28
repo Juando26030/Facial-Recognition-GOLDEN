@@ -19,7 +19,14 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   (uno persistente por proceso, `pool_pre_ping`, LIFO, reintentos; prueba `tests/test_db_pool.py`: 30 peticiones, 0 conexiones
   nuevas); `scripts/seed_staging_demo.py` va en la imagen y ahora exige `DEPLOY_ENV=staging` además de un host de Neon
   (producción también vivirá en Neon)
-- [ ] 1. Carga masiva con fotos fuera del hilo de fondo (Cloud Run Job o cola dentro de la petición), misma barra de progreso
+- [x] 1. Carga masiva con fotos como **Cloud Run Job** (`BULK_BACKEND=cloudrun`, `BULK_JOB_NAME`). El servicio web solo revisa
+  permisos y la autorización de las fotos, guarda en la tarea (`bulk_jobs.spec_json`, migración 0050) los TOKENS de los archivos
+  ya subidos al bucket —nunca su contenido: un ZIP de 2 GB no cabe en el servicio web— y lanza una ejecución del Job por la API de
+  Cloud Run (`run.jobs.runWithOverrides`, args `-m app.bulk_runner <id>`). El Job (misma imagen, comando `python`, hasta 24 h, CPU
+  siempre asignada, 0 reintentos) descarga, valida y procesa con el MISMO código y escribe el avance en la misma fila: la barra no
+  cambia. Si el Job no se puede lanzar, la tarea queda en error (503) y el evento no queda bloqueado. Se descartó la cola procesada
+  dentro de la petición: tope de 45-60 s por petición contra cargas de horas. `thread` sigue siendo el modo por defecto (VM y local).
+  Pruebas: `tests/test_bulk_cloudrun.py` (4) + las 9 de siempre
 - [ ] 2. `deploy/gcp/bootstrap.sh` completo e idempotente (con costos al inicio)
 - [ ] 3. Staging en Cloud Run (`*-staging`) + workflow de GitHub Actions; producción preparada pero desactivada
 - [ ] 4. Jobs programados: respaldo completo diario, BD cada hora, check_backups, purge_biometrics, precalentamiento, congelamiento
