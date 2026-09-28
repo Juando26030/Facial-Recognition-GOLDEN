@@ -64,31 +64,85 @@ def test_a_failed_job_schedules_its_own_retry(monkeypatch, cloud, db):
     assert job.status == "queued" and calls == [job.run_at] and job.run_at > datetime.utcnow()
 
 
-def test_internal_endpoint_needs_the_invoker_token_and_runs_the_queue(monkeypatch, client, db):
-    done = []
-    jobs.handler("prueba_ok")(lambda payload: done.append(payload["n"]))
-    jobs.enqueue(db, "prueba_ok", {"n": 1})
-    db.commit()
-    assert client.post("/internal/jobs/run").status_code == 403
-    monkeypatch.setenv("JOBS_INVOKER_SA", "jobs@p.iam.gserviceaccount.com")
+INVOKER = "golden-invoker-staging@p.iam.gserviceaccount.com"
+
+
+@pytest.fixture()
+def oidc(monkeypatch):
+    """Doble de la verificación de Google: cada «token» de prueba representa un caso."""
+    from google.auth import exceptions as google_exceptions
+    monkeypatch.setenv("JOBS_INVOKER_SA", INVOKER)
     monkeypatch.setenv("CLOUD_TASKS_URL", URL)
     seen = {}
 
     def verify(token, request, audience):
         seen["audience"] = audience
-        if token != "bueno":
-            raise ValueError("firma inválida")
-        return {"email": "jobs@p.iam.gserviceaccount.com", "email_verified": True}
+        if audience != URL:
+            raise ValueError("audiencia equivocada")
+        if token == "red":
+            raise google_exceptions.TransportError("no se pudieron bajar los certificados")
+        claims = {"bueno": {"email": INVOKER, "email_verified": True},
+                  "otra-cuenta": {"email": "golden-invoker@p.iam.gserviceaccount.com", "email_verified": True},
+                  "sin-verificar": {"email": INVOKER, "email_verified": False}}.get(token)
+        if claims is None:
+            raise ValueError("firma, emisor o vencimiento no válidos")
+        return claims
 
     monkeypatch.setattr("google.oauth2.id_token.verify_oauth2_token", verify)
-    assert client.post("/internal/jobs/run", headers={"Authorization": "Bearer malo"}).status_code == 403
-    r = client.post("/internal/jobs/run", headers={"Authorization": "Bearer bueno"})
-    assert r.status_code == 200 and r.json() == {"ran": 1} and done == [1] and seen["audience"] == URL
+    return seen
+
+
+def _run(client, token=None, **headers):
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
+    return client.post("/internal/jobs/run", headers=headers)
+
+
+def test_internal_endpoint_only_accepts_the_invoker_oidc_token(oidc, monkeypatch, client, db):
+    done = []
+    jobs.handler("prueba_ok")(lambda payload: done.append(payload["n"]))
+    jobs.enqueue(db, "prueba_ok", {"n": 1})
+    db.commit()
+    assert _run(client).status_code == 401                                   # sin token
+    assert _run(client, "").status_code == 401
+    assert _run(client, "falsificado").status_code == 401                     # firma/emisor/vencimiento
+    assert _run(client, "otra-cuenta").status_code == 403                     # token válido, pero de otra cuenta (p. ej. la de producción)
+    assert _run(client, "sin-verificar").status_code == 403
+    assert _run(client, "red").status_code == 503                            # no se pudo verificar: Cloud Tasks reintenta
     monkeypatch.setenv("OPS_TOKEN", "t0k3n")
-    assert client.post("/internal/jobs/run", headers={"X-Ops-Token": "t0k3n"}).json() == {"ran": 0}
+    assert _run(client, **{"X-Ops-Token": "t0k3n"}).status_code == 401      # el token de operaciones YA NO sirve aquí
+    assert done == []
+    r = _run(client, "bueno")
+    assert r.status_code == 200 and r.json() == {"ran": 1} and done == [1] and oidc["audience"] == URL
 
 
-def test_internal_endpoint_runs_jobs_inside_the_request_without_background_threads(monkeypatch, client, db):
+def test_internal_endpoint_is_closed_when_not_configured(monkeypatch, client):
+    monkeypatch.delenv("CLOUD_TASKS_URL", raising=False)
+    monkeypatch.setenv("JOBS_INVOKER_SA", INVOKER)
+    assert _run(client, "cualquiera").status_code == 403                     # sin audiencia configurada no se verifica «a medias»
+    monkeypatch.setenv("CLOUD_TASKS_URL", URL)
+    monkeypatch.delenv("JOBS_INVOKER_SA")
+    assert _run(client, "cualquiera").status_code == 403
+
+
+def test_every_internal_route_requires_the_invoker_token(client):
+    """Cualquier ruta /internal/* que se agregue sin la dependencia google_invoker hace fallar esta prueba."""
+    from app.main import app
+    from app.routers.ops import google_invoker
+
+    def walk(routes):                                  # FastAPI anida los routers incluidos (_IncludedRouter.original_router)
+        for r in routes:
+            inner = getattr(r, "original_router", None)
+            yield from walk(inner.routes) if inner is not None else [r]
+    internal = [r for r in walk(app.routes) if getattr(r, "path", "").startswith("/internal")]
+    assert internal
+    for route in internal:
+        assert any(d.call is google_invoker for d in route.dependant.dependencies), route.path
+        for method in route.methods:
+            assert client.request(method, route.path).status_code in (401, 403), (method, route.path)
+
+
+def test_internal_endpoint_runs_jobs_inside_the_request_without_background_threads(oidc, monkeypatch, client, db):
     """En Cloud Run la CPU se reduce al responder: el trabajo tiene que estar HECHO cuando llega la respuesta, en el hilo de la petición."""
     import threading
     handler_threads, drain_threads = [], []
@@ -96,7 +150,6 @@ def test_internal_endpoint_runs_jobs_inside_the_request_without_background_threa
     for n in range(3):
         jobs.enqueue(db, "prueba_en_peticion", {"n": n})
     db.commit()
-    monkeypatch.setenv("OPS_TOKEN", "t0k3n")
     real_drain = jobs.drain
 
     def spy_drain(*a, **kw):
@@ -104,7 +157,7 @@ def test_internal_endpoint_runs_jobs_inside_the_request_without_background_threa
         return real_drain(*a, **kw)
     monkeypatch.setattr(jobs, "drain", spy_drain)
     monkeypatch.setattr(jobs, "Worker", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("no debe arrancar el worker de fondo")))
-    r = client.post("/internal/jobs/run", headers={"X-Ops-Token": "t0k3n"})
+    r = _run(client, "bueno")
     assert r.status_code == 200 and r.json() == {"ran": 3}
     assert len(handler_threads) == 3 and set(handler_threads) == set(drain_threads)   # mismo hilo que atendió la petición
     db.expire_all()

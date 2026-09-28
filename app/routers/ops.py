@@ -44,27 +44,32 @@ def _ops_reader(request: Request, db: Session = Depends(get_db)) -> Optional[obj
     return require_role("admin")(get_current_staff(request, db))
 
 
-def _jobs_invoker(request: Request) -> None:
-    """Quién puede despertar la cola: Cloud Tasks / Cloud Scheduler con un token OIDC de `JOBS_INVOKER_SA` para la audiencia `CLOUD_TASKS_URL`,
-    o el token de operaciones (pruebas y uso manual)."""
-    token, supplied = os.getenv("OPS_TOKEN"), request.headers.get("x-ops-token")
-    if token and supplied and hmac.compare_digest(token, supplied):
-        return
-    auth, sa = request.headers.get("authorization", ""), os.getenv("JOBS_INVOKER_SA")
-    if sa and auth.startswith("Bearer "):
-        from google.auth.transport import requests as google_requests
-        from google.oauth2 import id_token
-        try:
-            claims = id_token.verify_oauth2_token(auth[7:], google_requests.Request(), os.getenv("CLOUD_TASKS_URL"))
-        except ValueError:
-            claims = {}
-        if claims.get("email") == sa and claims.get("email_verified"):
-            return
-    raise HTTPException(status_code=403, detail="No autorizado")
+def google_invoker(request: Request) -> None:
+    """Única puerta de TODA ruta /internal/* (servicio público): token OIDC de Google válido (firma y emisor de Google, vigente), emitido
+    PARA la audiencia `CLOUD_TASKS_URL` y A NOMBRE de la cuenta `JOBS_INVOKER_SA` del entorno, con el correo verificado.
+    Sin token o token inválido → 401; token válido de otra cuenta → 403; sin configurar → 403 (nunca se abre por falta de variables).
+    Ningún otro mecanismo (ni sesión de admin ni X-Ops-Token) sirve aquí."""
+    audience, invoker = os.getenv("CLOUD_TASKS_URL"), os.getenv("JOBS_INVOKER_SA")
+    if not audience or not invoker:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer ") or not auth[7:].strip():
+        raise HTTPException(status_code=401, detail="Falta el token", headers={"WWW-Authenticate": "Bearer"})
+    from google.auth import exceptions as google_exceptions
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token
+    try:
+        claims = id_token.verify_oauth2_token(auth[7:].strip(), google_requests.Request(), audience)
+    except google_exceptions.TransportError:
+        raise HTTPException(status_code=503, detail="No se pudo verificar el token", headers={"Retry-After": "10"})
+    except ValueError:                                   # firma, emisor, vencimiento o audiencia no válidos
+        raise HTTPException(status_code=401, detail="Token no válido", headers={"WWW-Authenticate": "Bearer"})
+    if claims.get("email") != invoker or claims.get("email_verified") is not True:
+        raise HTTPException(status_code=403, detail="No autorizado")
 
 
 @router.post("/internal/jobs/run")
-def run_jobs(_=Depends(_jobs_invoker)) -> dict:
+def run_jobs(_=Depends(google_invoker)) -> dict:
     """Ejecuta la cola dentro de ESTA petición (en Cloud Run con facturación por petición la CPU se reduce apenas se responde):
     hasta vaciarla o hasta JOBS_RUN_BUDGET_SECONDS (45 por defecto, por debajo del timeout de 60 de Gunicorn); lo que quede lo toma
     otra tarea de Cloud Tasks."""

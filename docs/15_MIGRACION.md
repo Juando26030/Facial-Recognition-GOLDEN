@@ -124,6 +124,15 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   `__session`, 60 s, CDN), que habría que probar el día del cambio. (c) Publicar Firebase de staging a mano (sin cuenta de GitHub):
   poco práctico. **Recomiendo (a).**
 
+- [x] R2. **`/internal/*` en un servicio público.** Antes aceptaba también el token de operaciones (`X-Ops-Token`) y, si faltaba
+  `CLOUD_TASKS_URL`, la librería de Google verificaba el token SIN audiencia. Ahora TODA ruta `/internal/*` (hoy solo
+  `/internal/jobs/run`) pasa por una sola dependencia (`google_invoker`, app/routers/ops.py): token OIDC de Google válido (firma, emisor
+  y vigencia de Google), audiencia = `CLOUD_TASKS_URL` y emitido para `JOBS_INVOKER_SA` del entorno con correo verificado. Sin token o
+  inválido → 401; válido de otra cuenta (p. ej. el invoker de producción contra staging) → 403; sin configurar → 403 (cerrado);
+  no se pudo verificar por red → 503 (Cloud Tasks reintenta). Ni la sesión de admin ni `X-Ops-Token` sirven ahí (`X-Ops-Token` sigue
+  solo para `/api/ops/deploy-allowed`). Una prueba recorre todas las rutas `/internal` de la app y falla si alguna no tiene la
+  dependencia (`tests/test_jobs_cloudtasks.py`)
+
 #### Qué corre Juan David después de la sesión 2 (en este orden; nada de esto lo corrió Claude Code)
 1. Revisar `deploy/gcp/bootstrap.sh`, `deploy/gcp/deploy.sh`, `deploy/gcp/config.sh` y `.github/workflows/cloudrun*.yml`.
 2. Cloud Shell: `git clone` del repositorio, `git checkout migra/fase1-2`, `gcloud config set project <ID>` y
