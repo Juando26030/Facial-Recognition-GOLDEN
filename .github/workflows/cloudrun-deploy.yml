@@ -1,0 +1,92 @@
+name: Despliegue a Cloud Run (reutilizable)
+
+# Construye la imagen, la sube a Artifact Registry y la despliega con deploy/gcp/deploy.sh (migraciones como Job → 3 servicios → Jobs), y
+# publica Firebase Hosting (dominio → Cloud Run, /static desde la CDN). Autenticación SIN llaves: Workload Identity Federation (el token
+# OIDC de GitHub se cambia por credenciales de la cuenta golden-deployer del entorno; la de producción solo acepta la rama main).
+# Variables del Environment de GitHub (las imprime bootstrap.sh; no son secretos): GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER,
+# GCP_DEPLOYER, FIREBASE_SITE. Si faltan, el despliegue se salta sin fallar (aún no se corrió bootstrap.sh).
+
+on:
+  workflow_call:
+    inputs:
+      env:
+        type: string
+        required: true
+      force:
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GOLDEN_ENV: ${{ inputs.env }}
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION || 'us-east1' }}
+      FIREBASE_SITE: ${{ vars.FIREBASE_SITE }}
+      FORCE: ${{ inputs.force && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: cfg
+        name: ¿Está configurado el entorno?
+        run: |
+          if [ -z "${{ vars.GCP_PROJECT_ID }}" ] || [ -z "${{ vars.GCP_WIF_PROVIDER }}" ] || [ -z "${{ vars.GCP_DEPLOYER }}" ]; then
+            echo "::notice::El Environment «$GOLDEN_ENV» no tiene las variables de GCP: corre deploy/gcp/bootstrap.sh $GOLDEN_ENV y configúralas. Se omite el despliegue."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/golden/app:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          fi
+
+      - if: steps.cfg.outputs.ready == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER }}
+
+      - if: steps.cfg.outputs.ready == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - if: steps.cfg.outputs.ready == 'true'
+        name: Docker → Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - if: steps.cfg.outputs.ready == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - if: steps.cfg.outputs.ready == 'true'
+        name: Construir y subir la imagen (dlib se compila una vez y queda en la caché)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            APP_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - if: steps.cfg.outputs.ready == 'true'
+        name: Desplegar (migraciones → servicios → Jobs; producción respeta el congelamiento)
+        run: bash deploy/gcp/deploy.sh "$GOLDEN_ENV" "$IMAGE"
+
+      - if: steps.cfg.outputs.ready == 'true' && vars.FIREBASE_SITE != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - if: steps.cfg.outputs.ready == 'true' && vars.FIREBASE_SITE != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - if: steps.cfg.outputs.ready == 'true' && vars.FIREBASE_SITE != ''
+        name: Firebase Hosting (rutas → Cloud Run, /static desde la CDN)
+        run: |
+          python deploy/firebase/make_config.py "$GOLDEN_ENV" "$PROJECT_ID" "$REGION" "$FIREBASE_SITE"
+          npx --yes firebase-tools@13 deploy --only hosting --project "$PROJECT_ID" --config build/firebase/firebase.json --non-interactive

@@ -1,0 +1,16 @@
+# Variables NO secretas comunes a todos los servicios y Jobs de Cloud Run (--env-vars-file). Las calculadas —buckets, cola, URLs— las
+# agrega deploy.sh; los secretos vienen de Secret Manager. Datos públicos del negocio: los de la política de privacidad publicada.
+ENVIRONMENT: "production"
+APP_TIMEZONE: "America/Bogota"
+LEGAL_ADDRESS: "Carrera 14a # 71a - 59, Bogotá"
+LEGAL_PHONE: "+57 317 427 6073"
+LEGAL_EMAIL: "info@goldenlogisticas.com"
+LEGAL_PRIVACY_EMAIL: "info@goldenlogisticas.com"
+BIOMETRIC_RETENTION_DAYS: "180"
+RECOGNITION_JITTERS: "2"
+# Detrás de Firebase Hosting solo pasa la cookie «__session», y CF-Connecting-IP no es confiable (Cloudflare solo como DNS).
+SESSION_COOKIE: "__session"
+TRUST_CF_CONNECTING_IP: "0"
+# Posición de la IP real en X-Forwarded-For detrás de Firebase: VERIFICAR en staging (sesión 3) y ajustar.
+XFF_CLIENT_INDEX: "0"
+DEPLOY_FREEZE_HOURS: "3"

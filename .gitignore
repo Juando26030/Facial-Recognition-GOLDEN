@@ -7,3 +7,4 @@ tests/load/.load_env.json
 .build_info
 .env.staging
 .env.*.local
+build/

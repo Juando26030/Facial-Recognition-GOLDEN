@@ -27,7 +27,39 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   cambia. Si el Job no se puede lanzar, la tarea queda en error (503) y el evento no queda bloqueado. Se descartó la cola procesada
   dentro de la petición: tope de 45-60 s por petición contra cargas de horas. `thread` sigue siendo el modo por defecto (VM y local).
   Pruebas: `tests/test_bulk_cloudrun.py` (4) + las 9 de siempre
-- [ ] 2. `deploy/gcp/bootstrap.sh` completo e idempotente (con costos al inicio)
+- [x] 2. `deploy/gcp/bootstrap.sh <staging|production>` (NO se ha corrido: lo revisa y lo corre Juan David en Cloud Shell). Idempotente,
+  con qué crea y cuánto cuesta al inicio. Lee el ID del proyecto de `gcloud config`; `REGION` por defecto `us-east1` (`REGION=us-east4`
+  como alternativa). Crea: APIs; Artifact Registry con limpieza (10 últimas / 30 días); cuentas de servicio por entorno (`golden-app`,
+  `golden-ops`, `golden-invoker`, `golden-deployer`) con permisos mínimos —incluido `iam.serviceAccountTokenCreator` de la cuenta de la app
+  sobre sí misma (firmar URLs)—; Workload Identity Federation para GitHub (staging: cualquier rama del repositorio; producción: solo
+  `main`); Secret Manager pidiendo cada valor por teclado a ciegas (genera los que se pueden generar; en producción pide la
+  `SECRET_KEY` y la `FACE_ENCRYPTION_KEY` ACTUALES de la VM, sin las cuales no se leen los rostros migrados) y crea `golden_app` con
+  `scripts/neon_app_role.py` guardando su cadena directo en el secreto; buckets (producción reutiliza los dos existentes —archivos bajo
+  `app/`, separados de las copias de la VM en `data/` y `config/`— e imprime su región; staging crea uno propio para que su cuenta no
+  toque producción) con CORS (origen = dominio del entorno + dominios de Firebase), ciclo de vida y versiones; cola de Cloud Tasks con
+  tope; los 3 servicios y 3 Jobs con imagen de relleno (`deploy.sh --placeholder`); la tarea de Cloud Scheduler (solo producción);
+  canal de correo, chequeo de disponibilidad a `/healthz` cada minuto y alertas de caída, Jobs fallidos y 5xx (con los nombres exactos
+  del entorno, para que staging no dispare las de producción); presupuesto al 50/90/100 % en la moneda de la cuenta (se pide el
+  monto); y el sitio de Firebase Hosting. Al final imprime las variables a configurar en GitHub. Revisado con shellcheck.
+  `deploy/gcp/config.sh` concentra nombres y parámetros; `deploy/gcp/env/common.yaml` las variables no secretas
+- [x] 3. Staging en Cloud Run + GitHub Actions: `.github/workflows/cloudrun.yml` despliega staging en cada push a `migra/fase1-2`
+  (primero las pruebas de `ci.yml`); producción está en el mismo archivo con `if: false` (preparada, DESACTIVADA; la VM sigue con
+  `deploy.yml`, que no se tocó). Los pasos viven en `cloudrun-deploy.yml`: imagen con caché (dlib se compila una vez), `deploy/gcp/deploy.sh`
+  (Job de migraciones con el dueño ANTES de tocar los servicios —si falla, todo sigue en la versión anterior—, los 3 servicios con
+  `APP_MODULE` distinto, sonda de arranque a `/readyz` y de vida a `/healthz`, Jobs de carga y de operaciones, permisos entre piezas) y
+  Firebase Hosting (`deploy/firebase/make_config.py`: las rutas salen de `app/appmode.py`, prueba `tests/test_firebase_config.py`). En
+  producción `deploy.sh` consulta `/api/ops/deploy-allowed` con el token de operaciones y se niega a desplegar si hay un evento en curso o
+  una apertura cercana (`FORCE=1` / «force» lo salta). Sin las variables del Environment el despliegue se salta sin fallar. Revisado
+  con actionlint. Un despliegue NO devuelve a 0 las instancias mínimas que haya puesto el precalentamiento
+- **Firebase Hosting frente a Cloud Run — límites verificados en la documentación oficial:** (1) 60 s por petición (504 aunque Cloud Run
+  permita más): nada pesado pasa por una petición (cargas y respaldos son Jobs; la cola se despierta por Cloud Tasks directo a Cloud
+  Run, sin Firebase); (2) **solo pasa la cookie `__session`** a Cloud Run: la app ahora la nombra con `SESSION_COOKIE=__session` (en la
+  VM sigue `session`); sin esto nadie podría iniciar sesión; (3) respuestas dinámicas `private` salvo que la app diga `public` (el
+  cascarón del formulario público ya manda `s-maxage=60`), con `Cookie` en `Vary`; (4) regiones: `us-east1` y `us-east4` están
+  soportadas; (5) tamaño: el tope efectivo es el de Cloud Run (32 MiB), resuelto con la subida directa. Con esto Firebase alcanza y **no
+  hace falta el Cloudflare Worker** (~US$5/mes); quedaría como plan B si Firebase fallara en la prueba de carga. Además, detrás de
+  Firebase (Cloudflare solo DNS) `CF-Connecting-IP` se podría inventar: `TRUST_CF_CONNECTING_IP=0` y la IP real sale de
+  `X-Forwarded-For` en la posición `XFF_CLIENT_INDEX` (verificar la posición exacta con tráfico real en staging, sesión 3)
 - [ ] 3. Staging en Cloud Run (`*-staging`) + workflow de GitHub Actions; producción preparada pero desactivada
 - [x] 4. Jobs programados: **UNA tarea de Cloud Scheduler** (cabe en las 3 gratuitas) corre cada hora al minuto 05 (hora de Bogotá) el
   Cloud Run Job `golden-ops` (`python -m app.ops_runner hourly`, misma imagen), que reemplaza los 4 cron de la VM. Pasos aislados (si
