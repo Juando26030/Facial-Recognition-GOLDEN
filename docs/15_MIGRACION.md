@@ -39,7 +39,21 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   `.env.staging` o en Secret Manager (`--app-secret`), nunca en pantalla. **Aplicado en la rama staging:** golden_app entra por el pooler,
   lee, NO puede crear tablas, y la app funcionó con él (cola: encolar/reclamar/terminar; función de cupo; `/readyz` 200). Copia del
   `.env.staging` anterior fuera del repo
-- [ ] 6. Scripts de migración VM→Neon y archivos VM→Cloud Storage, probados contra la rama staging con el respaldo de producción
+- [x] 6. Scripts de migración, probados:
+  - **Base VM→Neon** (`scripts/migrate_db_to_neon.py`): origen en vivo (`pg_dump 18 --no-owner --no-privileges`) o un respaldo
+    `.sql[.gz]`; exige `golden_app` creado antes y destino vacío (`--wipe` con confirmación); pasa el volcado directo a `psql 18`
+    (`ON_ERROR_STOP`, una sola transacción, sin archivos intermedios) quitando `OWNER TO`/`GRANT`/`REVOKE`/`ALTER DEFAULT PRIVILEGES` de la
+    VM; cuenta filas por tabla en el volcado (y en el origen vivo) y en Neon, y sale con error ante cualquier diferencia; `--migrate` corre
+    `alembic upgrade head` con el dueño; al final aplica los permisos de `golden_app`. Sin psql 18 local: variable `PSQL` con
+    `docker run … postgres:18 psql`. **Probado con el respaldo de producción más reciente disponible (26-sep, 17:05; no hay uno más nuevo
+    en este equipo) contra la rama staging:** 389 filas en 36 tablas idénticas antes/después, migraciones 0048→0050 sin cambiar conteos,
+    las 37 tablas quedan del dueño y `golden_app` lee sin ser dueño de nada. Staging queda con esa copia de producción. Prueba del filtro:
+    `tests/test_migrate_db_to_neon.py` (no toca datos de los COPY aunque empiecen por «GRANT»; sin saltos de línea de Windows)
+  - **Archivos VM→Cloud Storage** (`scripts/migrate_files_to_gcs.py`): mismas claves que la app (`<GCS_PREFIX>/<tenant>/…`), sube solo lo
+    que falta o cambió (MD5), cada subida verificada con MD5 de punta a punta, pasada final local-vs-bucket (falta/distinto → código 1),
+    `--dry-run` y `--verify-only`, sin temporales (`uploads/`, `*.part`). Probado contra el emulador: repetir no resube, un objeto
+    alterado se detecta y se corrige, y `GcsStorage` lee el archivo migrado con su clave (`tests/test_migrate_files.py`). La corrida real
+    contra el bucket es de la sesión del cambio (Juan David, desde la VM)
 
 ### Sesión 3 — pendiente
 Prueba de carga distribuida, medición de latencia, este documento completo (runbook + costos), CLAUDE.md, revisión final.
