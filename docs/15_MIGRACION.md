@@ -165,7 +165,9 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 #### Qué corre Juan David después de la sesión 2 (en este orden; nada de esto lo corrió Claude Code)
 1. Revisar `deploy/gcp/bootstrap.sh`, `deploy/gcp/deploy.sh`, `deploy/gcp/config.sh` y `.github/workflows/cloudrun*.yml`.
 2. Cloud Shell: `git clone` del repositorio, `git checkout migra/fase1-2`, `gcloud config set project <ID>` y
-   `bash deploy/gcp/bootstrap.sh staging`. Pide: la cadena DIRECTA del dueño de la rama staging de Neon (la de `DIRECT_DATABASE_URL`
+   `bash deploy/gcp/bootstrap.sh staging` — **si se sigue la recomendación de R1**, `<ID>` es un proyecto NUEVO solo para staging y
+   se corre `FIREBASE_DEPLOY=1 bash deploy/gcp/bootstrap.sh staging`. En Neon (plan Launch): fijar la ventana de historia en 1 día
+   (R4) y crear una llave de API para el precalentamiento (se pega en el bootstrap, nunca en el chat). Pide: la cadena DIRECTA del dueño de la rama staging de Neon (la de `DIRECT_DATABASE_URL`
    de `.env.staging`), Enter para generar `SECRET_KEY`/`FACE_ENCRYPTION_KEY`/`OPS_TOKEN` nuevas, y los opcionales (llaves SANDBOX de
    Wompi, Azure si se quiere correo real en staging, correo de alertas, llave de API de Neon + id del proyecto + id del endpoint de la
    rama staging para el precalentamiento). Ojo: le pone una contraseña NUEVA a `golden_app` en staging (la de `.env.staging` local deja de

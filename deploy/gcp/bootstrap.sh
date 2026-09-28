@@ -170,6 +170,8 @@ if [ "$GOLDEN_ENV" = staging ] && ! exists gcloud storage buckets describe "gs:/
 fi
 for b in "$APP_BUCKET" "$BACKUP_BUCKET"; do
   echo "   gs://$b está en: $(gcloud storage buckets describe "gs://$b" --format='value(location)')"
+  echo "   reglas de ciclo de vida ACTUALES (se reemplazan por las del repositorio):"
+  gcloud storage buckets describe "gs://$b" --format='json(lifecycle_config)' | sed 's/^/     /'
 done
 python3 - "$PUBLIC_BASE_URL" "$FIREBASE_SITE" > "$TMP/cors.json" <<'EOF'
 import json, sys
