@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
 
+from app import warmup
 from app.database import get_db
 from app.models import AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
@@ -353,6 +354,7 @@ def update_event(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     if data.status is not None and data.status not in EVENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Estado inválido (debe ser uno de: {', '.join(EVENT_STATUSES)})")
+    status_changed = data.status is not None and data.status != event.status
     # 2026-09-16, pedido explícito: si el evento ya tiene gente cargada (roster y/o registros en
     # vivo), no se puede "devolver" a 'creado' — 'creado' es preparación previa al evento, y
     # volver a ese estado con datos reales adentro presta a confusión (¿el evento no ha empezado,
@@ -394,6 +396,8 @@ def update_event(
     for field, value in data.dict(exclude_unset=True).items():
         setattr(event, field, value)
     db.commit()
+    if status_changed:
+        warmup.kick()                  # entra o sale de «en proceso»: precalentar / soltar instancias YA, sin esperar la hora
     return _serialize(event)
 
 

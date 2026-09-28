@@ -15,7 +15,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, heavy, wompi
+from app import bulk_jobs, formlib, formsvc, heavy, ops, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -222,6 +222,7 @@ def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Se
     """Estado manual, calendario por fechas y cupo (editable en caliente: no se pierde ninguna inscripción)."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
+    was_active = form.manual_status == "activo"
     if "manual_status" in data:
         if data["manual_status"] not in formlib.STATUSES:
             raise HTTPException(status_code=400, detail=f"Estado inválido (uno de: {', '.join(formlib.STATUSES)})")
@@ -250,6 +251,11 @@ def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Se
     db.commit()
     formsvc.invalidate_public_cache()
     _maybe_feed_on_close(db, form)
+    opened = form.manual_status == "activo" and not was_active and not form.use_schedule
+    if opened:
+        ops.record_system_event("form_opened", str(form.id))        # el precalentamiento mantiene «publico» caliente la hora siguiente
+    if opened or "schedule" in data or "use_schedule" in data:
+        warmup.kick()
     return _detail(db, form, request)
 
 

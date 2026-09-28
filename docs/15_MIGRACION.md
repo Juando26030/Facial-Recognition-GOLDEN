@@ -29,7 +29,23 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   Pruebas: `tests/test_bulk_cloudrun.py` (4) + las 9 de siempre
 - [ ] 2. `deploy/gcp/bootstrap.sh` completo e idempotente (con costos al inicio)
 - [ ] 3. Staging en Cloud Run (`*-staging`) + workflow de GitHub Actions; producción preparada pero desactivada
-- [ ] 4. Jobs programados: respaldo completo diario, BD cada hora, check_backups, purge_biometrics, precalentamiento, congelamiento
+- [x] 4. Jobs programados: **UNA tarea de Cloud Scheduler** (cabe en las 3 gratuitas) corre cada hora al minuto 05 (hora de Bogotá) el
+  Cloud Run Job `golden-ops` (`python -m app.ops_runner hourly`, misma imagen), que reemplaza los 4 cron de la VM. Pasos aislados (si
+  uno falla los demás corren y el Job termina en 1 → alerta de Monitoring + correo a `ALERT_EMAIL`, máximo cada 6 h por problema):
+  respaldo de la base cada hora; a las 3 también el diario («completo»: la base; los archivos viven en el bucket con versiones de
+  objeto, lo borrado/sobrescrito se conserva 30 días; los secretos, versionados en Secret Manager); a las 4 la purga biométrica
+  (obligatoria); revisión de respaldos (hora < 2 h, diario < 26 h, tamaño); cola de trabajos pendiente (barrido de seguridad de Cloud
+  Tasks); y precalentamiento. Respaldos: `pg_dump` 18 (añadido a la imagen desde el repositorio oficial de PostgreSQL) con el dueño,
+  `--no-owner --no-privileges`, gzip verificado, MD5 al subir, `gs://<BACKUP_BUCKET>/db/hourly|daily/…` (retención: 3 y 60 días,
+  `deploy/gcs-lifecycle.json`). «Último respaldo» en `/sistema` lee el más reciente DIRECTO del bucket (`BACKUP_BUCKET`).
+  **Precalentamiento sin tocar la base a cada rato** (regla de costo: Neon no se apagaría nunca, ~US$19/mes): se calcula dentro de la
+  corrida horaria (que ya despierta a Neon para el respaldo) mirando 75 min hacia adelante, y además al instante cuando un evento entra
+  o sale de «en proceso» o un formulario se abre (a mano, con constancia `form_opened`, o por calendario): `app/warmup.py` fija
+  instancias mínimas a nivel de servicio (web 2 con eventos en curso, biometría 1 si usan rostro, público 2 alrededor de una apertura;
+  sin revisión nueva) y, en Neon, «nunca apagarse» + mínimo 0,5 CU durante esas ventanas (vuelve a 5 min / 0,25 CU después). El
+  congelamiento de despliegues va en el workflow (pieza 3). **Probado de punta a punta desde el contenedor** contra Neon staging y el
+  emulador de Cloud Storage: respaldo horario y diario (17 KB), revisión en verde, y ese mismo respaldo restaurado en staging con
+  `migrate_db_to_neon.py` → 389 filas idénticas (restauración probada). Pruebas: `tests/test_ops_runner.py` (10)
 - [x] 5. Rol `golden_app` en Neon (`scripts/neon_app_role.py`, idempotente). La app entra con `golden_app` por el pooler; migraciones,
   respaldos y restauraciones con el dueño (`golden_db_owner`, conexión directa). Permisos: `CONNECT`, `USAGE` del esquema, DML en
   todas las tablas, secuencias, `EXECUTE` de funciones, y privilegios por defecto del dueño para lo que creen las migraciones futuras;

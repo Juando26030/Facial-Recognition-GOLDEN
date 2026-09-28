@@ -172,8 +172,10 @@ def check_bulk_jobs(db: Session) -> dict:
 
 # ------------------------------------------------------------------ respaldos
 def check_backup() -> dict:
-    folder = os.getenv("BACKUP_DIR")
     max_age = float(os.getenv("BACKUP_MAX_AGE_HOURS", "26"))
+    if os.getenv("BACKUP_BUCKET"):
+        return _check_backup_bucket(os.environ["BACKUP_BUCKET"], max_age)
+    folder = os.getenv("BACKUP_DIR")
     if not folder or not os.path.isdir(folder):
         return item("backup", "Último respaldo", "yellow", "no configurado", "El sistema no sabe dónde buscar los respaldos (BACKUP_DIR).",
                     "Define BACKUP_DIR con la carpeta de los volcados o verifica el respaldo directamente en el bucket.")
@@ -185,6 +187,22 @@ def check_backup() -> dict:
     level = "green" if age_h <= max_age else "yellow" if age_h <= max_age * 2 else "red"
     return item("backup", "Último respaldo", level, f"hace {age_h:.0f} h", "" if level == "green" else "El respaldo más reciente es más viejo de lo esperado.",
                 "" if level == "green" else "Revisa el cron del respaldo (backup.log) y corre scripts/backup_db.sh a mano.", age_hours=round(age_h, 1))
+
+
+def _check_backup_bucket(bucket_name: str, max_age: float, client=None) -> dict:
+    """Cloud Run: el respaldo más reciente se lee DIRECTO del bucket (el Job de operaciones los deja en db/hourly y db/daily)."""
+    try:
+        from google.cloud import storage as gcs
+        client = client or gcs.Client()
+        newest = max((b for b in client.list_blobs(bucket_name, prefix="db/") if b.name.endswith(".sql.gz")), key=lambda b: b.updated, default=None)
+    except Exception as e:  # noqa: BLE001
+        return item("backup", "Último respaldo", "red", "sin acceso", f"No se pudo leer el bucket de respaldos: {e}", "Revisa el permiso de lectura del bucket.")
+    if newest is None:
+        return item("backup", "Último respaldo", "red", "ninguno", f"No hay volcados en gs://{bucket_name}/db/.", "Revisa el Job de operaciones (golden-ops).")
+    age_h = (datetime.now(newest.updated.tzinfo) - newest.updated).total_seconds() / 3600
+    level = "green" if age_h <= max_age else "yellow" if age_h <= max_age * 2 else "red"
+    return item("backup", "Último respaldo", level, f"hace {age_h:.0f} h", "" if level == "green" else "El respaldo más reciente es más viejo de lo esperado.",
+                "" if level == "green" else "Revisa las ejecuciones del Job golden-ops en Cloud Run.", age_hours=round(age_h, 1), name=newest.name)
 
 
 # ------------------------------------------------------------------ eventos y formularios

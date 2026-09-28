@@ -126,16 +126,9 @@ def start(job_id: str, work) -> None:
 
 
 def launch_cloud_run(job_id: str) -> None:
-    """Modo `cloudrun`: una ejecución del Job `BULK_JOB_NAME` (projects/<p>/locations/<r>/jobs/<nombre>) con el id como argumento.
-    Por la API REST de Cloud Run con las credenciales del servicio (necesita run.jobs.runWithOverrides sobre ese Job)."""
-    import google.auth
-    from google.auth.transport.requests import AuthorizedSession
-
-    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    resp = AuthorizedSession(creds).post(
-        f"https://run.googleapis.com/v2/{os.environ['BULK_JOB_NAME']}:run",
-        json={"overrides": {"containerOverrides": [{"args": ["-m", "app.bulk_runner", job_id]}]}}, timeout=30)
-    resp.raise_for_status()
+    """Modo `cloudrun`: una ejecución del Job `BULK_JOB_NAME` (projects/<p>/locations/<r>/jobs/<nombre>) con el id como argumento."""
+    from app import cloudrun
+    cloudrun.run_job(os.environ["BULK_JOB_NAME"], ["-m", "app.bulk_runner", job_id])
 
 
 def mark_interrupted() -> int:

@@ -15,8 +15,14 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 # ---- 2) imagen final: sin compiladores, usuario sin privilegios ----
 FROM python:${PYTHON}-slim-trixie
 # tesseract-ocr: lectura de la cédula nueva por foto (app/mrz_ocr.py).
-RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr \
-    && rm -rf /var/lib/apt/lists/*
+# postgresql-client-18 (repositorio oficial de PostgreSQL; Debian trae la 17): pg_dump de los respaldos del Job de operaciones.
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr ca-certificates curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=wheels,source=/wheels,target=/wheels \
     pip install --no-cache-dir --no-index /wheels/*.whl
 RUN useradd --system --uid 10001 --home-dir /app golden
