@@ -86,3 +86,46 @@ def test_internal_endpoint_needs_the_invoker_token_and_runs_the_queue(monkeypatc
     assert r.status_code == 200 and r.json() == {"ran": 1} and done == [1] and seen["audience"] == URL
     monkeypatch.setenv("OPS_TOKEN", "t0k3n")
     assert client.post("/internal/jobs/run", headers={"X-Ops-Token": "t0k3n"}).json() == {"ran": 0}
+
+
+def test_internal_endpoint_runs_jobs_inside_the_request_without_background_threads(monkeypatch, client, db):
+    """En Cloud Run la CPU se reduce al responder: el trabajo tiene que estar HECHO cuando llega la respuesta, en el hilo de la petición."""
+    import threading
+    handler_threads, drain_threads = [], []
+    jobs.handler("prueba_en_peticion")(lambda payload: handler_threads.append(threading.get_ident()))
+    for n in range(3):
+        jobs.enqueue(db, "prueba_en_peticion", {"n": n})
+    db.commit()
+    monkeypatch.setenv("OPS_TOKEN", "t0k3n")
+    real_drain = jobs.drain
+
+    def spy_drain(*a, **kw):
+        drain_threads.append(threading.get_ident())
+        return real_drain(*a, **kw)
+    monkeypatch.setattr(jobs, "drain", spy_drain)
+    monkeypatch.setattr(jobs, "Worker", lambda *a, **kw: (_ for _ in ()).throw(AssertionError("no debe arrancar el worker de fondo")))
+    r = client.post("/internal/jobs/run", headers={"X-Ops-Token": "t0k3n"})
+    assert r.status_code == 200 and r.json() == {"ran": 3}
+    assert len(handler_threads) == 3 and set(handler_threads) == set(drain_threads)   # mismo hilo que atendió la petición
+    db.expire_all()
+    assert {j.status for j in db.query(Job).filter_by(kind="prueba_en_peticion")} == {"done"}
+
+
+def test_drain_stops_near_the_budget_and_schedules_the_rest(monkeypatch, db):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(jobs.time, "monotonic", lambda: clock["t"])
+    kicks = []
+    monkeypatch.setattr(jobs, "kick", lambda at=None: kicks.append(at))
+
+    def slow(payload):
+        clock["t"] += 10                          # cada trabajo "tarda" 10 s
+    jobs.handler("prueba_lenta")(slow)
+    for n in range(20):
+        jobs.enqueue(db, "prueba_lenta", {"n": n})
+    db.commit()
+    ran = jobs.drain(max_rounds=100_000, budget_seconds=45)
+    assert ran == 5                               # un lote de 5 (50 s) y ya no reclama otro: se pasó de 45 s
+    assert kicks == [None]                        # queda trabajo: pide otra tarea
+    db.expire_all()
+    pending = db.query(Job).filter_by(kind="prueba_lenta", status="queued").count()
+    assert pending == 15                          # lo no reclamado sigue en cola, no "running" huérfano

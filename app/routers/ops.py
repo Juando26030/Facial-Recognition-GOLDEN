@@ -65,9 +65,11 @@ def _jobs_invoker(request: Request) -> None:
 
 @router.post("/internal/jobs/run")
 def run_jobs(_=Depends(_jobs_invoker)) -> dict:
-    """Ejecuta la cola dentro de ESTA petición (en Cloud Run la CPU solo está garantizada mientras hay una petición en curso)."""
+    """Ejecuta la cola dentro de ESTA petición (en Cloud Run con facturación por petición la CPU se reduce apenas se responde):
+    hasta vaciarla o hasta JOBS_RUN_BUDGET_SECONDS (45 por defecto, por debajo del timeout de 60 de Gunicorn); lo que quede lo toma
+    otra tarea de Cloud Tasks."""
     from app import jobs, reconcile  # noqa: F401 — registra `payments_reconcile` (form_feed ya lo registra formsvc)
-    return {"ran": jobs.drain()}
+    return {"ran": jobs.drain(max_rounds=100_000, budget_seconds=float(os.getenv("JOBS_RUN_BUDGET_SECONDS", "45")))}
 
 
 @router.get("/api/ops/status")

@@ -150,14 +150,25 @@ def run_once(limit: int = 10) -> int:
     return len(claimed)
 
 
-def drain(max_rounds: int = 50) -> int:
-    """Ejecuta trabajos hasta que no quede ninguno vencido (pruebas)."""
-    total = 0
+def drain(max_rounds: int = 50, budget_seconds: Optional[float] = None) -> int:
+    """Ejecuta trabajos hasta que no quede ninguno vencido, EN el hilo de quien llama (nunca en segundo plano).
+
+    `budget_seconds`: deja de reclamar lotes nuevos al pasar ese tiempo (el endpoint de Cloud Tasks lo usa para responder antes del
+    timeout de la petición); con presupuesto los lotes son chicos para no dejar trabajos reclamados sin ejecutar. Si se corta con
+    trabajo pendiente, programa otra tarea para seguir."""
+    deadline = time.monotonic() + budget_seconds if budget_seconds else None
+    total = n = 0
     for _ in range(max_rounds):
-        n = run_once(50)
+        if deadline is not None and time.monotonic() >= deadline:
+            kick()
+            break
+        n = run_once(5 if deadline is not None else 50)
         total += n
         if not n:
             break
+    else:
+        if n:
+            kick()
     return total
 
 
