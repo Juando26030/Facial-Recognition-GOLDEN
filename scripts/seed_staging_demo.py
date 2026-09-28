@@ -6,7 +6,8 @@ Dentro del contenedor (lee .env.staging):
 
 La contraseña (aleatoria) de la cuenta `revisor.staging` queda SOLO en el archivo de --password-file, nunca en la salida.
 
-Se niega a correr si DATABASE_URL no apunta a Neon (host *.neon.tech): nunca contra la VM de producción."""
+Se niega a correr si DATABASE_URL no apunta a Neon (host *.neon.tech) O si DEPLOY_ENV no es «staging»: producción también vivirá en
+Neon, así que el host solo no basta. En Cloud Run: `gcloud run jobs execute golden-tools-staging --region <región> --args=scripts/seed_staging_demo.py,--people,3000`."""
 import argparse
 import os
 import random
@@ -18,8 +19,8 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 host = (urlsplit(os.environ.get("DATABASE_URL", "")).hostname or "")
-if not host.endswith(".neon.tech"):
-    sys.exit(f"Solo para la base de staging en Neon (host={host!r}).")
+if not host.endswith(".neon.tech") or os.environ.get("DEPLOY_ENV") != "staging":
+    sys.exit(f"Solo para la base de staging en Neon con DEPLOY_ENV=staging (host={host!r}, DEPLOY_ENV={os.environ.get('DEPLOY_ENV')!r}).")
 
 from app.auth import hash_password  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
