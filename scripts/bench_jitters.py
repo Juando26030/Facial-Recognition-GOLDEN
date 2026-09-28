@@ -11,6 +11,12 @@ Qué mide, por cada valor de jitters:
   * si las fotos vienen agrupadas por persona (una subcarpeta por persona, o nombre `persona_1.jpg`, `persona_2.jpg`...), precisión de verdad:
     de todas las parejas de fotos de la MISMA persona (deberían coincidir) y de DISTINTAS personas (no deberían), cuántas acierta con el umbral 0.55
     (tasa de aciertos y de falsos positivos). Sin ese agrupamiento se informa solo la desviación.
+  * si en cada carpeta de persona hay una foto `registro.*` y otra(s) `kiosko.*`/`kiosco.*`, simulación del escaneo real: los registros se
+    enrolan como en producción (25 jitters, resolución completa) y cada foto de kiosco se identifica como en `app/faces.identify` (rostro más
+    grande, lado mayor --max-side, la persona más cercana si la distancia < 0.55). Se cuentan aciertos, falsos positivos (reconoce a OTRA
+    persona), sin coincidencia, sin rostro y el tiempo promedio por escaneo (--repeat veces cada foto para estabilizar el tiempo).
+
+Extensiones: .jpg, .jpeg y .png sin importar mayúsculas (las fotos bajadas de WhatsApp vienen como .jpg o .jpeg).
 
 Privacidad: NUNCA imprime ni guarda nombres de archivo, nombres de personas ni encodings: solo cifras agregadas. Los resultados se escriben en --out
 (fuera del repo). Las fotos no se copian a ningún lado.
@@ -51,12 +57,14 @@ def main() -> None:
     ap.add_argument("--max-side", type=int, default=640)
     ap.add_argument("--out", default=os.getenv("LOAD_RESULTS_DIR", r"C:\JDRJ\Golden\perf_results"))
     ap.add_argument("--limit", type=int, default=200, help="máximo de fotos a usar")
+    ap.add_argument("--repeat", type=int, default=5, help="veces que se escanea cada foto de kiosco (solo para estabilizar el tiempo)")
     ap.add_argument("--synthetic", action="store_true", help="si no hay carpeta, usa la foto de dominio público de scikit-image (solo mide tiempo)")
     args = ap.parse_args()
 
     from app.biometrics import BiometricEngine
 
-    paths = sorted(p for ext in ("*.jpg", "*.jpeg", "*.png") for p in glob.glob(os.path.join(args.dir, "**", ext), recursive=True))[: args.limit]
+    paths = sorted(p for p in glob.glob(os.path.join(args.dir, "**", "*"), recursive=True)
+                   if os.path.splitext(p)[1].lower() in (".jpg", ".jpeg", ".png"))[: args.limit]
     images, owners = [], []
     if paths:
         for p in paths:
@@ -107,6 +115,10 @@ def main() -> None:
             row["diff_dist_min"] = round(float(np.min(diff)), 4) if diff else None
         report["rows"].append(row)
 
+    ident = identification(images, owners, paths, args) if paths else None
+    if ident:
+        report["identification"] = ident
+
     print()
     head = "| jitters | ms mediana | ms p95 | desviación media vs 25 | desviación máx |" + (" aciertos misma persona | falsos positivos | dist. mínima entre personas distintas |" if grouped else "")
     print(head)
@@ -118,10 +130,65 @@ def main() -> None:
         print(line)
     if not grouped:
         print("\n(Sin agrupar por persona no se puede medir aciertos ni falsos positivos: pon las fotos en una subcarpeta por persona, o nómbralas persona_1.jpg, persona_2.jpg...)")
+    if ident:
+        print(f"\nSimulación de escaneo: {ident['persons']} personas enroladas, {ident['scans_per_jitter']} escaneos por valor "
+              f"({ident['kiosk_photos']} fotos de kiosco x {args.repeat} repeticiones), umbral {THRESHOLD}.")
+        print("| jitters | aciertos | falsos positivos | sin coincidencia | sin rostro | ms promedio por escaneo | dist. media al correcto | dist. mínima a otra persona |")
+        print("|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for r in ident["rows"]:
+            print(f"| {r['jitters']} | {r['hits']} | {r['false_positives']} | {r['no_match']} | {r['no_face']} | {r['ms_mean']} | {r['own_dist_mean']} | {r['other_dist_min']} |")
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "bench_jitters.json"), "w", encoding="utf8") as fh:
         json.dump(report, fh, indent=2)
     print(f"\nResultados agregados en {os.path.join(args.out, 'bench_jitters.json')} (sin nombres ni encodings).")
+
+
+def identification(images, owners, paths, args):
+    """Enrola `registro.*` como en producción e identifica cada `kiosko.*`/`kiosco.*` como app/faces.identify. None si no hay esa estructura."""
+    from app.biometrics import BiometricEngine
+
+    role = [os.path.basename(p).lower().split(".")[0] for p in paths]
+    reg = [i for i, r in enumerate(role) if r.startswith("registro")]
+    kio = [i for i, r in enumerate(role) if r.startswith(("kiosko", "kiosco"))]
+    if not reg or not kio:
+        return None
+    gallery_ids, gallery = [], []
+    for i in reg:
+        enc = BiometricEngine.extract_encoding(images[i], is_registration=True)
+        if enc:
+            gallery_ids.append(owners[i])
+            gallery.append(enc)
+    if not gallery:
+        return None
+    matrix = np.array(gallery)
+    rows = []
+    for jit in JITTERS:
+        hits = fps = no_match = no_face = 0
+        times, own, other = [], [], []
+        for _ in range(args.repeat):
+            for i in kio:
+                t0 = time.perf_counter()
+                enc = BiometricEngine.extract_encoding(images[i], jitters=jit, max_side=args.max_side, largest_face=True)
+                if enc is None:
+                    times.append((time.perf_counter() - t0) * 1000)
+                    no_face += 1
+                    continue
+                dist = np.linalg.norm(matrix - np.array(enc), axis=1)
+                best = int(np.argmin(dist))
+                times.append((time.perf_counter() - t0) * 1000)
+                own += [float(d) for g, d in zip(gallery_ids, dist) if g == owners[i]]
+                other += [float(d) for g, d in zip(gallery_ids, dist) if g != owners[i]]
+                if dist[best] >= THRESHOLD:
+                    no_match += 1
+                elif gallery_ids[best] == owners[i]:
+                    hits += 1
+                else:
+                    fps += 1
+        rows.append({"jitters": jit, "hits": hits, "false_positives": fps, "no_match": no_match, "no_face": no_face,
+                     "ms_mean": round(statistics.mean(times), 1),
+                     "own_dist_mean": round(statistics.mean(own), 4) if own else None,
+                     "other_dist_min": round(min(other), 4) if other else None})
+    return {"persons": len(gallery_ids), "kiosk_photos": len(kio), "scans_per_jitter": len(kio) * args.repeat, "rows": rows}
 
 
 if __name__ == "__main__":

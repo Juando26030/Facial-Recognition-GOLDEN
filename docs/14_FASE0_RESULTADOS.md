@@ -85,6 +85,32 @@ Tareas del brief: hilos y pool (§8.1), candidatos del evento + matriz en memori
 
 El costo es casi lineal (~0,46 s por jitter): **1-2 jitters serían 5-8 veces más rápidos** que 10, y la desviación (0,12) queda lejos del umbral de coincidencia (0,55). **Recomendación:** medir la precisión real corriendo `python scripts/bench_jitters.py` con las fotos de prueba en una carpeta por persona; si con 2 jitters no bajan los aciertos ni suben los falsos positivos, poner `RECOGNITION_JITTERS=2` en el `.env` (no requiere código). Hasta medirlo, sigue en 10.
 
+### 6.1 Medición con fotos reales (2026-09-27)
+
+`C:\JDRJ\Golden\fotos_prueba`: 4 personas con consentimiento, una foto de registro y una de kiosco por persona (bajadas de WhatsApp,
+.jpg y .jpeg). Corrido dentro de la imagen Docker (`golden-app:local`, Python 3.14, CPU del PC de desarrollo), con la carpeta montada en
+solo lectura. Simulación del escaneo real (`scripts/bench_jitters.py`, modo registro/kiosco): los registros se enrolan como en producción
+(25 jitters, resolución completa) y cada foto de kiosco se identifica como `app/faces.identify` (rostro más grande, 640 px, la persona más
+cercana si la distancia < 0,55). 20 escaneos por valor (4 fotos × 5 repeticiones, para estabilizar el tiempo).
+
+| jitters | aciertos | falsos positivos | no detectados (sin rostro / sin coincidencia) | ms promedio por escaneo | dist. media al correcto | dist. mínima a otra persona |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 20/20 | 0 | 0 / 0 | 133 | 0,289 | 0,712 |
+| 2 | 20/20 | 0 | 0 / 0 | 221 | 0,282 | 0,696 |
+| 5 | 20/20 | 0 | 0 / 0 | 475 | 0,273 | 0,714 |
+| 10 (actual) | 20/20 | 0 | 0 / 0 | 901 | 0,272 | 0,704 |
+
+Todas las parejas de fotos (registro y kiosco mezclados): aciertos misma persona 100 % y 0 falsos positivos con 1, 2, 5, 10 y 25 jitters;
+desviación máxima frente a 25 jitters: 0,12 (1), 0,10 (2), 0,06 (5 y 10).
+
+**Recomendación: `RECOGNITION_JITTERS=2` en producción.** Con 2 jitters el escaneo cuesta ~4 veces menos que con 10 (221 ms frente a
+901 ms) y la precisión medida no cambia: la distancia a la persona correcta sube solo 0,01 (0,28 frente a 0,27) y el margen hasta el
+umbral sigue siendo enorme (0,28 contra 0,55; la persona equivocada más cercana quedó a 0,70). Se prefiere 2 y no 1 porque cuesta solo
+~90 ms más y reduce a la mitad la diferencia frente al encoding de referencia (0,10 frente a 0,12 en el peor caso), un colchón barato
+para fotos de kiosco peores que estas (contraluz, ángulo). **Límite de la muestra:** 4 personas y 24 parejas de personas distintas no
+bastan para estimar la tasa de falsos positivos de un evento de miles (el riesgo real son los parecidos). Antes de un evento grande,
+repetir con ≥30 personas; si aparece algún falso positivo o un "sin coincidencia" con 2 que no salga con 10, volver a 10.
+
 ## 7. Estado por proceso (revisado antes de pasar a varios procesos)
 
 Revisé todo el estado en memoria a nivel de módulo:
