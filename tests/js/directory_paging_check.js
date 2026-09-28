@@ -12,6 +12,8 @@ class El {
   closest() { return table; }
   setAttribute() {}
   querySelector() { return null; }
+  querySelectorAll() { return []; }
+  replaceChildren(...c) { c.forEach(x => { x.parentNode = this; }); this.children = c; this._html = ''; }
 }
 const container = new El('div');
 const table = container.appendChild(new El('table'));
@@ -19,7 +21,8 @@ const tbody = new El('tbody');
 const els = { tbody };
 let intervalFn = null;
 global.window = { EVENT_ID: 1, STAFF_ROLE: 'coordinador', OPTIONAL_VARIABLES: [], FIELD_CONFIGS: [] };
-global.document = { getElementById: id => els[id] || null, createElement: t => new El(t), visibilityState: 'visible', body: new El('body') };
+global.document = { getElementById: id => els[id] || null, createElement: t => new El(t), visibilityState: 'visible', body: new El('body'), addEventListener: (k, f) => { docListeners[k] = f; } };
+const docListeners = {};
 global.setInterval = f => { intervalFn = f; return 1; };
 
 // ---- servidor falso ----
@@ -43,13 +46,15 @@ global.fetch = async url => {
 };
 
 eval(fs.readFileSync('static/js/directory.js', 'utf8'));
-const rows = () => tbody.children.length;
+const rows = () => tbody.children.filter(tr => tr.className !== 'directory-more').length;   // se dibujan como máximo 200 (ver directory_search_check.js)
+const total = () => +tbody.children.find(tr => tr.className === 'directory-more').children[0].innerText.match(/de (\d+)/)[1];
 const settle = async () => { for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); };
 
 (async () => {
   const dir = window.GoldenDirectory.mountSearch({ tbodyId: 'tbody', searchIds: {} });
   await dir.reload();
-  assert.strictEqual(rows(), 2500);
+  assert.strictEqual(rows(), 200);
+  assert.strictEqual(total(), 2500);
   assert.deepStrictEqual(calls.map(c => c.split('?')[0]), ['/api/users/changes', '/api/users', '/api/users', '/api/users']);
 
   // Otro kiosco registra a alguien: el sondeo trae SOLO esa persona.
@@ -58,8 +63,8 @@ const settle = async () => { for (let i = 0; i < 50; i++) await new Promise(r =>
   intervalFn(); await settle();
   assert.strictEqual(calls.length, 1);
   assert.ok(calls[0].startsWith('/api/users/changes?cursor=10%3A2500'));
-  assert.strictEqual(tbody.children.find(tr => tr.children[1].innerText === users[7].id).children.at(-1).innerText, 'Registrado');
-  assert.strictEqual(rows(), 2500);
+  assert.strictEqual(tbody.children.find(tr => tr.children[1] && tr.children[1].innerText === users[7].id).children.at(-1).innerText, 'Registrado');
+  assert.strictEqual(total(), 2500);
 
   // Nada cambió: una sola consulta pequeña, la tabla no se vuelve a dibujar.
   calls.length = 0;
@@ -72,7 +77,17 @@ const settle = async () => { for (let i = 0; i < 50; i++) await new Promise(r =>
   calls.length = 0;
   users = users.slice(1);
   intervalFn(); await settle();
-  assert.strictEqual(rows(), 2499);
+  assert.strictEqual(total(), 2499);
   assert.ok(calls.length === 5 && calls[1].startsWith('/api/users/changes?cursor=9007'));
+  // Pestaña oculta: el sondeo no consulta; al volver a verla se ponen al día los cambios sin esperar al siguiente ciclo.
+  document.visibilityState = 'hidden';
+  users[9] = { ...users[9], status: 'Registrado' }; logId++; changed.set(users[9].id, logId);
+  calls.length = 0;
+  intervalFn(); await settle();
+  assert.strictEqual(calls.length, 0);
+  document.visibilityState = 'visible';
+  docListeners.visibilitychange(); await settle();
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(tbody.children.find(tr => tr.children[1] && tr.children[1].innerText === users[9].id).children.at(-1).innerText, 'Registrado');
   console.log('directory.js: páginas + incremental OK');
 })().catch(e => { console.error(e); process.exit(1); });

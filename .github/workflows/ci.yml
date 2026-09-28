@@ -43,6 +43,8 @@ jobs:
           pip install -r /tmp/requirements-ci.txt pytest httpx
       - name: Pruebas
         run: python -m pytest -q
+      - name: Pruebas de JS (DOM falso, sin navegador)
+        run: for f in tests/js/*_check.js; do node "$f" || exit 1; done
 
   lint:
     # Ruff con reglas básicas (ruff.toml) SOLO sobre los archivos .py nuevos o modificados respecto a la base: no se reformatea ni se

@@ -54,9 +54,13 @@
   /* Cada palabra escrita debe corresponder a alguna palabra distinta de lo guardado, en cualquier
      orden: "David Juzga" encuentra "Juan David Ramirez Juzga". */
   function matchesWordPrefix(haystack, query) {
-    const queryWords = wordsOf(query);
+    return matchesWords(wordsOf(haystack), wordsOf(query));
+  }
+
+  /* Igual que matchesWordPrefix pero con las palabras ya normalizadas (el buscador del Directorio las precalcula una vez por persona). */
+  function matchesWords(haystackWords, queryWords) {
     if (!queryWords.length) return false;
-    const available = wordsOf(haystack);
+    const available = haystackWords.slice();
     return queryWords.every(qw => {
       const idx = available.findIndex(hw => wordMatches(qw, hw));
       if (idx === -1) return false;
@@ -497,22 +501,85 @@
       if (totalCounterEl) totalCounterEl.innerText = `✅ ${registered} registrados de ${total}`;
     }
 
+    /* Buscador rápido (antes, cada tecla re-normalizaba a TODAS las personas y redibujaba TODAS las filas: 180-230 ms por tecla con
+       3.000 personas, con el campo de texto congelado mientras tanto):
+       - lo que se compara (cédula en minúsculas, palabras del nombre y de la entidad sin tildes) se calcula UNA vez por persona;
+       - las filas ya construidas se reutilizan (una por persona; si el servidor manda una versión nueva, es otro objeto y se reconstruye);
+       - se dibujan como máximo RENDER_LIMIT filas, con «Mostrar más» para el resto;
+       - al escribir se espera SEARCH_DELAY_MS después de la última tecla antes de filtrar (la letra aparece al instante). */
+    const RENDER_LIMIT = 200;
+    const SEARCH_DELAY_MS = 250;
+    const searchKeys = new WeakMap();
+    const rowCache = new WeakMap();
+    let shownLimit = RENDER_LIMIT;
+    let lastFiltered = [];
+    let searchTimer = null;
+
+    function keysOf(u) {
+      let k = searchKeys.get(u);
+      if (!k) {
+        k = { id: String(u.id || '').toLowerCase(), name: wordsOf(`${u.first_name || ''} ${u.last_name || ''}`), entity: wordsOf(u.entity || '') };
+        searchKeys.set(u, k);
+      }
+      return k;
+    }
+
+    function rowOf(u) {
+      let tr = rowCache.get(u);
+      if (!tr) { tr = buildRow(u); rowCache.set(u, tr); }
+      return tr;
+    }
+
+    function drawRows() {
+      const tbody = document.getElementById(opts.tbodyId);
+      // El «✅ Acreditar» puntual (FOUND_PENDING) vive en una fila reutilizada: como antes, se va al volver a dibujar.
+      tbody.querySelectorAll('.btn-accredit-pending').forEach(b => b.remove());
+      if (!lastFiltered.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+        return;
+      }
+      const rows = lastFiltered.slice(0, shownLimit).map(rowOf);
+      if (lastFiltered.length > shownLimit) {
+        const more = document.createElement('tr');
+        more.className = 'directory-more';
+        const td = document.createElement('td');
+        td.colSpan = 6;
+        td.style.cssText = 'text-align:center; padding:0.8rem; color:#555;';
+        td.innerText = `Mostrando ${shownLimit} de ${lastFiltered.length}. Escribe en el buscador para afinar, o `;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'golden-btn btn-table-action';
+        btn.innerText = `Mostrar ${Math.min(RENDER_LIMIT, lastFiltered.length - shownLimit)} más`;
+        btn.addEventListener('click', () => { shownLimit += RENDER_LIMIT; drawRows(); });
+        td.appendChild(btn);
+        more.appendChild(td);
+        rows.push(more);
+      }
+      tbody.replaceChildren(...rows);
+    }
+
     function applyFilters() {
+      clearTimeout(searchTimer);
       const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
-      const nombre = (nombreInput && nombreInput.value || '').trim();
-      const entidad = (entidadInput && entidadInput.value || '').trim();
-      const filtered = allUsers.filter(u => {
+      const nombre = wordsOf((nombreInput && nombreInput.value || '').trim());
+      const entidad = wordsOf((entidadInput && entidadInput.value || '').trim());
+      lastFiltered = allUsers.filter(u => {
         if (onlyNotRegistered && u.status !== 'No registrado') return false;
-        if (cedula && !String(u.id || '').toLowerCase().includes(cedula)) return false;
-        if (nombre) {
-          const fullName = `${u.first_name || ''} ${u.last_name || ''}`;
-          if (!matchesWordPrefix(fullName, nombre)) return false;
-        }
-        if (entidad && !matchesWordPrefix(String(u.entity || ''), entidad)) return false;
+        if (!cedula && !nombre.length && !entidad.length) return true;
+        const k = keysOf(u);
+        if (cedula && !k.id.includes(cedula)) return false;
+        if (nombre.length && !matchesWords(k.name, nombre)) return false;
+        if (entidad.length && !matchesWords(k.entity, entidad)) return false;
         return true;
       });
       updateCounterLabel();
-      renderRows(opts.tbodyId, filtered);
+      drawRows();
+    }
+
+    function onSearchInput() {
+      clearTimeout(searchTimer);
+      shownLimit = RENDER_LIMIT;
+      searchTimer = setTimeout(applyFilters, SEARCH_DELAY_MS);
     }
 
     /* Carga por páginas + incremental (Fase 1-2). La lista completa llega en páginas de PAGE (la primera se ve enseguida) y después cada
@@ -576,9 +643,11 @@
     setInterval(() => {
       if (document.visibilityState === 'visible' && tbodyEl && tbodyEl.offsetParent !== null) refresh();
     }, POLL_MS);
+    // Con la pestaña oculta no se consulta (no gasta la base); al volver a ella se ponen al día los cambios de inmediato.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 
     [cedulaInput, nombreInput, entidadInput].forEach(input => {
-      if (input) input.addEventListener('input', applyFilters);
+      if (input) input.addEventListener('input', onSearchInput);
     });
 
     /* nameInfo (Sprint 2 Parte 2, 2.1): {nombres, apellidos} cuando el escaneo trajo un nombre
@@ -730,6 +799,7 @@
         if (nombreInput) nombreInput.value = '';
         if (entidadInput) entidadInput.value = '';
         onlyNotRegistered = false;
+        shownLimit = RENDER_LIMIT;
         if (counterBtn) { counterBtn.style.background = '#fbe9ea'; counterBtn.style.color = '#a12631'; }
         applyFilters();
       },
