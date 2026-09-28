@@ -13,7 +13,7 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 - [x] 5. Dockerfile multi-etapa + 3 puntos de entrada — imagen construida (Python 3.14, dlib compilado en la etapa de ruedas), los tres servicios arriba con `deploy/docker-compose.yml` contra Neon staging (`/readyz` 200 en los tres; `publico`/`web` sin dlib, ~275 MiB cada uno; `biometria` con el modelo, ~300 MiB) y prueba del emulador de Cloud Storage (`fsouza/fake-gcs-server`) en verde. Arreglado de paso: `STORAGE_BACKEND=` vacío (como lo deja la plantilla) tumbaba `/readyz`; ahora vacío = local
 - [x] 6. `.env.staging` lleno por Juan David (incluida una `FACE_ENCRYPTION_KEY` propia de staging, válida y distinta de la local). Migraciones corridas en la rama staging de Neon (vacía, Postgres 18, `us-east-1`) por la conexión directa: queda en `0049_form_atomic_reserve (head)`. Contenedor probado contra ella: login, Directorio con 3.000 personas sintéticas (`scripts/seed_staging_demo.py`: 3 páginas de 1.000 y el incremental cada 15 s actualiza los contadores sin recargar) y subida directa de un documento de 20 MB. **Latencia de referencia desde el PC de desarrollo (Bogotá) a Neon us-east-1:** `SELECT 1` mediana 81 ms (p95 85, mínimo 79), igual por el pooler que directa; abrir conexión ~500 ms (TLS + channel binding), por eso el pool reutiliza conexiones; `/readyz` del servicio web ~0,33 s en caliente (primera ~1,4 s). Esta medición NO sirve para elegir región (sale desde Colombia): la región se decide en la sesión 3 con la medición desde Cloud Run; el bootstrap queda con `us-east1` por defecto y `us-east4` como alternativa. Nota: las cadenas de `.env.staging` usan el rol dueño (`golden_db_owner`); para mínimo privilegio, crear un rol de app para la app y dejar el dueño solo a las migraciones
 
-### Sesión 2 — en curso
+### Sesión 2 — terminada (2026-09-28)
 - [x] 0. Preparación: `FACE_ENCRYPTION_KEY` NUEVA en `.env.staging` (aleatoria, nunca la de producción); región sin decidir
   (`us-east1` por defecto, `us-east4` alternativa, se mide desde Cloud Run en la sesión 3); pool de conexiones confirmado
   (uno persistente por proceso, `pool_pre_ping`, LIFO, reintentos; prueba `tests/test_db_pool.py`: 30 peticiones, 0 conexiones
@@ -102,6 +102,21 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
     `--dry-run` y `--verify-only`, sin temporales (`uploads/`, `*.part`). Probado contra el emulador: repetir no resube, un objeto
     alterado se detecta y se corrige, y `GcsStorage` lee el archivo migrado con su clave (`tests/test_migrate_files.py`). La corrida real
     contra el bucket es de la sesión del cambio (Juan David, desde la VM)
+
+#### Qué corre Juan David después de la sesión 2 (en este orden; nada de esto lo corrió Claude Code)
+1. Revisar `deploy/gcp/bootstrap.sh`, `deploy/gcp/deploy.sh`, `deploy/gcp/config.sh` y `.github/workflows/cloudrun*.yml`.
+2. Cloud Shell: `git clone` del repositorio, `git checkout migra/fase1-2`, `gcloud config set project <ID>` y
+   `bash deploy/gcp/bootstrap.sh staging`. Pide: la cadena DIRECTA del dueño de la rama staging de Neon (la de `DIRECT_DATABASE_URL`
+   de `.env.staging`), Enter para generar `SECRET_KEY`/`FACE_ENCRYPTION_KEY`/`OPS_TOKEN` nuevas, y los opcionales (llaves SANDBOX de
+   Wompi, Azure si se quiere correo real en staging, correo de alertas, llave de API de Neon + id del proyecto + id del endpoint de la
+   rama staging para el precalentamiento). Ojo: le pone una contraseña NUEVA a `golden_app` en staging (la de `.env.staging` local deja de
+   servir; para volver a usarla: `python scripts/neon_app_role.py --env-file .env.staging --rotate`). Si Firebase pide autenticación:
+   `firebase login --no-localhost` y volver a correr el script (es idempotente).
+3. GitHub → Settings → Environments: crear `staging` (y `production`) con las variables que imprime el script.
+4. Volver a lanzar el workflow «Cloud Run» (o hacer un push a `migra/fase1-2`): construye la imagen (~20 min la primera vez), corre las
+   migraciones, despliega staging y publica Firebase Hosting. Verificar `https://golden-staging-<número>.web.app`.
+5. `bash deploy/gcp/bootstrap.sh production` puede esperar a la semana 3 (necesita la rama `production` de Neon y la `SECRET_KEY` y
+   `FACE_ENCRYPTION_KEY` de la VM). Deja los servicios con imagen de relleno y la tarea horaria EN PAUSA hasta el día del cambio.
 
 ### Sesión 3 — pendiente
 Prueba de carga distribuida, medición de latencia, este documento completo (runbook + costos), CLAUDE.md, revisión final.

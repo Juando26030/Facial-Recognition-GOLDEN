@@ -143,8 +143,8 @@ done
 if ! exists gcloud secrets versions access latest --secret "$(secret_name database-url)" || [[ " $ROTATE " == *" database-url "* ]]; then
   ensure_secret "$(secret_name database-url)"
   pip3 install --user --quiet psycopg2-binary >/dev/null 2>&1 || true
-  ROTATE_FLAG=""; [[ " $ROTATE " == *" database-url "* ]] && ROTATE_FLAG="--rotate"
-  python3 scripts/neon_app_role.py --owner-secret "$(secret_name direct-database-url)" --app-secret "$(secret_name database-url)" $ROTATE_FLAG
+  # --rotate: si golden_app ya existía su contraseña no se conoce, así que se le pone una nueva para poder guardarla en el secreto.
+  python3 scripts/neon_app_role.py --owner-secret "$(secret_name direct-database-url)" --app-secret "$(secret_name database-url)" --rotate
 fi
 secret_access() { gcloud secrets add-iam-policy-binding "$(secret_name "$1")" --member "serviceAccount:$(sa_email "$2")" \
                     --role roles/secretmanager.secretAccessor --quiet >/dev/null 2>&1 || true; }
@@ -204,11 +204,16 @@ fi
 # -------------------------------------------------------------------------------------------------------------------------- 9
 step "9. Cloud Scheduler ($SCHEDULER_OPS)"
 if [ "$GOLDEN_ENV" = production ] || [ "${SCHEDULE_STAGING:-0}" = 1 ]; then
-  exists gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION" \
-    || gcloud scheduler jobs create http "$SCHEDULER_OPS" --location "$REGION" --schedule "5 * * * *" --time-zone "America/Bogota" \
-         --uri "https://run.googleapis.com/v2/$(run_path jobs "$JOB_OPS"):run" --http-method POST \
-         --oauth-service-account-email "$(sa_email "$SA_INVOKER")" --description "Respaldos, revisión, purga, cola y precalentamiento"
-  ok "cada hora al minuto 05 (Bogotá)"
+  if ! exists gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION"; then
+    gcloud scheduler jobs create http "$SCHEDULER_OPS" --location "$REGION" --schedule "5 * * * *" --time-zone "America/Bogota" \
+      --uri "https://run.googleapis.com/v2/$(run_path jobs "$JOB_OPS"):run" --http-method POST \
+      --oauth-service-account-email "$(sa_email "$SA_INVOKER")" --description "Respaldos, revisión, purga, cola y precalentamiento"
+    # Se crea EN PAUSA: hasta el día del cambio el Job tiene la imagen de relleno (fallaría cada hora y llenaría el correo de alertas)
+    # y no debe respaldar una base que todavía no es la real. Se reanuda en el runbook del cambio:
+    #   gcloud scheduler jobs resume golden-ops-hourly --location <región>
+    gcloud scheduler jobs pause "$SCHEDULER_OPS" --location "$REGION" >/dev/null
+  fi
+  ok "cada hora al minuto 05 (Bogotá); estado: $(gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION" --format 'value(state)')"
 else
   ok "staging no se programa (SCHEDULE_STAGING=1 para hacerlo); a mano: gcloud run jobs execute $JOB_OPS --region $REGION"
 fi
