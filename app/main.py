@@ -120,6 +120,7 @@ async def no_cache_html(request, call_next):
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY or "dev-only-insecure-key-do-not-use-in-production",
+    session_cookie=os.getenv("SESSION_COOKIE", "session"),   # detrás de Firebase Hosting debe ser «__session»: es la única cookie que deja pasar
     same_site="lax",
     https_only=IS_PRODUCTION,
 )

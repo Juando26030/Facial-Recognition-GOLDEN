@@ -2,6 +2,7 @@
 
 Todo el estado vive en Postgres (`rate_limit_events`, `password_reset_tokens`), no en memoria, para que valga con
 varios procesos/workers y sobreviva a un reinicio."""
+import os
 import hashlib
 import math
 import secrets
@@ -23,10 +24,19 @@ MIN_PASSWORD_LENGTH = 8
 
 
 def client_ip(request: Request) -> str:
-    """IP real del visitante detrás de Cloudflare/Nginx (cabeceras que ellos ponen)."""
-    return (request.headers.get("cf-connecting-ip")
-            or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-            or (request.client.host if request.client else "?"))
+    """IP real del visitante. En la VM (Cloudflare con proxy + Nginx) `CF-Connecting-IP` es confiable porque Cloudflare la reescribe. En
+    Cloud Run detrás de Firebase Hosting (Cloudflare solo DNS) cualquiera podría mandarla inventada: allá TRUST_CF_CONNECTING_IP=0 y se usa
+    `X-Forwarded-For`, cuya entrada con la IP real (la que agregó el primer proxy de Google) indica XFF_CLIENT_INDEX: 0 = la primera
+    (comportamiento de la VM), -1 = la última, -2 = la penúltima…"""
+    if os.getenv("TRUST_CF_CONNECTING_IP", "1") == "1" and request.headers.get("cf-connecting-ip"):
+        return request.headers["cf-connecting-ip"]
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if hops:
+        try:
+            return hops[int(os.getenv("XFF_CLIENT_INDEX", "0"))]
+        except IndexError:
+            return hops[0]
+    return request.client.host if request.client else "?"
 
 
 def record_event(db: Session, kind: str, key: str, ip: Optional[str]) -> None:
