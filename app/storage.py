@@ -13,6 +13,7 @@ todos modos). Las rutas que lo usan no notan la diferencia.
 Cloud Storage: `STORAGE_BACKEND=gcs`, `GCS_BUCKET` y, opcional, `GCS_PREFIX` (carpeta dentro del bucket). Credenciales: las de la
 cuenta de servicio del servicio de Cloud Run (nunca una llave en archivo)."""
 import mimetypes
+from datetime import timedelta
 import os
 import shutil
 from typing import Iterable, List, Optional, Protocol
@@ -190,6 +191,23 @@ class GcsStorage:
                 while chunk := fh.read(1 << 20):
                     yield chunk
         return StreamingResponse(chunks(), media_type=media_type or blob.content_type or mimetypes.guess_type(key)[0], headers=out)
+
+    def signed_put_url(self, key: str, content_type: str, max_bytes: int, expires_seconds: int) -> tuple:
+        """URL firmada v4 para que el NAVEGADOR suba directo al bucket (app/uploads.py). Devuelve (url, encabezados que el navegador
+        debe mandar tal cual: van firmados). En Cloud Run la cuenta de servicio no tiene llave privada: se firma con la API IAM
+        (signBlob), que exige `roles/iam.serviceAccountTokenCreator` de la cuenta sobre sí misma. El bucket necesita CORS para PUT
+        desde el dominio de la app (deploy/gcs-app-cors.json)."""
+        from google.auth.credentials import Signing
+        headers = {"Content-Type": content_type, "x-goog-content-length-range": f"0,{max_bytes}"}
+        creds, kwargs = self.client._credentials, {}
+        if not isinstance(creds, Signing):
+            from google.auth.transport.requests import Request as AuthRequest
+            if not creds.valid:
+                creds.refresh(AuthRequest())
+            kwargs = {"service_account_email": creds.service_account_email, "access_token": creds.token}
+        url = self.bucket.blob(self._name(key)).generate_signed_url(
+            version="v4", method="PUT", expiration=timedelta(seconds=expires_seconds), headers=headers, **kwargs)
+        return url, headers
 
     def ping(self) -> None:
         """Lectura mínima del bucket (para /readyz; /readyz solo lo usa el arranque, nunca los chequeos frecuentes)."""

@@ -6,6 +6,7 @@
     <title>{{ event.name }} — Base de Datos | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <!-- Carga automática en lotes para bases grandes (10.000+ personas con foto) — ver el bloque de
          abajo. XLSX (SheetJS) para partir el Excel/CSV en trozos válidos; JSZip para armar, por
@@ -180,6 +181,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
    lote pesa 15 % subida + 85 % proceso dentro de su parte de la barra total (ver makeUi). */
 async function postBulkRegister(formData, ui) {
     formData.set("background", "true");
+    // Los archivos suben DIRECTO al almacenamiento (Cloud Run no acepta peticiones de más de 32 MiB); a la app solo va el token.
+    // En un reintento por NEEDS_LABELS el FormData ya trae los tokens y no se vuelve a subir nada.
+    try {
+        await DirectUpload.replaceFiles(formData, { roster_file: ["roster_upload", "bulk_roster"], zip_file: ["zip_upload", "bulk_zip"] }, {
+            body: { event_id: formData.get("event_id") },
+            onProgress: (loaded, total) => ui && ui("upload", loaded / total, `Subiendo archivos… ${(loaded / 1048576).toFixed(1)} de ${(total / 1048576).toFixed(1)} MB`),
+        });
+    } catch (e) {
+        showToast(e.message, "error");
+        return null;
+    }
     let res;
     try {
         res = await xhrPost("/api/bulk_register", formData, (loaded, total) => {

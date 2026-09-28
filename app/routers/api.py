@@ -22,7 +22,7 @@ from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUse
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, digital_badge, faces, heavy
+from app import bulk_jobs, crypto, digital_badge, faces, heavy, uploads
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -1097,6 +1097,7 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
     field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
+    roster_upload: str = Form(None), zip_upload: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
@@ -1104,14 +1105,25 @@ def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
-    content = roster_file.file.read() if (roster_file is not None and roster_file.filename) else None
-    zip_bytes = zip_file.file.read() if (zip_file is not None and zip_file.filename) else None
+    # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
+    roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
+    zip_up = uploads.fetch(zip_upload, "bulk_zip", {"e": event_id})
+    content = roster_up.content if roster_up else (roster_file.file.read() if (roster_file is not None and roster_file.filename) else None)
+    roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
+    zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
     if zip_bytes is not None and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
-    args = dict(event_id=event_id, roster_filename=roster_file.filename if content is not None else None,
+    args = dict(event_id=event_id, roster_filename=roster_filename,
                 content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id)
+
+    def cleanup(result):
+        # NEEDS_LABELS: el navegador reenvía la MISMA carga con los nombres de las columnas; los archivos temporales tienen que seguir ahí.
+        if not (isinstance(result, dict) and result.get("result") == "NEEDS_LABELS"):
+            uploads.discard(roster_up, zip_up)
+        return result
+
     if not background:
-        return _bulk_register_impl(db, staff, **args)
+        return cleanup(_bulk_register_impl(db, staff, **args))
 
     if bulk_jobs.active_job(db, event_id):
         raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
@@ -1120,7 +1132,7 @@ def bulk_register(
 
     def work(job_db, reporter):
         worker_staff = job_db.query(StaffUser).filter(StaffUser.id == staff_id).first()
-        return _bulk_register_impl(job_db, worker_staff, progress=reporter, **args)
+        return cleanup(_bulk_register_impl(job_db, worker_staff, progress=reporter, **args))
 
     bulk_jobs.start(job_id, work)
     return {"background": True, "job_id": job_id}

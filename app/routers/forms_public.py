@@ -19,7 +19,7 @@ from PIL import Image
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, jobs, security, wompi
+from app import formlib, formsvc, jobs, security, uploads, wompi
 from app.database import get_db
 from app.email_check import check_email
 from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
@@ -237,9 +237,44 @@ def asset(event_id: int, slug: str, tenant_id: str, filename: str, k: Optional[s
 
 
 # ------------------------------------------------------------------ envío
+def _limit_mb(f: dict, settings: dict) -> int:
+    return min(f.get("max_mb", 10), settings.get("max_mb", 10)) if settings.get("max_mb") else f.get("max_mb", 10)
+
+
+def _check_stage(settings: dict, claims: dict) -> None:
+    """Las mismas etapas que exige el envío (enlace personal, código, identificación): sin ellas tampoco se firma una subida."""
+    needs_code, needs_identify, mode = _needs(settings)
+    if mode == "invite" and not claims.get("inv"):
+        raise HTTPException(status_code=403, detail="Usa tu enlace personal para inscribirte")
+    if needs_code and not claims.get("g"):
+        raise HTTPException(status_code=403, detail="Falta el código de acceso")
+    if needs_identify and mode != "invite" and not claims.get("id_ok"):
+        raise HTTPException(status_code=403, detail="Primero identifícate con tu número de documento")
+
+
+@router.post("/f/{event_id}/{slug}/upload")
+def sign_file(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+    """Firma la subida directa de un archivo del formulario (ver app/uploads.py): `{fid, filename, size, content_type, k, t}`. El
+    archivo va del navegador al almacenamiento; el envío manda solo el token (así varios archivos de 20 MB no chocan con los 32 MiB)."""
+    form = _load(db, event_id, slug)
+    if _access(db, form, data.get("k"), check_full=False) in ("cerrado", "cupo_lleno"):
+        return JSONResponse({"detail": "Este formulario ya no recibe inscripciones", "stage": "closed"}, status_code=409)
+    _limit(db, request, "form_upload", form, 60)
+    settings = formsvc.get_settings(form)
+    _check_stage(settings, _read(data.get("t"), form))
+    fid = str(data.get("fid") or "")
+    f = formsvc.get_design(form)["fields"].get(fid)
+    if not f or f["type"] != "file":
+        raise HTTPException(status_code=400, detail="Ese campo no recibe archivos")
+    event = db.query(Event).filter(Event.id == form.event_id).first()
+    return uploads.create("form_file", {"f": form.id, "fid": fid}, event.tenant_id, str(data.get("filename") or ""), data.get("size"),
+                          str(data.get("content_type") or ""), max_bytes=_limit_mb(f, settings) * 1024 * 1024,
+                          extensions={"." + e for e in f.get("accept", formlib.FILE_EXTENSIONS)})
+
+
 def _check_upload(f: dict, name: str, content: bytes, settings: dict) -> Optional[str]:
     ext = os.path.splitext(name)[1].lower().lstrip(".")
-    limit_mb = min(f.get("max_mb", 10), settings.get("max_mb", 10)) if settings.get("max_mb") else f.get("max_mb", 10)
+    limit_mb = _limit_mb(f, settings)
     if ext not in f.get("accept", formlib.FILE_EXTENSIONS):
         return f"«{f['label']}»: formato no permitido (.{ext}). Se aceptan: {', '.join(f.get('accept', []))}"
     if len(content) > limit_mb * 1024 * 1024:
@@ -299,13 +334,18 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     settings = formsvc.get_settings(form)
     design = formsvc.get_design(form)
     claims = _read(payload.get("t"), form)
-    needs_code, needs_identify, mode = _needs(settings)
-    if mode == "invite" and not claims.get("inv"):
-        raise HTTPException(status_code=403, detail="Usa tu enlace personal para inscribirte")
-    if needs_code and not claims.get("g"):
-        raise HTTPException(status_code=403, detail="Falta el código de acceso")
-    if needs_identify and mode != "invite" and not claims.get("id_ok"):
-        raise HTTPException(status_code=403, detail="Primero identifícate con tu número de documento")
+    _check_stage(settings, claims)
+    # Archivos ya subidos directo al almacenamiento (`uploads`: {campo: token}); los viejos multipart siguen llegando en `files`.
+    staged, token_errors = [], {}
+    for fid, tok in (payload.get("uploads") or {}).items() if isinstance(payload.get("uploads"), dict) else []:
+        try:
+            up = uploads.fetch(str(tok), "form_file", {"f": form.id, "fid": str(fid)})
+        except HTTPException as exc:
+            token_errors[str(fid)] = exc.detail
+            continue
+        if up:
+            files[str(fid)] = (up.filename, up.content)
+            staged.append(up)
 
     values = dict(payload.get("values") or {})
     fields = design["fields"]
@@ -316,7 +356,7 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
             if fields[fid].get("readonly_when_prefilled"):
                 values[fid] = val
     # Archivos
-    uploaded, file_errors, pending = {}, {}, {}
+    uploaded, file_errors, pending = {}, dict(token_errors), {}
     visible = formlib.visible_ids(design, values)
     for fid, (filename, content) in files.items():
         f = fields.get(fid)
@@ -413,12 +453,14 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
                               breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
             db.add(pay)
             db.commit()
+            uploads.discard(*staged)
             return {"ok": True, "payment_required": True, "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
         formsvc.confirm_submission(db, form, sub)
         db.commit()
     except Exception:
         db.rollback()                 # nunca dejar la fila del formulario bloqueada
         raise
+    uploads.discard(*staged)
     jobs.kick()
     return {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
 

@@ -7,6 +7,7 @@
     <title>{{ form_title }}</title>
     <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
+    <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <style>
         html, body { margin:0; min-height:100%; }
         body { padding:24px 14px 50px; box-sizing:border-box; font-family:'Montserrat', sans-serif; background:#F4F5F9; }
@@ -196,16 +197,24 @@ function showForm(st) {
     if (!fr.validate()) return;
     fr.button.disabled = true; fr.button.textContent = "Enviando…"; msg.textContent = "";
     const { values, files } = fr.collect();
-    const fd = new FormData();
-    fd.append("data", JSON.stringify({ values, k: K, d: D, code: fr.code(), t: token, sid: SID, source: SOURCE }));
-    Object.entries(files).forEach(([fid, f]) => fd.append("file:" + fid, f, f.name));
+    // Los archivos suben DIRECTO al almacenamiento (varios de 20 MB no caben en una petición: Cloud Run corta a 32 MiB); el envío lleva solo los tokens.
+    const uploads = {};
+    try {
+      for (const [fid, f] of Object.entries(files)) {
+        msg.style.color = "inherit"; msg.textContent = `Subiendo «${f.name}»…`;
+        uploads[fid] = await DirectUpload.upload(f, { signUrl: BASE + "/upload", body: { fid, k: K, t: token },
+          onProgress: (loaded, total) => { msg.textContent = `Subiendo «${f.name}»… ${Math.round(100 * loaded / total)} %`; } });
+      }
+    } catch (err) { return reset(err.message || "No se pudo subir el archivo. Intenta de nuevo.", true); }
+    msg.textContent = "";
+    const body = JSON.stringify({ values, k: K, d: D, code: fr.code(), t: token, sid: SID, source: SOURCE, uploads });
     // Si la red o el servidor fallan a mitad (sin conexión, 502/503/504), lo escrito NO se pierde: se reintenta solo con la MISMA clave de envío (`sid`), así que el
     // servidor nunca crea dos inscripciones (Fase 0 de escalabilidad, doc 13 §8.9). Se avisa con calma en vez de mostrar un error.
     const RETRY_WAIT = [1500, 3000, 6000, 10000, 15000];
     let res, data, lastErr;
     for (let attempt = 0; attempt <= RETRY_WAIT.length; attempt++) {
       try {
-        res = await fetch(BASE + "/submit", { method: "POST", body: fd });
+        res = await fetch(BASE + "/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body });
         if (![502, 503, 504].includes(res.status)) { data = await res.json().catch(() => ({})); lastErr = null; break; }
         lastErr = new Error("busy");
       } catch (err) { lastErr = err; }

@@ -23,6 +23,7 @@ from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import EventDocument, EventExpense, StaffUser
+from app import uploads
 from app.storage import get_storage, key_of
 
 router = APIRouter()
@@ -70,26 +71,32 @@ def list_documents(event_id: int, db: Session = Depends(get_db), staff: StaffUse
 
 @router.post("/events/{event_id}/documents")
 def add_document(
-    event_id: int, name: str = Form(...), description: str = Form(""), file: UploadFile = File(...),
+    event_id: int, name: str = Form(...), description: str = Form(""), file: UploadFile = File(None), upload: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
+    """El archivo llega en la petición o ya subido directo al almacenamiento (`upload`, ver app/uploads.py)."""
     event = get_event_for_staff(event_id, db, staff)
     if not name.strip():
         raise HTTPException(status_code=400, detail="El documento necesita un nombre o referencia")
-    ext = os.path.splitext(file.filename or "")[1].lower()
+    up = uploads.fetch(upload, "event_doc", {"e": event.id})
+    if up is None and (file is None or not file.filename):
+        raise HTTPException(status_code=400, detail="Adjunta el archivo")
+    filename = up.filename if up else file.filename
+    ext = os.path.splitext(filename or "")[1].lower()
     if ext not in DOC_EXT:
         raise HTTPException(status_code=400, detail=f"Formato no permitido — usa uno de: {', '.join(sorted(DOC_EXT))}")
-    content = file.file.read()
+    content = up.content if up else file.file.read()
     if not content or len(content) > MAX_FILE_BYTES:
         raise HTTPException(status_code=400, detail="El archivo está vacío o pesa más de 25 MB")
     doc = EventDocument(
         event_id=event.id, name=name.strip(), description=description.strip() or None,
-        original_filename=os.path.basename(file.filename), mime_type=file.content_type, size_bytes=len(content),
-        stored_path=_store(event.tenant_id, "event_docs", event.id, file.filename, content),
+        original_filename=os.path.basename(filename), mime_type=up.content_type if up else file.content_type, size_bytes=len(content),
+        stored_path=_store(event.tenant_id, "event_docs", event.id, filename, content),
         uploaded_by_id=staff.id, created_at=datetime.utcnow(),
     )
     db.add(doc)
     db.commit()
+    uploads.discard(up)
     return _doc_json(doc)
 
 
@@ -164,7 +171,7 @@ def list_expenses(event_id: int, db: Session = Depends(get_db), staff: StaffUser
 @router.post("/events/{event_id}/expenses")
 def add_expense(
     event_id: int, category: str = Form(...), responsible: str = Form(...), description: str = Form(""),
-    applies_to: str = Form(""), amount: str = Form(...), evidence: UploadFile = File(None),
+    applies_to: str = Form(""), amount: str = Form(...), evidence: UploadFile = File(None), evidence_upload: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
@@ -178,19 +185,21 @@ def add_expense(
         raise HTTPException(status_code=400, detail="El valor del gasto debe ser un número mayor o igual a 0")
 
     evidence_path = evidence_name = None
-    if evidence is not None and evidence.filename:
-        ext = os.path.splitext(evidence.filename)[1].lower()
+    up = uploads.fetch(evidence_upload, "expense_evidence", {"e": event.id})
+    if up is not None or (evidence is not None and evidence.filename):
+        evidence_filename = up.filename if up else evidence.filename
+        ext = os.path.splitext(evidence_filename)[1].lower()
         if ext not in IMAGE_EXT:
             raise HTTPException(status_code=400, detail="La evidencia debe ser una imagen (PNG, JPG, WebP o GIF)")
-        content = evidence.file.read()
+        content = up.content if up else evidence.file.read()
         if not content or len(content) > MAX_FILE_BYTES:
             raise HTTPException(status_code=400, detail="La imagen está vacía o pesa más de 25 MB")
         try:
             Image.open(io.BytesIO(content)).verify()
         except Exception:
             raise HTTPException(status_code=400, detail="La evidencia no es una imagen válida")
-        evidence_path = _store(event.tenant_id, "event_expenses", event.id, evidence.filename, content)
-        evidence_name = os.path.basename(evidence.filename)
+        evidence_path = _store(event.tenant_id, "event_expenses", event.id, evidence_filename, content)
+        evidence_name = os.path.basename(evidence_filename)
 
     expense = EventExpense(
         event_id=event.id, category=category.strip(), responsible=responsible.strip(),
@@ -199,6 +208,7 @@ def add_expense(
     )
     db.add(expense)
     db.commit()
+    uploads.discard(up)
     return _expense_json(expense)
 
 

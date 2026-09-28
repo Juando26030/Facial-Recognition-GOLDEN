@@ -6,6 +6,7 @@
     <title>Legalizaciones | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .card { background:white; padding:1.6rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem; overflow-x:auto; }
@@ -84,7 +85,11 @@ document.getElementById('expForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('button[type="submit"]');
   setButtonLoading(btn, true, 'Guardando...');
-  const res = await fetch(`/api/events/${EVENT_ID}/expenses`, { method: 'POST', body: new FormData(e.target) });
+  let res;
+  try {
+    const fd = await DirectUpload.replaceFiles(new FormData(e.target), { evidence: ['evidence_upload', 'expense_evidence'] }, { body: { event_id: EVENT_ID } });
+    res = await fetch(`/api/events/${EVENT_ID}/expenses`, { method: 'POST', body: fd });
+  } catch (err) { setButtonLoading(btn, false); return showToast(err.message, 'error'); }
   setButtonLoading(btn, false);
   if (res.ok) { e.target.reset(); showToast('Gasto agregado', 'success'); loadExpenses(); }
   else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo guardar el gasto', 'error');
