@@ -40,7 +40,8 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
-            echo "IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/golden/app:${GITHUB_SHA}" >> "$GITHUB_ENV"
+            REPO=golden; [ "$GOLDEN_ENV" = staging ] && REPO=golden-staging     # un repositorio de imágenes por entorno
+            echo "IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/app:${GITHUB_SHA}" >> "$GITHUB_ENV"
           fi
 
       - if: steps.cfg.outputs.ready == 'true'

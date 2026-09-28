@@ -103,6 +103,27 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
     alterado se detecta y se corrige, y `GcsStorage` lee el archivo migrado con su clave (`tests/test_migrate_files.py`). La corrida real
     contra el bucket es de la sesión del cambio (Juan David, desde la VM)
 
+#### Revisión de Juan David (2026-09-28) — correcciones antes de correr nada
+- [x] R1. **Aislamiento staging/producción.** `golden-deployer-<entorno>` ya NO tiene `run.admin` ni `firebasehosting.admin` en el
+  proyecto: recibe `run.developer` sobre cada servicio y Job de SU entorno (a nivel de recurso, lo da bootstrap.sh después de crearlos
+  con la imagen de relleno) y un rol propio de solo lectura `goldenRunOperationsViewer` (`run.operations.get/list`, para esperar sus
+  despliegues). `deploy.sh` ya no crea recursos ni cambia políticas (`--allow-unauthenticated` y los permisos entre piezas pasaron a
+  bootstrap, que corre el dueño). Artifact Registry: un repositorio por entorno (`golden-staging`, `golden`), así staging no puede
+  sobrescribir una imagen que despliegue producción. Secretos: la cuenta de despliegue ve los metadatos de los secretos de SU entorno
+  (por secreto), no la lista del proyecto. Workload Identity: staging solo desde `refs/heads/migra/fase1-2` (`STAGING_BRANCH_REF` para
+  cambiarla) y producción solo desde `refs/heads/main`.
+  **Firebase Hosting no tiene permisos por sitio** (sus roles se dan a nivel de proyecto; no pude confirmarlo en la lista oficial de
+  permisos porque la página no cargó completa, así que el diseño asume lo seguro): con un solo proyecto, quien pueda publicar el sitio
+  de staging también puede publicar o borrar el de producción. Opciones: (a) **staging en su propio proyecto de Google Cloud**
+  (RECOMENDADA): aislamiento total de todo —Cloud Run, secretos, buckets, imágenes, Firebase—, sin costo extra (mismo pago de
+  facturación; las capas gratuitas van por cuenta de facturación) y sin cambiar código: `gcloud config set project <proyecto-staging>`
+  y `FIREBASE_DEPLOY=1 bash deploy/gcp/bootstrap.sh staging`. Firebase Hosting solo reenvía a Cloud Run del MISMO proyecto, por eso
+  staging con Firebase implica mover todo staging. (b) Un solo proyecto (lo que hace el script por defecto): la cuenta de staging no
+  recibe NINGÚN permiso de Firebase; staging se prueba por la URL de Cloud Run y, como sin Firebase nadie reparte las rutas entre los
+  3 servicios, el servicio web de staging sirve la app completa (`app.main:app`). Pierde probar en staging lo propio de Firebase (cookie
+  `__session`, 60 s, CDN), que habría que probar el día del cambio. (c) Publicar Firebase de staging a mano (sin cuenta de GitHub):
+  poco práctico. **Recomiendo (a).**
+
 #### Qué corre Juan David después de la sesión 2 (en este orden; nada de esto lo corrió Claude Code)
 1. Revisar `deploy/gcp/bootstrap.sh`, `deploy/gcp/deploy.sh`, `deploy/gcp/config.sh` y `.github/workflows/cloudrun*.yml`.
 2. Cloud Shell: `git clone` del repositorio, `git checkout migra/fase1-2`, `gcloud config set project <ID>` y

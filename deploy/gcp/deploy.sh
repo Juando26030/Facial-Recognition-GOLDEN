@@ -7,7 +7,8 @@
 #   deploy/gcp/deploy.sh staging --placeholder      # crea todo con la imagen «hello» de Google (bootstrap, antes de la primera imagen)
 #
 # Qué NO toca: las instancias mínimas de cada servicio (las maneja el precalentamiento; un despliegue no las devuelve a 0), los
-# secretos (solo los referencia) ni el programador (bootstrap.sh). Vuelta atrás: `gcloud run services update-traffic <svc> --to-revisions
+# secretos (solo los referencia), el programador ni NINGÚN permiso: la cuenta de GitHub Actions solo tiene run.developer sobre los
+# servicios y Jobs de su entorno, así que aquí no se crea nada nuevo ni se cambian políticas (eso es de bootstrap.sh, con el dueño). Vuelta atrás: `gcloud run services update-traffic <svc> --to-revisions
 # <revisión-anterior>=100` (Cloud Run guarda las revisiones) — ver docs/15_MIGRACION.md.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -16,11 +17,6 @@ IMAGE="${2:?Falta la imagen (o --placeholder)}"
 PLACEHOLDER=0
 if [ "$IMAGE" = "--placeholder" ]; then IMAGE="us-docker.pkg.dev/cloudrun/container/hello"; PLACEHOLDER=1; fi
 WEB_URL="$(run_url "$SVC_WEB")"
-if [ "$GOLDEN_ENV" = production ]; then
-  PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.golden-eventos.com}"; FIREBASE_SITE="${FIREBASE_SITE:-golden-app-${PROJECT_NUMBER}}"
-else
-  FIREBASE_SITE="${FIREBASE_SITE:-golden-staging-${PROJECT_NUMBER}}"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://${FIREBASE_SITE}.web.app}"
-fi
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 say() { echo -e "\n== $*"; }
 
@@ -37,15 +33,21 @@ if [ "$PLACEHOLDER" = 0 ] && [ "$GOLDEN_ENV" = production ] && [ "${FORCE:-0}" !
   fi
 fi
 
-# ---------------------------------------------------------------- secretos que existen → --set-secrets
-EXISTING="$(gcloud secrets list --format='value(name)' | sed 's#.*/##')"
+# ---------------------------------------------------------------- todo debe existir ya (lo crea bootstrap.sh con la imagen de relleno)
+if [ "$PLACEHOLDER" = 0 ]; then
+  for svc in "$SVC_WEB" "$SVC_PUBLICO" "$SVC_BIOMETRIA"; do
+    gcloud run services describe "$svc" --region "$REGION" >/dev/null 2>&1 || { echo "No existe $svc: corre deploy/gcp/bootstrap.sh $GOLDEN_ENV." >&2; exit 1; }
+  done
+fi
+
+# ---------------------------------------------------------------- secretos que existen → --set-secrets (se revisa cada uno, sin listar el proyecto)
 secrets_flag() {   # $1 = lista «nombre:VARIABLE[*]»; los de * son obligatorios
   local out="" pair name var required s
   for pair in $1; do
     name="${pair%%:*}"; var="${pair#*:}"; required=0
     if [ "${var%\*}" != "$var" ]; then required=1; var="${var%\*}"; fi
     s="$(secret_name "$name")"
-    if grep -qx "$s" <<<"$EXISTING"; then out+="${var}=${s}:latest,"
+    if gcloud secrets describe "$s" >/dev/null 2>&1; then out+="${var}=${s}:latest,"
     elif [ "$required" = 1 ] && [ "$PLACEHOLDER" = 0 ]; then echo "Falta el secreto obligatorio ${s} (corre bootstrap.sh)." >&2; exit 1
     fi
   done
@@ -105,11 +107,13 @@ deploy_service() {   # nombre, módulo, cpu, memoria, concurrencia, máx. instan
     probes=(--startup-probe "httpGet.path=/readyz,initialDelaySeconds=0,timeoutSeconds=5,periodSeconds=5,failureThreshold=36"
             --liveness-probe "httpGet.path=/healthz,timeoutSeconds=3,periodSeconds=30,failureThreshold=3")
   fi
-  gcloud run deploy "$svc" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$SA_APP")" --allow-unauthenticated \
+  local public=()
+  [ "$PLACEHOLDER" = 1 ] && public=(--allow-unauthenticated)     # solo al crearlo (bootstrap); después la política no se toca
+  gcloud run deploy "$svc" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$SA_APP")" "${public[@]}" \
     --cpu "$cpu" --memory "$mem" --concurrency "$conc" --max-instances "$max" --timeout 60 --cpu-boost --execution-environment gen2 \
     --env-vars-file "$TMP/$svc.yaml" ${APP_SECRET_FLAGS:+--set-secrets "$APP_SECRET_FLAGS"} "${probes[@]}" --quiet
 }
-deploy_service "$SVC_WEB"       app.entrypoints.web:app       1 1Gi 40 10 2
+deploy_service "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2
 deploy_service "$SVC_PUBLICO"   app.entrypoints.publico:app   1 1Gi 40 10 2
 deploy_service "$SVC_BIOMETRIA" app.entrypoints.biometria:app 2 2Gi 2  10 1 FACE_PROCESSES=2
 
@@ -124,17 +128,6 @@ env_file "$TMP/ops.yaml" FACE_PROCESSES=0
 gcloud run jobs deploy "$JOB_OPS" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$SA_OPS")" \
   --command python --args=-m,app.ops_runner,hourly --tasks 1 --max-retries 0 --task-timeout 1800 --cpu 1 --memory 1Gi \
   --env-vars-file "$TMP/ops.yaml" ${OPS_SECRET_FLAGS:+--set-secrets "$OPS_SECRET_FLAGS"} --quiet
-
-# ---------------------------------------------------------------- 4) permisos entre piezas (a nivel de recurso, idempotentes)
-say "Permisos entre servicios y Jobs"
-bind_job() { gcloud run jobs add-iam-policy-binding "$1" --region "$REGION" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null; }
-bind_job "$JOB_BULK" "$SA_APP" roles/run.jobsExecutorWithOverrides       # el servicio lanza la carga masiva
-bind_job "$JOB_OPS" "$SA_APP" roles/run.jobsExecutorWithOverrides        # y el precalentamiento inmediato
-bind_job "$JOB_OPS" "$SA_INVOKER" roles/run.invoker                       # Cloud Scheduler corre la tarea horaria
-for svc in "$SVC_WEB" "$SVC_PUBLICO" "$SVC_BIOMETRIA"; do                  # el precalentamiento cambia sus instancias mínimas
-  gcloud run services add-iam-policy-binding "$svc" --region "$REGION" --member "serviceAccount:$(sa_email "$SA_OPS")" \
-    --role roles/run.developer --quiet >/dev/null
-done
 
 if [ "$PLACEHOLDER" = 0 ]; then
   say "Comprobación"

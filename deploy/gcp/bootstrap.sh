@@ -37,8 +37,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source deploy/gcp/config.sh "${1:-}"
 ROTATE="${ROTATE:-}"          # p. ej. ROTATE="secret-key ops-token": vuelve a pedir esos secretos aunque existan
-if [ "$GOLDEN_ENV" = production ]; then FIREBASE_SITE="${FIREBASE_SITE:-golden-app-${PROJECT_NUMBER}}"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.golden-eventos.com}"
-else FIREBASE_SITE="${FIREBASE_SITE:-golden-staging-${PROJECT_NUMBER}}"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://${FIREBASE_SITE}.web.app}"; fi
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 step() { echo -e "\n\033[1m== $*\033[0m"; }
 ok() { echo "   ✓ $*"; }
@@ -81,9 +79,16 @@ sa_bind "$SA_APP" "$SA_APP" roles/iam.serviceAccountTokenCreator   # firmar sus 
 sa_bind "$SA_INVOKER" "$SA_APP" roles/iam.serviceAccountUser       # crear tareas de Cloud Tasks con el token OIDC del invoker
 sa_bind "$SA_APP" "$SA_DEPLOYER" roles/iam.serviceAccountUser      # desplegar servicios que corren como app / ops
 sa_bind "$SA_OPS" "$SA_DEPLOYER" roles/iam.serviceAccountUser
-project_bind "$SA_DEPLOYER" roles/run.admin                         # desplegar y dar permisos entre servicios y Jobs
-project_bind "$SA_DEPLOYER" roles/secretmanager.viewer              # ver QUÉ secretos existen (no sus valores)
-project_bind "$SA_DEPLOYER" roles/firebasehosting.admin
+# La cuenta de despliegue NO tiene roles de Cloud Run a nivel de proyecto: recibe run.developer sobre cada servicio y Job de SU entorno
+# (paso 8). Lo único de proyecto: ver el estado de las operaciones que lanza (rol propio de solo lectura, nada de otro entorno).
+OPS_ROLE="goldenRunOperationsViewer"
+exists gcloud iam roles describe "$OPS_ROLE" --project "$PROJECT_ID" \
+  || gcloud iam roles create "$OPS_ROLE" --project "$PROJECT_ID" --title "Golden: ver operaciones de Cloud Run" \
+       --permissions run.operations.get,run.operations.list --stage GA >/dev/null
+project_bind "$SA_DEPLOYER" "projects/${PROJECT_ID}/roles/${OPS_ROLE}"
+if [ "$FIREBASE_DEPLOY" = 1 ]; then
+  project_bind "$SA_DEPLOYER" roles/firebasehosting.admin           # solo a nivel de proyecto: ver docs/15 (staging en proyecto aparte)
+fi
 gcloud artifacts repositories add-iam-policy-binding "$AR_REPO" --location "$REGION" \
   --member "serviceAccount:$(sa_email "$SA_DEPLOYER")" --role roles/artifactregistry.writer --quiet >/dev/null
 ok "app, ops, invoker, deployer"
@@ -99,10 +104,10 @@ exists gcloud iam workload-identity-pools providers describe "$PROVIDER" --locat
        --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
        --attribute-condition "assertion.repository=='${GITHUB_REPO}'"
 POOL_PATH="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}"
-if [ "$GOLDEN_ENV" = production ]; then MEMBER="principalSet://iam.googleapis.com/${POOL_PATH}/attribute.ref/refs/heads/main"   # solo desde main
-else MEMBER="principalSet://iam.googleapis.com/${POOL_PATH}/attribute.repository/${GITHUB_REPO}"; fi
+# Solo la rama del entorno (el proveedor ya exige el repositorio): staging ← migra/fase1-2, producción ← main.
+MEMBER="principalSet://iam.googleapis.com/${POOL_PATH}/attribute.ref/${DEPLOY_REF}"
 gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$SA_DEPLOYER")" --role roles/iam.workloadIdentityUser --member "$MEMBER" --quiet >/dev/null
-ok "proveedor ${POOL_PATH}/providers/${PROVIDER}"
+ok "proveedor ${POOL_PATH}/providers/${PROVIDER}; $SA_DEPLOYER solo desde ${DEPLOY_REF}"
 
 # -------------------------------------------------------------------------------------------------------------------------- 5
 step "5. Secret Manager (${GOLDEN_ENV})"
@@ -151,7 +156,12 @@ secret_access() { gcloud secrets add-iam-policy-binding "$(secret_name "$1")" --
 for pair in $APP_SECRETS; do secret_access "${pair%%:*}" "$SA_APP"; secret_access "${pair%%:*}" "$SA_OPS"; done
 for pair in $OPS_SECRETS neon-project-id:x neon-endpoint-id:x; do secret_access "${pair%%:*}" "$SA_OPS"; done
 secret_access ops-token "$SA_DEPLOYER"     # el despliegue pregunta /api/ops/deploy-allowed (congelamiento)
-ok "permisos de lectura: app → secretos de la app; ops → todos; deployer → ops-token"
+# El despliegue necesita saber QUÉ secretos de SU entorno existen (para montarlos), no sus valores: metadatos por secreto, no del proyecto.
+for pair in $APP_SECRETS $OPS_SECRETS neon-project-id:x neon-endpoint-id:x; do
+  gcloud secrets add-iam-policy-binding "$(secret_name "${pair%%:*}")" --member "serviceAccount:$(sa_email "$SA_DEPLOYER")" \
+    --role roles/secretmanager.viewer --quiet >/dev/null 2>&1 || true
+done
+ok "permisos de lectura: app → secretos de la app; ops → todos; deployer → ops-token y metadatos de los de su entorno"
 
 # -------------------------------------------------------------------------------------------------------------------------- 6
 step "6. Buckets"
@@ -164,7 +174,8 @@ done
 python3 - "$PUBLIC_BASE_URL" "$FIREBASE_SITE" > "$TMP/cors.json" <<'EOF'
 import json, sys
 rules = json.load(open("deploy/gcs-app-cors.json"))
-rules[0]["origin"] = sorted({sys.argv[1], f"https://{sys.argv[2]}.web.app", f"https://{sys.argv[2]}.firebaseapp.com"})
+site = sys.argv[2]
+rules[0]["origin"] = sorted({sys.argv[1]} | ({f"https://{site}.web.app", f"https://{site}.firebaseapp.com"} if site else set()))
 print(json.dumps(rules))
 EOF
 gcloud storage buckets update "gs://$APP_BUCKET" --cors-file "$TMP/cors.json" --versioning --quiet >/dev/null
@@ -198,8 +209,20 @@ step "8. Cloud Run (servicios y Jobs)"
 if exists gcloud run services describe "$SVC_WEB" --region "$REGION"; then
   ok "ya existen: los actualiza el workflow de GitHub Actions (no se tocan aquí)"
 else
-  bash deploy/gcp/deploy.sh "$GOLDEN_ENV" --placeholder
+  bash deploy/gcp/deploy.sh "$GOLDEN_ENV" --placeholder       # crea los 3 servicios (públicos) y los 3 Jobs con la imagen «hello»
 fi
+# Permisos a nivel de RECURSO (idempotentes). El despliegue ya no da permisos: lo hace esto, con la cuenta de quien corre el bootstrap.
+bind_job() { gcloud run jobs add-iam-policy-binding "$1" --region "$REGION" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null; }
+bind_svc() { gcloud run services add-iam-policy-binding "$1" --region "$REGION" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null; }
+for svc in "$SVC_WEB" "$SVC_PUBLICO" "$SVC_BIOMETRIA"; do
+  bind_svc "$svc" "$SA_DEPLOYER" roles/run.developer               # GitHub Actions actualiza SOLO los servicios de su entorno
+  bind_svc "$svc" "$SA_OPS" roles/run.developer                    # el precalentamiento cambia sus instancias mínimas
+done
+for job in "$JOB_MIGRATE" "$JOB_BULK" "$JOB_OPS"; do bind_job "$job" "$SA_DEPLOYER" roles/run.developer; done
+bind_job "$JOB_BULK" "$SA_APP" roles/run.jobsExecutorWithOverrides  # el servicio lanza la carga masiva
+bind_job "$JOB_OPS" "$SA_APP" roles/run.jobsExecutorWithOverrides   # y el precalentamiento inmediato
+bind_job "$JOB_OPS" "$SA_INVOKER" roles/run.invoker                  # Cloud Scheduler corre la tarea horaria
+ok "$SA_DEPLOYER: run.developer sobre los 3 servicios y 3 Jobs de $GOLDEN_ENV (nada del otro entorno)"
 
 # -------------------------------------------------------------------------------------------------------------------------- 9
 step "9. Cloud Scheduler ($SCHEDULER_OPS)"
@@ -281,8 +304,10 @@ else
 fi
 
 # -------------------------------------------------------------------------------------------------------------------------- 12
-step "12. Firebase Hosting (sitio $FIREBASE_SITE)"
-if command -v firebase >/dev/null; then
+step "12. Firebase Hosting (sitio ${FIREBASE_SITE:-ninguno})"
+if [ -z "$FIREBASE_SITE" ]; then
+  ok "sin Firebase en este entorno (staging en el mismo proyecto): se prueba por la URL de Cloud Run, que sirve toda la app"
+elif command -v firebase >/dev/null; then
   firebase projects:addfirebase "$PROJECT_ID" >/dev/null 2>&1 || true                   # si ya es proyecto de Firebase, no pasa nada
   firebase hosting:sites:create "$FIREBASE_SITE" --project "$PROJECT_ID" >/dev/null 2>&1 || true
   if firebase hosting:sites:get "$FIREBASE_SITE" --project "$PROJECT_ID" >/dev/null 2>&1; then ok "sitio listo; el contenido lo publica el workflow"
@@ -299,6 +324,6 @@ LISTO ($GOLDEN_ENV). Configura en GitHub → Settings → Environments → «$GO
   GCP_REGION          = $REGION
   GCP_WIF_PROVIDER    = ${POOL_PATH}/providers/${PROVIDER}
   GCP_DEPLOYER        = $(sa_email "$SA_DEPLOYER")
-  FIREBASE_SITE       = $FIREBASE_SITE
-Web (Cloud Run): $(run_url "$SVC_WEB")   ·   Público (Firebase Hosting): $PUBLIC_BASE_URL
+  FIREBASE_SITE       = ${FIREBASE_SITE:-(dejar VACÍA: este entorno no usa Firebase Hosting)}
+Web (Cloud Run): $(run_url "$SVC_WEB")   ·   Dirección pública: $PUBLIC_BASE_URL
 EOF

@@ -18,9 +18,14 @@ PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 if [ -z "$PROJECT_ID" ]; then echo "No hay proyecto en gcloud config: gcloud config set project <ID>" >&2; exit 2; fi
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 GITHUB_REPO="${GITHUB_REPO:-Juando26030/Facial-Recognition-GOLDEN}"
+# Rama desde la que GitHub Actions puede desplegar cada entorno (Workload Identity: cualquier otra rama no obtiene credenciales).
+if [ "$GOLDEN_ENV" = production ]; then DEPLOY_REF="refs/heads/main"; else DEPLOY_REF="${STAGING_BRANCH_REF:-refs/heads/migra/fase1-2}"; fi
+# Firebase Hosting solo da permisos a nivel de PROYECTO (no por sitio). Por eso la cuenta de despliegue de staging NO los recibe salvo
+# que staging viva en su propio proyecto de Google Cloud (recomendado, docs/15): FIREBASE_DEPLOY=1 para dárselos igual.
+if [ "$GOLDEN_ENV" = production ]; then FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-1}"; else FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-0}"; fi
 
-# Imagen (un solo repositorio de Artifact Registry para los dos entornos)
-AR_REPO="golden"
+# Imagen: un repositorio de Artifact Registry POR ENTORNO (staging no puede sobrescribir una imagen que producción vaya a desplegar)
+AR_REPO="golden${SUFFIX}"
 IMAGE_BASE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/app"
 
 # Cuentas de servicio (una por papel y por entorno: staging nunca puede leer secretos ni archivos de producción)
@@ -35,6 +40,17 @@ SVC_WEB="golden-web${SUFFIX}"; SVC_PUBLICO="golden-publico${SUFFIX}"; SVC_BIOMET
 JOB_MIGRATE="golden-migrate${SUFFIX}"; JOB_BULK="golden-bulk${SUFFIX}"; JOB_OPS="golden-ops${SUFFIX}"
 run_url() { echo "https://$1-${PROJECT_NUMBER}.${REGION}.run.app"; }          # formato determinista de Cloud Run
 run_path() { echo "projects/${PROJECT_ID}/locations/${REGION}/$1/$2"; }
+
+# Dominio público y sitio de Firebase Hosting. Sin Firebase (staging en el mismo proyecto que producción, FIREBASE_DEPLOY=0) no hay quien
+# reparta las rutas entre los 3 servicios: el servicio web de staging sirve TODA la app (WEB_MODULE) y su URL de Cloud Run es la pública.
+WEB_MODULE="app.entrypoints.web:app"
+if [ "$GOLDEN_ENV" = production ]; then
+  FIREBASE_SITE="${FIREBASE_SITE:-golden-app-${PROJECT_NUMBER}}"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://app.golden-eventos.com}"
+elif [ "$FIREBASE_DEPLOY" = 1 ]; then
+  FIREBASE_SITE="${FIREBASE_SITE:-golden-staging-${PROJECT_NUMBER}}"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://${FIREBASE_SITE}.web.app}"
+else
+  FIREBASE_SITE=""; WEB_MODULE="app.main:app"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-$(run_url "golden-web${SUFFIX}")}"
+fi
 
 # Cola, programador
 QUEUE="golden-jobs${SUFFIX}"
