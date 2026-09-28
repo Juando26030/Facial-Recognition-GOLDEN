@@ -220,7 +220,7 @@ _storage: Optional[Storage] = None
 def get_storage() -> Storage:
     global _storage
     if _storage is None:
-        backend = os.getenv("STORAGE_BACKEND", "local")
+        backend = os.getenv("STORAGE_BACKEND") or "local"      # vacío = local (así lo documentan .env.example y .env.staging.example)
         if backend == "gcs":
             bucket = os.getenv("GCS_BUCKET")
             if not bucket:

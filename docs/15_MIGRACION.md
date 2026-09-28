@@ -10,7 +10,7 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 - [x] 2. `GcsStorage` en `app/storage.py`
 - [x] 3. Backend Cloud Tasks en `app/jobs.py` (Postgres sigue como alternativa)
 - [x] 4. Directorio paginado e incremental en `static/js/directory.js`
-- [~] 5. Dockerfile multi-etapa + 3 puntos de entrada — escrito; FALTA construirlo y levantarlo (Docker Desktop no arranca en este equipo)
+- [x] 5. Dockerfile multi-etapa + 3 puntos de entrada — imagen construida (Python 3.14, dlib compilado en la etapa de ruedas), los tres servicios arriba con `deploy/docker-compose.yml` contra Neon staging (`/readyz` 200 en los tres; `publico`/`web` sin dlib, ~275 MiB cada uno; `biometria` con el modelo, ~300 MiB) y prueba del emulador de Cloud Storage (`fsouza/fake-gcs-server`) en verde. Arreglado de paso: `STORAGE_BACKEND=` vacío (como lo deja la plantilla) tumbaba `/readyz`; ahora vacío = local
 - [~] 6. `.env.staging.example` + `.env.staging` en `.gitignore` (hecho) → FALTA: Juan David llena `.env.staging`, luego migraciones y contenedor contra Neon staging
 
 ### Sesión 2 — pendiente

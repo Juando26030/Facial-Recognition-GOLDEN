@@ -139,6 +139,9 @@ def test_cloud_storage_backend_needs_a_bucket_and_unknown_backends_fail(monkeypa
     monkeypatch.setenv("STORAGE_BACKEND", "s3")
     with pytest.raises(RuntimeError, match="no existe"):
         storage.get_storage()
+    monkeypatch.setenv("STORAGE_BACKEND", "")                   # vacío en el .env (como deja la plantilla de staging) = local
+    storage.reset_storage()
+    assert isinstance(storage.get_storage(), storage.LocalStorage)
     monkeypatch.delenv("STORAGE_BACKEND")
     storage.reset_storage()
 
