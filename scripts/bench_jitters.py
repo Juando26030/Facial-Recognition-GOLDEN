@@ -16,7 +16,7 @@ Qué mide, por cada valor de jitters:
     grande, lado mayor --max-side, la persona más cercana si la distancia < 0.55). Se cuentan aciertos, falsos positivos (reconoce a OTRA
     persona), sin coincidencia, sin rostro y el tiempo promedio por escaneo (--repeat veces cada foto para estabilizar el tiempo).
 
-Extensiones: .jpg, .jpeg y .png sin importar mayúsculas (las fotos bajadas de WhatsApp vienen como .jpg o .jpeg).
+Extensiones: .jpg, .jpeg, .png, .webp y .avif sin importar mayúsculas (WhatsApp y los navegadores entregan cualquiera de ellas).
 
 Privacidad: NUNCA imprime ni guarda nombres de archivo, nombres de personas ni encodings: solo cifras agregadas. Los resultados se escriben en --out
 (fuera del repo). Las fotos no se copian a ningún lado.
@@ -59,12 +59,17 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=200, help="máximo de fotos a usar")
     ap.add_argument("--repeat", type=int, default=5, help="veces que se escanea cada foto de kiosco (solo para estabilizar el tiempo)")
     ap.add_argument("--synthetic", action="store_true", help="si no hay carpeta, usa la foto de dominio público de scikit-image (solo mide tiempo)")
+    ap.add_argument("--jitters", default=",".join(map(str, JITTERS)), help="valores a medir, p. ej. 1,2,5")
+    ap.add_argument("--thresholds", default=str(THRESHOLD), help="umbrales a comparar en la simulación de escaneo, p. ej. 0.55,0.50")
+    ap.add_argument("--skip-pairs", action="store_true", help="solo la simulación de escaneo (sin todas las parejas contra 25 jitters, lo más lento)")
     args = ap.parse_args()
+    args.jitters = tuple(int(x) for x in args.jitters.split(","))
+    args.thresholds = tuple(float(x) for x in args.thresholds.split(","))
 
     from app.biometrics import BiometricEngine
 
     paths = sorted(p for p in glob.glob(os.path.join(args.dir, "**", "*"), recursive=True)
-                   if os.path.splitext(p)[1].lower() in (".jpg", ".jpeg", ".png"))[: args.limit]
+                   if os.path.splitext(p)[1].lower() in (".jpg", ".jpeg", ".png", ".webp", ".avif"))[: args.limit]
     images, owners = [], []
     if paths:
         for p in paths:
@@ -83,6 +88,13 @@ def main() -> None:
         enc = BiometricEngine.extract_encoding(img, jitters=jitters, max_side=args.max_side)
         return (np.array(enc) if enc else None), (time.perf_counter() - t0) * 1000
 
+    if args.skip_pairs and paths:
+        ident = identification(images, owners, paths, args)
+        print_identification(ident, args)
+        os.makedirs(args.out, exist_ok=True)
+        with open(os.path.join(args.out, "bench_jitters.json"), "w", encoding="utf8") as fh:
+            json.dump({"identification": ident}, fh, indent=2)
+        return
     print(f"{len(images)} fotos, lado mayor {args.max_side}px. Calculando la referencia ({REFERENCE} jitters)...")
     ref = [encode(img, REFERENCE)[0] for img in images]
     usable = [i for i, e in enumerate(ref) if e is not None]
@@ -96,7 +108,7 @@ def main() -> None:
     grouped = bool(pairs_same) and bool(pairs_diff)
 
     report = {"photos": len(images), "with_face": len(usable), "persons": len(persons) if grouped else None, "max_side": args.max_side, "threshold": THRESHOLD, "rows": []}
-    for jit in (*JITTERS, REFERENCE):
+    for jit in (*args.jitters, REFERENCE):
         encs, times = {}, []
         for i in usable:
             e, ms = encode(images[i], jit)
@@ -131,16 +143,30 @@ def main() -> None:
     if not grouped:
         print("\n(Sin agrupar por persona no se puede medir aciertos ni falsos positivos: pon las fotos en una subcarpeta por persona, o nómbralas persona_1.jpg, persona_2.jpg...)")
     if ident:
-        print(f"\nSimulación de escaneo: {ident['persons']} personas enroladas, {ident['scans_per_jitter']} escaneos por valor "
-              f"({ident['kiosk_photos']} fotos de kiosco x {args.repeat} repeticiones), umbral {THRESHOLD}.")
-        print("| jitters | aciertos | falsos positivos | sin coincidencia | sin rostro | ms promedio por escaneo | dist. media al correcto | dist. mínima a otra persona |")
-        print("|---:|---:|---:|---:|---:|---:|---:|---:|")
-        for r in ident["rows"]:
-            print(f"| {r['jitters']} | {r['hits']} | {r['false_positives']} | {r['no_match']} | {r['no_face']} | {r['ms_mean']} | {r['own_dist_mean']} | {r['other_dist_min']} |")
+        print_identification(ident, args)
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "bench_jitters.json"), "w", encoding="utf8") as fh:
         json.dump(report, fh, indent=2)
     print(f"\nResultados agregados en {os.path.join(args.out, 'bench_jitters.json')} (sin nombres ni encodings).")
+
+
+def print_identification(ident, args) -> None:
+    if not ident:
+        print("Sin estructura registro/kiosco por persona: no hay simulación de escaneo.")
+        return
+    print(f"\nSimulación de escaneo: {ident['persons']} personas enroladas (de {ident['registrations']} fotos de registro; "
+          f"{ident['registrations_without_face']} sin rostro detectable; {ident['kiosk_of_unenrolled']} fotos de kiosco de esas personas no se usan), "
+          f"{ident['scans_per_jitter']} escaneos por valor ({ident['kiosk_photos']} fotos de kiosco x {args.repeat} repeticiones).")
+    print("| jitters | umbral | aciertos | falsos positivos | sin coincidencia | sin rostro | ms promedio por escaneo |")
+    print("|---:|---:|---:|---:|---:|---:|---:|")
+    for r in ident["rows"]:
+        for t in r["by_threshold"]:
+            print(f"| {r['jitters']} | {t['threshold']} | {t['hits']} | {t['false_positives']} | {t['no_match']} | {r['no_face']} | {r['ms_mean']} |")
+    print("\nDistancias (cada foto de kiosco contra todos los registros):")
+    print("| jitters | misma persona: media | p95 | MÁXIMA | otra persona: MÍNIMA | p1 | margen (mín. otra − máx. misma) |")
+    print("|---:|---:|---:|---:|---:|---:|---:|")
+    for r in ident["rows"]:
+        print(f"| {r['jitters']} | {r['own_dist_mean']} | {r['own_dist_p95']} | {r['own_dist_max']} | {r['other_dist_min']} | {r['other_dist_p1']} | {r['margin']} |")
 
 
 def identification(images, owners, paths, args):
@@ -152,6 +178,7 @@ def identification(images, owners, paths, args):
     kio = [i for i, r in enumerate(role) if r.startswith(("kiosko", "kiosco"))]
     if not reg or not kio:
         return None
+    thresholds = getattr(args, "thresholds", (THRESHOLD,))
     gallery_ids, gallery = [], []
     for i in reg:
         enc = BiometricEngine.extract_encoding(images[i], is_registration=True)
@@ -161,9 +188,13 @@ def identification(images, owners, paths, args):
     if not gallery:
         return None
     matrix = np.array(gallery)
+    enrolled = set(gallery_ids)
+    # Una foto de kiosco de alguien cuyo registro no se pudo enrolar (sin rostro) no mide el reconocimiento: se cuenta aparte.
+    kio_all, kio = kio, [i for i in kio if owners[i] in enrolled]
     rows = []
-    for jit in JITTERS:
-        hits = fps = no_match = no_face = 0
+    for jit in getattr(args, "jitters", JITTERS):
+        no_face = 0
+        best_d, best_ok = [], []                     # por escaneo: distancia al más cercano y si ese más cercano es la persona correcta
         times, own, other = [], [], []
         for _ in range(args.repeat):
             for i in kio:
@@ -178,17 +209,22 @@ def identification(images, owners, paths, args):
                 times.append((time.perf_counter() - t0) * 1000)
                 own += [float(d) for g, d in zip(gallery_ids, dist) if g == owners[i]]
                 other += [float(d) for g, d in zip(gallery_ids, dist) if g != owners[i]]
-                if dist[best] >= THRESHOLD:
-                    no_match += 1
-                elif gallery_ids[best] == owners[i]:
-                    hits += 1
-                else:
-                    fps += 1
-        rows.append({"jitters": jit, "hits": hits, "false_positives": fps, "no_match": no_match, "no_face": no_face,
-                     "ms_mean": round(statistics.mean(times), 1),
+                best_d.append(float(dist[best]))
+                best_ok.append(gallery_ids[best] == owners[i])
+        by_threshold = [{"threshold": t,
+                         "hits": sum(d < t and ok for d, ok in zip(best_d, best_ok)),
+                         "false_positives": sum(d < t and not ok for d, ok in zip(best_d, best_ok)),
+                         "no_match": sum(d >= t for d in best_d)} for t in thresholds]
+        rows.append({"jitters": jit, "by_threshold": by_threshold, "no_face": no_face, "ms_mean": round(statistics.mean(times), 1),
                      "own_dist_mean": round(statistics.mean(own), 4) if own else None,
-                     "other_dist_min": round(min(other), 4) if other else None})
-    return {"persons": len(gallery_ids), "kiosk_photos": len(kio), "scans_per_jitter": len(kio) * args.repeat, "rows": rows}
+                     "own_dist_p95": round(float(np.percentile(own, 95)), 4) if own else None,
+                     "own_dist_max": round(max(own), 4) if own else None,
+                     "other_dist_min": round(min(other), 4) if other else None,
+                     "other_dist_p1": round(float(np.percentile(other, 1)), 4) if other else None,
+                     "margin": round(min(other) - max(own), 4) if own and other else None})
+    return {"persons": len(gallery_ids), "registrations": len(reg), "registrations_without_face": len(reg) - len(gallery_ids),
+            "kiosk_photos": len(kio), "kiosk_of_unenrolled": len(kio_all) - len(kio),
+            "scans_per_jitter": len(kio) * args.repeat, "rows": rows}
 
 
 if __name__ == "__main__":

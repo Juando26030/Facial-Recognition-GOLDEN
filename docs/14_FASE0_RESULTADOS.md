@@ -111,6 +111,62 @@ para fotos de kiosco peores que estas (contraluz, ángulo). **Límite de la mues
 bastan para estimar la tasa de falsos positivos de un evento de miles (el riesgo real son los parecidos). Antes de un evento grande,
 repetir con ≥30 personas; si aparece algún falso positivo o un "sin coincidencia" con 2 que no salga con 10, volver a 10.
 
+### 6.2 Segunda medición: 39 personas (2026-09-28)
+
+`C:\JDRJ\Goldenotos_prueba`: 40 carpetas anónimas con consentimiento; **una está vacía, así que la muestra real es de 39 personas**
+(una foto de registro y una de kiosco cada una; formatos .jpg, .jpeg, .png, .webp y .avif — el script ahora lee los cinco: en una primera
+corrida solo leía .jpg/.jpeg/.png, dejó fuera 30 fotos y sus números se descartaron). Misma forma de medir que en 6.1: dentro de la imagen
+Docker, carpeta montada en solo lectura, registros enrolados como en producción (25 jitters, resolución completa) y cada foto de kiosco
+identificada como `app/faces.identify` (rostro más grande, 640 px). 195 escaneos por valor (39 fotos × 5 repeticiones). Conjunto
+cerrado: todas las personas escaneadas están registradas.
+
+| jitters | umbral | aciertos | falsos positivos | sin coincidencia | sin rostro | ms por escaneo |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0,55 | 190/195 | 0 | 0 | 5 | 119 |
+| 1 | 0,50 | 165/195 | 0 | 25 | 5 | 119 |
+| 2 (producción) | 0,55 | 189/195 | 0 | 1 | 5 | 202 |
+| 2 (producción) | 0,50 | 173/195 | 0 | 17 | 5 | 202 |
+| 5 | 0,55 | 190/195 | 0 | 0 | 5 | 453 |
+| 5 | 0,50 | 182/195 | 0 | 8 | 5 | 453 |
+
+«Sin rostro» = una misma foto de kiosco (×5 repeticiones) en la que no se detecta cara a 640 px, con cualquier umbral y jitters.
+
+Distancias de cada foto de kiosco contra todos los registros:
+
+| jitters | misma persona: media | p95 | máxima | otra persona: mínima | p1 | margen (mín. otra − máx. misma) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0,412 | 0,526 | 0,530 | 0,584 | 0,645 | +0,054 |
+| 2 | 0,402 | 0,510 | 0,555 | 0,542 | 0,638 | **−0,013** |
+| 5 | 0,393 | 0,496 | 0,527 | 0,542 | 0,640 | +0,015 |
+
+**Lectura.** (1) Con 0,55 los aciertos son 97-98 % y no hubo ningún falso positivo; con 0,50 se pierden 8-25 aciertos de 195 (4-13 %
+de personas que el sistema ya no reconoce y deben ir por cédula) **sin ganar nada medible en falsos positivos** (tampoco hubo con 0,55).
+(2) Pero el margen es muy estrecho: la persona equivocada más parecida quedó a 0,54-0,58, casi en el umbral, y con 2 jitters las dos
+distribuciones incluso se tocan (una foto de la misma persona a 0,555 y el impostor más cercano a 0,542). No hubo falso positivo solo
+porque en ese escaneo la persona correcta estaba registrada y quedó más cerca. **El riesgo real es alguien que NO está en la base y se
+parece a alguien que sí** (conjunto abierto): esa persona podría quedar por debajo de 0,55. Con miles de personas en un evento aparecen
+más parecidos y la distancia mínima a otra persona baja. (3) 1, 2 y 5 jitters dan la misma precisión con 0,55; 2 cuesta 202 ms.
+
+**Recomendación: mantener 0,55 y `RECOGNITION_JITTERS=2`.** 0,50 haría que 1 de cada 8-12 personas no sea reconocida (a 1-2 jitters)
+sin una mejora demostrada. La protección contra falsos positivos no debe depender solo del umbral: (a) con «registro automático»
+APAGADO el operador confirma (ver abajo: hoy NO ve la foto de registro, conviene agregarla); (b) con «registro automático» ENCENDIDO en
+un evento grande, conviene una regla extra además del umbral: **exigir distancia < 0,55 Y que la segunda persona más cercana esté al
+menos ~0,06 más lejos** (si dos personas quedan casi empatadas, se pide confirmación o cédula). Esa regla no está implementada: es una
+propuesta para medir con esta misma prueba antes de activarla. **Límite de la muestra:** 39 personas en conjunto cerrado (1.482
+comparaciones contra otras personas por repetición); sirve para comparar valores, no para estimar la tasa de falsos positivos de un
+evento de miles. Antes de un evento con registro automático encendido y más de ~1.000 personas con rostro, repetir con más personas y
+con fotos de personas NO registradas.
+
+**¿El operador ve la foto de registro antes de confirmar?** No. Con «registro automático» apagado, `/api/recognize` responde
+`MATCH_PENDING` y la pantalla del kiosco (`app.js` → `fillProfileCard`) muestra solo campos de texto editables (nombres, cargo, entidad…)
+y el mensaje «Coincidencia encontrada — confirma para autorizar el acceso»: ni la foto registrada ni qué tan parecida es. El operador
+confirma por el nombre, sin comparar caras. **Propuesta (no implementada):** en esa tarjeta, mostrar lado a lado la foto de registro
+(`GET /api/users/{id}/photo?event_id=…`, ya existe: exige sesión y acceso al evento, sirve la foto descifrada con `Cache-Control:
+private, no-store`) y la captura del momento (ya está en el navegador, no hay que subirla de nuevo), más un indicador de parecido en
+palabras (p. ej. «muy parecido» < 0,40, «parecido» 0,40-0,50, «revisar con cuidado» 0,50-0,55) y, si la segunda persona más cercana
+queda casi empatada, un aviso con su nombre. La foto solo se muestra en ese momento y no se guarda en el navegador. Costo: una petición
+de ~50-100 KB por confirmación.
+
 ## 7. Estado por proceso (revisado antes de pasar a varios procesos)
 
 Revisé todo el estado en memoria a nivel de módulo:
