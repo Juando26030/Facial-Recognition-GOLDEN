@@ -113,7 +113,7 @@ repetir con ≥30 personas; si aparece algún falso positivo o un "sin coinciden
 
 ### 6.2 Segunda medición: 39 personas (2026-09-28)
 
-`C:\JDRJ\Goldenotos_prueba`: 40 carpetas anónimas con consentimiento; **una está vacía, así que la muestra real es de 39 personas**
+`C:\JDRJ\Golden\fotos_prueba`: 40 carpetas anónimas con consentimiento; **una está vacía, así que la muestra real es de 39 personas**
 (una foto de registro y una de kiosco cada una; formatos .jpg, .jpeg, .png, .webp y .avif — el script ahora lee los cinco: en una primera
 corrida solo leía .jpg/.jpeg/.png, dejó fuera 30 fotos y sus números se descartaron). Misma forma de medir que en 6.1: dentro de la imagen
 Docker, carpeta montada en solo lectura, registros enrolados como en producción (25 jitters, resolución completa) y cada foto de kiosco
