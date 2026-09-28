@@ -291,16 +291,31 @@ fi
 
 # -------------------------------------------------------------------------------------------------------------------------- 11
 step "11. Presupuesto"
-if [ "$GOLDEN_ENV" = production ]; then
-  BILLING="$(gcloud billing projects describe "$PROJECT_ID" --format 'value(billingAccountName)' | sed 's#billingAccounts/##')"
-  if [ -z "$(gcloud billing budgets list --billing-account "$BILLING" --filter 'displayName="Golden nube"' --format 'value(name)' 2>/dev/null)" ]; then
-    read -rp "   Monto mensual EN LA MONEDA de la cuenta de facturación (p. ej. 165000COP ≈ US\$40, o 40USD): " AMOUNT
-    gcloud billing budgets create --billing-account "$BILLING" --display-name "Golden nube" --budget-amount "$AMOUNT" \
-      --threshold-rule percent=0.5 --threshold-rule percent=0.9 --threshold-rule percent=1.0 --filter-projects "projects/$PROJECT_ID"
-  fi
-  ok "avisos al 50, 90 y 100 % (avisan, no apagan nada). Si se cambia de cuenta de facturación, hay que volver a crearlo"
+# Solo se crea uno si NINGÚN presupuesto de la cuenta de facturación cubre este proyecto (uno filtrado a este proyecto, o uno de toda la
+# cuenta). Si ya hay (p. ej. «GoldenWeb mensual», COP 160.000), solo se informa. Si no se pueden leer los presupuestos, NO se crea nada.
+BILLING="$(gcloud billing projects describe "$PROJECT_ID" --format 'value(billingAccountName)' | sed 's#billingAccounts/##')"
+if ! BUDGETS="$(gcloud billing budgets list --billing-account "$BILLING" --format json 2>/dev/null)"; then
+  echo "   ⚠ No se pudieron leer los presupuestos de la cuenta $BILLING (permiso billing.budgets.list): no se crea ninguno. Revísalo en la consola."
 else
-  ok "el presupuesto se crea una sola vez, con production"
+  COVERING="$(BUDGETS_JSON="$BUDGETS" python3 - "$PROJECT_NUMBER" "$PROJECT_ID" <<'EOF'
+import json, os, sys
+number, pid = sys.argv[1], sys.argv[2]
+for b in json.loads(os.environ["BUDGETS_JSON"] or "[]"):
+    projects = (b.get("budgetFilter") or {}).get("projects") or []
+    if not projects or f"projects/{number}" in projects or f"projects/{pid}" in projects:
+        amount = (b.get("amount") or {}).get("specifiedAmount") or {}
+        print(f"«{b.get('displayName', b['name'])}» {amount.get('units', '?')} {amount.get('currencyCode', '')}".strip())
+EOF
+)"
+  if [ -n "$COVERING" ]; then
+    ok "ya hay presupuesto para este proyecto, no se crea otro: $(echo "$COVERING" | paste -sd ';' -)"
+  else
+    read -rp "   No hay presupuesto para este proyecto. Monto mensual EN LA MONEDA de la cuenta (p. ej. 160000COP; Enter = no crear): " AMOUNT
+    if [ -n "$AMOUNT" ]; then
+      gcloud billing budgets create --billing-account "$BILLING" --display-name "Golden nube" --budget-amount "$AMOUNT"         --threshold-rule percent=0.5 --threshold-rule percent=0.9 --threshold-rule percent=1.0 --filter-projects "projects/$PROJECT_ID"
+      ok "creado, con avisos al 50, 90 y 100 % (avisan, no apagan nada)"
+    fi
+  fi
 fi
 
 # -------------------------------------------------------------------------------------------------------------------------- 12

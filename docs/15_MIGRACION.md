@@ -133,6 +133,10 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   solo para `/api/ops/deploy-allowed`). Una prueba recorre todas las rutas `/internal` de la app y falla si alguna no tiene la
   dependencia (`tests/test_jobs_cloudtasks.py`)
 
+- [x] R3. **Presupuesto:** el paso 11 ya no crea uno si CUALQUIER presupuesto de la cuenta de facturación cubre el proyecto (filtrado a
+  este proyecto o de toda la cuenta): solo lo informa (p. ej. «GoldenWeb mensual» 160000 COP). Si no puede leer los presupuestos (falta
+  `billing.budgets.list` en la cuenta de la empresa) no crea nada y avisa. Solo sin ninguno pregunta el monto (Enter = no crear)
+
 #### Qué corre Juan David después de la sesión 2 (en este orden; nada de esto lo corrió Claude Code)
 1. Revisar `deploy/gcp/bootstrap.sh`, `deploy/gcp/deploy.sh`, `deploy/gcp/config.sh` y `.github/workflows/cloudrun*.yml`.
 2. Cloud Shell: `git clone` del repositorio, `git checkout migra/fase1-2`, `gcloud config set project <ID>` y
