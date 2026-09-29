@@ -19,7 +19,7 @@
 #
 # Proyecto, región, repositorio de imágenes y nombres salen de deploy/gcp/config.sh staging (REGION o `gcloud config set run/region`).
 # Variables: WEB_URL (por defecto la URL pública de staging de config.sh; DEBE ser exactamente una de las de staging: se aborta con cualquier otra), LOAD_EVENT_ID (por defecto,
-# el del último LOAD_SEED en los logs), TASKS_FORMS/TASKS_CEDULA/TASKS_FACE (6/4/4 tareas de 1 vCPU), CEDULA_MIN (30), SCALE_WEB/SCALE_PUB/SCALE_BIO («min max»: 2 6 / 2 6 / 3 6), SCALE_FILE (dónde se guardan los originales).
+# el del último LOAD_SEED en los logs), TASKS_FORMS/TASKS_CEDULA/TASKS_FACE (6/4/4 tareas de 1 vCPU), CEDULA_MIN (30), SCALE_WEB/SCALE_PUBLICO/SCALE_BIO («min max»: 2 10 / 2 10 / 3 10; SCALE_PUB sigue valiendo como alias; el máximo por defecto es 10, el de producción; para probar con menos, p. ej. SCALE_PUBLICO='2 6'), SCALE_FILE (dónde se guardan los originales).
 set -euo pipefail
 export FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-1}"             # staging con Firebase (proyecto propio): PUBLIC_BASE_URL = https://<sitio>.web.app
 # CANDADO: la lista de destinos permitidos se calcula SOLO desde proyecto, región y nombres de staging (config.sh). Lo que traiga el entorno de la terminal
@@ -71,7 +71,7 @@ set_max() { gcloud run services update "$1" --project "$PROJECT" --region "$REGI
 # servicios de staging y aborta, con el comando que lo arregla, si PUBLIC_LIMIT_FACTOR de publico no es $LIMITS_FACTOR o si algún máximo de instancias no es el de SCALE_*.
 preflight() {
   local bad=0 pair svc max
-  for pair in "$SVC_WEB:${SCALE_WEB:-2 6}" "$SVC_PUBLICO:${SCALE_PUB:-2 6}" "$SVC_BIOMETRIA:${SCALE_BIO:-3 6}"; do
+  for pair in "$SVC_WEB:${SCALE_WEB:-2 10}" "$SVC_PUBLICO:${SCALE_PUBLICO:-${SCALE_PUB:-2 10}}" "$SVC_BIOMETRIA:${SCALE_BIO:-3 10}"; do
     svc="${pair%%:*}"; read -r _ max <<<"${pair#*:}"
     if [ "$svc" = "$SVC_PUBLICO" ]; then
       gcloud run services describe "$svc" --project "$PROJECT" --region "$REGION" --format=json | "${PYTHON3:-python3}" "$(dirname "$0")/preflight.py" "$svc" "$max" "$LIMITS_FACTOR" || bad=1
@@ -160,7 +160,7 @@ case "${1:-}" in
     fi ;;
   scale-up)
     [ ! -e "$SCALE_FILE" ] || { echo "scale-up SE NIEGA: ya hay valores ORIGINALES guardados en $SCALE_FILE. Si se repitiera, reescribiría los originales con los valores YA subidos y scale-down restauraría lo equivocado. Corre primero: bash deploy/loadtest/run_phase4.sh scale-down (si ya restauraste a mano, borra ese archivo)." >&2; exit 1; }
-    for pair in "$SVC_WEB:${SCALE_WEB:-2 6}" "$SVC_PUBLICO:${SCALE_PUB:-2 6}" "$SVC_BIOMETRIA:${SCALE_BIO:-3 6}"; do
+    for pair in "$SVC_WEB:${SCALE_WEB:-2 10}" "$SVC_PUBLICO:${SCALE_PUBLICO:-${SCALE_PUB:-2 10}}" "$SVC_BIOMETRIA:${SCALE_BIO:-3 10}"; do
       svc="${pair%%:*}"; read -r want_min want_max <<<"${pair#*:}"
       read -r cur_min cur_max <<<"$(get_scale "$svc")"
       echo "$svc $cur_min $cur_max" >> "$SCALE_FILE"                   # ORIGINALES (mínimo de servicio, máximo de plantilla)

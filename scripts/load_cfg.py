@@ -32,3 +32,9 @@ def derived_password() -> str:
     if not token:
         raise SystemExit("Falta OPS_TOKEN: la clave de la cuenta de carga se deriva de él (ver scripts/load_cfg.py).")
     return "Ld" + hmac.new(token.encode(), b"golden-load-account", hashlib.sha256).hexdigest()[:30] + "!9"
+
+
+def timing_token() -> str:
+    """Valor de `X-Timing-Token` para que la app (SERVER_TIMING=1) devuelva `Server-Timing`. Misma fórmula que app/timing.py::token(); vacío sin OPS_TOKEN."""
+    token = os.environ.get("OPS_TOKEN", "")
+    return hmac.new(token.encode(), b"golden-server-timing", hashlib.sha256).hexdigest()[:20] if token else ""

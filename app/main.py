@@ -15,7 +15,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import appmode, bulk_jobs, faces, jobs, obs, ops
+from app import appmode, bulk_jobs, faces, jobs, obs, ops, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
@@ -126,6 +126,10 @@ app.add_middleware(
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)          # el directorio de miles de personas baja de ~2 MB a ~150 KB
+if timing.active():                                  # diagnóstico de esperas (SERVER_TIMING / LOG_SLOW_WAITS_MS): apagado por defecto, sin costo si está apagado
+    from app.database import engine as _engine
+    timing.install_db(_engine)
+    app.add_middleware(timing.TimingMiddleware)
 app.add_middleware(obs.RequestLogMiddleware, on_5xx=ops.record_5xx)     # el más externo: mide y registra TODA petición (incluidos los errores)
 
 app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")

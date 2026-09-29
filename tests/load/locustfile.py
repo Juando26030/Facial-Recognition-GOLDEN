@@ -111,6 +111,7 @@ class FormBurst(HttpUser):
 
     def on_start(self):
         self.client.headers["X-Forwarded-For"] = _fake_ip()
+        self.client.headers.update(_timing_headers())
 
     @task
     def once(self):
@@ -192,6 +193,39 @@ class Mixed(_Staff):
     def face(self):
         name, data = random.choice(_photos())
         self.client.post("/api/recognize", data={"event_id": EVENT_ID, "confirm": "true", "force": "true"}, files={"file": ("scan.jpg", data, "image/jpeg")}, name="POST recognize")
+
+
+def _timing_headers() -> dict:
+    """Con SERVER_TIMING=1 en el servicio, `X-Timing-Token` (derivado de OPS_TOKEN) hace que responda `Server-Timing`; sin OPS_TOKEN no se pide nada."""
+    try:
+        from scripts.load_cfg import timing_token
+        token = timing_token()
+    except Exception:  # noqa: BLE001
+        token = ""
+    return {"X-Timing-Token": token} if token else {}
+
+
+def _server_app_ms(header: str):
+    """`app;dur=12.3, thread;dur=…` → 12.3 (ms que la app dice haber tardado); None si no viene."""
+    for part in (header or "").split(","):
+        name, _, rest = part.strip().partition(";")
+        if name == "app" and rest.startswith("dur="):
+            try:
+                return float(rest[4:])
+            except ValueError:
+                return None
+    return None
+
+
+@events.request.add_listener
+def _outside_the_app(request_type, name, response_time, response=None, **_):
+    """Latencia que queda FUERA de la app (Cloud Run: cola de concurrencia, red, Firebase, el propio generador) = total medido por el cliente − `app;dur` del servidor.
+    Se registra como una petición aparte «[fuera de la app] …» (mismo reporte y percentiles); solo cuando el servicio devolvió `Server-Timing`. Sin datos de personas."""
+    if name.startswith("[fuera de la app]") or response is None:
+        return
+    app_ms = _server_app_ms(response.headers.get("Server-Timing", ""))
+    if app_ms is not None:
+        events.request.fire(request_type="APP", name=f"[fuera de la app] {name}", response_time=max(0.0, response_time - app_ms), response_length=0, exception=None, context={})
 
 
 @events.quitting.add_listener

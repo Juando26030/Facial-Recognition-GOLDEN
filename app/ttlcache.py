@@ -28,6 +28,23 @@ class TTLCache:
                 del self._data[key]
         return default
 
+    def peek(self, key, max_stale: float = 0.0):
+        """(valor, estado): «fresh» si vigente, «stale» si venció hace ≤ `max_stale` s (se puede servir mientras otro lo refresca), (None, None) si no hay nada utilizable.
+        Con TTL 0 (caché apagada) nunca hay «stale»."""
+        if self.ttl <= 0:
+            max_stale = 0.0
+        with self._lock:
+            hit = self._data.get(key)
+            if not hit:
+                return None, None
+            now = time.monotonic()
+            if hit[0] > now:
+                return hit[1], "fresh"
+            if now - hit[0] <= max_stale:
+                return hit[1], "stale"
+            del self._data[key]
+        return None, None
+
     def set(self, key, value) -> None:
         with self._lock:
             if len(self._data) >= self.maxsize:

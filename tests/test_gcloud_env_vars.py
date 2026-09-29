@@ -84,7 +84,7 @@ def _service_json(max_scale, factor=None):
     return {"spec": {"template": {"metadata": {"annotations": {"autoscaling.knative.dev/maxScale": str(max_scale)}}, "spec": {"containers": [{"env": env}]}}}}
 
 
-GOOD_SERVICES = {"golden-web-staging": _service_json(6), "golden-publico-staging": _service_json(6, 200), "golden-biometria-staging": _service_json(6)}
+GOOD_SERVICES = {"golden-web-staging": _service_json(10), "golden-publico-staging": _service_json(10, 200), "golden-biometria-staging": _service_json(10)}
 
 
 def _run(tmp_path, *script_args, web=WEB, extra_env=None, services=None):
@@ -167,10 +167,10 @@ def test_only_selects_scenarios_and_a_wrong_web_url_deploys_nothing(tmp_path):
 # ------------------------------------------------------------------ comprobación previa de `run` y protección de los originales de scale-up
 @pytest.mark.skipif(BASH is None, reason="sin bash")
 @pytest.mark.parametrize("services,needle", [
-    ({"golden-publico-staging": _service_json(6)}, "PUBLIC_LIMIT_FACTOR = sin definir, esperado 200"),               # un despliegue de CI borró el factor
-    ({"golden-publico-staging": _service_json(6, 1)}, "PUBLIC_LIMIT_FACTOR = 1, esperado 200"),
-    ({"golden-biometria-staging": _service_json(10)}, "golden-biometria-staging: máximo de instancias = 10, esperado 6"),      # el despliegue volvió el máximo a 10
-    ({"golden-web-staging": _service_json(10)}, "golden-web-staging: máximo de instancias = 10, esperado 6"),
+    ({"golden-publico-staging": _service_json(10)}, "PUBLIC_LIMIT_FACTOR = sin definir, esperado 200"),               # un despliegue de CI borró el factor
+    ({"golden-publico-staging": _service_json(10, 1)}, "PUBLIC_LIMIT_FACTOR = 1, esperado 200"),
+    ({"golden-biometria-staging": _service_json(6)}, "golden-biometria-staging: máximo de instancias = 6, esperado 10"),      # un tope viejo de 6 sin subir
+    ({"golden-web-staging": _service_json(3)}, "golden-web-staging: máximo de instancias = 3, esperado 10"),
     ({"golden-publico-staging": {}}, "máximo de instancias = sin definir"),
 ])
 def test_run_aborts_before_creating_anything_when_a_deploy_wiped_the_load_settings(tmp_path, services, needle):
@@ -181,9 +181,9 @@ def test_run_aborts_before_creating_anything_when_a_deploy_wiped_the_load_settin
 
 @pytest.mark.skipif(BASH is None, reason="sin bash")
 def test_run_passes_the_preflight_with_the_expected_settings_custom_caps_and_the_explicit_skip(tmp_path):
-    assert _run(tmp_path, "run", "small")[0].returncode == 0                                # 200 y máximos 6: pasa
+    assert _run(tmp_path, "run", "small")[0].returncode == 0                                # 200 y máximos 10 (los de producción): pasa
     caps = {"golden-web-staging": _service_json(4), "golden-publico-staging": _service_json(4, 200), "golden-biometria-staging": _service_json(8)}
-    r, _ = _run(tmp_path, "run", "small", services=caps, extra_env={"SCALE_WEB": "2 4", "SCALE_PUB": "2 4", "SCALE_BIO": "3 8"})
+    r, _ = _run(tmp_path, "run", "small", services=caps, extra_env={"SCALE_WEB": "2 4", "SCALE_PUBLICO": "2 4", "SCALE_BIO": "3 8"})
     assert r.returncode == 0, r.stderr                                                    # los máximos esperados salen de SCALE_* (los mismos de scale-up)
     r, lines = _run(tmp_path, "run", "small", services={"golden-publico-staging": _service_json(10)}, extra_env={"PREFLIGHT_SKIP": "1"})
     assert r.returncode == 0 and "PREFLIGHT_SKIP=1" in r.stderr and len([ln for ln in lines if ln.startswith("DEPLOY")]) == 3     # omitirla es explícito y deja aviso
@@ -208,3 +208,29 @@ def test_scale_up_refuses_to_overwrite_the_saved_originals(tmp_path):
     assert r.returncode != 0 and "scale-up SE NIEGA" in r.stderr and "scale-down" in r.stderr and "reescribiría los originales" in r.stderr
     assert saved.read_text(encoding="utf8") == before                                     # los originales quedan INTACTOS
     assert not [ln for ln in lines if "services update" in ln]                            # y no se tocó ningún servicio
+
+
+def _fake_curl(tmp_path):
+    """scale-up lee y mueve el mínimo por la API REST con curl: uno de mentira (lee «min 0, max 10», ignora lo demás)."""
+    fake = tmp_path / "bin"
+    fake.mkdir(exist_ok=True)
+    curl = fake / "curl"
+    body = "#!/usr/bin/env bash\necho '{\"scaling\":{\"minInstanceCount\":0},\"template\":{\"scaling\":{\"maxInstanceCount\":10}}}'\n"
+    curl.write_text(body, encoding="utf8", newline="\n")
+    curl.chmod(curl.stat().st_mode | stat.S_IEXEC)
+
+
+def _max_instances(lines):
+    return {ln.split()[4]: ln.split("--max-instances ")[1].split()[0] for ln in lines if "services update" in ln and "--max-instances" in ln}
+
+
+@pytest.mark.skipif(BASH is None, reason="sin bash")
+def test_scale_up_defaults_to_the_production_max_of_10_and_takes_caps_from_the_variables(tmp_path):
+    _fake_curl(tmp_path)
+    r, lines = _run(tmp_path, "scale-up")
+    assert r.returncode == 0, r.stderr
+    assert _max_instances(lines) == {"golden-web-staging": "10", "golden-publico-staging": "10", "golden-biometria-staging": "10"}         # sin recorte a 6
+    (tmp_path / ".golden_phase4_scale_goldenweb-staging.txt").unlink()
+    r, lines = _run(tmp_path, "scale-up", extra_env={"SCALE_WEB": "1 4", "SCALE_PUBLICO": "2 8", "SCALE_BIO": "3 5"})
+    assert r.returncode == 0, r.stderr
+    assert _max_instances(lines) == {"golden-web-staging": "4", "golden-publico-staging": "8", "golden-biometria-staging": "5"}

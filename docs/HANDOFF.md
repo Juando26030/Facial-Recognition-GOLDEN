@@ -93,6 +93,7 @@ runbook de cutover). Detalle: `docs/15_MIGRACION.md` «Sesión 4».
 3. Dejar que el push despliegue staging (corre la migración `0051`); correr `backup-daily` una vez; `bootstrap.sh staging` si se quiere recrear el paso 12 sin cuelgue.
 4. D2.1: medir latencia desde us-east1 y us-east4 (Job temporal) y decidir región. D2.2: `/api/ops/client-ip` con tráfico real y fijar `XFF_CLIENT_INDEX`.
 5. D2.3: `deploy/loadtest/run_phase4.sh build|seed|run|report|verify|cleanup` y los simulacros 1 y 2.
+   Ronda 3 pendiente: desplegar, `scale-up` (máx 10), correr con `SERVER_TIMING=1` y ver dónde queda la latencia («[fuera de la app]» en el informe); D (`FORM_STATE_CDN_SECONDS=4`) se prueba en una corrida aparte; después, UNA variable por corrida (THREADPOOL_SIZE / DB_POOL_SIZE / concurrencia). Docs/15 «2.ª ronda».
 6. Semana 3: runbook D2.4 (con autorización explícita para cada acción de producción).
 
 **Pendientes de código:** regla DUDOSO en el Control de Áreas; cupo + INSERT en una sola función SQL si se queda us-east1; tabla de costos; Fase 3 (contingencia del kiosco).

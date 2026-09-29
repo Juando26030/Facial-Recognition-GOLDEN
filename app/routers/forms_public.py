@@ -5,13 +5,16 @@ contraseña de acceso, condiciones, tipos, archivos) sin fiarse de lo que mande 
 Flujo (el navegador pregunta `GET .../state` y sigue la etapa que indique): `gate` (palabra/código de acceso) →
 `identify` (cédula, para pre-llenar o para autorizar) → `form` → `thanks`. Cada etapa superada se recuerda en un token
 firmado y con vencimiento (`t`), que el envío exige."""
+import asyncio
 import json
 import os
 import secrets
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -20,7 +23,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, jobs, security, uploads, wompi
+from app import formlib, formsvc, jobs, security, timing, uploads, wompi
 from app.database import SessionLocal, get_db
 from app.email_check import check_email
 from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
@@ -110,6 +113,58 @@ def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] 
 
 
 # ------------------------------------------------------------------ páginas y estado
+# ------------------------------------------------------------------ caché de estado/página: NUNCA bloquea a nadie
+# Stale-while-revalidate: un valor vigente se sirve al instante; uno VENCIDO (hasta FORM_PUBLIC_STALE_SECONDS después) también, y UN solo hilo propio (no del pool de la
+# app) lo refresca en segundo plano; solo cuando no hay ningún valor utilizable se espera, y esa espera es un `await` (no ocupa ningún hilo del pool). Antes los que
+# esperaban la recarga se quedaban bloqueados en un candado DENTRO del pool de hilos y, si la recarga tardaba, no dejaban arrancar a los envíos.
+PUBLIC_STALE_SECONDS = float(os.getenv("FORM_PUBLIC_STALE_SECONDS", "5"))
+_refreshing: set = set()
+_refreshing_lock = threading.Lock()
+_inflight: Dict[tuple, "asyncio.Task"] = {}          # solo se toca desde el bucle de eventos de ESTE proceso (sin candado)
+
+
+def _spawn_refresh(cache, key, factory) -> None:
+    """Refresca `key` en un hilo propio, uno solo a la vez por clave. Si falla, el valor viejo se sigue sirviendo hasta que caduque su margen."""
+    with _refreshing_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def work():
+        try:
+            cache.set(key, factory())
+        except Exception:  # noqa: BLE001
+            log.warning("no se pudo refrescar la caché %s en segundo plano", key[0], exc_info=True)
+        finally:
+            with _refreshing_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=work, name="form-cache-refresh", daemon=True).start()
+
+
+async def _cached_async(cache, key, factory):
+    """Valor de la caché sin bloquear: vigente → ya; vencido pero utilizable → ya (y refresco en segundo plano); nada → UNA sola recarga (un hilo) y los demás esperan
+    con `await` a esa misma tarea (`shield`: si un cliente se desconecta no cancela la recarga de los demás)."""
+    value, st = cache.peek(key, PUBLIC_STALE_SECONDS)
+    if st == "fresh":
+        return value
+    if st == "stale":
+        _spawn_refresh(cache, key, factory)
+        return value
+    loop_key = (id(asyncio.get_running_loop()), key)
+    task = _inflight.get(loop_key)
+    if task is None:
+        async def load():
+            result = await timing.run(factory)
+            cache.set(key, result)
+            return result
+
+        task = asyncio.ensure_future(load())
+        _inflight[loop_key] = task
+        task.add_done_callback(lambda _t: _inflight.pop(loop_key, None))
+    return await asyncio.shield(task)
+
+
 def _page_title(event_id: int, slug: str, k: Optional[str]) -> dict:
     """Fallo de caché de la página: lo único que hace falta de la base es el título (y que el formulario exista y sea visible)."""
     db = SessionLocal()
@@ -125,19 +180,16 @@ def _page_title(event_id: int, slug: str, k: Optional[str]) -> dict:
 async def page(event_id: int, slug: str, request: Request, k: Optional[str] = None):
     """El cascaron HTML es el mismo para todos: el formulario y su estado llegan por `/state`. Sin clave de pruebas se puede guardar en la cache del
     navegador/Cloudflare unos segundos (`s-maxage`); con `?k=` (pruebas) nunca.
-    `async` a propósito: el ACIERTO de caché se sirve en el bucle de eventos, sin pasar por el pool de hilos (que en un pico tienen ocupados los envíos que esperan
-    el bloqueo del cupo); solo el fallo va a un hilo, con una sola recarga a la vez."""
+    `async` a propósito: la caché se sirve en el bucle de eventos, sin pasar por el pool de hilos (ver `_cached_async`)."""
     from app.main import templates  # import tardio: main.py importa este modulo
     key = ("page", event_id, slug)
-    cached = None if k else formsvc.public_cache.get(key)
-    if cached is None:
-        try:
-            if k:
-                cached = await run_in_threadpool(_page_title, event_id, slug, k)
-            else:
-                cached = await run_in_threadpool(formsvc.public_cache.get_or_compute, key, lambda: _page_title(event_id, slug, k))
-        except HTTPException:
-            return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Este formulario no está disponible</h3>", status_code=404)
+    try:
+        if k:
+            cached = await timing.run(_page_title, event_id, slug, k)
+        else:
+            cached = await _cached_async(formsvc.public_cache, key, lambda: _page_title(event_id, slug, k))
+    except HTTPException:
+        return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Este formulario no está disponible</h3>", status_code=404)
     response = templates.TemplateResponse(request=request, name="form_public.html", context={"event_id": event_id, "slug": slug, "form_title": cached["title"]})
     if not k:
         response.headers["Cache-Control"] = "public, max-age=30, s-maxage=60"
@@ -152,18 +204,29 @@ def _state_compute(event_id: int, slug: str, k: Optional[str], i: Optional[str],
         db.close()
 
 
+def _cdn_seconds() -> int:
+    """FORM_STATE_CDN_SECONDS (apagado = 0): segundos de `s-maxage` para el estado ANÓNIMO. Se limita a 1-10 s."""
+    try:
+        return max(0, min(10, int(os.getenv("FORM_STATE_CDN_SECONDS", "0"))))
+    except ValueError:
+        return 0
+
+
 @router.get("/f/{event_id}/{slug}/state")
-async def state(event_id: int, slug: str, k: Optional[str] = None, i: Optional[str] = None, t: Optional[str] = None):
+async def state(event_id: int, slug: str, request: Request, k: Optional[str] = None, i: Optional[str] = None, t: Optional[str] = None):
     """Lo que el navegador necesita para dibujar el formulario. Para quien llega «en frio» (sin clave de pruebas, enlace personal ni token) el resultado
     es identico para todos: se calcula una vez cada pocos segundos y se sirve de la memoria (con 10.000 aperturas, eran 10.000 conteos de cupo).
-    `async`: el acierto de caché NO usa el pool de hilos ni la base; el fallo se recalcula en un hilo, uno solo a la vez por formulario (los demás esperan ese resultado)."""
+    `async` y sin bloqueos: ver `_cached_async`. Con FORM_STATE_CDN_SECONDS > 0 la respuesta ANÓNIMA (sin parámetros, sin cookie, sin Set-Cookie) lleva
+    `Cache-Control: public, max-age=0, s-maxage=N` para que la CDN de Firebase la sirva sin llegar a Cloud Run; cualquier otra petición (clave de pruebas, enlace personal,
+    token, cookie o sesión) NUNCA se cachea ahí."""
     if not (k or i or t):
         key = ("state", event_id, slug)
-        hit = formsvc.public_cache.get(key)
-        if hit is not None:
-            return hit
-        return await run_in_threadpool(formsvc.public_cache.get_or_compute, key, lambda: _state_compute(event_id, slug, k, i, t))
-    return await run_in_threadpool(_state_compute, event_id, slug, k, i, t)
+        result = await _cached_async(formsvc.public_cache, key, lambda: _state_compute(event_id, slug, k, i, t))
+        seconds = _cdn_seconds()
+        if seconds and not request.query_params and not request.headers.get("cookie") and not request.headers.get("authorization"):
+            return JSONResponse(jsonable_encoder(result), headers={"Cache-Control": f"public, max-age=0, s-maxage={seconds}"})
+        return result
+    return await timing.run(_state_compute, event_id, slug, k, i, t)
 
 
 def _state(db: Session, event_id: int, slug: str, k: Optional[str], i: Optional[str], t: Optional[str]) -> dict:
@@ -330,7 +393,7 @@ def _safe_name(name: str) -> str:
 
 
 @router.post("/f/{event_id}/{slug}/submit")
-async def submit(event_id: int, slug: str, request: Request, db: Session = Depends(get_db)):
+async def submit(event_id: int, slug: str, request: Request):
     """Lee el cuerpo (lo unico asincrono) y pasa el resto —consultas, cupo, insercion— a un hilo: el bucle de eventos nunca espera a la base de datos."""
     ctype = request.headers.get("content-type", "")
     files: Dict[str, Tuple[str, bytes]] = {}
@@ -347,7 +410,7 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
         raise HTTPException(status_code=400, detail="La solicitud no se pudo leer")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="La solicitud no se pudo leer")
-    return await run_in_threadpool(_submit, db, event_id, slug, request, payload, files)
+    return await timing.run(_submit_sync, event_id, slug, request, payload, files)
 
 
 def _record_submit_event(form_id: int, sid: str, source: Optional[str], is_test: bool) -> None:
@@ -359,6 +422,15 @@ def _record_submit_event(form_id: int, sid: str, source: Optional[str], is_test:
         db.commit()
     except Exception:  # noqa: BLE001
         log.warning("no se pudo registrar el evento de envío del formulario %s", form_id, exc_info=True)
+    finally:
+        db.close()
+
+
+def _submit_sync(event_id: int, slug: str, request: Request, payload: dict, files: Dict[str, Tuple[str, bytes]]):
+    """La sesión se abre AQUÍ, dentro del hilo del envío (antes `Depends(get_db)` pedía un turno de hilo solo para crearla: dos esperas en la misma cola por envío)."""
+    db = SessionLocal()
+    try:
+        return _submit(db, event_id, slug, request, payload, files)
     finally:
         db.close()
 
