@@ -38,7 +38,9 @@ FACE_PROCESSES = max(0, int(os.getenv("FACE_PROCESSES", "1")))          # proces
 FACE_CONCURRENCY = max(1, int(os.getenv("FACE_CONCURRENCY", "4")))      # cálculos faciales pendientes (en curso + en cola) por proceso web
 FACE_TASK_TIMEOUT = float(os.getenv("FACE_TASK_TIMEOUT", "180"))
 FACE_QUEUE_TIMEOUT = float(os.getenv("FACE_QUEUE_TIMEOUT", "1"))         # espera corta: un hilo esperando turno es un hilo menos para cédulas y formularios; mejor 503 rápido y que el kiosco reintente
-MATCH_TOKEN_TTL = int(os.getenv("MATCH_TOKEN_TTL", "120"))              # segundos que vale una coincidencia para confirmarla sin reenviar la foto
+MATCH_TOKEN_TTL = int(os.getenv("MATCH_TOKEN_TTL", "300"))              # segundos que vale una coincidencia (y sus candidatos) para confirmarla sin reenviar la foto
+MATCH_MARGIN = float(os.getenv("MATCH_MARGIN") or "0.06")                # si el mejor y el segundo candidato distan menos que esto, el resultado es DUDOSO (docs/14 §6.3)
+TOP_CANDIDATES = 6                                                      # principal + los 5 siguientes que ve el operador
 
 _gate = threading.BoundedSemaphore(FACE_CONCURRENCY)
 
@@ -117,6 +119,18 @@ class _Index:
         i = int(np.argmin(dist))
         return self.ids[i], float(dist[i])
 
+    def top(self, encoding, k: int = TOP_CANDIDATES) -> List[Tuple[str, float]]:
+        """Las `k` personas más parecidas, de la más cercana a la más lejana [(cédula, distancia)], con el mismo cálculo (una sola operación numpy)."""
+        if not self.ids:
+            return []
+        vec = np.asarray(encoding, dtype=np.float32).reshape(-1)
+        if vec.shape[0] != self.matrix.shape[1]:
+            return []
+        dist = np.linalg.norm(self.matrix - vec, axis=1)
+        k = min(k, len(self.ids))
+        part = np.argpartition(dist, k - 1)[:k]
+        return [(self.ids[int(i)], float(dist[int(i)])) for i in part[np.argsort(dist[part])]]
+
 
 _indexes: Dict[int, _Index] = {}
 _locks: Dict[int, threading.Lock] = {}
@@ -171,18 +185,41 @@ def event_index(db: Session, event: Event) -> _Index:
 
 
 # ------------------------------------------------------------------ reconocer
-def identify(db: Session, event: Event, image_bytes: bytes) -> Tuple[str, Optional[str]]:
-    """Devuelve ("NO_FACE", None) | ("NO_MATCH", None) | ("MATCH", cédula). Levanta `Busy` si la cola de cálculo facial está saturada."""
+def confidence(dist: float) -> dict:
+    """La distancia en palabras para el operador (umbrales de docs/14 §6.2). `level`: high | medium | low | out (fuera de la tolerancia)."""
+    if dist < 0.40:
+        return {"level": "high", "label": "Muy parecido"}
+    if dist < 0.50:
+        return {"level": "medium", "label": "Parecido"}
+    if dist < FACE_TOLERANCE:
+        return {"level": "low", "label": "Revisar con cuidado"}
+    return {"level": "out", "label": "Fuera de la tolerancia"}
+
+
+def is_doubtful(ranked: List[Tuple[str, float]]) -> bool:
+    """DUDOSO: el mejor y el segundo candidato quedan a menos de MATCH_MARGIN (casi empatados). Con un solo candidato no hay con quién compararse."""
+    return len(ranked) >= 2 and (ranked[1][1] - ranked[0][1]) < MATCH_MARGIN
+
+
+def recognize(db: Session, event: Event, image_bytes: bytes) -> Tuple[str, List[Tuple[str, float]]]:
+    """Devuelve ("NO_FACE", []) | ("NO_MATCH", []) | ("MATCH", ranked) con `ranked` = los TOP_CANDIDATES más cercanos (el primero está dentro de la tolerancia).
+    Levanta `Busy` si la cola de cálculo facial está saturada. Un solo cálculo facial y una sola operación numpy: los candidatos no cuestan más."""
     from app.biometrics import BiometricEngine    # import tardío: PIL/numpy solo hacen falta aquí (dlib vive en el proceso hijo)
 
     image = BiometricEngine.process_image_stream(image_bytes)
     encoding = extract(image, jitters=RECOGNITION_JITTERS, max_side=RECOGNITION_MAX_SIDE, largest_face=True)
     if not encoding:
-        return "NO_FACE", None
-    uid, dist = event_index(db, event).best(encoding)
-    if uid is not None and dist < FACE_TOLERANCE:
-        return "MATCH", uid
-    return "NO_MATCH", None
+        return "NO_FACE", []
+    ranked = event_index(db, event).top(encoding)
+    if ranked and ranked[0][1] < FACE_TOLERANCE:
+        return "MATCH", ranked
+    return "NO_MATCH", []
+
+
+def identify(db: Session, event: Event, image_bytes: bytes) -> Tuple[str, Optional[str]]:
+    """Devuelve ("NO_FACE", None) | ("NO_MATCH", None) | ("MATCH", cédula). Lo usa el Control de Áreas; el registro usa `recognize` (candidatos y regla de duda)."""
+    status, ranked = recognize(db, event, image_bytes)
+    return status, (ranked[0][0] if status == "MATCH" else None)
 
 
 # ------------------------------------------------------------------ token de coincidencia (evita reconocer dos veces)
@@ -190,14 +227,23 @@ def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="face-match")
 
 
-def make_match_token(event_id: int, staff_id: int, user_id: str) -> str:
-    return _serializer().dumps({"e": event_id, "s": staff_id, "u": user_id})
+def make_match_token(event_id: int, staff_id: int, user_id: str, ranked: Optional[List[Tuple[str, float]]] = None, doubtful: bool = False) -> str:
+    """Token firmado de corta vida de UN reconocimiento: la persona principal y los candidatos (cédula, distancia) del mismo cálculo. Solo viaja en cuerpos
+    de petición (nunca en URLs ni logs)."""
+    data = {"e": event_id, "s": staff_id, "u": user_id, "c": [[uid, round(dist, 4)] for uid, dist in (ranked or [])], "d": 1 if doubtful else 0}
+    return _serializer().dumps(data)
 
 
-def read_match_token(token: str, event_id: int, staff_id: int) -> Optional[str]:
-    """Cédula de la coincidencia, si el token es auténtico, no venció y es de ESTE evento y de ESTE operador; si no, None."""
+def read_match_payload(token: str, event_id: int, staff_id: int) -> Optional[dict]:
+    """Contenido del token (`u` principal, `c` candidatos, `d` dudoso) si es auténtico, no venció y es de ESTE evento y de ESTE operador; si no, None."""
     try:
         data = _serializer().loads(token, max_age=MATCH_TOKEN_TTL)
     except (BadSignature, SignatureExpired):
         return None
-    return data["u"] if data.get("e") == event_id and data.get("s") == staff_id else None
+    return data if data.get("e") == event_id and data.get("s") == staff_id else None
+
+
+def read_match_token(token: str, event_id: int, staff_id: int) -> Optional[str]:
+    """Cédula de la coincidencia principal (ver `read_match_payload`), o None."""
+    data = read_match_payload(token, event_id, staff_id)
+    return data["u"] if data else None

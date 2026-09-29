@@ -1,4 +1,4 @@
-# Handoff — migración a Cloud Run + Neon (estado al 2026-09-28)
+# Handoff — migración a Cloud Run + Neon (estado al 2026-09-29)
 
 Documento para que una sesión nueva retome sin perder contexto. Complementa (no reemplaza) a [`docs/15_MIGRACION.md`](15_MIGRACION.md)
 (progreso pieza por pieza), [`docs/13_ARQUITECTURA_ESCALABILIDAD.md`](13_ARQUITECTURA_ESCALABILIDAD.md) (plan, §15-§16 = decisiones
@@ -55,8 +55,8 @@ ruff limpio en lo tocado, shellcheck y actionlint limpios.
 - **Umbral 0,55 y `RECOGNITION_JITTERS=2`:** con 39 personas, 0,55 reconoce 97 % sin falsos positivos; 0,50 deja de reconocer 1 de cada 8-12
   sin ganancia medida. El margen es estrecho (impostor más cercano a 0,54): el riesgo real es alguien NO registrado parecido a alguien
   registrado. Propuestas (no implementadas): foto de registro en la tarjeta de confirmación y regla de «segundo más cercano».
-- **Retención biométrica:** 180 días tras el fin del evento (purga automática); después de purgar, la foto desaparece en ≤ 2 días y el
-  encoding cifrado sobrevive hasta **61 días** en los respaldos diarios (número para la política de privacidad). Ventana de historia de
+- **Retención biométrica (desde la sesión 4):** 7 días después de que TODOS los eventos de la persona estén finalizados (tope 180 desde la captura); el encoding cifrado
+  puede seguir hasta **30 días** en los respaldos diarios (antes 60). Ventana de historia de
   Neon: fijarla en 1 día (paso manual).
 - **Una sola tarea de Cloud Scheduler** (cabe en las 3 gratis) reemplaza los 4 cron de la VM; en producción se crea EN PAUSA hasta el cambio.
 - **Carga masiva como Cloud Run Job** (no cola dentro de la petición: hay cargas de horas y el tope por petición es 60 s).
@@ -83,23 +83,18 @@ ruff limpio en lo tocado, shellcheck y actionlint limpios.
 6. El precalentamiento de Neon (apagado/mínimo) necesita plan Launch: ya está.
 7. Copias del mundo VM (`gs://<bucket-datos>/data/` con fotos, volcados viejos) siguen su propia retención hasta limpiarlas tras el cambio.
 
-## 6. Siguientes pasos exactos
-**Juan David (nada de esto lo hace Claude Code):**
-1. Decidir si staging va en un proyecto aparte (recomendado). Si sí: crear el proyecto, `gcloud config set project <proyecto-staging>`.
-2. En Neon: ventana de historia de 1 día; tener a mano la llave de API y los ids de proyecto y endpoint de la rama staging.
-3. Cloud Shell: `git clone …`, `git checkout migra/fase1-2`, `FIREBASE_DEPLOY=1 bash deploy/gcp/bootstrap.sh staging` (o sin
-   `FIREBASE_DEPLOY` si queda en el mismo proyecto). Detalle de qué pide en `docs/15_MIGRACION.md` («Qué corre Juan David…»).
-4. GitHub → Environments `staging`: las variables que imprime el script. Relanzar el workflow «Cloud Run» y revisar la URL de staging.
+## 6. Siguientes pasos exactos (actualizado 2026-09-29, sesión 4)
+**Hecho en la sesión 4 (rama `migra/fase1-2`, 414 pruebas en verde):** D.1 arreglos del Job de ops/bootstrap/Actions/distintivo STAGING; B retención biométrica de 7 días tras finalizar
+(tope 180; migración `0051`; purga horaria; botón «Borrar fotos del evento»; respaldos a 30 días); A verificación del operador (foto de registro, confianza, «Ver 5 más cercanos», DUDOSO con
+`MATCH_MARGIN`, recomendado 0,10); C textos de privacidad y consentimiento (marcados PENDIENTE DE REVISIÓN LEGAL); D.2 scripts y pasos (latencia/región, IP real, carga distribuida, simulacros,
+runbook de cutover). Detalle: `docs/15_MIGRACION.md` «Sesión 4».
 
-**Sesión 3 de Claude Code (cuando staging esté arriba):**
-1. Medir la latencia real app→Neon desde Cloud Run (us-east1) y decidir región (script de medición: pendiente de escribir).
-2. Verificar `XFF_CLIENT_INDEX` con tráfico real y ajustarlo en `deploy/gcp/env/common.yaml`.
-3. Prueba de carga distribuida (Locust en Cloud Run Jobs) contra staging: 10.000 aperturas / 5.000 envíos + escaneos, y simulacros de
-   falla (doc 13 §11, Fase 4). Nunca contra producción.
-4. `docs/15_MIGRACION.md` completo: runbook del día del cambio (ventana, respaldo final, `migrate_db_to_neon.py` y
-   `migrate_files_to_gcs.py --biometric-prefix biometric`, DNS en Cloudflare, dominio en Firebase, reanudar `golden-ops-hourly`, mover el
-   chequeo de Google «GoldenWeb readyz» y UptimeRobot a `/health` (en Cloud Run `/healthz` da 404 de Google), verificación, vuelta atrás) y tabla de costos.
-5. Revisión final de pruebas y ruff; luego Fase 3 (modo contingencia del kiosco) en otra rama.
+**Juan David, en este orden** (lista completa con comandos en docs/15 y en el resumen de la sesión):
+1. Neon: historia de 1 día. Aplicar el ciclo de vida de 30 días al bucket de staging (comando en docs/15, B4). Borrar `C:\JDRJ\Golden\fotos_prueba`.
+2. Revisión legal de los textos nuevos (`/privacidad` y consentimientos). Decidir `MATCH_MARGIN` (recomendado 0,10 ya en `common.yaml`).
+3. Dejar que el push despliegue staging (corre la migración `0051`); correr `backup-daily` una vez; `bootstrap.sh staging` si se quiere recrear el paso 12 sin cuelgue.
+4. D2.1: medir latencia desde us-east1 y us-east4 (Job temporal) y decidir región. D2.2: `/api/ops/client-ip` con tráfico real y fijar `XFF_CLIENT_INDEX`.
+5. D2.3: `deploy/loadtest/run_phase4.sh build|seed|run|report|verify|cleanup` y los simulacros 1 y 2.
+6. Semana 3: runbook D2.4 (con autorización explícita para cada acción de producción).
 
-**Propuestas esperando aprobación (no implementar sin permiso):** foto de registro + indicador de parecido en la tarjeta de confirmación
-facial; regla de «segundo más cercano» para registro automático (docs/14 §6.2).
+**Pendientes de código:** regla DUDOSO en el Control de Áreas; cupo + INSERT en una sola función SQL si se queda us-east1; tabla de costos; Fase 3 (contingencia del kiosco).

@@ -297,3 +297,13 @@ def test_refund_terms_are_configured_per_form_and_shown_on_the_refund_page(clien
     assert "Condiciones de este formulario" in page and "hasta <b>10 días</b>" in page and "La comisión de Wompi no se devuelve." in page
     assert "Condiciones de este formulario" not in client.get("/reembolsos").text                                          # la página general no las muestra
     assert client.get(f"{'/f/%d/%s' % (ev.id, form['slug'])}/state").json()["refund"]["days"] == 10                       # y el formulario público las recibe
+
+
+def test_privacy_texts_state_7_day_retention_cap_backups_and_processors(client, factory):
+    p = client.get("/privacidad").text
+    for needle in ("7 días después de que finalice el evento", "180 días desde que se captura", "30 días", "Neon", "Google Cloud", "Firebase Hosting", "Wompi", "Microsoft", "PENDIENTE DE REVISIÓN LEGAL"):
+        assert needle in p
+    ev = factory.event("en_proceso", facial_enabled=True)
+    factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    assert "7 días después de que finalicen todos tus eventos" in client.get(f"/kiosk/{ev.id}/registro").text

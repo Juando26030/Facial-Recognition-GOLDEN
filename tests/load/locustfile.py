@@ -17,12 +17,26 @@ import json
 import os
 import random
 
-from locust import HttpUser, between, constant_pacing, events, task
+from locust import HttpUser, between, constant, constant_pacing, events, task
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CFG = json.load(open(os.path.join(HERE, ".load_env.json"), encoding="utf8"))
+
+
+def _cfg() -> dict:
+    """Local: `.load_env.json` (lo escribe setup_load_db.py). En Cloud Run Jobs contra staging: variables LOAD_EVENT_ID, LOAD_FORM_SLUG, LOAD_PEOPLE y OPS_TOKEN
+    (la clave de la cuenta de carga se deriva de él, scripts/load_cfg.py; nunca viaja en claro)."""
+    path = os.path.join(HERE, ".load_env.json")
+    if os.path.exists(path):
+        return json.load(open(path, encoding="utf8"))
+    from scripts.load_cfg import USERNAME, derived_password
+    return {"event_id": int(os.environ["LOAD_EVENT_ID"]), "form_slug": os.environ["LOAD_FORM_SLUG"], "password": derived_password(),
+            "people": int(os.getenv("LOAD_PEOPLE", "5000")), "digitador": USERNAME}
+
+
+CFG = _cfg()
 EVENT_ID, SLUG, PASSWORD = CFG["event_id"], CFG["form_slug"], CFG["password"]
 N_PEOPLE = CFG["people"]
+STAFF_USER = CFG.get("digitador", "carga_dig")
 _photo_cache: list = []
 
 
@@ -89,12 +103,42 @@ class FormUser(HttpUser):
                 r.failure(f"submit {r.status_code}: {r.text[:120]}")
 
 
+class FormBurst(HttpUser):
+    """Fase 4 (docs/15): cada usuario virtual abre el formulario UNA vez y, con probabilidad LOAD_SUBMIT_RATIO (0,5 → 10.000 aperturas y ~5.000 envíos), lo envía tras
+    unos segundos (lo que tarda en escribir); un 10 % de los envíos se repite con la MISMA `sid` (reintento por red mala: debe salir «replayed», nunca duplicar). Con el
+    formulario lleno (cupo < envíos) el 409 «cupo completo» es la respuesta CORRECTA y se cuenta aparte; cualquier 5xx es fallo."""
+    wait_time = constant(0)
+
+    def on_start(self):
+        self.client.headers["X-Forwarded-For"] = _fake_ip()
+
+    @task
+    def once(self):
+        import gevent
+        with self.client.get(f"/f/{EVENT_ID}/{SLUG}", name="GET pagina del formulario", catch_response=True) as r:
+            r.success() if r.status_code == 200 else r.failure(f"{r.status_code}")
+        self.client.get(f"/f/{EVENT_ID}/{SLUG}/state", name="GET state")
+        if random.random() < float(os.getenv("LOAD_SUBMIT_RATIO", "0.5")):
+            gevent.sleep(random.uniform(1, float(os.getenv("LOAD_THINK_MAX", "30"))))
+            n = random.randint(10**9, 10**10 - 1)
+            payload = {"values": {"cedula": str(n), "nombres": "Prueba", "apellidos": "Carga", "correo": f"carga{n}@example.com", "tel": "3001234567"}, "sid": f"sid{n}"}
+            for attempt in range(2 if random.random() < 0.10 else 1):
+                with self.client.post(f"/f/{EVENT_ID}/{SLUG}/submit", json=payload, name="POST envio" if attempt == 0 else "POST envio (reintento, misma sid)", catch_response=True) as r:
+                    if r.status_code == 200:
+                        r.success()
+                    elif r.status_code == 409:
+                        r.success()                      # cupo completo (o duplicado): respuesta correcta, no error; se ve en el reporte por código
+                    else:
+                        r.failure(f"submit {r.status_code}: {r.text[:120]}")
+        self.stop()
+
+
 class _Staff(HttpUser):
     abstract = True
 
     def on_start(self):
         self.client.headers["X-Forwarded-For"] = _fake_ip()
-        _login(self.client, "carga_dig")
+        _login(self.client, STAFF_USER)
 
 
 class CedulaScanner(_Staff):

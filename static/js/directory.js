@@ -117,7 +117,8 @@
      exigía el backend en DELETE /users/{id}/logs. Cada una de las dos dispara su propia
      confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
-  function buildEditModal(user) {
+  function buildEditModal(user, opts) {
+    opts = opts || {};       // { method: 'biometrico' (el ingreso viene de una verificación facial), onSaved(id) }
     // Parámetros del Evento (2026-09-16): las 5 variables fijas + cada opcional_N ya rotulado,
     // con el tipo de control/obligatoriedad/opciones que se haya definido en
     // /kiosk/{event_id}/parametros — mismo FIELD_CONFIGS que usa el alta manual (ver
@@ -268,7 +269,7 @@
           saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
           try {
             const statusRes = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
-              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus, method: opts.method }),
             });
             if (!statusRes.ok) {
               const data = await statusRes.json().catch(() => ({}));
@@ -324,7 +325,7 @@
           if (!canManageStatus && !isRegistered) {
             try {
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado' }),
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado', method: opts.method }),
               });
               if (st.ok) { if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId); }
               else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
@@ -333,6 +334,7 @@
           showToast('Cambios guardados', 'success');
           close();
           if (window.directorySearch) window.directorySearch.reload();
+          if (opts.onSaved) opts.onSaved(currentId);
         } else {
           const data = await res.json().catch(() => ({}));
           showToast(data.detail || 'Error al guardar cambios', 'error');
@@ -806,5 +808,5 @@
     };
   }
 
-  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode, matchesWordPrefix };
+  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode, matchesWordPrefix, openEdit: buildEditModal };
 })();

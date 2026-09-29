@@ -12,6 +12,8 @@ BIOMETRIC_MAX_DAYS: "180"
 # Fotos biométricas bajo un prefijo común: la regla de ciclo de vida borra en 1 día sus versiones viejas (docs/15, R4).
 BIOMETRIC_KEY_PREFIX: "biometric"
 RECOGNITION_JITTERS: "2"
+# Caso dudoso del reconocimiento: 0,10 atrapó el único falso positivo del conjunto abierto a costa de 2,1 % de escaneos por verificar (docs/14 §6.3).
+MATCH_MARGIN: "0.10"
 # Detrás de Firebase Hosting solo pasa la cookie «__session», y CF-Connecting-IP no es confiable (Cloudflare solo como DNS).
 SESSION_COOKIE: "__session"
 TRUST_CF_CONNECTING_IP: "0"

@@ -151,8 +151,7 @@ más parecidos y la distancia mínima a otra persona baja. (3) 1, 2 y 5 jitters 
 sin una mejora demostrada. La protección contra falsos positivos no debe depender solo del umbral: (a) con «registro automático»
 APAGADO el operador confirma (ver abajo: hoy NO ve la foto de registro, conviene agregarla); (b) con «registro automático» ENCENDIDO en
 un evento grande, conviene una regla extra además del umbral: **exigir distancia < 0,55 Y que la segunda persona más cercana esté al
-menos ~0,06 más lejos** (si dos personas quedan casi empatadas, se pide confirmación o cédula). Esa regla no está implementada: es una
-propuesta para medir con esta misma prueba antes de activarla. **Límite de la muestra:** 39 personas en conjunto cerrado (1.482
+menos ~0,06 más lejos** (si dos personas quedan casi empatadas, se pide confirmación o cédula). Esa regla se implementó el 2026-09-29 (`MATCH_MARGIN`) y se midió: ver §6.3. **Límite de la muestra:** 39 personas en conjunto cerrado (1.482
 comparaciones contra otras personas por repetición); sirve para comparar valores, no para estimar la tasa de falsos positivos de un
 evento de miles. Antes de un evento con registro automático encendido y más de ~1.000 personas con rostro, repetir con más personas y
 con fotos de personas NO registradas.
@@ -160,12 +159,91 @@ con fotos de personas NO registradas.
 **¿El operador ve la foto de registro antes de confirmar?** No. Con «registro automático» apagado, `/api/recognize` responde
 `MATCH_PENDING` y la pantalla del kiosco (`app.js` → `fillProfileCard`) muestra solo campos de texto editables (nombres, cargo, entidad…)
 y el mensaje «Coincidencia encontrada — confirma para autorizar el acceso»: ni la foto registrada ni qué tan parecida es. El operador
-confirma por el nombre, sin comparar caras. **Propuesta (no implementada):** en esa tarjeta, mostrar lado a lado la foto de registro
+confirma por el nombre, sin comparar caras. **Propuesta (implementada el 2026-09-29, ver §6.3):** en esa tarjeta, mostrar lado a lado la foto de registro
 (`GET /api/users/{id}/photo?event_id=…`, ya existe: exige sesión y acceso al evento, sirve la foto descifrada con `Cache-Control:
 private, no-store`) y la captura del momento (ya está en el navegador, no hay que subirla de nuevo), más un indicador de parecido en
 palabras (p. ej. «muy parecido» < 0,40, «parecido» 0,40-0,50, «revisar con cuidado» 0,50-0,55) y, si la segunda persona más cercana
 queda casi empatada, un aviso con su nombre. La foto solo se muestra en ese momento y no se guarda en el navegador. Costo: una petición
 de ~50-100 KB por confirmación.
+
+### 6.3 Verificación del operador y calibración de `MATCH_MARGIN` (2026-09-29)
+
+Lo implementado (docs/15 «Sesión 4 — A»): el resultado del escaneo muestra la captura junto a la foto de registro, con la confianza en palabras, «Ver 5 más cercanos» (del mismo cálculo, por el token) y
+clic en una persona → modal Editar → guardar registra a ESA persona; y la regla de caso dudoso: si el mejor y el segundo candidato distan menos de `MATCH_MARGIN`, el resultado es DUDOSO y nunca se registra solo.
+
+**Método** (`scripts/calibrate_match_margin.py`, dentro de la imagen Docker con la carpeta montada en SOLO LECTURA; nada de fotos, nombres ni encodings sale de allí, los resultados son anónimos P01…P39): las 39 personas
+de §6.2 (una foto de registro enrolada como en producción —25 jitters— y una de kiosco), `RECOGNITION_JITTERS=2`, umbral 0,55, cada foto de kiosco escaneada 5 veces (190 escaneos con rostro; los otros 5 son la
+foto sin rostro de §6.2). Dos escenarios: **cerrado** (todos registrados) y **abierto**, el de riesgo: cada escaneo se repite con la propia persona QUITADA de la galería (alguien NO registrado que se parece a
+alguien registrado); cualquier coincidencia < 0,55 es un falso positivo.
+
+| | Resultado |
+|---|---|
+| Conjunto cerrado: la persona correcta es el mejor candidato (top 1) | **100 %** de los 190 escaneos (0 falsos positivos, 0 sin coincidencia) |
+| Persona correcta entre los 6 mostrados (principal + 5) | **100 %** |
+| Diferencia entre el mejor y el segundo candidato en las coincidencias correctas | mín. **0,085** · p5 0,142 · mediana 0,269 |
+| Conjunto abierto: escaneos que igual «reconocen» a alguien | **1 de 190** (0,5 %), con diferencia mejor–segundo de **0,086** |
+
+| `MATCH_MARGIN` | escaneos DUDOSOS (cerrado) | del conjunto abierto, falsos positivos marcados DUDOSOS |
+|---:|---:|---:|
+| 0,04 | 0 % | 0 de 1 |
+| **0,06** (el default del código) | 0 % | 0 de 1 |
+| 0,08 | 0 % | 0 de 1 |
+| **0,10** | **2,1 %** | **1 de 1** |
+| 0,12 | 2,6 % | 1 de 1 |
+| 0,15 | 6,3 % | 1 de 1 |
+| 0,20 | 21,6 % | 1 de 1 |
+
+**Lectura y recomendación.** Con 39 personas los márgenes 0,04-0,08 **no se activan nunca** (la menor diferencia entre el mejor y el segundo entre coincidencias correctas es 0,085) y no atrapan el único
+falso positivo del conjunto abierto (diferencia 0,086): serían inertes. **0,10** es el menor valor probado que sí lo atrapa, a un costo de **2,1 %** de escaneos que el operador debe verificar (con el autoregistro
+apagado, que sigue siendo lo recomendado, el operador ya compara siempre; el margen solo importa cuando el autoregistro está prendido). **Recomiendo `MATCH_MARGIN=0.10`**: queda puesto en
+`deploy/gcp/env/common.yaml` (el default del código sigue en 0,06, como se pidió, para instalaciones que no lo definen). Límites: es UN solo falso positivo del conjunto abierto en una muestra de 39 personas; el
+valor se puede afinar con más personas y más parecidos. Si en producción se ve demasiado DUDOSO (> 5 %), subir hacia 0,12; para ser más estrictos, 0,15 cuesta 6,3 %.
+Ver también la distancia por persona (genuina máxima frente al impostor más cercano, todas con el mismo escaneo; la última columna es también la mejor distancia sin ella en la galería):
+
+| Persona | distancia genuina máx. | genuina media | impostor más cercano (mín.) |
+|---|---:|---:|---:|
+| P01 | 0.394 | 0.392 | 0.655 |
+| P02 | 0.317 | 0.308 | 0.652 |
+| P03 | 0.262 | 0.248 | 0.621 |
+| P04 | 0.181 | 0.168 | 0.634 |
+| P05 | 0.335 | 0.309 | 0.677 |
+| P06 | 0.333 | 0.318 | 0.638 |
+| P07 | 0.397 | 0.384 | 0.665 |
+| P08 | 0.385 | 0.367 | 0.649 |
+| P09 | 0.337 | 0.323 | 0.58 |
+| P10 | 0.48 | 0.473 | 0.719 |
+| P11 | 0.509 | 0.488 | 0.668 |
+| P12 | 0.348 | 0.337 | 0.657 |
+| P13 | 0.485 | 0.468 | 0.621 |
+| P14 | 0.523 | 0.508 | 0.72 |
+| P15 | 0.473 | 0.465 | 0.646 |
+| P16 | 0.478 | 0.468 | 0.672 |
+| P17 | 0.469 | 0.459 | 0.711 |
+| P18 | 0.451 | 0.432 | 0.668 |
+| P19 | 0.541 | 0.521 | 0.672 |
+| P20 | 0.44 | 0.424 | 0.69 |
+| P21 | 0.442 | 0.433 | 0.706 |
+| P22 | 0.475 | 0.467 | 0.635 |
+| P23 | 0.472 | 0.454 | 0.631 |
+| P24 | 0.334 | 0.323 | 0.697 |
+| P25 | 0.395 | 0.382 | 0.705 |
+| P26 | 0.487 | 0.47 | 0.543 |
+| P27 | 0.485 | 0.474 | 0.6 |
+| P28 | 0.396 | 0.389 | 0.745 |
+| P29 | None | None | None |
+| P30 | 0.535 | 0.521 | 0.681 |
+| P31 | 0.367 | 0.359 | 0.61 |
+| P32 | 0.437 | 0.426 | 0.627 |
+| P33 | 0.422 | 0.412 | 0.648 |
+| P34 | 0.408 | 0.396 | 0.673 |
+| P35 | 0.33 | 0.314 | 0.597 |
+| P36 | 0.406 | 0.386 | 0.638 |
+| P37 | 0.402 | 0.399 | 0.716 |
+| P38 | 0.394 | 0.377 | 0.624 |
+| P39 | 0.362 | 0.349 | 0.744 |
+
+El margen mínimo global (impostor más cercano − genuina más lejana, en TODOS los pares) fue 0,0018: el umbral 0,55 sigue siendo estrecho en el peor par, por eso la verificación humana y la regla del margen.
+**Juan David: la carpeta `C:\JDRJ\Golden\fotos_prueba` ya se puede borrar** (solo se leyó; no se copió nada).
 
 ## 7. Estado por proceso (revisado antes de pasar a varios procesos)
 

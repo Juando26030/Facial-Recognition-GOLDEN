@@ -139,7 +139,7 @@
                          quien no quiera se registra por cédula. Se recuerda solo en esta sesión del navegador. -->
                     <div id="bioGate" role="dialog" aria-modal="false" aria-labelledby="bioGateTitle" style="display:none; background:#fff8e1; border:2px solid var(--golden-primary); border-radius:14px; padding:16px; margin-bottom:12px;">
                         <h4 id="bioGateTitle" style="margin:0 0 6px;">🔒 Reconocimiento facial — aviso y autorización</h4>
-                        <p style="font-size:0.88rem; line-height:1.5; margin:0 0 8px;">Este evento identifica a las personas por su rostro. Tu rostro es un <b>dato biométrico sensible</b> (Ley 1581 de 2012). Se usa solo para identificarte en este evento. Puedes negarte: te registramos por cédula, sin usar tu rostro. Más información en la <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</p>
+                        <p style="font-size:0.88rem; line-height:1.5; margin:0 0 8px;">Este evento identifica a las personas por su rostro. Tu rostro es un <b>dato biométrico sensible</b> (Ley 1581 de 2012). Se usa solo para identificarte en este evento. Tu foto y tu rostro se borran 7 días después de que finalicen todos tus eventos (máximo 180 días desde que se capturan); pueden quedar en copias de seguridad hasta 30 días más. Puedes negarte: te registramos por cédula, sin usar tu rostro. <em>[PENDIENTE DE REVISIÓN LEGAL]</em> Más información en la <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</p>
                         <div style="display:flex; gap:8px; flex-wrap:wrap;">
                             <button type="button" id="bioGateAccept" class="golden-btn golden-btn-primary" style="width:auto;">La persona autoriza el escaneo de su rostro</button>
                             <button type="button" id="bioGateDecline" class="golden-btn" style="width:auto; background:#f0f0f0; color:var(--golden-dark);">No autoriza — registrar por cédula</button>
@@ -153,54 +153,22 @@
                     <button id="printScanBtn" class="golden-btn" style="display:none; width:100%; background:#f0f0f0; color:var(--golden-dark); margin-top:0.5rem;">🖨️ Imprimir Escarapela</button>
                 </div>
 
-                <div class="badge-preview-area" id="profileCard" style="display: none;">
+                <!-- Verificación del operador: captura en vivo junto a la foto de registro, confianza en palabras y «Ver 5 más cercanos» (docs/14 §6.3) -->
+                <div class="badge-preview-area" id="scanResult" style="display: none;">
                     <div class="badge-card" style="padding: 20px; width: 100%;">
-                        <h4 style="text-align:center; color: var(--golden-primary); margin-bottom: 15px;">Actualización de Asistente</h4>
-                        <form id="liveEditForm">
-                            <input type="hidden" id="edit_id" name="id">
-
-                            <div class="badge-input-row">
-                                <div class="badge-input-group">
-                                    <label>Nombres</label>
-                                    <input type="text" id="edit_first_name" name="first_name" required>
-                                </div>
-                                <div class="badge-input-group">
-                                    <label>Apellidos</label>
-                                    <input type="text" id="edit_last_name" name="last_name" required>
-                                </div>
+                        <h4 id="scanTitle" style="text-align:center; color: var(--golden-primary); margin-bottom: 12px;"></h4>
+                        <div id="scanMain">
+                            <div class="scan-compare">
+                                <figure><img id="scanLive" alt="Captura en vivo"><figcaption>Captura en vivo</figcaption></figure>
+                                <figure><img id="scanReg" alt="Foto de registro"><figcaption id="scanRegCap">Foto de registro</figcaption></figure>
                             </div>
-
-                            <div class="badge-input-row">
-                                <div class="badge-input-group">
-                                    <label>Cargo</label>
-                                    <input type="text" id="edit_role" name="role">
-                                </div>
-                                <div class="badge-input-group">
-                                    <label>Entidad</label>
-                                    <input type="text" id="edit_entity" name="entity">
-                                </div>
+                            <dl id="scanInfo" class="scan-info"></dl>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+                                <button type="button" id="scanOpenBtn" class="golden-btn golden-btn-primary" style="width:auto;">Abrir registro y confirmar ingreso</button>
+                                <button type="button" id="scanMoreBtn" class="golden-btn" style="width:auto; background:#f0f0f0; color:var(--golden-dark);">Ver 5 más cercanos</button>
                             </div>
-
-                            <div class="badge-input-row">
-                                <div class="badge-input-group">
-                                    <label>Teléfono</label>
-                                    <input type="text" id="edit_phone" name="phone">
-                                </div>
-                                <div class="badge-input-group">
-                                    <label>Correo Electrónico</label>
-                                    <input type="email" id="edit_email" name="email">
-                                </div>
-                            </div>
-
-                            <div class="badge-input-row">
-                                <div class="badge-input-group">
-                                    <label>Tipo de Asistente</label>
-                                    <input type="text" id="edit_opt_1" name="opt_1">
-                                </div>
-                            </div>
-
-                            <button type="submit" class="golden-btn golden-btn-primary" style="margin-top: 10px;">Guardar y Autorizar Acceso</button>
-                        </form>
+                        </div>
+                        <div id="scanCands" class="scan-cands"></div>
                     </div>
                 </div>
             </div>
@@ -224,6 +192,7 @@
                 {% if staff_role in ["coordinador", "admin", "super_admin"] %}
                 <div style="margin-bottom:1rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
                     <button type="button" id="autoRegisterBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
+                    {% if event.facial_enabled %}<p id="autoRegisterWarn" role="alert" style="display:none; margin:6px 0 0; padding:8px 10px; border-radius:8px; background:#fff3cd; color:#664d03; font-size:0.8rem; max-width:420px;">⚠️ Con reconocimiento facial el registro automático NO se recomienda en eventos grandes: dos personas parecidas pueden confundirse y nadie verifica la foto. Recomendado: apagado, para que el operador compare y confirme.</p>{% endif %}
                     <button type="button" id="autoPrintBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
                 </div>
                 {% endif %}
@@ -397,10 +366,15 @@
             autoRegisterBtn.innerText = window.EVENT_AUTO_REGISTER ? '🔓 Modo autoregistro: ACTIVADO' : '🔒 Modo autoregistro: apagado';
             autoRegisterBtn.style.background = window.EVENT_AUTO_REGISTER ? '#28a745' : '#f0f0f0';
             autoRegisterBtn.style.color = window.EVENT_AUTO_REGISTER ? 'white' : 'var(--golden-dark)';
+            const warn = document.getElementById('autoRegisterWarn');
+            if (warn) warn.style.display = window.EVENT_AUTO_REGISTER ? 'block' : 'none';       // aviso permanente mientras esté activo con rostro
         }
         updateAutoRegisterBtn();
         autoRegisterBtn.addEventListener('click', async () => {
             const next = !window.EVENT_AUTO_REGISTER;
+            if (next && document.getElementById('autoRegisterWarn') && !(await showConfirm(
+                'Con reconocimiento facial el registro automático <b>no se recomienda en eventos grandes</b>: si dos personas se parecen, el sistema puede registrar a la equivocada sin que nadie compare las fotos. Lo recomendado es dejarlo apagado para que el operador verifique.<br><br>¿Activarlo de todos modos?',
+                { variant: 'warning', confirmLabel: 'Sí, activar' }))) return;
             const res = await fetch(`/api/events/${window.EVENT_ID}`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auto_register: next }),
             });

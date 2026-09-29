@@ -6,12 +6,15 @@
   docs.cloud.google.com/run/docs/known-issues). /healthz y /readyz se mantienen para la VM y por compatibilidad.
   GET /api/ops/status      (admin+) semáforo completo para la pantalla «Estado del sistema».
   GET /api/ops/deploy-allowed   ¿se puede desplegar ahora? (admin+, o la cabecera X-Ops-Token = OPS_TOKEN para el flujo de despliegue).
+  GET /api/ops/client-ip   (admin+ u OPS_TOKEN) qué IP de X-Forwarded-For toma la app como la del visitante (verificar XFF_CLIENT_INDEX detrás de Firebase).
+  POST /api/ops/simulate-crash   SOLO staging con CHAOS_ENABLED=1 (simulacro «matar instancia» de docs/15); en cualquier otro caso responde 404.
   GET /sistema             la pantalla (admin+)."""
 import hmac
 import os
+import signal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -91,6 +94,38 @@ def deploy_allowed(hours: Optional[int] = None, db: Session = Depends(get_db), _
     if hours is not None and not 0 <= hours <= 72:
         raise HTTPException(status_code=400, detail="hours debe estar entre 0 y 72")
     return ops.deploy_allowed(db, hours)
+
+
+@router.get("/api/ops/client-ip")
+def client_ip_diagnostic(request: Request, _=Depends(_ops_reader)) -> dict:
+    """Diagnóstico para elegir XFF_CLIENT_INDEX detrás de Firebase Hosting: lista la cadena `X-Forwarded-For` tal como llega, y qué entrada toma `client_ip()`.
+    Se llama desde el navegador/`curl` de quien prueba (con su propia IP conocida y, si se quiere, mandando una cabecera `X-Forwarded-For` inventada para ver
+    si el índice elegido se deja engañar). Solo para admin+ o con OPS_TOKEN; no se registra la respuesta."""
+    from app.security import client_ip
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    return {"x_forwarded_for": hops, "hops": len(hops), "chosen_ip": client_ip(request), "xff_client_index": os.getenv("XFF_CLIENT_INDEX", "0"),
+            "trust_cf_connecting_ip": os.getenv("TRUST_CF_CONNECTING_IP", "1") == "1", "cf_connecting_ip_present": bool(request.headers.get("cf-connecting-ip")),
+            "socket_peer": request.client.host if request.client else None}
+
+
+def _die() -> None:
+    """Termina la instancia: SIGQUIT al proceso maestro de Gunicorn (apagado inmediato de los workers, el contenedor sale y Cloud Run levanta otra);
+    sin Gunicorn (uvicorn), sale el propio proceso."""
+    try:
+        os.kill(os.getppid(), getattr(signal, "SIGQUIT", signal.SIGTERM))
+    finally:
+        os._exit(1)
+
+
+@router.post("/api/ops/simulate-crash")
+def simulate_crash(background: BackgroundTasks, _=Depends(_ops_reader)) -> dict:
+    """Simulacro 1 de la Fase 4 («matar una instancia» mientras hay carga). Triple candado: solo con DEPLOY_ENV=staging, CHAOS_ENABLED=1 (Juan David lo pone
+    con `gcloud run services update … --update-env-vars CHAOS_ENABLED=1` para el simulacro y lo quita al terminar) y admin+ u OPS_TOKEN. Producción y
+    cualquier otro entorno responden 404 como si la ruta no existiera. Responde y DESPUÉS se cae."""
+    if os.getenv("DEPLOY_ENV", "").strip().lower() != "staging" or os.getenv("CHAOS_ENABLED") != "1":
+        raise HTTPException(status_code=404, detail="Not Found")
+    background.add_task(_die)
+    return {"crashing": True}
 
 
 @pages.get("/sistema")

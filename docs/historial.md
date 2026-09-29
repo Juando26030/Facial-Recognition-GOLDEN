@@ -858,3 +858,9 @@ con F841 preexistentes (CI revisa archivos tocados) se quitaron 5 variables sin 
 borrar por sorpresa); listeners de SQLAlchemy estampan ambos relojes (`Event.status` con `active_history=True`: una instancia expirada no traía el valor anterior y reabrir no limpiaba el reloj);
 `privacy.purge_expired` por claves y en lotes, foto primero y encoding después; paso `purge` del Job ahora cada hora y con error si Storage falla; botón «Borrar fotos del evento» (admin+, escribir
 el nombre; omite a quien está en otro evento abierto CON rostro; auditoría en `system_events`); respaldos `db/` de 60 a 30 días. Detalle y decisiones: docs/15 «Sesión 4 — B».
+**A verificación del operador.** El token de coincidencia lleva ahora los 6 candidatos del mismo cálculo (`_Index.top`); `/api/recognize/{candidates,photo,person}` solo leen ese token (fotos por POST, `no-store`,
+sin cédulas en URL); resultado DUDOSO si mejor y segundo distan < `MATCH_MARGIN`; el registro del elegido sale del modal Editar con `method: biometrico`. Calibración con 39 personas (anónima, docs/14 §6.3): top-1 y top-6
+100 %, diferencia mínima 0,085, un falso positivo en el conjunto abierto con diferencia 0,086 → 0,04-0,08 inertes, 0,10 lo atrapa a 2,1 % de dudosos (recomendado). Trampa: un `replace` que no encuentra su texto no falla; usar `assert`.
+**C** textos de privacidad/consentimiento con retención de 7 días/180/30 y encargados (Google Cloud, Neon, Wompi, Microsoft), marcados PENDIENTE DE REVISIÓN LEGAL. **D.2** scripts (latencia, `/api/ops/client-ip`,
+simulacro de caída solo staging, generadores Locust en Cloud Run Jobs, informe) y runbook de cutover: docs/15. Hallazgo: `/ready` cronometra pre_ping + consulta (2 RTT) y el bloqueo del cupo dura 3 RTT → ~15 envíos/s por formulario
+desde us-east1 frente a la meta de 42/s (recomendación provisional us-east4, por confirmar con la medición).

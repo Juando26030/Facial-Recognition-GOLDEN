@@ -12,6 +12,7 @@ from app import privacy
 def info() -> dict:
     email = os.getenv("LEGAL_EMAIL", "info@goldenlogisticas.com")
     days, cap = privacy.days_after_event(), privacy.max_days()
+    backup_days = 30            # deploy/gcs-lifecycle.json (respaldos diarios)
     refund = os.getenv("REFUND_REQUEST_DAYS", "").strip()
     return {
         "name": os.getenv("LEGAL_NAME", "GOLDEN EVENTOS Y LOGISTICA SAS"),
@@ -21,6 +22,7 @@ def info() -> dict:
         "email": email,
         "privacy_email": os.getenv("LEGAL_PRIVACY_EMAIL", email),
         "retention": f"{days} días después de que finalice el evento (si participas en más de un evento, después de que hayan finalizado todos), y en ningún caso más de {cap} días desde que se captura",
+        "cap_days": cap, "backup_days": backup_days,
         "refund_days": f"{refund} días calendario" if refund.isdigit() else "el plazo que indique cada formulario",
         "updated": "25 de septiembre de 2026",
     }

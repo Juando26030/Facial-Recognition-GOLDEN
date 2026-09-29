@@ -336,7 +336,7 @@ def _directory_etag(db: Session, event_id: int, tenant_id: str, extra: str = "")
     return hashlib.md5(f"{tuple(att)}|{tuple(logs)}|{usr}|{extra}".encode()).hexdigest()[:20]
 
 
-def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None) -> list:
+def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None, only_ids: Optional[list] = None) -> list:
     """Filas del directorio (roster precargado + quien se presento). Un asistente no reconocido como registrado queda «No registrado»; «Actualizado» es una
     edicion de perfil, no una acreditacion (ver update_user). Sin `face_encoding` (columna diferida): no se descifra nada."""
     event_id = event.id
@@ -348,12 +348,14 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
         touched = db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id, AccessLog.id > since_log).union(
             db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event_id, EventAttendee.id > since_att))
         query = query.filter(User.id.in_(touched))
+    if only_ids is not None:               # p. ej. el registro de un candidato del reconocimiento facial
+        query = query.filter(User.id.in_(only_ids))
     if limit is not None:
         query = query.order_by(User.id).offset(offset).limit(limit)
     users = query.all()
     if not users:
         return []
-    ids = [u.id for u in users] if (limit is not None or changed_since is not None) else None
+    ids = [u.id for u in users] if (limit is not None or changed_since is not None or only_ids is not None) else None
     att_q = db.query(EventAttendee).filter(EventAttendee.event_id == event_id)
     log_q = db.query(AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"),
                      func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo")).filter(AccessLog.event_id == event_id)
@@ -457,6 +459,39 @@ def email_check(
     return {"exists": bool(matches), "matches": matches}
 
 
+def _mask_id(uid: str) -> str:
+    """Cédula parcial para las listas de candidatos: solo las últimas 4 cifras."""
+    return "***" + uid[-4:] if len(uid) > 4 else "***"
+
+
+def _candidate_views(db: Session, event: Event, ranked: list, start: int = 0, masked: bool = True) -> list:
+    """Vista legible de los candidatos `ranked[start:]` del MISMO cálculo del reconocimiento (sin tocar el rostro ni la foto): nombre, cédula (parcial si `masked`),
+    categoría, estado de registro, distancia y confianza en palabras. `index` es la posición en el token: con ella se pide la foto o el registro (nunca se expone
+    una cédula completa que el cliente pueda usar para pedir fotos de cualquiera)."""
+    picked = list(enumerate(ranked))[start:]
+    if not picked:
+        return []
+    ids = [uid for _, (uid, _d) in picked]
+    users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(ids))}
+    cats = {a.user_id: a.get_categories() for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(ids))}
+    registered = {r[0] for r in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.user_id.in_(ids), AccessLog.record_type != "Actualizado").distinct()}
+    views = []
+    for i, (uid, dist) in picked:
+        u = users.get(uid)
+        if u is None:
+            continue
+        views.append({
+            "index": i, "id": _mask_id(uid) if masked else uid, "name": f"{u.first_name or ''} {u.last_name or ''}".strip(),
+            "categories": cats.get(uid, []), "registered": uid in registered,
+            "distance": round(dist, 2), "confidence": faces.confidence(dist), "within_tolerance": dist < faces.FACE_TOLERANCE,
+        })
+    return views
+
+
+def _private_json(payload: dict) -> JSONResponse:
+    return JSONResponse(payload, headers={"Cache-Control": "private, no-store"})       # nombres y fotos de personas: nunca a la caché
+
+
 @router.post("/recognize")
 def recognize(
     event_id: int = Form(...), file: Optional[UploadFile] = File(None), match_token: str = Form(""), force: bool = Form(False),
@@ -470,20 +505,25 @@ def recognize(
     `result: "MATCH_PENDING"` con los datos de la persona SIN crear ningun log todavia.
     El flujo DUPLICADO/force sigue exactamente igual, se evalua ANTES de este chequeo nuevo.
 
-    Fase 0 de escalabilidad: cada persona se reconoce UNA vez. La respuesta MATCH_PENDING/DUPLICADO trae un `match_token` (firmado, vale ~2 minutos, solo
-    para este evento y este operador); para confirmar o forzar se manda ese token en vez de reenviar la foto y repetir el calculo facial."""
+    Fase 0 de escalabilidad: cada persona se reconoce UNA vez. La respuesta MATCH_PENDING/DUPLICADO trae un `match_token` (firmado, vale ~5 minutos, solo
+    para este evento y este operador); para confirmar o forzar se manda ese token en vez de reenviar la foto y repetir el calculo facial.
+
+    Verificacion del operador (docs/14 §6.3): el token lleva tambien los 6 candidatos mas cercanos del MISMO calculo (`/recognize/candidates|photo|person`).
+    **DUDOSO**: si el mejor y el segundo candidato distan menos de MATCH_MARGIN (0,06 por defecto) el resultado es `result: "DUDOSO"` con los candidatos y NUNCA
+    se registra solo, ni con autoregistro ni con `confirm`: el operador elige a la persona (el registro se confirma desde su ficha)."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
     if match_token:
-        uid = faces.read_match_token(match_token, event.id, staff.id)
-        user = db.get(User, (uid, event.tenant_id)) if uid else None
+        payload = faces.read_match_payload(match_token, event.id, staff.id)
+        user = db.get(User, (payload["u"], event.tenant_id)) if payload else None
         if not user:
             raise HTTPException(status_code=400, detail="La coincidencia venció. Escanea de nuevo.")
+        ranked, doubtful = [(uid, dist) for uid, dist in payload["c"]], bool(payload["d"])
     else:
         if file is None:
             raise HTTPException(status_code=422, detail="Falta la foto")
         try:
-            status, uid = faces.identify(db, event, file.file.read())
+            status, ranked = faces.recognize(db, event, file.file.read())
         except faces.Busy:
             raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
         except UnidentifiedImageError:
@@ -492,20 +532,26 @@ def recognize(
             return {"result": "NO", "details": "Rostro no detectado"}
         if status == "NO_MATCH":
             return {"result": "NO", "details": "Denegado"}
-        user = db.get(User, (uid, event.tenant_id))
+        user = db.get(User, (ranked[0][0], event.tenant_id))
         if not user:
             return {"result": "NO", "details": "Denegado"}
+        doubtful = faces.is_doubtful(ranked)
 
-    token = faces.make_match_token(event.id, staff.id, user.id)
+    token = faces.make_match_token(event.id, staff.id, user.id, ranked, doubtful)
+    if doubtful:
+        return _private_json({"result": "DUDOSO", "details": "Coincidencia dudosa: hay varias personas casi igual de parecidas. Verifica cuál es.", "match_token": token,
+                              "candidates": _candidate_views(db, event, ranked)})
+    principal = _candidate_views(db, event, ranked[:1], masked=False)
+    extra = {"match_token": token, "match": principal[0] if principal else None, "has_candidates": len(ranked) > 1}
     if not force and _already_checked_in(db, event.id, user.id):
-        return {**_duplicate_warning(db, event.id, user), "match_token": token}
+        return _private_json({**_duplicate_warning(db, event.id, user), **extra})
     data = {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
         "role": user.role, "entity": user.entity, "phone": user.phone,
         "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
     }
     if not event.auto_register and not confirm:
-        return {"result": "MATCH_PENDING", "data": data, "match_token": token}
+        return _private_json({"result": "MATCH_PENDING", "data": data, **extra})
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,
@@ -514,7 +560,50 @@ def recognize(
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)
     db.commit()
-    return {"result": "SÍ", "data": data}
+    return _private_json({"result": "SÍ", "data": data, **extra})
+
+
+def _recognition_from_token(db: Session, event_id: int, match_token: str, staff: StaffUser):
+    event = get_event_for_staff(event_id, db, staff)
+    require_event_in_progress(event)
+    payload = faces.read_match_payload(match_token, event.id, staff.id)
+    if not payload:
+        raise HTTPException(status_code=400, detail="La coincidencia venció. Escanea de nuevo.")
+    return event, [(uid, dist) for uid, dist in payload["c"]]
+
+
+@router.post("/recognize/candidates")
+def recognize_candidates(event_id: int = Form(...), match_token: str = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """«Ver 5 más cercanos»: los candidatos siguientes del MISMO reconocimiento (los guarda el token: no se recalcula el rostro ni se reenvía la foto).
+    Cédula parcial; los que quedan fuera de la tolerancia van marcados. Las fotos se piden aparte, una a una, solo cuando el operador abre la lista."""
+    event, ranked = _recognition_from_token(db, event_id, match_token, staff)
+    return _private_json({"candidates": _candidate_views(db, event, ranked, start=1)})
+
+
+@router.post("/recognize/photo")
+def recognize_photo(event_id: int = Form(...), match_token: str = Form(...), index: int = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Foto de registro de un candidato del reconocimiento (`index` 0 = la persona principal). Solo las personas que están en el token de ESTE operador y ESTE
+    evento (no sirve para pedir la foto de cualquiera), `Cache-Control: private, no-store`, y la ruta no lleva cédulas (POST con token en el cuerpo)."""
+    event, ranked = _recognition_from_token(db, event_id, match_token, staff)
+    if not 0 <= index < len(ranked):
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    key = photo_key(event.tenant_id, ranked[index][0])
+    content = crypto.read_bytes(key) if get_storage().exists(key) else None       # la foto puede estar cifrada en reposo
+    if content is None:
+        raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
+    return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/recognize/person")
+def recognize_person(event_id: int = Form(...), match_token: str = Form(...), index: int = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """El registro (fila del directorio) del candidato elegido, para abrir el modal «Editar»: desde ahí se corrigen datos o se confirma el ingreso de ESA persona."""
+    event, ranked = _recognition_from_token(db, event_id, match_token, staff)
+    if not 0 <= index < len(ranked):
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    rows = _directory_rows(db, event, only_ids=[ranked[index][0]])
+    if not rows:
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    return _private_json(rows[0])
 
 
 def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
@@ -931,7 +1020,7 @@ def update_registration_status(
             log = AccessLog(
                 tenant_id=event.tenant_id, user_id=user_id, record_type="Existente",
                 event_id=event_id, registered_by_staff_id=staff.id,
-                registration_method="tradicional",  # Fase 16: cambio manual de estado desde el Directorio
+                registration_method="biometrico" if data.get("method") == "biometrico" else "tradicional",  # Fase 16: cambio manual de estado desde el Directorio; «biometrico» lo manda la verificación del operador tras un escaneo facial
             )
             db.add(log)
             _upsert_attendee(db, event_id, user_id, event.tenant_id)

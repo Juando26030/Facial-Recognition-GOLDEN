@@ -3,8 +3,8 @@
 Rama `migra/fase1-2`. Plan y decisiones de fondo: `docs/13_ARQUITECTURA_ESCALABILIDAD.md` (§4-8, §11, §14-16).
 Este archivo se completa en la sesión 3 (runbook del día del cambio + costos); por ahora lleva la lista de progreso.
 
-**Estado al 2026-09-28:** sesiones 1 y 2 y la revisión R1-R4 terminadas y empujadas; nada creado en la nube; siguiente paso: Juan David
-corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.md).
+**Estado al 2026-09-29:** staging (`goldenweb-staging`, us-east1) desplegado y en verde; la sesión 4 (D.1, B, A, C y los scripts de D.2) está en la rama y lo que
+falta lo corre Juan David: lista exacta al final de este archivo y en [`docs/HANDOFF.md`](HANDOFF.md).
 
 ## Progreso (se actualiza en cada commit)
 
@@ -239,6 +239,29 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
 - [x] D1.7 **GitHub Actions** (avisos por Node 20): checkout v7, setup-python v7, setup-node v7 (Node 22 para firebase-tools),
   google-github-actions/auth v3 y setup-gcloud v3, docker/setup-buildx v4 y build-push v7 (todas `node24`).
 
+### Sesión 4 — A: reconocimiento facial, verificación del operador (docs/14 §6.3)
+- [x] A1. **Resultado del escaneo** (`static/js/app.js`, `templates/kiosk_registro.html`, `app/routers/api.py`, `app/faces.py`). Al reconocer, el kiosco muestra la captura en vivo junto a la
+  **foto de registro** de la persona encontrada, con nombre, cédula, categoría, estado de registro y un indicador de confianza en palabras (`Muy parecido` < 0,40 · `Parecido` 0,40-0,50 ·
+  `Revisar con cuidado` 0,50-0,55 · `Fuera de la tolerancia` ≥ 0,55; la distancia va entre paréntesis). **«Ver 5 más cercanos»** despliega los candidatos 2-6 con foto, nombre, cédula parcial (últimas 4
+  cifras), confianza y, los que superan 0,55, marcados «Fuera de la tolerancia». Todo sale del MISMO cálculo: `/api/recognize` deja en el token firmado (`match_token`, ahora 300 s) la persona
+  principal y los 6 más cercanos (`_Index.top`: una sola operación numpy, sin trabajo extra de base por escaneo); `/api/recognize/candidates`, `/photo` y `/person` solo leen ese token (no recalculan el rostro
+  ni reciben la foto). **Las fotos de los candidatos se piden solo al pulsar el botón** (una petición `POST` por foto; la de la persona principal, al mostrarla). Clic en la principal o en un candidato →
+  se abre el modal **Editar** existente (`GoldenDirectory.openEdit`); guardar ahí marca el ingreso de ESA persona (`PATCH …/status` con `method: biometrico`, así en los reportes sigue contando como
+  biométrico), no el del mejor match. Tras guardar aparece el botón **Imprimir** en el mismo panel (el modal ya dispara la auto-impresión si el evento la tiene; también tras un alta nueva con foto).
+  Se quitó la tarjeta anterior «Actualización de Asistente» (`liveEditForm`), que solo servía para confirmar al mejor match.
+- **Regla de caso dudoso:** `MATCH_MARGIN` (variable de entorno, default 0,06; recomendado 0,10, ver docs/14 §6.3): si el mejor y el segundo candidato distan menos, el resultado es `DUDOSO`: nunca se
+  registra solo (ni con autoregistro, ni con `confirm`/`force`, ni con el token) y se muestran directamente los candidatos, sin «principal». Se evalúa antes que `DUPLICADO`. El Control de Áreas
+  (`faces.identify`) NO usa esta regla todavía (queda como pendiente: mismo cambio en `kiosk_areas`).
+- **Seguridad:** las fotos/registros de candidatos solo salen por `POST /api/recognize/{photo,person,candidates}`: `digitador+` autorizado en el evento (`get_event_for_staff`), evento en proceso, token
+  del MISMO operador y evento (no sirve para pedir la foto de cualquiera: solo las posiciones que trae el token), `Cache-Control: private, no-store`, sin cédulas ni tokens en URL ni logs (van en el cuerpo).
+  En Firebase estas rutas las sirve el servicio `web` (no cargan dlib; el token y la llave de cifrado son los mismos secretos).
+- **Advertencia del autoregistro** (`kiosk_registro.html`): con `facial_enabled`, al activar el registro automático sale un aviso propio (modal) que lo desaconseja en eventos grandes, y mientras esté
+  activo queda un aviso permanente bajo el interruptor.
+- [x] A2. Pruebas: `tests/test_recognize_verification.py` (12: candidatos del mismo cálculo y sin reconocer de nuevo, cédula parcial, fuera de tolerancia, DUDOSO con y sin autoregistro/confirm/token, margen
+  configurable, permisos y token de otro evento/operador/cliente, foto solo POST y `no-store`, token vencido, «confirmar a otra persona» y método biométrico, pantalla y aviso).
+- [x] A3. Calibración de `MATCH_MARGIN` con las 39 personas: docs/14 §6.3 (`scripts/calibrate_match_margin.py`, resultados anónimos). **Juan David: ya puedes borrar `C:\JDRJ\Golden\fotos_prueba`** (solo se leyó, montada en
+  solo lectura; no se copió nada al repo ni a la nube; los resultados agregados quedaron en `C:\JDRJ\Golden\perf_results\calibrate_match_margin.json`).
+
 ### Sesión 4 — B: retención biométrica de 7 días después de finalizado (reemplaza a los 180 días de R4)
 - [x] B1. **Regla** (`app/privacy.py`, migración `0051_biometric_retention`): foto y vector del rostro se borran cuando TODOS los eventos de la
   persona llevan al menos `BIOMETRIC_RETENTION_DAYS_AFTER_EVENT` (7) días finalizados. Si sigue en un evento abierto, o finalizado hace menos de
@@ -279,15 +302,115 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
   ciclo de vida de respaldos) y ajustes en `tests/test_privacy.py`.
 - Sustituye a R4 (tabla de arriba): la persistencia máxima tras la purga pasa a **30 días** (respaldos diarios) y la retención automática a 7 días tras finalizar.
 
-### Sesión 3 — pendiente (empieza cuando staging esté desplegado en Cloud Run)
-- [ ] 1. Script de medición de latencia app→Neon desde Cloud Run (us-east1) y decisión de región (us-east1 / us-east4)
-- [ ] 2. Verificar `XFF_CLIENT_INDEX` con tráfico real detrás de Firebase y fijarlo en `deploy/gcp/env/common.yaml`
-- [ ] 3. Prueba de carga distribuida contra staging (Locust en Cloud Run Jobs: 10.000 aperturas / 5.000 envíos + escaneos) y simulacros
-  de falla (doc 13 §11, Fase 4)
-- [ ] 4. Este documento completo: runbook del día del cambio (ventana, respaldo final, migración de base y archivos con
-  `--biometric-prefix biometric`, DNS, dominio en Firebase, reanudar `golden-ops-hourly`, mover el chequeo «GoldenWeb readyz» y el monitor de UptimeRobot a
-  `/health` (NO `/healthz`: en Cloud Run da 404 de Google), verificación, vuelta atrás, limpieza de lo de la VM) y tabla de costos por componente
-- [ ] 5. Revisión final de pruebas y ruff
+### Sesión 4 — D.2: latencia y región, IP real, carga distribuida y cambio (lo que corre Juan David; Claude Code dejó scripts y pasos)
+
+**D2.1 Latencia app → Neon: por qué `/ready` da 43-46 ms (análisis del código; las cifras de RTT se confirman con el script).**
+- `/ready` no mide UNA consulta: `ops._db_probe` cronometra `db.execute("SELECT 1")` **incluyendo el préstamo de la conexión del pool**, y el pool tiene `pool_pre_ping=True`, que
+  antes de entregar la conexión hace OTRO `SELECT 1`. Son **2 idas y vueltas (RTT)**: 44 ms ≈ 2 × ~22 ms. Una consulta suelta cuesta ~22 ms desde `us-east1`, no 44.
+- No es conexión nueva (TCP + TLS + SCRAM, ~0,5 s desde Bogotá; solo la paga la primera petición de una instancia o una conexión que murió), ni «Neon despertando» (esa primera
+  consulta tardaría cientos de ms o segundos, y staging tiene la base despierta por el respaldo horario), ni varias consultas: `/ready` hace una sola. `storage.ping()` va aparte y no
+  entra en `latency_ms`.
+- **Por qué importa para los formularios:** con la fila del formulario bloqueada corren `form_reserve_slot()` (1 RTT) + `INSERT` (1 RTT) + `COMMIT` (1 RTT) = **3 RTT con el bloqueo tomado**.
+  Con RTT ≈ 22 ms el bloqueo dura ~66 ms → como mucho **~15 envíos por segundo por formulario** (los demás esperan turno). La meta de la Fase 4 son 5.000 envíos en 120 s = **~42/s**:
+  desde `us-east1` NO se alcanzaría con un solo formulario (el `p95 < 2 s` se rompería por la cola del bloqueo). Con RTT ≈ 2-3 ms (`us-east4`, Ashburn, mismo entorno de red que
+  `us-east-1`) el bloqueo dura ~9 ms → ~110/s, con margen. Es hipótesis derivada de los 44 ms y de la geografía: **la confirma la medición de abajo**.
+- **Recomendación provisional: `us-east4`** (cambio: `REGION=us-east4 bash deploy/gcp/bootstrap.sh staging` y redesplegar; la región de Neon no se toca). Confirmar antes: (1) la medición
+  desde ambas regiones; (2) el precio en cloud.google.com/run/pricing (el handoff anotó que `us-east4` costaba más; no pude verificarlo desde aquí); (3) que Firebase Hosting siga
+  soportándola (sí figura en la documentación). Si por costo se quedara `us-east1`, la alternativa de código es que el cupo y el INSERT vayan en UNA sola función SQL en autocommit
+  (bloqueo de 1 RTT): más cambio y sin probar; no se hizo.
+- **Medir con conexiones calientes desde Cloud Run** (`scripts/measure_db_latency.py`: conexión nueva, `SELECT 1` = 1 RTT, dos seguidos = ping + consulta, préstamo del pool = lo de `/ready`,
+  y una transacción de 3 sentencias). En us-east1 se usa el Job que ya existe (imagen y secretos de staging):
+  ```bash
+  gcloud run jobs execute golden-ops-staging --region us-east1 --args="-m,scripts.measure_db_latency,--n,300" --wait
+  gcloud logging read 'resource.type="cloud_run_job" AND textPayload:"LATENCY_RESULT"' --project goldenweb-staging --limit 1 --format='value(textPayload)'
+  ```
+  Para `us-east4` hace falta un Job temporal ALLÍ (mismos secretos; sin reintentos, 5 min máximo; se borra al terminar). Imagen: la que usa staging hoy
+  (`gcloud run jobs describe golden-ops-staging --region us-east1 --format='value(spec.template.spec.template.spec.containers[0].image)'`):
+  ```bash
+  IMG=<la imagen de arriba>          # el Artifact Registry es regional pero se puede leer entre regiones del mismo proyecto
+  gcloud run jobs create golden-latency-probe --region us-east4 --image "$IMG" --service-account golden-ops-staging@goldenweb-staging.iam.gserviceaccount.com \
+    --command python --args="-m,scripts.measure_db_latency,--n,300" --tasks 1 --max-retries 0 --task-timeout 300 --cpu 1 --memory 512Mi \
+    --set-secrets DATABASE_URL=golden-database-url-staging:latest,DIRECT_DATABASE_URL=golden-direct-database-url-staging:latest
+  gcloud run jobs execute golden-latency-probe --region us-east4 --wait
+  gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="golden-latency-probe" AND textPayload:"LATENCY_RESULT"' --project goldenweb-staging --limit 1 --format='value(textPayload)'
+  gcloud run jobs delete golden-latency-probe --region us-east4 --quiet
+  ```
+  (Los nombres de secreto salen de `deploy/gcp/config.sh`: `golden-<nombre>-staging`; si el de la conexión directa se llama distinto, `gcloud secrets list`.) Pegar el resultado en esta sección.
+  Regla: si `select1_warm_1rtt` en `us-east1` da ≥ 12 ms y en `us-east4` ≤ 4 ms → `us-east4`.
+
+**D2.2 IP real del cliente detrás de Firebase Hosting.** Hoy `TRUST_CF_CONNECTING_IP=0` (Cloudflare solo es DNS: esa cabecera se puede inventar) y `XFF_CLIENT_INDEX=0` (la PRIMERA entrada de
+`X-Forwarded-For`). El riesgo: si Firebase/Cloud Run AGREGAN al final de una cadena que trae el cliente, la primera entrada es lo que el cliente escribió (se puede inventar y esquivar los límites
+por IP); si en cambio quedara la IP de Google, todos compartirían un mismo límite. Nuevo diagnóstico `GET /api/ops/client-ip` (admin+ u `X-Ops-Token`): devuelve la cadena tal como llega, cuántas entradas
+y cuál toma `client_ip()`. Procedimiento (desde tu casa o desde el móvil con datos, para conocer tu IP pública real: <https://ifconfig.me>):
+  ```bash
+  OPS_TOKEN=$(gcloud secrets versions access latest --secret golden-ops-token-staging --project goldenweb-staging)     # no lo pegues en el chat
+  curl -s -H "X-Ops-Token: $OPS_TOKEN" https://golden-staging-<número>.web.app/api/ops/client-ip
+  curl -s -H "X-Ops-Token: $OPS_TOKEN" -H "X-Forwarded-For: 6.6.6.6" https://golden-staging-<número>.web.app/api/ops/client-ip     # con una entrada inventada
+  ```
+  Lectura: en la 1.ª respuesta busca tu IP en `x_forwarded_for` y anota su posición contando desde el FINAL (p. ej. penúltima = −2). En la 2.ª, `6.6.6.6` debe aparecer al principio y la
+  tuya seguir en la misma posición contada desde el final: entonces el índice correcto es el NEGATIVO (`−2`, no `0`) y `XFF_CLIENT_INDEX: "-2"` en `deploy/gcp/env/common.yaml` (más un
+  redespliegue). Si tu IP es la ÚNICA entrada (Firebase la reescribe), `0` es correcto y no se puede inventar. Con `TRUST_CF_CONNECTING_IP=0` no hay que cambiar nada más. **No cambié el valor
+  hoy** porque sin este tráfico real un índice equivocado es peor que `0`. **Ojo con la carga:** la prueba de carga fija su propia `X-Forwarded-For` por usuario virtual; si el índice
+  pasa a `−2` los 20 generadores compartirán IP (20 IPs) y toparán el límite por IP de los formularios: correr la Fase 4 ANTES del cambio de índice, o con `PUBLIC_LIMIT_FACTOR` alto temporal.
+
+**D2.3 Prueba de carga distribuida contra staging** (`deploy/loadtest/`, `scripts/seed_load_staging.py`, `scripts/loadgen_report.py`; generadores = Cloud Run Jobs con Locust; solo staging: el
+generador se niega a apuntar a un host sin «staging» y al dominio de producción). Criterios (docs/13 §11): formularios 10.000 aperturas en 60 s + 5.000 envíos en 120 s con 0 errores 5xx, p95 del
+envío < 2 s, cero sobrecupos y cero duplicados; cédula 200 estaciones × 30 min (~57/s) p95 < 500 ms; facial referencia 30/s con p95 < 2 s; aislamiento: la latencia de la cédula durante el pico
+de formularios sube ≤ 20 %.
+  - Datos: 5.000 personas sintéticas y encodings aleatorios en el evento `LOAD-STG` (tenant `carga-staging`), un formulario con **cupo 4.000 < 5.000 envíos** a propósito (el 409 «cupo
+    completo» es correcto y se cuenta; sobrecupo = más de 4.000 confirmadas). La clave de `carga_dig` se deriva de `OPS_TOKEN` (nunca se imprime). Sin fotos reales en la nube: el escenario facial usa la
+    foto de dominio público (astronauta) o, sin rostro, mide solo la detección.
+  - Pasos (en Cloud Shell, desde el clon de `migra/fase1-2`): `bash deploy/loadtest/run_phase4.sh build` → `seed` → (leer `LOAD_SEED`: `event_id`) → `WEB_URL=https://golden-staging-<número>.web.app LOAD_EVENT_ID=<id> run` →
+    cuando terminen los Jobs, `report <exec_forms> <exec_cedula> <exec_face>` → `verify` → `cleanup`. El script imprime los comandos exactos. Tope de costo: 20 tareas × 1 vCPU × ≤ 34 min (cédula) +
+    3 min (formularios) + 9 min (facial) ≈ 8-9 vCPU-horas ≈ **US$1-3**, sin reintentos y con `task-timeout`; los Jobs se borran en `cleanup`. Neon: el pico sube el cómputo (autoescala): fijar
+    el máximo en 2-4 CU para tener tope (`Settings → Compute` en la consola) y comprobarlo antes.
+  - Para que el facial no se cuelgue por instancias: el precalentamiento sube `biometria` a mínimo 1 solo si hay un evento en proceso con rostro (sí, `LOAD-STG`); para 30/s hacen falta ~6 instancias
+    (≈ 5 escaneos/s por proceso con 2 jitters): subir `--max-instances` y `--min-instances` temporalmente y bajarlos después.
+  - Criterios que salen de la base: `verify` imprime `oversold`, `duplicate_persons`, `duplicate_sids` y `access_logs_in_event` (deben ser 0, 0, 0 y ≥ los 200 de «POST checkin-cedula»).
+- **Simulacros** (mientras corre la cédula de 30 min; ambos con el generador ya en marcha):
+  1. *Matar una instancia*: `gcloud run services update golden-web-staging --region us-east1 --update-env-vars CHAOS_ENABLED=1` (una vez), y en el minuto ~10:
+     `curl -s -X POST -H "X-Ops-Token: $OPS_TOKEN" https://golden-web-staging-<número>.us-east1.run.app/api/ops/simulate-crash` (repetirlo 2-3 veces para tumbar varias). Solo funciona con
+     `DEPLOY_ENV=staging` + `CHAOS_ENABLED=1` + credencial (producción responde 404). Quitar la variable al terminar: `--remove-env-vars CHAOS_ENABLED`. Aprobado si `verify` muestra
+     `access_logs_in_event` ≥ las respuestas 200 de «POST checkin-cedula» (ningún ingreso confirmado se pierde; puede haber 5xx durante el reemplazo).
+  2. *Reiniciar el cómputo de Neon*: en el minuto ~5 de una corrida de formularios (`LOAD_THINK_MAX=120` alarga el pico) con la llave de Neon en una variable de entorno (no en el chat):
+     `curl -s -X POST "https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID/endpoints/$NEON_ENDPOINT_ID/restart" -H "Authorization: Bearer $NEON_API_KEY"` (también sirve el botón
+     *Restart compute* de la consola). Aprobado si `verify` da `oversold=0`, `duplicate_persons=0`, `duplicate_sids=0` y el número de confirmadas = respuestas 200 del primer envío («POST envio»).
+  El simulacro 3 (red del kiosco cortada) queda para la Fase 3 (modo contingencia).
+
+**D2.4 Runbook del día del cambio (semana 3; producción; lo ejecuta Juan David, ningún paso lo corre Claude Code).** La VM `golden-biometrics-prod` **se apaga, NO se borra**, y es la vuelta atrás.
+Requisitos: Fase 4 aprobada en staging, región decidida, `bootstrap.sh production` corrido (rama `production` de Neon con ventana de historia de 1 día, `SECRET_KEY` y `FACE_ENCRYPTION_KEY`
+ACTUALES de la VM en Secret Manager), autorización explícita de Juan David para cada acción de producción (merge a `main`, activar el despliegue de producción de `cloudrun.yml` hoy con `if: false`).
+1. **T-2 días:** bajar el TTL del DNS de `app.golden-eventos.com` en Cloudflare a 300 s; avisar la ventana (sin eventos ni aperturas de formularios); confirmar `deploy-allowed` en la VM.
+2. **Ventana — congelar:** `curl -s -H "X-Ops-Token: …" https://app.golden-eventos.com/api/ops/deploy-allowed` sin eventos; detener el cron de la VM (respaldos, purga) y activar solo lectura de la VM (parar el servicio: `sudo systemctl stop facial-recognition`).
+3. **Respaldo final y datos:** en la VM `scripts/backup_db.sh` (guardar el `.sql.gz`), y después, desde la VM (tiene `pg_dump`/`psql` 18):
+   ```bash
+   python scripts/migrate_db_to_neon.py --source-url "$VM_DATABASE_URL" --target-owner-secret golden-db-owner-url-production --migrate      # cuenta filas antes/después; hasta 0051; una diferencia = detener
+   python scripts/migrate_files_to_gcs.py --source ~/Facial-Recognition/data --bucket golden-datos-analisis-de-imagen-id --prefix app --biometric-prefix biometric
+   python scripts/migrate_files_to_gcs.py --source ~/Facial-Recognition/data --bucket golden-datos-analisis-de-imagen-id --prefix app --biometric-prefix biometric --verify-only
+   ```
+   (con `golden_app` ya creado en la rama `production`; los archivos admiten una primera pasada días antes y otra en la ventana). Las fotos biométricas viejas de la VM pasan al bucket con su reloj de
+   retención nuevo: `face_captured_at` queda con la constancia de autorización o con la fecha de la migración `0051` (ver B2).
+4. **Desplegar:** activar el workflow de producción (o `deploy/gcp/deploy.sh production`); comprobar `…/health` y `…/ready` de cada servicio y `Estado del sistema`.
+5. **Dominio:** conectar `app.golden-eventos.com` al sitio de Firebase Hosting (consola de Firebase → Hosting → Agregar dominio) y en Cloudflare cambiar el registro a los que indique Firebase con **proxy
+   apagado (solo DNS)**; esperar el certificado. Ahora sí `TRUST_CF_CONNECTING_IP=0` y el `XFF_CLIENT_INDEX` verificado en D2.2.
+6. **Encender lo programado:** reanudar `golden-ops-hourly` (`gcloud scheduler jobs resume golden-ops-hourly --location us-east1`) y correr UNA vez `backup-daily` (comando de D.1) y `check-backups`.
+7. **Monitores → `/health`:** el chequeo de Google «GoldenWeb readyz» y el monitor de UptimeRobot pasan a `https://app.golden-eventos.com/health` (NO `/healthz`: en Cloud Run da 404 de Google; y no `/ready`:
+   toca la base y Neon no se apagaría). `bootstrap.sh production` ya crea `golden-health-production`; borrar el chequeo viejo.
+8. **Verificación:** iniciar sesión; kiosco por cédula y por rostro (con el flujo de verificación); un formulario público de prueba y su correo; `__session` con `Secure`; pago de prueba de Wompi (mismo
+   webhook: la URL no cambia); `/sistema` en verde (respaldo «hace 0 h»); `gcloud run jobs execute golden-ops --region us-east1 --wait` sin errores.
+9. **Apagar la VM (no borrarla):** `gcloud compute instances stop golden-biometrics-prod --zone us-central1-a`; conservar disco y snapshots al menos 30 días.
+10. **Vuelta atrás:** hasta el primer dato real nuevo en Neon: en Cloudflare devolver el DNS a la IP de la VM (con proxy), `gcloud compute instances start golden-biometrics-prod --zone us-central1-a`,
+    `sudo systemctl start facial-recognition`, y volver a poner los monitores en `/healthz` de la VM; detener `golden-ops-hourly` (`pause`). **Pasado ese punto** lo ingresado en Neon debe volver a la VM antes de
+    reabrirla: `pg_dump` de Neon con el dueño (`--no-owner --no-privileges`) y restaurarlo en la VM con el procedimiento de `docs/recuperacion_desastre.md` (se pierde solo lo escrito durante la restauración).
+11. **Limpieza (semana +1):** borrar `gs://<bucket-datos>/data/` y `config/.env` de la VM y sus volcados viejos (R4), y las copias con historia de Neon >1 día.
+Tabla de costos por componente: pendiente (no se pidió en esta sesión).
+
+### Sesión 3 — estado (2026-09-29): scripts y pasos listos (D.2); faltan las corridas en la nube de Juan David
+- [~] 1. Latencia app→Neon y región: `scripts/measure_db_latency.py` y análisis en «D.2 · D2.1» (recomendación provisional `us-east4`); falta correrlo en las dos regiones y decidir
+- [~] 2. `XFF_CLIENT_INDEX`: diagnóstico `GET /api/ops/client-ip` y procedimiento en «D2.2»; falta el tráfico real detrás de Firebase
+- [~] 3. Prueba de carga distribuida y simulacros 1 y 2: `deploy/loadtest/` + `scripts/seed_load_staging.py` + `scripts/loadgen_report.py` y pasos en «D2.3»; falta correrlos
+- [x] 4. Runbook del día del cambio (VM apagada, monitores a `/health`, `golden-ops-hourly`, vuelta atrás): «D2.4» (tabla de costos por componente: pendiente)
+- [ ] 5. Revisión final de pruebas y ruff tras las corridas; luego Fase 3 (modo contingencia del kiosco) en otra rama
 
 ## Decisiones tomadas
 - `docs/13` se actualizó con la versión completa que Juan David pegó en el chat (§14-§17); no estaba en el disco.

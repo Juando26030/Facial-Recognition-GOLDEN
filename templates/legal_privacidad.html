@@ -38,7 +38,9 @@
 <li><b>Autorización previa, expresa y separada.</b> Solo guardamos tu fotografía o rostro si tú lo autorizas de forma explícita, aparte de cualquier otro texto. Queda constancia de cuándo y cómo se dio (ante el personal del evento o por declaración del Organizador en cargas masivas).</li>
 <li><b>Alternativa sin rostro.</b> Si no quieres que se use tu rostro, te registras <b>por cédula</b> (o documento) y accedes al evento igual, sin ninguna consecuencia.</li>
 <li><b>Para qué.</b> Solo para identificarte en el evento en el que te inscribiste.</li>
-<li><b>Cuánto tiempo.</b> Conservamos el dato biométrico <b>{{ L.retention }}</b>; después se borra (foto y representación numérica). Puedes pedir el borrado antes en cualquier momento.</li>
+<li><b>Cuánto tiempo.</b> Conservamos tu fotografía y la representación numérica de tu rostro <b>{{ L.retention }}</b>; después se borran. Si participas en otro evento que sigue abierto o que finalizó hace menos de ese plazo, se conservan hasta que también pase ese plazo para todos tus eventos; el tope de {{ L.cap_days }} días aplica siempre, aunque un evento nunca se finalice. Puedes pedir el borrado antes en cualquier momento. El resto de tus datos (nombre, documento, registros de ingreso, formularios) se conserva según la sección 3.
+    <span class="pending">[PENDIENTE DE REVISIÓN LEGAL: plazos de retención biométrica]</span></li>
+<li><b>Copias de seguridad.</b> Lo biométrico ya borrado puede permanecer, cifrado, en nuestras copias de seguridad hasta <b>{{ L.backup_days }} días</b> más y en el historial de restauración de la base de datos durante 1 día; después desaparece de forma definitiva. <span class="pending">[PENDIENTE DE REVISIÓN LEGAL]</span></li>
 <li><b>Seguridad.</b> Tu fotografía y la representación numérica de tu rostro se guardan <b>cifradas</b> (cifrado en reposo), con acceso restringido al personal autorizado, conexión cifrada y respaldos protegidos.</li>
 </ul>
 
@@ -47,7 +49,8 @@
 <tr><th>Tercero</th><th>Para qué</th></tr>
 <tr><td>Wompi (Bancolombia)</td><td>Procesar pagos en línea.</td></tr>
 <tr><td>Microsoft (Microsoft 365 / Graph)</td><td>Enviar correos (escarapela digital, notificaciones).</td></tr>
-<tr><td>Google Cloud</td><td>Alojamiento de la plataforma y copias de seguridad.</td></tr>
+<tr><td>Google Cloud (Cloud Run, Cloud Storage, Firebase Hosting; región us-east1, Carolina del Sur, EE. UU.)</td><td>Alojamiento de la aplicación, de los archivos (fotos, firmas, documentos), de las copias de seguridad y de la entrega del sitio.</td></tr>
+<tr><td>Neon (base de datos PostgreSQL; AWS us-east-1, Virginia, EE. UU.)</td><td>Almacenar los datos de la plataforma, incluidos los datos biométricos cifrados.</td></tr>
 <tr><td>Cloudflare</td><td>Seguridad y entrega de la página.</td></tr>
 <tr><td>Google (traducción, fuentes)</td><td>Solo si usas el botón «Translate» (se traduce el texto del formulario, no lo que escribes) y para las tipografías.</td></tr>
 <tr><td>El Organizador del evento</td><td>Recibe los datos de sus propios asistentes.</td></tr>
