@@ -6,6 +6,7 @@
     <title>Estadísticas | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
@@ -69,6 +70,14 @@
         </div>
         {% endif %}
 
+        {% if staff_role in ["admin", "super_admin"] %}
+        <div style="background: white; padding: 1.2rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem; display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+            <div style="flex:1; min-width:240px;"><b>🔒 Fotos y rostros del evento</b>
+                <div style="color:#666; font-size:0.82rem;">Se borran solas 7 días después de finalizado el evento. Aquí puedes borrarlas ya.</div>
+                <div id="purgeStatus" role="status" aria-live="polite" style="font-size:0.82rem; margin-top:4px;"></div></div>
+            <button type="button" id="purgePhotosBtn" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px; cursor:pointer;">Borrar fotos del evento</button>
+        </div>
+        {% endif %}
         <div style="background:#f6f7fb; padding:1.5rem 1.6rem; border-radius:20px; margin-bottom:1.5rem;" id="analyticsRegistro"></div>
 
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;">
@@ -93,6 +102,16 @@
 
 <script>
 AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `/api/events/${window.EVENT_ID}/analytics/registro`, { refreshSeconds: 30 });
+
+(function() {
+    const purgeBtn = document.getElementById('purgePhotosBtn');
+    if (purgeBtn) purgeBtn.addEventListener('click', async () => {
+        const say = document.getElementById('purgeStatus'), res = await purgeEventBiometrics(window.EVENT_ID);
+        if (!res) return;
+        say.style.color = res.ok ? '#1e7e34' : '#c0392b';
+        say.textContent = res.ok ? purgeEventMessage(res.data) : (res.data.detail || 'No se pudo borrar');
+    });
+})();
 
 (function() {
     const exportBtn = document.getElementById('exportBtn');

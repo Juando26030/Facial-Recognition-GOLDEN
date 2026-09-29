@@ -1,7 +1,7 @@
 {
   "rule": [
     { "action": { "type": "Delete" }, "condition": { "age": 3, "matchesPrefix": ["db/hourly/"] } },
-    { "action": { "type": "Delete" }, "condition": { "age": 60, "matchesPrefix": ["db/"] } },
+    { "action": { "type": "Delete" }, "condition": { "age": 30, "matchesPrefix": ["db/"] } },
     { "action": { "type": "Delete" }, "condition": { "daysSinceNoncurrentTime": 1, "matchesPrefix": ["db/"] } }
   ]
 }

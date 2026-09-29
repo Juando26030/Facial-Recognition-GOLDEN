@@ -81,7 +81,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
   (`require_role_excluding`, `effective_roles` para el doble rol coordinador+comercial). Dos puertas distintas: `get_event_for_staff`
   (acceso) y `require_event_in_progress` (registrar/reconocer).
 - **Biometría:** consentimiento expreso antes de guardar un rostro; cifrado con `FACE_ENCRYPTION_KEY` (perderla = perder los rostros);
-  retención 180 días tras el fin del evento (`scripts/purge_biometrics.py`); umbral 0,55 y `RECOGNITION_JITTERS=2` (docs/14 §6.2).
+  retención 7 días tras finalizar TODOS los eventos de la persona, tope 180 días desde la captura (`app/privacy.py`, paso `purge` del Job de ops); umbral 0,55 y `RECOGNITION_JITTERS=2` (docs/14 §6.2).
 - Mensajes al usuario en español; identificadores en inglés; respuestas como dicts planos.
 
 ## Reglas de trabajo

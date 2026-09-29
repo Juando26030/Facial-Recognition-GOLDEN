@@ -6,6 +6,7 @@
     <title>Parámetros del Evento | Golden Logísticas</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .params-table { width:100%; border-collapse:collapse; }
@@ -320,7 +321,7 @@
         const say = (t, err) => { const el = document.getElementById('privStatus'); el.style.color = err ? '#c0392b' : '#1e7e34'; el.textContent = t; };
         async function load() {
             const d = await (await fetch(`${base}/privacy`)).json();
-            const ret = d.retention_days ? `Retención automática: ${d.retention_days} días después de finalizado el evento.` : 'Retención automática: NO definida todavía (no se borra nada solo).';
+            const ret = `Retención automática: ${d.after_event_days} días después de que todos los eventos de la persona estén finalizados (máximo ${d.max_days} días desde la captura).`;
             document.getElementById('privInfo').innerHTML = `<b>${d.with_biometrics}</b> de ${d.attendees} personas tienen rostro guardado (<b>${d.with_consent}</b> con constancia de autorización, <b>${d.without_consent}</b> sin constancia — anteriores a este control). ${ret} Cifrado del rostro en reposo: <b>${d.encrypted ? 'activo' : 'NO activo (falta FACE_ENCRYPTION_KEY)'}</b>.${d.purged_at ? ' Último borrado: ' + d.purged_at.slice(0, 10) + '.' : ''}`;
         }
         load();
@@ -333,9 +334,9 @@
         });
         const ev = document.getElementById('privEvent');
         if (ev) ev.addEventListener('click', async () => {
-            if (!(await showConfirm('¿Borrar los datos biométricos de TODAS las personas de este evento? No se puede deshacer. Quienes siguen en otro evento activo del cliente se conservan.'))) return;
-            const r = await fetch(`${base}/biometrics/purge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }) }); const d = await r.json().catch(() => ({}));
-            r.ok ? (say(`Se borraron ${d.deleted} rostro(s); ${d.kept_in_other_events} se conservan por estar en otro evento activo.`), load()) : say(d.detail || 'No se pudo borrar', true);
+            const res = await purgeEventBiometrics(window.EVENT_ID);
+            if (!res) return;
+            res.ok ? (say(purgeEventMessage(res.data)), load()) : say(res.data.detail || 'No se pudo borrar', true);
         });
     })();
     // ---- Correo de la escarapela virtual (editor visual)

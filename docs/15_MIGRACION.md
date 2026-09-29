@@ -239,6 +239,46 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
 - [x] D1.7 **GitHub Actions** (avisos por Node 20): checkout v7, setup-python v7, setup-node v7 (Node 22 para firebase-tools),
   google-github-actions/auth v3 y setup-gcloud v3, docker/setup-buildx v4 y build-push v7 (todas `node24`).
 
+### Sesión 4 — B: retención biométrica de 7 días después de finalizado (reemplaza a los 180 días de R4)
+- [x] B1. **Regla** (`app/privacy.py`, migración `0051_biometric_retention`): foto y vector del rostro se borran cuando TODOS los eventos de la
+  persona llevan al menos `BIOMETRIC_RETENTION_DAYS_AFTER_EVENT` (7) días finalizados. Si sigue en un evento abierto, o finalizado hace menos de
+  7 días, se conserva y la regla corre cuando cierre ese otro evento. **Tope:** `BIOMETRIC_MAX_DAYS` (180) días desde la captura aunque el evento
+  siga abierto (eventos que nunca se finalizan; una persona sin ningún evento solo se borra por el tope). Reabrir un evento finalizado reinicia
+  su reloj; si las fotos ya se borraron, el cliente las vuelve a entregar en cada evento con reconocimiento facial. Todo lo demás se conserva
+  (nombre, cédula, ingresos, formularios…). Se quitó `BIOMETRIC_RETENTION_DAYS` (180) de `.env.example`, `common.yaml`, scripts y textos.
+- [x] B2. **Implementación.** Dos relojes nuevos, estampados por listeners de SQLAlchemy (así valen para cualquier ruta del código, scripts y pruebas):
+  `events.finalized_at` (al pasar a «finalizado»; se limpia al reabrir; reenviar el mismo estado NO lo reinicia) y `users.face_captured_at` (al
+  guardar un `face_encoding` distinto). **Relleno de la migración (decisión):** eventos ya finalizados → `finalized_at` = momento de la migración
+  (el reloj de 7 días arranca ahí: nada se borra por sorpresa en la primera corrida); rostros existentes → `face_captured_at` = su constancia de
+  autorización o, si no la tienen, el momento de la migración (el tope de 180 días cuenta desde ahí). Paso `purge` del Job de ops (cada hora, sin
+  la restricción de la hora 4): consulta por claves en lotes de 200, idempotente, sin bloqueos sobre `events`; por persona borra PRIMERO el objeto
+  de Storage y solo si eso salió bien deja en nulo el encoding y la constancia (si falla: cuenta el error, no toca el encoding y reintenta la hora
+  siguiente; el paso termina en error y avisa). No hay miniaturas ni copias derivadas de la foto (una sola llave por persona). La caché de rostros
+  en memoria se invalida sola (el listener de `faces_version` sube la versión de los eventos del cliente cuando cambia un `face_encoding`). Solo se
+  registran conteos: `{"people", "objects", "errors", "by_cap"}`. Candidatos: quien tiene `face_encoding` o constancia de autorización (una foto sin
+  ninguno de los dos —caso anterior al 25-sep sin encoding— no se ve desde la base; ceiling conocido). `--dry-run` en `scripts/purge_biometrics.py`.
+- [x] B3. **Botón «Borrar fotos del evento»** en Estadísticas (admin+; también sustituye al botón de Parámetros): modal propio (`static/js/biometric-purge.js`,
+  `showPrompt`) que explica qué se borra (fotos y vectores del rostro) y qué no (todo lo demás) y exige escribir el nombre del evento; el servidor
+  también lo exige (`confirm_name`, sin distinguir mayúsculas). **Regla de omisión (decisión):** se conserva a quien está en OTRO evento ABIERTO
+  (no finalizado) CON reconocimiento facial activo —el principio es no romper un evento en curso que usa rostros—; la respuesta trae cuántas se omitieron y
+  el motivo con los nombres de esos eventos (nunca de personas). Quien solo está en otros eventos sin rostro, o ya finalizados, sí se borra (aunque
+  la regla automática lo esperaría 7 días: el admin lo pidió). Auditoría en `system_events` (`kind=biometrics_purge`, `ref=event:<id>`, «por
+  <usuario> (id N); X borradas, Y omitidas»): quién, cuándo, evento y cuántas, sin datos de personas.
+- [x] B4. **Respaldos: 60 → 30 días** para `db/` (`deploy/gcs-lifecycle.json`; los horarios siguen en 3 días). Lo biométrico borrado puede seguir hasta **30 días
+  (+ ≤ 1 día de retraso del ciclo de vida)** dentro de los respaldos diarios (cifrado con la llave de la app) y durante la ventana de historial de Neon
+  (**se fija en 1 día**, paso manual en la consola de Neon → Settings → Storage → History retention). La foto en el bucket: ≤ 2 días (versiones viejas, regla de 1 día).
+  En producción la regla también acorta los volcados de la VM en `db/` (compatible con su retención de 30 días). **Comando para Juan David (staging;
+  aplica también las reglas de la app, como hace el bootstrap):**
+  ```bash
+  python3 -c 'import json; a, b = (json.load(open(f)) for f in ("deploy/gcs-app-lifecycle.json", "deploy/gcs-lifecycle.json")); print(json.dumps({"rule": a["rule"] + b["rule"]}))' > /tmp/lc.json
+  gcloud storage buckets update gs://goldenweb-staging-golden-staging --lifecycle-file /tmp/lc.json --quiet
+  ```
+  Tras la migración `0051` en staging (la corre el Job `golden-migrate-staging` en el próximo despliegue) el primer `purge` no borra nada por sorpresa (ver B2).
+- [x] B5. Pruebas: `tests/test_biometric_retention.py` (una persona/un evento, dos eventos con uno abierto, reapertura, reenviar el mismo estado, tope de 180,
+  huérfanas, idempotencia y lotes, fallo de Storage, dry-run, paso del Job solo con conteos, permisos y nombre del botón, omisión del borrado manual,
+  ciclo de vida de respaldos) y ajustes en `tests/test_privacy.py`.
+- Sustituye a R4 (tabla de arriba): la persistencia máxima tras la purga pasa a **30 días** (respaldos diarios) y la retención automática a 7 días tras finalizar.
+
 ### Sesión 3 — pendiente (empieza cuando staging esté desplegado en Cloud Run)
 - [ ] 1. Script de medición de latencia app→Neon desde Cloud Run (us-east1) y decisión de región (us-east1 / us-east4)
 - [ ] 2. Verificar `XFF_CLIENT_INDEX` con tráfico real detrás de Firebase y fijarlo en `deploy/gcp/env/common.yaml`

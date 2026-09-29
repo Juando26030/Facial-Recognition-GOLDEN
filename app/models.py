@@ -1,4 +1,5 @@
 import json
+from sqlalchemy import event as sa_event
 from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
@@ -52,6 +53,7 @@ class User(Base):
     extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
     face_encoding = deferred(Column(EncryptedText))      # deferred: no se descifra/carga al leer la persona (directorio, cédula...), solo cuando de verdad se pide; cifrado en reposo si hay FACE_ENCRYPTION_KEY (app/crypto.py); el código lo usa en claro
     biometric_consent_at = Column(DateTime, nullable=True)      # cuándo se autorizó guardar el rostro (Ley 1581: dato sensible, autorización previa y expresa)
+    face_captured_at = Column(DateTime, nullable=True, index=True)   # cuándo se guardó el rostro (lo estampa el listener de abajo); el tope de BIOMETRIC_MAX_DAYS cuenta desde aquí
     biometric_consent_source = Column(String, nullable=True)    # 'kiosko' (la persona autorizó ante el digitador) | 'carga_masiva' (declaración del organizador) | 'copiado' (heredado de otro evento)
 
     tenant = relationship("Tenant", back_populates="users", overlaps="tenant,users,logs")
@@ -231,6 +233,7 @@ class Event(Base):
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
+    finalized_at = Column(DateTime, nullable=True)     # cuándo pasó a «finalizado» (lo estampa el listener de abajo; NULL si no lo está): desde aquí corren los BIOMETRIC_RETENTION_DAYS_AFTER_EVENT días
     biometrics_purged_at = Column(DateTime, nullable=True)     # última vez que se borraron los datos biométricos de este evento (privacidad)
     digital_email_subject = Column(String, nullable=True)  # plantilla propia del correo de la escarapela virtual (NULL = la de siempre)
     digital_email_body = Column(Text, nullable=True)       # HTML ya saneado (app/email_template.py)
@@ -750,3 +753,23 @@ class SystemEvent(Base):
     ref = Column(String, nullable=True)
     detail = Column(Text, nullable=True)
     at = Column(DateTime, nullable=False, default=utcnow)
+
+
+# ------------------------------------------------------------------ relojes de la retención biométrica (app/privacy.py)
+@sa_event.listens_for(Event.status, "set", active_history=True)     # active_history: carga el valor anterior aunque la instancia esté expirada
+def _stamp_finalized(target, value, oldvalue, initiator):
+    """`finalized_at` se estampa al pasar a «finalizado» y se limpia al reabrir (el reloj de los 7 días se reinicia)."""
+    if value == oldvalue:
+        return
+    if value == "finalizado":
+        target.finalized_at = utcnow()
+    elif oldvalue == "finalizado":
+        target.finalized_at = None
+
+
+@sa_event.listens_for(User.face_encoding, "set")
+def _stamp_face_captured(target, value, oldvalue, initiator):
+    """`face_captured_at` = cuándo se guardó el rostro (un rostro repetido idéntico no reinicia el reloj del tope)."""
+    if value and value == oldvalue:
+        return
+    target.face_captured_at = utcnow() if value else None

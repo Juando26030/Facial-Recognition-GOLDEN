@@ -10,7 +10,7 @@ Scheduler (cabe en las 3 gratuitas): cada hora al minuto 05, hora de Bogotá, co
 Respaldos: `pg_dump` 18 con el DUEÑO (DIRECT_DATABASE_URL), `--no-owner --no-privileges` (se restaura en cualquier Postgres; en Neon con
 scripts/migrate_db_to_neon.py --source-dump), comprimido, verificado (gzip íntegro + marca de volcado completo) y subido con MD5 a
 gs://<BACKUP_BUCKET>/db/hourly|daily/AAAA/MM/golden_db_AAAAmmdd_HHMM.sql.gz. Retención por ciclo de vida del bucket
-(deploy/gcs-lifecycle.json): horarios 3 días, diarios 60. Los archivos (fotos, firmas…) no se copian: viven en el bucket de la app con
+(deploy/gcs-lifecycle.json): horarios 3 días, diarios 30 (antes 60; los respaldos guardan el encoding cifrado, ver docs/15). Los archivos (fotos, firmas…) no se copian: viven en el bucket de la app con
 versiones de objeto (lo borrado o sobrescrito se conserva 30 días). Los secretos viven versionados en Secret Manager.
 Avisos por correo a ALERT_EMAIL como máximo cada 6 h por el mismo problema."""
 import gzip
@@ -133,16 +133,18 @@ def _alert(key: str, subject: str, body: str) -> None:
 
 # ------------------------------------------------------------------ otros pasos
 def purge() -> str:
+    """Retención biométrica (app/privacy.py): solo conteos en el resultado y en el log. Con errores el paso FALLA (alerta) y se reintenta la hora siguiente."""
     from app import privacy
     from app.database import SessionLocal
-    days = privacy.retention_days()
-    if not days:
-        return "retención apagada (BIOMETRIC_RETENTION_DAYS=0)"
     db = SessionLocal()
     try:
-        return json.dumps(privacy.purge_expired(db, days))
+        r = privacy.purge_expired(db)
     finally:
         db.close()
+    log.info("purga biométrica: %s", json.dumps(r))
+    if r["errors"]:
+        raise RuntimeError(f"la purga biométrica tuvo {r['errors']} error(es) al borrar fotos (se reintenta en la próxima corrida): {json.dumps(r)}")
+    return json.dumps(r)
 
 
 def sweep() -> str:

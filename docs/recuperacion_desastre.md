@@ -8,7 +8,7 @@ Qué copias existen, dónde están y cómo se usan. Última verificación de una
 | Copia | Qué contiene | Dónde | Frecuencia / retención | Sirve si... |
 |---|---|---|---|---|
 | **Snapshot del disco** | La máquina completa: sistema, Postgres, `data/`, `.env`, Nginx, certificados, cron, runner de GitHub | Snapshots de Compute Engine | Diario (02:00 Bogotá), 14 días | La VM o su disco se dañan |
-| **Volcado de la base** | Solo la base `golden_db` (personas, eventos, accesos, cuentas, parámetros, encodings faciales) | `gs://golden-backups-analisis-de-imagen-id/db/AAAA/MM/` | Diario 03:00, 60 días (regla de ciclo de vida); además 7 días en `~/backups` de la VM | Se daña/borra algo en la base, o hay que armar una VM desde cero |
+| **Volcado de la base** | Solo la base `golden_db` (personas, eventos, accesos, cuentas, parámetros, encodings faciales) | `gs://golden-backups-analisis-de-imagen-id/db/AAAA/MM/` | Diario 03:00, 30 días (regla de ciclo de vida; antes 60, bajó por la retención biométrica); además 7 días en `~/backups` de la VM | Se daña/borra algo en la base, o hay que armar una VM desde cero |
 | **Archivos y `.env`** | `data/` (fotos, firmas, logos, plantillas de escarapela, informes, documentos) y el `.env` | `gs://<bucket-de-datos>/data/` y `/config/.env` (con versionado) | Diario 03:00, incremental | Armar una VM desde cero; recuperar un archivo puntual |
 | **Código y configuración** | Código, migraciones, `requirements.txt` con versiones fijas, `deploy/nginx-golden.conf`, `deploy/facial-recognition.service`, scripts | GitHub | Cada push | Siempre |
 
@@ -29,7 +29,7 @@ Probar el aviso una vez: `venv/bin/python scripts/check_backups.py --test`.
 
 **2. Que nadie pueda borrar las copias por error (en Cloud Shell, una vez):**
 ```bash
-# Los volcados no se pueden borrar ni sobrescribir durante 30 días, ni por quien tenga permisos (la regla de 60 días sigue borrándolos después)
+# Los volcados no se pueden borrar ni sobrescribir durante 30 días, ni por quien tenga permisos (la regla de 30 días los borra justo después)
 gcloud storage buckets update gs://golden-backups-analisis-de-imagen-id --retention-period=30d
 # Papelera de 30 días en ambos buckets (un objeto borrado se puede recuperar)
 gcloud storage buckets update gs://golden-backups-analisis-de-imagen-id gs://golden-datos-analisis-de-imagen-id --soft-delete-duration=30d

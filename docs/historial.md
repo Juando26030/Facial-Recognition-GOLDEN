@@ -854,3 +854,7 @@ Documento de referencia: [`docs/13_ARQUITECTURA_ESCALABILIDAD.md`](13_ARQUITECTU
 intencional (cookies seguras, sin /docs); distintivo rojo STAGING en pantallas y `[STAGING]` en asuntos de correo; (6) bootstrap paso 12 con
 `--non-interactive`, `timeout`, salto si el sitio existe y comando manual si falla; (7) GitHub Actions a versiones node24. Al tocar tests
 con F841 preexistentes (CI revisa archivos tocados) se quitaron 5 variables sin uso.
+**B retención biométrica: 7 días tras finalizar (tope 180).** Reemplaza `BIOMETRIC_RETENTION_DAYS=180`. Migración 0051 (`events.finalized_at`, `users.face_captured_at`, rellenos con «ahora» para no
+borrar por sorpresa); listeners de SQLAlchemy estampan ambos relojes (`Event.status` con `active_history=True`: una instancia expirada no traía el valor anterior y reabrir no limpiaba el reloj);
+`privacy.purge_expired` por claves y en lotes, foto primero y encoding después; paso `purge` del Job ahora cada hora y con error si Storage falla; botón «Borrar fotos del evento» (admin+, escribir
+el nombre; omite a quien está en otro evento abierto CON rostro; auditoría en `system_events`); respaldos `db/` de 60 a 30 días. Detalle y decisiones: docs/15 «Sesión 4 — B».

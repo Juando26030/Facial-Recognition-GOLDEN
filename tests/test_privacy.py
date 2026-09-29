@@ -97,18 +97,21 @@ def _with_face(db, ev, uid, other_event=None):
 
 def test_purge_event_erases_faces_but_keeps_people_who_are_in_another_active_event(client, factory, db):
     import os
-    from app.models import User
+    from app.models import SystemEvent, User
     factory.staff("admin", "adm1")
     ev = factory.event("finalizado")
-    other = factory.event("en_proceso")
+    other = factory.event("en_proceso", facial_enabled=True)
     _with_face(db, ev, "1001")
     _with_face(db, ev, "1002", other_event=other)
     login(client, "adm1")
     assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={}).status_code == 400                                 # sin confirmación no borra
+    assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True, "confirm_name": "otro nombre"}).status_code == 400
     st = client.get(f"/api/events/{ev.id}/privacy").json()
     assert (st["with_biometrics"], st["with_consent"]) == (2, 2)
-    r = client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True}).json()
-    assert r == {"deleted": 1, "kept_in_other_events": 1}
+    r = client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm_name": f"  {ev.name.upper()} "}).json()            # el nombre confirma (sin importar mayúsculas)
+    assert (r["deleted"], r["kept_in_other_events"]) == (1, 1) and other.event_code in r["kept_reason"]
+    audit = db.query(SystemEvent).filter_by(kind="biometrics_purge").one()                                                    # auditoría: quién, evento y cuántas (nada personal)
+    assert audit.ref == f"event:{ev.id}" and "adm1" in audit.detail and "1 borradas" in audit.detail and "Mora" not in audit.detail
     db.expire_all()
     u1, u2 = db.query(User).filter_by(id="1001").first(), db.query(User).filter_by(id="1002").first()
     assert u1.face_encoding is None and u1.biometric_consent_at is None and not os.path.isfile(f"data/{ev.tenant_id}/known_people/1001.jpg")
@@ -121,31 +124,12 @@ def test_a_coordinator_can_erase_one_persons_face_but_only_admins_purge_the_even
     ev = factory.event("en_proceso")
     _with_face(db, ev, "1001")
     login(client, "coord1")
-    assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True}).status_code == 403
+    assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm_name": ev.name}).status_code == 403
     assert client.delete(f"/api/events/{ev.id}/users/9999/biometrics").status_code == 404
     assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").json()["deleted"] is True
     db.expire_all()
     assert db.query(User).filter_by(id="1001").first().face_encoding is None
     assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").json()["deleted"] is False                         # ya no había nada
-
-
-def test_automatic_retention_only_runs_when_configured_and_only_on_old_finalized_events(client, factory, db, monkeypatch):
-    from datetime import date, timedelta
-    from app import privacy
-    ev_old = factory.event("finalizado", end_date=date.today() - timedelta(days=200))
-    ev_recent = factory.event("finalizado", end_date=date.today() - timedelta(days=10))
-    ev_live = factory.event("en_proceso", end_date=date.today() - timedelta(days=300))
-    _with_face(db, ev_old, "1001")
-    _with_face(db, ev_recent, "2002")
-    _with_face(db, ev_live, "3003")
-    monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS", raising=False)
-    assert privacy.retention_days() == 180                                                                       # decisión de Golden: 6 meses por defecto
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "0")
-    assert privacy.retention_days() is None                                                                      # 0 apaga el borrado automático
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "180")
-    r = privacy.purge_expired(db, 180)
-    assert r == {"events": 1, "deleted": 1, "kept_in_other_events": 0}                                           # solo el evento finalizado hace más de 180 días
-    assert privacy.purge_expired(db, 180)["events"] == 0                                                          # ya purgado: no se repite
 
 
 # ------------------------------- páginas legales públicas -------------------------------
@@ -161,18 +145,17 @@ def test_legal_pages_are_public_marked_as_drafts_and_show_the_business_data(clie
 
 
 def test_business_data_and_retention_come_from_the_environment(client, monkeypatch):
-    monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS", raising=False)
+    for k in ("BIOMETRIC_RETENTION_DAYS_AFTER_EVENT", "BIOMETRIC_MAX_DAYS"):
+        monkeypatch.delenv(k, raising=False)
     home = client.get("/terminos").text
     assert "Carrera 14a # 71a - 59, Bogotá" in home and "+57 317 427 6073" in home and "info@goldenlogisticas.com" in home      # los datos reales de Golden
-    assert "6 meses (180 días) después de la fecha de finalización" in client.get("/privacidad").text                         # retención por defecto: 6 meses
+    assert "7 días después de que finalice el evento" in client.get("/privacidad").text and "180 días desde que se captura" in client.get("/privacidad").text
     monkeypatch.setenv("LEGAL_ADDRESS", "Calle 1 # 2-3")
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "90")
+    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS_AFTER_EVENT", "10")
     monkeypatch.setenv("REFUND_REQUEST_DAYS", "15")
     assert "Calle 1 # 2-3" in client.get("/terminos").text
-    assert "3 meses (90 días)" in client.get("/privacidad").text
+    assert "10 días después de que finalice el evento" in client.get("/privacidad").text
     assert "15 días calendario" in client.get("/reembolsos").text
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "0")
-    assert "hasta que solicites su supresión" in client.get("/privacidad").text                                                 # apagada explícitamente
 
 
 def test_jurisdiction_is_bogota_and_international_events_are_covered(client):

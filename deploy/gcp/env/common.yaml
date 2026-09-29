@@ -6,7 +6,9 @@ LEGAL_ADDRESS: "Carrera 14a # 71a - 59, Bogotá"
 LEGAL_PHONE: "+57 317 427 6073"
 LEGAL_EMAIL: "info@goldenlogisticas.com"
 LEGAL_PRIVACY_EMAIL: "info@goldenlogisticas.com"
-BIOMETRIC_RETENTION_DAYS: "180"
+# Retención biométrica: 7 días después de que TODOS los eventos de la persona estén finalizados; tope de 180 días desde la captura.
+BIOMETRIC_RETENTION_DAYS_AFTER_EVENT: "7"
+BIOMETRIC_MAX_DAYS: "180"
 # Fotos biométricas bajo un prefijo común: la regla de ciclo de vida borra en 1 día sus versiones viejas (docs/15, R4).
 BIOMETRIC_KEY_PREFIX: "biometric"
 RECOGNITION_JITTERS: "2"

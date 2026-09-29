@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import privacy
+from app import ops, privacy
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.models import EventAttendee, StaffUser
@@ -15,16 +15,19 @@ ADMIN = require_role("admin")
 @router.get("/events/{event_id}/privacy")
 def get_privacy(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(VIEW)):
     event = get_event_for_staff(event_id, db, staff)
-    return {**privacy.stats(db, event), "retention_days": privacy.retention_days(), "purged_at": event.biometrics_purged_at.isoformat() if event.biometrics_purged_at else None}
+    return {**privacy.stats(db, event), "after_event_days": privacy.days_after_event(), "max_days": privacy.max_days(), "event_name": event.name, "purged_at": event.biometrics_purged_at.isoformat() if event.biometrics_purged_at else None}
 
 
 @router.post("/events/{event_id}/biometrics/purge")
 def purge_event_biometrics(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
-    """Borra los datos biométricos del evento (irreversible). Exige `confirm: true`; solo admin+."""
+    """Borra los datos biométricos del evento (irreversible; solo admin+). Exige `confirm_name` = nombre exacto del evento. Deja constancia
+    de auditoría (quién, cuándo, evento, cuántas personas: nada personal)."""
     event = get_event_for_staff(event_id, db, staff)
-    if not data.get("confirm"):
-        raise HTTPException(status_code=400, detail="Falta la confirmación: este borrado no se puede deshacer")
-    return privacy.purge_event(db, event)
+    if str(data.get("confirm_name", "")).strip().casefold() != event.name.strip().casefold():
+        raise HTTPException(status_code=400, detail="Escribe el nombre exacto del evento para confirmar: este borrado no se puede deshacer")
+    result = privacy.purge_event(db, event)
+    ops.record_system_event("biometrics_purge", f"event:{event.id}", f"por {staff.username} (id {staff.id}); {result['deleted']} borradas, {result['kept_in_other_events']} omitidas")
+    return result
 
 
 @router.delete("/events/{event_id}/users/{user_id}/biometrics")
