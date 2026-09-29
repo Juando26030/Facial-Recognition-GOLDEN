@@ -126,7 +126,7 @@ def _trace_from(header: Optional[str]) -> Optional[str]:
 
 class RequestLogMiddleware:
     """Middleware ASGI puro (sin BaseHTTPMiddleware: no crea tareas extra ni interfiere con los hilos). Pone el `X-Request-ID`, mide la
-    latencia y escribe UNA línea de log por petición. No registra cuerpos, cabeceras ni cookies. Las peticiones a /healthz no se registran."""
+    latencia y escribe UNA línea de log por petición. No registra cuerpos, cabeceras ni cookies. Las peticiones a /health y /healthz no se registran."""
 
     def __init__(self, app: ASGIApp, on_5xx=None) -> None:
         self.app, self.on_5xx = app, on_5xx
@@ -153,7 +153,7 @@ class RequestLogMiddleware:
             await self.app(scope, receive, send_wrapper)
         finally:
             path = scope.get("path", "")
-            if path != "/healthz":
+            if path not in ("/health", "/healthz"):
                 query = scope.get("query_string", b"").decode("latin-1")
                 client = scope.get("client")
                 http = {"requestMethod": scope.get("method"), "requestUrl": mask_url(path + ("?" + query if query else "")), "status": status,

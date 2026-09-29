@@ -24,7 +24,7 @@ app/main.py            app, middlewares (CSRF por Origin, cookie de sesión, no-
 app/database.py        engine (pool persistente, pre_ping, reintentos); DATABASE_URL obligatoria
 app/models.py          modelos; app/auth.py roles y permisos (require_role, effective_roles, get_event_for_staff)
 app/routers/           api.py (registro, reconocimiento, directorio, carga masiva), events, forms/forms_public/form_payments,
-                       badges, roulette, ops (/healthz, /readyz, /sistema, /internal/jobs/run), …
+                       badges, roulette, ops (/health, /ready, /sistema, /internal/jobs/run), …
 app/storage.py         archivos: LocalStorage | GcsStorage (STORAGE_BACKEND); claves como acme/known_people/1001.jpg
 app/uploads.py         subida directa de archivos grandes (URLs firmadas / PUT local)
 app/jobs.py            cola en Postgres; la despierta un hilo (JOBS_BACKEND=db) o Cloud Tasks (cloudtasks)
@@ -68,7 +68,8 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
   largo (cargas de fotos, respaldos) va en Cloud Run Jobs, nunca en un hilo en Cloud Run.
 - **Horas internas en UTC** (`datetime.utcnow()`); hora local solo al mostrar/leer (`app/timeutil.py`).
 - **Nada de datos personales en logs** (cédulas, nombres, correos, encodings; `app/obs.py` enmascara lo que puede).
-- **Salud:** `/healthz` no toca nada (lo usan monitores y la sonda de vida); `/readyz` toca la base: SOLO sonda de arranque. Nada frecuente
+- **Salud:** `/health` no toca nada (lo usan monitores y la sonda de vida); `/ready` toca la base: SOLO sonda de arranque. En Cloud Run
+  nunca rutas que terminen en «z» (`/healthz` da 404 de Google; `/healthz`/`/readyz` quedan para la VM). Nada frecuente
   puede tocar la base (Neon no se apagaría).
 - **`/internal/*` solo con token OIDC de Google** de la cuenta invoker del entorno (`google_invoker` en `app/routers/ops.py`).
 - **Detrás de Firebase Hosting:** solo pasa la cookie `__session` (`SESSION_COOKIE`), `CF-Connecting-IP` no es confiable

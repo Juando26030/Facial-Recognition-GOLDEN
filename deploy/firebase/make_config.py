@@ -20,7 +20,7 @@ from app import appmode  # noqa: E402
 
 def rewrites(suffix: str, region: str) -> list:
     run = lambda name: {"run": {"serviceId": f"golden-{name}{suffix}", "region": region}}  # noqa: E731
-    out = [{"source": p, **run("web")} for p in ("/healthz", "/readyz", "/api/ops/**")]
+    out = [{"source": p, **run("web")} for p in ("/health", "/ready", "/healthz", "/readyz", "/api/ops/**")]
     out += [{"source": re.sub(r"\{[^/]+\}", "*", p), **run("biometria")} for p in sorted(appmode.BIOMETRIC_PATHS)]
     for prefix in appmode.PUBLIC_PREFIXES:
         base = prefix.rstrip("/")

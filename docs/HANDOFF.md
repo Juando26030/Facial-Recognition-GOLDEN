@@ -98,7 +98,7 @@ ruff limpio en lo tocado, shellcheck y actionlint limpios.
    falla (doc 13 §11, Fase 4). Nunca contra producción.
 4. `docs/15_MIGRACION.md` completo: runbook del día del cambio (ventana, respaldo final, `migrate_db_to_neon.py` y
    `migrate_files_to_gcs.py --biometric-prefix biometric`, DNS en Cloudflare, dominio en Firebase, reanudar `golden-ops-hourly`, mover el
-   chequeo de Google «GoldenWeb readyz» de `/readyz` a `/healthz`, verificación, vuelta atrás) y tabla de costos.
+   chequeo de Google «GoldenWeb readyz» y UptimeRobot a `/health` (en Cloud Run `/healthz` da 404 de Google), verificación, vuelta atrás) y tabla de costos.
 5. Revisión final de pruebas y ruff; luego Fase 3 (modo contingencia del kiosco) en otra rama.
 
 **Propuestas esperando aprobación (no implementar sin permiso):** foto de registro + indicador de parecido en la tarjeta de confirmación

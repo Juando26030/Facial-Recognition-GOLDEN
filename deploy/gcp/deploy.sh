@@ -103,9 +103,10 @@ deploy_service() {   # nombre, módulo, cpu, memoria, concurrencia, máx. instan
   env_file "$TMP/$svc.yaml" "APP_MODULE=$module" "WEB_CONCURRENCY=$workers" "$@"
   local probes=()
   if [ "$PLACEHOLDER" = 0 ]; then
-    # /readyz (toca la base) SOLO al arrancar; el chequeo periódico de vida va a /healthz, que no toca nada (Neon puede apagarse).
-    probes=(--startup-probe "httpGet.path=/readyz,initialDelaySeconds=0,timeoutSeconds=5,periodSeconds=5,failureThreshold=36"
-            --liveness-probe "httpGet.path=/healthz,timeoutSeconds=3,periodSeconds=30,failureThreshold=3")
+    # /ready (toca la base) SOLO al arrancar; el chequeo periódico de vida va a /health, que no toca nada (Neon puede apagarse).
+    # Nunca rutas que terminen en «z»: Cloud Run las reserva (/healthz da 404 del propio Google).
+    probes=(--startup-probe "httpGet.path=/ready,initialDelaySeconds=0,timeoutSeconds=5,periodSeconds=5,failureThreshold=36"
+            --liveness-probe "httpGet.path=/health,timeoutSeconds=3,periodSeconds=30,failureThreshold=3")
   fi
   local public=()
   [ "$PLACEHOLDER" = 1 ] && public=(--allow-unauthenticated)     # solo al crearlo (bootstrap); después la política no se toca
@@ -131,7 +132,7 @@ gcloud run jobs deploy "$JOB_OPS" --image "$IMAGE" --region "$REGION" --service-
 
 if [ "$PLACEHOLDER" = 0 ]; then
   say "Comprobación"
-  curl -fsS --max-time 60 "${WEB_URL}/healthz" && echo
-  curl -fsS --max-time 60 "${WEB_URL}/readyz" | head -c 300 && echo
+  curl -fsS --max-time 60 "${WEB_URL}/health" && echo
+  curl -fsS --max-time 60 "${WEB_URL}/ready" | head -c 300 && echo
 fi
 echo -e "\nListo: $GOLDEN_ENV con $IMAGE\n  web: $WEB_URL\n  público (Firebase Hosting): $PUBLIC_BASE_URL"

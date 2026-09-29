@@ -21,7 +21,7 @@ BIOMETRIC_PATHS = {
 }
 # Rutas públicas (sin sesión): lo que miles de personas abren desde su teléfono.
 PUBLIC_PREFIXES = ("/f/", "/b/", "/c/", "/r/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/api/email-assets/")
-ALWAYS = ("/healthz", "/readyz", "/api/ops/")
+ALWAYS = ("/health", "/ready", "/api/ops/")          # «/health» y «/ready» cubren también /healthz y /readyz
 
 
 def loads_model() -> bool:

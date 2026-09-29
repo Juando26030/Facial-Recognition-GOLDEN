@@ -7,8 +7,13 @@ Todo lo que permite saber **si la app está bien, qué está pasando y qué hace
 
 | Dirección | Quién | Para qué |
 |---|---|---|
-| `GET /healthz` | el orquestador (systemd, Cloud Run) | **¿El proceso está vivo?** No toca la base ni el disco: responde en milisegundos. Si falla, se reinicia el proceso. |
-| `GET /readyz` | el orquestador y el despliegue | **¿Puede atender peticiones ahora?** Comprueba la base (con tiempo límite de 2 s), el almacenamiento y —solo donde corre la biometría— que el modelo facial esté cargado. Responde `503` diciendo **qué componente falla y por qué**. Si falla, se le deja de mandar tráfico (sin reiniciar). |
+| `GET /health` (= `/healthz`) | el orquestador (systemd, Cloud Run) | **¿El proceso está vivo?** No toca la base ni el disco: responde en milisegundos. Si falla, se reinicia el proceso. |
+| `GET /ready` (= `/readyz`) | el orquestador y el despliegue | **¿Puede atender peticiones ahora?** Comprueba la base (con tiempo límite de 2 s), el almacenamiento y —solo donde corre la biometría— que el modelo facial esté cargado. Responde `503` diciendo **qué componente falla y por qué**. Si falla, se le deja de mandar tráfico (sin reiniciar). |
+
+**En Cloud Run usar SIEMPRE `/health` y `/ready`.** Google reserva en Cloud Run las rutas que terminan en «z»: `/healthz` responde un 404
+del propio Google sin llegar a la app (docs.cloud.google.com/run/docs/known-issues). `/healthz` y `/readyz` siguen existiendo para la VM
+y por compatibilidad. **El día del cambio:** el chequeo de Google «GoldenWeb readyz» y el monitor de UptimeRobot deben apuntar a
+`https://app.golden-eventos.com/health` (no toca la base: Neon puede apagarse; `/ready` solo como sonda de arranque).
 | `GET /api/ops/status` y la pantalla **`/sistema`** («Estado del sistema», menú lateral, solo administradores) | personas | El semáforo completo, en español, con motivo y qué hacer. Se refresca solo cada 15 s. |
 | `GET /api/ops/deploy-allowed` | el despliegue y los administradores | **¿Se puede desplegar ahora?** `allowed: false` si hay un evento en curso o una apertura (evento o formulario) en las próximas N horas (`DEPLOY_FREEZE_HOURS`, 3 por defecto). Se puede llamar con sesión de administrador o con la cabecera `X-Ops-Token` (variable `OPS_TOKEN`). |
 
@@ -50,7 +55,7 @@ Cada línea de log es **un JSON en la salida estándar**, con los campos que Clo
 * **`X-Request-ID`**: se respeta el que llegue (si es un identificador razonable) o se genera; vuelve siempre en la respuesta y sale en cada log de esa petición.
   Es el «código» que el usuario ve si algo falla: con ese código se encuentra la traza completa.
 * **`logging.googleapis.com/trace`** aparece si llega `X-Cloud-Trace-Context` y está definida `GOOGLE_CLOUD_PROJECT`.
-* Una línea por petición (`golden.http`); `/healthz` no se registra. Los errores 5xx salen con `severity=ERROR`.
+* Una línea por petición (`golden.http`); `/health` y `/healthz` no se registran. Los errores 5xx salen con `severity=ERROR`.
 * Gunicorn/uvicorn escriben en el mismo formato (configurado en `deploy/gunicorn.conf.py`).
 
 ### Errores para el usuario

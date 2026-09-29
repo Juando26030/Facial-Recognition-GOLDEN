@@ -29,7 +29,7 @@ def _service_for(config, path):
 @pytest.mark.parametrize("path", [
     "/f/12/feria", "/f/12/feria/submit", "/b/abc", "/c/tok/pdf", "/r/tok/state", "/webhooks/wompi", "/privacidad", "/terminos",
     "/reembolsos", "/api/email-assets/acme/x.png", "/api/recognize", "/api/register", "/api/bulk_register", "/api/bulk_jobs/9f",
-    "/api/events/3/areas/7/movement-face", "/api/users", "/kiosk/3/registro", "/login", "/", "/healthz", "/readyz", "/api/ops/status",
+    "/api/events/3/areas/7/movement-face", "/api/users", "/kiosk/3/registro", "/login", "/", "/health", "/ready", "/healthz", "/readyz", "/api/ops/status",
 ])
 def test_each_path_goes_to_the_service_that_serves_it(config, path):
     service = _service_for(config, path)

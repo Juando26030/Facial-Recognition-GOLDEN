@@ -25,7 +25,7 @@
 #      Cobro por uso (ver doc 13 §6) ................................................................................... ~5-19
 #   9. Cloud Scheduler: UNA tarea (golden-ops-hourly, cada hora al minuto 05). 3 tareas gratis por cuenta; producción la
 #      activa, staging no (se corre a mano) ............................................................................. 0
-#  10. Monitoreo: canal de correo, chequeo de disponibilidad a /healthz cada minuto (NO toca la base: Neon puede apagarse),
+#  10. Monitoreo: canal de correo, chequeo de disponibilidad a /health cada minuto (NO toca la base: Neon puede apagarse),
 #      alertas de caída, de Jobs fallidos y de errores 5xx. Chequeos: 1 millón/mes gratis; alertas sin costo hasta 2027 ... 0
 #  11. Presupuesto con avisos al 50, 90 y 100 % (solo con production; en la moneda de la cuenta de facturación) ........... 0
 #  12. Firebase Hosting: sitio del entorno (dominio propio frente a Cloud Run; la CDN sirve /static). 10 GB/mes gratis ..... ~0
@@ -256,11 +256,17 @@ if [ -n "$EMAIL" ]; then
   CHANNEL="$(gcloud beta monitoring channels list --filter "displayName=\"Golden alertas\"" --format 'value(name)' | head -n1)"
   [ -n "$CHANNEL" ] || CHANNEL="$(gcloud beta monitoring channels create --display-name "Golden alertas" --type email \
                                    --channel-labels "email_address=$EMAIL" --format 'value(name)')"
-  UPTIME="golden-healthz${SUFFIX}"
+  # Versión anterior: chequeo «golden-healthz» a /healthz y su alerta. En Cloud Run /healthz da 404 del propio Google (reserva las rutas que
+  # terminan en «z»), así que fallaban siempre: se borran y se crean «golden-health» a /health y su alerta nueva.
+  OLD_ID="$(gcloud monitoring uptime list-configs --filter "displayName=\"golden-healthz${SUFFIX}\"" --format 'value(name)' | head -n1)"
+  OLD_POLICY="$(gcloud monitoring policies list --filter "displayName=\"Golden ${GOLDEN_ENV}: /healthz no responde\"" --format 'value(name)' | head -n1)"
+  [ -z "$OLD_POLICY" ] || gcloud monitoring policies delete "$OLD_POLICY" --quiet >/dev/null
+  [ -z "$OLD_ID" ] || gcloud monitoring uptime delete "${OLD_ID##*/}" --quiet >/dev/null
+  UPTIME="golden-health${SUFFIX}"
   WEB_HOST="$(run_url "$SVC_WEB" | sed 's#https://##')"
   CHECK_ID="$(gcloud monitoring uptime list-configs --filter "displayName=\"$UPTIME\"" --format 'value(name)' | head -n1 | sed 's#.*/##')"
   [ -n "$CHECK_ID" ] || CHECK_ID="$(gcloud monitoring uptime create "$UPTIME" --resource-type uptime-url \
-      --resource-labels "host=$WEB_HOST,project_id=$PROJECT_ID" --path /healthz --protocol https --period 1 --timeout 10 \
+      --resource-labels "host=$WEB_HOST,project_id=$PROJECT_ID" --path /health --protocol https --period 1 --timeout 10 \
       --format 'value(name)' | sed 's#.*/##')"
   policy() {   # nombre  archivo-json
     if [ -z "$(gcloud monitoring policies list --filter "displayName=\"$1\"" --format 'value(name)')" ]; then
@@ -268,7 +274,7 @@ if [ -n "$EMAIL" ]; then
     fi
   }
   cat > "$TMP/p1.json" <<EOF
-{"displayName": "Golden ${GOLDEN_ENV}: /healthz no responde", "combiner": "OR",
+{"displayName": "Golden ${GOLDEN_ENV}: /health no responde", "combiner": "OR",
  "conditions": [{"displayName": "chequeo de disponibilidad fallando", "conditionThreshold": {
    "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id=\"${CHECK_ID}\" AND resource.type=\"uptime_url\"",
    "comparison": "COMPARISON_GT", "thresholdValue": 1, "duration": "120s", "trigger": {"count": 1},
@@ -288,10 +294,10 @@ EOF
    "comparison": "COMPARISON_GT", "thresholdValue": 20, "duration": "0s", "trigger": {"count": 1},
    "aggregations": [{"alignmentPeriod": "300s", "perSeriesAligner": "ALIGN_SUM", "crossSeriesReducer": "REDUCE_SUM"}]}}]}
 EOF
-  policy "Golden ${GOLDEN_ENV}: /healthz no responde" "$TMP/p1.json"
+  policy "Golden ${GOLDEN_ENV}: /health no responde" "$TMP/p1.json"
   policy "Golden ${GOLDEN_ENV}: un Job falló (respaldos, migraciones o carga)" "$TMP/p2.json"
   policy "Golden ${GOLDEN_ENV}: errores 5xx" "$TMP/p3.json"
-  ok "canal de correo, chequeo /healthz cada minuto (sin tocar la base) y 3 alertas"
+  ok "canal de correo, chequeo /health cada minuto (sin tocar la base) y 3 alertas"
 else
   ok "alertas omitidas"
 fi

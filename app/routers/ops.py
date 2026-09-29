@@ -1,7 +1,9 @@
 """Salud y estado del sistema (docs/observabilidad.md).
 
-  GET /healthz             liveness: NO toca ninguna dependencia, responde en milisegundos (el orquestador reinicia el proceso si falla).
-  GET /readyz              readiness: base (con tiempo límite), almacenamiento y —en el servicio de biometría— el modelo facial. 503 dice cuál falla y por qué.
+  GET /health  (= /healthz) liveness: NO toca ninguna dependencia, responde en milisegundos (el orquestador reinicia el proceso si falla).
+  GET /ready   (= /readyz)  readiness: base (con tiempo límite), almacenamiento y —en el servicio de biometría— el modelo facial. 503 dice cuál falla y por qué.
+  En Cloud Run se usan /health y /ready: Google reserva rutas que terminan en «z» (/healthz da 404 del propio Google, ver
+  docs.cloud.google.com/run/docs/known-issues). /healthz y /readyz se mantienen para la VM y por compatibilidad.
   GET /api/ops/status      (admin+) semáforo completo para la pantalla «Estado del sistema».
   GET /api/ops/deploy-allowed   ¿se puede desplegar ahora? (admin+, o la cabecera X-Ops-Token = OPS_TOKEN para el flujo de despliegue).
   GET /sistema             la pantalla (admin+)."""
@@ -21,11 +23,13 @@ router = APIRouter()
 pages = APIRouter()
 
 
+@router.get("/health")
 @router.get("/healthz")
 async def healthz() -> dict:
     return {"status": "ok"}
 
 
+@router.get("/ready")
 @router.get("/readyz")
 def readyz() -> JSONResponse:
     checks = ops.readiness(require_model=appmode.loads_model())

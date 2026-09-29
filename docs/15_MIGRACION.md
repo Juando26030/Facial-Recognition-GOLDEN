@@ -41,7 +41,7 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
   `app/`, separados de las copias de la VM en `data/` y `config/`— e imprime su región; staging crea uno propio para que su cuenta no
   toque producción) con CORS (origen = dominio del entorno + dominios de Firebase), ciclo de vida y versiones; cola de Cloud Tasks con
   tope; los 3 servicios y 3 Jobs con imagen de relleno (`deploy.sh --placeholder`); la tarea de Cloud Scheduler (solo producción);
-  canal de correo, chequeo de disponibilidad a `/healthz` cada minuto y alertas de caída, Jobs fallidos y 5xx (con los nombres exactos
+  canal de correo, chequeo de disponibilidad a `/health` cada minuto y alertas de caída, Jobs fallidos y 5xx (con los nombres exactos
   del entorno, para que staging no dispare las de producción); presupuesto al 50/90/100 % en la moneda de la cuenta (se pide el
   monto) [corregido en R3: no crea otro si ya hay uno]; y el sitio de Firebase Hosting. Al final imprime las variables a configurar en GitHub. Revisado con shellcheck.
   `deploy/gcp/config.sh` concentra nombres y parámetros; `deploy/gcp/env/common.yaml` las variables no secretas
@@ -49,7 +49,7 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
   (primero las pruebas de `ci.yml`); producción está en el mismo archivo con `if: false` (preparada, DESACTIVADA; la VM sigue con
   `deploy.yml`, que no se tocó). Los pasos viven en `cloudrun-deploy.yml`: imagen con caché (dlib se compila una vez), `deploy/gcp/deploy.sh`
   (Job de migraciones con el dueño ANTES de tocar los servicios —si falla, todo sigue en la versión anterior—, los 3 servicios con
-  `APP_MODULE` distinto, sonda de arranque a `/readyz` y de vida a `/healthz`, Jobs de carga y de operaciones, permisos entre piezas) y
+  `APP_MODULE` distinto, sonda de arranque a `/ready` y de vida a `/health`, Jobs de carga y de operaciones, permisos entre piezas) y
   Firebase Hosting (`deploy/firebase/make_config.py`: las rutas salen de `app/appmode.py`, prueba `tests/test_firebase_config.py`). En
   producción `deploy.sh` consulta `/api/ops/deploy-allowed` con el token de operaciones y se niega a desplegar si hay un evento en curso o
   una apertura cercana (`FORCE=1` / «force» lo salta). Sin las variables del Environment el despliegue se salta sin fallar. Revisado
@@ -185,14 +185,26 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
 - [x] Cierre de la sesión 2: `docs/HANDOFF.md` (estado, decisiones, reglas, riesgos, siguientes pasos), `CLAUDE.md` corto y el
   historial detallado movido sin cambios a `docs/historial.md`
 
+### Staging desplegado (2026-09-29, proyecto `goldenweb-staging`, us-east1) — problemas encontrados y corregidos
+- [x] S1. **`/healthz` daba 404 de Google** en Cloud Run (la respuesta ni siquiera llega a la app: Cloud Run reserva rutas que terminan
+  en «z», docs.cloud.google.com/run/docs/known-issues). Nuevas rutas equivalentes `/health` y `/ready` (las viejas siguen para la VM) en:
+  sondas de Cloud Run (`deploy.sh`: arranque `/ready`, vida `/health`), comprobación tras desplegar, chequeo de disponibilidad y alerta
+  del bootstrap (`golden-health-<entorno>` a `/health`), Firebase Hosting, `docs/observabilidad.md` y runbook. **Para recrear el chequeo
+  de staging** basta volver a correr `bash deploy/gcp/bootstrap.sh staging` (borra `golden-healthz-staging` y su alerta «/healthz no
+  responde» y crea los nuevos). A mano, en Cloud Shell:
+  `gcloud monitoring uptime list-configs --filter='displayName="golden-healthz-staging"' --format='value(name)'` →
+  `gcloud monitoring uptime delete <ID del final>`, y `gcloud monitoring policies list --filter='displayName="Golden staging: /healthz no responde"' --format='value(name)'`
+  → `gcloud monitoring policies delete <nombre>`; después correr el bootstrap para crear los nuevos. El día del cambio: «GoldenWeb readyz»
+  y UptimeRobot a `https://app.golden-eventos.com/health`
+
 ### Sesión 3 — pendiente (empieza cuando staging esté desplegado en Cloud Run)
 - [ ] 1. Script de medición de latencia app→Neon desde Cloud Run (us-east1) y decisión de región (us-east1 / us-east4)
 - [ ] 2. Verificar `XFF_CLIENT_INDEX` con tráfico real detrás de Firebase y fijarlo en `deploy/gcp/env/common.yaml`
 - [ ] 3. Prueba de carga distribuida contra staging (Locust en Cloud Run Jobs: 10.000 aperturas / 5.000 envíos + escaneos) y simulacros
   de falla (doc 13 §11, Fase 4)
 - [ ] 4. Este documento completo: runbook del día del cambio (ventana, respaldo final, migración de base y archivos con
-  `--biometric-prefix biometric`, DNS, dominio en Firebase, reanudar `golden-ops-hourly`, mover el chequeo «GoldenWeb readyz» a
-  `/healthz`, verificación, vuelta atrás, limpieza de lo de la VM) y tabla de costos por componente
+  `--biometric-prefix biometric`, DNS, dominio en Firebase, reanudar `golden-ops-hourly`, mover el chequeo «GoldenWeb readyz» y el monitor de UptimeRobot a
+  `/health` (NO `/healthz`: en Cloud Run da 404 de Google), verificación, vuelta atrás, limpieza de lo de la VM) y tabla de costos por componente
 - [ ] 5. Revisión final de pruebas y ruff
 
 ## Decisiones tomadas

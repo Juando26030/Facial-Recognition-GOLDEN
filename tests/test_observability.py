@@ -261,3 +261,13 @@ def test_deploy_allowed_accepts_the_ops_token_without_a_session(client, factory,
     assert client.get("/api/ops/deploy-allowed", headers={"X-Ops-Token": "malo"}).status_code == 401
     r = client.get("/api/ops/deploy-allowed", headers={"X-Ops-Token": "token-de-operaciones"})
     assert r.status_code == 200 and r.json()["allowed"] is False
+
+
+def test_cloud_run_health_routes_do_not_end_in_z(client):
+    """Cloud Run reserva rutas que terminan en «z» (/healthz da 404 del propio Google): las sondas usan /health y /ready, iguales a las viejas."""
+    from app import appmode
+    assert client.get("/health").json() == client.get("/healthz").json() == {"status": "ok"}
+    ready, readyz = client.get("/ready"), client.get("/readyz")
+    assert ready.status_code == readyz.status_code and ready.json()["status"] == readyz.json()["status"]
+    for mode in ("publico", "web", "biometria"):
+        assert appmode.route_allowed("/health", mode=mode) and appmode.route_allowed("/ready", mode=mode)
