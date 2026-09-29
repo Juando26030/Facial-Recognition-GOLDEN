@@ -49,20 +49,38 @@ def apply_grants(conn) -> None:
     conn.commit()
 
 
-def ensure_role(conn, rotate: bool):
-    """Crea golden_app si falta (o le cambia la contraseña con rotate). Devuelve la contraseña nueva, o None si no se tocó."""
+def ensure_role(conn, rotate: bool, role: str = APP_ROLE):
+    """Crea el rol si falta (o le cambia la contraseña con rotate). Devuelve la contraseña nueva, o None si no se tocó."""
     with conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (APP_ROLE,))
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
         exists = cur.fetchone() is not None
         if exists and not rotate:
             return None
         password = secrets.token_urlsafe(32)
-        verb = "ALTER" if exists else "CREATE"
         # Neon exige la contraseña en claro (la sincroniza con su plano de control; rechaza un verificador SCRAM): viaja por TLS.
-        cur.execute(sql.SQL(verb + " ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD {}").format(
-            sql.Identifier(APP_ROLE), sql.Literal(password)))
+        if exists:
+            # Rotación: SOLO login y contraseña. En Postgres 16+ un ALTER ROLE que menciona (NO)SUPERUSER, aunque no cambie nada, exige ser
+            # superusuario, y el dueño en Neon no lo es. Que siga sin privilegios lo comprueba check_attributes() después.
+            cur.execute(sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(sql.Identifier(role), sql.Literal(password)))
+        else:
+            cur.execute(sql.SQL("CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD {}").format(
+                sql.Identifier(role), sql.Literal(password)))
     conn.commit()
     return password
+
+
+def check_attributes(conn, role: str = APP_ROLE) -> None:
+    """El rol de la app puede entrar y NO es superusuario ni crea bases ni roles (pg_roles). Si no, se detiene con error."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = %s", (role,))
+        row = cur.fetchone()
+    if row is None:
+        raise SystemExit(f"El rol {role} no existe.")
+    can_login, is_super, create_db, create_role = row
+    wrong = [name for name, bad in (("no puede iniciar sesión", not can_login), ("es SUPERUSER", is_super),
+                                    ("tiene CREATEDB", create_db), ("tiene CREATEROLE", create_role)) if bad]
+    if wrong:
+        raise SystemExit(f"El rol {role} tiene privilegios de más o le falta el acceso: {', '.join(wrong)}. Corrígelo antes de usarlo.")
 
 
 def app_url(owner_direct_url: str, password: str) -> str:
@@ -142,9 +160,10 @@ def main() -> None:
     try:
         password = None if args.grants_only else ensure_role(conn, args.rotate)
         apply_grants(conn)
+        check_attributes(conn)
     finally:
         conn.close()
-    print("Permisos de golden_app aplicados.")
+    print("Permisos de golden_app aplicados; sin SUPERUSER, CREATEDB ni CREATEROLE (pg_roles).")
     if password is None:
         if not args.grants_only:
             print("golden_app ya existía: contraseña sin cambios (usa --rotate para cambiarla).")
