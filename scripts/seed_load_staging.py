@@ -18,9 +18,14 @@ from datetime import date, timedelta
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-host = (urlsplit(os.environ.get("DATABASE_URL", "")).hostname or "")
-if not host.endswith(".neon.tech") or os.environ.get("DEPLOY_ENV") != "staging":
-    sys.exit(f"Solo para la base de staging en Neon con DEPLOY_ENV=staging (host={host!r}, DEPLOY_ENV={os.environ.get('DEPLOY_ENV')!r}).")
+
+
+def guard() -> None:
+    """Solo staging en Neon (se llama al ejecutar el script; las pruebas usan las funciones directamente sobre su base de pruebas)."""
+    host = (urlsplit(os.environ.get("DATABASE_URL", "")).hostname or "")
+    if not host.endswith(".neon.tech") or os.environ.get("DEPLOY_ENV") != "staging":
+        sys.exit(f"Solo para la base de staging en Neon con DEPLOY_ENV=staging (host={host!r}, DEPLOY_ENV={os.environ.get('DEPLOY_ENV')!r}).")
+
 
 from sqlalchemy import func, insert, text  # noqa: E402
 
@@ -95,15 +100,74 @@ def verify(db) -> dict:
             "duplicate_persons": dup_persons, "duplicate_sids": dup_sid, "access_logs_in_event": logs}
 
 
+def _load_event(db):
+    return db.query(Event).filter_by(event_code=EVENT_CODE, tenant_id=TENANT).first()
+
+
+def reset_runs(db) -> dict:
+    """Vuelve a cero lo que dejó una corrida (inscripciones, ingresos, límites por IP) SIN tocar el evento, el formulario ni las personas: para repetir la prueba desde
+    cero (p. ej. tras el modo pequeño). Solo cifras."""
+    ev = _load_event(db)
+    if not ev:
+        return {"error": "no hay evento de carga"}
+    form_ids = [f.id for f in db.query(WebForm).filter_by(event_id=ev.id)]
+    out = {}
+    if form_ids:
+        out["form_submissions"] = db.query(FormSubmission).filter(FormSubmission.form_id.in_(form_ids)).delete(synchronize_session=False)
+    out["access_logs"] = db.query(AccessLog).filter(AccessLog.event_id == ev.id).delete(synchronize_session=False)
+    out["rate_limit_events"] = db.execute(text("DELETE FROM rate_limit_events WHERE key = :u"), {"u": USERNAME}).rowcount
+    db.commit()
+    return out
+
+
+def delete_all(db) -> dict:
+    """Borra TODO lo de la prueba de carga: el evento LOAD-STG con sus filas dependientes (cualquier tabla con `event_id` o `form_id`), el formulario, las personas
+    sintéticas del cliente `carga-staging`, la cuenta `carga_dig` y el cliente. Nada más (todo se busca por el evento y el cliente de la prueba)."""
+    from app.models import Base
+    ev = _load_event(db)
+    counts = {}
+    if ev:
+        form_ids = [f.id for f in db.query(WebForm).filter_by(event_id=ev.id)]
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name in ("events", "web_forms", "users", "tenants", "staff_users"):
+                continue
+            conds = []
+            if "form_id" in table.c and form_ids:
+                conds.append(table.c.form_id.in_(form_ids))
+            if "event_id" in table.c:
+                conds.append(table.c.event_id == ev.id)
+            for cond in conds:
+                n = db.execute(table.delete().where(cond)).rowcount
+                if n:
+                    counts[table.name] = counts.get(table.name, 0) + n
+        db.execute(text("DELETE FROM web_forms WHERE event_id = :e"), {"e": ev.id})
+        db.execute(text("DELETE FROM events WHERE id = :e"), {"e": ev.id})
+    counts["users"] = db.execute(text("DELETE FROM users WHERE tenant_id = :t"), {"t": TENANT}).rowcount
+    counts["staff_users"] = db.execute(text("DELETE FROM staff_users WHERE username = :u"), {"u": USERNAME}).rowcount
+    db.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": TENANT})
+    db.commit()
+    return counts
+
+
 def main() -> None:
+    guard()
     ap = argparse.ArgumentParser()
     ap.add_argument("--people", type=int, default=5000)
     ap.add_argument("--capacity", type=int, default=4000)
     ap.add_argument("--verify", action="store_true")
+    ap.add_argument("--reset-runs", action="store_true", help="borra inscripciones, ingresos y límites de una corrida; deja evento, formulario y personas")
+    ap.add_argument("--delete-all", action="store_true", help="borra TODO lo de la prueba (evento LOAD-STG, formulario, personas sintéticas, cuenta carga_dig, cliente)")
     args = ap.parse_args()
     db = SessionLocal()
     try:
-        print("LOAD_VERIFY " + json.dumps(verify(db)) if args.verify else "LOAD_SEED " + json.dumps(seed(db, args.people, args.capacity)))
+        if args.verify:
+            print("LOAD_VERIFY " + json.dumps(verify(db)))
+        elif args.reset_runs:
+            print("LOAD_RESET " + json.dumps(reset_runs(db)))
+        elif args.delete_all:
+            print("LOAD_DELETED " + json.dumps(delete_all(db)))
+        else:
+            print("LOAD_SEED " + json.dumps(seed(db, args.people, args.capacity)))
     finally:
         db.close()
 

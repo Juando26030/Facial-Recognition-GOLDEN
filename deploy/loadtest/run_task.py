@@ -28,8 +28,12 @@ def main() -> int:
     scenario, host = os.environ["LOAD_SCENARIO"], os.environ["LOAD_HOST"].rstrip("/")
     if scenario not in CLASSES:
         sys.exit(f"LOAD_SCENARIO debe ser uno de {list(CLASSES)}")
-    if "staging" not in host.lower() or "golden-eventos" in host.lower():
-        sys.exit(f"Por seguridad LOAD_HOST debe ser de staging (contener «staging» y no ser el dominio de producción): {host!r}")
+    from scripts.load_cfg import check_host              # doble candado (ver load_cfg.check_host): host de staging Y, si viene LOAD_ALLOWED_HOSTS, uno de los EXACTOS de staging
+    problem = check_host(host, os.getenv("LOAD_ALLOWED_HOSTS", "").split(","))
+    if problem:
+        sys.exit(f"Por seguridad no se genera carga contra este destino: {problem}")
+    if not os.getenv("LOAD_ALLOWED_HOSTS"):
+        sys.exit("Falta LOAD_ALLOWED_HOSTS (la pone deploy/loadtest/run_phase4.sh): sin la lista exacta de staging no se genera carga.")
     index, count = int(os.getenv("CLOUD_RUN_TASK_INDEX", "0")), int(os.getenv("CLOUD_RUN_TASK_COUNT", "1"))
     total_users, total_rate, duration = int(os.environ["LOAD_USERS"]), float(os.getenv("LOAD_RATE", "50")), int(os.getenv("LOAD_DURATION", "300"))
     users = total_users // count + (1 if index < total_users % count else 0)

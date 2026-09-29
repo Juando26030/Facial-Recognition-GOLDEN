@@ -10,6 +10,23 @@ USERNAME = "carga_dig"
 FORM_SLUG = "carga"
 
 
+def check_host(url: str, allowed=()):
+    """None si `url` es un destino permitido para la prueba de carga; si no, el motivo. Doble candado: (1) el host debe ser de staging (contener «staging») y NO ser el
+    dominio de producción; (2) si se dan `allowed` (LOAD_ALLOWED_HOSTS: los hosts EXACTOS de staging que calcula deploy/gcp/config.sh), debe coincidir con uno.
+    Así una URL mal escrita (o la de producción) nunca recibe carga, aunque contenga la palabra «staging» en otro sitio."""
+    from urllib.parse import urlsplit
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host:
+        return f"la URL debe ser https://… (recibí {url!r})"
+    if "golden-eventos" in host or "staging" not in host:
+        return f"{host!r} no es de staging"
+    allowed_hosts = [urlsplit(a if "//" in a else "https://" + a).hostname.lower() for a in allowed if a]
+    if allowed_hosts and host not in allowed_hosts:
+        return f"{host!r} no está entre los hosts permitidos de staging ({', '.join(allowed_hosts)})"
+    return None
+
+
 def derived_password() -> str:
     token = os.environ.get("OPS_TOKEN", "")
     if not token:

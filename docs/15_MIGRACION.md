@@ -367,13 +367,94 @@ de formularios sube ≤ 20 %.
   - Datos: 5.000 personas sintéticas y encodings aleatorios en el evento `LOAD-STG` (tenant `carga-staging`), un formulario con **cupo 4.000 < 5.000 envíos** a propósito (el 409 «cupo
     completo» es correcto y se cuenta; sobrecupo = más de 4.000 confirmadas). La clave de `carga_dig` se deriva de `OPS_TOKEN` (nunca se imprime). Sin fotos reales en la nube: el escenario facial usa la
     foto de dominio público (astronauta) o, sin rostro, mide solo la detección.
-  - Pasos (en Cloud Shell, desde el clon de `migra/fase1-2`): `bash deploy/loadtest/run_phase4.sh build` → `seed` → (leer `LOAD_SEED`: `event_id`) → `WEB_URL=https://golden-staging-<número>.web.app LOAD_EVENT_ID=<id> run` →
+  - *(Sustituido por «D2.3 · Corrida completa», más abajo; se deja como referencia.)* Pasos (en Cloud Shell, desde el clon de `migra/fase1-2`): `bash deploy/loadtest/run_phase4.sh build` → `seed` → (leer `LOAD_SEED`: `event_id`) → `WEB_URL=https://golden-staging-<número>.web.app LOAD_EVENT_ID=<id> run` →
     cuando terminen los Jobs, `report <exec_forms> <exec_cedula> <exec_face>` → `verify` → `cleanup`. El script imprime los comandos exactos. Tope de costo: 20 tareas × 1 vCPU × ≤ 34 min (cédula) +
     3 min (formularios) + 9 min (facial) ≈ 8-9 vCPU-horas ≈ **US$1-3**, sin reintentos y con `task-timeout`; los Jobs se borran en `cleanup`. Neon: el pico sube el cómputo (autoescala): fijar
     el máximo en 2-4 CU para tener tope (`Settings → Compute` en la consola) y comprobarlo antes.
   - Para que el facial no se cuelgue por instancias: el precalentamiento sube `biometria` a mínimo 1 solo si hay un evento en proceso con rostro (sí, `LOAD-STG`); para 30/s hacen falta ~6 instancias
     (≈ 5 escaneos/s por proceso con 2 jitters): subir `--max-instances` y `--min-instances` temporalmente y bajarlos después.
   - Criterios que salen de la base: `verify` imprime `oversold`, `duplicate_persons`, `duplicate_sids` y `access_logs_in_event` (deben ser 0, 0, 0 y ≥ los 200 de «POST checkin-cedula»).
+**D2.3 · Corrida completa: orden único, con el valor esperado de cada verificación.** (Reemplaza a los «Pasos» de arriba. Todo en Cloud Shell, desde el clon de `migra/fase1-2`; `REGION` = la de los servicios de staging, us-east4;
+los comandos vienen de `deploy/loadtest/run_phase4.sh`, que lee proyecto, región y nombres de `deploy/gcp/config.sh staging`.)
+
+*Antes de empezar*
+1. `git pull && export REGION=us-east4 && gcloud config set project goldenweb-staging` (o `gcloud config set run/region us-east4`).
+2. `bash deploy/loadtest/run_phase4.sh quota` (opcional): confirma la cuota de CPU y memoria de la región (200 vCPU / ~400 GiB; la prueba pide hasta 55 vCPU y ~54 GiB en el peor caso: cabe con margen, sección «CPU simultánea» abajo).
+3. Neon (consola → Settings → Compute): máximo 2-4 CU, para tener tope de costo durante el pico.
+4. `bash deploy/loadtest/run_phase4.sh build` (imagen del generador en el repositorio de staging).
+5. `bash deploy/loadtest/run_phase4.sh seed` → imprime `LOAD_SEED {"event_id": N, "form_slug": "carga", "people": 5000, "capacity": 4000}`. Esperado: `people` 5000, `capacity` 4000.
+6. `bash deploy/loadtest/run_phase4.sh limits-up` (sube `PUBLIC_LIMIT_FACTOR`; los generadores comparten IP real).
+7. `bash deploy/loadtest/run_phase4.sh scale-up` (sube min/max de web, publico y biometria y GUARDA los originales en `~/.golden_phase4_scale_<proyecto>.txt`).
+
+*Modo pequeño (~5 %, ~3 min): valida la cadena entera antes de gastar la corrida completa*
+8. `bash deploy/loadtest/run_phase4.sh run small` (1 tarea por escenario: 500 aperturas y ~250 envíos, 10 estaciones de cédula 2 min, 3 usuarios faciales 1 min). Anota los 3 nombres de ejecución.
+9. Cuando terminen (~3 min): `bash deploy/loadtest/run_phase4.sh report <exec_forms> <exec_cedula> <exec_face>`. Esperado: los tres «CUMPLE», 0 fallos y 0 5xx. Si algo falla aquí, arréglalo antes de seguir (el destino, el token, la cuota o la siembra).
+10. `bash deploy/loadtest/run_phase4.sh verify`. Esperado: `oversold` **0**, `duplicate_persons` **0**, `duplicate_sids` **0**, `confirmed_submissions` = respuestas 200 de «POST envio» del informe (~250; ≤ 4000), `access_logs_in_event` ≥ respuestas 200 de «POST checkin-cedula» (igual, sin caídas).
+11. `bash deploy/loadtest/run_phase4.sh reset-data`: deja en cero inscripciones e ingresos (evento, formulario y personas se quedan). Esperado: `LOAD_RESET` con `form_submissions` y `access_logs` iguales a lo verificado en el paso 10; un `verify` posterior da 0 y 0.
+
+*Aislamiento (criterio «la cédula no sube más de 20 % durante el pico de formularios»)*
+12. Línea base: `ONLY=cedula CEDULA_MIN=5 bash deploy/loadtest/run_phase4.sh run` → `report - <exec_cedula> -`. Anota el p95 de «POST checkin-cedula».
+13. `reset-data`. Con pico: `ONLY=forms,cedula CEDULA_MIN=5 bash deploy/loadtest/run_phase4.sh run` → `report <exec_forms> <exec_cedula> -`. Esperado: el p95 de la cédula ≤ 1,2 × el de la línea base (y < 500 ms); formularios p95 < 2 s, 0 5xx.
+
+*Corrida completa con el simulacro 1 (matar una instancia)*
+14. `reset-data`, y `gcloud run services update golden-web-staging --region "$REGION" --update-env-vars CHAOS_ENABLED=1`.
+15. `bash deploy/loadtest/run_phase4.sh run` (formularios 10.000/5.000, cédula 200 estaciones × 30 min, facial 60 usuarios). Anota los 3 nombres de ejecución.
+16. Minuto ~10 (cédula en marcha): `curl -s -X POST -H "X-Ops-Token: $OPS_TOKEN" https://golden-web-staging-<número>.$REGION.run.app/api/ops/simulate-crash` (2-3 veces, con unos segundos entre una y otra). Esperado: `{"crashing": true}` y la instancia se reemplaza sola; puede haber unos 5xx en ese instante.
+17. Al terminar (~35 min): `report <exec_forms> <exec_cedula> <exec_face>`. Esperado: forms p95 «POST envio» < 2 s y 0 5xx en la ventana de formularios; cédula p95 < 500 ms (los fallos se limitan a los segundos del simulacro); facial p95 < 2 s (los 503 «reintenta» son contención esperada; revisa cuántos).
+18. `verify`. Esperado: `oversold` **0**; `duplicate_persons` **0**; `duplicate_sids` **0**; `confirmed_submissions` = **4000** (hubo ~5.000 intentos y el cupo es 4000; si los 200 de «POST envio» fueron menos de 4000, = ese número); `access_logs_in_event` **≥** las respuestas 200 de «POST checkin-cedula» (ningún ingreso confirmado se perdió; puede ser mayor por peticiones cuya respuesta se perdió al caer la instancia). Después: `gcloud run services update golden-web-staging --region "$REGION" --remove-env-vars CHAOS_ENABLED`.
+
+*Simulacro 2 (reiniciar el cómputo de Neon)*
+19. `reset-data`; `ONLY=forms,cedula CEDULA_MIN=10 LOAD_THINK_MAX=120 bash deploy/loadtest/run_phase4.sh run` (el pico de formularios dura ~4 min).
+20. Minuto ~2 (pico de formularios): `curl -s -X POST "https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID/endpoints/$NEON_ENDPOINT_ID/restart" -H "Authorization: Bearer $NEON_API_KEY"` (o «Restart compute» en la consola). La llave va en una variable de entorno, nunca en el chat.
+21. `report <exec_forms> <exec_cedula> -` y `verify`. Esperado: `oversold` **0**, `duplicate_persons` **0**, `duplicate_sids` **0**, `confirmed_submissions` = respuestas 200 de «POST envio» (primer envío); puede ser mayor solo por envíos cuya respuesta se perdió durante el reinicio (nunca por duplicados: el reintento con la misma `sid` da «replayed»); `access_logs_in_event` ≥ respuestas 200 de «POST checkin-cedula».
+
+*Cierre (siempre, aunque algo haya fallado)*
+22. Devolver lo tocado: `bash deploy/loadtest/run_phase4.sh scale-down` (restaura min/max ORIGINALES desde el archivo), `bash deploy/loadtest/run_phase4.sh limits-down`, quitar `CHAOS_ENABLED` si quedó (`--remove-env-vars CHAOS_ENABLED`) y devolver el máximo de Neon a su valor.
+23. `bash deploy/loadtest/run_phase4.sh cleanup` (borra SOLO los 3 Jobs del generador). Los datos sintéticos se quedan hasta que corras `bash deploy/loadtest/run_phase4.sh purge-data` (escribir `LOAD-STG`; borra el evento LOAD-STG, el formulario, las 5.000 personas, las inscripciones e ingresos, la cuenta `carga_dig` y el cliente `carga-staging`, y nada más). Opcional: borrar la imagen `loadgen` de Artifact Registry.
+24. Al día siguiente: Facturación → Informes (por SKU): sin consumo sostenido de Cloud Run/Neon fuera de lo esperado.
+
+**D2.3 · CPU simultánea máxima (¿alcanza la cuota de Cloud Run de la región?).** Por instancia: web 1 vCPU / 1 GiB, publico 1 vCPU / 1 GiB, biometria 2 vCPU / 2 GiB (`deploy/gcp/deploy.sh`, máximo 10 instancias cada uno); generadores 1 vCPU / 1 GiB por tarea; Job de operaciones 1 vCPU (seed/verify, momentáneo).
+| Componente | vCPU máx. con los topes de `deploy.sh` (10 instancias) | vCPU máx. con `scale-up` (topes 6) | Esperado bajo carga |
+|---|---:|---:|---:|
+| web (cédula ~57/s + logins) | 10 | 6 | ~3 |
+| publico (10.000 aperturas + 5.000 envíos) | 10 | 6 | ~3 |
+| biometria (60 usuarios ≈ 17 escaneos/s; ~9/s por instancia con 2 jitters) | 20 | 12 | ~6 |
+| generadores: forms 6 + cédula 4 + facial 4 tareas | 14 | 14 | 14 |
+| Job de ops (seed/verify) | 1 | 1 | ~1 |
+| **Total** | **55** | **39** | **~27** |
+Memoria simultánea análoga: ~54 GiB con los topes por defecto (web 10 + publico 10 + biometria 20 + generadores 14), ~38 GiB con topes 6, ~25 GiB esperado.
+**Cuota de la región (dato de Juan David, 2026-09-29):** en us-east4 la cuota de Cloud Run es **200 vCPU y ~400 GiB de memoria**; uso actual **3,75 vCPU y 4 GB**.
+| | Necesita la prueba | Uso actual | Suma | Cuota | Ocupación |
+|---|---:|---:|---:|---:|---:|
+| CPU, peor caso (topes de `deploy.sh`: 10 instancias por servicio) | 55 vCPU | 3,75 | 58,75 | 200 | **29 %** |
+| CPU, con `scale-up` (topes 6) | 39 vCPU | 3,75 | 42,75 | 200 | 21 % |
+| CPU, esperado | ~27 vCPU | 3,75 | ~31 | 200 | ~15 % |
+| Memoria, peor caso | ~54 GiB | 4 | ~58 | ~400 | **~15 %** |
+| Memoria, esperado | ~25 GiB | 4 | ~29 | ~400 | ~7 % |
+**Cabe con margen** (el peor caso usa menos de un tercio de la CPU y ~15 % de la memoria), así que **no hace falta correr los generadores en otra región**: todo va en la región de los servicios, como en producción. Los topes de `scale-up` (6 por servicio) no son por la cuota sino para acotar costo
+y que la prueba no escale sin límite; si quieres que el facial llegue a la referencia de 30/s, sube el de biometria (`SCALE_BIO="4 8"`): 8 instancias = 16 vCPU, siguen cabiendo de sobra.
+
+**D2.3 · Instancias: comandos exactos para subir y bajar** (lo hace `run_phase4.sh scale-up` / `scale-down`; aquí van a mano por si prefieres). El mínimo es a nivel de SERVICIO (API v2, el mismo mecanismo de `app/warmup.py`, no crea revisión); el máximo va en la plantilla (`gcloud`, crea una revisión):
+```bash
+PROJECT=goldenweb-staging; REGION=us-east4            # o el que uses
+TOKEN=$(gcloud auth print-access-token)
+for S in golden-web-staging golden-publico-staging golden-biometria-staging; do        # 1) ANOTA los ORIGINALES (min max)
+  echo -n "$S: "; curl -fsS -H "Authorization: Bearer $TOKEN" "https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/services/$S" \\
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("scaling") or {}).get("minInstanceCount", 0), (d.get("template", {}).get("scaling") or {}).get("maxInstanceCount", 10))'
+done
+# 2) SUBIR (ejemplo: web 2/6, biometria 3/6)
+curl -fsS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"scaling":{"minInstanceCount":3}}' \\
+  "https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/services/golden-biometria-staging?updateMask=scaling.minInstanceCount"
+gcloud run services update golden-biometria-staging --project "$PROJECT" --region "$REGION" --max-instances 6
+curl -fsS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"scaling":{"minInstanceCount":2}}' \\
+  "https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/services/golden-web-staging?updateMask=scaling.minInstanceCount"
+gcloud run services update golden-web-staging --project "$PROJECT" --region "$REGION" --max-instances 6
+# 3) RESTAURAR con los valores anotados en el paso 1 (repite los dos comandos por servicio con esos números)
+```
+**Valores originales esperados** (los que deja `deploy.sh`/el precalentamiento; confírmalos con el paso 1, porque el precalentamiento puede haberlos movido): máximo **10** en los tres servicios; mínimo **0** si no hay eventos en proceso (staging no tiene el Scheduler; con el evento LOAD-STG en proceso, un paso `warmup` del Job de ops puede dejar web en 2 y biometria en 1, y publico en 2 alrededor de la apertura de un formulario). `scale-down` restaura exactamente lo que `scale-up` leyó y guardó. No cambies estados de eventos ni abras formularios durante la prueba (`warmup.kick()` movería los mínimos).
+
+**D2.3 · Los generadores no pueden apuntar a producción** (aunque `WEB_URL` esté mal escrita). Cuatro candados: (1) `run_phase4.sh run` aborta si el host de `WEB_URL` no es EXACTAMENTE uno de los de staging que calcula `config.sh staging` (el sitio de Firebase `golden-staging-<n>.web.app` o los `run.app` de web/publico/biometria de staging); un nombre de producción, un typo o cualquier otro se rechaza antes de crear nada. (2) Cada tarea recibe `LOAD_ALLOWED_HOSTS` con esa lista y vuelve a comprobarla (`scripts/load_cfg.check_host`: https, contiene «staging», no es `golden-eventos…`, y coincide con uno de los permitidos); sin la lista no genera carga. (3) La cuenta de carga es `carga_dig` con clave derivada del `OPS_TOKEN` de STAGING y un evento que solo existe en la base de staging: contra producción el inicio de sesión fallaría. (4) `seed_load_staging.py` se niega a correr sin `DEPLOY_ENV=staging` y host de Neon. Pruebas en `tests/test_load_tools.py`.
+
 - **Simulacros** (mientras corre la cédula de 30 min; ambos con el generador ya en marcha):
   1. *Matar una instancia*: `gcloud run services update golden-web-staging --region "$REGION" --update-env-vars CHAOS_ENABLED=1` (una vez), y en el minuto ~10:
      `curl -s -X POST -H "X-Ops-Token: $OPS_TOKEN" https://golden-web-staging-<número>.<región>.run.app/api/ops/simulate-crash` (repetirlo 2-3 veces para tumbar varias). Solo funciona con
