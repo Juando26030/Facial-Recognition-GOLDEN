@@ -15,6 +15,7 @@ import secrets
 import sys
 import time
 from datetime import date, datetime, timedelta
+from app.timeutil import utcnow
 from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -54,7 +55,7 @@ def seed(db, people: int, password_file: str) -> None:
     db.add(ev)
     db.flush()
     rnd = random.Random(2026)
-    now = datetime.utcnow()
+    now = utcnow()
     users, attendees, logs = [], [], []
     for i in range(people):
         cid = str(1_000_000_000 + i)
@@ -82,7 +83,7 @@ def simulate(db, n: int, every: float) -> None:
     random.shuffle(pending)
     for i, cid in enumerate(pending[:n], 1):
         db.add(AccessLog(tenant_id=TENANT, user_id=cid, event_id=ev.id, record_type="Existente", registration_method="tradicional",
-                         timestamp=datetime.utcnow(), registered_by_staff_id=staff.id))
+                         timestamp=utcnow(), registered_by_staff_id=staff.id))
         db.commit()
         print(f"{i}/{n} acreditada {cid}", flush=True)
         time.sleep(every)

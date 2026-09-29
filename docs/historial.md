@@ -844,3 +844,13 @@ Documento de referencia: [`docs/13_ARQUITECTURA_ESCALABILIDAD.md`](13_ARQUITECTU
 **Despliegue**: `deploy/gunicorn.conf.py` + unit actualizado (3 procesos por defecto, `WEB_CONCURRENCY`); `deploy.yml` pregunta `/api/ops/deploy-allowed` (salvo `force`), escribe `.build_info` y espera `/readyz`. **Gunicorn no se pudo probar en Windows ni en Python 3.14 (el de la VM)**: la vuelta atrás inmediata es `uvicorn app.main:app --workers 3` (comentada en el unit).
 
 **Cálculo facial en procesos hijo (Fase 0, añadido al cierre):** dlib retiene el GIL mientras calcula, así que **todo** encoding (escaneo, registro, carga masiva, áreas) pasa por `faces.extract()` → `ProcessPoolExecutor` (spawn, `FACE_PROCESSES`=1 por proceso web; `0` = mismo proceso, lo usan las pruebas) con `app/face_worker.py` (hijo con prioridad baja que muere si muere el web; si el hijo se cae, `Busy` → 503 y el pool se recrea). Cola de pendientes acotada (`FACE_CONCURRENCY`=4, espera `FACE_QUEUE_TIMEOUT`=1 s → 503 + `Retry-After`): esperar turno no debe ocupar hilos que necesitan cédulas/formularios. Los hilos de los endpoints síncronos se limitan a pool de base + pendientes faciales (`THREADPOOL_SIZE`). Resultados y límites medidos: `docs/14_FASE0_RESULTADOS.md`.
+
+## Sesión 4 (2026-09-29, rama `migra/fase1-2`) — tras el primer despliegue de staging
+**D.1 arreglos pequeños.** El primer Job de ops en staging falló con «paso check-backups falló» y el motivo solo salía en `jsonPayload.stack_trace`
+(`No hay respaldos daily…`: el diario corre a las 3:00 y el entorno era nuevo). Ahora: (1) `message` lleva `paso X falló: Tipo: motivo`;
+(2) que falte el PRIMER diario es aviso mientras el respaldo más viejo tenga < 26 h (sin horarios, o pasado el plazo, sigue siendo falla);
+(3) pasos sueltos del Job documentados en docs/15 y `backup-daily` impreso al final de bootstrap.sh; (4) `datetime.utcnow()` →
+`app.timeutil.utcnow()` en app/scripts/tests (mismo valor, sin DeprecationWarning); (5) `ENVIRONMENT=production` + `DEPLOY_ENV=staging` es
+intencional (cookies seguras, sin /docs); distintivo rojo STAGING en pantallas y `[STAGING]` en asuntos de correo; (6) bootstrap paso 12 con
+`--non-interactive`, `timeout`, salto si el sitio existe y comando manual si falla; (7) GitHub Actions a versiones node24. Al tocar tests
+con F841 preexistentes (CI revisa archivos tocados) se quitaron 5 variables sin uso.

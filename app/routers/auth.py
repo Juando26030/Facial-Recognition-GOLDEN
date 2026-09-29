@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from app.timeutil import utcnow
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -123,7 +124,7 @@ def reset_submit(
     staff = db.query(StaffUser).filter(StaffUser.id == row.staff_user_id).first()
     staff.password_hash = hash_password(password)
     staff.must_change_password = False
-    row.used_at = datetime.utcnow()
+    row.used_at = utcnow()
     db.commit()
     security.clear_events(db, "login_fail", staff.username)
     return _page(request, "done", message="Listo, tu contraseña quedó cambiada. Ya puedes ingresar.")

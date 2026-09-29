@@ -12,6 +12,7 @@ porcentajes, redondeos, hora local) vive aquí una sola vez.
 """
 from collections import Counter
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 from typing import Iterable, Optional
 
 from app.timeutil import to_local
@@ -29,7 +30,7 @@ def chart(chart_id: str, title: str, kind: str, labels: list, datasets: list, st
 
 
 def dashboard(title: str, kpis: list, charts: list) -> dict:
-    return {"title": title, "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "kpis": kpis, "charts": charts}
+    return {"title": title, "generated_at": utcnow().isoformat(timespec="seconds") + "Z", "kpis": kpis, "charts": charts}
 
 
 def pct(part: int, total: int) -> str:

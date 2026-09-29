@@ -86,6 +86,8 @@ def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = No
     """`attachments`: lista de (nombre_archivo, bytes, mime "tipo/subtipo"). Devuelve
     {"sent": bool, "detail": str} — nunca lanza: quien llama decide qué mostrar. `html`: versión con formato (el `body` queda como texto alterno)."""
     attachments = attachments or []
+    if os.getenv("DEPLOY_ENV", "").strip().lower() == "staging" and not subject.startswith("[STAGING]"):
+        subject = "[STAGING] " + subject                      # ningún correo de pruebas se confunde con uno de producción
 
     if all(os.getenv(k) for k in ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "GRAPH_SENDER")):
         return _send_via_graph(to, subject, body, attachments, html)

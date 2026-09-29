@@ -336,12 +336,23 @@ step "12. Firebase Hosting (sitio ${FIREBASE_SITE:-ninguno})"
 if [ -z "$FIREBASE_SITE" ]; then
   ok "sin Firebase en este entorno (staging en el mismo proyecto): se prueba por la URL de Cloud Run, que sirve toda la app"
 elif command -v firebase >/dev/null; then
-  firebase projects:addfirebase "$PROJECT_ID" >/dev/null 2>&1 || true                   # si ya es proyecto de Firebase, no pasa nada
-  firebase hosting:sites:create "$FIREBASE_SITE" --project "$PROJECT_ID" >/dev/null 2>&1 || true
-  if firebase hosting:sites:get "$FIREBASE_SITE" --project "$PROJECT_ID" >/dev/null 2>&1; then ok "sitio listo; el contenido lo publica el workflow"
-  else echo "   ⚠ No se pudo crear el sitio (¿falta «firebase login --no-localhost»?). Vuelve a correr el script después."; fi
+  # Nunca interactivo ni colgado: cada llamada con tiempo límite y sin stdin (antes, «firebase» esperaba una respuesta y no volvía).
+  FB_T="${FIREBASE_TIMEOUT:-90}"
+  fb() { timeout "$FB_T" firebase "$@" --project "$PROJECT_ID" --non-interactive </dev/null; }
+  if fb hosting:sites:get "$FIREBASE_SITE" >/dev/null 2>&1; then
+    ok "el sitio $FIREBASE_SITE ya existe (se salta); el contenido lo publica el workflow"
+  else
+    fb projects:addfirebase "$PROJECT_ID" >/dev/null 2>&1 || true                       # si ya es proyecto de Firebase, no pasa nada
+    if fb hosting:sites:create "$FIREBASE_SITE" >/dev/null 2>&1 && fb hosting:sites:get "$FIREBASE_SITE" >/dev/null 2>&1; then
+      ok "sitio $FIREBASE_SITE creado; el contenido lo publica el workflow"
+    else
+      echo "   ⚠ No se pudo crear el sitio (¿sin «firebase login --no-localhost»? ¿más de ${FB_T}s?). Hazlo a mano y sigue:"
+      echo "       firebase hosting:sites:create $FIREBASE_SITE --project $PROJECT_ID --non-interactive"
+    fi
+  fi
 else
   echo "   ⚠ Sin CLI de Firebase: npm install -g firebase-tools, y vuelve a correr el script."
+  echo "       o a mano: firebase hosting:sites:create $FIREBASE_SITE --project $PROJECT_ID --non-interactive"
 fi
 
 # -------------------------------------------------------------------------------------------------------------------------- resumen
@@ -354,4 +365,8 @@ LISTO ($GOLDEN_ENV). Configura en GitHub → Settings → Environments → «$GO
   GCP_DEPLOYER        = $(sa_email "$SA_DEPLOYER")
   FIREBASE_SITE       = ${FIREBASE_SITE:-(dejar VACÍA: este entorno no usa Firebase Hosting)}
 Web (Cloud Run): $(run_url "$SVC_WEB")   ·   Dirección pública: $PUBLIC_BASE_URL
+
+DESPUÉS del primer despliegue real (el Job de operaciones aún tiene la imagen de relleno), en un entorno NUEVO corre UNA vez el respaldo diario,
+para que no falte hasta las ${OPS_DAILY_HOUR:-3}:00 y check-backups quede sin avisos:
+  gcloud run jobs execute $JOB_OPS --region $REGION --args="-m,app.ops_runner,backup-daily" --wait
 EOF

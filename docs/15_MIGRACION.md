@@ -213,6 +213,32 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
   staging es la de la cuenta en el respaldo de producción del 26-sep; si se cambió después (o se escribió otra), no coincide. Arreglo:
   poner una contraseña nueva a esa cuenta SOLO en staging (comando en el mensaje de la sesión) o volver a copiar un respaldo reciente
 
+### Sesión 4 (2026-09-29, rama `migra/fase1-2`) — D.1: arreglos tras el primer despliegue de staging
+- [x] D1.1 **Job de ops: el motivo del fallo va en `message`.** Cada paso fallido (y cada tarea suelta) registra
+  `paso <nombre> falló: <Tipo>: <motivo>` (400 caracteres como máximo, sin datos personales ni secretos), además del `stack_trace`. Se lee con
+  `gcloud logging read 'resource.type="cloud_run_job" AND severity>=ERROR' --format='value(jsonPayload.message)' --limit 5`.
+- [x] D1.2 **`check-backups` en un entorno recién creado.** Que falte el PRIMER respaldo diario es un AVISO (el paso pasa y lo dice) mientras el
+  respaldo más viejo del bucket tenga menos de `BACKUP_DAILY_MAX_AGE_H` (26) horas. Sin respaldos horarios, o con el diario ausente pasado
+  ese plazo, sigue fallando (la alarma real no se debilita). Pruebas en `tests/test_ops_runner.py`.
+- [x] D1.3 **Pasos sueltos del Job de operaciones** (`backup | backup-daily | purge | check-backups | sweep | warmup`; el Job se llama
+  `golden-ops` en producción y `golden-ops-staging` en staging):
+  ```bash
+  gcloud run jobs execute golden-ops-staging --region us-east1 --args="-m,app.ops_runner,<paso>" --wait
+  ```
+  **Entorno nuevo:** tras el primer despliegue real (con la imagen de relleno el Job no sirve) correr una vez `backup-daily`; `bootstrap.sh`
+  lo imprime al final y el runbook del cambio lo incluye.
+- [x] D1.4 `datetime.utcnow()` → `app.timeutil.utcnow()` (mismo valor: `datetime` naive en UTC; sin `DeprecationWarning` en Python 3.14).
+- [x] D1.5 **`ENVIRONMENT=production` junto a `DEPLOY_ENV=staging` es INTENCIONAL.** `ENVIRONMENT` decide el comportamiento de seguridad
+  (`IS_PRODUCTION` en `app/main.py`: cookie de sesión `Secure`, `SECRET_KEY` obligatoria, sin `/docs` ni `/openapi.json`); staging debe
+  probar exactamente eso. `DEPLOY_ENV` solo identifica el entorno. Para que nada de staging pase por producción: distintivo rojo
+  «STAGING · pruebas, no es producción» en todas las pantallas del personal y en el ingreso (`templates/_env_badge.html`), prefijo `[STAGING]`
+  en el asunto de TODO correo (`app/mailer.py`, incluidas las alertas del Job de ops) y las alertas/chequeos de Monitoring ya llevan el
+  nombre del entorno (bootstrap). Prueba: `tests/test_staging_badge.py`.
+- [x] D1.6 **Bootstrap, paso 12 (Firebase Hosting):** no interactivo (`--non-interactive`, sin stdin), cada llamada con `timeout`
+  (`FIREBASE_TIMEOUT`, 90 s), salta si el sitio ya existe y, si falla, imprime el comando manual en vez de esperar.
+- [x] D1.7 **GitHub Actions** (avisos por Node 20): checkout v7, setup-python v7, setup-node v7 (Node 22 para firebase-tools),
+  google-github-actions/auth v3 y setup-gcloud v3, docker/setup-buildx v4 y build-push v7 (todas `node24`).
+
 ### Sesión 3 — pendiente (empieza cuando staging esté desplegado en Cloud Run)
 - [ ] 1. Script de medición de latencia app→Neon desde Cloud Run (us-east1) y decisión de región (us-east1 / us-east4)
 - [ ] 2. Verificar `XFF_CLIENT_INDEX` con tráfico real detrás de Firebase y fijarlo en `deploy/gcp/env/common.yaml`

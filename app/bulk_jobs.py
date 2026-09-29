@@ -21,6 +21,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -50,7 +51,7 @@ def create_job(db: Session, event_id: int, staff_id: int, spec: dict = None) -> 
 
 def active_job(db: Session, event_id: int):
     """Tarea en curso de este evento (y con latido reciente), para no procesar dos cargas a la vez."""
-    since = datetime.utcnow() - STALE_AFTER
+    since = utcnow() - STALE_AFTER
     return db.query(BulkJob).filter(
         BulkJob.event_id == event_id, BulkJob.status.in_(("queued", "running")), BulkJob.updated_at > since,
     ).first()
@@ -71,7 +72,7 @@ class Reporter:
             return
         self.last = now
         self.db.query(BulkJob).filter(BulkJob.id == self.job_id).update(
-            {"status": "running", "stage": stage, "done": done, "total": total, "updated_at": datetime.utcnow()}
+            {"status": "running", "stage": stage, "done": done, "total": total, "updated_at": utcnow()}
         )
         self.db.commit()
 
@@ -82,7 +83,7 @@ class Reporter:
 def _finish(job_id: str, result=None, error_status=None, error_detail=None):
     db = SessionLocal()
     try:
-        values = {"finished_at": datetime.utcnow(), "updated_at": datetime.utcnow()}
+        values = {"finished_at": utcnow(), "updated_at": utcnow()}
         if error_status is not None:
             values.update(status="error", error_status=error_status, error_detail=str(error_detail), stage="Error")
         else:
@@ -142,13 +143,13 @@ def mark_interrupted() -> int:
 
 def serialize(job: BulkJob, db: Session) -> dict:
     """Estado para el navegador. Una tarea 'running' sin latidos hace más de 10 min se da por interrumpida."""
-    if job.status in ("queued", "running") and job.updated_at < datetime.utcnow() - STALE_AFTER:
+    if job.status in ("queued", "running") and job.updated_at < utcnow() - STALE_AFTER:
         job.status, job.error_status, job.stage = "error", 500, "Interrumpida"
         job.error_detail = "La carga se interrumpió (el servidor se reinició). Vuelve a intentarlo."
-        job.finished_at = datetime.utcnow()
+        job.finished_at = utcnow()
         db.commit()
     out = {"id": job.id, "status": job.status, "stage": job.stage, "done": job.done, "total": job.total,
-           "elapsed": ((job.finished_at or datetime.utcnow()) - job.created_at).total_seconds()}
+           "elapsed": ((job.finished_at or utcnow()) - job.created_at).total_seconds()}
     if job.status == "done":
         out["result"] = json.loads(job.result_json)
     if job.status == "error":

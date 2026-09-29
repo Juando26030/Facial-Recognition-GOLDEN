@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 from datetime import datetime
+from app.timeutil import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -634,7 +635,7 @@ def _auto_partial_possible(p: FormPayment) -> bool:
 
 
 def _pay_label(p: FormPayment) -> str:
-    if p.status == "pending" and p.created_at < datetime.utcnow() - formsvc.PENDING_HOLD:
+    if p.status == "pending" and p.created_at < utcnow() - formsvc.PENDING_HOLD:
         return "abandoned"      # pendiente y ya pasó el tiempo de espera: la persona no terminó de pagar
     return p.status
 
@@ -748,7 +749,7 @@ def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: 
             res = send_mail(p["email"], f"Tu inscripción — {ev_name}",
                             f"Hola {p.get('first_name') or ''}, te invitamos a completar tu inscripción a {ev_name} ({name}).\n\nAbre tu enlace personal (ya trae tus datos):\n{link}\n\nEs personal: no lo compartas.")
             if res.get("sent"):
-                inv.sent_at = datetime.utcnow()
+                inv.sent_at = utcnow()
                 job_db.commit()
                 sent += 1
             else:

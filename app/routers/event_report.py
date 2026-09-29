@@ -4,6 +4,7 @@ y se le manda por correo a la comercial del evento. Descargable desde ese mismo 
 botón "Descargar informe" del menú del evento."""
 import os
 from datetime import datetime
+from app.timeutil import utcnow
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -45,7 +46,7 @@ def upload_final_report(
     get_storage().put(key, content)
     if event.report_pdf_path and normalize_key(event.report_pdf_path) != key:
         get_storage().delete(event.report_pdf_path)  # el informe nuevo reemplaza al anterior aunque cambie de formato
-    event.report_pdf_path, event.report_uploaded_at = key, datetime.utcnow()
+    event.report_pdf_path, event.report_uploaded_at = key, utcnow()
     db.commit()
 
     commercial = event.commercial

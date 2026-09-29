@@ -5,6 +5,7 @@ Se corre cada pocos minutos (cron: `scripts/reconcile_payments.py`, o el trabajo
 `MIN_AGE` y `MAX_AGE`: los más nuevos aún los está resolviendo el navegador/el webhook; los más viejos ya se dieron por abandonados."""
 import logging
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -19,7 +20,7 @@ MAX_AGE = timedelta(days=3)
 
 def reconcile_pending(db: Session, limit: int = 200) -> dict:
     from app.routers.form_payments import apply_result
-    now = datetime.utcnow()
+    now = utcnow()
     pending = (db.query(FormPayment).filter(FormPayment.status == "pending", FormPayment.created_at < now - MIN_AGE, FormPayment.created_at > now - MAX_AGE)
                .order_by(FormPayment.created_at).limit(limit).all())
     summary = {"checked": len(pending), "updated": 0, "not_found": 0, "unavailable": 0, "mismatch": 0}

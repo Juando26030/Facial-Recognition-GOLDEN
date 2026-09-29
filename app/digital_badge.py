@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 from datetime import datetime
+from app.timeutil import utcnow
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -53,6 +54,6 @@ def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name:
     link = f"{base}/b/{ensure_token(db, attendee)}"
     subject, html_body, text_body = email_template.render(event, person_name, last_name, link)
     result = send_mail(contact, subject, text_body, html=html_body)
-    attendee.digital_sent_at = datetime.utcnow()
+    attendee.digital_sent_at = utcnow()
     db.flush()
     return result

@@ -9,6 +9,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 from typing import Callable, Dict, List, Optional
 
 from sqlalchemy import func, text
@@ -43,7 +44,7 @@ def record_system_event(kind: str, ref: Optional[str] = None, detail: Optional[s
     from app.obs import mask_pii
     db = SessionLocal()
     try:
-        db.add(SystemEvent(kind=kind, ref=(ref or "")[:80] or None, detail=mask_pii(detail)[:500] if detail else None, at=datetime.utcnow()))
+        db.add(SystemEvent(kind=kind, ref=(ref or "")[:80] or None, detail=mask_pii(detail)[:500] if detail else None, at=utcnow()))
         db.commit()
     except Exception:  # noqa: BLE001 — ver docstring
         log.error("no se pudo registrar el hecho %s del sistema", kind, exc_info=True)
@@ -162,7 +163,7 @@ def check_emails(db: Session) -> dict:
 
 def check_bulk_jobs(db: Session) -> dict:
     running = db.query(BulkJob).filter(BulkJob.status.in_(("queued", "running"))).all()
-    stuck = [j for j in running if j.updated_at and j.updated_at < datetime.utcnow() - timedelta(minutes=10)]
+    stuck = [j for j in running if j.updated_at and j.updated_at < utcnow() - timedelta(minutes=10)]
     if stuck:
         return item("bulk_jobs", "Cargas masivas", "red", f"{len(running)} en curso, {len(stuck)} sin avanzar", "Una carga lleva más de 10 minutos sin avanzar.",
                     "Avisa a quien la lanzó; si el servidor se reinició, debe volver a subir la carga.", running=len(running), stuck=len(stuck))
@@ -237,10 +238,10 @@ def deploy_allowed(db: Session, hours: Optional[int] = None) -> dict:
     running = db.query(Event.event_code).filter(Event.status == "en_proceso").all()
     if running:
         reasons.append(f"Hay {len(running)} evento(s) en curso ({', '.join(r[0] for r in running[:5])}).")
-    horizon = datetime.utcnow() + timedelta(hours=hours)
+    horizon = utcnow() + timedelta(hours=hours)
     for ev in db.query(Event).filter(Event.status == "creado", Event.start_date != None).all():  # noqa: E711
         start = local_to_utc(datetime.combine(ev.start_date, datetime.strptime(ev.event_time_start or "00:00", "%H:%M").time()))
-        if datetime.utcnow() <= start <= horizon:
+        if utcnow() <= start <= horizon:
             reasons.append(f"El evento {ev.event_code} abre en menos de {hours} h.")
     reasons += [f"Un formulario del evento {o['event_id']} abre en {o['opens_in_minutes']} min." for o in _next_form_openings(db, hours)]
     return {"allowed": not reasons, "hours": hours, "reasons": reasons}
@@ -250,9 +251,9 @@ def deploy_allowed(db: Session, hours: Optional[int] = None) -> dict:
 def check_payments(db: Session) -> dict:
     last = db.query(func.max(SystemEvent.at)).filter(SystemEvent.kind == "wompi_webhook").scalar()
     stale = db.query(func.count(FormPayment.id)).filter(FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
-                                                         FormPayment.created_at < datetime.utcnow() - timedelta(minutes=15)).scalar() or 0
+                                                         FormPayment.created_at < utcnow() - timedelta(minutes=15)).scalar() or 0
     level = "red" if stale >= 5 else "yellow" if stale else "green"
-    when = f"hace {int((datetime.utcnow() - last).total_seconds() // 60)} min" if last else "ninguno registrado"
+    when = f"hace {int((utcnow() - last).total_seconds() // 60)} min" if last else "ninguno registrado"
     return item("payments", "Pagos (Wompi)", level, f"último webhook: {when} · {stale} pago(s) sin conciliar",
                 "" if level == "green" else "Hay pagos pendientes de hace más de 15 minutos: el webhook pudo perderse.",
                 "" if level == "green" else "Corre scripts/reconcile_payments.py (consulta a Wompi por referencia) y verifica la URL del webhook en el panel de Wompi.",
@@ -260,7 +261,7 @@ def check_payments(db: Session) -> dict:
 
 
 def check_errors(db: Session) -> dict:
-    n = db.query(func.count(SystemEvent.id)).filter(SystemEvent.kind == "error_5xx", SystemEvent.at > datetime.utcnow() - timedelta(minutes=15)).scalar() or 0
+    n = db.query(func.count(SystemEvent.id)).filter(SystemEvent.kind == "error_5xx", SystemEvent.at > utcnow() - timedelta(minutes=15)).scalar() or 0
     level = "red" if n >= 10 else "yellow" if n else "green"
     return item("errors", "Errores (últimos 15 min)", level, f"{n} error(es) del servidor", "" if level == "green" else "El servidor devolvió errores 5xx recientemente.",
                 "" if level == "green" else "Busca en los logs por severity=ERROR; el id de cada error aparece en la pantalla del usuario y en el log.", count=n)
@@ -278,7 +279,7 @@ def system_status(db: Session) -> dict:
         except Exception as exc:  # noqa: BLE001 — un chequeo roto no debe tumbar la pantalla: se muestra como rojo con el motivo
             log.error("falló un chequeo de estado", exc_info=True)
             results.append(item("check", "Chequeo", "red", "error", f"El chequeo falló: {type(exc).__name__}.", "Revisa los logs del servidor."))
-    return {"level": _worst([r["level"] for r in results]), "checked_at": datetime.utcnow().isoformat() + "Z", "items": results}
+    return {"level": _worst([r["level"] for r in results]), "checked_at": utcnow().isoformat() + "Z", "items": results}
 
 
 def model_ready() -> None:

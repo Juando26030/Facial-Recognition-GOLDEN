@@ -6,6 +6,7 @@ import logging
 import os
 import re
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 from typing import Optional
 
 from sqlalchemy import and_, func, or_, text
@@ -50,7 +51,7 @@ def get_schedule(form: WebForm) -> list:
 
 
 def now_local() -> datetime:
-    return to_local(datetime.utcnow()).replace(tzinfo=None)
+    return to_local(utcnow()).replace(tzinfo=None)
 
 
 def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
@@ -78,7 +79,7 @@ def code_uses(db: Session, code: FormDiscountCode) -> int:
     """Usos de un código: inscripciones reales confirmadas + las que están pagando ahora (mismo criterio que el cupo)."""
     return db.query(FormSubmission).filter(
         FormSubmission.discount_code_id == code.id, FormSubmission.is_test == False,  # noqa: E712
-        or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > datetime.utcnow() - PENDING_HOLD))).count()
+        or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > utcnow() - PENDING_HOLD))).count()
 
 
 def price_context(db: Session, form: WebForm, pay: dict, link, code):
@@ -146,7 +147,7 @@ def quota_counts(db: Session, form: WebForm, rules: list) -> dict:
         return {}
     if db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None).first():  # noqa: E711
         rebuild_quota_keys(db, form, rules)
-    hold = datetime.utcnow() - PENDING_HOLD
+    hold = utcnow() - PENDING_HOLD
     cols = [func.count(FormSubmission.id).filter(func.strpos(FormSubmission.quota_keys, f"|{rule_sig(r)}|") > 0) for r in rules]
     row = db.query(*cols).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
                                  or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold))).one()
@@ -181,7 +182,7 @@ def quota_public(db: Session, form: WebForm) -> dict:
 def held_count(db: Session, form: WebForm) -> int:
     """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min)."""
     holding = db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
-                                           FormPayment.submission_id != None, FormPayment.created_at > datetime.utcnow() - PENDING_HOLD).count()  # noqa: E711
+                                           FormPayment.submission_id != None, FormPayment.created_at > utcnow() - PENDING_HOLD).count()  # noqa: E711
     return real_submissions(db, form).count() + holding
 
 
@@ -196,7 +197,7 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
     """Reintento, cupos por variable, cupo total y duplicado en UNA ida y vuelta (función `form_reserve_slot`, migración 0049). Deja la fila del
     formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
     Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
-    params = {"form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": datetime.utcnow() - PENDING_HOLD,
+    params = {"form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
               "matched": json.dumps([{"sig": rule_sig(r), "limit": r["limit"], "label": r["label"]} for r in rules if quota_match(r, values)])}
     res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
@@ -219,7 +220,7 @@ def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
 def purge_stale_pending(db: Session, form: WebForm) -> None:
     """Quita las inscripciones en espera de pago de más de 24 h (abandonadas). Se llama de forma perezosa al enviar."""
     for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == PENDING,
-                                               FormSubmission.created_at < datetime.utcnow() - PENDING_PURGE):
+                                               FormSubmission.created_at < utcnow() - PENDING_PURGE):
         discard_submission(db, form, sub)
 
 
@@ -232,7 +233,7 @@ def confirm_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
     if sub.invite_id:
         inv = db.query(FormInvite).filter_by(id=sub.invite_id).first()
         if inv:
-            inv.used_at = datetime.utcnow()
+            inv.used_at = utcnow()
     if get_settings(form)["feed"] == "realtime" and not sub.is_test:
         db.flush()
         jobs.enqueue(db, "form_feed", {"submission_id": sub.id}, dedupe_key=str(sub.id))
@@ -424,7 +425,7 @@ def feed_pending(db: Session, form: WebForm, upsert_attendee) -> dict:
             problems.append(f"Inscripción {sub.id}: {err}")
         else:
             done += 1
-    form.fed_at = datetime.utcnow()
+    form.fed_at = utcnow()
     db.commit()
     return {"fed": done, "problems": problems}
 

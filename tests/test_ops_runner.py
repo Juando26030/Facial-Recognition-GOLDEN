@@ -109,7 +109,30 @@ def test_backup_problems_detects_missing_old_and_small(monkeypatch):
     hourly = [SimpleNamespace(name=f"db/hourly/x{i}.sql.gz", updated=now - timedelta(hours=10 - i), size=1000) for i in range(6)]
     hourly.append(SimpleNamespace(name="db/hourly/ultimo.sql.gz", updated=now - timedelta(hours=3), size=100))
     found = ops_runner.backup_problems(FakeBucket(hourly), now=now)
-    assert set(found) == {"hourly-old", "hourly-small", "daily-none"}
+    assert set(found) == {"hourly-old", "hourly-small"}          # entorno con <26 h: el diario aún no llega (aviso, no problema)
+
+
+def test_missing_first_daily_warns_in_new_env_but_fails_when_overdue():
+    now = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
+    fresh = [SimpleNamespace(name="db/hourly/a.sql.gz", updated=now - timedelta(minutes=30), size=1000)]
+    assert ops_runner.backup_problems(FakeBucket(fresh), now=now) == {}
+    assert "daily" in ops_runner.check_backups(FakeBucket(fresh), now=now)               # avisa, no lanza
+    old = [SimpleNamespace(name="db/hourly/a.sql.gz", updated=now - timedelta(hours=30), size=1000),
+           SimpleNamespace(name="db/hourly/b.sql.gz", updated=now - timedelta(minutes=30), size=1000)]
+    assert set(ops_runner.backup_problems(FakeBucket(old), now=now)) == {"daily-none"}   # pasó el plazo: alarma real
+    assert set(ops_runner.backup_problems(FakeBucket([]), now=now)) == {"hourly-none", "daily-none"}
+    with pytest.raises(RuntimeError):
+        ops_runner.check_backups(FakeBucket(old), now=now)
+
+
+def test_failed_step_logs_reason_in_message(monkeypatch, caplog):
+    monkeypatch.setattr(ops_runner, "check_backups", lambda: (_ for _ in ()).throw(RuntimeError("no hay respaldos")))
+    monkeypatch.setattr(ops_runner, "backup_db", lambda kind, now=None: "ok")
+    monkeypatch.setattr(ops_runner, "sweep", lambda: "ok")
+    monkeypatch.setattr(ops_runner, "warmup", lambda: "ok")
+    with caplog.at_level("ERROR", logger="golden.ops"):
+        ops_runner.hourly(now=datetime(2026, 10, 5, 9, 5))
+    assert any("check-backups falló: RuntimeError: no hay respaldos" in r.getMessage() for r in caplog.records)
 
 
 # ------------------------------------------------------------------ orden de la tarea horaria

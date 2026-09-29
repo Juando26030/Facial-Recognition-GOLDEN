@@ -1,5 +1,6 @@
 """Login, límite de intentos, restablecer/cambiar contraseña, CSRF y jerarquía de cuentas (Sprint 4, ítem 3)."""
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 from tests.conftest import PASSWORD, login
 
@@ -57,7 +58,7 @@ def test_lock_expires_after_window(client, factory, db):
     for _ in range(5):
         login(client, "ana", "mala")
     assert login(client, "ana", PASSWORD).status_code == 429
-    db.query(RateLimitEvent).update({"created_at": datetime.utcnow() - timedelta(minutes=16)})
+    db.query(RateLimitEvent).update({"created_at": utcnow() - timedelta(minutes=16)})
     db.commit()
     assert login(client, "ana", PASSWORD).status_code == 302
 
@@ -121,7 +122,7 @@ def test_expired_and_replaced_tokens_are_invalid(client, factory, outbox, db):
     client.post("/olvide-contrasena", data={"username": "ana"})
     second = _token_from(outbox)
     assert client.get(f"/restablecer/{first}").status_code == 410   # el nuevo enlace invalida el anterior
-    db.query(PasswordResetToken).update({"expires_at": datetime.utcnow() - timedelta(minutes=1)})
+    db.query(PasswordResetToken).update({"expires_at": utcnow() - timedelta(minutes=1)})
     db.commit()
     assert client.get(f"/restablecer/{second}").status_code == 410  # vencido
 
@@ -237,7 +238,7 @@ def test_password_reset_by_manager_forces_change_and_respects_hierarchy(client, 
 
 
 def test_digitador_and_cliente_cannot_reset_anyones_password(client, factory):
-    digi = factory.staff("digitador", "9990001")
+    factory.staff("digitador", "9990001")
     other = factory.staff("digitador", "9990002")
     login(client, "9990001")
     assert client.put(f"/api/staff/{other.id}/password", json={"new_password": "Temporal#2026"}).status_code == 403

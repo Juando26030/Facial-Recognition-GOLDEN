@@ -8,6 +8,7 @@ import os
 import uuid
 import zipfile
 from datetime import datetime
+from app.timeutil import utcnow
 from decimal import Decimal, InvalidOperation
 
 import pandas as pd
@@ -92,7 +93,7 @@ def add_document(
         event_id=event.id, name=name.strip(), description=description.strip() or None,
         original_filename=os.path.basename(filename), mime_type=up.content_type if up else file.content_type, size_bytes=len(content),
         stored_path=_store(event.tenant_id, "event_docs", event.id, filename, content),
-        uploaded_by_id=staff.id, created_at=datetime.utcnow(),
+        uploaded_by_id=staff.id, created_at=utcnow(),
     )
     db.add(doc)
     db.commit()
@@ -204,7 +205,7 @@ def add_expense(
     expense = EventExpense(
         event_id=event.id, category=category.strip(), responsible=responsible.strip(),
         description=description.strip() or None, applies_to=applies_to.strip() or None, amount=value,
-        evidence_path=evidence_path, evidence_name=evidence_name, created_by_id=staff.id, created_at=datetime.utcnow(),
+        evidence_path=evidence_path, evidence_name=evidence_name, created_by_id=staff.id, created_at=utcnow(),
     )
     db.add(expense)
     db.commit()

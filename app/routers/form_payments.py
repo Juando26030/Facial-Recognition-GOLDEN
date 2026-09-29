@@ -8,6 +8,7 @@ invitación usada, carga a la base). Si el pago se rechaza o se abandona, esa pe
 terminal; un rechazo puede pasar a aprobado (Wompi deja reintentar con la misma referencia)."""
 import json
 from datetime import datetime
+from app.timeutil import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -38,9 +39,9 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
     pay.status = new
     pay.transaction_id = transaction_id or pay.transaction_id
     pay.payment_method = method or pay.payment_method
-    pay.updated_at = datetime.utcnow()
+    pay.updated_at = utcnow()
     if new == "approved":
-        pay.confirmed_at = datetime.utcnow()
+        pay.confirmed_at = utcnow()
         sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).first() if pay.submission_id else None
         if sub and sub.status == formsvc.PENDING:
             formsvc.finalize_submission(db, db.query(WebForm).filter(WebForm.id == pay.form_id).first(), sub)   # confirma y hace commit

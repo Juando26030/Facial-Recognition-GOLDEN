@@ -12,6 +12,7 @@ analítica y libera el cupo; los datos se conservan). Un pago anulado desde el p
 registra igual, para que la plataforma nunca quede desfasada."""
 import json
 from datetime import datetime
+from app.timeutil import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,7 +30,7 @@ ADMIN = require_role("admin")
 
 def complete(db: Session, pay: FormPayment, refund: FormRefund) -> Optional[str]:
     """Da por hecho un reembolso: actualiza el pago y, si corresponde, cancela la inscripción. Devuelve un aviso o None."""
-    refund.status, refund.done_at = "done", datetime.utcnow()
+    refund.status, refund.done_at = "done", utcnow()
     pay.refunded_cents = (pay.refunded_cents or 0) + refund.amount_cents
     if pay.refunded_cents >= pay.amount_cents:
         pay.status = "refunded"

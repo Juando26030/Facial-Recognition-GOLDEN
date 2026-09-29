@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import date, datetime, timedelta
+from app.timeutil import utcnow
 
 import pytest
 
@@ -185,15 +186,15 @@ def test_status_turns_red_with_the_reason_and_what_to_do(client, factory, db, mo
     ev = factory.event("en_proceso")
     login(client, "root")
     for _ in range(12):
-        db.add(Job(kind="email", payload_json="{}", status="failed", run_at=datetime.utcnow(), created_at=datetime.utcnow()))       # 12 fallidos
-    db.add(Job(kind="x", payload_json="{}", status="queued", run_at=datetime.utcnow() - timedelta(minutes=20), created_at=datetime.utcnow()))   # esperando hace 20 min
+        db.add(Job(kind="email", payload_json="{}", status="failed", run_at=utcnow(), created_at=utcnow()))       # 12 fallidos
+    db.add(Job(kind="x", payload_json="{}", status="queued", run_at=utcnow() - timedelta(minutes=20), created_at=utcnow()))   # esperando hace 20 min
     for _ in range(11):
-        db.add(SystemEvent(kind="error_5xx", ref="r", at=datetime.utcnow()))
+        db.add(SystemEvent(kind="error_5xx", ref="r", at=utcnow()))
     form = WebForm(event_id=ev.id, name="F", slug="f", manual_status="activo", design_json="{}", test_key="k")
     db.add(form)
     db.commit()
     for i in range(6):                                                                                   # pagos sin conciliar hace más de 15 min
-        db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=1, reference=f"R{i}", status="pending", is_test=False, created_at=datetime.utcnow() - timedelta(hours=1)))
+        db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=1, reference=f"R{i}", status="pending", is_test=False, created_at=utcnow() - timedelta(hours=1)))
     db.commit()
     body = client.get("/api/ops/status").json()
     by = {i["id"]: i for i in body["items"]}
@@ -241,7 +242,7 @@ def test_deploy_is_not_allowed_with_an_event_running_or_about_to_open(client, fa
     db.query(Event).delete()
     db.commit()
 
-    soon = datetime.utcnow() + timedelta(hours=1)                                                        # abre en ~1 h (hora local = UTC-5)
+    soon = utcnow() + timedelta(hours=1)                                                        # abre en ~1 h (hora local = UTC-5)
     local = soon - timedelta(hours=5)
     factory.event("creado", start_date=local.date(), event_time_start=local.strftime("%H:%M"))
     r = client.get("/api/ops/deploy-allowed").json()

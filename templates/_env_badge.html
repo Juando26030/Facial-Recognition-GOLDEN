@@ -1,0 +1,2 @@
+{# Distintivo de entorno: solo en staging (DEPLOY_ENV=staging). Producción no muestra nada. #}
+{% if deploy_env() == "staging" %}<div class="golden-env-badge" role="status">STAGING · pruebas, no es producción</div>{% endif %}

@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from app.timeutil import utcnow
 import re
 import json
 from typing import List, Optional
@@ -663,7 +664,7 @@ def sync_access_logs(
         raise HTTPException(status_code=400, detail="Falta la lista de registros")
     if len(records) > SYNC_MAX_RECORDS:
         raise HTTPException(status_code=400, detail=f"Maximo {SYNC_MAX_RECORDS} registros por lote")
-    now = datetime.utcnow()
+    now = utcnow()
     results = []
     for rec in records:
         client_id = str((rec or {}).get("client_id") or "").strip()[:64]
@@ -1030,7 +1031,7 @@ def manual_register(
     user = User(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
         role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json,
-        biometric_consent_at=datetime.utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
+        biometric_consent_at=utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
     )
     user.set_extras(extras)
     db.add(user)
@@ -1454,7 +1455,7 @@ def _bulk_register_impl(
 
                 if face_enc_json:
                     user.face_encoding = face_enc_json
-                    user.biometric_consent_at, user.biometric_consent_source = datetime.utcnow(), "carga_masiva"
+                    user.biometric_consent_at, user.biometric_consent_source = utcnow(), "carga_masiva"
 
                 db.flush()
                 # Categorías (ítem 14): columna "categoria"/"categorias" (con o sin tilde), varias

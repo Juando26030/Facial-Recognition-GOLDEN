@@ -2,6 +2,7 @@
 un "padre". Cada hijo se maneja totalmente separado (parámetros, registro, reportes) — lo único que
 cruza es el aviso de que una persona ya asistió a un evento hermano."""
 from datetime import datetime
+from app.timeutil import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -27,7 +28,7 @@ def create_super_event(data: dict, db: Session = Depends(get_db), staff: StaffUs
         raise HTTPException(status_code=400, detail="El superevento necesita un nombre y un cliente")
     if db.query(SuperEvent).filter(SuperEvent.tenant_id == tenant_id, SuperEvent.name == name).first():
         raise HTTPException(status_code=400, detail="Ya existe un superevento con ese nombre para este cliente")
-    sup = SuperEvent(tenant_id=tenant_id, name=name, created_by_id=staff.id, created_at=datetime.utcnow())
+    sup = SuperEvent(tenant_id=tenant_id, name=name, created_by_id=staff.id, created_at=utcnow())
     db.add(sup)
     db.commit()
     return {"id": sup.id, "name": sup.name, "tenant_id": sup.tenant_id, "events": 0}

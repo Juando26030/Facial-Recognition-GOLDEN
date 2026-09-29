@@ -1,4 +1,5 @@
 """Carga masiva de la base: modo síncrono de siempre y modo en segundo plano con progreso (Sprint 5)."""
+from app.timeutil import utcnow
 import io
 import time
 import zipfile
@@ -114,7 +115,7 @@ def test_job_without_heartbeat_is_marked_interrupted(client, factory, db):
     from app.models import BulkJob
 
     ev = _admin(client, factory)
-    db.add(BulkJob(id="y" * 32, event_id=ev.id, status="running", stage="Procesando", updated_at=datetime.utcnow() - timedelta(minutes=30)))
+    db.add(BulkJob(id="y" * 32, event_id=ev.id, status="running", stage="Procesando", updated_at=utcnow() - timedelta(minutes=30)))
     db.commit()
     job = client.get(f"/api/bulk_jobs/{'y' * 32}").json()
     assert job["status"] == "error" and "interrumpió" in job["error"]["detail"]
@@ -124,12 +125,12 @@ def test_job_without_heartbeat_is_marked_interrupted(client, factory, db):
 def test_job_status_needs_access_to_that_event(client, factory, db):
     from app.models import BulkJob
 
-    ev = _admin(client, factory)
+    _admin(client, factory)
     other = factory.event("creado", tenant_id="otro")
     db.add(BulkJob(id="z" * 32, event_id=other.id, status="done", stage="Listo", result_json="{}"))
     db.commit()
     client.post("/logout")
-    dig = factory.staff("digitador", "9990001")
+    factory.staff("digitador", "9990001")
     login(client, "9990001")
     assert client.get(f"/api/bulk_jobs/{'z' * 32}").status_code == 403       # un digitador no consulta cargas
     assert client.get("/api/bulk_jobs/no-existe").status_code in (403, 404)

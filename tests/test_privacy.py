@@ -1,4 +1,5 @@
 """Privacidad y cumplimiento (Ley 1581 de 2012): consentimiento para el dato biométrico, borrado, páginas legales y accesibilidad básica."""
+from app.timeutil import utcnow
 import io
 import zipfile
 
@@ -82,7 +83,7 @@ def _with_face(db, ev, uid, other_event=None):
     from app.models import EventAttendee, User
     u = db.query(User).filter_by(id=uid, tenant_id=ev.tenant_id).first() or User(id=uid, tenant_id=ev.tenant_id, first_name="N", last_name="A")
     u.face_encoding = "[[0.1]]"
-    u.biometric_consent_at, u.biometric_consent_source = datetime.utcnow(), "kiosko"
+    u.biometric_consent_at, u.biometric_consent_source = utcnow(), "kiosko"
     db.add(u)
     db.flush()
     for e in (ev, other_event):

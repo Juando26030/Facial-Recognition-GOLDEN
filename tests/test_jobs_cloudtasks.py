@@ -1,5 +1,6 @@
 """Cola con JOBS_BACKEND=cloudtasks: la tabla sigue siendo la fuente de verdad; Cloud Tasks solo despierta a /internal/jobs/run."""
 from datetime import datetime, timedelta, timezone
+from app.timeutil import utcnow
 
 import pytest
 from google.api_core.exceptions import AlreadyExists
@@ -61,7 +62,7 @@ def test_a_failed_job_schedules_its_own_retry(monkeypatch, cloud, db):
     assert jobs.run_once() == 1
     job = db.query(Job).filter_by(kind="prueba_falla").one()
     db.refresh(job)
-    assert job.status == "queued" and calls == [job.run_at] and job.run_at > datetime.utcnow()
+    assert job.status == "queued" and calls == [job.run_at] and job.run_at > utcnow()
 
 
 INVOKER = "golden-invoker-staging@p.iam.gserviceaccount.com"

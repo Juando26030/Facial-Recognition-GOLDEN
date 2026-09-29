@@ -24,6 +24,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from app.timeutil import utcnow
 from typing import Callable, Dict, Optional
 
 from sqlalchemy.orm import Session
@@ -53,7 +54,7 @@ def enqueue(db: Session, kind: str, payload: dict, *, run_at: Optional[datetime]
     """Agrega un trabajo a la transacción de `db` (no confirma). Con `dedupe_key`, un segundo trabajo igual del mismo tipo se ignora."""
     if dedupe_key and db.query(Job.id).filter(Job.kind == kind, Job.dedupe_key == dedupe_key).first():
         return
-    now = datetime.utcnow()
+    now = utcnow()
     db.add(Job(kind=kind, payload_json=json.dumps(payload), dedupe_key=dedupe_key, run_at=run_at or now, max_attempts=max_attempts, created_at=now))
 
 
@@ -88,7 +89,7 @@ def kick(at: Optional[datetime] = None) -> None:
         _wake.set()
         return
     try:
-        _cloud_task(at or datetime.utcnow())
+        _cloud_task(at or utcnow())
     except Exception:  # noqa: BLE001 — el trabajo ya está a salvo en la tabla; no se tumba la petición de quien encoló
         log.error("no se pudo crear la tarea de Cloud Tasks; la tomará el siguiente aviso o el barrido programado", exc_info=True)
 
@@ -97,7 +98,7 @@ def _claim(limit: int) -> list:
     """Reclama hasta `limit` trabajos vencidos y los marca en curso. Devuelve [(id, kind, payload)]."""
     db = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = utcnow()
         rows = (db.query(Job)
                 .filter(((Job.status == "queued") & (Job.run_at <= now)) | ((Job.status == "running") & (Job.locked_until < now)))
                 .order_by(Job.run_at, Job.id).limit(limit).with_for_update(skip_locked=True).all())
@@ -117,7 +118,7 @@ def _finish(job_id: int, error: Optional[str], attempts: int, max_attempts: int)
         job = db.get(Job, job_id)
         if not job:
             return
-        now = datetime.utcnow()
+        now = utcnow()
         job.locked_until = None
         if error is None:
             job.status, job.finished_at, job.last_error = "done", now, None
@@ -201,7 +202,7 @@ class Worker(threading.Thread):
 def stats(db: Session) -> dict:
     """Para «Estado del sistema»: pendientes, la más antigua, en curso y fallidas."""
     from sqlalchemy import func
-    now = datetime.utcnow()
+    now = utcnow()
     pending = db.query(func.count(Job.id), func.min(Job.run_at)).filter(Job.status == "queued").first()
     due = db.query(func.min(Job.run_at)).filter(Job.status == "queued", Job.run_at <= now).scalar()      # los que esperan un reintento futuro no cuentan como atrasados
     return {

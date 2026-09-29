@@ -15,6 +15,7 @@ OPS_JOB_NAME (Job de operaciones, para kick). Lo que no está configurado se sal
 import logging
 import os
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -54,7 +55,7 @@ def plan(db: Session, now_local: datetime = None) -> dict:
     opening = _openings(db, now_local, timedelta(minutes=_int("WARM_LOOKAHEAD_MIN", 75)), after)
     # Formularios abiertos A MANO (sin calendario): la app dejó constancia al abrirlos (routers/forms.py → «form_opened»).
     opening += [{"form_id": int(ref), "manual": True} for (ref,) in
-                db.query(SystemEvent.ref).filter(SystemEvent.kind == "form_opened", SystemEvent.at > datetime.utcnow() - after).all()]
+                db.query(SystemEvent.ref).filter(SystemEvent.kind == "form_opened", SystemEvent.at > utcnow() - after).all()]
     busy = bool(running or opening)
     return {
         "web": _int("WARM_WEB_MIN", 2) if running else 0,

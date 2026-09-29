@@ -1,5 +1,6 @@
 """Ruleta: los 6 modos (5a y 5b por separado), filtros, auditoría, permisos y pantalla pública (Sprint 5)."""
 from datetime import datetime
+from app.timeutil import utcnow
 
 from tests.conftest import login
 
@@ -9,7 +10,6 @@ def _setup(client, factory, db, n=10, role="coordinador"):
 
     staff = factory.staff(role, "coord1")
     ev = factory.event("en_proceso", coordinator=staff)
-    cats = ["VIP", "General"]
     for i in range(1, n + 1):
         u = factory.person(ev, f"{1000 + i}", f"Nombre{i}", f"Apellido{i}")
         u.entity = "ACME" if i % 2 else "OTRA"
@@ -286,7 +286,7 @@ def test_authorization_needs_a_display_link_can_be_cancelled_and_expires(client,
     cfg = db.query(RouletteConfig).filter_by(event_id=ev.id).first()
     import json as _json
     auth = _json.loads(cfg.authorized_json)
-    auth["at"] = (datetime.utcnow() - timedelta(minutes=31)).isoformat()
+    auth["at"] = (utcnow() - timedelta(minutes=31)).isoformat()
     cfg.authorized_json = _json.dumps(auth)
     db.commit()
     assert client.get(f"{api}/authorization").json()["authorized"] is False         # caducó (30 min sin usar)
@@ -296,7 +296,7 @@ def test_authorization_needs_a_display_link_can_be_cancelled_and_expires(client,
 
 def test_authorizing_validates_now_and_a_failed_spin_keeps_the_authorization(client, factory, db):
     ev = _setup(client, factory, db)
-    token = _token(client, ev)
+    _token(client, ev)
     api = f"/api/events/{ev.id}/roulette"
     _save(client, ev, mode="single_fixed", winners=["1003"])
     db.query(__import__("app.models", fromlist=["EventAttendee"]).EventAttendee).delete()          # la base queda vacía

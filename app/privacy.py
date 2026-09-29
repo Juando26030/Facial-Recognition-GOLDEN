@@ -10,6 +10,7 @@ Retención automática: 180 días (6 meses) después del fin de un evento finali
 """
 import os
 from datetime import date, datetime, timedelta
+from app.timeutil import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -72,14 +73,14 @@ def purge_event(db: Session, event: Event) -> dict:
             continue
         _erase(user)
         deleted += 1
-    event.biometrics_purged_at = datetime.utcnow()
+    event.biometrics_purged_at = utcnow()
     db.commit()
     return {"deleted": deleted, "kept_in_other_events": kept}
 
 
 def purge_expired(db: Session, days: int, today: date = None) -> dict:
     """Aplica la retención: eventos finalizados cuyo fin fue hace más de `days` días y que aún no se han purgado."""
-    limit = (today or datetime.utcnow().date()) - timedelta(days=days)      # todo interno va en UTC
+    limit = (today or utcnow().date()) - timedelta(days=days)      # todo interno va en UTC
     total = {"events": 0, "deleted": 0, "kept_in_other_events": 0}
     for event in db.query(Event).filter(Event.status == "finalizado", Event.end_date < limit, Event.biometrics_purged_at.is_(None)).all():
         r = purge_event(db, event)

@@ -22,9 +22,15 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
+from app.timeutil import utcnow
 
 log = logging.getLogger("golden.ops")
 MARK = b"PostgreSQL database dump complete"
+
+
+def _reason(e: Exception) -> str:
+    """Motivo corto del fallo para el campo `message` del log (Cloud Logging: `--format='value(jsonPayload.message)'`); el traceback sigue en stack_trace."""
+    return f"{type(e).__name__}: {e}"[:400]
 
 
 def _bucket():
@@ -34,7 +40,7 @@ def _bucket():
 
 def _local_now() -> datetime:
     from app.timeutil import to_local
-    return to_local(datetime.utcnow())
+    return to_local(utcnow())
 
 
 # ------------------------------------------------------------------ respaldos
@@ -66,15 +72,22 @@ def backup_db(kind: str = "hourly", bucket=None, now=None) -> str:
         os.remove(path)
 
 
-def backup_problems(bucket=None, now=None) -> dict:
-    """Problemas de los respaldos en el bucket: ninguno, viejo o sospechosamente pequeño."""
-    bucket, now = bucket or _bucket(), now or datetime.now(timezone.utc)
+def _scan_backups(bucket, now) -> tuple:
+    """(problemas, avisos). Un entorno recién creado aún no tiene su primer respaldo diario (corre a las OPS_DAILY_HOUR): mientras el
+    respaldo más viejo del bucket tenga menos de BACKUP_DAILY_MAX_AGE_H horas, que falte el diario es un AVISO, no un problema. Sin
+    respaldos horarios, o con el diario ausente pasado ese plazo, sigue siendo problema (la alarma real no se debilita)."""
     limits = {"hourly": float(os.getenv("BACKUP_HOURLY_MAX_AGE_H", "2")), "daily": float(os.getenv("BACKUP_DAILY_MAX_AGE_H", "26"))}
-    found = {}
+    found, warned, listed = {}, {}, {}
     for kind, max_age in limits.items():
         blobs = sorted((b for b in bucket.client.list_blobs(bucket, prefix=f"db/{kind}/") if b.name.endswith(".sql.gz")), key=lambda b: b.updated)
+        listed[kind] = blobs
         if not blobs:
-            found[f"{kind}-none"] = f"No hay respaldos {kind} en gs://{bucket.name}/db/{kind}/."
+            msg = f"No hay respaldos {kind} en gs://{bucket.name}/db/{kind}/."
+            hourly = listed.get("hourly")
+            if kind == "daily" and hourly and (now - hourly[0].updated).total_seconds() / 3600 <= max_age:
+                warned["daily-none"] = msg + " Entorno nuevo: llegará a las %s:00 (o corre `backup-daily` una vez)." % os.getenv("OPS_DAILY_HOUR", "3")
+            else:
+                found[f"{kind}-none"] = msg
             continue
         last = blobs[-1]
         age = (now - last.updated).total_seconds() / 3600
@@ -83,14 +96,19 @@ def backup_problems(bucket=None, now=None) -> dict:
         sizes = [b.size for b in blobs[-25:-1]]
         if len(sizes) >= 5 and last.size < 0.5 * statistics.median(sizes):
             found[f"{kind}-small"] = f"El último respaldo {kind} pesa {last.size} bytes y lo normal es ~{int(statistics.median(sizes))}: puede estar vacío o cortado."
-    return found
+    return found, warned
+
+
+def backup_problems(bucket=None, now=None) -> dict:
+    """Problemas de los respaldos en el bucket: ninguno, viejo o sospechosamente pequeño."""
+    return _scan_backups(bucket or _bucket(), now or datetime.now(timezone.utc))[0]
 
 
 def check_backups(bucket=None, now=None) -> str:
-    found = backup_problems(bucket, now)
+    found, warned = _scan_backups(bucket or _bucket(), now or datetime.now(timezone.utc))
     if found:
         raise RuntimeError("; ".join(found.values()))        # el Job falla y main() avisa por correo
-    return "respaldos al día"
+    return "; ".join(["respaldos al día", *warned.values()]) if warned else "respaldos al día"
 
 
 def _alert(key: str, subject: str, body: str) -> None:
@@ -103,7 +121,7 @@ def _alert(key: str, subject: str, body: str) -> None:
         return
     db = SessionLocal()
     try:
-        since = datetime.utcnow() - timedelta(hours=float(os.getenv("REALERT_H", "6")))
+        since = utcnow() - timedelta(hours=float(os.getenv("REALERT_H", "6")))
         if db.query(SystemEvent.id).filter(SystemEvent.kind == "ops_alert", SystemEvent.ref == key, SystemEvent.at > since).first():
             return
     finally:
@@ -157,7 +175,7 @@ def hourly(now=None) -> dict:
         try:
             results[name] = {"ok": True, "detail": fn()}
         except Exception as e:  # noqa: BLE001 — un paso fallido no detiene los demás
-            log.error("paso %s falló", name, exc_info=True)
+            log.error("paso %s falló: %s", name, _reason(e), exc_info=True)
             results[name] = {"ok": False, "detail": f"{type(e).__name__}: {e}"}
     return results
 
@@ -173,7 +191,7 @@ def main(task: str) -> int:
         try:
             results = {task: {"ok": True, "detail": TASKS[task]()}}
         except Exception as e:  # noqa: BLE001
-            log.error("tarea %s falló", task, exc_info=True)
+            log.error("tarea %s falló: %s", task, _reason(e), exc_info=True)
             results = {task: {"ok": False, "detail": f"{type(e).__name__}: {e}"}}
     else:
         print(f"Tarea desconocida: {task}. Usa: hourly, {', '.join(TASKS)}")

@@ -27,4 +27,5 @@ def _url_for(context, name, /, **path_params):
 
 def install(templates) -> None:
     templates.env.globals["url_for"] = _url_for
+    templates.env.globals["deploy_env"] = lambda: os.getenv("DEPLOY_ENV", "").strip().lower()      # «staging» pinta el distintivo de _env_badge.html
     templates.env.globals["legal"] = legal.info      # datos legales del negocio para el pie de las páginas públicas

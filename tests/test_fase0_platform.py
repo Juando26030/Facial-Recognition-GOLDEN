@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 import pytest
 
@@ -51,9 +52,9 @@ def test_failed_jobs_back_off_then_end_as_failed_and_can_be_seen(db, monkeypatch
     assert jobs.run_once() == 1
     db.expire_all()
     job = db.query(Job).one()
-    assert job.status == "queued" and job.attempts == 1 and job.run_at > datetime.utcnow()             # espera antes de reintentar
+    assert job.status == "queued" and job.attempts == 1 and job.run_at > utcnow()             # espera antes de reintentar
     assert jobs.run_once() == 0                                                                        # todavía no le toca
-    job.run_at = datetime.utcnow() - timedelta(seconds=1)
+    job.run_at = utcnow() - timedelta(seconds=1)
     db.commit()
     assert jobs.run_once() == 1
     db.expire_all()
@@ -75,7 +76,7 @@ def test_a_job_whose_process_died_is_reclaimed_after_the_lease(db, handlers):
     jobs.enqueue(db, "eco", {"n": 3})
     db.commit()
     job = db.query(Job).one()
-    job.status, job.locked_until, job.attempts = "running", datetime.utcnow() - timedelta(seconds=5), 1     # quedó «en curso» y el proceso murió
+    job.status, job.locked_until, job.attempts = "running", utcnow() - timedelta(seconds=5), 1     # quedó «en curso» y el proceso murió
     db.commit()
     assert jobs.run_once() == 1 and handlers == [{"n": 3}]
 
@@ -260,7 +261,7 @@ def test_reconcile_confirms_a_payment_whose_webhook_was_lost(client, factory, db
     db.add(sub)
     db.commit()
     pay = FormPayment(form_id=form.id, event_id=ev.id, submission_id=sub.id, amount_cents=500000, reference="GW-1-1-1-abc", status="pending", is_test=True,
-                      created_at=datetime.utcnow() - timedelta(minutes=10))
+                      created_at=utcnow() - timedelta(minutes=10))
     fresh = FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-1-1-2-def", status="pending", is_test=True)   # recién creado: aún no se concilia
     db.add_all([pay, fresh])
     db.commit()
@@ -286,8 +287,8 @@ def test_reconcile_ignores_amount_mismatches_and_unknown_references(db, factory,
     form = WebForm(event_id=ev.id, name="F", slug="f", manual_status="activo", design_json="{}", test_key="k")
     db.add(form)
     db.commit()
-    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-A", status="pending", is_test=True, created_at=datetime.utcnow() - timedelta(minutes=10)))
-    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-B", status="pending", is_test=True, created_at=datetime.utcnow() - timedelta(minutes=10)))
+    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-A", status="pending", is_test=True, created_at=utcnow() - timedelta(minutes=10)))
+    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-B", status="pending", is_test=True, created_at=utcnow() - timedelta(minutes=10)))
     db.commit()
     monkeypatch.setattr(wompi, "config", lambda is_test: {"api": "x", "private_key": "k", "test": True})
     monkeypatch.setattr(wompi, "fetch_by_reference", lambda cfg, ref: {"status": "APPROVED", "id": "t", "amount_in_cents": 1, "currency": "COP"} if ref == "GW-A" else None)

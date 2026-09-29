@@ -220,3 +220,7 @@ body.has-sidebar .golden-event-strip { margin-left: 220px; }
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
   outline: 3px solid var(--golden-primary, #D4AF37); outline-offset: 2px; box-shadow: 0 0 0 5px rgba(0,0,0,0.85);
 }
+
+/* Distintivo de staging (templates/_env_badge.html) */
+.golden-env-badge { position: fixed; bottom: 8px; right: 8px; z-index: 5000; background: #c0392b; color: #fff; font: 600 12px/1 sans-serif;
+  padding: 6px 10px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.3); pointer-events: none; }
