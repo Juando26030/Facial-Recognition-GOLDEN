@@ -3,6 +3,9 @@
 Rama `migra/fase1-2`. Plan y decisiones de fondo: `docs/13_ARQUITECTURA_ESCALABILIDAD.md` (§4-8, §11, §14-16).
 Este archivo se completa en la sesión 3 (runbook del día del cambio + costos); por ahora lleva la lista de progreso.
 
+**Estado al 2026-09-28:** sesiones 1 y 2 y la revisión R1-R4 terminadas y empujadas; nada creado en la nube; siguiente paso: Juan David
+corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.md).
+
 ## Progreso (se actualiza en cada commit)
 
 ### Sesión 1 — la app queda lista para Cloud Run + Neon
@@ -11,7 +14,7 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 - [x] 3. Backend Cloud Tasks en `app/jobs.py` (Postgres sigue como alternativa)
 - [x] 4. Directorio paginado e incremental en `static/js/directory.js`
 - [x] 5. Dockerfile multi-etapa + 3 puntos de entrada — imagen construida (Python 3.14, dlib compilado en la etapa de ruedas), los tres servicios arriba con `deploy/docker-compose.yml` contra Neon staging (`/readyz` 200 en los tres; `publico`/`web` sin dlib, ~275 MiB cada uno; `biometria` con el modelo, ~300 MiB) y prueba del emulador de Cloud Storage (`fsouza/fake-gcs-server`) en verde. Arreglado de paso: `STORAGE_BACKEND=` vacío (como lo deja la plantilla) tumbaba `/readyz`; ahora vacío = local
-- [x] 6. `.env.staging` lleno por Juan David (incluida una `FACE_ENCRYPTION_KEY` propia de staging, válida y distinta de la local). Migraciones corridas en la rama staging de Neon (vacía, Postgres 18, `us-east-1`) por la conexión directa: queda en `0049_form_atomic_reserve (head)`. Contenedor probado contra ella: login, Directorio con 3.000 personas sintéticas (`scripts/seed_staging_demo.py`: 3 páginas de 1.000 y el incremental cada 15 s actualiza los contadores sin recargar) y subida directa de un documento de 20 MB. **Latencia de referencia desde el PC de desarrollo (Bogotá) a Neon us-east-1:** `SELECT 1` mediana 81 ms (p95 85, mínimo 79), igual por el pooler que directa; abrir conexión ~500 ms (TLS + channel binding), por eso el pool reutiliza conexiones; `/readyz` del servicio web ~0,33 s en caliente (primera ~1,4 s). Esta medición NO sirve para elegir región (sale desde Colombia): la región se decide en la sesión 3 con la medición desde Cloud Run; el bootstrap queda con `us-east1` por defecto y `us-east4` como alternativa. Nota: las cadenas de `.env.staging` usan el rol dueño (`golden_db_owner`); para mínimo privilegio, crear un rol de app para la app y dejar el dueño solo a las migraciones
+- [x] 6. `.env.staging` lleno por Juan David (incluida una `FACE_ENCRYPTION_KEY` propia de staging, válida y distinta de la local). Migraciones corridas en la rama staging de Neon (vacía, Postgres 18, `us-east-1`) por la conexión directa: queda en `0049_form_atomic_reserve (head)`. Contenedor probado contra ella: login, Directorio con 3.000 personas sintéticas (`scripts/seed_staging_demo.py`: 3 páginas de 1.000 y el incremental cada 15 s actualiza los contadores sin recargar) y subida directa de un documento de 20 MB. **Latencia de referencia desde el PC de desarrollo (Bogotá) a Neon us-east-1:** `SELECT 1` mediana 81 ms (p95 85, mínimo 79), igual por el pooler que directa; abrir conexión ~500 ms (TLS + channel binding), por eso el pool reutiliza conexiones; `/readyz` del servicio web ~0,33 s en caliente (primera ~1,4 s). Esta medición NO sirve para elegir región (sale desde Colombia): la región se decide en la sesión 3 con la medición desde Cloud Run; el bootstrap queda con `us-east1` por defecto y `us-east4` como alternativa. Nota: las cadenas de `.env.staging` usan el rol dueño (`golden_db_owner`); para mínimo privilegio, crear un rol de app para la app y dejar el dueño solo a las migraciones (hecho en la sesión 2, pieza 5)
 
 ### Sesión 2 — terminada (2026-09-28)
 - [x] 0. Preparación: `FACE_ENCRYPTION_KEY` NUEVA en `.env.staging` (aleatoria, nunca la de producción); región sin decidir
@@ -32,7 +35,7 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   como alternativa). Crea: APIs; Artifact Registry con limpieza (10 últimas / 30 días); cuentas de servicio por entorno (`golden-app`,
   `golden-ops`, `golden-invoker`, `golden-deployer`) con permisos mínimos —incluido `iam.serviceAccountTokenCreator` de la cuenta de la app
   sobre sí misma (firmar URLs)—; Workload Identity Federation para GitHub (staging: cualquier rama del repositorio; producción: solo
-  `main`); Secret Manager pidiendo cada valor por teclado a ciegas (genera los que se pueden generar; en producción pide la
+  `main`) [corregido en R1: staging solo desde `migra/fase1-2`, permisos a nivel de recurso]; Secret Manager pidiendo cada valor por teclado a ciegas (genera los que se pueden generar; en producción pide la
   `SECRET_KEY` y la `FACE_ENCRYPTION_KEY` ACTUALES de la VM, sin las cuales no se leen los rostros migrados) y crea `golden_app` con
   `scripts/neon_app_role.py` guardando su cadena directo en el secreto; buckets (producción reutiliza los dos existentes —archivos bajo
   `app/`, separados de las copias de la VM en `data/` y `config/`— e imprime su región; staging crea uno propio para que su cuenta no
@@ -40,7 +43,7 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
   tope; los 3 servicios y 3 Jobs con imagen de relleno (`deploy.sh --placeholder`); la tarea de Cloud Scheduler (solo producción);
   canal de correo, chequeo de disponibilidad a `/healthz` cada minuto y alertas de caída, Jobs fallidos y 5xx (con los nombres exactos
   del entorno, para que staging no dispare las de producción); presupuesto al 50/90/100 % en la moneda de la cuenta (se pide el
-  monto); y el sitio de Firebase Hosting. Al final imprime las variables a configurar en GitHub. Revisado con shellcheck.
+  monto) [corregido en R3: no crea otro si ya hay uno]; y el sitio de Firebase Hosting. Al final imprime las variables a configurar en GitHub. Revisado con shellcheck.
   `deploy/gcp/config.sh` concentra nombres y parámetros; `deploy/gcp/env/common.yaml` las variables no secretas
 - [x] 3. Staging en Cloud Run + GitHub Actions: `.github/workflows/cloudrun.yml` despliega staging en cada push a `migra/fase1-2`
   (primero las pruebas de `ci.yml`); producción está en el mismo archivo con `if: false` (preparada, DESACTIVADA; la VM sigue con
@@ -179,8 +182,18 @@ Este archivo se completa en la sesión 3 (runbook del día del cambio + costos);
 5. `bash deploy/gcp/bootstrap.sh production` puede esperar a la semana 3 (necesita la rama `production` de Neon y la `SECRET_KEY` y
    `FACE_ENCRYPTION_KEY` de la VM). Deja los servicios con imagen de relleno y la tarea horaria EN PAUSA hasta el día del cambio.
 
-### Sesión 3 — pendiente
-Prueba de carga distribuida, medición de latencia, este documento completo (runbook + costos), CLAUDE.md, revisión final.
+- [x] Cierre de la sesión 2: `docs/HANDOFF.md` (estado, decisiones, reglas, riesgos, siguientes pasos), `CLAUDE.md` corto y el
+  historial detallado movido sin cambios a `docs/historial.md`
+
+### Sesión 3 — pendiente (empieza cuando staging esté desplegado en Cloud Run)
+- [ ] 1. Script de medición de latencia app→Neon desde Cloud Run (us-east1) y decisión de región (us-east1 / us-east4)
+- [ ] 2. Verificar `XFF_CLIENT_INDEX` con tráfico real detrás de Firebase y fijarlo en `deploy/gcp/env/common.yaml`
+- [ ] 3. Prueba de carga distribuida contra staging (Locust en Cloud Run Jobs: 10.000 aperturas / 5.000 envíos + escaneos) y simulacros
+  de falla (doc 13 §11, Fase 4)
+- [ ] 4. Este documento completo: runbook del día del cambio (ventana, respaldo final, migración de base y archivos con
+  `--biometric-prefix biometric`, DNS, dominio en Firebase, reanudar `golden-ops-hourly`, mover el chequeo «GoldenWeb readyz» a
+  `/healthz`, verificación, vuelta atrás, limpieza de lo de la VM) y tabla de costos por componente
+- [ ] 5. Revisión final de pruebas y ruff
 
 ## Decisiones tomadas
 - `docs/13` se actualizó con la versión completa que Juan David pegó en el chat (§14-§17); no estaba en el disco.

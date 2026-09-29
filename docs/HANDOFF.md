@@ -1,0 +1,105 @@
+# Handoff — migración a Cloud Run + Neon (estado al 2026-09-28)
+
+Documento para que una sesión nueva retome sin perder contexto. Complementa (no reemplaza) a [`docs/15_MIGRACION.md`](15_MIGRACION.md)
+(progreso pieza por pieza), [`docs/13_ARQUITECTURA_ESCALABILIDAD.md`](13_ARQUITECTURA_ESCALABILIDAD.md) (plan, §15-§16 = decisiones
+de la migración) y [`docs/14_FASE0_RESULTADOS.md`](14_FASE0_RESULTADOS.md) (carga y reconocimiento facial). Reglas técnicas del código:
+[`CLAUDE.md`](../CLAUDE.md); historia detallada: [`docs/historial.md`](historial.md).
+
+## 1. Dónde está todo
+
+| | Estado |
+|---|---|
+| `main` | `f3a7260`: Fase 0 de escalabilidad, **desplegada en la VM** (Gunicorn 3 procesos, migraciones hasta `0048`). `RECOGNITION_JITTERS=2` activo en producción (lo puso Juan David). |
+| `migra/fase1-2` | Adelante de `main`, empujada, CI y workflow «Cloud Run» en verde. Migraciones nuevas `0049_form_atomic_reserve`, `0050_bulk_job_spec` (no aplicadas en producción). **No fusionar sin autorización.** |
+| Nube | **Nada creado todavía.** `deploy/gcp/bootstrap.sh` está listo y revisado por Juan David; lo corre ÉL en Cloud Shell. |
+| Neon | Proyecto `goldenweb` (AWS us-east-1, Postgres 18), base `golden_db`, dueño `golden_db_owner`, ramas `production` y `staging`. **Plan Launch** activo; Juan David creó una llave de API y conectó Neon a GitHub (esa integración no la usa nuestro flujo). |
+| Rama `staging` de Neon | Tiene una copia del respaldo de producción del 26-sep (389 filas, 36 tablas) migrada a `0050`, con el rol `golden_app` creado. La contraseña de `golden_app` cambiará cuando se corra el bootstrap de staging (usa `--rotate`). |
+| Este PC (Windows) | Python 3.13 en `C:\Users\USUARIO\AppData\Local\Programs\Python\Python313\python.exe` (el de PATH, 3.14, no tiene pytest). Docker Desktop funciona (`golden-app:local` construida con `pg_dump` 18). psql/pg_dump 18 por Docker (`postgres:18`). Postgres 17 local para `golden_test`. `.env.staging` (ignorado) con las cadenas de Neon staging: `DATABASE_URL` = `golden_app` por el pooler, `DIRECT_DATABASE_URL` = dueño directo. Fotos de prueba en `C:\JDRJ\Golden\fotos_prueba` (39 personas útiles; montar SIEMPRE en solo lectura). |
+
+## 2. Hecho y probado
+**Sesión 1 (código listo para Cloud Run + Neon):** cupo de formularios en una sola ida y vuelta (`form_reserve_slot`, pruebas de
+concurrencia); `GcsStorage` (probado contra el emulador `fsouza/fake-gcs-server`); cola por Cloud Tasks (la tabla sigue mandando;
+`/internal/jobs/run` vacía la cola dentro de la petición con presupuesto de 45 s); directorio por páginas + incremental cada 15 s (visto
+por Juan David); subida directa de archivos grandes con URLs firmadas (Cloud Run corta a 32 MiB); Dockerfile multi-etapa (una imagen,
+tres servicios, sin root) levantado con docker-compose contra Neon staging.
+
+**Sesión 2 (infraestructura como código):** carga masiva con fotos como Cloud Run Job (el servicio web solo guarda tokens); Job horario
+de operaciones `app/ops_runner.py` (respaldo cada hora + diario a las 3, purga biométrica a las 4, revisión de respaldos, barrido de la
+cola, precalentamiento) — **probado desde el contenedor** contra Neon staging y el emulador, y el respaldo restaurado con conteos
+idénticos; precalentamiento `app/warmup.py` (instancias mínimas + Neon) sin consultar la base a cada rato; rol `golden_app` en Neon
+(`scripts/neon_app_role.py`, aplicado en staging, la app funciona con él); migración de la base VM→Neon (`scripts/migrate_db_to_neon.py`,
+**probada con el respaldo real de producción contra staging: 389 filas idénticas**) y de archivos VM→GCS (`scripts/migrate_files_to_gcs.py`,
+MD5, probado contra el emulador); `deploy/gcp/bootstrap.sh`, `deploy.sh`, `config.sh`; workflows `cloudrun.yml` (staging en cada push a
+`migra/fase1-2`, producción con `if: false`) y `cloudrun-deploy.yml`; Firebase Hosting con rutas generadas desde `app/appmode.py`.
+
+**Revisión de Juan David (R1-R4) + prueba facial:** permisos de despliegue a nivel de recurso y por rama; `/internal/*` solo con OIDC del
+invoker (401/403); el bootstrap no duplica el presupuesto existente («GoldenWeb mensual», COP 160.000); retención biométrica (versiones
+viejas en 1 día, sin soft delete, máximo 61 días por los respaldos diarios); reconocimiento facial con 39 personas (tabla en docs/14 §6.2).
+
+Pruebas: 380 en verde (`python -m pytest -q`), 2 se saltan sin el emulador (pasan con él), `node tests/js/directory_paging_check.js`,
+ruff limpio en lo tocado, shellcheck y actionlint limpios.
+
+## 3. Decisiones y su porqué
+- **Región `us-east1` por defecto, `us-east4` como alternativa, SIN decidir.** us-east1 es más barata (Nivel 1) pero más lejos de Neon
+  (us-east-1, Virginia). La latencia medida desde Colombia (81 ms) no sirve para decidir: hay que medir desde Cloud Run (sesión 3). Cambiar
+  es `REGION=us-east4 bash deploy/gcp/bootstrap.sh …` + redesplegar. El cupo atómico existe justamente para que ~10-15 ms por consulta no
+  limiten los formularios.
+- **Neon (plan Launch)** en vez de Postgres en una VM: cobra por uso y se apaga solo. La app usa el pooler con `golden_app` (solo DML);
+  migraciones, respaldos y restauraciones usan el dueño por conexión directa. Nada frecuente puede tocar la base (se mantendría despierta).
+- **Firebase Hosting** para el dominio (el balanceador de Google cuesta fijo; el mapeo de dominios de Cloud Run no es para producción;
+  Cloudflare gratis no reescribe `Host`). Límites verificados: 60 s por petición, solo pasa la cookie `__session`, respuestas privadas salvo
+  `public`. Cloudflare Worker queda como plan B.
+- **Staging en un proyecto de Google Cloud aparte (recomendado, pendiente de que Juan David decida):** Firebase Hosting solo da permisos a
+  nivel de proyecto y solo reenvía a Cloud Run del mismo proyecto; un proyecto aparte aísla todo sin costo. Si se queda en el mismo
+  proyecto, staging no tiene Firebase y su servicio web sirve la app completa (`app.main:app`).
+- **Umbral 0,55 y `RECOGNITION_JITTERS=2`:** con 39 personas, 0,55 reconoce 97 % sin falsos positivos; 0,50 deja de reconocer 1 de cada 8-12
+  sin ganancia medida. El margen es estrecho (impostor más cercano a 0,54): el riesgo real es alguien NO registrado parecido a alguien
+  registrado. Propuestas (no implementadas): foto de registro en la tarjeta de confirmación y regla de «segundo más cercano».
+- **Retención biométrica:** 180 días tras el fin del evento (purga automática); después de purgar, la foto desaparece en ≤ 2 días y el
+  encoding cifrado sobrevive hasta **61 días** en los respaldos diarios (número para la política de privacidad). Ventana de historia de
+  Neon: fijarla en 1 día (paso manual).
+- **Una sola tarea de Cloud Scheduler** (cabe en las 3 gratis) reemplaza los 4 cron de la VM; en producción se crea EN PAUSA hasta el cambio.
+- **Carga masiva como Cloud Run Job** (no cola dentro de la petición: hay cargas de horas y el tope por petición es 60 s).
+
+## 4. Reglas de trabajo (las de siempre)
+- Rama `migra/fase1-2` para esta migración; se puede empujar. **Prohibido sin autorización explícita para ESA acción:** merge o push a
+  `main`, desplegar en producción, correr migraciones en producción, crear recursos de nube (los crea Juan David), pruebas de carga
+  contra producción.
+- Commit + push por cada pieza terminada con sus pruebas en verde, y la lista de `docs/15_MIGRACION.md` al día en el mismo commit.
+- Secretos y cadenas de conexión: nunca en el repo ni en el chat (solo nombres de variables). Nada de fotos, encodings ni resultados por
+  persona en el repo, logs o commits. Si algo requiere un secreto, se pide que lo ponga Juan David en `.env.staging` o en el bootstrap.
+- Ante una ambigüedad: decidir, documentar y seguir. Antes de cerrar una sesión o al acercarse al límite: commit, push y progreso al día.
+
+## 5. Riesgos pendientes
+1. `bootstrap.sh` y `deploy.sh` nunca han corrido contra el proyecto real: los permisos a nivel de recurso (`run.developer` sobre Jobs,
+   esperar ejecuciones con `--wait`) y los comandos de Firebase/Monitoring siguen la documentación oficial pero se confirman en la primera
+   corrida. Ambos scripts son idempotentes: se corrige y se vuelve a correr.
+2. Producción necesita la `SECRET_KEY` y la `FACE_ENCRYPTION_KEY` ACTUALES de la VM; sin la llave de rostros, los rostros migrados no se leen.
+3. Posición de la IP real en `X-Forwarded-For` detrás de Firebase (`XFF_CLIENT_INDEX`) sin verificar: hasta entonces los límites por IP se
+   podrían esquivar. Se verifica con tráfico real en staging.
+4. Margen estrecho del reconocimiento facial (ver §3): antes de un evento grande con registro automático, medir con más personas y con
+   personas no registradas.
+5. El respaldo horario despierta a Neon unos minutos por hora (~US$1-2/mes).
+6. El precalentamiento de Neon (apagado/mínimo) necesita plan Launch: ya está.
+7. Copias del mundo VM (`gs://<bucket-datos>/data/` con fotos, volcados viejos) siguen su propia retención hasta limpiarlas tras el cambio.
+
+## 6. Siguientes pasos exactos
+**Juan David (nada de esto lo hace Claude Code):**
+1. Decidir si staging va en un proyecto aparte (recomendado). Si sí: crear el proyecto, `gcloud config set project <proyecto-staging>`.
+2. En Neon: ventana de historia de 1 día; tener a mano la llave de API y los ids de proyecto y endpoint de la rama staging.
+3. Cloud Shell: `git clone …`, `git checkout migra/fase1-2`, `FIREBASE_DEPLOY=1 bash deploy/gcp/bootstrap.sh staging` (o sin
+   `FIREBASE_DEPLOY` si queda en el mismo proyecto). Detalle de qué pide en `docs/15_MIGRACION.md` («Qué corre Juan David…»).
+4. GitHub → Environments `staging`: las variables que imprime el script. Relanzar el workflow «Cloud Run» y revisar la URL de staging.
+
+**Sesión 3 de Claude Code (cuando staging esté arriba):**
+1. Medir la latencia real app→Neon desde Cloud Run (us-east1) y decidir región (script de medición: pendiente de escribir).
+2. Verificar `XFF_CLIENT_INDEX` con tráfico real y ajustarlo en `deploy/gcp/env/common.yaml`.
+3. Prueba de carga distribuida (Locust en Cloud Run Jobs) contra staging: 10.000 aperturas / 5.000 envíos + escaneos, y simulacros de
+   falla (doc 13 §11, Fase 4). Nunca contra producción.
+4. `docs/15_MIGRACION.md` completo: runbook del día del cambio (ventana, respaldo final, `migrate_db_to_neon.py` y
+   `migrate_files_to_gcs.py --biometric-prefix biometric`, DNS en Cloudflare, dominio en Firebase, reanudar `golden-ops-hourly`, mover el
+   chequeo de Google «GoldenWeb readyz» de `/readyz` a `/healthz`, verificación, vuelta atrás) y tabla de costos.
+5. Revisión final de pruebas y ruff; luego Fase 3 (modo contingencia del kiosco) en otra rama.
+
+**Propuestas esperando aprobación (no implementar sin permiso):** foto de registro + indicador de parecido en la tarjeta de confirmación
+facial; regla de «segundo más cercano» para registro automático (docs/14 §6.2).
