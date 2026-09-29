@@ -28,6 +28,7 @@ public_cache = TTLCache(PUBLIC_CACHE_SECONDS)
 
 def invalidate_public_cache() -> None:
     public_cache.clear()
+    _held_cache.clear()
 
 # columnas de un Excel de pre-llenado (en minúscula) -> clave del campo del evento
 COLUMN_TO_KEY = {
@@ -180,24 +181,74 @@ def quota_public(db: Session, form: WebForm) -> dict:
 
 
 def held_count(db: Session, form: WebForm) -> int:
-    """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min)."""
-    holding = db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
-                                           FormPayment.submission_id != None, FormPayment.created_at > utcnow() - PENDING_HOLD).count()  # noqa: E711
-    return real_submissions(db, form).count() + holding
+    """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min). UNA sola consulta (antes eran dos)."""
+    from sqlalchemy import select
+    confirmed = select(func.count()).select_from(FormSubmission).where(
+        FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed").scalar_subquery()  # noqa: E712
+    holding = select(func.count()).select_from(FormPayment).where(
+        FormPayment.form_id == form.id, FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
+        FormPayment.submission_id != None, FormPayment.created_at > utcnow() - PENDING_HOLD).scalar_subquery()  # noqa: E711
+    return int(db.execute(select(confirmed + holding)).scalar() or 0)
 
 
-def is_full(db: Session, form: WebForm) -> bool:
-    return form.capacity is not None and held_count(db, form) >= form.capacity
+_held_cache = TTLCache(float(os.getenv("FORM_HELD_CACHE_SECONDS", "2")))
 
 
-_RESERVE_SQL = text("SELECT form_reserve_slot(:form_id, :person_id, :sid, :is_test, :hold_from, CAST(:matched AS jsonb))")
+def invalidate_held() -> None:
+    """Se libera (o cambia) un cupo: la caché del «lleno» de ESTE proceso se olvida al instante (otros procesos, hasta ~2 s)."""
+    _held_cache.clear()
+
+
+def bump_held(form: WebForm) -> None:
+    """Este proceso acaba de apartar un cupo (confirmado o esperando pago): si la caché del conteo existe, sube en 1, así la vía rápida ve el «lleno» sin esperar
+    a que venza (en otros procesos, hasta ~2 s; el bloqueo de la base siempre manda)."""
+    cur = _held_cache.get(form.id)
+    if form.capacity is not None and cur is not None:
+        _held_cache.set(form.id, cur + 1)
+
+
+def held_count_cached(db: Session, form: WebForm) -> int:
+    """`held_count` con caché de unos segundos y una sola recarga a la vez. SOLO para la vía rápida de «cupo lleno» (rechazar sin pedir el bloqueo): un dato viejo puede
+    rechazar unos segundos de más si se liberó un cupo, pero NUNCA deja pasar de más: quien pasa se vuelve a comprobar con el bloqueo dentro de `form_reserve_slot`."""
+    return _held_cache.get_or_compute(form.id, lambda: held_count(db, form))
+
+
+def mark_full(form: WebForm) -> None:
+    """La base acaba de decir «lleno» bajo bloqueo: los siguientes envíos se rechazan sin pedir el bloqueo durante unos segundos."""
+    if form.capacity is not None:
+        _held_cache.set(form.id, form.capacity)
+
+
+def has_confirmed_sid(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str]) -> bool:
+    """¿Ya hay una inscripción confirmada con esta clave de envío (y esta persona)? Misma condición que el reintento de `form_reserve_slot`, sin bloqueo:
+    un reintento con la MISMA `sid` debe responder «replayed» aunque el formulario ya esté lleno."""
+    if not sid:
+        return False
+    q = db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.sid == sid, FormSubmission.is_test == False,  # noqa: E712
+                                           FormSubmission.status == "confirmed")
+    if person_id is not None:
+        q = q.filter(FormSubmission.person_id == person_id)
+    return q.first() is not None
+
+
+def is_full(db: Session, form: WebForm, held: Optional[int] = None) -> bool:
+    if form.capacity is None:
+        return False
+    return (held if held is not None else held_count(db, form)) >= form.capacity
+
+
+# `set_config(..., true)` = SET LOCAL (solo esta transacción; vale con el pooler de Neon en modo transacción). Contrapresión: si el bloqueo de la fila del formulario no se
+# consigue en FORM_LOCK_TIMEOUT_MS (3 s) la base lanza `lock_not_available` (55P03) y el envío responde 503 + Retry-After en vez de retener hilo y conexión hasta que Firebase
+# corte a los 60 s. Las dos sentencias viajan en UNA ida y vuelta.
+FORM_LOCK_TIMEOUT_MS = int(os.getenv("FORM_LOCK_TIMEOUT_MS", "3000"))
+_RESERVE_SQL = text("SELECT set_config('lock_timeout', :lock_timeout, true); SELECT form_reserve_slot(:form_id, :person_id, :sid, :is_test, :hold_from, CAST(:matched AS jsonb))")
 
 
 def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Optional[str], is_test: bool, rules: list, values: dict) -> dict:
     """Reintento, cupos por variable, cupo total y duplicado en UNA ida y vuelta (función `form_reserve_slot`, migración 0049). Deja la fila del
     formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
     Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
-    params = {"form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
+    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
               "matched": json.dumps([{"sig": rule_sig(r), "limit": r["limit"], "label": r["label"]} for r in rules if quota_match(r, values)])}
     res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
@@ -215,6 +266,7 @@ def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
             get_storage().delete(form_file_key(event.tenant_id, form.id, v["stored"]))
     db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
+    invalidate_held()
 
 
 def purge_stale_pending(db: Session, form: WebForm) -> None:
@@ -224,12 +276,13 @@ def purge_stale_pending(db: Session, form: WebForm) -> None:
         discard_submission(db, form, sub)
 
 
-def confirm_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
+def confirm_submission(db: Session, form: WebForm, sub: FormSubmission, record_event: bool = True) -> None:
     """La parte BARATA de confirmar una inscripción (sin confirmar la transacción: la confirma quien llama, junto con lo demás): estado, marca de envío
     para la analítica, invitación usada y —si el formulario carga en tiempo real— el trabajo en segundo plano que la pasa a la base del evento y envía
     la escarapela (correo, base de datos, etc.: nada de eso ocurre dentro de la petición ni dentro del bloqueo del cupo)."""
     sub.status = "confirmed"
-    db.add(FormEvent(form_id=form.id, sid=sub.sid or os.urandom(4).hex(), kind="submit", source=sub.source, is_test=sub.is_test))
+    if record_event:          # el envío del formulario público lo registra después del commit (`forms_public._record_submit_event`), fuera del bloqueo del cupo
+        db.add(FormEvent(form_id=form.id, sid=sub.sid or os.urandom(4).hex(), kind="submit", source=sub.source, is_test=sub.is_test))
     if sub.invite_id:
         inv = db.query(FormInvite).filter_by(id=sub.invite_id).first()
         if inv:
@@ -265,11 +318,11 @@ def run_feed_job(submission_id: int) -> None:
         db.close()
 
 
-def public_state(db: Session, form: WebForm) -> str:
+def public_state(db: Session, form: WebForm, held: Optional[int] = None) -> str:
     """Lo que ve el público: activo | pruebas | cerrado | cupo_lleno | finalizado. `cupo_lleno` se ve igual que
     `cerrado` (misma plantilla) pero se distingue para los reportes."""
     st = status_of(form)
-    if st == "activo" and is_full(db, form):
+    if st == "activo" and is_full(db, form, held):
         return "cupo_lleno"
     return st
 

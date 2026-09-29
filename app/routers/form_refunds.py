@@ -18,7 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app import wompi
+from app import formsvc, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import FormPayment, FormRefund, FormSubmission, StaffUser
@@ -34,6 +34,7 @@ def complete(db: Session, pay: FormPayment, refund: FormRefund) -> Optional[str]
     pay.refunded_cents = (pay.refunded_cents or 0) + refund.amount_cents
     if pay.refunded_cents >= pay.amount_cents:
         pay.status = "refunded"
+        formsvc.invalidate_held()
     warning = None
     if refund.cancel_registration and pay.submission_id:
         sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).first()

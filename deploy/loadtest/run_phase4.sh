@@ -33,6 +33,7 @@ PROJECT="$PROJECT_ID"; CEDULA_MIN="${CEDULA_MIN:-30}"
 AR="$REGION-docker.pkg.dev/$PROJECT/$AR_REPO"; IMAGE="$AR/loadgen:latest"; APP_IMAGE_JOB="$JOB_OPS"
 JOB="golden-loadgen-staging"
 SCALE_FILE="${SCALE_FILE:-$HOME/.golden_phase4_scale_${PROJECT}.txt}"
+LIMITS_FACTOR="${LIMITS_FACTOR:-200}"          # PUBLIC_LIMIT_FACTOR que pone limits-up y que exige la comprobación previa de `run`
 say() { echo -e "\n== $*"; }
 LAST_T0=""
 ops_job() {   # ejecuta el Job de ops con un paso de scripts.seed_load_staging y espera; anota la hora para leer SOLO lo que imprima esta ejecución
@@ -66,6 +67,21 @@ set_min() { curl -fsS -X PATCH -H "Authorization: Bearer $(gcloud auth print-acc
               "$(svc_url "$1")?updateMask=scaling.minInstanceCount" -d "{\"scaling\":{\"minInstanceCount\":$2}}" >/dev/null; }
 set_max() { gcloud run services update "$1" --project "$PROJECT" --region "$REGION" --max-instances "$2" --quiet >/dev/null; }
 
+# COMPROBACIÓN PREVIA de `run`: un despliegue de CI (`--env-vars-file` reemplaza TODAS las variables; `--max-instances` vuelve a 10) borra lo que puso limits-up/scale-up. Lee los tres
+# servicios de staging y aborta, con el comando que lo arregla, si PUBLIC_LIMIT_FACTOR de publico no es $LIMITS_FACTOR o si algún máximo de instancias no es el de SCALE_*.
+preflight() {
+  local bad=0 pair svc max
+  for pair in "$SVC_WEB:${SCALE_WEB:-2 6}" "$SVC_PUBLICO:${SCALE_PUB:-2 6}" "$SVC_BIOMETRIA:${SCALE_BIO:-3 6}"; do
+    svc="${pair%%:*}"; read -r _ max <<<"${pair#*:}"
+    if [ "$svc" = "$SVC_PUBLICO" ]; then
+      gcloud run services describe "$svc" --project "$PROJECT" --region "$REGION" --format=json | "${PYTHON3:-python3}" "$(dirname "$0")/preflight.py" "$svc" "$max" "$LIMITS_FACTOR" || bad=1
+    else
+      gcloud run services describe "$svc" --project "$PROJECT" --region "$REGION" --format=json | "${PYTHON3:-python3}" "$(dirname "$0")/preflight.py" "$svc" "$max" || bad=1
+    fi
+  done
+  [ "$bad" = 0 ] || { echo "No se lanzó nada: arregla lo de arriba y repite «run» (PREFLIGHT_SKIP=1 lo omite a propósito, p. ej. para una línea base sin scale-up)." >&2; exit 1; }
+}
+
 case "${1:-}" in
   quota)
     echo "CPU simultánea máxima de toda la prueba (docs/15): servicios hasta 10 instancias (web 1 vCPU, publico 1, biometria 2 = hasta 40 vCPU) + generadores (6+4+4 tareas × 1 vCPU = 14) + Job de ops 1."
@@ -92,6 +108,7 @@ case "${1:-}" in
     WEB_URL="${WEB_URL:-$PUBLIC_BASE_URL}"
     host="$(echo "$WEB_URL" | sed 's#^https://##; s#/.*$##')"
     case ",$(allowed_hosts)," in *",$host,"*) ;; *) echo "WEB_URL=$WEB_URL NO es un destino de staging permitido. Permitidos: $(allowed_hosts | tr ',' ' ')" >&2; exit 1;; esac
+    if [ "${PREFLIGHT_SKIP:-0}" = 1 ]; then echo "AVISO: PREFLIGHT_SKIP=1, no se comprobaron límites ni instancias." >&2; else preflight; fi
     LOAD_EVENT_ID="${LOAD_EVENT_ID:-$(log_line LOAD_SEED | sed -n 's/.*"event_id": *\([0-9]*\).*/\1/p')}"
     [ -n "$LOAD_EVENT_ID" ] || { echo "Define LOAD_EVENT_ID (de la línea LOAD_SEED de los logs; corre «seed» primero)." >&2; exit 1; }
     if [ "$MODE" = small ]; then     # ~5 % de la escala: 1 tarea por escenario, 500 aperturas (~250 envíos), 10 estaciones de cédula 2 min, 3 usuarios faciales 1 min
@@ -137,12 +154,12 @@ case "${1:-}" in
     echo "Esperado tras la corrida completa: oversold=0, duplicate_persons=0, duplicate_sids=0, confirmed_submissions=capacity (4000: hubo ~5.000 intentos), access_logs_in_event ≥ las respuestas 200 de «POST checkin-cedula» del informe." ;;
   limits-up|limits-down)   # los generadores están en Google Cloud y la app ya no cree su X-Forwarded-For: sube el límite por IP de los formularios SOLO durante la prueba y devuélvelo
     if [ "$1" = limits-up ]; then
-      gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --update-env-vars PUBLIC_LIMIT_FACTOR=200 --quiet
+      gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --update-env-vars PUBLIC_LIMIT_FACTOR=$LIMITS_FACTOR --quiet
     else
       gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --remove-env-vars PUBLIC_LIMIT_FACTOR --quiet   # vuelve al valor de common.yaml (1)
     fi ;;
   scale-up)
-    [ ! -e "$SCALE_FILE" ] || { echo "Ya hay valores originales guardados en $SCALE_FILE: corre scale-down primero (no se sobreescriben para no perder los originales)." >&2; exit 1; }
+    [ ! -e "$SCALE_FILE" ] || { echo "scale-up SE NIEGA: ya hay valores ORIGINALES guardados en $SCALE_FILE. Si se repitiera, reescribiría los originales con los valores YA subidos y scale-down restauraría lo equivocado. Corre primero: bash deploy/loadtest/run_phase4.sh scale-down (si ya restauraste a mano, borra ese archivo)." >&2; exit 1; }
     for pair in "$SVC_WEB:${SCALE_WEB:-2 6}" "$SVC_PUBLICO:${SCALE_PUB:-2 6}" "$SVC_BIOMETRIA:${SCALE_BIO:-3 6}"; do
       svc="${pair%%:*}"; read -r want_min want_max <<<"${pair#*:}"
       read -r cur_min cur_max <<<"$(get_scale "$svc")"

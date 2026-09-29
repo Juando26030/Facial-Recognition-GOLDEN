@@ -546,6 +546,7 @@ def delete_submission(event_id: int, form_id: int, submission_id: int, db: Sessi
             get_storage().delete(form_file_key(event.tenant_id, form.id, v["stored"]))
     db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
+    formsvc.invalidate_held()
     db.commit()
     return {"message": "Inscripción eliminada (si tenía un pago, ese registro financiero se conserva)"}
 

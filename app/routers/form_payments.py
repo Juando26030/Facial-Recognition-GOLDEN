@@ -37,6 +37,7 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
         db.rollback()
         return pay
     pay.status = new
+    formsvc.invalidate_held()          # un pago rechazado/expirado libera su cupo: la vía rápida del «lleno» no debe seguir rechazando
     pay.transaction_id = transaction_id or pay.transaction_id
     pay.payment_method = method or pay.payment_method
     pay.updated_at = utcnow()
