@@ -271,3 +271,12 @@ def test_cloud_run_health_routes_do_not_end_in_z(client):
     assert ready.status_code == readyz.status_code and ready.json()["status"] == readyz.json()["status"]
     for mode in ("publico", "web", "biometria"):
         assert appmode.route_allowed("/health", mode=mode) and appmode.route_allowed("/ready", mode=mode)
+
+
+def test_static_urls_are_paths_not_absolute_urls(client):
+    """Detrás de Firebase la app ve «http» y el host interno de Cloud Run: una URL absoluta quedaba http://…run.app/static/… y el navegador
+    la bloqueaba en la página https (sin estilos). Deben salir como ruta, con su ?v=."""
+    import re
+    html = client.get("/login", headers={"host": "golden-web-staging-abc-ue.a.run.app"}).text
+    assets = re.findall(r'(?:href|src)="([^"]*/static/[^"]*)"', html)
+    assert assets and all(a.startswith("/static/") and "?v=" in a for a in assets), assets

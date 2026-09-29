@@ -197,6 +197,12 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
   → `gcloud monitoring policies delete <nombre>`; después correr el bootstrap para crear los nuevos. El día del cambio: «GoldenWeb readyz»
   y UptimeRobot a `https://app.golden-eventos.com/health`
 
+- [x] S2. **Página sin estilos en `*.web.app`.** El HTML pedía el CSS como `http://golden-web-staging-…a.run.app/static/css/style.css?v=…`:
+  `url_for` armaba una URL ABSOLUTA con el host y el esquema que ve la app detrás del proxy (host interno de Cloud Run, `http`), y el
+  navegador la bloqueaba por contenido mixto en la página `https`. Firebase sí servía `/static/…` (200). Arreglo: `app/staticver.py` devuelve
+  solo la ruta (`/static/…?v=…`), válida en cualquier dominio (en Firebase sale de su CDN); además `FORWARDED_ALLOW_IPS="*"` en Cloud Run
+  para que la app tome `X-Forwarded-Proto=https` de Google (redirecciones en https). Prueba: `test_static_urls_are_paths_not_absolute_urls`
+
 ### Sesión 3 — pendiente (empieza cuando staging esté desplegado en Cloud Run)
 - [ ] 1. Script de medición de latencia app→Neon desde Cloud Run (us-east1) y decisión de región (us-east1 / us-east4)
 - [ ] 2. Verificar `XFF_CLIENT_INDEX` con tráfico real detrás de Firebase y fijarlo en `deploy/gcp/env/common.yaml`

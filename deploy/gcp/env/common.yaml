@@ -16,3 +16,5 @@ TRUST_CF_CONNECTING_IP: "0"
 # Posición de la IP real en X-Forwarded-For detrás de Firebase: VERIFICAR en staging (sesión 3) y ajustar.
 XFF_CLIENT_INDEX: "0"
 DEPLOY_FREEZE_HOURS: "3"
+# Cloud Run y Firebase ponen X-Forwarded-Proto=https: se confía en ellos para que la app sepa que la petición llegó por https (redirecciones).
+FORWARDED_ALLOW_IPS: "*"
