@@ -145,6 +145,8 @@ for opt in wompi-public-key wompi-integrity-secret wompi-events-secret wompi-pri
 done
 # La cadena de la APP (rol golden_app, por el pooler) la genera scripts/neon_app_role.py: crea el rol si falta, con contraseña al azar,
 # y la guarda directo en el secreto. Nunca pasa por la pantalla.
+# IDEMPOTENTE: si el secreto ya tiene valor NO se toca (ni se rota la contraseña de golden_app): solo se entra aquí la primera vez o con ROTATE="database-url" explícito.
+# Los secretos son globales del proyecto, así que mover de región tampoco los toca.
 if ! exists gcloud secrets versions access latest --secret "$(secret_name database-url)" || [[ " $ROTATE " == *" database-url "* ]]; then
   ensure_secret "$(secret_name database-url)"
   pip3 install --user --quiet psycopg2-binary >/dev/null 2>&1 || true

@@ -66,6 +66,22 @@ case "$ACTION" in
     chk "cola $QUEUE" gcloud tasks queues describe "$QUEUE" --location "$REGION"
     chk "repositorio de imágenes $AR_REPO" gcloud artifacts repositories describe "$AR_REPO" --location "$REGION"
     chk "bucket gs://$APP_BUCKET" gcloud storage buckets describe "gs://$APP_BUCKET"
+    # Configuración del bucket NUEVO (deploy/gcp/check_bucket.py): región, CORS con PUT desde el dominio, versiones, ciclo de vida (uploads/ 1 día, respaldos 30 días).
+    origins=("$PUBLIC_BASE_URL"); [ -z "$FIREBASE_SITE" ] || origins+=("https://${FIREBASE_SITE}.web.app" "https://${FIREBASE_SITE}.firebaseapp.com")
+    for b in $(printf '%s\n' "$APP_BUCKET" "$BACKUP_BUCKET" | sort -u); do
+      loc="$(gcloud storage buckets describe "gs://$b" --format='value(location)' 2>/dev/null || true)"
+      if [ "${loc,,}" = "${REGION,,}" ]; then echo "  OK    gs://$b está en $REGION"; else echo "  FALTA gs://$b está en '${loc:-?}', no en $REGION"; fail=1; fi
+    done
+    if [ "$APP_BUCKET" = "$BACKUP_BUCKET" ]; then kind=both; else kind=app; fi
+    gcloud storage buckets describe "gs://$APP_BUCKET" --format=json 2>/dev/null | python3 deploy/gcp/check_bucket.py "$kind" "${origins[@]}" || fail=1
+    if [ "$kind" = app ]; then gcloud storage buckets describe "gs://$BACKUP_BUCKET" --format=json 2>/dev/null | python3 deploy/gcp/check_bucket.py backup || fail=1; fi
+    # Firma de URLs de subida: la cuenta de la app necesita serviceAccountTokenCreator sobre sí misma (signBlob; no tiene llave privada).
+    if gcloud iam service-accounts get-iam-policy "$(sa_email "$SA_APP")" --format=json 2>/dev/null | python3 -c '
+import json, sys
+p = json.load(sys.stdin); me = "serviceAccount:" + sys.argv[1]
+sys.exit(0 if any(b.get("role") == "roles/iam.serviceAccountTokenCreator" and me in b.get("members", []) for b in p.get("bindings", [])) else 1)' "$(sa_email "$SA_APP")"; then
+      echo "  OK    ${SA_APP} puede firmar URLs de subida (serviceAccountTokenCreator sobre sí misma)"
+    else echo "  FALTA ${SA_APP} sin serviceAccountTokenCreator sobre sí misma: las subidas directas fallarían"; fail=1; fi
     [ "$GOLDEN_ENV" = production ] && chk "tarea $SCHEDULER_OPS" gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION"
     for path in health ready; do chk "GET $(run_url "$SVC_WEB")/$path" curl -fsS --max-time 60 "$(run_url "$SVC_WEB")/$path"; done
     [ -z "$FIREBASE_SITE" ] || chk "sitio público $PUBLIC_BASE_URL/health (las reglas de Firebase ya apuntan a $REGION)" curl -fsS --max-time 60 "$PUBLIC_BASE_URL/health"

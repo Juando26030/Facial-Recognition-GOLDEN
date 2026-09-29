@@ -468,6 +468,22 @@ entorno, sin tocar código).
 1. **Región de Cloud Run: `us-east4` (Virginia del Norte) — decisión de Juan David, 2026-09-29.** Junto a Neon (AWS us-east-1). Corrige lo que decía este punto antes: `us-east1` y `us-east4`
    son ambas de Nivel 1 (mismo precio de Cloud Run, verificado en la lista oficial de ubicaciones). Todo lo regional (servicios, Jobs, Artifact Registry, Cloud Tasks, Scheduler y bucket)
    va en la misma región. La región es un parámetro (`deploy/gcp/config.sh`); el traslado de staging y el arranque de producción: `docs/15_MIGRACION.md`, «Mover a otra región».
+
+| Medida (Cloud Run → Neon, conexiones calientes, `scripts/measure_db_latency.py`) | us-east1 | us-east4 |
+|---|---:|---:|
+| Una consulta con la conexión abierta (1 ida y vuelta, RTT) | **15,1 ms** | **4,9 ms** |
+| Conexión nueva (TCP + TLS + autenticación) | 107 ms | 49 ms |
+| Transacción de 3 sentencias con commit | 75,5 ms | 23,8 ms |
+| Bloqueo del cupo de UN formulario ≈ 3 RTT (`form_reserve_slot` + `INSERT` + `COMMIT`) | ≈ 45 ms | ≈ 15 ms |
+| Envíos por segundo por formulario que permite ese bloqueo (1 / duración) | **≈ 22/s** | **≈ 68/s** |
+| Meta de la Fase 4: 5.000 envíos en 120 s | ~42/s: NO alcanza | ~42/s: cumple con ~1,6× de margen |
+
+**Por qué el cupo decide la región.** El cupo atómico ya va en UNA sentencia (`form_reserve_slot`), pero la fila del formulario queda bloqueada hasta el `COMMIT`: mientras tanto corren esa función, el
+`INSERT` y el `COMMIT`, o sea ~3 idas y vueltas con el bloqueo tomado. Los envíos de UN mismo formulario se serializan por ese bloqueo, así que su tope es 1 / (3 × RTT): con 15,1 ms de RTT son ~22 envíos/s
+(la meta de 42/s se rompería con cola y `p95 > 2 s`); con 4,9 ms son ~68/s. Cota pesimista: si se contara la transacción completa de 3 sentencias medida arriba (~5 RTT, con el inicio de la transacción), serían
+13/s en us-east1 y 42/s en us-east4 — justo la meta, sin margen; el número real se confirma con la prueba de carga de la Fase 4 (formularios) en la región nueva. Además `/ready` mide dos idas y vueltas (el `pre_ping` del pool
++ la consulta): 2 × 15,1 ≈ 30 ms de los 43-46 ms vistos en staging; el resto no se descompuso (la medida `engine_checkout_select1_like_ready` del mismo script lo separa).
+
 2. **Cupo en una sola sentencia SQL.** Hoy el bloqueo de la fila del
    formulario dura varias idas y vueltas a la base. Con la base a 10-15 ms,
    eso limitaría cada formulario a ~25 envíos/s. El control de cupo debe

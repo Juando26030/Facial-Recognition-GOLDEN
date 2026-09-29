@@ -304,20 +304,12 @@ falta lo corre Juan David: lista exacta al final de este archivo y en [`docs/HAN
 
 ### Sesión 4 — D.2: latencia y región, IP real, carga distribuida y cambio (lo que corre Juan David; Claude Code dejó scripts y pasos)
 
-**D2.1 Latencia app → Neon: por qué `/ready` da 43-46 ms (análisis del código; las cifras de RTT se confirman con el script).**
-- `/ready` no mide UNA consulta: `ops._db_probe` cronometra `db.execute("SELECT 1")` **incluyendo el préstamo de la conexión del pool**, y el pool tiene `pool_pre_ping=True`, que
-  antes de entregar la conexión hace OTRO `SELECT 1`. Son **2 idas y vueltas (RTT)**: 44 ms ≈ 2 × ~22 ms. Una consulta suelta cuesta ~22 ms desde `us-east1`, no 44.
-- No es conexión nueva (TCP + TLS + SCRAM, ~0,5 s desde Bogotá; solo la paga la primera petición de una instancia o una conexión que murió), ni «Neon despertando» (esa primera
-  consulta tardaría cientos de ms o segundos, y staging tiene la base despierta por el respaldo horario), ni varias consultas: `/ready` hace una sola. `storage.ping()` va aparte y no
-  entra en `latency_ms`.
-- **Por qué importa para los formularios:** con la fila del formulario bloqueada corren `form_reserve_slot()` (1 RTT) + `INSERT` (1 RTT) + `COMMIT` (1 RTT) = **3 RTT con el bloqueo tomado**.
-  Con RTT ≈ 22 ms el bloqueo dura ~66 ms → como mucho **~15 envíos por segundo por formulario** (los demás esperan turno). La meta de la Fase 4 son 5.000 envíos en 120 s = **~42/s**:
-  desde `us-east1` NO se alcanzaría con un solo formulario (el `p95 < 2 s` se rompería por la cola del bloqueo). Con RTT ≈ 2-3 ms (`us-east4`, Ashburn, mismo entorno de red que
-  `us-east-1`) el bloqueo dura ~9 ms → ~110/s, con margen. Es hipótesis derivada de los 44 ms y de la geografía: **la confirma la medición de abajo**.
-- **Decisión (Juan David, 2026-09-29): `us-east4`; procedimiento exacto en «Mover a otra región» (arriba).** (Recomendación original: `REGION=us-east4 bash deploy/gcp/bootstrap.sh staging` y redesplegar; la región de Neon no se toca.) Confirmar antes: (1) la medición
-  desde ambas regiones; (2) el precio en cloud.google.com/run/pricing (el handoff anotó que `us-east4` costaba más; no pude verificarlo desde aquí); (3) que Firebase Hosting siga
-  soportándola (sí figura en la documentación). Si por costo se quedara `us-east1`, la alternativa de código es que el cupo y el INSERT vayan en UNA sola función SQL en autocommit
-  (bloqueo de 1 RTT): más cambio y sin probar; no se hizo.
+**D2.1 Latencia app → Neon y región (medido; la decisión y la tabla completa están en docs/13 §15).**
+- Medido desde Cloud Run con conexiones calientes: una consulta cuesta **15,1 ms en us-east1 y 4,9 ms en us-east4**; conexión nueva 107 ms frente a 49 ms; transacción de 3 sentencias 75,5 ms frente a 23,8 ms.
+- `/ready` no mide UNA consulta: `ops._db_probe` cronometra `db.execute("SELECT 1")` **incluyendo el préstamo de la conexión del pool**, y el pool tiene `pool_pre_ping=True`, que antes de entregar la conexión hace
+  OTRO `SELECT 1`: son 2 idas y vueltas (2 × 15,1 ≈ 30 ms de los 43-46 vistos en staging; el resto no se descompuso). No es conexión nueva, ni «Neon despertando», ni varias consultas.
+- **Por qué importa para los formularios:** con la fila bloqueada corren `form_reserve_slot()` + `INSERT` + `COMMIT` ≈ 3 RTT: ≈ 45 ms en us-east1 (~22 envíos/s por formulario) y ≈ 15 ms en us-east4 (~68/s), frente a la meta de la
+  Fase 4 de ~42/s. **Decisión (Juan David, 2026-09-29): `us-east4`; procedimiento exacto en «Mover a otra región» (arriba).**
 - **Medir con conexiones calientes desde Cloud Run** (`scripts/measure_db_latency.py`: conexión nueva, `SELECT 1` = 1 RTT, dos seguidos = ping + consulta, préstamo del pool = lo de `/ready`,
   y una transacción de 3 sentencias). En us-east1 se usa el Job que ya existe (imagen y secretos de staging):
   ```bash
@@ -390,6 +382,18 @@ ACTUALES de la VM en Secret Manager), autorización explícita de Juan David par
    ```
    (con `golden_app` ya creado en la rama `production`; los archivos admiten una primera pasada días antes y otra en la ventana). Las fotos biométricas viejas de la VM pasan al bucket con su reloj de
    retención nuevo: `face_captured_at` queda con la constancia de autorización o con la fecha de la migración `0051` (ver B2).
+   **3b. Copiar el contenido de los BUCKETS de la VM a los buckets NUEVOS de producción** (`golden-datos-…` → `<proyecto>-golden-app-us-east4`, `golden-backups-…` → `<proyecto>-golden-backups-us-east4`; desde Cloud Shell, no
+   necesita la VM; solo lee los viejos y solo escribe en los nuevos; se puede repetir):
+   ```bash
+   gcloud config set run/region us-east4                       # o export REGION=us-east4
+   bash deploy/gcp/copy_vm_buckets.sh --dry-run                # qué copiaría
+   bash deploy/gcp/copy_vm_buckets.sh                          # copia y comprueba
+   bash deploy/gcp/copy_vm_buckets.sh --verify                 # solo comprueba
+   ```
+   Mapa: `data/<cliente>/known_people/…` → `app/biometric/<cliente>/known_people/…` (fotos biométricas con su prefijo y su ciclo de vida de 1 día); el resto de `data/<cliente>/…` → `app/<cliente>/…`; los volcados de la VM
+   `db/…` → `db/vm/…` del bucket de respaldos nuevo (se borran a los 30 días como todo `db/`). NO se copian `config/.env` (secretos: van en Secret Manager), `uploads/` ni temporales. **Comprobación de conteos:** el script imprime
+   `OK fotos biométricas: N = N`, `OK archivos en total: M = M` y `OK volcados de la VM: K = K`, y un `rsync` en seco que no debe listar nada por copiar (rsync compara tamaño y suma de verificación); sale con error si algo difiere.
+   Es equivalente (y con MD5 desde el disco) a los `migrate_files_to_gcs.py` de arriba: úsalo para adelantar trabajo días antes o si la VM ya no está.
 4. **Desplegar:** activar el workflow de producción (o `deploy/gcp/deploy.sh production`); comprobar `…/health` y `…/ready` de cada servicio y `Estado del sistema`.
 5. **Dominio:** conectar `app.golden-eventos.com` al sitio de Firebase Hosting (consola de Firebase → Hosting → Agregar dominio) y en Cloudflare cambiar el registro a los que indique Firebase con **proxy
    apagado (solo DNS)**; esperar el certificado. Ahora sí `TRUST_CF_CONNECTING_IP=0` y el `XFF_CLIENT_INDEX` verificado en D2.2.
@@ -440,13 +444,17 @@ bash deploy/gcp/move_region.sh staging copy --dry-run && bash deploy/gcp/move_re
 # 6) respaldos en la región nueva (el bucket nuevo empieza vacío y check-backups lo exige)
 gcloud run jobs execute "golden-ops-staging" --region "$REGION" --args="-m,app.ops_runner,backup" --wait
 gcloud run jobs execute "golden-ops-staging" --region "$REGION" --args="-m,app.ops_runner,backup-daily" --wait
-# 7) verifica la región nueva (servicios, Jobs, cola, bucket, /health, /ready, sitio público y que las variables apunten a us-east4)
+# 7) verifica la región nueva (servicios, Jobs, cola, /health, /ready, sitio público, variables hacia us-east4) Y el bucket nuevo: está en la región, CORS con PUT desde el dominio, versiones,
+#    ciclo de vida (uploads/ a 1 día, respaldos a 30) y el permiso de firma de URLs de la cuenta de la app
 bash deploy/gcp/move_region.sh staging verify
 # 8) ~1 día de observación (Estado del sistema en verde; la cola vieja se vacía sola); después limpia lo VIEJO (pide escribir la región)
 bash deploy/gcp/move_region.sh staging cleanup
 ```
 Después: actualizar el texto de la URL de Cloud Run de staging donde se haya anotado (`golden-web-staging-<número>.us-east4.run.app`), y repetir las mediciones de D2.1 en la región nueva como referencia. La contraseña de
 `revisor.staging`/datos sintéticos siguen en la base (Neon no se mueve). Mientras conviven las dos regiones el costo extra es despreciable (sin instancias mínimas no hay cobro inactivo; un poco de almacenamiento).
+
+**Idempotencia de `bootstrap.sh` (comprobado):** en una segunda corrida NO rota nada: `put_secret` deja los secretos que ya tienen valor, y la cadena de `golden_app` (`scripts/neon_app_role.py --rotate`) solo se genera si el secreto `database-url` no tiene
+valor; rotar exige pedirlo (`ROTATE="database-url"`). Los secretos son globales del proyecto: mover de región no los toca.
 
 **Producción directamente en us-east4** (no hay nada que mover: su bootstrap todavía no se corrió): `gcloud config set run/region us-east4` (o `REGION=us-east4` en cada comando) y `bash deploy/gcp/bootstrap.sh production` /
 GitHub Environment `production` con `GCP_REGION=us-east4`. Crea los buckets NUEVOS `<proyecto>-golden-app-us-east4` (archivos bajo `app/`) y `<proyecto>-golden-backups-us-east4` (`bootstrap.sh` avisa si un bucket no está en la región del
