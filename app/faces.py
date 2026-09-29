@@ -127,9 +127,18 @@ class _Index:
         if vec.shape[0] != self.matrix.shape[1]:
             return []
         dist = np.linalg.norm(self.matrix - vec, axis=1)
-        k = min(k, len(self.ids))
-        part = np.argpartition(dist, k - 1)[:k]
-        return [(self.ids[int(i)], float(dist[int(i)])) for i in part[np.argsort(dist[part])]]
+        # Una persona puede tener varios encodings (varias filas con la misma cédula): cada PERSONA cuenta una sola vez, con su mejor fila. Así el «segundo
+        # candidato» de la regla DUDOSO es siempre OTRA persona, nunca la segunda foto de la misma.
+        out, seen = [], set()
+        for i in np.argsort(dist):
+            uid = self.ids[int(i)]
+            if uid in seen:
+                continue
+            seen.add(uid)
+            out.append((uid, float(dist[int(i)])))
+            if len(out) == k:
+                break
+        return out
 
 
 _indexes: Dict[int, _Index] = {}
@@ -156,15 +165,20 @@ def _build(db: Session, event: Event, version: int) -> _Index:
     ids, vectors, dim = [], [], None
     for uid, raw in rows:
         try:
-            vec = np.asarray(json.loads(raw), dtype=np.float32).reshape(-1)
+            arr = np.asarray(json.loads(raw), dtype=np.float32)
         except (TypeError, ValueError):
             continue
-        if dim is None:
-            dim = vec.shape[0]
-        if vec.shape[0] != dim:
+        if arr.ndim == 1:
+            arr = arr[None, :]
+        if arr.ndim != 2:
             continue
-        ids.append(uid)
-        vectors.append(vec)
+        for vec in arr:                                # una fila por encoding: varios encodings de la misma persona = varias filas con su cédula
+            if dim is None:
+                dim = vec.shape[0]
+            if vec.shape[0] != dim:
+                continue
+            ids.append(uid)
+            vectors.append(vec)
     matrix = np.vstack(vectors) if vectors else np.zeros((0, dim or 128), dtype=np.float32)
     log.info("matriz facial del evento %s: %d rostros (versión %s)", event.id, len(ids), version)
     return _Index(version, ids, matrix)

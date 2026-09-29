@@ -185,6 +185,46 @@ def test_scanner_page_has_the_result_panel_and_the_autoregister_warning(client, 
     assert 'id="autoRegisterWarn"' not in client.get(f"/kiosk/{plain.id}/registro").text                 # sin rostro no hay advertencia
 
 
+def test_top_counts_each_person_once_so_a_second_encoding_never_makes_it_doubtful():
+    """Personas con 2 encodings: el «segundo» candidato de la regla DUDOSO es siempre OTRA persona, nunca la segunda foto de la misma."""
+    import numpy as np
+    rows = np.array([[0.30, 0], [0.32, 0], [0.40, 0], [0.90, 0]], dtype=np.float32)
+    idx = faces._Index(1, ["A", "A", "B", "C"], rows)                        # A tiene 2 encodings (0,30 y 0,32); B está a 0,40
+    ranked = idx.top([0, 0])
+    assert [u for u, _ in ranked] == ["A", "B", "C"]                          # A aparece UNA vez
+    assert not faces.is_doubtful(ranked)                                      # 0,40 − 0,30 = 0,10 ≥ 0,06; contra su propia 2.ª foto (0,02) habría dado DUDOSO
+    close = faces._Index(1, ["A", "A", "B"], np.array([[0.30, 0], [0.31, 0], [0.34, 0]], dtype=np.float32)).top([0, 0])
+    assert faces.is_doubtful(close) and [u for u, _ in close] == ["A", "B"]   # y sí es dudoso cuando OTRA persona queda a menos de 0,06
+
+
+def test_one_encoding_per_person_ranks_exactly_like_the_previous_argpartition_version():
+    """El caso de hoy (un encoding por persona) no cambia: mismo orden y mismas distancias que la versión anterior de `top` (argpartition + argsort)."""
+    import numpy as np
+    rng = np.random.default_rng(7)
+    for n, k in ((1, 6), (3, 6), (6, 6), (50, 6), (500, 6), (500, 3)):
+        matrix = rng.normal(0, 0.1, (n, 128)).astype(np.float32)
+        ids = [f"p{i}" for i in range(n)]
+        vec = rng.normal(0, 0.1, 128).astype(np.float32)
+        dist = np.linalg.norm(matrix - vec, axis=1)
+        kk = min(k, n)
+        part = np.argpartition(dist, kk - 1)[:kk]
+        old = [(ids[int(i)], float(dist[int(i)])) for i in part[np.argsort(dist[part])]]
+        assert faces._Index(1, ids, matrix).top(vec, k) == old
+
+
+def test_recognize_with_two_encodings_per_person_is_not_doubtful_against_itself(client, factory, db, scan):
+    from app.models import User
+    ev = _setup(client, factory, db, [0.40, 0.90])
+    u = db.query(User).filter_by(id="100100").one()
+    u.face_encoding = json.dumps([json.loads(_at(0.40, 0)), json.loads(_at(0.41, 5))])      # 2.º encoding de la MISMA persona, casi idéntico
+    db.commit()
+    faces.clear_cache()
+    body = _scan(client, ev).json()
+    assert body["result"] == "MATCH_PENDING" and body["data"]["id"] == "100100"
+    cands = _tok(client, ev, body["match_token"], "/api/recognize/candidates").json()["candidates"]
+    assert [c["id"] for c in cands] == ["***0101"]                                          # la lista no repite a la persona principal
+
+
 def test_verification_js_uses_own_dialogs_and_lazy_photos():
     js = open("static/js/app.js", encoding="utf8").read()
     assert "alert(" not in js and "confirm(" not in js.replace("showConfirm(", "").replace("confirmDuplicateRegistration(", "")
