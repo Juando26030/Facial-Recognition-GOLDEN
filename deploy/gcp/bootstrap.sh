@@ -6,7 +6,7 @@
 #      gcloud config set project <ID del proyecto>      # el proyecto se llama «GoldenWeb», pero el ID es otro: el script lo lee de aquí
 #      bash deploy/gcp/bootstrap.sh staging              # primero staging
 #      bash deploy/gcp/bootstrap.sh production           # después producción (servicios quedan con imagen de relleno hasta el cambio)
-#      REGION=us-east4 bash deploy/gcp/bootstrap.sh ...  # si la medición de la sesión 3 decide Virginia del Norte
+#      REGION=<región> bash deploy/gcp/bootstrap.sh ...  # o gcloud config set run/region <región>; ver deploy/gcp/config.sh y docs/15 «Mover a otra región»
 #
 #  QUÉ CREA Y CUÁNTO CUESTA (precios de lista, US$/mes; la suma de TODO el plan está en docs/15_MIGRACION.md):
 #   1. APIs (Cloud Run, Artifact Registry, Secret Manager, Cloud Tasks, Cloud Scheduler, IAM, Monitoring, Firebase…) ....... 0
@@ -165,11 +165,12 @@ ok "permisos de lectura: app → secretos de la app; ops → todos; deployer →
 
 # -------------------------------------------------------------------------------------------------------------------------- 6
 step "6. Buckets"
-if [ "$GOLDEN_ENV" = staging ] && ! exists gcloud storage buckets describe "gs://$APP_BUCKET"; then
-  gcloud storage buckets create "gs://$APP_BUCKET" --location "$REGION" --uniform-bucket-level-access --public-access-prevention
-fi
 for b in "$APP_BUCKET" "$BACKUP_BUCKET"; do
-  echo "   gs://$b está en: $(gcloud storage buckets describe "gs://$b" --format='value(location)')"
+  exists gcloud storage buckets describe "gs://$b" \
+    || gcloud storage buckets create "gs://$b" --location "$REGION" --uniform-bucket-level-access --public-access-prevention
+  loc="$(gcloud storage buckets describe "gs://$b" --format='value(location)')"
+  echo "   gs://$b está en: $loc"
+  [ "${loc,,}" = "${REGION,,}" ] || echo "   ⚠ el bucket NO está en $REGION: cada foto y respaldo cruzaría regiones (costo y latencia). Usa un bucket nuevo en $REGION (APP_BUCKET/BACKUP_BUCKET) o copia los datos (deploy/gcp/move_region.sh)."
   echo "   reglas de ciclo de vida ACTUALES (se reemplazan por las del repositorio):"
   gcloud storage buckets describe "gs://$b" --format='json(lifecycle_config)' | sed 's/^/     /'
 done
@@ -265,6 +266,13 @@ if [ -n "$EMAIL" ]; then
   UPTIME="golden-health${SUFFIX}"
   WEB_HOST="$(run_url "$SVC_WEB" | sed 's#https://##')"
   CHECK_ID="$(gcloud monitoring uptime list-configs --filter "displayName=\"$UPTIME\"" --format 'value(name)' | head -n1 | sed 's#.*/##')"
+  # Cambio de región: la URL de Cloud Run lleva la región, así que el chequeo (y su alerta, que apunta a su id) del host viejo se recrean.
+  if [ -n "$CHECK_ID" ] && [ "$(gcloud monitoring uptime describe "$CHECK_ID" --format 'value(monitoredResource.labels.host)')" != "$WEB_HOST" ]; then
+    OLD_POLICY="$(gcloud monitoring policies list --filter "displayName=\"Golden ${GOLDEN_ENV}: /health no responde\"" --format 'value(name)' | head -n1)"
+    [ -z "$OLD_POLICY" ] || gcloud monitoring policies delete "$OLD_POLICY" --quiet >/dev/null
+    gcloud monitoring uptime delete "$CHECK_ID" --quiet >/dev/null
+    CHECK_ID=""
+  fi
   [ -n "$CHECK_ID" ] || CHECK_ID="$(gcloud monitoring uptime create "$UPTIME" --resource-type uptime-url \
       --resource-labels "host=$WEB_HOST,project_id=$PROJECT_ID" --path /health --protocol https --period 1 --timeout 10 \
       --format 'value(name)' | sed 's#.*/##')"

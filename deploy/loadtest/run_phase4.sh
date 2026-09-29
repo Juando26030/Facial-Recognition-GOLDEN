@@ -9,11 +9,13 @@
 #   bash deploy/loadtest/run_phase4.sh verify           # 5) cupo y duplicados en la base (solo cifras)
 #   bash deploy/loadtest/run_phase4.sh cleanup          # 6) borra los Jobs del generador
 #
-# Variables opcionales: PROJECT (goldenweb-staging), REGION (us-east1), WEB_URL (https://golden-staging-<número>.web.app: la URL PÚBLICA de Firebase de staging;
+# Proyecto, región, repositorio de imágenes y nombres salen de deploy/gcp/config.sh staging (REGION o `gcloud config set run/region`). Opcionales: WEB_URL (https://golden-staging-<número>.web.app: la URL PÚBLICA de Firebase de staging;
 # debe contener «staging»), TASKS (20), CEDULA_MIN (30). Tope de costo aproximado por corrida completa: ver docs/15 (≈ US$1-3; 1 vCPU × 20 tareas × ≤ 40 min).
 set -euo pipefail
-PROJECT="${PROJECT:-goldenweb-staging}"; REGION="${REGION:-us-east1}"; TASKS="${TASKS:-20}"; CEDULA_MIN="${CEDULA_MIN:-30}"
-AR="$REGION-docker.pkg.dev/$PROJECT/golden-staging"; IMAGE="$AR/loadgen:latest"; APP_IMAGE_JOB="golden-ops-staging"
+# shellcheck source=/dev/null
+source "$(dirname "$0")/../gcp/config.sh" staging          # PROJECT_ID, REGION, AR_REPO, JOB_OPS: nada fijo aquí
+PROJECT="$PROJECT_ID"; TASKS="${TASKS:-20}"; CEDULA_MIN="${CEDULA_MIN:-30}"
+AR="$REGION-docker.pkg.dev/$PROJECT/$AR_REPO"; IMAGE="$AR/loadgen:latest"; APP_IMAGE_JOB="$JOB_OPS"
 JOB="golden-loadgen-staging"
 say() { echo -e "\n== $*"; }
 case "${1:-}" in

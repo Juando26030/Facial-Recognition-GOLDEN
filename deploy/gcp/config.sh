@@ -2,8 +2,10 @@
 # Nada secreto aquí: los valores secretos viven en Secret Manager y solo se referencian por nombre.
 #
 #   GOLDEN_ENV     staging | production          (primer argumento)
-#   REGION         us-east1 por defecto (Nivel 1, más barata); us-east4 es la alternativa si la latencia a Neon (us-east-1) no alcanza.
-#                  Se decide en la sesión 3 midiendo DESDE Cloud Run; cambiarla es volver a correr bootstrap.sh + deploy.sh.
+#   REGION         SIN valor fijo en el código: variable REGION, o la propiedad de gcloud `run/region` (`gcloud config set run/region <región>`), o error.
+#                  Decisión de Golden (2026-09-29): us-east4 (Virginia del Norte), junto a Neon (AWS us-east-1); us-east1 y us-east4 son ambas Nivel 1.
+#                  TODO lo regional (servicios, Jobs, Artifact Registry, Cloud Tasks, Scheduler, bucket) vive en la MISMA región para no pagar tráfico entre
+#                  regiones. Mover de región = docs/15 «Mover a otra región» y deploy/gcp/move_region.sh. OLD_REGION solo lo usa ese script.
 #   PROJECT_ID     se lee de `gcloud config` (el proyecto se renombró a «GoldenWeb» pero su ID no cambió: nunca se escribe a mano).
 
 GOLDEN_ENV="${1:-${GOLDEN_ENV:-}}"
@@ -13,7 +15,8 @@ case "$GOLDEN_ENV" in
   *) echo "Uso: $0 staging|production" >&2; exit 2 ;;
 esac
 
-REGION="${REGION:-us-east1}"
+REGION="${REGION:-$(gcloud config get-value run/region 2>/dev/null)}"
+if [ -z "$REGION" ]; then echo "Falta la región: REGION=<región> o gcloud config set run/region <región> (la decidida es us-east4; ver docs/15)." >&2; exit 2; fi
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 if [ -z "$PROJECT_ID" ]; then echo "No hay proyecto en gcloud config: gcloud config set project <ID>" >&2; exit 2; fi
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
@@ -56,13 +59,15 @@ fi
 QUEUE="golden-jobs${SUFFIX}"
 SCHEDULER_OPS="golden-ops-hourly${SUFFIX}"
 
-# Buckets. Producción REUTILIZA los que ya existen (archivos bajo el prefijo «app/», separados de las copias de la VM que viven en
-# «data/» y «config/»); staging tiene uno propio para que su cuenta de servicio no toque nada de producción.
+# Buckets: NUEVOS y en la región del entorno (la ubicación de un bucket no se puede cambiar, y los que ya tenía la VM están en otra región: usarlos
+# costaría tráfico entre regiones en cada foto y cada respaldo). El nombre lleva la región, así mover de región crea uno nuevo sin chocar con el viejo
+# (los nombres son únicos en todo Google Cloud). Las copias que hace la VM (`data/`, `config/`, sus volcados) siguen en los buckets viejos hasta apagar la VM.
+# Staging: uno solo (app y respaldos) para que su cuenta de servicio no toque nada de producción.
 if [ "$GOLDEN_ENV" = production ]; then
-  APP_BUCKET="${APP_BUCKET:-golden-datos-analisis-de-imagen-id}"; APP_PREFIX="app"
-  BACKUP_BUCKET="${BACKUP_BUCKET:-golden-backups-analisis-de-imagen-id}"
+  APP_BUCKET="${APP_BUCKET:-${PROJECT_ID}-golden-app-${REGION}}"; APP_PREFIX="app"
+  BACKUP_BUCKET="${BACKUP_BUCKET:-${PROJECT_ID}-golden-backups-${REGION}}"
 else
-  APP_BUCKET="${APP_BUCKET:-${PROJECT_ID}-golden-staging}"; APP_PREFIX=""
+  APP_BUCKET="${APP_BUCKET:-${PROJECT_ID}-golden-staging-${REGION}}"; APP_PREFIX=""
   BACKUP_BUCKET="$APP_BUCKET"
 fi
 

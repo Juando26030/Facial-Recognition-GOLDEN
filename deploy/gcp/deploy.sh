@@ -2,7 +2,7 @@
 # Despliega una imagen en un entorno: migraciones (Job) → 3 servicios → Jobs de carga masiva y de operaciones → permisos entre ellos.
 # Lo usan el workflow de GitHub Actions (.github/workflows/cloudrun.yml) y, una sola vez con --placeholder, bootstrap.sh.
 #
-#   deploy/gcp/deploy.sh staging    <imagen>        # p. ej. us-east1-docker.pkg.dev/<proyecto>/golden/app:<commit>
+#   deploy/gcp/deploy.sh staging    <imagen>        # p. ej. <región>-docker.pkg.dev/<proyecto>/golden/app:<commit>
 #   deploy/gcp/deploy.sh production <imagen>        # respeta el congelamiento (/api/ops/deploy-allowed); FORCE=1 lo salta
 #   deploy/gcp/deploy.sh staging --placeholder      # crea todo con la imagen «hello» de Google (bootstrap, antes de la primera imagen)
 #

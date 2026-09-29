@@ -465,13 +465,9 @@ entorno, sin tocar código).
 
 **Decisiones nuevas para la migración:**
 
-1. **Región de Cloud Run: `us-east1` (Carolina del Sur) por defecto, no
-   `us-east4`.** Verificado: `us-east4` tiene precios de Nivel 2 (más caros)
-   y `us-east1` de Nivel 1. La capa gratuita es la misma en ambas. Costo
-   de elegir `us-east1`: más distancia a Neon (Virginia), latencia estimada
-   ~10-15 ms por consulta en vez de ~1-2 ms. Se acepta **solo si** se
-   cumple la condición 2 y la medición en staging lo confirma; si no, se
-   cambia a `us-east4` (es redesplegar, la región queda como parámetro).
+1. **Región de Cloud Run: `us-east4` (Virginia del Norte) — decisión de Juan David, 2026-09-29.** Junto a Neon (AWS us-east-1). Corrige lo que decía este punto antes: `us-east1` y `us-east4`
+   son ambas de Nivel 1 (mismo precio de Cloud Run, verificado en la lista oficial de ubicaciones). Todo lo regional (servicios, Jobs, Artifact Registry, Cloud Tasks, Scheduler y bucket)
+   va en la misma región. La región es un parámetro (`deploy/gcp/config.sh`); el traslado de staging y el arranque de producción: `docs/15_MIGRACION.md`, «Mover a otra región».
 2. **Cupo en una sola sentencia SQL.** Hoy el bloqueo de la fila del
    formulario dura varias idas y vueltas a la base. Con la base a 10-15 ms,
    eso limitaría cada formulario a ~25 envíos/s. El control de cupo debe

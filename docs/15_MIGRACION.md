@@ -314,7 +314,7 @@ falta lo corre Juan David: lista exacta al final de este archivo y en [`docs/HAN
   Con RTT ≈ 22 ms el bloqueo dura ~66 ms → como mucho **~15 envíos por segundo por formulario** (los demás esperan turno). La meta de la Fase 4 son 5.000 envíos en 120 s = **~42/s**:
   desde `us-east1` NO se alcanzaría con un solo formulario (el `p95 < 2 s` se rompería por la cola del bloqueo). Con RTT ≈ 2-3 ms (`us-east4`, Ashburn, mismo entorno de red que
   `us-east-1`) el bloqueo dura ~9 ms → ~110/s, con margen. Es hipótesis derivada de los 44 ms y de la geografía: **la confirma la medición de abajo**.
-- **Recomendación provisional: `us-east4`** (cambio: `REGION=us-east4 bash deploy/gcp/bootstrap.sh staging` y redesplegar; la región de Neon no se toca). Confirmar antes: (1) la medición
+- **Decisión (Juan David, 2026-09-29): `us-east4`; procedimiento exacto en «Mover a otra región» (arriba).** (Recomendación original: `REGION=us-east4 bash deploy/gcp/bootstrap.sh staging` y redesplegar; la región de Neon no se toca.) Confirmar antes: (1) la medición
   desde ambas regiones; (2) el precio en cloud.google.com/run/pricing (el handoff anotó que `us-east4` costaba más; no pude verificarlo desde aquí); (3) que Firebase Hosting siga
   soportándola (sí figura en la documentación). Si por costo se quedara `us-east1`, la alternativa de código es que el cupo y el INSERT vayan en UNA sola función SQL en autocommit
   (bloqueo de 1 RTT): más cambio y sin probar; no se hizo.
@@ -368,8 +368,8 @@ de formularios sube ≤ 20 %.
     (≈ 5 escaneos/s por proceso con 2 jitters): subir `--max-instances` y `--min-instances` temporalmente y bajarlos después.
   - Criterios que salen de la base: `verify` imprime `oversold`, `duplicate_persons`, `duplicate_sids` y `access_logs_in_event` (deben ser 0, 0, 0 y ≥ los 200 de «POST checkin-cedula»).
 - **Simulacros** (mientras corre la cédula de 30 min; ambos con el generador ya en marcha):
-  1. *Matar una instancia*: `gcloud run services update golden-web-staging --region us-east1 --update-env-vars CHAOS_ENABLED=1` (una vez), y en el minuto ~10:
-     `curl -s -X POST -H "X-Ops-Token: $OPS_TOKEN" https://golden-web-staging-<número>.us-east1.run.app/api/ops/simulate-crash` (repetirlo 2-3 veces para tumbar varias). Solo funciona con
+  1. *Matar una instancia*: `gcloud run services update golden-web-staging --region "$REGION" --update-env-vars CHAOS_ENABLED=1` (una vez), y en el minuto ~10:
+     `curl -s -X POST -H "X-Ops-Token: $OPS_TOKEN" https://golden-web-staging-<número>.<región>.run.app/api/ops/simulate-crash` (repetirlo 2-3 veces para tumbar varias). Solo funciona con
      `DEPLOY_ENV=staging` + `CHAOS_ENABLED=1` + credencial (producción responde 404). Quitar la variable al terminar: `--remove-env-vars CHAOS_ENABLED`. Aprobado si `verify` muestra
      `access_logs_in_event` ≥ las respuestas 200 de «POST checkin-cedula» (ningún ingreso confirmado se pierde; puede haber 5xx durante el reemplazo).
   2. *Reiniciar el cómputo de Neon*: en el minuto ~5 de una corrida de formularios (`LOAD_THINK_MAX=120` alarga el pico) con la llave de Neon en una variable de entorno (no en el chat):
@@ -385,19 +385,19 @@ ACTUALES de la VM en Secret Manager), autorización explícita de Juan David par
 3. **Respaldo final y datos:** en la VM `scripts/backup_db.sh` (guardar el `.sql.gz`), y después, desde la VM (tiene `pg_dump`/`psql` 18):
    ```bash
    python scripts/migrate_db_to_neon.py --source-url "$VM_DATABASE_URL" --target-owner-secret golden-db-owner-url-production --migrate      # cuenta filas antes/después; hasta 0051; una diferencia = detener
-   python scripts/migrate_files_to_gcs.py --source ~/Facial-Recognition/data --bucket golden-datos-analisis-de-imagen-id --prefix app --biometric-prefix biometric
-   python scripts/migrate_files_to_gcs.py --source ~/Facial-Recognition/data --bucket golden-datos-analisis-de-imagen-id --prefix app --biometric-prefix biometric --verify-only
+   python scripts/migrate_files_to_gcs.py --source ~/Facial-Recognition/data --bucket "$APP_BUCKET" --prefix app --biometric-prefix biometric      # APP_BUCKET: `source deploy/gcp/config.sh production`; bucket NUEVO en us-east4
+   python scripts/migrate_files_to_gcs.py --source ~/Facial-Recognition/data --bucket "$APP_BUCKET" --prefix app --biometric-prefix biometric --verify-only
    ```
    (con `golden_app` ya creado en la rama `production`; los archivos admiten una primera pasada días antes y otra en la ventana). Las fotos biométricas viejas de la VM pasan al bucket con su reloj de
    retención nuevo: `face_captured_at` queda con la constancia de autorización o con la fecha de la migración `0051` (ver B2).
 4. **Desplegar:** activar el workflow de producción (o `deploy/gcp/deploy.sh production`); comprobar `…/health` y `…/ready` de cada servicio y `Estado del sistema`.
 5. **Dominio:** conectar `app.golden-eventos.com` al sitio de Firebase Hosting (consola de Firebase → Hosting → Agregar dominio) y en Cloudflare cambiar el registro a los que indique Firebase con **proxy
    apagado (solo DNS)**; esperar el certificado. Ahora sí `TRUST_CF_CONNECTING_IP=0` y el `XFF_CLIENT_INDEX` verificado en D2.2.
-6. **Encender lo programado:** reanudar `golden-ops-hourly` (`gcloud scheduler jobs resume golden-ops-hourly --location us-east1`) y correr UNA vez `backup-daily` (comando de D.1) y `check-backups`.
+6. **Encender lo programado:** reanudar `golden-ops-hourly` (`gcloud scheduler jobs resume golden-ops-hourly --location "$REGION"`) y correr UNA vez `backup-daily` (comando de D.1) y `check-backups`.
 7. **Monitores → `/health`:** el chequeo de Google «GoldenWeb readyz» y el monitor de UptimeRobot pasan a `https://app.golden-eventos.com/health` (NO `/healthz`: en Cloud Run da 404 de Google; y no `/ready`:
    toca la base y Neon no se apagaría). `bootstrap.sh production` ya crea `golden-health-production`; borrar el chequeo viejo.
 8. **Verificación:** iniciar sesión; kiosco por cédula y por rostro (con el flujo de verificación); un formulario público de prueba y su correo; `__session` con `Secure`; pago de prueba de Wompi (mismo
-   webhook: la URL no cambia); `/sistema` en verde (respaldo «hace 0 h»); `gcloud run jobs execute golden-ops --region us-east1 --wait` sin errores.
+   webhook: la URL no cambia); `/sistema` en verde (respaldo «hace 0 h»); `gcloud run jobs execute golden-ops --region "$REGION" --wait` sin errores.
 9. **Apagar la VM (no borrarla):** `gcloud compute instances stop golden-biometrics-prod --zone us-central1-a`; conservar disco y snapshots al menos 30 días.
 10. **Vuelta atrás:** hasta el primer dato real nuevo en Neon: en Cloudflare devolver el DNS a la IP de la VM (con proxy), `gcloud compute instances start golden-biometrics-prod --zone us-central1-a`,
     `sudo systemctl start facial-recognition`, y volver a poner los monitores en `/healthz` de la VM; detener `golden-ops-hourly` (`pause`). **Pasado ese punto** lo ingresado en Neon debe volver a la VM antes de
@@ -405,8 +405,60 @@ ACTUALES de la VM en Secret Manager), autorización explícita de Juan David par
 11. **Limpieza (semana +1):** borrar `gs://<bucket-datos>/data/` y `config/.env` de la VM y sus volcados viejos (R4), y las copias con historia de Neon >1 día.
 Tabla de costos por componente: pendiente (no se pidió en esta sesión).
 
+### Sesión 4 — Mover a otra región: staging de us-east1 a us-east4 y producción directo en us-east4 (decisión de Juan David, 2026-09-29)
+**Decisión:** `us-east4` (Virginia del Norte, junto a Neon en AWS us-east-1). `us-east1` y `us-east4` son ambas Nivel 1 (mismo precio de Cloud Run, verificado en la lista oficial de ubicaciones; la nota
+contraria de docs/13 §15 y del handoff quedó desactualizada). **Todo lo regional vive en la MISMA región** (servicios, Jobs, Artifact Registry, Cloud Tasks, Scheduler y bucket) para no pagar tráfico entre regiones.
+La región ya no está escrita en ningún script: `deploy/gcp/config.sh` la toma de `REGION` o de `gcloud config set run/region <región>` y falla si falta; el workflow usa la variable `GCP_REGION` del Environment
+de GitHub (sin valor por defecto: sin la variable no despliega). `deploy/loadtest/run_phase4.sh` lee todo de `config.sh`.
+
+**Qué es regional y qué se hace con cada cosa** (nada se «mueve»: se crea en la región nueva y se borra la vieja):
+| Recurso | ¿Regional? | En la región nueva | Lo de la región vieja |
+|---|---|---|---|
+| Servicios de Cloud Run (`web`, `publico`, `biometria`) | sí | se RECREAN: `bootstrap.sh` (imagen de relleno + permisos por recurso) y luego el despliegue | se borran |
+| Cloud Run Jobs (`migrate`, `bulk`, `ops`) | sí | se RECREAN igual | se borran |
+| Artifact Registry (`golden-staging` / `golden`) | sí | repositorio nuevo (bootstrap); las imágenes NO se copian: el workflow reconstruye (la caché de capas es de GitHub) | se borra el repositorio (las imágenes viejas cobran almacenamiento) |
+| Cloud Tasks (`golden-jobs*`) | sí | cola nueva (bootstrap); `CLOUD_TASKS_URL` y la cola salen de `config.sh` | se borra cuando esté vacía; lo pendiente NO se copia: la tabla `jobs` de la base es la fuente de verdad y el paso `sweep` del Job de ops lo retoma |
+| Cloud Scheduler (`golden-ops-hourly`, solo producción) | sí | se recrea EN PAUSA (bootstrap) | se borra |
+| Bucket de archivos y respaldos | sí, y la ubicación NO se puede cambiar | bucket NUEVO `<proyecto>-golden-staging-<región>` (staging) o `<proyecto>-golden-app-<región>` y `<proyecto>-golden-backups-<región>` (producción); los nombres son únicos en todo Google Cloud, por eso llevan la región | staging: se COPIA el contenido y se borra el viejo. Producción: no hay nada que copiar (los archivos de la VM se suben directo al bucket nuevo); los buckets de la VM (`data/`, `config/`, volcados) NO se tocan hasta apagarla |
+| Reglas de Firebase Hosting (`rewrites` con `serviceId` + `region`) | llevan la región | `make_config.py` las regenera con la región nueva y el workflow publica el sitio: ES el cambio de tráfico del dominio público | no hay que borrar nada (el sitio y el dominio son globales) |
+| Chequeo de disponibilidad y su alerta (Monitoring) | el host lleva la región | `bootstrap.sh` detecta el host viejo y los recrea | (los reemplaza) |
+| Secret Manager, cuentas de servicio, Workload Identity, presupuesto, canal de correo, Neon, DNS de Cloudflare | no | sin cambios | — |
+| Variables con región que calcula `deploy.sh`: `CLOUD_TASKS_URL`, cola, `BULK_JOB_NAME`, `OPS_JOB_NAME`, `WARM_SERVICE_*`, `GCS_BUCKET`/`BACKUP_BUCKET`, `PUBLIC_BASE_URL` (sin Firebase) | sí | se actualizan solas al redesplegar | — |
+
+**Procedimiento en orden — staging** (sin corte: la región nueva se prepara y verifica antes de cambiar el tráfico; lo corre Juan David en Cloud Shell desde el clon de `migra/fase1-2`, con el proyecto de staging en `gcloud config`):
+```bash
+git pull && export OLD_REGION=us-east1 REGION=us-east4 && gcloud config set run/region "$REGION"
+# 1) inventario (solo lee): qué hay en la región vieja y qué falta en la nueva
+bash deploy/gcp/move_region.sh staging plan
+# 2) crea lo regional NUEVO: repositorio de imágenes, bucket, cola, servicios y Jobs con imagen de relleno, permisos, chequeo de disponibilidad
+FIREBASE_DEPLOY=1 bash deploy/gcp/bootstrap.sh staging          # idempotente: no vuelve a pedir los secretos que ya existen; imprime las variables de GitHub
+# 3) GitHub → Settings → Environments → staging → Variables: GCP_REGION = us-east4 (el resto no cambia)
+# 4) copia el contenido del bucket viejo al nuevo (primero en seco)
+bash deploy/gcp/move_region.sh staging copy --dry-run && bash deploy/gcp/move_region.sh staging copy
+# 5) despliega: relanza el workflow «Cloud Run» (o un push a migra/fase1-2). Construye la imagen en el repositorio NUEVO, corre las migraciones (mismo Neon), despliega los 3 servicios y los
+#    Jobs en us-east4 y publica Firebase Hosting con las reglas nuevas: desde aquí el sitio público (web.app) responde desde us-east4
+# 6) respaldos en la región nueva (el bucket nuevo empieza vacío y check-backups lo exige)
+gcloud run jobs execute "golden-ops-staging" --region "$REGION" --args="-m,app.ops_runner,backup" --wait
+gcloud run jobs execute "golden-ops-staging" --region "$REGION" --args="-m,app.ops_runner,backup-daily" --wait
+# 7) verifica la región nueva (servicios, Jobs, cola, bucket, /health, /ready, sitio público y que las variables apunten a us-east4)
+bash deploy/gcp/move_region.sh staging verify
+# 8) ~1 día de observación (Estado del sistema en verde; la cola vieja se vacía sola); después limpia lo VIEJO (pide escribir la región)
+bash deploy/gcp/move_region.sh staging cleanup
+```
+Después: actualizar el texto de la URL de Cloud Run de staging donde se haya anotado (`golden-web-staging-<número>.us-east4.run.app`), y repetir las mediciones de D2.1 en la región nueva como referencia. La contraseña de
+`revisor.staging`/datos sintéticos siguen en la base (Neon no se mueve). Mientras conviven las dos regiones el costo extra es despreciable (sin instancias mínimas no hay cobro inactivo; un poco de almacenamiento).
+
+**Producción directamente en us-east4** (no hay nada que mover: su bootstrap todavía no se corrió): `gcloud config set run/region us-east4` (o `REGION=us-east4` en cada comando) y `bash deploy/gcp/bootstrap.sh production` /
+GitHub Environment `production` con `GCP_REGION=us-east4`. Crea los buckets NUEVOS `<proyecto>-golden-app-us-east4` (archivos bajo `app/`) y `<proyecto>-golden-backups-us-east4` (`bootstrap.sh` avisa si un bucket no está en la región del
+entorno). Ya NO se reutilizan los buckets de la VM: están en otra región y cada foto o respaldo cruzaría regiones. Los comandos de subida del runbook usan el bucket que imprime `config.sh`
+(`source deploy/gcp/config.sh production; echo $APP_BUCKET`).
+
+**Limpiar lo viejo para que no cueste** (lo hace `cleanup`; se niega si la cola vieja tiene tareas, salvo `FORCE=1`): servicios y Jobs, cola, tarea de Scheduler, repositorio de Artifact Registry y el bucket viejo de staging con
+todas sus versiones (dos confirmaciones escritas). No borra nada de producción sin escribir «produccion», ni los buckets de la VM. Al día siguiente revisa Facturación → Informes agrupado por SKU y por ubicación: no debe
+quedar consumo en la región vieja. Lo que sí queda a propósito: secretos, cuentas de servicio, Workload Identity y Neon (globales).
+
 ### Sesión 3 — estado (2026-09-29): scripts y pasos listos (D.2); faltan las corridas en la nube de Juan David
-- [~] 1. Latencia app→Neon y región: `scripts/measure_db_latency.py` y análisis en «D.2 · D2.1» (recomendación provisional `us-east4`); falta correrlo en las dos regiones y decidir
+- [x] 1. Latencia app→Neon y región: decidida `us-east4` (docs/13 §15); falta ejecutar el traslado de staging (sección «Mover a otra región») y repetir la medición allí
 - [~] 2. `XFF_CLIENT_INDEX`: diagnóstico `GET /api/ops/client-ip` y procedimiento en «D2.2»; falta el tráfico real detrás de Firebase
 - [~] 3. Prueba de carga distribuida y simulacros 1 y 2: `deploy/loadtest/` + `scripts/seed_load_staging.py` + `scripts/loadgen_report.py` y pasos en «D2.3»; falta correrlos
 - [x] 4. Runbook del día del cambio (VM apagada, monitores a `/health`, `golden-ops-hourly`, vuelta atrás): «D2.4» (tabla de costos por componente: pendiente)

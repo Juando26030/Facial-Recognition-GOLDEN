@@ -1,8 +1,8 @@
 """Siembra en la base de STAGING el evento y el formulario de la prueba de carga de la Fase 4 (datos 100 % sintéticos: nadie real, encodings aleatorios).
 
 Como Cloud Run Job (la imagen de la app ya trae este script; DATABASE_URL de `golden_app` alcanza: solo inserta filas):
-    gcloud run jobs execute golden-ops-staging --region us-east1 --args="-m,scripts.seed_load_staging,--people,5000,--capacity,4000" --wait
-    gcloud run jobs execute golden-ops-staging --region us-east1 --args="-m,scripts.seed_load_staging,--verify" --wait        # después de la prueba
+    gcloud run jobs execute golden-ops-staging --region "$REGION" --args="-m,scripts.seed_load_staging,--people,5000,--capacity,4000" --wait
+    gcloud run jobs execute golden-ops-staging --region "$REGION" --args="-m,scripts.seed_load_staging,--verify" --wait        # después de la prueba
 
 Idempotente (no duplica). Imprime UNA línea `LOAD_SEED {json}` con los ids que necesitan los generadores (event_id, form_slug): nada secreto. La contraseña de la
 cuenta `carga_dig` (digitador) se DERIVA de OPS_TOKEN (scripts/load_cfg.py) y nunca se imprime.

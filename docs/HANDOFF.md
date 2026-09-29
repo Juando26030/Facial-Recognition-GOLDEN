@@ -40,10 +40,8 @@ Pruebas: 380 en verde (`python -m pytest -q`), 2 se saltan sin el emulador (pasa
 ruff limpio en lo tocado, shellcheck y actionlint limpios.
 
 ## 3. Decisiones y su porqué
-- **Región `us-east1` por defecto, `us-east4` como alternativa, SIN decidir.** us-east1 es más barata (Nivel 1) pero más lejos de Neon
-  (us-east-1, Virginia). La latencia medida desde Colombia (81 ms) no sirve para decidir: hay que medir desde Cloud Run (sesión 3). Cambiar
-  es `REGION=us-east4 bash deploy/gcp/bootstrap.sh …` + redesplegar. El cupo atómico existe justamente para que ~10-15 ms por consulta no
-  limiten los formularios.
+- **Región `us-east4` (decidida el 2026-09-29).** Nivel 1 igual que us-east1; junto a Neon (Virginia). Sin valores fijos: `REGION` o `gcloud config set run/region`. Todo lo regional en la MISMA
+  región (buckets nuevos `<proyecto>-golden-*-<región>`). Staging se traslada de us-east1 con `deploy/gcp/move_region.sh` (docs/15 «Mover a otra región»); producción nace en us-east4.
 - **Neon (plan Launch)** en vez de Postgres en una VM: cobra por uso y se apaga solo. La app usa el pooler con `golden_app` (solo DML);
   migraciones, respaldos y restauraciones usan el dueño por conexión directa. Nada frecuente puede tocar la base (se mantendría despierta).
 - **Firebase Hosting** para el dominio (el balanceador de Google cuesta fijo; el mapeo de dominios de Cloud Run no es para producción;

@@ -26,7 +26,7 @@ jobs:
     env:
       GOLDEN_ENV: ${{ inputs.env }}
       PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.GCP_REGION || 'us-east1' }}
+      REGION: ${{ vars.GCP_REGION }}
       FIREBASE_SITE: ${{ vars.FIREBASE_SITE }}
       FORCE: ${{ inputs.force && '1' || '0' }}
     steps:
@@ -35,7 +35,7 @@ jobs:
       - id: cfg
         name: ¿Está configurado el entorno?
         run: |
-          if [ -z "${{ vars.GCP_PROJECT_ID }}" ] || [ -z "${{ vars.GCP_WIF_PROVIDER }}" ] || [ -z "${{ vars.GCP_DEPLOYER }}" ]; then
+          if [ -z "${{ vars.GCP_PROJECT_ID }}" ] || [ -z "${{ vars.GCP_REGION }}" ] || [ -z "${{ vars.GCP_WIF_PROVIDER }}" ] || [ -z "${{ vars.GCP_DEPLOYER }}" ]; then
             echo "::notice::El Environment «$GOLDEN_ENV» no tiene las variables de GCP: corre deploy/gcp/bootstrap.sh $GOLDEN_ENV y configúralas. Se omite el despliegue."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
