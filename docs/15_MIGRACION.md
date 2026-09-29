@@ -330,7 +330,7 @@ falta lo corre Juan David: lista exacta al final de este archivo y en [`docs/HAN
   (Los nombres de secreto salen de `deploy/gcp/config.sh`: `golden-<nombre>-staging`; si el de la conexión directa se llama distinto, `gcloud secrets list`.) Pegar el resultado en esta sección.
   Regla: si `select1_warm_1rtt` en `us-east1` da ≥ 12 ms y en `us-east4` ≤ 4 ms → `us-east4`.
 
-**D2.2 IP real del cliente detrás de Firebase Hosting.** Hoy `TRUST_CF_CONNECTING_IP=0` (Cloudflare solo es DNS: esa cabecera se puede inventar) y `XFF_CLIENT_INDEX=0` (la PRIMERA entrada de
+**D2.2 IP real del cliente detrás de Firebase Hosting** *(procedimiento de MEDICIÓN original; el hallazgo y la corrección que lo reemplazan van justo debajo, «D2.2 · Hallazgo en staging y corrección»)*. Antes: `TRUST_CF_CONNECTING_IP=0` (Cloudflare solo es DNS: esa cabecera se puede inventar) y `XFF_CLIENT_INDEX=0` (la PRIMERA entrada de
 `X-Forwarded-For`). El riesgo: si Firebase/Cloud Run AGREGAN al final de una cadena que trae el cliente, la primera entrada es lo que el cliente escribió (se puede inventar y esquivar los límites
 por IP); si en cambio quedara la IP de Google, todos compartirían un mismo límite. Nuevo diagnóstico `GET /api/ops/client-ip` (admin+ u `X-Ops-Token`): devuelve la cadena tal como llega, cuántas entradas
 y cuál toma `client_ip()`. Procedimiento (desde tu casa o desde el móvil con datos, para conocer tu IP pública real: <https://ifconfig.me>):
@@ -344,6 +344,21 @@ y cuál toma `client_ip()`. Procedimiento (desde tu casa o desde el móvil con d
   redespliegue). Si tu IP es la ÚNICA entrada (Firebase la reescribe), `0` es correcto y no se puede inventar. Con `TRUST_CF_CONNECTING_IP=0` no hay que cambiar nada más. **No cambié el valor
   hoy** porque sin este tráfico real un índice equivocado es peor que `0`. **Ojo con la carga:** la prueba de carga fija su propia `X-Forwarded-For` por usuario virtual; si el índice
   pasa a `−2` los 20 generadores compartirán IP (20 IPs) y toparán el límite por IP de los formularios: correr la Fase 4 ANTES del cambio de índice, o con `PUBLIC_LIMIT_FACTOR` alto temporal.
+
+**D2.2 · Hallazgo en staging y corrección (opción D, implementada 2026-09-29).** Medido desde Cloud Shell (IP real 34.139.233.0): por Firebase (`web.app`) la cadena es `[IP real, IP de Google]` (la de Google cambia entre llamadas: 66.102.8.224,
+74.125.210.70) y una `X-Forwarded-For` falsa se descarta; por `run.app` directo la cadena es `[lo que escribió el cliente, IP real]`, así que con `XFF_CLIENT_INDEX=0` un atacante fijaba su «IP» y esquivaba los límites. Ningún índice fijo sirve para los dos
+caminos (ambas cadenas tienen 2 entradas), así que la app **quita del FINAL de la cadena las IPs de infraestructura de Google y toma la última que queda** (`security.client_ip`, `XFF_STRIP_GOOGLE=1` en `common.yaml`): por Firebase queda la IP real,
+por run.app también (la última la agrega Google; el atacante solo controla lo de la izquierda). Los rangos son `goog.json` MENOS `cloud.json` (`app/google_infra_cidrs.txt`, 402 rangos): 66.102.x y 74.125.x entran, y Cloud Shell/VM de clientes (34.x…) NO,
+así que cuentan como visitantes. Tests con las cadenas reales medidas en `tests/test_client_ip_strip.py`. Supuestos (marcados): (a) Firebase Hosting y el frontend de Cloud Run siguen agregando UNA IP de Google al final y esa IP sigue dentro de `goog.json`;
+(b) las llamadas internas (Cloud Tasks a `/internal/jobs/run`, Scheduler, Jobs) no dependen de la IP (las protege el token OIDC; el Scheduler y los Jobs ni pasan por HTTP), así que no cambian.
+- **Lista vieja (dos protecciones).** (1) Si TODA la cadena es de Google (llamada interna que llega a un límite, o la IP de un visitante que cae en un rango de Google), `limit_ip()` devuelve `None`: se SALTA el límite por IP (siguen los de por usuario/cédula) en vez de juntar a todos
+  en un solo cubo y bloquearlos a la vez; queda contado. (2) «Estado del sistema» tiene el chequeo **IP del visitante**: ROJO si hubo visitas con cadena toda de Google en los últimos 10 min; AMARILLO si una IP concentra ≥ 60 % de las peticiones (≥ 100 en 5 min) con ≥ 20 navegadores distintos
+  (puede ser el wifi de un evento —sube `PUBLIC_LIMIT_FACTOR`— o un proxy nuevo de Google que la lista no conoce) o si la lista tiene más de 45 días. No se desactiva el límite automáticamente por concentración: los navegadores «distintos» los declara el cliente y un atacante podría fingirlos para apagar su propio límite.
+- **Refrescar la lista (cada mes y antes de un evento grande):** `python scripts/refresh_google_cidrs.py` (descarga goog.json y cloud.json, reescribe `app/google_infra_cidrs.txt`), commit y despliegue. Para probar sin desplegar código: `python scripts/refresh_google_cidrs.py --print` y ponerlo en la variable
+  `XFF_STRIP_CIDRS` del servicio (coma-separado; «auto» o vacío = el archivo). Fecha de la lista actual: `python scripts/refresh_google_cidrs.py --age`.
+- **Prueba de carga:** los generadores están en Google Cloud (clientes: NO se quitan), pero la app ya no cree la `X-Forwarded-For` que ponen (todos los usuarios virtuales de una tarea comparten IP real): sube el límite SOLO mientras dura la prueba y devuélvelo:
+  `gcloud run services update golden-publico-staging --region "$REGION" --update-env-vars PUBLIC_LIMIT_FACTOR=200` (y lo mismo con `golden-web-staging` para los límites de login) antes de `run_phase4.sh run`; al terminar:
+  `gcloud run services update golden-publico-staging --region "$REGION" --remove-env-vars PUBLIC_LIMIT_FACTOR` (vuelve a 1). Atajo: `bash deploy/loadtest/run_phase4.sh limits-up` antes de `run` y `limits-down` al terminar. Un redespliegue del workflow también lo devuelve (las variables vienen de `common.yaml`). Los límites de login por IP (20 fallos) no dependen de esa variable: la carga solo inicia sesión bien.
 
 **D2.3 Prueba de carga distribuida contra staging** (`deploy/loadtest/`, `scripts/seed_load_staging.py`, `scripts/loadgen_report.py`; generadores = Cloud Run Jobs con Locust; solo staging: el
 generador se niega a apuntar a un host sin «staging» y al dominio de producción). Criterios (docs/13 §11): formularios 10.000 aperturas en 60 s + 5.000 envíos en 120 s con 0 errores 5xx, p95 del
@@ -396,7 +411,10 @@ ACTUALES de la VM en Secret Manager), autorización explícita de Juan David par
    Es equivalente (y con MD5 desde el disco) a los `migrate_files_to_gcs.py` de arriba: úsalo para adelantar trabajo días antes o si la VM ya no está.
 4. **Desplegar:** activar el workflow de producción (o `deploy/gcp/deploy.sh production`); comprobar `…/health` y `…/ready` de cada servicio y `Estado del sistema`.
 5. **Dominio:** conectar `app.golden-eventos.com` al sitio de Firebase Hosting (consola de Firebase → Hosting → Agregar dominio) y en Cloudflare cambiar el registro a los que indique Firebase con **proxy
-   apagado (solo DNS)**; esperar el certificado. Ahora sí `TRUST_CF_CONNECTING_IP=0` y el `XFF_CLIENT_INDEX` verificado en D2.2.
+   apagado (solo DNS)**; esperar el certificado. Ahora sí `TRUST_CF_CONNECTING_IP=0` y `XFF_STRIP_GOOGLE=1` (D2.2, opción D).
+   **5b. Repetir la prueba de IP por el DOMINIO PROPIO** (DNS ya cambiado, Cloudflare solo DNS, sin proxy): `curl -s -H "X-Ops-Token: $OPS_TOKEN" https://app.golden-eventos.com/api/ops/client-ip` (y otra vez con `-H "X-Forwarded-For: 1.2.3.4"`). Debe verse
+   `x_forwarded_for` = `[tu IP real, una IP de Google]` (`hops: 2`, `google_infra: [false, true]`), `chosen_ip` = tu IP real, y la falsa DESCARTADA. **Si aparece cualquier otra entrada** (una tercera, una IP de Cloudflare 104.x/172.64.x/
+   162.158.x, etc.) NO sigas: significa que el proxy de Cloudflare quedó encendido o hay un salto que no se esperaba; corrige el DNS (nube gris) y repite.
 6. **Encender lo programado:** reanudar `golden-ops-hourly` (`gcloud scheduler jobs resume golden-ops-hourly --location "$REGION"`) y correr UNA vez `backup-daily` (comando de D.1) y `check-backups`.
 7. **Monitores → `/health`:** el chequeo de Google «GoldenWeb readyz» y el monitor de UptimeRobot pasan a `https://app.golden-eventos.com/health` (NO `/healthz`: en Cloud Run da 404 de Google; y no `/ready`:
    toca la base y Neon no se apagaría). `bootstrap.sh production` ya crea `golden-health-production`; borrar el chequeo viejo.

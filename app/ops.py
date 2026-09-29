@@ -267,9 +267,29 @@ def check_errors(db: Session) -> dict:
                 "" if level == "green" else "Busca en los logs por severity=ERROR; el id de cada error aparece en la pantalla del usuario y en el log.", count=n)
 
 
+def check_client_ip() -> dict:
+    """IP del visitante detrás de Firebase/Cloud Run: avisa si la lista de rangos de Google está vieja o si la cadena X-Forwarded-For no se interpreta como se espera
+    (docs/15, D2.2 opción D). Solo cuenta con XFF_STRIP_GOOGLE=1 (Cloud Run); en la VM no aplica."""
+    from app import security
+    h = security.ip_health()
+    if not h["strip"]:
+        return item("client_ip", "IP del visitante", "green", "sin proxies de Google (VM)", **h)
+    fix = "Refresca los rangos: python scripts/refresh_google_cidrs.py, commit y despliegue (docs/15, «IP real del cliente»)."
+    if h["google_ip_hits"]:
+        return item("client_ip", "IP del visitante", "red", f"{h['google_ip_hits']} visitas con IP de Google",
+                    "Toda la cadena X-Forwarded-For fue de Google: los límites por IP se saltaron para esas visitas (quedan los límites por usuario). O la lista de rangos está vieja, o el tráfico entra por un camino nuevo.", fix, **h)
+    if h["concentrated"]:
+        return item("client_ip", "IP del visitante", "yellow", f"{int(h['top_share'] * 100)} % desde una IP ({h['distinct_clients']} navegadores)",
+                    "Muchos navegadores distintos salen por una misma IP: puede ser el wifi de un evento (normal; sube PUBLIC_LIMIT_FACTOR) o una lista de rangos de Google vieja que deja pasar un proxy nuevo.", fix, **h)
+    if h["list_age_days"] is None or h["list_age_days"] > 45:
+        return item("client_ip", "IP del visitante", "yellow", "rangos de Google sin fecha" if h["list_age_days"] is None else f"rangos de hace {h['list_age_days']} días",
+                    "La lista de rangos de Google no se refresca hace más de 45 días (mensual y antes de un evento grande).", fix, **h)
+    return item("client_ip", "IP del visitante", "green", f"rangos de hace {h['list_age_days']} días", **h)
+
+
 # ------------------------------------------------------------------ estado completo / readiness
 def system_status(db: Session) -> dict:
-    checks: List[Callable[[], dict]] = [check_version, check_database, lambda: check_connections(db), lambda: check_queue(db), check_backup,
+    checks: List[Callable[[], dict]] = [check_version, check_database, lambda: check_connections(db), lambda: check_queue(db), check_backup, check_client_ip,
                                         lambda: check_bulk_jobs(db), lambda: check_events(db), lambda: check_emails(db), lambda: check_payments(db),
                                         lambda: check_errors(db)]
     results = []

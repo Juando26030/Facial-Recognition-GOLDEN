@@ -17,7 +17,10 @@ MATCH_MARGIN: "0.10"
 # Detrás de Firebase Hosting solo pasa la cookie «__session», y CF-Connecting-IP no es confiable (Cloudflare solo como DNS).
 SESSION_COOKIE: "__session"
 TRUST_CF_CONNECTING_IP: "0"
-# Posición de la IP real en X-Forwarded-For detrás de Firebase: VERIFICAR en staging (sesión 3) y ajustar.
+# IP real del visitante (docs/15, D2.2 opción D): se quitan del FINAL de X-Forwarded-For las IPs de infraestructura de Google (app/google_infra_cidrs.txt, se refresca con
+# scripts/refresh_google_cidrs.py cada mes y antes de un evento grande) y se toma la última que queda. Sirve igual por Firebase ([IP real, IP de Google]) y por run.app
+# ([lo que escriba el cliente, IP real]); XFF_CLIENT_INDEX solo cuenta si XFF_STRIP_GOOGLE se apaga.
+XFF_STRIP_GOOGLE: "1"
 XFF_CLIENT_INDEX: "0"
 DEPLOY_FREEZE_HOURS: "3"
 # Cloud Run y Firebase ponen X-Forwarded-Proto=https: se confía en ellos para que la app sepa que la petición llegó por https (redirecciones).

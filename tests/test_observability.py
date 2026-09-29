@@ -175,7 +175,7 @@ def test_status_endpoint_is_admin_only_and_structured(client, factory):
     assert r.status_code == 200
     body = r.json()
     ids = [i["id"] for i in body["items"]]
-    assert ids == ["version", "database", "connections", "queue", "backup", "bulk_jobs", "events", "emails", "payments", "errors"]
+    assert ids == ["version", "database", "connections", "queue", "backup", "client_ip", "bulk_jobs", "events", "emails", "payments", "errors"]
     assert body["level"] in ("green", "yellow", "red") and all(i["level"] in ("green", "yellow", "red") and "reason" in i and "action" in i for i in body["items"])
     page = client.get("/sistema")
     assert page.status_code == 200 and "Estado del sistema" in page.text

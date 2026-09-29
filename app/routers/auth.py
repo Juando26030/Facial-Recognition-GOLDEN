@@ -34,7 +34,7 @@ def login_submit(
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    ip = security.client_ip(request)
+    ip = security.limit_ip(request)                 # None = IP de Google: solo cuenta el límite por usuario
     username = username.strip()
     # Bloqueo temporal tras varios fallos (por usuario y por IP). Se aplica igual exista o no la cuenta,
     # y el mensaje no dice cuál de las dos cosas falló.
@@ -85,7 +85,7 @@ def forgot_submit(request: Request, username: str = Form(...), db: Session = Dep
     """Manda un enlace de un solo uso al correo de la cuenta. La respuesta es SIEMPRE la misma (exista la
     cuenta, tenga o no correo) para no revelar qué usuarios existen; las cuentas sin correo (ej. los
     digitadores temporales) las restablece un admin/coordinador."""
-    ip = security.client_ip(request)
+    ip = security.limit_ip(request)
     username = username.strip()
     generic = "Si la cuenta existe y tiene un correo registrado, te enviamos un enlace para elegir una contraseña nueva (vale 60 minutos)."
     if security.minutes_locked(db, "reset_request", username, ip, security.RESET_MAX_REQUESTS, security.RESET_MAX_REQUESTS * 4, security.RESET_WINDOW):

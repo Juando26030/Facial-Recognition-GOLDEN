@@ -76,7 +76,10 @@ def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = Tru
 
 def _limit(db: Optional[Session], request: Request, kind: str, form: WebForm, max_hits: int) -> None:
     """Limite por IP en memoria (`db` se ignora: se conserva la firma que usan los demas modulos). Con varios procesos cada uno lleva su cuenta."""
-    if not _limiter.hit((kind, form.id, security.client_ip(request)), max(1, int(max_hits * LIMIT_FACTOR)), _LIMIT.total_seconds()):
+    ip = security.limit_ip(request)
+    if ip is None:                     # IP de infraestructura de Google (no confiable): sin límite por IP para no bloquear a todos a la vez; se cuenta en «Estado del sistema»
+        return
+    if not _limiter.hit((kind, form.id, ip), max(1, int(max_hits * LIMIT_FACTOR)), _LIMIT.total_seconds()):
         raise HTTPException(status_code=429, detail="Demasiadas consultas seguidas — espera unos minutos e intenta de nuevo.")
 
 

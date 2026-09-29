@@ -8,6 +8,7 @@
 #   bash deploy/loadtest/run_phase4.sh report <EJECUCION_forms> <EJECUCION_cedula> <EJECUCION_face>   # 4) une los logs y compara con los criterios
 #   bash deploy/loadtest/run_phase4.sh verify           # 5) cupo y duplicados en la base (solo cifras)
 #   bash deploy/loadtest/run_phase4.sh cleanup          # 6) borra los Jobs del generador
+#   bash deploy/loadtest/run_phase4.sh limits-up        # ANTES del paso 3: sube PUBLIC_LIMIT_FACTOR (los generadores comparten IP real); limits-down lo DEVUELVE al terminar (docs/15, D2.2)
 #
 # Proyecto, región, repositorio de imágenes y nombres salen de deploy/gcp/config.sh staging (REGION o `gcloud config set run/region`). Opcionales: WEB_URL (https://golden-staging-<número>.web.app: la URL PÚBLICA de Firebase de staging;
 # debe contener «staging»), TASKS (20), CEDULA_MIN (30). Tope de costo aproximado por corrida completa: ver docs/15 (≈ US$1-3; 1 vCPU × 20 tareas × ≤ 40 min).
@@ -53,6 +54,12 @@ case "${1:-}" in
   verify)
     gcloud run jobs execute "$APP_IMAGE_JOB" --project "$PROJECT" --region "$REGION" --args="-m,scripts.seed_load_staging,--verify" --wait
     gcloud logging read 'resource.type="cloud_run_job" AND textPayload:"LOAD_VERIFY"' --project "$PROJECT" --limit 1 --format='value(textPayload)' ;;
+  limits-up|limits-down)   # los generadores están en Google Cloud y la app ya no cree su X-Forwarded-For: sube el límite por IP de los formularios SOLO durante la prueba y devuélvelo
+    if [ "$1" = limits-up ]; then
+      gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --update-env-vars PUBLIC_LIMIT_FACTOR=200 --quiet
+    else
+      gcloud run services update "$SVC_PUBLICO" --project "$PROJECT" --region "$REGION" --remove-env-vars PUBLIC_LIMIT_FACTOR --quiet   # vuelve al valor de common.yaml (1)
+    fi ;;
   cleanup)
     for s in forms cedula face; do gcloud run jobs delete "$JOB-$s" --project "$PROJECT" --region "$REGION" --quiet || true; done ;;
   *) sed -n 2,14p "$0"; exit 1 ;;
