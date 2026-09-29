@@ -203,6 +203,16 @@ corre `bootstrap.sh staging`. Resumen para retomar: [`docs/HANDOFF.md`](HANDOFF.
   solo la ruta (`/static/…?v=…`), válida en cualquier dominio (en Firebase sale de su CDN); además `FORWARDED_ALLOW_IPS="*"` en Cloud Run
   para que la app tome `X-Forwarded-Proto=https` de Google (redirecciones en https). Prueba: `test_static_urls_are_paths_not_absolute_urls`
 
+- [x] S3. **«Usuario o contraseña incorrectos» con la cuenta de producción en staging: NO es un fallo del flujo.** Diagnóstico con la
+  conexión directa del dueño (sin mostrar usuarios ni claves): (1) el hash es bcrypt puro (`app/auth.py`), no depende de `SECRET_KEY` ni de
+  ninguna variable; (2) el único intento fallido registrado (`rate_limit_events`) muestra que la petición SÍ llegó a la app, que el usuario
+  escrito EXISTE (la cuenta `super_admin`, activa, hash `$2b$` de 60 caracteres) y que la app vio la IP real del cliente (sin bloqueo por
+  IP); (3) con un usuario de prueba `revisor.staging` (coordinador, contraseña aleatoria guardada fuera del repo) el inicio de sesión
+  FUNCIONA por el `run.app` y por el `web.app` (302, cookie `__session` con `Secure`, `/clientes` 200 con la sesión): el cuerpo del
+  formulario llega, Firebase deja pasar la cookie y el control de origen acepta `PUBLIC_BASE_URL`. Conclusión: la contraseña guardada en
+  staging es la de la cuenta en el respaldo de producción del 26-sep; si se cambió después (o se escribió otra), no coincide. Arreglo:
+  poner una contraseña nueva a esa cuenta SOLO en staging (comando en el mensaje de la sesión) o volver a copiar un respaldo reciente
+
 ### Sesión 3 — pendiente (empieza cuando staging esté desplegado en Cloud Run)
 - [ ] 1. Script de medición de latencia app→Neon desde Cloud Run (us-east1) y decisión de región (us-east1 / us-east4)
 - [ ] 2. Verificar `XFF_CLIENT_INDEX` con tráfico real detrás de Firebase y fijarlo en `deploy/gcp/env/common.yaml`
