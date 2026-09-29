@@ -16,12 +16,28 @@ import sys
 import time
 
 import gevent
-from locust.env import Environment  # importar locust primero: parchea gevent
+import locust  # importar locust primero: parchea gevent
+from locust.env import Environment
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, "load"), os.path.dirname(HERE)]      # en la imagen: /app/load (locustfile) y /app (scripts/load_cfg.py)
 
 CLASSES = {"forms": "FormBurst", "cedula": "CedulaScanner", "face": "FaceScanner"}
+
+
+def watch_generator(lags: list) -> None:
+    """Mide la SATURACIÓN DEL PROPIO GENERADOR: cuánto se retrasa un `sleep(0.1)` (si el proceso no da abasto, los usuarios virtuales esperan turno y la latencia medida
+    incluye esa espera, no solo la del servidor). Se guarda en LOADGEN_RESULT["generator"] y el informe la muestra."""
+    while True:
+        t = time.perf_counter()
+        gevent.sleep(0.1)
+        lags.append((time.perf_counter() - t - 0.1) * 1000)
+
+
+def make_env(user_class, host):
+    """events=locust.events: los oyentes del locustfile (`@events.request`, «[fuera de la app]», y `@events.quitting`) están en los eventos GLOBALES; un Environment sin este
+    argumento crea los suyos y esos oyentes nunca se ejecutan (así se perdió la línea «[fuera de la app]» en la 3.ª corrida)."""
+    return Environment(user_classes=[user_class], host=host, events=locust.events)
 
 
 def main() -> int:
@@ -39,13 +55,16 @@ def main() -> int:
     users = total_users // count + (1 if index < total_users % count else 0)
     rate = max(1.0, total_rate / count)
     import locustfile
-    env = Environment(user_classes=[getattr(locustfile, CLASSES[scenario])], host=host)
+    env = make_env(getattr(locustfile, CLASSES[scenario]), host)
     runner = env.create_local_runner()
+    lags: list = []
+    gevent.spawn(watch_generator, lags)
+    cpu0 = sum(os.times()[:2])
     started = time.time()
     runner.start(users, spawn_rate=rate)
     if scenario == "forms":                                   # cada usuario hace su parte y termina: se espera a que no quede ninguno
         gevent.sleep(2)
-        while runner.user_count > 0 and time.time() - started < duration:
+        while locustfile.DONE["users"] < users and time.time() - started < duration:          # usuarios que YA terminaron (no user_count: ver locustfile.FormBurst)
             gevent.sleep(1)
     else:
         gevent.sleep(duration)
@@ -55,8 +74,11 @@ def main() -> int:
         entries.append({"name": name, "method": method, "requests": e.num_requests, "failures": e.num_failures, "max_ms": e.max_response_time,
                         "total_ms": e.total_response_time, "histogram": {str(k): v for k, v in e.response_times.items()}})
     errors = {f"{err.method} {err.name}: {err.error}"[:200]: err.occurrences for err in env.stats.errors.values()}
+    wall = max(time.time() - started, 0.001)
+    lags.sort()
+    generator = {"cpu_pct": round(100 * (sum(os.times()[:2]) - cpu0) / wall), "lag_p95_ms": round(lags[int(len(lags) * .95)]) if lags else 0, "lag_max_ms": round(lags[-1]) if lags else 0}
     print("LOADGEN_RESULT " + json.dumps({"scenario": scenario, "task": index, "tasks": count, "users": users, "seconds": round(time.time() - started, 1),
-                                          "entries": entries, "errors": errors}), flush=True)
+                                          "entries": entries, "errors": errors, "generator": generator}), flush=True)
     return 0
 
 

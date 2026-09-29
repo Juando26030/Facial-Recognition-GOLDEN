@@ -71,6 +71,12 @@ def main(paths: list) -> int:
         print("| Petición | Solicitudes | Fallos | p50 ms | p95 ms | p99 ms | máx ms |\n|---|---:|---:|---:|---:|---:|---:|")
         for name, m in sorted(merged.items()):
             print(f"| {name} | {m['requests']} | {m['failures']} | {percentile(m['hist'], .5)} | {percentile(m['hist'], .95)} | {percentile(m['hist'], .99)} | {m['max_ms']:.0f} |")
+        gens = [(r["task"], r.get("generator")) for r in results if r.get("generator")]
+        if gens:
+            print("\nGenerador (si la CPU pasa de ~85 % o el retraso p95 de ~200 ms, la latencia medida incluye la espera del PROPIO generador y no vale como latencia del servidor):")
+            for task, g in sorted(gens):
+                flag = "  ⚠ SATURADO" if g["cpu_pct"] > 85 or g["lag_p95_ms"] > 200 else ""
+                print(f"- tarea {task}: CPU {g['cpu_pct']} %, retraso del bucle p95 {g['lag_p95_ms']} ms, máx {g['lag_max_ms']} ms{flag}")
         if errors:
             print("\nFallos por motivo:\n" + "\n".join(f"- {v} × {k}" for k, v in sorted(errors.items(), key=lambda kv: -kv[1])[:10]))
         target, limit = CRITERIA.get(scenario, (None, None))

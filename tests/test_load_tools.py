@@ -1,7 +1,13 @@
 """Herramientas de la prueba de carga (Fase 4): candado de destino (nunca producción) y limpieza de los datos sintéticos de staging."""
+import json
+import os
+from pathlib import Path
+
 import pytest
 
 from scripts.load_cfg import check_host
+
+ROOT = Path(__file__).resolve().parent.parent
 
 STAGING = ["golden-staging-123.web.app", "golden-web-staging-123.us-east4.run.app"]
 
@@ -97,3 +103,55 @@ def test_seed_is_idempotent_and_only_adds_missing_people(db, monkeypatch):
     assert grown["people"] == 45 and grown["capacity"] == 12 and db.query(EventAttendee).filter_by(event_id=first["event_id"]).count() == 45
     assert s.seed(db, 20, 12)["people"] == 45                                      # pedir menos no borra (para eso: purge-data)
     assert s.verify(db)["event_id"] == first["event_id"]                           # verify también imprime el id del evento (respaldo si el log del seed tarda)
+
+
+def test_locust_outside_the_app_line_is_recorded_end_to_end(tmp_path):
+    """Regresión: run_task creaba `Environment` sin `events=locust.events`, los oyentes del locustfile nunca corrían y «[fuera de la app]» no salía en el informe. Aquí un
+    servidor de mentira con `Server-Timing` y el generador real (en un subproceso: locust parchea gevent y no debe entrar al proceso de pytest)."""
+    import subprocess
+    import sys
+    driver = tmp_path / "drive.py"
+    driver.write_text('''
+import json, os, sys, threading, time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import gevent
+import locust
+from locust.env import Environment
+ROOT = sys.argv[1]
+sys.path[:0] = [ROOT + "/tests/load", ROOT, ROOT + "/deploy/loadtest"]
+seen = {}
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        seen["token"] = self.headers.get("X-Timing-Token")
+        time.sleep(0.05)
+        self.send_response(200); self.send_header("Server-Timing", "app;dur=10.0"); self.send_header("Content-Length", "2"); self.end_headers(); self.wfile.write(b"{}")
+    def log_message(self, *a): pass
+srv = HTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+import run_task, locustfile
+env = run_task.make_env(locustfile.FormBurst, "http://127.0.0.1:%d" % srv.server_port)
+runner = env.create_local_runner(); runner.start(2, spawn_rate=2)
+gevent.sleep(3); runner.quit()
+print("ENTRIES", json.dumps(sorted(n for n, _ in env.stats.entries)))
+print("TOKEN", bool(seen.get("token")))
+''', encoding="utf8")
+    env = {**os.environ, "LOAD_EVENT_ID": "1", "LOAD_FORM_SLUG": "carga", "OPS_TOKEN": "token-de-prueba", "LOAD_SUBMIT_RATIO": "0", "PYTHONIOENCODING": "utf-8"}
+    r = subprocess.run([sys.executable, str(driver), str(ROOT)], env=env, capture_output=True, text=True, encoding="utf8", timeout=60, cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "TOKEN True" in r.stdout
+    names = json.loads(r.stdout.split("ENTRIES ", 1)[1].splitlines()[0])
+    assert "[fuera de la app] GET state" in names and "[fuera de la app] GET pagina del formulario" in names, names
+
+
+def test_report_flags_a_saturated_generator(tmp_path, capsys):
+    """El informe muestra CPU y retraso del bucle de cada tarea y avisa cuando el generador no daba abasto (su latencia no es la del servidor)."""
+    from scripts import loadgen_report
+    entry = {"name": "GET state", "method": "GET", "requests": 10, "failures": 0, "max_ms": 50, "total_ms": 100, "histogram": {"10": 10}}
+    lines = [{"scenario": "forms", "task": i, "tasks": 2, "users": 5, "seconds": 10, "entries": [entry], "errors": {}, "generator": g}
+             for i, g in enumerate([{"cpu_pct": 40, "lag_p95_ms": 20, "lag_max_ms": 90}, {"cpu_pct": 97, "lag_p95_ms": 900, "lag_max_ms": 4000}])]
+    f = tmp_path / "r.txt"
+    f.write_text("\n".join("LOADGEN_RESULT " + json.dumps(x) for x in lines), encoding="utf8")
+    loadgen_report.main([str(f)])
+    out = capsys.readouterr().out
+    assert "tarea 0: CPU 40 %" in out and "tarea 1: CPU 97 %" in out
+    assert out.count("SATURADO") == 1 and "tarea 1: CPU 97 %, retraso del bucle p95 900 ms, máx 4000 ms  ⚠ SATURADO" in out

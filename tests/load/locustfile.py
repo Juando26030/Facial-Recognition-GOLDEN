@@ -103,6 +103,9 @@ class FormUser(HttpUser):
                 r.failure(f"submit {r.status_code}: {r.text[:120]}")
 
 
+DONE = {"users": 0}          # usuarios de FormBurst que ya terminaron su recorrido (run_task.py espera a que lleguen al total)
+
+
 class FormBurst(HttpUser):
     """Fase 4 (docs/15): cada usuario virtual abre el formulario UNA vez y, con probabilidad LOAD_SUBMIT_RATIO (0,5 → 10.000 aperturas y ~5.000 envíos), lo envía tras
     unos segundos (lo que tarda en escribir); un 10 % de los envíos se repite con la MISMA `sid` (reintento por red mala: debe salir «replayed», nunca duplicar). Con el
@@ -131,7 +134,10 @@ class FormBurst(HttpUser):
                         r.success()                      # cupo completo (o duplicado): respuesta correcta, no error; se ve en el reporte por código
                     else:
                         r.failure(f"submit {r.status_code}: {r.text[:120]}")
-        self.stop()
+        # NO `self.stop()`: Locust REPONE a los usuarios detenidos para mantener constante el total pedido, y cada reposición abría el formulario otra vez
+        # (3.ª corrida: ~17.700 aperturas para 10.000 usuarios). El usuario terminado se queda dormido hasta que el generador termine.
+        DONE["users"] += 1
+        gevent.sleep(10 ** 6)
 
 
 class _Staff(HttpUser):
