@@ -44,3 +44,14 @@ def test_backup_retention_is_30_days_not_60():
         if r["condition"].get("age") == 30 and r["condition"].get("matchesPrefix") == ["db/"]:
             r["condition"]["age"] = 60
     assert "db/ (diarios) se borra a los 30 días" in failed(doc, "backup")
+
+
+def test_cors_list_must_be_exact_extra_origins_fail():
+    doc = describe()
+    doc["cors_config"][0]["origin"] = [ORIGIN, "https://golden-web-123.us-east4.run.app"]        # run.app de más (p. ej. en producción)
+    bad = failed(doc, "app")
+    assert len(bad) == 1 and bad[0].startswith("CORS sin orígenes de más") and "run.app" in bad[0]
+    doc["cors_config"][0]["origin"] = [ORIGIN]
+    assert failed(doc, "app") == []
+    two = describe(origin=ORIGIN)
+    assert any("web.app" in f for f in [label for label, ok in cb.check(two, "app", [ORIGIN, "https://s.web.app"]) if not ok])   # falta uno de la lista

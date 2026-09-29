@@ -55,6 +55,17 @@ else
   FIREBASE_SITE=""; WEB_MODULE="app.main:app"; PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-$(run_url "golden-web${SUFFIX}")}"
 fi
 
+# Orígenes que el bucket deja hacer PUT directo desde el navegador (CORS de la subida con URL firmada). UNA sola definición: la usan bootstrap.sh (la aplica) y
+# move_region.sh verify (comprueba EXACTAMENTE esta lista), calculada desde el proyecto y la región. Plantilla de la regla: deploy/gcs-app-cors.json (solo su
+# origin cambia). Producción: el dominio propio y los sitios de Firebase, NUNCA run.app. Staging: además la URL run.app del servicio web (para probar directo).
+cors_origins() {
+  {
+    echo "$PUBLIC_BASE_URL"
+    [ -z "$FIREBASE_SITE" ] || { echo "https://${FIREBASE_SITE}.web.app"; echo "https://${FIREBASE_SITE}.firebaseapp.com"; }
+    [ "$GOLDEN_ENV" = production ] || run_url "golden-web${SUFFIX}"
+  } | { if [ "$GOLDEN_ENV" = production ]; then grep -v '\.run\.app$'; else cat; fi; } | sort -u
+}
+
 # Cola, programador
 QUEUE="golden-jobs${SUFFIX}"
 SCHEDULER_OPS="golden-ops-hourly${SUFFIX}"

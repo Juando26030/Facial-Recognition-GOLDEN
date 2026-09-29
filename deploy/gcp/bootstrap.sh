@@ -176,11 +176,11 @@ for b in "$APP_BUCKET" "$BACKUP_BUCKET"; do
   echo "   reglas de ciclo de vida ACTUALES (se reemplazan por las del repositorio):"
   gcloud storage buckets describe "gs://$b" --format='json(lifecycle_config)' | sed 's/^/     /'
 done
-python3 - "$PUBLIC_BASE_URL" "$FIREBASE_SITE" > "$TMP/cors.json" <<'EOF'
+mapfile -t CORS_ORIGINS < <(cors_origins)              # deploy/gcp/config.sh: la MISMA lista que comprueba move_region.sh verify
+python3 - "${CORS_ORIGINS[@]}" > "$TMP/cors.json" <<'EOF'
 import json, sys
 rules = json.load(open("deploy/gcs-app-cors.json"))
-site = sys.argv[2]
-rules[0]["origin"] = sorted({sys.argv[1]} | ({f"https://{site}.web.app", f"https://{site}.firebaseapp.com"} if site else set()))
+rules[0]["origin"] = sorted(set(sys.argv[1:]))
 print(json.dumps(rules))
 EOF
 gcloud storage buckets update "gs://$APP_BUCKET" --cors-file "$TMP/cors.json" --versioning --quiet >/dev/null
@@ -202,7 +202,7 @@ bucket_bind "$APP_BUCKET" "$SA_OPS" roles/storage.objectAdmin              # la 
 bucket_bind "$BACKUP_BUCKET" "$SA_OPS" roles/storage.objectCreator          # respaldos: crear…
 bucket_bind "$BACKUP_BUCKET" "$SA_OPS" roles/storage.objectViewer           # …y revisar (no borrar: eso lo hace el ciclo de vida)
 bucket_bind "$BACKUP_BUCKET" "$SA_APP" roles/storage.objectViewer           # «Último respaldo» en /sistema
-ok "CORS ($PUBLIC_BASE_URL + dominios de Firebase), versiones, ciclo de vida y permisos"
+ok "CORS (${CORS_ORIGINS[*]}), versiones, ciclo de vida y permisos"
 
 # -------------------------------------------------------------------------------------------------------------------------- 7
 step "7. Cloud Tasks ($QUEUE)"

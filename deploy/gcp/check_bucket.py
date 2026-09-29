@@ -3,7 +3,7 @@
     gcloud storage buckets describe "gs://$APP_BUCKET" --format=json | python3 deploy/gcp/check_bucket.py app https://app.golden-eventos.com [https://<sitio>.web.app ...]
     ... | python3 deploy/gcp/check_bucket.py backup     |     ... | python3 deploy/gcp/check_bucket.py both <origen>   (staging: un solo bucket con todo)
 
-  app     CORS con PUT desde los orígenes indicados (subida directa con URL firmada), versiones de objeto, `uploads/` se borra a 1 día, versiones viejas de `biometric/` a 1 día,
+  app     CORS con PUT desde EXACTAMENTE los orígenes indicados (ni uno menos ni uno más; subida directa con URL firmada), versiones de objeto, `uploads/` se borra a 1 día, versiones viejas de `biometric/` a 1 día,
           versiones viejas del resto a 30 días.
   backup  `db/hourly/` a 3 días y `db/` (diarios) a 30 días, y las versiones viejas de `db/` a 1 día.
 Tolera los dos estilos de nombres de gcloud (camelCase o snake_case). Imprime `OK`/`FALTA` por comprobación; código de salida 1 si falta algo."""
@@ -55,6 +55,9 @@ def check(doc: dict, kind: str, origins: list) -> list:
         put_origins = {o for c in cors if "PUT" in (c.get("method") or []) for o in (c.get("origin") or [])}
         for o in origins:
             out.append((f"CORS con PUT desde {o}", o in put_origins))
+        extra = sorted(put_origins - set(origins))
+        if origins:                                            # la lista debe ser EXACTA: un origen de más (p. ej. run.app en producción) también es un fallo
+            out.append(("CORS sin orígenes de más" + (f" (sobran: {', '.join(extra)})" if extra else ""), not extra))
         out.append(("versiones de objeto activadas", versioning_on(doc)))
         out.append(("uploads/ se borra a 1 día", has_rule(rules, "uploads/", age=1)))
         out.append(("versiones viejas de biometric/ a 1 día", has_rule(rules, "biometric/", noncurrent=1)))

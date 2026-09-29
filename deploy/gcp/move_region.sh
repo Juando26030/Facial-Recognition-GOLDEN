@@ -67,7 +67,7 @@ case "$ACTION" in
     chk "repositorio de imágenes $AR_REPO" gcloud artifacts repositories describe "$AR_REPO" --location "$REGION"
     chk "bucket gs://$APP_BUCKET" gcloud storage buckets describe "gs://$APP_BUCKET"
     # Configuración del bucket NUEVO (deploy/gcp/check_bucket.py): región, CORS con PUT desde el dominio, versiones, ciclo de vida (uploads/ 1 día, respaldos 30 días).
-    origins=("$PUBLIC_BASE_URL"); [ -z "$FIREBASE_SITE" ] || origins+=("https://${FIREBASE_SITE}.web.app" "https://${FIREBASE_SITE}.firebaseapp.com")
+    mapfile -t origins < <(cors_origins)                 # la misma lista que aplica bootstrap.sh (config.sh); verify exige que el bucket tenga EXACTAMENTE esa
     for b in $(printf '%s\n' "$APP_BUCKET" "$BACKUP_BUCKET" | sort -u); do
       loc="$(gcloud storage buckets describe "gs://$b" --format='value(location)' 2>/dev/null || true)"
       if [ "${loc,,}" = "${REGION,,}" ]; then echo "  OK    gs://$b está en $REGION"; else echo "  FALTA gs://$b está en '${loc:-?}', no en $REGION"; fail=1; fi

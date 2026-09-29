@@ -444,7 +444,7 @@ bash deploy/gcp/move_region.sh staging copy --dry-run && bash deploy/gcp/move_re
 # 6) respaldos en la región nueva (el bucket nuevo empieza vacío y check-backups lo exige)
 gcloud run jobs execute "golden-ops-staging" --region "$REGION" --args="-m,app.ops_runner,backup" --wait
 gcloud run jobs execute "golden-ops-staging" --region "$REGION" --args="-m,app.ops_runner,backup-daily" --wait
-# 7) verifica la región nueva (servicios, Jobs, cola, /health, /ready, sitio público, variables hacia us-east4) Y el bucket nuevo: está en la región, CORS con PUT desde el dominio, versiones,
+# 7) verifica la región nueva (servicios, Jobs, cola, /health, /ready, sitio público, variables hacia us-east4) Y el bucket nuevo: está en la región, CORS con PUT desde EXACTAMENTE la lista de config.sh, versiones,
 #    ciclo de vida (uploads/ a 1 día, respaldos a 30) y el permiso de firma de URLs de la cuenta de la app
 bash deploy/gcp/move_region.sh staging verify
 # 8) ~1 día de observación (Estado del sistema en verde; la cola vieja se vacía sola); después limpia lo VIEJO (pide escribir la región)
@@ -452,6 +452,8 @@ bash deploy/gcp/move_region.sh staging cleanup
 ```
 Después: actualizar el texto de la URL de Cloud Run de staging donde se haya anotado (`golden-web-staging-<número>.us-east4.run.app`), y repetir las mediciones de D2.1 en la región nueva como referencia. La contraseña de
 `revisor.staging`/datos sintéticos siguen en la base (Neon no se mueve). Mientras conviven las dos regiones el costo extra es despreciable (sin instancias mínimas no hay cobro inactivo; un poco de almacenamiento).
+
+**Orígenes de CORS del bucket (una sola definición).** `cors_origins()` en `deploy/gcp/config.sh` los calcula desde el proyecto y la región; `bootstrap.sh` los aplica sobre la plantilla `deploy/gcs-app-cors.json` (solo cambia su `origin`) y `move_region.sh verify` exige EXACTAMENTE esa lista (falta uno o sobra uno = FALTA). **Staging:** la URL pública, `https://<sitio>.web.app`, `https://<sitio>.firebaseapp.com` y la URL `run.app` del servicio web (para probar directo). **Producción:** el dominio propio y los dos sitios de Firebase; `run.app` NUNCA (se filtra aunque `PUBLIC_BASE_URL` lo trajera). Un bucket que quedó con orígenes distintos (p. ej. creado antes de este cambio) se corrige volviendo a correr `bootstrap.sh <entorno>`.
 
 **Idempotencia de `bootstrap.sh` (comprobado):** en una segunda corrida NO rota nada: `put_secret` deja los secretos que ya tienen valor, y la cadena de `golden_app` (`scripts/neon_app_role.py --rotate`) solo se genera si el secreto `database-url` no tiene
 valor; rotar exige pedirlo (`ROTATE="database-url"`). Los secretos son globales del proyecto: mover de región no los toca.
