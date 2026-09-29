@@ -96,16 +96,22 @@ case "${1:-}" in
     fi
     echo "Modo: $MODE · destino: $WEB_URL · evento $LOAD_EVENT_ID · región $REGION · tareas forms/cédula/facial: $TF/$TC/$TX"
     mk() {  # nombre escenario usuarios tasa duración tareas
+      # Variables en un ARCHIVO (--env-vars-file), no en --set-env-vars: LOAD_ALLOWED_HOSTS lleva comas y gcloud las tomaría como separador de variables.
+      local envfile; envfile="$(mktemp)"
+      "${PYTHON3:-python3}" "$(dirname "$0")/job_env.py" "$envfile" "LOAD_SCENARIO=$2" "LOAD_HOST=$WEB_URL" "LOAD_ALLOWED_HOSTS=$(allowed_hosts)" "LOAD_USERS=$3" "LOAD_RATE=$4" \
+        "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=5000" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" \
+        || { rm -f "$envfile"; return 1; }
       gcloud run jobs deploy "$JOB-$1" --project "$PROJECT" --region "$REGION" --image "$IMAGE" --tasks "$6" --parallelism "$6" --max-retries 0 \
         --task-timeout "$(( $5 + 240 ))s" --cpu 1 --memory 1Gi \
         --set-secrets "OPS_TOKEN=$(secret_name ops-token):latest" \
-        --set-env-vars "LOAD_SCENARIO=$2,LOAD_HOST=$WEB_URL,LOAD_ALLOWED_HOSTS=$(allowed_hosts),LOAD_USERS=$3,LOAD_RATE=$4,LOAD_DURATION=$5,LOAD_EVENT_ID=$LOAD_EVENT_ID,LOAD_FORM_SLUG=carga,LOAD_PEOPLE=5000,LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" --quiet
+        --env-vars-file "$envfile" --quiet || { rm -f "$envfile"; return 1; }
+      rm -f "$envfile"
     }
     ONLY="${ONLY:-forms,cedula,face}"           # p. ej. ONLY=forms,cedula para el simulacro de Neon
     has() { case ",$ONLY," in *",$1,"*) return 0;; *) return 1;; esac; }
-    has forms  && mk forms  forms  "$FU" "$FR" "$FD" "$TF"
-    has cedula && mk cedula cedula "$CU" "$CR" "$CD" "$TC"
-    has face   && mk face   face   "$XU" "$XR" "$XD" "$TX"
+    if has forms;  then mk forms  forms  "$FU" "$FR" "$FD" "$TF" || { echo "FALLÓ el despliegue del Job forms: no se lanzó nada." >&2; exit 1; }; fi
+    if has cedula; then mk cedula cedula "$CU" "$CR" "$CD" "$TC" || { echo "FALLÓ el despliegue del Job cedula: no se lanzó nada." >&2; exit 1; }; fi
+    if has face;   then mk face   face   "$XU" "$XR" "$XD" "$TX" || { echo "FALLÓ el despliegue del Job face: no se lanzó nada." >&2; exit 1; }; fi
     say "Lanzando ($ONLY) a la vez, sin --wait; sigue con «report» cuando terminen"
     for s in forms cedula face; do
       has "$s" && echo "$s: $(gcloud run jobs execute "$JOB-$s" --project "$PROJECT" --region "$REGION" --async --format='value(metadata.name)')"
