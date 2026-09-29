@@ -80,3 +80,20 @@ def test_seed_script_refuses_to_run_outside_staging_on_neon(monkeypatch):
     monkeypatch.setenv("DEPLOY_ENV", "staging")
     with pytest.raises(SystemExit):
         s.guard()
+
+
+def test_seed_is_idempotent_and_only_adds_missing_people(db, monkeypatch):
+    monkeypatch.setenv("OPS_TOKEN", "token-de-prueba")
+    from app.models import Event, EventAttendee, EventStaffAuthorization, StaffUser, Tenant, User, WebForm
+    from scripts import seed_load_staging as s
+    first = s.seed(db, 30, 10)
+    again = s.seed(db, 30, 10)                                                     # repetir el seed
+    assert first == again and again["people"] == 30
+    assert db.query(Event).filter_by(event_code=s.EVENT_CODE).count() == 1 and db.query(WebForm).filter_by(slug=s.FORM_SLUG).count() == 1
+    assert db.query(User).filter_by(tenant_id=s.TENANT).count() == 30 and db.query(EventAttendee).filter_by(event_id=first["event_id"]).count() == 30
+    assert db.query(StaffUser).filter_by(username=s.USERNAME).count() == 1 and db.query(Tenant).filter_by(id=s.TENANT).count() == 1
+    assert db.query(EventStaffAuthorization).filter_by(event_id=first["event_id"]).count() == 1
+    grown = s.seed(db, 45, 12)                                                     # pedir más personas agrega SOLO las que faltan; el cupo se actualiza
+    assert grown["people"] == 45 and grown["capacity"] == 12 and db.query(EventAttendee).filter_by(event_id=first["event_id"]).count() == 45
+    assert s.seed(db, 20, 12)["people"] == 45                                      # pedir menos no borra (para eso: purge-data)
+    assert s.verify(db)["event_id"] == first["event_id"]                           # verify también imprime el id del evento (respaldo si el log del seed tarda)

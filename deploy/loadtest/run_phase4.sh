@@ -5,7 +5,7 @@
 #
 #   bash deploy/loadtest/run_phase4.sh quota              # antes de todo: dónde ver/subir la cuota de CPU de la región (ver docs/15, «CPU simultánea»)
 #   bash deploy/loadtest/run_phase4.sh build              # construye y sube la imagen del generador (Artifact Registry de staging)
-#   bash deploy/loadtest/run_phase4.sh seed               # siembra el evento LOAD-STG y su formulario sintéticos (5.000 personas, cupo 4.000)
+#   bash deploy/loadtest/run_phase4.sh seed               # siembra el evento LOAD-STG y su formulario sintéticos (5.000 personas, cupo 4.000); se puede repetir: no duplica nada
 #   bash deploy/loadtest/run_phase4.sh reset-data         # deja en cero las inscripciones e ingresos de una corrida (evento, formulario y personas se quedan)
 #   bash deploy/loadtest/run_phase4.sh limits-up          # sube PUBLIC_LIMIT_FACTOR (los generadores comparten IP real); limits-down lo DEVUELVE
 #   bash deploy/loadtest/run_phase4.sh scale-up           # sube min/max de instancias de web, publico y biometria; GUARDA los valores originales; scale-down los restaura
@@ -29,8 +29,26 @@ AR="$REGION-docker.pkg.dev/$PROJECT/$AR_REPO"; IMAGE="$AR/loadgen:latest"; APP_I
 JOB="golden-loadgen-staging"
 SCALE_FILE="${SCALE_FILE:-$HOME/.golden_phase4_scale_${PROJECT}.txt}"
 say() { echo -e "\n== $*"; }
-ops_job() { gcloud run jobs execute "$APP_IMAGE_JOB" --project "$PROJECT" --region "$REGION" --args="-m,scripts.seed_load_staging,$1" --wait; }
-log_line() { gcloud logging read "resource.type=\"cloud_run_job\" AND textPayload:\"$1\"" --project "$PROJECT" --limit 1 --format='value(textPayload)'; }
+LAST_T0=""
+ops_job() {   # ejecuta el Job de ops con un paso de scripts.seed_load_staging y espera; anota la hora para leer SOLO lo que imprima esta ejecución
+  LAST_T0="$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)"
+  gcloud run jobs execute "$APP_IMAGE_JOB" --project "$PROJECT" --region "$REGION" --args="-m,scripts.seed_load_staging,$1" --wait
+}
+# Lee una línea marcada (LOAD_SEED, LOAD_VERIFY…) de Cloud Logging. Los logs tardan en aparecer: reintenta cada 10 s hasta 2 minutos; si no sale, dice cómo leerla a mano y falla.
+log_line() {
+  local filter="resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$APP_IMAGE_JOB\" AND textPayload:\"$1\"" out="" waited=0
+  [ -z "$LAST_T0" ] || filter="$filter AND timestamp>=\"$LAST_T0\""
+  while :; do
+    out="$(gcloud logging read "$filter" --project "$PROJECT" --limit 1 --freshness 3d --format='value(textPayload)' 2>/dev/null || true)"
+    [ -z "$out" ] || { echo "$out"; return 0; }
+    [ "$waited" -lt "${LOG_WAIT_SECONDS:-120}" ] || break
+    sleep 10; waited=$((waited + 10))
+  done
+  echo "No apareció la línea $1 en los logs tras ${waited} s (la ejecución SÍ terminó; Cloud Logging a veces tarda más). Léela a mano:" >&2
+  echo "  gcloud logging read '$filter' --project $PROJECT --limit 1 --freshness 3d --format='value(textPayload)'" >&2
+  echo "  o en la consola: Logging → Explorador de registros → texto «$1» (recurso: Job de Cloud Run $APP_IMAGE_JOB)." >&2
+  return 1
+}
 # Únicos destinos permitidos: los hosts EXACTOS de staging que calcula config.sh (el generador vuelve a comprobarlo con LOAD_ALLOWED_HOSTS).
 allowed_hosts() { { echo "$PUBLIC_BASE_URL"; run_url "$SVC_WEB"; run_url "$SVC_PUBLICO"; run_url "$SVC_BIOMETRIA"; } | sed 's#^https://##; s#/.*$##' | sort -u | paste -sd, -; }
 # Instancias de Cloud Run (API v2: el mínimo es a nivel de SERVICIO, como lo mueve app/warmup.py; el máximo va en la plantilla y crea una revisión nueva).
@@ -51,11 +69,13 @@ case "${1:-}" in
     echo "Dato de Juan David (2026-09-29): us-east4 tiene 200 vCPU y ~400 GiB; uso actual 3,75 vCPU y 4 GB. La prueba pide hasta 55 vCPU y ~54 GiB en el peor caso (docs/15): cabe con margen." ;;
   build)
     gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
-    docker build -f deploy/loadtest/Dockerfile -t "$IMAGE" . && docker push "$IMAGE" ;;
+    docker build -f deploy/loadtest/Dockerfile -t "$IMAGE" . || { echo "FALLÓ el build del generador: no sigas con seed/run." >&2; exit 1; }
+    docker push "$IMAGE" || { echo "FALLÓ el push de la imagen: no sigas con seed/run." >&2; exit 1; } ;;
   seed)
     say "Sembrando (Job existente $APP_IMAGE_JOB, con DEPLOY_ENV=staging)"
     ops_job "--people,5000,--capacity,4000"
-    echo "LOAD_SEED (event_id y form_slug): $(log_line LOAD_SEED)" ;;
+    line="$(log_line LOAD_SEED)" || { echo "El seed terminó bien; solo falta leer event_id. Cuando aparezca la línea, usa LOAD_EVENT_ID=<id> en «run» (o corre «verify», que también lo imprime)." >&2; exit 1; }
+    echo "LOAD_SEED (event_id y form_slug): $line" ;;
   reset-data)
     say "Dejando en cero inscripciones e ingresos de LOAD-STG"; ops_job "--reset-runs"; log_line LOAD_RESET ;;
   purge-data)
@@ -102,7 +122,7 @@ case "${1:-}" in
     done
     python3 scripts/loadgen_report.py "${files[@]}" ;;
   verify)
-    ops_job "--verify"; echo "LOAD_VERIFY: $(log_line LOAD_VERIFY)"
+    ops_job "--verify"; line="$(log_line LOAD_VERIFY)" || exit 1; echo "LOAD_VERIFY: $line"
     echo "Esperado tras la corrida completa: oversold=0, duplicate_persons=0, duplicate_sids=0, confirmed_submissions=capacity (4000: hubo ~5.000 intentos), access_logs_in_event ≥ las respuestas 200 de «POST checkin-cedula» del informe." ;;
   limits-up|limits-down)   # los generadores están en Google Cloud y la app ya no cree su X-Forwarded-For: sube el límite por IP de los formularios SOLO durante la prueba y devuélvelo
     if [ "$1" = limits-up ]; then

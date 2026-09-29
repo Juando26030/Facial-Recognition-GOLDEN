@@ -96,7 +96,7 @@ def verify(db) -> dict:
                               "GROUP BY sid HAVING count(*) > 1) t"), {"f": form.id}).scalar()
     ev = db.get(Event, form.event_id)
     logs = db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == ev.id).scalar()
-    return {"capacity": form.capacity, "confirmed_submissions": confirmed, "oversold": max(0, confirmed - (form.capacity or confirmed)),
+    return {"event_id": ev.id, "form_slug": form.slug, "capacity": form.capacity, "confirmed_submissions": confirmed, "oversold": max(0, confirmed - (form.capacity or confirmed)),
             "duplicate_persons": dup_persons, "duplicate_sids": dup_sid, "access_logs_in_event": logs}
 
 

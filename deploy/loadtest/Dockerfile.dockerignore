@@ -1,0 +1,6 @@
+# Contexto de construcción del GENERADOR de carga (deploy/loadtest/Dockerfile). BuildKit usa este archivo EN LUGAR del .dockerignore de la raíz (el de la app excluye
+# tests/, docs/, etc.; no se ensancha para el generador). Lista blanca: solo entra lo que el Dockerfile copia, nada de datos, secretos ni el código de la app.
+*
+!tests/load/locustfile.py
+!scripts/load_cfg.py
+!deploy/loadtest/run_task.py
