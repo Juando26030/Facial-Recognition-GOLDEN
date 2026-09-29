@@ -22,6 +22,11 @@
 # el del último LOAD_SEED en los logs), TASKS_FORMS/TASKS_CEDULA/TASKS_FACE (6/4/4 tareas de 1 vCPU), CEDULA_MIN (30), SCALE_WEB/SCALE_PUB/SCALE_BIO («min max»: 2 6 / 2 6 / 3 6), SCALE_FILE (dónde se guardan los originales).
 set -euo pipefail
 export FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-1}"             # staging con Firebase (proyecto propio): PUBLIC_BASE_URL = https://<sitio>.web.app
+# CANDADO: la lista de destinos permitidos se calcula SOLO desde proyecto, región y nombres de staging (config.sh). Lo que traiga el entorno de la terminal
+# (PUBLIC_BASE_URL/FIREBASE_SITE de otra sesión —quizá de producción—, GOLDEN_ENV, buckets, PROJECT_ID) no puede ensancharla. Si el sitio de Firebase de staging NO se
+# llama golden-staging-<número de proyecto>, indícalo explícitamente con LOAD_FIREBASE_SITE=<nombre> (nunca por una variable heredada).
+unset PUBLIC_BASE_URL FIREBASE_SITE GOLDEN_ENV APP_BUCKET BACKUP_BUCKET PROJECT_ID STAGING_BRANCH_REF
+[ -z "${LOAD_FIREBASE_SITE:-}" ] || export FIREBASE_SITE="$LOAD_FIREBASE_SITE"
 # shellcheck source=/dev/null
 source "$(dirname "$0")/../gcp/config.sh" staging          # PROJECT_ID, REGION, AR_REPO, JOB_OPS, SVC_*: nada fijo aquí
 PROJECT="$PROJECT_ID"; CEDULA_MIN="${CEDULA_MIN:-30}"

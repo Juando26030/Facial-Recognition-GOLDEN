@@ -83,9 +83,12 @@ def _run(tmp_path, *script_args, web=WEB, extra_env=None):
     gcloud.chmod(gcloud.stat().st_mode | stat.S_IEXEC)
     log = tmp_path / "gcloud.log"
     log.write_text("", encoding="utf8")
-    env = {**os.environ, "PATH": str(fake) + os.pathsep + os.environ["PATH"], "FAKE_GCLOUD_LOG": str(log), "PYTHON3": sys.executable, "WEB_URL": web,
-           "LOAD_EVENT_ID": "7", "HOME": str(tmp_path), **(extra_env or {})}
-    env.pop("REGION", None)
+    # HERMÉTICO: el script NO hereda nada del entorno de quien corre las pruebas. conftest.py fija PUBLIC_BASE_URL="http://test.local" en el proceso de pytest y el CI trae
+    # DATABASE_URL, SECRET_KEY, etc.; config.sh respeta PUBLIC_BASE_URL/FIREBASE_SITE/APP_BUCKET/REGION/PROJECT_ID… si existen, y eso cambiaba los hosts permitidos.
+    # Solo pasan: PATH (con el gcloud de mentira primero), lo mínimo del sistema (Windows necesita SYSTEMROOT/TEMP para bash y mktemp) y lo que el test declara.
+    keep = {k: os.environ[k] for k in ("SYSTEMROOT", "SystemRoot", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "COMSPEC", "MSYSTEM") if k in os.environ}
+    env = {**keep, "PATH": str(fake) + os.pathsep + os.environ["PATH"], "HOME": str(tmp_path), "FAKE_GCLOUD_LOG": str(log), "PYTHON3": sys.executable, "WEB_URL": web,
+           "LOAD_EVENT_ID": "7", **(extra_env or {})}
     r = subprocess.run([BASH, "deploy/loadtest/run_phase4.sh", *script_args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
     return r, log.read_text(encoding="utf8").splitlines()
 
@@ -115,6 +118,24 @@ def test_every_generator_job_gets_its_env_from_a_file_with_the_comma_list_intact
         assert check_host(env["LOAD_HOST"], hosts) is None              # run_task acepta este destino…
         assert check_host("https://app.golden-eventos.com", hosts) is not None      # …y no el de producción
     assert sum(ln.startswith("EXECUTE ") for ln in lines) == 3
+
+
+@pytest.mark.skipif(BASH is None, reason="sin bash")
+def test_inherited_environment_can_neither_widen_nor_break_the_allowed_hosts(tmp_path, monkeypatch):
+    """El CI (y conftest.py) traen PUBLIC_BASE_URL=http://test.local; una terminal de producción podría traer el de producción. Nada de eso entra en la lista de destinos permitidos:
+    run_phase4.sh la calcula SOLO desde proyecto, región y nombres de staging."""
+    poison = {"PUBLIC_BASE_URL": "http://test.local", "FIREBASE_SITE": "otro-sitio", "GOLDEN_ENV": "production", "APP_BUCKET": "x", "PROJECT_ID": "otro-proyecto"}
+    for key, value in poison.items():
+        monkeypatch.setenv(key, value)                                  # también en el proceso de pytest: _run no debe heredarlos
+    r, lines = _run(tmp_path, "run", "small")
+    _, envs = _jobs(lines)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert all(sorted(e["LOAD_ALLOWED_HOSTS"].split(",")) == sorted(ALLOWED) for e in envs)
+    # Y aunque el entorno SÍ llegara al script (una terminal con PUBLIC_BASE_URL de producción), el candado sigue cerrado: ese host no pasa ni el 2.º candado (load_cfg.check_host).
+    prod = "https://app.golden-eventos.com"
+    r, lines = _run(tmp_path, "run", "small", web=prod, extra_env={"PUBLIC_BASE_URL": prod, "FIREBASE_SITE": "golden-app-298291650070"})
+    assert r.returncode != 0 and not [ln for ln in lines if ln.startswith(("DEPLOY", "EXECUTE"))]
+    assert check_host(prod, [prod.replace("https://", "")]) is not None and check_host("https://golden-app-298291650070.web.app", ["golden-app-298291650070.web.app"]) is not None
 
 
 @pytest.mark.skipif(BASH is None, reason="sin bash")
