@@ -234,3 +234,34 @@ def test_scale_up_defaults_to_the_production_max_of_10_and_takes_caps_from_the_v
     r, lines = _run(tmp_path, "scale-up", extra_env={"SCALE_WEB": "1 4", "SCALE_PUBLICO": "2 8", "SCALE_BIO": "3 5"})
     assert r.returncode == 0, r.stderr
     assert _max_instances(lines) == {"golden-web-staging": "4", "golden-publico-staging": "8", "golden-biometria-staging": "5"}
+
+
+@pytest.mark.skipif(BASH is None, reason="sin bash")
+@pytest.mark.parametrize("value,expected", [(None, "0.5"), ("1", "1"), ("0.25", "0.25"), ("1.0", "1.0")])
+def test_submit_ratio_reaches_every_job_and_defaults_to_half(tmp_path, value, expected):
+    r, lines = _run(tmp_path, "run", "small", extra_env={"LOAD_SUBMIT_RATIO": value} if value else None)
+    assert r.returncode == 0, r.stdout + r.stderr
+    _, envs = _jobs(lines)
+    assert len(envs) == 3 and all(e["LOAD_SUBMIT_RATIO"] == expected for e in envs)
+    assert f"envían el {round(100 * float(expected))} % de quienes abren" in r.stdout
+
+
+@pytest.mark.skipif(BASH is None, reason="sin bash")
+@pytest.mark.parametrize("bad", ["2", "-1", "abc", "0,5", "1.5", "50"])
+def test_invalid_submit_ratio_creates_nothing(tmp_path, bad):
+    r, lines = _run(tmp_path, "run", "small", extra_env={"LOAD_SUBMIT_RATIO": bad})
+    assert r.returncode != 0 and "LOAD_SUBMIT_RATIO" in r.stderr and "No se lanzó nada" in r.stderr
+    assert not [ln for ln in lines if ln.startswith(("DEPLOY", "EXECUTE"))]
+
+
+def test_submit_ratio_parser(monkeypatch):
+    from scripts.load_cfg import DEFAULT_SUBMIT_RATIO, submit_ratio
+    monkeypatch.delenv("LOAD_SUBMIT_RATIO", raising=False)
+    assert submit_ratio() == DEFAULT_SUBMIT_RATIO == 0.5
+    for raw, want in (("1", 1.0), ("0", 0.0), ("0.25", 0.25), (" 0.7 ", 0.7), ("", 0.5)):
+        monkeypatch.setenv("LOAD_SUBMIT_RATIO", raw)
+        assert submit_ratio() == want
+    for bad in ("2", "-0.1", "abc", "nan", "1,5"):
+        monkeypatch.setenv("LOAD_SUBMIT_RATIO", bad)
+        with pytest.raises(SystemExit):
+            submit_ratio()

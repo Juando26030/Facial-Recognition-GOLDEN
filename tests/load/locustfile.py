@@ -107,6 +107,11 @@ class FormUser(HttpUser):
 DONE = {"users": 0}          # usuarios de FormBurst que ya terminaron su recorrido (run_task.py espera a que lleguen al total)
 
 
+try:
+    from scripts.load_cfg import submit_ratio
+    SUBMIT_RATIO = submit_ratio()                            # LOAD_SUBMIT_RATIO: proporción de los que abren que además envían (0,5 por defecto; 1 = todos)
+except ImportError:                                          # ejecución local sin el repo en el path
+    SUBMIT_RATIO = float(os.getenv("LOAD_SUBMIT_RATIO", "0.5"))
 RETRY_DEADLINE = float(os.getenv("LOAD_RETRY_DEADLINE", "150"))          # s: lo mismo que el navegador real (templates/form_public.html)
 RETRY_BASE = float(os.getenv("LOAD_RETRY_BASE_MS", "1500")) / 1000
 
@@ -171,7 +176,7 @@ class FormBurst(HttpUser):
                 break
             gevent.sleep(_retry_delay(r, attempt))
             attempt += 1
-        if random.random() < float(os.getenv("LOAD_SUBMIT_RATIO", "0.5")):
+        if random.random() < SUBMIT_RATIO:
             gevent.sleep(random.uniform(1, float(os.getenv("LOAD_THINK_MAX", "30"))))
             n = random.randint(10**9, 10**10 - 1)
             payload = {"values": {"cedula": str(n), "nombres": "Prueba", "apellidos": "Carga", "correo": f"carga{n}@example.com", "tel": "3001234567"}, "sid": f"sid{n}"}

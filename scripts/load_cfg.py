@@ -38,3 +38,21 @@ def timing_token() -> str:
     """Valor de `X-Timing-Token` para que la app (SERVER_TIMING=1) devuelva `Server-Timing`. Misma fórmula que app/timing.py::token(); vacío sin OPS_TOKEN."""
     token = os.environ.get("OPS_TOKEN", "")
     return hmac.new(token.encode(), b"golden-server-timing", hashlib.sha256).hexdigest()[:20] if token else ""
+
+
+DEFAULT_SUBMIT_RATIO = 0.5
+
+
+def submit_ratio() -> float:
+    """Proporción (0 a 1) de los usuarios que abren el formulario y además lo ENVÍAN: variable LOAD_SUBMIT_RATIO del Job (0,5 por defecto: ~5.000 envíos con 10.000 aperturas;
+    1 = 10.000 envíos). Un valor que no sea un número entre 0 y 1 detiene el generador en vez de correr otra prueba distinta de la pedida."""
+    raw = os.environ.get("LOAD_SUBMIT_RATIO", "").strip()
+    if not raw:
+        return DEFAULT_SUBMIT_RATIO
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not 0.0 <= value <= 1.0:
+        raise SystemExit(f"LOAD_SUBMIT_RATIO={raw!r} no es válido: debe ser un número entre 0 y 1 (0,5 = la mitad de los usuarios envía; 1 = todos).")
+    return value

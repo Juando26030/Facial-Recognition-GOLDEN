@@ -106,6 +106,8 @@ case "${1:-}" in
   run)
     MODE="${2:-full}"
     WEB_URL="${WEB_URL:-$PUBLIC_BASE_URL}"
+    SUBMIT_RATIO="${LOAD_SUBMIT_RATIO:-0.5}"     # proporción de los que abren el formulario que además envían (0.5 = ~5.000 envíos de 10.000; 1 = 10.000 envíos)
+    [[ "$SUBMIT_RATIO" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO no es válido: un número entre 0 y 1 (0.5 o 1). No se lanzó nada." >&2; exit 1; }
     host="$(echo "$WEB_URL" | sed 's#^https://##; s#/.*$##')"
     case ",$(allowed_hosts)," in *",$host,"*) ;; *) echo "WEB_URL=$WEB_URL NO es un destino de staging permitido. Permitidos: $(allowed_hosts | tr ',' ' ')" >&2; exit 1;; esac
     if [ "${PREFLIGHT_SKIP:-0}" = 1 ]; then echo "AVISO: PREFLIGHT_SKIP=1, no se comprobaron límites ni instancias." >&2; else preflight; fi
@@ -116,12 +118,12 @@ case "${1:-}" in
     else
       TF="${TASKS_FORMS:-6}"; TC="${TASKS_CEDULA:-4}"; TX="${TASKS_FACE:-4}"; FU=10000; FR=170; FD=360; CU=200; CR=20; CD=$(( CEDULA_MIN * 60 )); XU=60; XR=10; XD=300
     fi
-    echo "Modo: $MODE · destino: $WEB_URL · evento $LOAD_EVENT_ID · región $REGION · tareas forms/cédula/facial: $TF/$TC/$TX"
+    echo "Modo: $MODE · envían el $("${PYTHON3:-python3}" -c "print(round(100 * $SUBMIT_RATIO))") % de quienes abren · destino: $WEB_URL · evento $LOAD_EVENT_ID · región $REGION · tareas forms/cédula/facial: $TF/$TC/$TX"
     mk() {  # nombre escenario usuarios tasa duración tareas
       # Variables en un ARCHIVO (--env-vars-file), no en --set-env-vars: LOAD_ALLOWED_HOSTS lleva comas y gcloud las tomaría como separador de variables.
       local envfile; envfile="$(mktemp)"
       "${PYTHON3:-python3}" "$(dirname "$0")/job_env.py" "$envfile" "LOAD_SCENARIO=$2" "LOAD_HOST=$WEB_URL" "LOAD_ALLOWED_HOSTS=$(allowed_hosts)" "LOAD_USERS=$3" "LOAD_RATE=$4" \
-        "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=5000" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" \
+        "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=5000" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO" \
         || { rm -f "$envfile"; return 1; }
       gcloud run jobs deploy "$JOB-$1" --project "$PROJECT" --region "$REGION" --image "$IMAGE" --tasks "$6" --parallelism "$6" --max-retries 0 \
         --task-timeout "$(( $5 + 240 ))s" --cpu 1 --memory 1Gi \
