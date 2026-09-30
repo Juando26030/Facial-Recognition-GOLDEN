@@ -2,6 +2,7 @@
 
 Todo el estado vive en Postgres (`rate_limit_events`, `password_reset_tokens`), no en memoria, para que valga con
 varios procesos/workers y sobreviva a un reinicio."""
+import functools
 import hashlib
 import ipaddress
 import math
@@ -73,17 +74,24 @@ def reload_infra() -> None:
     """Vuelve a leer la lista (las pruebas cambian la variable)."""
     global _infra_cache
     _infra_cache = None
+    _google_infra_lookup.cache_clear()
 
 
-def is_google_infra(ip: str) -> bool:
-    """¿Es una IP de infraestructura de Google (no de clientes de Google Cloud)? Falso si no es una IP válida."""
-    if _infra_cache is None:
-        infra_info()
+@functools.lru_cache(maxsize=8192)
+def _google_infra_lookup(ip: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
     return any(addr.version == n.version and addr in n for n in _infra_cache[0])
+
+
+def is_google_infra(ip: str) -> bool:
+    """¿Es una IP de infraestructura de Google (no de clientes de Google Cloud)? Falso si no es una IP válida. El resultado se guarda por IP (recorrer ~400 redes costaba ~0,6 ms por
+    petición de envío; los reintentos de una misma persona repiten la IP): la caché se vacía al releer la lista (`reload_infra`)."""
+    if _infra_cache is None:
+        infra_info()
+    return _google_infra_lookup(ip)
 
 
 def client_ip(request: Request) -> str:

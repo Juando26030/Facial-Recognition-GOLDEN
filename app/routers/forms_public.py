@@ -449,7 +449,7 @@ def _leave_lock_zone() -> None:
 def _busy_response() -> JSONResponse:
     """503 «ocupado» con `Retry-After` variable (1-3 s: el jitter evita que todos vuelvan a la vez). La inscripción NO se hizo; el navegador reintenta con la misma `sid`."""
     return JSONResponse({"detail": "Estamos recibiendo muchísimas inscripciones a la vez. Tu envío se reintentará solo en unos segundos.", "busy": True}, status_code=503,
-                        headers={"Retry-After": str(random.choice((1, 2, 3)))})
+                        headers={"Retry-After": str(random.choice((1, 2, 3))), "X-Golden-Busy": "1"})
 
 
 def _run_after(callbacks: list) -> None:

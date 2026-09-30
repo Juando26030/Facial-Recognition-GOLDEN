@@ -52,15 +52,17 @@ def record_system_event(kind: str, ref: Optional[str] = None, detail: Optional[s
         db.close()
 
 
-def record_5xx(request_id: str, method: str, path: str, status: int) -> None:
-    """Cuenta un error 5xx (máximo uno por segundo por proceso: en plena caída no hay que escribir miles de filas; el resto se suma al siguiente)."""
+def record_5xx(request_id: str, method: str, path: str, status: int):
+    """Cuenta un error 5xx (máximo uno por segundo por proceso: en plena caída no hay que escribir miles de filas; el resto se suma al siguiente). La escritura en la base va en un
+    HILO (`_pool`): se llama desde el middleware de registro, dentro del bucle de eventos, y una consulta síncrona ahí (con el pool agotado, hasta DB_POOL_TIMEOUT) congelaba todas las peticiones
+    del proceso. Devuelve el `Future` de la escritura (o None si se omitió por el límite de un segundo); los 503 de contrapresión con `Retry-After` NO llegan aquí (obs.py)."""
     global _last_5xx_write, _skipped_5xx
     now = time.monotonic()
     if now - _last_5xx_write < 1.0:
         _skipped_5xx += 1
-        return
+        return None
     extra, _skipped_5xx, _last_5xx_write = _skipped_5xx, 0, now
-    record_system_event("error_5xx", request_id, f"{method} {path} -> {status}" + (f" (+{extra} más en el último segundo)" if extra else ""))
+    return _pool.submit(record_system_event, "error_5xx", request_id, f"{method} {path} -> {status}" + (f" (+{extra} más en el último segundo)" if extra else ""))
 
 
 # ------------------------------------------------------------------ versión

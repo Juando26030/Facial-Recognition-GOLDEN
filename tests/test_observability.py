@@ -103,11 +103,11 @@ def test_database_down_answers_503_with_retry_after(client):
 
 def test_5xx_are_recorded_for_the_status_screen_with_a_throttle(db):
     ops._last_5xx_write = 0.0
-    ops.record_5xx("rid-1", "GET", "/api/x", 500)
-    ops.record_5xx("rid-2", "GET", "/api/x", 500)                              # dentro del mismo segundo: se suma, no se escribe
+    ops.record_5xx("rid-1", "GET", "/api/x", 500).result(10)                    # la escritura va en un hilo: se espera a su Future
+    assert ops.record_5xx("rid-2", "GET", "/api/x", 500) is None               # dentro del mismo segundo: se suma, no se escribe
     assert db.query(SystemEvent).filter_by(kind="error_5xx").count() == 1
     ops._last_5xx_write = 0.0
-    ops.record_5xx("rid-3", "GET", "/api/x", 502)
+    ops.record_5xx("rid-3", "GET", "/api/x", 502).result(10)
     rows = db.query(SystemEvent).filter_by(kind="error_5xx").order_by(SystemEvent.id).all()
     assert len(rows) == 2 and "+1 más" in rows[1].detail
 

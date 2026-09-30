@@ -140,13 +140,19 @@ class RequestLogMiddleware:
         rid = _clean_request_id(headers.get("x-request-id"))
         tokens = (request_id_var.set(rid), trace_var.set(_trace_from(headers.get("x-cloud-trace-context"))))
         scope.setdefault("state", {})["request_id"] = rid
-        start, status = time.perf_counter(), 500
+        start, status, backpressure = time.perf_counter(), 500, False
 
         async def send_wrapper(message: Message) -> None:
-            nonlocal status
+            nonlocal status, backpressure
             if message["type"] == "http.response.start":
                 status = message["status"]
-                MutableHeaders(scope=message)["X-Request-ID"] = rid
+                out = MutableHeaders(scope=message)
+                out["X-Request-ID"] = rid
+                # «ocupado, reintenta» (forms_public._busy_response, marca interna X-Golden-Busy): contrapresión esperada, no un error. NO basta con `Retry-After`: el 503 de «base de datos
+                # caída» (main.py) también lo lleva y ese SÍ es un error real.
+                backpressure = status == 503 and out.get("x-golden-busy") == "1"
+                if "x-golden-busy" in out:
+                    del out["x-golden-busy"]                         # la marca es solo para este middleware: no sale al cliente
             await send(message)
 
         try:
@@ -158,8 +164,9 @@ class RequestLogMiddleware:
                 client = scope.get("client")
                 http = {"requestMethod": scope.get("method"), "requestUrl": mask_url(path + ("?" + query if query else "")), "status": status,
                         "latency": f"{time.perf_counter() - start:.3f}s", "remoteIp": mask_ip(headers.get("cf-connecting-ip") or (client[0] if client else None))}
-                self.log.log(logging.ERROR if status >= 500 else logging.INFO, "%s %s -> %s", http["requestMethod"], http["requestUrl"], status, extra={"http_request": http})
-                if status >= 500 and self.on_5xx:
+                real_5xx = status >= 500 and not backpressure
+                self.log.log(logging.ERROR if real_5xx else logging.INFO, "%s %s -> %s", http["requestMethod"], http["requestUrl"], status, extra={"http_request": http})
+                if real_5xx and self.on_5xx:                 # la contrapresión (503 + Retry-After) ni va como ERROR ni enciende «Estado del sistema»
                     self.on_5xx(rid, http["requestMethod"], mask_url(path), status)
             request_id_var.reset(tokens[0])
             trace_var.reset(tokens[1])
