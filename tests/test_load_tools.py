@@ -1,4 +1,5 @@
 """Herramientas de la prueba de carga (Fase 4): candado de destino (nunca producción) y limpieza de los datos sintéticos de staging."""
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -105,9 +106,13 @@ def test_seed_is_idempotent_and_only_adds_missing_people(db, monkeypatch):
     assert s.verify(db)["event_id"] == first["event_id"]                           # verify también imprime el id del evento (respaldo si el log del seed tarda)
 
 
+@pytest.mark.skipif(any(importlib.util.find_spec(m) is None for m in ("gevent", "locust")), reason="requiere locust/gevent (imagen del generador o entorno local; el CI de la app no los instala)")
 def test_locust_outside_the_app_line_is_recorded_end_to_end(tmp_path):
     """Regresión: run_task creaba `Environment` sin `events=locust.events`, los oyentes del locustfile nunca corrían y «[fuera de la app]» no salía en el informe. Aquí un
-    servidor de mentira con `Server-Timing` y el generador real (en un subproceso: locust parchea gevent y no debe entrar al proceso de pytest)."""
+    servidor de mentira con `Server-Timing` y el generador real (en un subproceso: locust parchea gevent y no debe entrar al proceso de pytest).
+    Corre donde locust esté instalado (la imagen del generador o un entorno local); el CI de la aplicación no lo instala y la salta. La comprobación usa `find_spec` (no
+    `pytest.importorskip`): importar locust en el proceso de pytest parchea gevent y cuelga la suite.
+    """
     import subprocess
     import sys
     driver = tmp_path / "drive.py"
