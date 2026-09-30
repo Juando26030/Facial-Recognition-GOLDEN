@@ -24,6 +24,7 @@ assert "test" in TEST_DB_NAME, f"Por seguridad las pruebas solo corren contra un
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ.pop("DIRECT_DATABASE_URL", None)   # las migraciones de las pruebas van siempre a la base de pruebas
 os.environ["FORM_PUBLIC_CACHE_SECONDS"] = "0"   # sin cache del estado publico de formularios: cada prueba ve el estado real (una prueba propia la activa)
+os.environ["FORM_MAX_LOCK_WAITERS"] = "0"     # sin tope de esperas del bloqueo del formulario: las pruebas con envíos simultáneos en hilos verifican la INTEGRIDAD del cupo y no deben depender de los tiempos (el tope se prueba a propósito en tests/test_form_backpressure.py)
 os.environ["FACE_PROCESSES"] = "0"             # el motor facial (doble) corre en el mismo proceso: las pruebas lo reemplazan con monkeypatch
 os.environ["JOBS_WORKER"] = "off"              # sin hilo de trabajos en segundo plano: cada prueba los ejecuta a la vista (ver _jobs_inline)
 os.environ.pop("ENVIRONMENT", None)          # las pruebas corren como desarrollo

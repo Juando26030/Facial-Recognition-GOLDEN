@@ -230,3 +230,50 @@ console.log(JSON.stringify(out));
     assert o["ra"][0] >= 30000                                                            # respeta Retry-After como mínimo
     assert o["raSmall"][0] >= 12000                                                       # Retry-After pequeño no acorta la espera creciente
     assert "DEADLINE = 150000" in html and "RETRY_WAIT" not in html                       # ~150 s en total, ya no 5 intentos
+
+
+# ------------------------------------------------------------------ 5) tope activo con envíos simultáneos: integridad intacta, rebote solo 409 o 503 «busy»
+def test_default_cap_is_three_per_process(monkeypatch):
+    monkeypatch.delenv("FORM_MAX_LOCK_WAITERS", raising=False)
+    assert forms_public._max_lock_waiters() == 3
+    monkeypatch.setenv("FORM_MAX_LOCK_WAITERS", "abc")
+    assert forms_public._max_lock_waiters() == 3                                          # un valor inválido no apaga el tope
+
+
+def test_simultaneous_submissions_with_the_cap_on_never_oversell_and_retries_fill_exactly_the_capacity(factory, db, monkeypatch):
+    monkeypatch.setenv("FORM_MAX_LOCK_WAITERS", "2")
+    with TestClient(app, follow_redirects=False) as admin:
+        ev = _event(admin, factory)
+        f = _create(admin, ev)
+        assert _status(admin, ev, f, manual_status="activo", capacity=4).status_code == 200
+    payloads = [({"cedula": f"90{n:03d}", "nombres": f"P{n}", "apellidos": "Q", "correo": f"p{n}@example.com"}, f"sid-{n}") for n in range(12)]
+    results, gate = {}, threading.Barrier(len(payloads))
+
+    def go(values, sid):
+        with TestClient(app, follow_redirects=False) as c:
+            gate.wait()
+            r = _submit(c, ev, f, values, sid=sid)
+            results[sid] = (r.status_code, r.headers.get("retry-after"), r.json())
+
+    threads = [threading.Thread(target=go, args=p) for p in payloads]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert len(results) == 12
+    assert sum(1 for code, _, _ in results.values() if code == 200) <= 4                                # nunca más que el cupo
+    for code, retry_after, body in results.values():
+        assert code in (200, 409, 503)                                                                  # ningún otro código
+        if code == 503:
+            assert body["busy"] is True and retry_after in ("1", "2", "3")                              # rebote con Retry-After
+        if code == 409:
+            assert body["stage"] == "closed"
+    assert db.query(FormSubmission).filter_by(form_id=f["id"], status="confirmed").count() == sum(1 for code, _, _ in results.values() if code == 200)
+    assert forms_public._lock_waiters == 0                                                              # el contador quedó en cero
+    with TestClient(app, follow_redirects=False) as c:                                                  # el navegador reintenta los 503 (misma sid), uno tras otro
+        for values, sid in payloads:
+            if results[sid][0] == 503:
+                r = _submit(c, ev, f, values, sid=sid)
+                assert r.status_code in (200, 409)                                                      # sin cola ya no hay rebote
+                results[sid] = (r.status_code, None, r.json())
+    codes = [code for code, _, _ in results.values()]
+    assert codes.count(200) == 4 and codes.count(409) == 8                                              # exactamente el cupo; el resto «cupo lleno»
+    assert db.query(FormSubmission).filter_by(form_id=f["id"], status="confirmed").count() == 4
