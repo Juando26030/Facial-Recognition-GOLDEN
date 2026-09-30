@@ -8,8 +8,7 @@ Los percentiles salen de los histogramas UNIDOS de todas las tareas (exactos al 
 import json
 import sys
 
-CRITERIA = {   # escenario: (petición que se juzga, p95 máximo en ms)
-    "forms": ("POST envio", 2000),
+CRITERIA = {   # escenario: (petición que se juzga, p95 máximo en ms). «forms» tiene su propio criterio (forms_criteria, abajo)
     "cedula": ("POST checkin-cedula", 500),
     "face": ("POST recognize", 2000),
 }
@@ -56,11 +55,70 @@ def merge(results: list) -> dict:
     return out
 
 
+# Criterio de aprobación de FORMULARIOS (decidido con Juan David tras las corridas 5-7): lo que vive el usuario, no la latencia de un intento suelto.
+STATE_P95_MS, STATE_P99_MS = 2000, 5000       # apertura (GET state): la página no cuenta (la sirve la CDN)
+USER_P95_S, USER_P95_GOAL_S = 120, 60         # p95 del tiempo TOTAL de quien se inscribe (con todos sus reintentos); meta 60 s tras la función SQL única
+USER_OK_PCT = 99.0                            # «inscrito» o «cupo lleno»
+
+
+def parse_verify(path: str):
+    """La línea `LOAD_VERIFY {json}` de `scripts/seed_load_staging.py --verify` (si está en alguno de los archivos)."""
+    found = None
+    for line in open(path, encoding="utf8").read().splitlines():
+        if "LOAD_VERIFY " in line:
+            try:
+                found = json.loads(line.split("LOAD_VERIFY ", 1)[1])
+            except ValueError:
+                pass
+    return found
+
+
+def forms_criteria(merged: dict, users: dict, errors: dict, gens: list, verify) -> int:
+    """Imprime el criterio de formularios y devuelve 0 (cumple) o 1."""
+    checks = []                                                      # (texto, cumple)
+    st = merged.get("GET state")
+    if st:
+        p95, p99 = percentile(st["hist"], .95), percentile(st["hist"], .99)
+        checks.append((f"state p95 {p95} ms < {STATE_P95_MS} y p99 {p99} ms < {STATE_P99_MS}", p95 < STATE_P95_MS and p99 < STATE_P99_MS))
+    total = sum(v["requests"] for v in users.values())
+    good = sum(v["requests"] for k, v in users.items() if k in ("inscrito", "cupo lleno"))
+    if total:
+        pct = 100 * good / total
+        checks.append((f"{pct:.1f} % de los usuarios que envían terminan «inscrito» o «cupo lleno» (mínimo {USER_OK_PCT} %; {total - good} sin terminar bien)", pct >= USER_OK_PCT))
+    ins = users.get("inscrito")
+    if ins:
+        t95 = percentile(ins["hist"], .95) / 1000
+        checks.append((f"p95 del tiempo total de quien se inscribe {t95:.1f} s < {USER_P95_S} s (meta {USER_P95_GOAL_S} s: {'alcanzada' if t95 < USER_P95_GOAL_S else 'aún no'})", t95 < USER_P95_S))
+    other_5xx = sum(m["requests"] for k, m in merged.items() if "(contrapresión" in k and k.split("(contrapresión ")[1].rstrip(")") != "503")
+    other_5xx += sum(v for k, v in errors.items() if any(f" {c}" in k for c in ("500", "501", "502", "504", "505")))
+    checks.append((f"{other_5xx} respuestas 5xx distintas de 503 «busy» (0 esperadas; el 429 de infraestructura se reporta aparte)", other_5xx == 0))
+    saturated = [t for t, g in gens if g["cpu_pct"] > 85 or g["lag_p95_ms"] > 200]
+    checks.append((f"generadores saturados: {saturated or 'ninguno'}", not saturated))
+    if verify:
+        expected = min(verify.get("capacity") or total, total)
+        clean_run = total == good
+        checks.append((f"base: inscripciones confirmadas {verify['confirmed_submissions']} = min(capacidad {verify.get('capacity')}, usuarios únicos que envían {total}) = {expected}"
+                       + ("" if clean_run else " (hay usuarios sin terminar bien: solo se exige que no pase de ese valor)"),
+                       verify["confirmed_submissions"] == expected if clean_run else verify["confirmed_submissions"] <= expected))
+        checks.append((f"base: sobreventas {verify['oversold']}, cédulas repetidas {verify['duplicate_persons']}, `sid` repetidas {verify['duplicate_sids']} (0 esperadas)",
+                       verify["oversold"] == 0 and verify["duplicate_persons"] == 0 and verify["duplicate_sids"] == 0))
+    print("\nCriterio de formularios:\n")
+    for text, ok in checks:
+        print(f"- {'✔' if ok else '✘'} {text}")
+    if not verify:
+        print(f"- ? base: falta la línea LOAD_VERIFY (`run_phase4.sh verify`): confirmadas = min(capacidad, {total} usuarios únicos que envían), 0 sobreventas, 0 duplicados")
+    bad = [t for t, ok in checks if not ok]
+    print(f"\nCriterio forms → {'CUMPLE' if not bad else 'NO CUMPLE'}" + ("" if verify else " (a falta de la verificación de la base)"))
+    print("La contrapresión («ocupado» con reintento) se reporta aparte y no cuenta como fallo.")
+    return 1 if bad else 0
+
+
 def main(paths: list) -> int:
     by_scenario = {}
     for p in paths:
         for r in parse(p):
             by_scenario.setdefault(r["scenario"], []).append(r)
+    verify = next((v for v in (parse_verify(p) for p in paths) if v), None)
     if not by_scenario:
         print("No hay líneas LOADGEN_RESULT en los archivos.")
         return 2
@@ -86,6 +144,7 @@ def main(paths: list) -> int:
                 attempts = sum(v["requests"] for k, v in merged.items() if k.split(" (contrapresión")[0] == base and not k.startswith(USER_PREFIX))
                 print(f"| {name} | {m['requests']} | {100 * m['requests'] / max(attempts, 1):.0f} % |")
         users = {k[len(USER_PREFIX):]: v for k, v in merged.items() if k.startswith(USER_PREFIX)}
+        gens = [(r["task"], r["generator"]) for r in results if r.get("generator")]
         if users:
             total = sum(v["requests"] for v in users.values())
             print(f"\nResultado FINAL por usuario virtual que envía ({total} usuarios; tiempo desde su primer intento hasta el resultado, con todos los reintentos):\n")
@@ -100,6 +159,9 @@ def main(paths: list) -> int:
                 print(f"- tarea {task}: CPU {g['cpu_pct']} %, retraso del bucle p95 {g['lag_p95_ms']} ms, máx {g['lag_max_ms']} ms{flag}")
         if errors:
             print("\nFallos por motivo:\n" + "\n".join(f"- {v} × {k}" for k, v in sorted(errors.items(), key=lambda kv: -kv[1])[:10]))
+        if scenario == "forms":
+            verdict |= forms_criteria(merged, users, errors, gens, verify)
+            continue
         target, limit = CRITERIA.get(scenario, (None, None))
         m = merged.get(target)
         five_xx = sum(v for k, v in errors.items() if any(f" {c}" in k or f"submit {c}" in k or f"{c} " in k for c in ("500", "502", "503", "504")))

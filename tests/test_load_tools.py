@@ -246,3 +246,46 @@ def test_report_separates_backpressure_and_shows_the_final_result_per_user(tmp_p
     assert "| POST envio (contrapresión 503) | 60 | 60 %" in out and "| GET state (contrapresión 429) | 5 | 5 %" in out
     assert "Resultado FINAL por usuario virtual que envía (100 usuarios" in out
     assert "| inscrito | 90 | 90.0 |" in out and "| cupo lleno | 6 | 6.0 |" in out and "| se rindió tras 12 reintentos | 4 | 4.0 |" in out
+
+
+def _forms_report(tmp_path, capsys, rows, gens=None, verify=None):
+    from scripts import loadgen_report
+    f = tmp_path / "r.txt"
+    lines = ["LOADGEN_RESULT " + json.dumps({"scenario": "forms", "task": 0, "tasks": 1, "users": 100, "seconds": 60, "entries": rows, "errors": {}, "generator": gens or {"cpu_pct": 40, "lag_p95_ms": 20, "lag_max_ms": 90}})]
+    if verify:
+        lines.append("LOAD_VERIFY " + json.dumps(verify))
+    f.write_text("\n".join(lines), encoding="utf8")
+    code = loadgen_report.main([str(f)])
+    return code, capsys.readouterr().out
+
+
+def _e(name, n, ms, fails=0):
+    return {"name": name, "method": "GET", "requests": n, "failures": fails, "max_ms": ms * 2, "total_ms": ms * n, "histogram": {str(ms): n}}
+
+
+def test_forms_criterion_passes_with_the_agreed_thresholds(tmp_path, capsys):
+    rows = [_e("GET state", 100, 300), _e("[usuario] inscrito", 90, 40000), _e("[usuario] cupo lleno", 10, 20000), _e("POST envio (contrapresión 503)", 500, 20)]
+    code, out = _forms_report(tmp_path, capsys, rows, verify={"confirmed_submissions": 90, "capacity": 90, "oversold": 0, "duplicate_persons": 0, "duplicate_sids": 0})
+    assert code == 0 and "Criterio forms → CUMPLE" in out
+    assert "min(capacidad 90, usuarios únicos que envían 100) = 90" in out and "meta 60 s: alcanzada" in out
+
+
+@pytest.mark.parametrize("rows,gens,verify,needle", [
+    ([_e("GET state", 100, 2500), _e("[usuario] inscrito", 100, 1000)], None, None, "✘ state p95"),                                                    # state lento
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 130000)], None, None, "✘ p95 del tiempo total de quien se inscribe"),                   # tiempo total > 120 s
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 95, 1000), _e("[usuario] se rindió tras 9 reintentos", 5, 150000, 5)], None, None, "✘ 95.0 %"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 98, 1000), _e("[usuario] no terminó (cortado al agotarse LOAD_DURATION)", 2, 360000, 2)], None, None, "✘ 98.0 %"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 502)", 3, 20)], None, None, "✘ 3 respuestas 5xx distintas"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 infra)", 1, 20)], None, None, "✘ 1 respuestas 5xx distintas"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000)], {"cpu_pct": 95, "lag_p95_ms": 20, "lag_max_ms": 90}, None, "✘ generadores saturados"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 90, 1000), _e("[usuario] cupo lleno", 10, 1000)], None, {"confirmed_submissions": 91, "capacity": 90, "oversold": 1, "duplicate_persons": 0, "duplicate_sids": 0}, "✘ base: sobreventas 1"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 90, 1000), _e("[usuario] cupo lleno", 10, 1000)], None, {"confirmed_submissions": 80, "capacity": 90, "oversold": 0, "duplicate_persons": 0, "duplicate_sids": 0}, "✘ base: inscripciones confirmadas 80"),
+])
+def test_forms_criterion_fails_when_any_agreed_threshold_is_missed(tmp_path, capsys, rows, gens, verify, needle):
+    code, out = _forms_report(tmp_path, capsys, rows, gens=gens, verify=verify)
+    assert code == 1 and "Criterio forms → NO CUMPLE" in out and needle in out, out
+
+
+def test_forms_criterion_asks_for_the_database_check_when_missing(tmp_path, capsys):
+    code, out = _forms_report(tmp_path, capsys, [_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000)])
+    assert code == 0 and "falta la línea LOAD_VERIFY" in out and "a falta de la verificación de la base" in out

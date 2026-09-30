@@ -69,6 +69,10 @@ def main() -> int:
     else:
         gevent.sleep(duration)
     runner.quit()
+    if scenario == "forms":                    # usuarios que NO terminaron cuando se acabó LOAD_DURATION (siguen reintentando): que no desaparezcan del informe
+        for _ in range(users - locustfile.DONE["users"]):
+            locust.events.request.fire(request_type="USER", name="[usuario] no terminó (cortado al agotarse LOAD_DURATION)", response_time=duration * 1000, response_length=0,
+                                       exception=Exception("no terminó"), context={})
     entries = []
     for (name, method), e in env.stats.entries.items():
         entries.append({"name": name, "method": method, "requests": e.num_requests, "failures": e.num_failures, "max_ms": e.max_response_time,

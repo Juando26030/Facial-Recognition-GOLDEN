@@ -130,7 +130,8 @@ def _attempt(client, method: str, url: str, name: str, ok_codes=(200,), **kw):
     with client.request(method, url, name=name, catch_response=True, **kw) as r:
         if _is_busy(r):
             try:
-                r.request_meta["name"] = f"{name} (contrapresión {r.status_code})"
+                infra = r.status_code == 503 and '"busy"' not in r.text          # 503 sin nuestro cuerpo JSON «busy» (p. ej. el HTML de Google): se distingue en el informe
+                r.request_meta["name"] = f"{name} (contrapresión {r.status_code}{' infra' if infra else ''})"
             except Exception:  # noqa: BLE001
                 pass
             r.success()

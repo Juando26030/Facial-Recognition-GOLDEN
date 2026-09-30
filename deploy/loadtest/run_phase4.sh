@@ -112,9 +112,9 @@ case "${1:-}" in
     LOAD_EVENT_ID="${LOAD_EVENT_ID:-$(log_line LOAD_SEED | sed -n 's/.*"event_id": *\([0-9]*\).*/\1/p')}"
     [ -n "$LOAD_EVENT_ID" ] || { echo "Define LOAD_EVENT_ID (de la línea LOAD_SEED de los logs; corre «seed» primero)." >&2; exit 1; }
     if [ "$MODE" = small ]; then     # ~5 % de la escala: 1 tarea por escenario, 500 aperturas (~250 envíos), 10 estaciones de cédula 2 min, 3 usuarios faciales 1 min
-      TF=1; TC=1; TX=1; FU=500; FR=9; FD=120; CU=10; CR=5; CD=120; XU=3; XR=3; XD=60
+      TF=1; TC=1; TX=1; FU=500; FR=9; FD=180; CU=10; CR=5; CD=120; XU=3; XR=3; XD=60
     else
-      TF="${TASKS_FORMS:-6}"; TC="${TASKS_CEDULA:-4}"; TX="${TASKS_FACE:-4}"; FU=10000; FR=170; FD=180; CU=200; CR=20; CD=$(( CEDULA_MIN * 60 )); XU=60; XR=10; XD=300
+      TF="${TASKS_FORMS:-6}"; TC="${TASKS_CEDULA:-4}"; TX="${TASKS_FACE:-4}"; FU=10000; FR=170; FD=360; CU=200; CR=20; CD=$(( CEDULA_MIN * 60 )); XU=60; XR=10; XD=300
     fi
     echo "Modo: $MODE · destino: $WEB_URL · evento $LOAD_EVENT_ID · región $REGION · tareas forms/cédula/facial: $TF/$TC/$TX"
     mk() {  # nombre escenario usuarios tasa duración tareas
