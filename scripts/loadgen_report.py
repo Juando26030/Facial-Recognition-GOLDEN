@@ -27,6 +27,10 @@ def parse(path: str) -> list:
     return [json.loads(line.split("LOADGEN_RESULT ", 1)[1]) for line in lines if "LOADGEN_RESULT " in line]
 
 
+USER_PREFIX = "[usuario] "          # resultado final de cada usuario virtual que envía (tests/load/locustfile.py::_user_result)
+BACKPRESSURE = "(contrapresión"     # intentos «ocupado» con reintento: no son fallos
+
+
 def percentile(hist: dict, q: float) -> int:
     total = sum(hist.values())
     if not total:
@@ -70,7 +74,24 @@ def main(paths: list) -> int:
         print(f"\n### {scenario}: {len(tasks)} tarea(s), {sum(r['users'] for r in results)} usuarios virtuales, ~{max(r['seconds'] for r in results)} s\n")
         print("| Petición | Solicitudes | Fallos | p50 ms | p95 ms | p99 ms | máx ms |\n|---|---:|---:|---:|---:|---:|---:|")
         for name, m in sorted(merged.items()):
+            if name.startswith(USER_PREFIX) or BACKPRESSURE in name:
+                continue                                     # van en sus propias tablas (abajo)
             print(f"| {name} | {m['requests']} | {m['failures']} | {percentile(m['hist'], .5)} | {percentile(m['hist'], .95)} | {percentile(m['hist'], .99)} | {m['max_ms']:.0f} |")
+        back = {k: v for k, v in merged.items() if BACKPRESSURE in k}
+        if back:
+            print("\nContrapresión (respuestas «ocupado» con reintento: 502/503/504 y el 429 de infraestructura; NO son fallos, el usuario reintenta con la misma `sid`):\n")
+            print("| Intento | Respuestas | % de los intentos de esa petición |\n|---|---:|---:|")
+            for name, m in sorted(back.items()):
+                base = name.split(" (contrapresión")[0]
+                attempts = sum(v["requests"] for k, v in merged.items() if k.split(" (contrapresión")[0] == base and not k.startswith(USER_PREFIX))
+                print(f"| {name} | {m['requests']} | {100 * m['requests'] / max(attempts, 1):.0f} % |")
+        users = {k[len(USER_PREFIX):]: v for k, v in merged.items() if k.startswith(USER_PREFIX)}
+        if users:
+            total = sum(v["requests"] for v in users.values())
+            print(f"\nResultado FINAL por usuario virtual que envía ({total} usuarios; tiempo desde su primer intento hasta el resultado, con todos los reintentos):\n")
+            print("| Resultado | Usuarios | % | p50 s | p95 s | máx s |\n|---|---:|---:|---:|---:|---:|")
+            for name, m in sorted(users.items(), key=lambda kv: -kv[1]["requests"]):
+                print(f"| {name} | {m['requests']} | {100 * m['requests'] / max(total, 1):.1f} | {percentile(m['hist'], .5) / 1000:.1f} | {percentile(m['hist'], .95) / 1000:.1f} | {m['max_ms'] / 1000:.1f} |")
         gens = [(r["task"], r.get("generator")) for r in results if r.get("generator")]
         if gens:
             print("\nGenerador (si la CPU pasa de ~85 % o el retraso p95 de ~200 ms, la latencia medida incluye la espera del PROPIO generador y no vale como latencia del servidor):")

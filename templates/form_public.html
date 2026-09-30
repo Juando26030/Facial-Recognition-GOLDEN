@@ -54,6 +54,13 @@ let token = null, theme = null;
 
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 const assetUrl = (p) => `${BASE}/asset/${p}` + (K ? `?k=${encodeURIComponent(K)}` : "");
+// Contrapresión: 502/503/504 y el 429 que NO es de la aplicación (el «Rate exceeded.» de Cloud Run, texto plano; los 429 de la app traen JSON con `detail` y NO se reintentan) son
+// «ocupado, vuelve a intentar». Se espera lo que diga `Retry-After` (mínimo, con espera creciente 1,5 → 3 → 6 → 12 s) más un poco al azar para que nadie vuelva a la vez.
+const isBusy = (res) => [502, 503, 504].includes(res.status) || (res.status === 429 && !(res.headers.get("content-type") || "").includes("json"));
+function retryDelay(res, attempt) {
+  const ra = res ? parseFloat(res.headers.get("Retry-After")) : NaN;
+  return Math.max(isFinite(ra) ? ra * 1000 : 0, 1500 * 2 ** Math.min(attempt, 3)) + Math.random() * 1500;
+}
 async function api(path, body) {
   const res = await fetch(BASE + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ k: K, d: D, t: token, sid: SID, source: SOURCE, ...body }) });
   return { res, data: await res.json().catch(() => ({})) };
@@ -125,7 +132,14 @@ function templateHtml(tpl) {
 async function load() {
   const params = new URLSearchParams();
   if (K) params.set("k", K); if (INVITE) params.set("i", INVITE); if (token) params.set("t", token);
-  const res = await fetch(`${BASE}/state?${params}`);
+  let res, t0 = Date.now();
+  for (let attempt = 0; ; attempt++) {          // la apertura también reintenta si el servicio está saturado (hasta ~40 s), en vez de decir «no disponible»
+    try { res = await fetch(`${BASE}/state?${params}`); } catch (e) { res = null; }
+    if (res && !isBusy(res)) break;
+    const wait = retryDelay(res, attempt);
+    if (Date.now() - t0 + wait > 40000) { box("<h3>Estamos con mucha demanda</h3><p>Recarga la página en unos segundos.</p>"); return; }
+    await new Promise((r) => setTimeout(r, wait));
+  }
   if (!res.ok) { box("<h3>Este formulario no está disponible</h3>"); return; }
   const st = await res.json();
   applyTheme(st.theme);
@@ -210,17 +224,20 @@ function showForm(st) {
     const body = JSON.stringify({ values, k: K, d: D, code: fr.code(), t: token, sid: SID, source: SOURCE, uploads });
     // Si la red o el servidor fallan a mitad (sin conexión, 502/503/504), lo escrito NO se pierde: se reintenta solo con la MISMA clave de envío (`sid`), así que el
     // servidor nunca crea dos inscripciones (Fase 0 de escalabilidad, doc 13 §8.9). Se avisa con calma en vez de mostrar un error.
-    const RETRY_WAIT = [1500, 3000, 6000, 10000, 15000];
+    // Con una cola larga (10.000 personas a la vez) 5 intentos no alcanzan: si la mayoría de los intentos rebota, unos cuantos usuarios se quedarían sin inscribir. Se reintenta con
+    // la MISMA `sid` hasta ~150 s en total (`retryDelay`: respeta `Retry-After`, espera creciente y variable). Sigue sin poder duplicar: el servidor responde «replayed».
+    const DEADLINE = 150000, t0 = Date.now();
     let res, data, lastErr;
-    for (let attempt = 0; attempt <= RETRY_WAIT.length; attempt++) {
+    for (let attempt = 0; ; attempt++) {
       try {
         res = await fetch(BASE + "/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body });
-        if (![502, 503, 504].includes(res.status)) { data = await res.json().catch(() => ({})); lastErr = null; break; }
+        if (!isBusy(res)) { data = await res.json().catch(() => ({})); lastErr = null; break; }
         lastErr = new Error("busy");
-      } catch (err) { lastErr = err; }
-      if (attempt === RETRY_WAIT.length) break;
+      } catch (err) { lastErr = err; res = null; }
+      const wait = retryDelay(res, attempt);
+      if (Date.now() - t0 + wait > DEADLINE) break;
       msg.style.color = "inherit"; msg.textContent = "Estamos procesando tu inscripción, no cierres esta página…";
-      await new Promise((r) => setTimeout(r, RETRY_WAIT[attempt]));
+      await new Promise((r) => setTimeout(r, wait));
     }
     if (lastErr) return reset("No pudimos enviar tu inscripción por un problema de conexión. Lo que escribiste sigue aquí: intenta de nuevo en un momento.", true);
     if (res.ok && data.payment_required) return pay(data, reset, fr);

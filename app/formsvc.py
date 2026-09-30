@@ -7,7 +7,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
-from typing import Optional
+from typing import Optional, Tuple
 
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
@@ -231,6 +231,27 @@ def has_confirmed_sid(db: Session, form: WebForm, sid: Optional[str], person_id:
     return q.first() is not None
 
 
+def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool) -> Tuple[bool, bool]:
+    """(reintento, duplicado) con UNA lectura SIN bloqueo, ANTES de pedir el `FOR UPDATE` del formulario. Mismas condiciones que `form_reserve_slot` (migración 0049): reintento =
+    ya hay una inscripción confirmada con esta `sid` (y esta persona, si viene); duplicado = ya hay una confirmada real con esta cédula (las pruebas nunca cuentan). Es solo un
+    adelanto para no hacer fila por algo que ya se sabe: la reserva bajo bloqueo sigue siendo la autoridad y repite todas sus comprobaciones."""
+    from sqlalchemy import false, select
+    fs = FormSubmission
+    retry_q = false()
+    if sid:
+        conds = [fs.form_id == form.id, fs.sid == sid, fs.is_test == is_test, fs.status == "confirmed"]
+        if person_id is not None:
+            conds.append(fs.person_id == person_id)
+        retry_q = select(fs.id).where(*conds).exists()
+    dup_q = false()
+    if person_id is not None and not is_test:
+        dup_q = select(fs.id).where(fs.form_id == form.id, fs.is_test == False, fs.status == "confirmed", fs.person_id == person_id).exists()  # noqa: E712
+    if not sid and (person_id is None or is_test):
+        return False, False
+    row = db.execute(select(retry_q, dup_q)).one()
+    return bool(row[0]), bool(row[1])
+
+
 def is_full(db: Session, form: WebForm, held: Optional[int] = None) -> bool:
     if form.capacity is None:
         return False
@@ -276,10 +297,12 @@ def purge_stale_pending(db: Session, form: WebForm) -> None:
         discard_submission(db, form, sub)
 
 
-def confirm_submission(db: Session, form: WebForm, sub: FormSubmission, record_event: bool = True) -> None:
+def confirm_submission(db: Session, form: WebForm, sub: FormSubmission, record_event: bool = True) -> bool:
     """La parte BARATA de confirmar una inscripción (sin confirmar la transacción: la confirma quien llama, junto con lo demás): estado, marca de envío
     para la analítica, invitación usada y —si el formulario carga en tiempo real— el trabajo en segundo plano que la pasa a la base del evento y envía
-    la escarapela (correo, base de datos, etc.: nada de eso ocurre dentro de la petición ni dentro del bloqueo del cupo)."""
+    la escarapela (correo, base de datos, etc.: nada de eso ocurre dentro de la petición ni dentro del bloqueo del cupo).
+    Devuelve True si encoló un trabajo (quien llama solo necesita despertar al worker en ese caso)."""
+    enqueued = False
     sub.status = "confirmed"
     if record_event:          # el envío del formulario público lo registra después del commit (`forms_public._record_submit_event`), fuera del bloqueo del cupo
         db.add(FormEvent(form_id=form.id, sid=sub.sid or os.urandom(4).hex(), kind="submit", source=sub.source, is_test=sub.is_test))
@@ -290,6 +313,8 @@ def confirm_submission(db: Session, form: WebForm, sub: FormSubmission, record_e
     if get_settings(form)["feed"] == "realtime" and not sub.is_test:
         db.flush()
         jobs.enqueue(db, "form_feed", {"submission_id": sub.id}, dedupe_key=str(sub.id))
+        enqueued = True
+    return enqueued
 
 
 def finalize_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:

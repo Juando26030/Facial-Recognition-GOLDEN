@@ -127,7 +127,7 @@ def test_full_form_rejects_without_asking_for_the_lock_and_replays_still_work(cl
     r = _submit(client, ev, f, other, sid="s-b")
     assert r.status_code == 409 and r.json()["stage"] == "closed" and calls == []      # rechazado SIN pedir el bloqueo de la fila
     replay = _submit(client, ev, f, _person_values(), sid="s-a")                       # reintento de la inscripción ya confirmada, con el formulario lleno
-    assert replay.status_code == 200 and replay.json()["replayed"] is True and calls == [1]
+    assert replay.status_code == 200 and replay.json()["replayed"] is True and calls == []       # ahora también el reintento se responde con la precomprobación, sin bloqueo
 
 
 def test_stale_room_hint_never_oversells_and_a_freed_slot_is_seen_at_once(client, factory, db):
@@ -192,7 +192,7 @@ def test_waiting_for_the_form_lock_gives_up_with_503_and_a_retry_with_the_same_s
     finally:
         tx.rollback()
         holder.close()
-    assert r.status_code == 503 and r.headers["retry-after"] == "2" and r.json()["busy"] is True
+    assert r.status_code == 503 and r.headers["retry-after"] in ("1", "2", "3") and r.json()["busy"] is True
     assert 0.25 < time.time() - t0 < 3                                                   # esperó ~lock_timeout, no 60 s
     assert db.query(FormSubmission).filter_by(form_id=f["id"]).count() == 0
     ok = _submit(client, ev, f, _person_values(), sid="s-lock")                          # el navegador reintenta con la MISMA sid
@@ -202,7 +202,8 @@ def test_waiting_for_the_form_lock_gives_up_with_503_and_a_retry_with_the_same_s
 
 
 # ------------------------------------------------------------------ integridad con carga concurrente (cupo exacto, sin duplicados)
-def test_concurrent_burst_keeps_exact_capacity_and_no_duplicates(client, factory, db):
+def test_concurrent_burst_keeps_exact_capacity_and_no_duplicates(client, factory, db, monkeypatch):
+    monkeypatch.setenv("FORM_MAX_LOCK_WAITERS", "0")          # integridad con la fila peleada por todos; el tope de esperas (503 temprano) se prueba en test_form_backpressure.py
     ev, f = _open_form(client, factory, capacity=8)
     outcomes, url = [], f"{_url(ev, f)}/submit"
 

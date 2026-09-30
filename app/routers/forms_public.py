@@ -8,6 +8,7 @@ firmado y con vencimiento (`t`), que el envío exige."""
 import asyncio
 import json
 import os
+import random
 import secrets
 import threading
 from datetime import datetime, timedelta
@@ -16,10 +17,11 @@ from typing import Dict, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from PIL import Image
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -413,11 +415,69 @@ async def submit(event_id: int, slug: str, request: Request):
     return await timing.run(_submit_sync, event_id, slug, request, payload, files)
 
 
+EVENT_LOCK_TIMEOUT_MS = int(os.getenv("FORM_EVENT_LOCK_TIMEOUT_MS", "2000"))
+_lock_waiters = 0                                        # envíos de ESTE proceso entre «pasó las comprobaciones previas» y «terminó su transacción de cupo» (esperando o teniendo el bloqueo)
+_lock_waiters_lock = threading.Lock()
+
+
+def _max_lock_waiters() -> int:
+    """FORM_MAX_LOCK_WAITERS (0 = sin límite): tope POR PROCESO de envíos en la zona del bloqueo del formulario. La fila se sirve a ~35-50 reservas/s por formulario, así que con
+    N procesos hay N×tope esperando y cada uno espera ~N×tope/45 s: 3 por proceso con 20 procesos (10 instancias × 2) son ~60 esperando ≈ 1,3 s. Por encima se responde 503 al
+    instante en vez de retener el turno de Cloud Run y una conexión hasta el `lock_timeout` (el navegador reintenta con la misma `sid`)."""
+    try:
+        return max(0, int(os.getenv("FORM_MAX_LOCK_WAITERS", "3")))
+    except ValueError:
+        return 3
+
+
+def _enter_lock_zone() -> bool:
+    global _lock_waiters
+    limit = _max_lock_waiters()
+    with _lock_waiters_lock:
+        if limit and _lock_waiters >= limit:
+            return False
+        _lock_waiters += 1
+        return True
+
+
+def _leave_lock_zone() -> None:
+    global _lock_waiters
+    with _lock_waiters_lock:
+        _lock_waiters = max(0, _lock_waiters - 1)
+
+
+def _busy_response() -> JSONResponse:
+    """503 «ocupado» con `Retry-After` variable (1-3 s: el jitter evita que todos vuelvan a la vez). La inscripción NO se hizo; el navegador reintenta con la misma `sid`."""
+    return JSONResponse({"detail": "Estamos recibiendo muchísimas inscripciones a la vez. Tu envío se reintentará solo en unos segundos.", "busy": True}, status_code=503,
+                        headers={"Retry-After": str(random.choice((1, 2, 3)))})
+
+
+def _run_after(callbacks: list) -> None:
+    for fn in callbacks:
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 — ya se respondió: lo que falle aquí solo se registra
+            log.warning("tarea posterior al envío falló", exc_info=True)
+
+
+def _respond(content: dict, after: list):
+    """La marca de analítica y el aviso al worker se hacen DESPUÉS de enviar la respuesta (tarea en segundo plano): ya no retienen turno, hilo ni conexión mientras el usuario espera.
+    SUBMIT_AFTER_RESPONSE=0 los vuelve a poner antes de responder. Nota Cloud Run: fuera de una petición la CPU puede estar reducida; con tráfico (cuando importa) hay CPU, y el
+    trabajo encolado nunca se pierde (está en la tabla; lo recoge el siguiente aviso o el barrido programado)."""
+    if os.getenv("SUBMIT_AFTER_RESPONSE", "1") == "0":
+        _run_after(after)
+        return content
+    return JSONResponse(content, background=BackgroundTask(_run_after, after))
+
+
 def _record_submit_event(form_id: int, sid: str, source: Optional[str], is_test: bool) -> None:
     """La marca «submit» de la analítica, en su propia transacción CORTA y DESPUÉS del commit: ya no ocupa una ida y vuelta con el cupo bloqueado. Si fallara solo
     se pierde ese punto de la analítica (la inscripción ya está confirmada)."""
     db = SessionLocal()
     try:
+        # El INSERT de `form_events` tiene FK a `web_forms`: pide `FOR KEY SHARE` sobre la fila que los reservadores tienen con `FOR UPDATE`, así que haría fila detrás de ellos
+        # (y sin `lock_timeout`, porque el de los reservadores es local a SU transacción). Va DESPUÉS de responder, con espera máxima propia; si vence solo se pierde la marca.
+        db.execute(text("SELECT set_config('lock_timeout', :v, true)"), {"v": f"{EVENT_LOCK_TIMEOUT_MS}ms"})
         db.add(FormEvent(form_id=form_id, sid=sid, kind="submit", source=source, is_test=is_test))
         db.commit()
     except Exception:  # noqa: BLE001
@@ -496,13 +556,32 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     is_test = access == "pruebas"
     sid = str(payload.get("sid") or "")[:40] or None
 
-    # VÍA RÁPIDA «cupo lleno»: si la cuenta (con caché de ~2 s, SIN bloquear la fila) ya llegó al tope, se rechaza sin pedir el bloqueo: cientos de envíos sobrantes no hacen fila
-    # detrás de los que sí compiten por el último cupo. Un reintento con la MISMA `sid` de una inscripción ya confirmada sigue respondiendo «replayed» (va al camino normal).
-    # Solo puede rechazar de MÁS unos segundos si se liberó un cupo; nunca deja pasar de más: quien pasa se vuelve a comprobar con el bloqueo (`form_reserve_slot`).
-    if form.capacity is not None and not is_test and formsvc.held_count_cached(db, form) >= form.capacity and not formsvc.has_confirmed_sid(db, form, sid, person_id):
-        db.rollback()
+    # PRECOMPROBACIÓN SIN BLOQUEO (reintento, cupo lleno, duplicado), en el mismo orden que `form_reserve_slot`: lo que ya se sabe no hace fila detrás del `FOR UPDATE` (antes un
+    # «replayed», un duplicado o un sobrante esperaban su turno del bloqueo, hasta 3 s reteniendo turno de Cloud Run, hilo y conexión, para que la base dijera lo mismo). Es solo
+    # un adelanto: la reserva bajo bloqueo repite TODAS estas comprobaciones y sigue siendo la autoridad; esto puede rechazar de MÁS unos segundos (el conteo del «lleno» va con
+    # caché de ~2 s y un cupo pudo liberarse), nunca dejar pasar de más.
+    retry, duplicate = formsvc.precheck(db, form, sid, person_id, is_test)
+    full = form.capacity is not None and not is_test and not retry and formsvc.held_count_cached(db, form) >= form.capacity
+    db.rollback()             # lecturas hechas: la conexión vuelve al pool antes de seguir
+    if retry:
+        return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
+    if full:
         return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+    if duplicate:
+        return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
 
+    # ZONA DEL BLOQUEO: tope por proceso de envíos que esperan (o tienen) el `FOR UPDATE`. Rechazo al instante, sin tocar la base; el contador se libera SIEMPRE (finally).
+    if not _enter_lock_zone():
+        return _busy_response()
+    try:
+        return _reserve_and_store(db, form, payload, settings, design, claims, values, clean, uploaded, pending, staged, person_id, is_test, sid)
+    finally:
+        _leave_lock_zone()
+
+
+def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict, design: dict, claims: dict, values: dict, clean: dict, uploaded: dict, pending: dict, staged: list,
+                       person_id: Optional[str], is_test: bool, sid: Optional[str]):
+    """Desde el precio (si hay pago) hasta el commit: la parte que compite por el bloqueo del formulario."""
     # Campo «Pago»: si esta visible y el monto (segun reglas y descuentos) es mayor que 0, la inscripcion NO se confirma
     # aqui: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
     quote = charge = cfg = code_row = None
@@ -580,23 +659,21 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
             formsvc.bump_held(form)
             uploads.discard(*staged)
             return {"ok": True, "payment_required": True, "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
-        formsvc.confirm_submission(db, form, sub, record_event=False)
+        enqueued = formsvc.confirm_submission(db, form, sub, record_event=False)
         submit_event = (form.id, sub.sid or os.urandom(4).hex(), sub.source, sub.is_test)      # se leen ANTES del commit (después los objetos quedan expirados)
         db.commit()
     except OperationalError as exc:
         db.rollback()
         if getattr(exc.orig, "pgcode", None) == "55P03":     # lock_not_available: la espera del bloqueo del cupo pasó de FORM_LOCK_TIMEOUT_MS
-            return JSONResponse({"detail": "Estamos recibiendo muchísimas inscripciones a la vez. Tu envío se reintentará solo en unos segundos.", "busy": True}, status_code=503,
-                                headers={"Retry-After": "2"})           # el navegador reintenta con la MISMA `sid` (nunca duplica): ver templates/form_public.html
+            return _busy_response()           # el navegador reintenta con la MISMA `sid` (nunca duplica): ver templates/form_public.html
         raise
     except Exception:
         db.rollback()                 # nunca dejar la fila del formulario bloqueada
         raise
     formsvc.bump_held(form)
-    _record_submit_event(*submit_event)
     uploads.discard(*staged)
-    jobs.kick()
-    return {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
+    after = [lambda: _record_submit_event(*submit_event)] + ([jobs.kick] if enqueued else [])      # kick() solo si de verdad se encoló algo
+    return _respond({"ok": True, "thanks": settings["thanks"], "is_test": is_test}, after)
 
 
 def _widget_params(pay: FormPayment, cfg: dict, design: dict, clean: dict, quote: dict) -> dict:

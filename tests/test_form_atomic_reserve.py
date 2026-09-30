@@ -12,6 +12,7 @@ from tests.test_forms import _basic_fields, _create, _design, _event, _open, _pu
 @pytest.fixture(autouse=True)
 def _no_dns(monkeypatch):
     monkeypatch.setattr("app.routers.forms_public.check_email", lambda e: (True, ""))
+    monkeypatch.setenv("FORM_MAX_LOCK_WAITERS", "0")        # aquí se prueba la INTEGRIDAD de la base con 8 envíos a la vez; el tope de esperas (503 temprano) tiene sus propias pruebas
 
 
 def _who(n, **extra):

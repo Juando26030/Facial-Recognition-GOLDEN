@@ -160,3 +160,89 @@ def test_report_flags_a_saturated_generator(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "tarea 0: CPU 40 %" in out and "tarea 1: CPU 97 %" in out
     assert out.count("SATURADO") == 1 and "tarea 1: CPU 97 %, retraso del bucle p95 900 ms, máx 4000 ms  ⚠ SATURADO" in out
+
+
+_RETRY_DRIVER = '''
+import json, sys, threading, time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import gevent
+import locust
+ROOT, MODE = sys.argv[1], sys.argv[2]
+sys.path[:0] = [ROOT + "/tests/load", ROOT, ROOT + "/deploy/loadtest"]
+hits = {"state": 0, "submit": 0}
+class H(BaseHTTPRequestHandler):
+    def _send(self, code, body, ctype="application/json", headers=()):
+        raw = body.encode()
+        self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(raw)))
+        for k, v in headers: self.send_header(k, v)
+        self.end_headers(); self.wfile.write(raw)
+    def do_GET(self):
+        if self.path.endswith("/state"):
+            hits["state"] += 1
+            if hits["state"] == 1:
+                return self._send(429, "Rate exceeded.", "text/plain; charset=utf-8")       # el 429 de Cloud Run: texto plano
+        self._send(200, "{}")
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        hits["submit"] += 1
+        if MODE == "giveup" or hits["submit"] <= 3:
+            return self._send(503, json.dumps({"busy": True}), headers=[("Retry-After", "0")])
+        self._send(200, json.dumps({"ok": True}))
+    def log_message(self, *a): pass
+srv = HTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+import run_task, locustfile
+env = run_task.make_env(locustfile.FormBurst, "http://127.0.0.1:%d" % srv.server_port)
+runner = env.create_local_runner(); runner.start(1, spawn_rate=1)
+t0 = time.time()
+while locustfile.DONE["users"] < 1 and time.time() - t0 < 30: gevent.sleep(0.2)
+runner.quit()
+print("STATS", json.dumps({n: [e.num_requests, e.num_failures] for (n, _), e in env.stats.entries.items()}))
+'''
+
+
+@pytest.mark.skipif(any(importlib.util.find_spec(m) is None for m in ("gevent", "locust")), reason="requiere locust/gevent (imagen del generador o entorno local; el CI de la app no los instala)")
+@pytest.mark.parametrize("mode", ["retries", "giveup"])
+def test_generator_retries_like_the_browser_and_reports_the_final_result_per_user(tmp_path, mode):
+    """Mismas reglas que el navegador: 503 «busy» y el 429 de infraestructura se reintentan con la misma sid; son contrapresión (no fallos); al final cada usuario deja «inscrito» o
+    «se rindió tras N reintentos» (ese sí es fallo). Corre donde locust esté instalado (subproceso: locust parchea gevent)."""
+    import subprocess
+    import sys
+    driver = tmp_path / "drive_retry.py"
+    driver.write_text(_RETRY_DRIVER, encoding="utf8")
+    env = {**os.environ, "LOAD_EVENT_ID": "1", "LOAD_FORM_SLUG": "carga", "OPS_TOKEN": "token-de-prueba", "LOAD_SUBMIT_RATIO": "1", "LOAD_THINK_MAX": "1", "PYTHONIOENCODING": "utf-8",
+           "LOAD_RETRY_BASE_MS": "20", "LOAD_RETRY_DEADLINE": "1.5" if mode == "giveup" else "30"}
+    r = subprocess.run([sys.executable, str(driver), str(ROOT), mode], env=env, capture_output=True, text=True, encoding="utf8", timeout=90, cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    stats = json.loads(r.stdout.split("STATS ", 1)[1].splitlines()[0])
+    assert stats["GET state (contrapresión 429)"][0] == 1 and stats["GET state (contrapresión 429)"][1] == 0          # el 429 de Cloud Run se reintenta y no es fallo
+    assert stats["GET state"] == [1, 0]
+    real_failures = {n: v[1] for n, v in stats.items() if v[1] and not n.startswith("[usuario]")}
+    assert real_failures == {}                                                                                        # ni un solo intento «ocupado» cuenta como fallo
+    if mode == "retries":
+        assert stats["POST envio (contrapresión 503)"] == [1, 0] and stats["POST envio (reintento por contrapresión) (contrapresión 503)"] == [2, 0]
+        assert stats["POST envio (reintento por contrapresión)"] == [1, 0]
+        assert stats["[usuario] inscrito"] == [1, 0]
+    else:
+        gave_up = [n for n in stats if n.startswith("[usuario] se rindió tras ")]
+        assert len(gave_up) == 1 and stats[gave_up[0]] == [1, 1]                                                       # rendirse SÍ es un fallo del usuario
+        assert "[usuario] inscrito" not in stats
+
+
+def test_report_separates_backpressure_and_shows_the_final_result_per_user(tmp_path, capsys):
+    from scripts import loadgen_report
+
+    def entry(name, n, fails=0, ms=100):
+        return {"name": name, "method": "POST", "requests": n, "failures": fails, "max_ms": ms * 3, "total_ms": ms * n, "histogram": {str(ms): n}}
+
+    rows = [entry("POST envio", 40, ms=50), entry("POST envio (contrapresión 503)", 60, ms=20), entry("GET state (contrapresión 429)", 5, ms=20), entry("GET state", 100, ms=30),
+            entry("[usuario] inscrito", 90, ms=4000), entry("[usuario] cupo lleno", 6, ms=9000), entry("[usuario] se rindió tras 12 reintentos", 4, fails=4, ms=150000)]
+    f = tmp_path / "r.txt"
+    f.write_text("LOADGEN_RESULT " + json.dumps({"scenario": "forms", "task": 0, "tasks": 1, "users": 100, "seconds": 60, "entries": rows, "errors": {}}), encoding="utf8")
+    loadgen_report.main([str(f)])
+    out = capsys.readouterr().out
+    main_table = out.split("Contrapresión")[0]
+    assert "| POST envio |" in main_table and "contrapresión" not in main_table and "[usuario]" not in main_table                # no ensucian la tabla principal
+    assert "| POST envio (contrapresión 503) | 60 | 60 %" in out and "| GET state (contrapresión 429) | 5 | 5 %" in out
+    assert "Resultado FINAL por usuario virtual que envía (100 usuarios" in out
+    assert "| inscrito | 90 | 90.0 |" in out and "| cupo lleno | 6 | 6.0 |" in out and "| se rindió tras 12 reintentos | 4 | 4.0 |" in out

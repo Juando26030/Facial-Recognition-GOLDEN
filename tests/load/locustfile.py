@@ -16,6 +16,7 @@ import io
 import json
 import os
 import random
+import time
 
 from locust import HttpUser, between, constant, constant_pacing, events, task
 
@@ -106,10 +107,51 @@ class FormUser(HttpUser):
 DONE = {"users": 0}          # usuarios de FormBurst que ya terminaron su recorrido (run_task.py espera a que lleguen al total)
 
 
+RETRY_DEADLINE = float(os.getenv("LOAD_RETRY_DEADLINE", "150"))          # s: lo mismo que el navegador real (templates/form_public.html)
+RETRY_BASE = float(os.getenv("LOAD_RETRY_BASE_MS", "1500")) / 1000
+
+
+def _is_busy(r) -> bool:
+    """Misma regla que `isBusy` de templates/form_public.html: 502/503/504 y el 429 que NO es de la app (el «Rate exceeded.» de Cloud Run es texto plano; los de la app traen JSON)."""
+    return r.status_code in (502, 503, 504) or (r.status_code == 429 and "json" not in (r.headers.get("content-type") or ""))
+
+
+def _retry_delay(r, attempt: int) -> float:
+    """Misma espera que `retryDelay` del navegador: lo que diga `Retry-After` como mínimo, espera creciente (x1, x2, x4, x8) y un poco al azar."""
+    try:
+        after = float(r.headers.get("Retry-After", ""))
+    except ValueError:
+        after = 0.0
+    return max(after, RETRY_BASE * 2 ** min(attempt, 3)) + random.uniform(0, RETRY_BASE)
+
+
+def _attempt(client, method: str, url: str, name: str, ok_codes=(200,), **kw):
+    """Un intento HTTP. Un intento «ocupado» (contrapresión) NO es un fallo: se cuenta aparte, con otro nombre («… (contrapresión 503)»)."""
+    with client.request(method, url, name=name, catch_response=True, **kw) as r:
+        if _is_busy(r):
+            try:
+                r.request_meta["name"] = f"{name} (contrapresión {r.status_code})"
+            except Exception:  # noqa: BLE001
+                pass
+            r.success()
+        elif r.status_code in ok_codes:
+            r.success()
+        else:
+            r.failure(f"{name} {r.status_code}: {r.text[:120]}")
+        return r
+
+
+def _user_result(label: str, started: float, failed: bool = False) -> None:
+    """El resultado FINAL de un usuario que envía («[usuario] inscrito / cupo lleno / se rindió / error»), con el tiempo total desde su primer intento: es lo que vive una persona."""
+    events.request.fire(request_type="USER", name=f"[usuario] {label}", response_time=(time.time() - started) * 1000, response_length=0,
+                        exception=Exception(label) if failed else None, context={})
+
+
 class FormBurst(HttpUser):
     """Fase 4 (docs/15): cada usuario virtual abre el formulario UNA vez y, con probabilidad LOAD_SUBMIT_RATIO (0,5 → 10.000 aperturas y ~5.000 envíos), lo envía tras
-    unos segundos (lo que tarda en escribir); un 10 % de los envíos se repite con la MISMA `sid` (reintento por red mala: debe salir «replayed», nunca duplicar). Con el
-    formulario lleno (cupo < envíos) el 409 «cupo completo» es la respuesta CORRECTA y se cuenta aparte; cualquier 5xx es fallo."""
+    unos segundos (lo que tarda en escribir). Reintenta como el navegador real (mismas reglas y esperas: 502/503/504 y 429 de infraestructura, con la misma `sid`, hasta
+    LOAD_RETRY_DEADLINE s); esos intentos «ocupado» son CONTRAPRESIÓN, no fallos. Un 10 % de los envíos ya inscritos se repite con la MISMA `sid` (debe salir «replayed»).
+    Con el formulario lleno el 409 «cupo completo» es la respuesta CORRECTA. Al final se registra el resultado del usuario: inscrito / cupo lleno / se rindió tras N reintentos."""
     wait_time = constant(0)
 
     def on_start(self):
@@ -121,19 +163,36 @@ class FormBurst(HttpUser):
         import gevent
         with self.client.get(f"/f/{EVENT_ID}/{SLUG}", name="GET pagina del formulario", catch_response=True) as r:
             r.success() if r.status_code == 200 else r.failure(f"{r.status_code}")
-        self.client.get(f"/f/{EVENT_ID}/{SLUG}/state", name="GET state")
+        started, attempt = time.time(), 0
+        while True:                                   # el navegador también reintenta la apertura si el servicio está saturado (hasta ~40 s)
+            r = _attempt(self.client, "GET", f"/f/{EVENT_ID}/{SLUG}/state", "GET state")
+            if not _is_busy(r) or time.time() - started + _retry_delay(r, attempt) > 40:
+                break
+            gevent.sleep(_retry_delay(r, attempt))
+            attempt += 1
         if random.random() < float(os.getenv("LOAD_SUBMIT_RATIO", "0.5")):
             gevent.sleep(random.uniform(1, float(os.getenv("LOAD_THINK_MAX", "30"))))
             n = random.randint(10**9, 10**10 - 1)
             payload = {"values": {"cedula": str(n), "nombres": "Prueba", "apellidos": "Carga", "correo": f"carga{n}@example.com", "tel": "3001234567"}, "sid": f"sid{n}"}
-            for attempt in range(2 if random.random() < 0.10 else 1):
-                with self.client.post(f"/f/{EVENT_ID}/{SLUG}/submit", json=payload, name="POST envio" if attempt == 0 else "POST envio (reintento, misma sid)", catch_response=True) as r:
-                    if r.status_code == 200:
-                        r.success()
-                    elif r.status_code == 409:
-                        r.success()                      # cupo completo (o duplicado): respuesta correcta, no error; se ve en el reporte por código
+            url, started, attempt, label = f"/f/{EVENT_ID}/{SLUG}/submit", time.time(), 0, None
+            while label is None:
+                r = _attempt(self.client, "POST", url, "POST envio" if attempt == 0 else "POST envio (reintento por contrapresión)", ok_codes=(200, 409), json=payload)
+                if r.status_code == 200:
+                    label = "inscrito"
+                elif r.status_code == 409:
+                    label = "cupo lleno" if "closed" in r.text else "duplicado"          # cupo completo (o duplicado): respuesta correcta, no error
+                elif _is_busy(r):
+                    wait = _retry_delay(r, attempt)
+                    if time.time() - started + wait > RETRY_DEADLINE:
+                        label = f"se rindió tras {attempt} reintentos"
                     else:
-                        r.failure(f"submit {r.status_code}: {r.text[:120]}")
+                        gevent.sleep(wait)
+                        attempt += 1
+                else:
+                    label = "error"
+            _user_result(label, started, failed=label.startswith("se rindió") or label == "error")
+            if label == "inscrito" and random.random() < 0.10:
+                _attempt(self.client, "POST", url, "POST envio (reintento, misma sid)", ok_codes=(200, 409), json=payload)
         # NO `self.stop()`: Locust REPONE a los usuarios detenidos para mantener constante el total pedido, y cada reposición abría el formulario otra vez
         # (3.ª corrida: ~17.700 aperturas para 10.000 usuarios). El usuario terminado se queda dormido hasta que el generador termine.
         DONE["users"] += 1
