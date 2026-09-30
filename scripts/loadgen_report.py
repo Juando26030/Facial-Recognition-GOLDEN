@@ -59,6 +59,8 @@ def merge(results: list) -> dict:
 STATE_P95_MS, STATE_P99_MS = 2000, 5000       # apertura (GET state): la página no cuenta (la sirve la CDN)
 USER_P95_S, USER_P95_GOAL_S = 120, 60         # p95 del tiempo TOTAL de quien se inscribe (con todos sus reintentos); meta 60 s tras la función SQL única
 USER_OK_PCT = 99.0                            # «inscrito» o «cupo lleno»
+INFRA_MAX_PCT = 0.1                           # 503 sin marca «busy» de la app (HTML de Google) y 429 de infraestructura: tolerados hasta este % de los intentos si TODOS los usuarios terminan con resultado
+INFRA_KINDS = ("503 infra", "429")
 
 
 def parse_verify(path: str):
@@ -89,9 +91,16 @@ def forms_criteria(merged: dict, users: dict, errors: dict, gens: list, verify) 
     if ins:
         t95 = percentile(ins["hist"], .95) / 1000
         checks.append((f"p95 del tiempo total de quien se inscribe {t95:.1f} s < {USER_P95_S} s (meta {USER_P95_GOAL_S} s: {'alcanzada' if t95 < USER_P95_GOAL_S else 'aún no'})", t95 < USER_P95_S))
-    other_5xx = sum(m["requests"] for k, m in merged.items() if "(contrapresión" in k and k.split("(contrapresión ")[1].rstrip(")") != "503")
+    kind = lambda k: k.split("(contrapresión ")[1].rstrip(")")      # noqa: E731  «503», «503 infra», «503 app», «429», «502»…
+    infra = sum(m["requests"] for k, m in merged.items() if "(contrapresión" in k and kind(k) in INFRA_KINDS)
+    attempts = sum(m["requests"] for k, m in merged.items() if not k.startswith(USER_PREFIX))
+    infra_pct = 100 * infra / max(attempts, 1)
+    all_done = total == good
+    checks.append((f"infraestructura (503 sin marca «busy» y 429 de Google): {infra} de {attempts} intentos = {infra_pct:.3f} % (máximo {INFRA_MAX_PCT} %) y "
+                   f"{'todos' if all_done else 'NO todos'} los usuarios que envían terminaron con resultado", infra_pct <= INFRA_MAX_PCT and all_done))
+    other_5xx = sum(m["requests"] for k, m in merged.items() if "(contrapresión" in k and kind(k) not in INFRA_KINDS + ("503",))
     other_5xx += sum(v for k, v in errors.items() if any(f" {c}" in k for c in ("500", "501", "502", "504", "505")))
-    checks.append((f"{other_5xx} respuestas 5xx distintas de 503 «busy» (0 esperadas; el 429 de infraestructura se reporta aparte)", other_5xx == 0))
+    checks.append((f"{other_5xx} respuestas 5xx distintas de 503 «busy» y de la infraestructura anterior (0 esperadas: 500, 502, 504 y el 503 de la app sin marca «busy» fallan)", other_5xx == 0))
     saturated = [t for t, g in gens if g["cpu_pct"] > 85 or g["lag_p95_ms"] > 200]
     checks.append((f"generadores saturados: {saturated or 'ninguno'}", not saturated))
     if verify:

@@ -276,7 +276,10 @@ def test_forms_criterion_passes_with_the_agreed_thresholds(tmp_path, capsys):
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 95, 1000), _e("[usuario] se rindió tras 9 reintentos", 5, 150000, 5)], None, None, "✘ 95.0 %"),
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 98, 1000), _e("[usuario] no terminó (cortado al agotarse LOAD_DURATION)", 2, 360000, 2)], None, None, "✘ 98.0 %"),
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 502)", 3, 20)], None, None, "✘ 3 respuestas 5xx distintas"),
-    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 infra)", 1, 20)], None, None, "✘ 1 respuestas 5xx distintas"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 app)", 1, 20)], None, None, "✘ 1 respuestas 5xx distintas"),               # 503 de la app sin marca busy
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 504)", 1, 20)], None, None, "✘ 1 respuestas 5xx distintas"),
+    ([_e("GET state", 1000, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 infra)", 2, 20)], None, None, "✘ infraestructura"),             # 0,2 % > 0,1 %
+    ([_e("GET state", 1000, 300), _e("[usuario] inscrito", 99, 1000), _e("[usuario] se rindió tras 9 reintentos", 1, 150000, 1), _e("GET state (contrapresión 429)", 1, 20)], None, None, "✘ infraestructura"),   # tasa baja pero un usuario sin resultado
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000)], {"cpu_pct": 95, "lag_p95_ms": 20, "lag_max_ms": 90}, None, "✘ generadores saturados"),
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 90, 1000), _e("[usuario] cupo lleno", 10, 1000)], None, {"confirmed_submissions": 91, "capacity": 90, "oversold": 1, "duplicate_persons": 0, "duplicate_sids": 0}, "✘ base: sobreventas 1"),
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 90, 1000), _e("[usuario] cupo lleno", 10, 1000)], None, {"confirmed_submissions": 80, "capacity": 90, "oversold": 0, "duplicate_persons": 0, "duplicate_sids": 0}, "✘ base: inscripciones confirmadas 80"),
@@ -289,3 +292,24 @@ def test_forms_criterion_fails_when_any_agreed_threshold_is_missed(tmp_path, cap
 def test_forms_criterion_asks_for_the_database_check_when_missing(tmp_path, capsys):
     code, out = _forms_report(tmp_path, capsys, [_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000)])
     assert code == 0 and "falta la línea LOAD_VERIFY" in out and "a falta de la verificación de la base" in out
+
+
+def test_forms_criterion_tolerates_a_few_infrastructure_503_and_429_when_every_user_finishes(tmp_path, capsys):
+    rows = [_e("GET state", 5000, 300), _e("POST envio", 5000, 300), _e("[usuario] inscrito", 90, 1000), _e("[usuario] cupo lleno", 10, 1000),
+            _e("POST envio (contrapresión 503 infra)", 6, 20), _e("GET state (contrapresión 429)", 4, 20)]              # 10 de ~10.010 = 0,1 %
+    code, out = _forms_report(tmp_path, capsys, rows)
+    assert code == 0 and "infraestructura (503 sin marca «busy» y 429 de Google): 10 de 10010 intentos = 0.100 %" in out and "Criterio forms → CUMPLE" in out
+
+
+def test_public_form_shows_waiting_messages_while_retrying_with_the_same_sid():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "templates" / "form_public.html").read_text(encoding="utf8")
+    assert 'msg.setAttribute("aria-live", "polite")' in html
+    assert "Hay mucha gente inscribiéndose al mismo tiempo; seguimos intentándolo, no cierres esta página" in html and waited_gate(html, 10000)
+    assert "Sigue en cola; si el cupo se agota te lo diremos aquí" in html and waited_gate(html, 60000)
+    assert html.count("sid: SID") >= 2 and "const body = JSON.stringify({ values, k: K, d: D, code: fr.code(), t: token, sid: SID" in html           # el reintento reutiliza el mismo cuerpo (misma sid)
+    assert html.index('msg.textContent = "";                                   // respuesta final') < html.index("if (lastErr) return reset(")
+
+
+def waited_gate(html, ms):
+    return f"waited >= {ms}" in html

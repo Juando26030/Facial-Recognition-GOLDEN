@@ -114,7 +114,8 @@ deploy_service() {   # nombre, módulo, cpu, memoria, concurrencia, máx. instan
     --cpu "$cpu" --memory "$mem" --concurrency "$conc" --max-instances "$max" --timeout 60 --cpu-boost --execution-environment gen2 \
     --env-vars-file "$TMP/$svc.yaml" ${APP_SECRET_FLAGS:+--set-secrets "$APP_SECRET_FLAGS"} "${probes[@]}" --quiet
 }
-deploy_service "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2
+# `web` (estaciones de cédula): límite alto con jitter grande para que los reciclajes de los procesos no coincidan bajo carga uniforme. Biometría: sin tocar (se mide en una prueba larga).
+deploy_service "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=20000 GUNICORN_MAX_REQUESTS_JITTER=10000
 # GUNICORN_MAX_REQUESTS=0 SOLO aquí (corrida 9: con el límite por defecto los 20 procesos de las 10 instancias se reciclaron casi a la vez en pleno pico y cortaron conexiones). El público no lleva
 # dlib; `web` y `biometria` conservan el reciclaje. Por ir aquí (y no en common.yaml, que es de los tres servicios) sobrevive a cada despliegue de CI. Vigilar la memoria: docs/15.
 deploy_service "$SVC_PUBLICO"   app.entrypoints.publico:app   1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=0

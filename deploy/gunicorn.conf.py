@@ -5,6 +5,7 @@
   GUNICORN_GRACEFUL_TIMEOUT   segundos que se dan a las peticiones en curso tras SIGTERM (10: lo que da Cloud Run)
   GUNICORN_MAX_REQUESTS       reinicia cada proceso tras N peticiones (1500 + jitter): dlib/numpy pueden ir engordando la memoria con los días; 0 = nunca (el servicio público de Cloud Run,
                               ver deploy/gcp/deploy.sh). Con carga pareja TODOS los procesos llegan al límite casi a la vez (corrida 9): no lo uses sin desfasarlos.
+  GUNICORN_MAX_REQUESTS_JITTER  aleatoriedad máxima añadida a max_requests por proceso (300 por defecto); `web` usa 20000 + jitter 10000 para que los reciclajes no coincidan.
   GUNICORN_KEEPALIVE          segundos que uvicorn mantiene abierta una conexión ociosa (5 por defecto). Alargarlo si Cloud Run muestra «connection to the instance had an error» dispersos.
 
 Uso:  gunicorn -c deploy/gunicorn.conf.py app.main:app            (todo)
@@ -20,7 +21,7 @@ timeout = int(os.getenv("GUNICORN_TIMEOUT", "60"))
 graceful_timeout = int(os.getenv("GUNICORN_GRACEFUL_TIMEOUT", "10"))
 keepalive = int(os.getenv("GUNICORN_KEEPALIVE", "5"))
 max_requests = int(os.getenv("GUNICORN_MAX_REQUESTS", "1500"))
-max_requests_jitter = 300
+max_requests_jitter = int(os.getenv("GUNICORN_MAX_REQUESTS_JITTER", "300"))
 accesslog = None                      # el log de peticiones lo escribe la propia app (JSON, con datos personales enmascarados: app/obs.py)
 errorlog = "-"
 capture_output = True

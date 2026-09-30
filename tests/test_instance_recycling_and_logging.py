@@ -31,7 +31,8 @@ def test_max_requests_zero_is_set_only_on_the_public_service_in_deploy_sh():
     by_service = {re.search(r"SVC_(\w+)", ln).group(1): ln for ln in lines}
     assert set(by_service) == {"WEB", "PUBLICO", "BIOMETRIA"}
     assert "GUNICORN_MAX_REQUESTS=0" in by_service["PUBLICO"]
-    assert "GUNICORN_MAX_REQUESTS" not in by_service["WEB"] and "GUNICORN_MAX_REQUESTS" not in by_service["BIOMETRIA"]       # web y biometría siguen reciclando
+    assert "GUNICORN_MAX_REQUESTS=20000" in by_service["WEB"] and "GUNICORN_MAX_REQUESTS_JITTER=10000" in by_service["WEB"]
+    assert "GUNICORN_MAX_REQUESTS" not in by_service["BIOMETRIA"]                                   # biometría sin tocar (por defecto)
     common = [ln for ln in (ROOT / "deploy" / "gcp" / "env" / "common.yaml").read_text(encoding="utf8").splitlines() if not ln.lstrip().startswith("#")]
     assert not [ln for ln in common if "GUNICORN_MAX_REQUESTS" in ln]                              # common.yaml es de los TRES servicios: aquí NO va
     workflow = (ROOT / ".github" / "workflows" / "cloudrun-deploy.yml").read_text(encoding="utf8")
@@ -57,7 +58,7 @@ def test_deploy_env_file_carries_the_extra_variable_as_a_string(tmp_path):
 
 
 def _conf(monkeypatch, **env):
-    for k in ("GUNICORN_MAX_REQUESTS", "GUNICORN_KEEPALIVE", "WEB_CONCURRENCY"):
+    for k in ("GUNICORN_MAX_REQUESTS", "GUNICORN_MAX_REQUESTS_JITTER", "GUNICORN_KEEPALIVE", "WEB_CONCURRENCY"):
         monkeypatch.delenv(k, raising=False)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
@@ -69,6 +70,8 @@ def test_gunicorn_conf_keepalive_defaults_to_5_and_max_requests_zero_is_accepted
     assert base["keepalive"] == 5 and base["max_requests"] == 1500 and base["max_requests_jitter"] == 300        # sin cambio de comportamiento
     assert _conf(monkeypatch, GUNICORN_KEEPALIVE="650")["keepalive"] == 650
     assert _conf(monkeypatch, GUNICORN_MAX_REQUESTS="0")["max_requests"] == 0                                      # 0 = nunca reciclar
+    web = _conf(monkeypatch, GUNICORN_MAX_REQUESTS="20000", GUNICORN_MAX_REQUESTS_JITTER="10000")
+    assert web["max_requests"] == 20000 and web["max_requests_jitter"] == 10000
 
 
 # ------------------------------------------------------------------ 2) contrapresión: INFO y sin on_5xx; los 5xx reales siguen igual
