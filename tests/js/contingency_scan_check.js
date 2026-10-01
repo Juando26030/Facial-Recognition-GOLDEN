@@ -59,6 +59,7 @@ eval(fs.readFileSync('static/js/directory.js', 'utf8'));
 
 (async () => {
   ROSTER = [{ h: await fp('1001'), n: 'Ana Pérez', c: [], s: 'No registrado' }, { h: await fp('1002'), n: 'Luis Gómez', c: [], s: 'Registrado' }, { h: await fp('1003'), n: 'Eva Ríos', c: [], s: 'No registrado' }];
+  const fpEva = await fp('1003');
   let seq = 0;
   const GC = C.create({ idb: fakeIndexedDB(), fetch: global.fetch, now: () => now, document: global.document, subtle: crypto.subtle, eventId: 7, uuid: () => `cid-${++seq}`,
     setInterval: () => 1, clearInterval() {}, setTimeout: global.setTimeout, clearTimeout: global.clearTimeout });
@@ -77,13 +78,13 @@ eval(fs.readFileSync('static/js/directory.js', 'utf8'));
   await d.submitScannedCedula('1001');
   assert.strictEqual(checkinCalls, 0, 'en contingencia no se espera a la red'); assert.ok(toasts.some(([m, t]) => /^Acreditado: Ana Pérez/.test(m) && t === 'success'));
   let q = await GC.queueList();
-  assert.strictEqual(q.length, 1); assert.ok(typeof q[0].client_id === 'string' && q[0].client_id.length >= 8, 'client_id generado por la estación'); assert.strictEqual(q[0].cedula, '1001'); assert.strictEqual(q[0].method, 'cedula');
+  assert.strictEqual(q.length, 1); assert.ok(typeof q[0].client_id === 'string' && q[0].client_id.length >= 8, 'client_id generado por la estación'); assert.strictEqual(q[0].h, await fp('1001')); assert.ok(!('cedula' in q[0]), 'la cola no guarda la cédula'); assert.strictEqual(q[0].method, 'cedula');
   assert.ok(!Number.isNaN(Date.parse(q[0].timestamp)) && q[0].timestamp.endsWith('Z'), 'marca de tiempo ISO UTC');
   assert.strictEqual(confirmCalls, 0, 'quien no constaba como registrado se admite sin preguntar');
 
   // 2) QR: mismo flujo, método «qr»
   reset(); await d.submitScannedCedula('1003', null, 'qr');
-  q = await GC.queueList(); assert.strictEqual(q.length, 2); assert.strictEqual(q.find((x) => x.cedula === '1003').method, 'qr');
+  q = await GC.queueList(); assert.strictEqual(q.length, 2); assert.strictEqual(q.find((x) => x.h === fpEva).method, 'qr');
 
   // 3) repetido en este quiosco: pide confirmación (DUPLICADO); si se rechaza no se encola; si se acepta se encola con OTRO client_id
   reset(); confirmAnswer = false; await d.submitScannedCedula('1001');
@@ -115,7 +116,7 @@ eval(fs.readFileSync('static/js/directory.js', 'utf8'));
   assert.strictEqual(checkinCalls, 3); assert.strictEqual(GC.state(), 'degraded'); assert.strictEqual((await GC.queueList()).length, 0);
   await scan();                                                                          // 2.º: agota otra vez → contingencia y ESTE escaneo se admite sin red
   assert.strictEqual(GC.active(), true); assert.strictEqual(checkinCalls, 6);
-  q = await GC.queueList(); assert.strictEqual(q.length, 1); assert.strictEqual(q[0].cedula, '1003');
+  q = await GC.queueList(); assert.strictEqual(q.length, 1); assert.strictEqual(q[0].h, fpEva);
   assert.ok(toasts.some(([m]) => /Acreditado: Eva Ríos/.test(m)));
   console.log('contingency: registro sin red OK (sin red, roster local, DUPLICADO, no registrado, vencida, paso automático)');
 })().catch((e) => { console.error(e); process.exit(1); });

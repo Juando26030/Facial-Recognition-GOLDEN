@@ -4,13 +4,17 @@ function fakeIndexedDB() {
   const dbs = new Map();
   return {
     dbs,
-    open(name) {
+    databases: async () => [...dbs.keys()].map((name) => ({ name })),
+    open(name, version = 1) {
       const r = {};
       setImmediate(() => {
         let d = dbs.get(name);
         const isNew = !d;
-        if (isNew) { d = { stores: new Map() }; dbs.set(name, d); }
+        if (isNew) { d = { stores: new Map(), version: 0 }; dbs.set(name, d); }
+        const upgrade = version > d.version;
+        d.version = Math.max(d.version, version);
         r.result = {
+          objectStoreNames: { contains: (n) => d.stores.has(n) },
           createObjectStore(n, { keyPath }) { d.stores.set(n, { keyPath, data: new Map() }); return {}; },
           transaction(names) {
             const tx = { pending: 0, oncomplete: null };
@@ -30,13 +34,14 @@ function fakeIndexedDB() {
                 put: (v) => op(() => { st.data.set(v[st.keyPath], structuredClone(v)); return v[st.keyPath]; }),
                 delete: (k) => op(() => { st.data.delete(k); }),
                 clear: () => op(() => { st.data.clear(); }),
+                count: () => op(() => st.data.size),
               };
             };
             return tx;
           },
           close() {},
         };
-        if (isNew && r.onupgradeneeded) r.onupgradeneeded();
+        if (upgrade && r.onupgradeneeded) r.onupgradeneeded();
         if (r.onsuccess) r.onsuccess();
       });
       return r;

@@ -237,3 +237,45 @@
     }
   };
 })();
+
+/* Cierre de sesión y copia local del modo contingencia (Fase 3, docs/15): al enviar CUALQUIER formulario «/logout» de la aplicación se borra el roster local de este dispositivo
+   (todos los `golden-contingency-*`), se avisa cuántos ingresos hechos sin red siguen sin sincronizar y se CONSERVA la cola hasta sincronizar (la sincroniza la próxima sesión que abra
+   el registro de ese evento). Si la página tiene el cliente de contingencia, antes intenta sincronizar. Nunca impide salir por un fallo técnico: sin IndexedDB, sigue el cierre normal. */
+(function () {
+  const PREFIX = "golden-contingency-";
+  const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const open = (name) => new Promise((res, rej) => { const r = indexedDB.open(name); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error("blocked")); });
+
+  async function pendingIn(name) {
+    const db = await open(name);
+    try { return db.objectStoreNames.contains("queue") ? await req(db.transaction(["queue"], "readonly").objectStore("queue").count()) : 0; } finally { db.close(); }
+  }
+  async function wipeRoster(name) {
+    const db = await open(name);
+    try {
+      const stores = ["roster", "meta"].filter((s) => db.objectStoreNames.contains(s));
+      if (!stores.length) return;
+      await new Promise((res, rej) => { const t = db.transaction(stores, "readwrite"); stores.forEach((s) => t.objectStore(s).clear()); t.oncomplete = res; t.onerror = () => rej(t.error); });
+    } finally { db.close(); }
+  }
+  window.GoldenLogoutCleanup = async function () {
+    const GC = window.GoldenContingency && window.GoldenContingency.instance;
+    if (GC && GC.beforeLogout) { try { await GC.beforeLogout(); } catch (e) { /* seguir con el cierre */ } }
+    const names = ((await indexedDB.databases()) || []).map((d) => d.name).filter((n) => n && n.startsWith(PREFIX));
+    let pending = 0;
+    for (const n of names) pending += await pendingIn(n);
+    if (pending > 0 && window.showConfirm) {
+      const ok = await window.showConfirm(`Quedan <strong>${pending}</strong> ingreso(s) sin sincronizar en este dispositivo (se hicieron sin conexión). Se conservarán y se enviarán cuando vuelvas a iniciar sesión y abras el registro de ese evento.<br><br>¿Cerrar sesión de todos modos?`, { variant: "warning", confirmLabel: "Cerrar sesión" });
+      if (!ok) return false;
+    }
+    for (const n of names) await wipeRoster(n);
+    return true;
+  };
+  document.addEventListener("submit", function (e) {
+    const f = e.target;
+    if (!f || !f.getAttribute || f.__loggingOut || !/\/logout$/.test(f.getAttribute("action") || "")) return;
+    if (!window.indexedDB || typeof indexedDB.databases !== "function") return;      // sin soporte: cierre normal
+    e.preventDefault();
+    window.GoldenLogoutCleanup().then((go) => go, () => true).then((go) => { if (go) { f.__loggingOut = true; f.submit(); } });
+  });
+})();
