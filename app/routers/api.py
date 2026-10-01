@@ -885,7 +885,7 @@ def local_roster(
 ):
     """Roster mínimo del evento para el modo contingencia del quiosco (Fase 3): por persona SOLO huella de la cédula (`h`), nombre para mostrar (`n`), categorías (`c`) y estado (`s`:
     «No registrado» / «Registrado» / «Nuevo»). Sin fotos, encodings, teléfono ni correo. Mismos permisos que acreditar (digitador+ con acceso al evento; el cliente no), no se
-    entrega de un evento finalizado, límite de `ROSTER_LIMIT` descargas por usuario y evento cada 10 min, `ETag` (304 si nada cambió) y gzip. `max_age_s`: vida máxima de la copia."""
+    entrega de un evento finalizado, límite de `ROSTER_LIMIT` descargas por usuario y evento cada 10 min, `ETag` (304 si nada cambió) y gzip. `max_age_s`: vida máxima de la copia. `event.auto_register`: el «Modo autoregistro» del evento (el quiosco sin red solo acredita al escanear si está encendido)."""
     event = get_event_for_staff(event_id, db, staff)
     if event.status == "finalizado":
         raise HTTPException(status_code=409, detail="El evento ya finalizó: no hay roster local")
@@ -893,7 +893,7 @@ def local_roster(
     if security.minutes_locked(db, "roster_local", key, None, ROSTER_LIMIT, ROSTER_LIMIT, ROSTER_WINDOW):
         raise HTTPException(status_code=429, detail="Demasiadas descargas del roster local — espera unos minutos.")
     security.record_event(db, "roster_local", key, None)
-    version = _directory_etag(db, event.id, event.tenant_id, "roster-local")
+    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}")      # el modo autoregistro viaja en la copia: si cambia, cambia la versión
     headers = {"Cache-Control": "private, no-cache", "ETag": f'"{version}"'}
     if request.headers.get("if-none-match") == headers["ETag"]:
         return Response(status_code=304, headers=headers)
@@ -911,7 +911,7 @@ def local_roster(
         real, new = counts.get(uid, (0, 0))
         rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
                      "s": "No registrado" if not real else ("Nuevo" if new else "Registrado")})
-    return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status},
+    return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status, "auto_register": bool(event.auto_register)},
                          "salt": salt, "count": len(rows), "people": rows}, headers=headers)
 
 

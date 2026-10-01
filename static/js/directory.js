@@ -109,6 +109,21 @@
   const isAdmin = ADMIN_ROLES.includes(window.STAFF_ROLE);
   const canManageStatus = STATUS_ROLES.includes(window.STAFF_ROLE);
 
+  /* Acreditar SIN red (modo contingencia, static/js/contingency.js). `target`: {cedula} (lo escrito/escaneado, o la fila cargada con red) o {h} (fila de la lista local, que no tiene la
+     cédula). Busca en la copia local; quien no está NO se admite; si ya consta como registrado o está en la cola pide la confirmación de DUPLICADO; si no, encola (client_id, marca de
+     tiempo, huella; método `cedula` | `qr` | `manual`) y avisa. Devuelve lo encontrado o null. Las listas abiertas se actualizan por `accreditHooks`. */
+  const accreditHooks = [];
+  async function offlineAccredit(GC, target, method, cid) {
+    const found = target.h ? await GC.findByHash(target.h) : await GC.scanLocal(target.cedula);
+    if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return null; }
+    if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return null; }
+    if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) return null;
+    await GC.enqueue(found, method, cid);
+    showToast(`Acreditado: ${found.person.n}`, 'success');
+    accreditHooks.forEach((f) => f(found));
+    return found;
+  }
+
   /* Modal flotante de edición (2026-09-16, reemplaza la edición inline contentEditable de antes —
      con 10 columnas en pantalla no cabía nada sin scroll horizontal). Mismos campos que el alta
      manual (incluidos los opcionales dinámicos de este evento, vía window.OPTIONAL_VARIABLES,
@@ -370,6 +385,7 @@
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
     tr.dataset.userId = user.id;
+    if (user.__h) tr.dataset.h = user.__h;          // fila de la lista local (sin cédula)
 
     /* La columna de Acción va PRIMERO (2026-09-16, pedido explícito: antes al final, obligaba a
        desplazarse hasta el final de la fila para editar/imprimir). El resto de columnas
@@ -697,18 +713,31 @@
       }
     }
 
-    /* Modo contingencia (static/js/contingency.js, Fase 3): sin red NO se espera al servidor. La persona se busca en la copia local (huella de la cédula); si no está, no se admite;
-       si ya constaba como registrada se pide confirmación como siempre; si no, se encola con su `client_id` y marca de tiempo (se sincroniza al volver la red). */
+    /* Modo contingencia (static/js/contingency.js, Fase 3): sin red NO se espera al servidor. Igual que en línea, escanear/escribir una cédula exacta SOLO acredita de inmediato si el «Modo
+       autoregistro» está encendido (el valor viaja con la copia local y se guarda en IndexedDB: vale tras recargar sin red); con el modo apagado SOLO busca y resalta a la persona, con un
+       botón «Acreditar» en su fila (como FOUND_PENDING). */
+    accreditHooks.push((found) => {
+      const u = allUsers.find((x) => (found.cedula && x.id === found.cedula) || (x.__h && x.__h === found.person.h));
+      if (u) { u.status = 'Registrado'; rowCache.delete(u); }
+      if (cedulaInput && found.cedula) cedulaInput.value = found.cedula;
+      applyFilters();
+    });
     async function offlineCheckin(GC, cedula, method, cid) {
+      if (await GC.autoRegister()) { await offlineAccredit(GC, { cedula }, method, cid); return; }
       const found = await GC.scanLocal(cedula);
       if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return; }
       if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return; }
-      if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) return;
-      await GC.enqueue(found, method, cid);
-      showToast(`Acreditado: ${found.person.n}`, 'success');
-      const u = allUsers.find(x => x.id === found.cedula);
-      if (u) u.status = 'Registrado';
       if (cedulaInput) { cedulaInput.value = found.cedula; applyFilters(); }
+      const tbody = document.getElementById(opts.tbodyId);
+      const row = tbody && (tbody.querySelector(`tr[data-user-id="${CSS.escape(found.cedula)}"]`) || tbody.querySelector(`tr[data-h="${found.person.h}"]`));
+      const actionTd = row ? row.querySelector('.action-cell') : null;
+      if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.innerText = '✅ Acreditar'; btn.className = 'golden-btn btn-table-action btn-accredit-pending';
+        btn.addEventListener('click', async () => { btn.disabled = true; btn.innerText = 'Acreditando...'; await offlineAccredit(GC, { cedula: found.cedula }, method, newClientId()); });
+        actionTd.appendChild(btn);
+      }
+      showToast(`${found.person.n} encontrado(a) — el modo autoregistro está apagado: confirma con "Acreditar" en la fila`, 'success');
     }
 
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {

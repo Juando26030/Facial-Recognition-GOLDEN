@@ -34,7 +34,7 @@ def test_roster_has_only_the_minimum_and_a_salted_fingerprint(client, factory, d
     assert r.status_code == 200
     body = r.json()
     assert set(body) == {"v", "generated_at", "max_age_s", "event", "salt", "count", "people"} and body["count"] == 2 and body["max_age_s"] == 86400
-    assert body["event"] == {"id": ev.id, "status": "en_proceso"}
+    assert body["event"] == {"id": ev.id, "status": "en_proceso", "auto_register": False}
     by_name = {p["n"]: p for p in body["people"]}
     ana, luis = by_name["Ana Prueba"], by_name["Luis Gómez"]
     assert set(ana) == {"h", "n", "c", "s"}                                              # nada más: ni cédula, ni teléfono, ni correo, ni encoding
@@ -147,3 +147,17 @@ def test_registration_page_registers_the_service_worker_and_privacy_has_the_pend
     assert "Copia local en el dispositivo del operador" in page and "PENDIENTE DE REVISIÓN LEGAL: todo este apartado" in page
     for needle in ("24 horas", "30 días", "no es una protección fuerte", "No se guardan fotografías"):
         assert needle in page, needle
+
+
+def test_roster_carries_the_auto_register_mode_and_its_version_changes_with_it(client, factory, db):
+    factory.staff("admin", "root")
+    ev = factory.event("en_proceso", auto_register=False)
+    factory.person(ev, "1001")
+    login(client, "root")
+    first = _get(client, ev)
+    assert first.json()["event"]["auto_register"] is False
+    assert _get(client, ev, headers={"If-None-Match": first.headers["etag"]}).status_code == 304
+    ev.auto_register = True
+    db.commit()
+    again = _get(client, ev, headers={"If-None-Match": first.headers["etag"]})           # al cambiar el modo la copia NO puede seguir «sin cambios»
+    assert again.status_code == 200 and again.json()["event"]["auto_register"] is True and again.headers["etag"] != first.headers["etag"]

@@ -98,6 +98,7 @@
       return c.persistent;
     };
 
+    c.ready = new Promise((resolve) => { c.markReady = resolve; });       // se resuelve cuando start() termina (con o sin soporte): directory.js lo espera antes de usar la copia local
     c.isSupported = () => !!(d.idb && d.subtle && d.fetch);
     c.active = () => !!(c.supported && c.machine && c.machine.state === 'contingency');
     c.state = () => (c.machine ? c.machine.state : 'normal');
@@ -146,7 +147,7 @@
       if (!res.ok) return 'error';
       const body = await res.json();
       await c.db.replaceRoster(body.people, { v: body.v, generated_at: body.generated_at, salt: body.salt, count: body.count, max_age_s: body.max_age_s,
-        event_id: body.event && body.event.id, fetched_at: fetchedAt, expires_at: fetchedAt + (body.max_age_s || 86400) * 1000 });
+        event_id: body.event && body.event.id, auto_register: !!(body.event && body.event.auto_register), fetched_at: fetchedAt, expires_at: fetchedAt + (body.max_age_s || 86400) * 1000 });
       return 'ok';
     };
 
@@ -159,13 +160,26 @@
       if (!meta || !meta.expires_at || d.now() >= meta.expires_at) return { status: 'expired' };
       const cedula = normalize(raw);
       const person = cedula ? await c.db.get('roster', await c.fingerprint(meta.salt, cedula)) : null;
-      if (!person) return { status: 'not_found' };
+      return person ? await found(person, cedula) : { status: 'not_found' };
+    };
+    const found = async (person, cedula) => {
       const queued = (await c.queueList()).some((q) => q.h === person.h);
       return { status: 'found', person, cedula, duplicate: queued || person.s !== 'No registrado', queued };
     };
+    /* La misma búsqueda por HUELLA (filas de la lista local, que no tienen la cédula) y utilidades para la lista/búsqueda sin red. */
+    c.findByHash = async (h) => {
+      const meta = await c.rosterMeta();
+      if (!meta || !meta.expires_at || d.now() >= meta.expires_at) return { status: 'expired' };
+      const person = h ? await c.db.get('roster', h) : null;
+      return person ? await found(person, '') : { status: 'not_found' };
+    };
+    /* «Modo autoregistro» del evento, tal como vino con la copia (se guarda en IndexedDB: vale tras recargar sin red). Apagado o desconocido → NO acredita al escanear, solo busca. */
+    c.autoRegister = async () => { const m = await c.rosterMeta(); return !!(m && m.auto_register === true); };
+    c.hashFor = async (raw) => { const meta = await c.rosterMeta(); const cedula = normalize(raw); return meta && cedula ? c.fingerprint(meta.salt, cedula) : ''; };
+    c.localPeople = async () => ((await c.rosterUsable()) ? c.db.getAll('roster') : []);
     /* Encola el ingreso (client_id + marca de tiempo; huella y nombre, NO la cédula) y lo anota como registrado en la copia local. */
     c.enqueue = async (found, method, clientId) => {
-      const rec = { client_id: clientId || uuid(), h: found.person.h, n: found.person.n, timestamp: new Date(d.now()).toISOString(), method: method === 'qr' ? 'qr' : 'cedula' };
+      const rec = { client_id: clientId || uuid(), h: found.person.h, n: found.person.n, timestamp: new Date(d.now()).toISOString(), method: ['qr', 'manual'].includes(method) ? method : 'cedula' };
       await c.db.put('queue', rec);
       await c.db.put('roster', { ...found.person, s: 'Registrado' });
       await recount();
@@ -263,6 +277,7 @@
     function render() {
       const doc = d.document;
       if (!doc || !doc.body) return;
+      if (doc.body.classList) doc.body.classList.toggle('golden-contingency', !!(c.supported && c.machine && c.machine.state === 'contingency'));       // muestra los botones «Acreditar sin red» de las filas
       const b = banner();
       const sig = b ? `${b.st}|${b.text}|${c.reviewCount}` : '';
       if (sig === c.bannerSig) return;
@@ -317,14 +332,20 @@
         render(); c.listeners.forEach((f) => f(s));
         if (s === 'normal' && from === 'contingency') { c.refreshRoster(); c.syncQueue(true); }       // volvió la red: copia al día y cola al servidor
       });
-      if (!c.isSupported()) { c.lastError = 'unsupported'; render(); return c; }
-      try { c.db = await openStore(d.idb, `golden-contingency-${d.eventId}`); } catch (e) { c.lastError = 'unsupported'; render(); return c; }
+      if (!c.isSupported()) { c.lastError = 'unsupported'; render(); c.markReady(); return c; }
+      try { c.db = await openStore(d.idb, `golden-contingency-${d.eventId}`); } catch (e) { c.lastError = 'unsupported'; render(); c.markReady(); return c; }
       c.supported = true;
+      if (d.document && d.document.head && d.document.createElement) {
+        const st = d.document.createElement('style');
+        st.textContent = '.btn-offline-accredit{display:none !important} body.golden-contingency .btn-offline-accredit{display:inline-block !important}';
+        d.document.head.appendChild(st);
+      }
       c.persistRequest = c.requestPersistence();                   // sin await: nunca bloquea el arranque
       await c.pruneOld();
       await recount();
       const meta = await c.rosterMeta();
       if (meta && meta.expires_at && d.now() >= meta.expires_at) await c.wipeRoster();           // vencido mientras el navegador estaba cerrado
+      c.markReady();
       c.refreshRoster().then((r) => { if (r === 'ok') { c.machine.authGood(); c.syncQueue(); } });
       c.timers.push(d.setInterval(checkHealth, HEALTH_MS));
       c.timers.push(d.setInterval(async () => {

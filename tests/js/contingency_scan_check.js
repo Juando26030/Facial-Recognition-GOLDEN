@@ -28,6 +28,7 @@ const body = new El('body');
 global.window = { EVENT_ID: 7, STAFF_ROLE: 'digitador', OPTIONAL_VARIABLES: [], FIELD_CONFIGS: [] };
 global.document = { getElementById: (id) => els[id] || null, createElement: (t) => new El(t), visibilityState: 'visible', body, addEventListener() {} };
 global.setInterval = () => 1;
+global.CSS = { escape: (x) => x };
 let now = 5_000_000, timers = [];
 global.setTimeout = (f, ms) => { const t = { f, at: now + ms }; timers.push(t); return t; };
 global.clearTimeout = (t) => { timers = timers.filter((x) => x !== t); };
@@ -42,11 +43,12 @@ const hex = (buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).p
 const SALT = 'b'.repeat(32);
 const fp = async (cedula) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${SALT}:${cedula}`))).slice(0, 16);
 const json = (status, data) => ({ ok: status >= 200 && status < 300, status, headers: { get: () => null }, json: async () => data });
-let checkinCalls = 0, checkinStatus = 200, healthOk = true;
+let checkinCalls = 0, checkinStatus = 200, healthOk = true, AUTO = true, netDown = false;
 global.fetch = async (url, init = {}) => {
+  if (netDown) throw new TypeError('Failed to fetch');
   const u = new URL(url, 'http://x');
   if (u.pathname === '/health') { if (!healthOk) throw new TypeError('Failed to fetch'); return json(200, { status: 'ok' }); }
-  if (u.pathname.endsWith('/local-roster')) return json(200, { v: 'v1', generated_at: 'x', max_age_s: 86400, event: { id: 7, status: 'en_proceso' }, salt: SALT, count: 3, people: ROSTER });
+  if (u.pathname.endsWith('/local-roster')) return json(200, { v: 'v1', generated_at: 'x', max_age_s: 86400, event: { id: 7, status: 'en_proceso', auto_register: AUTO }, salt: SALT, count: 3, people: ROSTER });
   if (u.pathname === '/api/users/changes') return json(200, { cursor: '1:1', total: 0, users: [] });
   if (u.pathname === '/api/users') return json(200, []);
   assert.strictEqual(u.pathname, '/api/checkin-cedula'); checkinCalls++;
@@ -61,7 +63,8 @@ eval(fs.readFileSync('static/js/directory.js', 'utf8'));
   ROSTER = [{ h: await fp('1001'), n: 'Ana Pérez', c: [], s: 'No registrado' }, { h: await fp('1002'), n: 'Luis Gómez', c: [], s: 'Registrado' }, { h: await fp('1003'), n: 'Eva Ríos', c: [], s: 'No registrado' }];
   const fpEva = await fp('1003');
   let seq = 0;
-  const GC = C.create({ idb: fakeIndexedDB(), fetch: global.fetch, now: () => now, document: global.document, subtle: crypto.subtle, eventId: 7, uuid: () => `cid-${++seq}`,
+  const GC_IDB = fakeIndexedDB();
+  const GC = C.create({ idb: GC_IDB, fetch: global.fetch, now: () => now, document: global.document, subtle: crypto.subtle, eventId: 7, uuid: () => `cid-${++seq}`,
     setInterval: () => 1, clearInterval() {}, setTimeout: global.setTimeout, clearTimeout: global.clearTimeout });
   await GC.start(); await flush(); await flush();
   window.GoldenContingency = { instance: GC };
@@ -118,5 +121,25 @@ eval(fs.readFileSync('static/js/directory.js', 'utf8'));
   assert.strictEqual(GC.active(), true); assert.strictEqual(checkinCalls, 6);
   q = await GC.queueList(); assert.strictEqual(q.length, 1); assert.strictEqual(q[0].h, fpEva);
   assert.ok(toasts.some(([m]) => /Acreditado: Eva Ríos/.test(m)));
+  // 8) «Modo autoregistro» APAGADO: sin red SOLO busca y resalta (como FOUND_PENDING en línea); acredita únicamente con el botón «Acreditar» de la fila
+  AUTO = false; healthOk = true; checkinStatus = 200;
+  await GC.refreshRoster(); GC.machine.health(true); GC.machine.health(true); GC.noteAuthGood(); await goContingency();
+  await GC.wipeAll(); ROSTER = ROSTER.map((r) => ({ ...r, s: r.h === ROSTER[1].h ? 'Registrado' : 'No registrado' })); await GC.refreshRoster(); netDown = true; reset();
+  assert.strictEqual(await GC.autoRegister(), false, 'el modo viaja con la copia');
+  const actionTd = new El('td'); const fakeRow = { querySelector: (sel) => (sel === '.action-cell' ? actionTd : null) };
+  els.tbody.querySelector = (sel) => (/data-user-id="1001"/.test(sel) ? fakeRow : null);
+  await d.submitScannedCedula('1001');
+  assert.strictEqual((await GC.queueList()).length, 0, 'con el modo apagado escanear NO acredita'); assert.ok(toasts.some(([m]) => /autoregistro está apagado/.test(m)) && !toasts.some(([m]) => /^Acreditado/.test(m)));
+  assert.strictEqual(els.cedula.value, '1001', 'resalta a la persona (filtra por su cédula)');
+  const pending = actionTd.children.find((x) => /btn-accredit-pending/.test(x.className)); assert.ok(pending, 'botón «Acreditar» en la fila');
+  await pending.listeners.click(); await flush(); await flush();
+  assert.strictEqual((await GC.queueList()).length, 1); assert.ok(toasts.some(([m]) => /^Acreditado: Ana Pérez/.test(m)), 'el botón sí acredita (y encola)');
+  reset(); await d.submitScannedCedula('9999'); assert.deepStrictEqual(toasts, [['No registrado: verificar manualmente', 'error']]);
+  // y con el modo ENCENDIDO acredita al escanear (ya probado arriba): el valor sobrevive a recargar la página SIN red (se lee de IndexedDB)
+  for (const mode of [false, true]) {
+    netDown = false; AUTO = mode; await GC.refreshRoster(); netDown = true;
+    const reloaded = C.create({ idb: GC_IDB, fetch: global.fetch, now: () => now, document: global.document, subtle: crypto.subtle, eventId: 7, uuid: () => 'z', setInterval: () => 1, clearInterval() {}, setTimeout: global.setTimeout, clearTimeout: global.clearTimeout });
+    await reloaded.start(); await flush(); assert.strictEqual(await reloaded.autoRegister(), mode, `tras recargar sin red el modo sigue en ${mode}`); reloaded.stop();
+  }
   console.log('contingency: registro sin red OK (sin red, roster local, DUPLICADO, no registrado, vencida, paso automático)');
 })().catch((e) => { console.error(e); process.exit(1); });
