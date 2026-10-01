@@ -275,9 +275,9 @@ def test_forms_criterion_passes_with_the_agreed_thresholds(tmp_path, capsys):
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 130000)], None, None, "✘ p95 del tiempo total de quien se inscribe"),                   # tiempo total > 120 s
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 95, 1000), _e("[usuario] se rindió tras 9 reintentos", 5, 150000, 5)], None, None, "✘ 95.0 %"),
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 98, 1000), _e("[usuario] no terminó (cortado al agotarse LOAD_DURATION)", 2, 360000, 2)], None, None, "✘ 98.0 %"),
-    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 502)", 3, 20)], None, None, "✘ 3 respuestas 5xx distintas"),
-    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 app)", 1, 20)], None, None, "✘ 1 respuestas 5xx distintas"),               # 503 de la app sin marca busy
-    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 504)", 1, 20)], None, None, "✘ 1 respuestas 5xx distintas"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 502)", 3, 20)], None, None, "✘ 3 respuestas 5xx de la app"),
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 app)", 1, 20)], None, None, "✘ 1 respuestas 5xx de la app"),               # 503 de la app sin marca busy
+    ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 504)", 1, 20)], None, None, "✘ 1 respuestas 5xx de la app"),
     ([_e("GET state", 1000, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 infra)", 2, 20)], None, None, "✘ infraestructura"),             # 0,2 % > 0,1 %
     ([_e("GET state", 1000, 300), _e("[usuario] inscrito", 99, 1000), _e("[usuario] se rindió tras 9 reintentos", 1, 150000, 1), _e("GET state (contrapresión 429)", 1, 20)], None, None, "✘ infraestructura"),   # tasa baja pero un usuario sin resultado
     ([_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000)], {"cpu_pct": 95, "lag_p95_ms": 20, "lag_max_ms": 90}, None, "✘ generadores saturados"),
@@ -298,7 +298,7 @@ def test_forms_criterion_tolerates_a_few_infrastructure_503_and_429_when_every_u
     rows = [_e("GET state", 5000, 300), _e("POST envio", 5000, 300), _e("[usuario] inscrito", 90, 1000), _e("[usuario] cupo lleno", 10, 1000),
             _e("POST envio (contrapresión 503 infra)", 6, 20), _e("GET state (contrapresión 429)", 4, 20)]              # 10 de ~10.010 = 0,1 %
     code, out = _forms_report(tmp_path, capsys, rows)
-    assert code == 0 and "infraestructura (503 sin marca «busy» y 429 de Google): 10 de 10010 intentos = 0.100 %" in out and "Criterio forms → CUMPLE" in out
+    assert code == 0 and "infraestructura (502/503/504 HTML de Google, 429 de texto plano, sin respuesta): 10 de 10010 intentos = 0.100 %" in out and "Criterio forms → CUMPLE" in out
 
 
 def test_public_form_shows_waiting_messages_while_retrying_with_the_same_sid():
@@ -313,3 +313,124 @@ def test_public_form_shows_waiting_messages_while_retrying_with_the_same_sid():
 
 def waited_gate(html, ms):
     return f"waited >= {ms}" in html
+
+
+def test_forms_criterion_counts_each_5xx_once_ignoring_the_outside_the_app_mirrors(tmp_path, capsys):
+    rows = [_e("GET state", 100, 300), _e("[usuario] inscrito", 100, 1000), _e("POST envio (contrapresión 503 app)", 5, 20), _e("[fuera de la app] POST envio (contrapresión 503 app)", 5, 20)]
+    code, out = _forms_report(tmp_path, capsys, rows)
+    assert code == 1 and "5 respuestas 5xx de la app" in out and "10 respuestas" not in out
+
+
+def test_forms_criterion_treats_html_502_503_504_as_infrastructure_but_json_ones_fail(tmp_path, capsys):
+    base = [_e("GET state", 5000, 300), _e("POST envio", 5000, 300), _e("[usuario] inscrito", 100, 1000)]
+    infra = [_e("POST envio (contrapresión 502 infra)", 3, 20), _e("POST envio (contrapresión 504 infra)", 3, 20), _e("POST envio (contrapresión 503 infra)", 3, 20),
+             _e("[fuera de la app] POST envio (contrapresión 502 infra)", 3, 20)]                    # el espejo no suma: 9 de ~10.009 = 0,09 %
+    code, out = _forms_report(tmp_path, capsys, base + infra)
+    assert code == 0 and "9 de 10009 intentos" in out, out
+    code, out = _forms_report(tmp_path, capsys, base + [_e("POST envio (contrapresión 502 app)", 1, 20)])
+    assert code == 1 and "✘ 1 respuestas 5xx de la app" in out
+
+
+def _cedula_report(tmp_path, capsys, rows, verify=None):
+    from scripts import loadgen_report
+    f = tmp_path / "c.txt"
+    lines = ["LOADGEN_RESULT " + json.dumps({"scenario": "cedula", "task": 0, "tasks": 1, "users": 10, "seconds": 60, "entries": rows, "errors": {}})]
+    if verify:
+        lines.append("LOAD_VERIFY " + json.dumps(verify))
+    f.write_text("\n".join(lines), encoding="utf8")
+    code = loadgen_report.main([str(f)])
+    return code, capsys.readouterr().out
+
+
+_OK_SCANS = [_e("POST checkin-cedula", 5000, 80), _e("[usuario] escaneo ok", 4999, 80), _e("[usuario] escaneo ok tras reintento", 1, 500)]
+
+
+def test_cedula_criterion_tolerates_rare_infrastructure_and_checks_the_access_logs(tmp_path, capsys):
+    rows = _OK_SCANS + [_e("POST checkin-cedula (contrapresión 502 infra)", 2, 20), _e("POST checkin-cedula (contrapresión tiempo agotado)", 1, 10000),
+                        _e("POST checkin-cedula (reintento)", 3, 90), _e("[fuera de la app] POST checkin-cedula (contrapresión 502 infra)", 2, 20)]
+    code, out = _cedula_report(tmp_path, capsys, rows, verify={"access_logs_in_event": 5003})               # 5003 escaneos 200 = 5000 + 3 reintentos
+    assert code == 0 and "Criterio cedula → CUMPLE" in out and "ingresos registrados 5003 >= escaneos 200 del informe 5003" in out, out
+    code, out = _cedula_report(tmp_path, capsys, rows, verify={"access_logs_in_event": 5002})
+    assert code == 1 and "✘ base: ingresos registrados 5002" in out
+    code, out = _cedula_report(tmp_path, capsys, rows)
+    assert code == 0 and "falta la línea LOAD_VERIFY" in out
+
+
+@pytest.mark.parametrize("extra,needle", [
+    ([_e("POST checkin-cedula (contrapresión 502 infra)", 10, 20)], "✘ infraestructura"),                                                     # 0,2 % > 0,1 %
+    ([_e("[usuario] escaneo sin resultado", 1, 20000, 1)], "✘ infraestructura"),                                                               # un escaneo sin resultado
+    ([_e("POST checkin-cedula (contrapresión 503 app)", 1, 20)], "✘ 1 respuestas 5xx de la app"),
+    ([_e("POST checkin-cedula (contrapresión 502)", 1, 20)], "✘ 1 respuestas 5xx de la app"),
+    ([], "✘ p95 de «POST checkin-cedula»"),                                                                                                   # un fallo real (p. ej. un 500)
+])
+def test_cedula_criterion_still_fails_on_other_5xx_failures_or_unfinished_scans(tmp_path, capsys, extra, needle):
+    rows = [dict(r) for r in _OK_SCANS] + extra
+    if needle.startswith("✘ p95"):
+        rows[0] = {**rows[0], "failures": 1}
+    code, out = _cedula_report(tmp_path, capsys, rows)
+    assert code == 1 and needle in out, out
+
+
+_CEDULA_DRIVER = '''
+import json, sys, threading, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
+import gevent
+import locust
+ROOT = sys.argv[1]
+sys.path[:0] = [ROOT + "/tests/load", ROOT, ROOT + "/deploy/loadtest"]
+order, hits = [], {}
+class H(BaseHTTPRequestHandler):
+    def _send(self, code, body, ctype="application/json"):
+        raw = body.encode()
+        self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(raw))); self.end_headers(); self.wfile.write(raw)
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
+        if self.path == "/login":
+            self.send_response(303); self.send_header("Location", "/"); self.send_header("Content-Length", "0"); self.end_headers(); return
+        cid = parse_qs(body)["client_id"][0]
+        if cid not in order: order.append(cid)
+        idx, hits[cid] = order.index(cid), hits.get(cid, 0) + 1
+        try:
+            if idx == 0 and hits[cid] == 1: return self._send(502, "<html>Bad Gateway</html>", "text/html")        # HTML de Google: infraestructura
+            if idx == 2 and hits[cid] == 1:
+                time.sleep(1.5); return self._send(200, json.dumps({"result": "SÍ"}))                              # guardó, pero la respuesta llega tarde: el cliente ya se rindió
+            if idx == 3: return self._send(500, json.dumps({"detail": "x"}))                                        # 500 de la app: no se reintenta y falla
+            self._send(200, json.dumps({"result": "SÍ"}))
+        except OSError:
+            pass
+    def log_message(self, *a): pass
+srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+import run_task, locustfile
+from locust import constant
+locustfile.CedulaScanner.wait_time = constant(0.05)
+env = run_task.make_env(locustfile.CedulaScanner, "http://127.0.0.1:%d" % srv.server_port)
+runner = env.create_local_runner(); runner.start(1, spawn_rate=1)
+t0 = time.time()
+while sum(e.num_requests for (n, _), e in env.stats.entries.items() if n.startswith("[usuario]")) < 6 and time.time() - t0 < 30: gevent.sleep(0.2)
+runner.quit()
+print("STATS", json.dumps({n: [e.num_requests, e.num_failures] for (n, _), e in env.stats.entries.items()}))
+print("HITS", json.dumps([hits[c] for c in order[:4]]))
+'''
+
+
+@pytest.mark.skipif(any(importlib.util.find_spec(m) is None for m in ("gevent", "locust")), reason="requiere locust/gevent (imagen del generador o entorno local; el CI de la app no los instala)")
+def test_cedula_generator_emulates_the_station_timeout_one_retry_same_client_id_and_final_result(tmp_path):
+    """La estación real espera 10 s y reintenta ante 502/503/504, error de red o tiempo agotado (el generador, UNA vez, con la misma `client_id`): los intentos que rebotan van
+    aparte, los reintentos como «(reintento)» y cada escaneo deja su resultado final. Un 500 de la app no se reintenta y falla."""
+    import subprocess
+    import sys
+    driver = tmp_path / "drive_cedula.py"
+    driver.write_text(_CEDULA_DRIVER, encoding="utf8")
+    env = {**os.environ, "LOAD_EVENT_ID": "1", "LOAD_FORM_SLUG": "carga", "LOAD_PEOPLE": "50", "OPS_TOKEN": "token-de-prueba", "PYTHONIOENCODING": "utf-8",
+           "LOAD_CEDULA_TIMEOUT": "0.4", "LOAD_CEDULA_RETRY_WAIT_MS": "10"}
+    r = subprocess.run([sys.executable, str(driver), str(ROOT)], env=env, capture_output=True, text=True, encoding="utf8", timeout=90, cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    stats = json.loads(r.stdout.split("STATS ", 1)[1].splitlines()[0])
+    hits = json.loads(r.stdout.split("HITS ", 1)[1].splitlines()[0])
+    assert hits[:4] == [2, 1, 2, 1]                                                                                   # los reintentos (escaneos 0 y 2) reusan el mismo client_id; el 500 no se reintenta
+    assert stats["POST checkin-cedula (contrapresión 502 infra)"] == [1, 0] and stats["POST checkin-cedula (contrapresión tiempo agotado)"] == [1, 0]
+    assert stats["POST checkin-cedula (reintento)"][0] == 2 and stats["POST checkin-cedula (reintento)"][1] == 0
+    assert stats["[usuario] escaneo ok tras reintento"] == [2, 0] and stats["[usuario] escaneo sin resultado"] == [1, 1]
+    assert stats["POST checkin-cedula"][1] == 1                                                                        # el 500 es el único fallo real

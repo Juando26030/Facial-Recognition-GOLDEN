@@ -17,6 +17,7 @@ import json
 import os
 import random
 import time
+import uuid
 
 from locust import HttpUser, between, constant, constant_pacing, events, task
 
@@ -113,6 +114,8 @@ try:
 except ImportError:                                          # ejecución local sin el repo en el path
     SUBMIT_RATIO = float(os.getenv("LOAD_SUBMIT_RATIO", "0.5"))
 RETRY_DEADLINE = float(os.getenv("LOAD_RETRY_DEADLINE", "150"))          # s: lo mismo que el navegador real (templates/form_public.html)
+CEDULA_TIMEOUT = float(os.getenv("LOAD_CEDULA_TIMEOUT", "10"))          # s por petición: lo mismo que la estación real (static/js/directory.js)
+CEDULA_RETRY_WAIT = float(os.getenv("LOAD_CEDULA_RETRY_WAIT_MS", "400")) / 1000
 RETRY_BASE = float(os.getenv("LOAD_RETRY_BASE_MS", "1500")) / 1000
 
 
@@ -130,15 +133,26 @@ def _retry_delay(r, attempt: int) -> float:
     return max(after, RETRY_BASE * 2 ** min(attempt, 3)) + random.uniform(0, RETRY_BASE)
 
 
+def _busy_name(name: str, r) -> str:
+    """Nombre de un intento «ocupado» o sin respuesta: «… (contrapresión 503)» = 503 «busy» de la app (esperado); «503 app» = JSON de la app SIN marca busy (falla el criterio);
+    «502/503/504 infra» = cuerpo que no es el JSON de la app (HTML de Google: infraestructura); «429» de texto plano; «tiempo agotado» / «error de red» = sin respuesta (status 0)."""
+    code = r.status_code
+    if code == 0:
+        import requests
+        return f"{name} (contrapresión {'tiempo agotado' if isinstance(getattr(r, 'error', None), requests.exceptions.Timeout) else 'error de red'})"
+    if code == 429:
+        return f"{name} (contrapresión 429)"
+    if code == 503 and '"busy"' in r.text:
+        return f"{name} (contrapresión 503)"
+    return f"{name} (contrapresión {code}{' app' if 'json' in (r.headers.get('content-type') or '') else ' infra'})"
+
+
 def _attempt(client, method: str, url: str, name: str, ok_codes=(200,), **kw):
-    """Un intento HTTP. Un intento «ocupado» (contrapresión) NO es un fallo: se cuenta aparte, con otro nombre («… (contrapresión 503)»)."""
+    """Un intento HTTP. Un intento «ocupado» (contrapresión) NO es un fallo: se cuenta aparte, con otro nombre (ver `_busy_name`)."""
     with client.request(method, url, name=name, catch_response=True, **kw) as r:
         if _is_busy(r):
             try:
-                tag = ""
-                if r.status_code == 503 and '"busy"' not in r.text:          # sin nuestro cuerpo «busy»: «app» si es JSON de la app (base caída: falla el criterio), «infra» si es el HTML de Google
-                    tag = " app" if "json" in (r.headers.get("content-type") or "") else " infra"
-                r.request_meta["name"] = f"{name} (contrapresión {r.status_code}{tag})"
+                r.request_meta["name"] = _busy_name(name, r)
             except Exception:  # noqa: BLE001
                 pass
             r.success()
@@ -216,14 +230,38 @@ class _Staff(HttpUser):
 
 
 class CedulaScanner(_Staff):
-    """(b) Una estación que escanea cédulas: una cada ~3,5 s en promedio (ver constant_pacing en el comando para forzar ritmo)."""
+    """(b) Una estación que escanea cédulas: una cada ~3,5 s en promedio (ver constant_pacing en el comando para forzar ritmo). Emula la estación real (static/js/directory.js):
+    tiempo de espera de 10 s por petición y UN reintento (misma `client_id`) ante 502/503/504, error de red o tiempo agotado. Los intentos que rebotan se reportan aparte
+    («… (contrapresión …)»), los reintentos como «POST checkin-cedula (reintento)» y cada escaneo deja su resultado final: «escaneo ok», «… ok tras reintento» o «… sin resultado»."""
     wait_time = between(2.5, 4.5)
 
     @task
     def scan(self):
+        import gevent
         cedula = f"9{random.randint(0, N_PEOPLE - 1):09d}"
-        with self.client.post("/api/checkin-cedula", data={"event_id": EVENT_ID, "cedula": cedula, "confirm": "true", "force": "true"}, name="POST checkin-cedula", catch_response=True) as r:
-            r.success() if r.status_code == 200 and r.json().get("result") in ("SÍ", "DUPLICADO") else r.failure(f"{r.status_code} {r.text[:100]}")
+        data = {"event_id": EVENT_ID, "cedula": cedula, "confirm": "true", "force": "true", "client_id": uuid.uuid4().hex}
+        started, label = time.time(), "escaneo sin resultado"
+        for attempt in range(2):
+            name = "POST checkin-cedula" if attempt == 0 else "POST checkin-cedula (reintento)"
+            with self.client.post("/api/checkin-cedula", data=data, name=name, timeout=CEDULA_TIMEOUT, catch_response=True) as r:
+                if r.status_code in (0, 502, 503, 504):
+                    try:
+                        r.request_meta["name"] = _busy_name(name, r)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    r.success()
+                    retry = True
+                elif r.status_code == 200 and r.json().get("result") in ("SÍ", "DUPLICADO"):
+                    r.success()
+                    label, retry = ("escaneo ok" if attempt == 0 else "escaneo ok tras reintento"), False
+                else:
+                    r.failure(f"{r.status_code} {r.text[:100]}")
+                    retry = False
+            if not retry:
+                break
+            if attempt == 0:
+                gevent.sleep(CEDULA_RETRY_WAIT)
+        _user_result(label, started, failed=label.endswith("sin resultado"))
 
 
 class FaceScanner(_Staff):

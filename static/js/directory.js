@@ -662,15 +662,38 @@
     /* Cada intento de acreditar lleva un `client_id` propio (Fase 0 de escalabilidad): si la red falla y se reintenta —o el navegador reenvía— el
        servidor devuelve el mismo resultado en vez de registrar dos veces. Los reintentos automáticos (red caída, 502/503/504) reusan el MISMO id. */
     const newClientId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `c${Date.now()}${Math.random().toString(16).slice(2)}`;
+    /* Misma regla que la estación emulada por el generador de carga (tests/load/locustfile.py::CedulaScanner): cada intento espera 10 s como máximo y, ante 502/503/504, un
+       error de red o el tiempo agotado, se reintenta SOLO (hasta 2 reintentos, con espera creciente corta) y con el MISMO `client_id` (el servidor no duplica el ingreso, ver
+       /api/checkin-cedula: `replayed`). Mientras reintenta se muestra un aviso discreto y el operador no tiene que hacer nada. */
+    const CHECKIN_TIMEOUT_MS = 10000;
+    let retryNote = null;
+    function showRetryNote(on) {
+      if (!on) { if (retryNote) { retryNote.remove(); retryNote = null; } return; }
+      if (retryNote) return;
+      retryNote = document.createElement('div');
+      retryNote.setAttribute('role', 'status'); retryNote.setAttribute('aria-live', 'polite');
+      retryNote.style.cssText = 'position:fixed; bottom:12px; right:12px; z-index:9998; background:#fff8e1; color:#7a5b00; border-left:4px solid #f0ad4e; padding:6px 12px; border-radius:8px; font-size:.8rem; opacity:.95;';
+      retryNote.textContent = 'Conexión lenta: reintentando, no hace falta volver a escanear…';
+      document.body.appendChild(retryNote);
+    }
     async function postWithRetry(url, formData, attempts = 3) {
-      for (let i = 1; ; i++) {
-        try {
-          const res = await fetch(url, { method: 'POST', body: formData });
-          if (![502, 503, 504].includes(res.status) || i >= attempts) return res;
-        } catch (e) {
-          if (i >= attempts) throw e;
+      try {
+        for (let i = 1; ; i++) {
+          const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+          const timer = ctl ? setTimeout(() => ctl.abort(), CHECKIN_TIMEOUT_MS) : null;
+          try {
+            const res = await fetch(url, { method: 'POST', body: formData, signal: ctl ? ctl.signal : undefined });
+            if (![502, 503, 504].includes(res.status) || i >= attempts) return res;
+          } catch (e) {
+            if (i >= attempts) throw e;
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+          showRetryNote(true);
+          await new Promise(r => setTimeout(r, 400 * i));
         }
-        await new Promise(r => setTimeout(r, 400 * i));
+      } finally {
+        showRetryNote(false);
       }
     }
 

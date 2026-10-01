@@ -60,7 +60,9 @@ STATE_P95_MS, STATE_P99_MS = 2000, 5000       # apertura (GET state): la página
 USER_P95_S, USER_P95_GOAL_S = 120, 60         # p95 del tiempo TOTAL de quien se inscribe (con todos sus reintentos); meta 60 s tras la función SQL única
 USER_OK_PCT = 99.0                            # «inscrito» o «cupo lleno»
 INFRA_MAX_PCT = 0.1                           # 503 sin marca «busy» de la app (HTML de Google) y 429 de infraestructura: tolerados hasta este % de los intentos si TODOS los usuarios terminan con resultado
-INFRA_KINDS = ("503 infra", "429")
+MIRROR_PREFIX = "[fuera de la app] "          # espejos de latencia (locustfile::_outside_the_app): repiten respuestas que ya están contadas con su nombre real; NUNCA se suman al criterio
+# Infraestructura = respuestas que NO vienen de la app: 502/503/504 cuyo cuerpo no es el JSON de la app (HTML de Google), 429 de texto plano, y peticiones sin respuesta (tiempo agotado / red).
+INFRA_KINDS = ("502 infra", "503 infra", "504 infra", "429", "tiempo agotado", "error de red")
 
 
 def parse_verify(path: str):
@@ -73,6 +75,49 @@ def parse_verify(path: str):
             except ValueError:
                 pass
     return found
+
+
+def _kind(name: str) -> str:
+    return name.split("(contrapresión ")[1].rstrip(")")              # «503», «503 infra», «503 app», «429», «502»…
+
+
+def infra_checks(merged: dict, errors: dict, all_done: bool) -> list:
+    """Los dos puntos del criterio sobre 5xx, comunes a formularios y cédula. Cada respuesta cuenta UNA vez (sin los espejos «[fuera de la app]»)."""
+    real = {k: m for k, m in merged.items() if not k.startswith(MIRROR_PREFIX)}
+    infra = sum(m["requests"] for k, m in real.items() if "(contrapresión" in k and _kind(k) in INFRA_KINDS)
+    attempts = sum(m["requests"] for k, m in real.items() if not k.startswith(USER_PREFIX))
+    infra_pct = 100 * infra / max(attempts, 1)
+    checks = [(f"infraestructura (502/503/504 HTML de Google, 429 de texto plano, sin respuesta): {infra} de {attempts} intentos = {infra_pct:.3f} % (máximo {INFRA_MAX_PCT} %) y "
+               f"{'todos' if all_done else 'NO todos'} los usuarios/escaneos terminaron con resultado", infra_pct <= INFRA_MAX_PCT and all_done)]
+    other_5xx = sum(m["requests"] for k, m in real.items() if "(contrapresión" in k and _kind(k) not in INFRA_KINDS + ("503",))
+    other_5xx += sum(v for k, v in errors.items() if any(f" {c}" in k for c in ("500", "501", "502", "503", "504", "505")))
+    checks.append((f"{other_5xx} respuestas 5xx de la app (500, 502/503/504 JSON, 503 sin marca «busy»; 0 esperadas)", other_5xx == 0))
+    return checks
+
+
+def cedula_criteria(merged: dict, users: dict, errors: dict, gens: list, verify) -> int:
+    """Criterio de la estación de cédula: p95 del primer intento < 500 ms sin fallos; infraestructura y 5xx como en formularios; todos los escaneos terminan con resultado;
+    y, con la línea LOAD_VERIFY, ningún ingreso confirmado se pierde (registros en la base >= escaneos 200 del informe)."""
+    checks = []
+    m = merged.get("POST checkin-cedula")
+    if m:
+        p95 = percentile(m["hist"], .95)
+        checks.append((f"p95 de «POST checkin-cedula» {p95} ms < 500 ms; fallos {m['failures']} (0 esperados)", p95 < 500 and m["failures"] == 0))
+    total = sum(v["requests"] for v in users.values())
+    done = sum(v["requests"] for k, v in users.items() if not k.endswith("sin resultado"))
+    checks += infra_checks(merged, errors, all_done=done == total)
+    ok200 = sum(v["requests"] - v["failures"] for k, v in merged.items() if k in ("POST checkin-cedula", "POST checkin-cedula (reintento)"))
+    if verify and verify.get("access_logs_in_event") is not None:
+        checks.append((f"base: ingresos registrados {verify['access_logs_in_event']} >= escaneos 200 del informe {ok200} (ninguno confirmado se pierde; de más = respuesta perdida tras guardar)",
+                       verify["access_logs_in_event"] >= ok200))
+    print("\nCriterio de cédula:\n")
+    for text, ok in checks:
+        print(f"- {'✔' if ok else '✘'} {text}")
+    if not (verify and verify.get("access_logs_in_event") is not None):
+        print(f"- ? base: falta la línea LOAD_VERIFY (`run_phase4.sh verify`): access_logs_in_event >= {ok200} escaneos 200")
+    bad = [t for t, ok in checks if not ok]
+    print(f"\nCriterio cedula → {'CUMPLE' if not bad else 'NO CUMPLE'}" + ("" if verify else " (a falta de la verificación de la base)"))
+    return 1 if bad else 0
 
 
 def forms_criteria(merged: dict, users: dict, errors: dict, gens: list, verify) -> int:
@@ -91,16 +136,7 @@ def forms_criteria(merged: dict, users: dict, errors: dict, gens: list, verify) 
     if ins:
         t95 = percentile(ins["hist"], .95) / 1000
         checks.append((f"p95 del tiempo total de quien se inscribe {t95:.1f} s < {USER_P95_S} s (meta {USER_P95_GOAL_S} s: {'alcanzada' if t95 < USER_P95_GOAL_S else 'aún no'})", t95 < USER_P95_S))
-    kind = lambda k: k.split("(contrapresión ")[1].rstrip(")")      # noqa: E731  «503», «503 infra», «503 app», «429», «502»…
-    infra = sum(m["requests"] for k, m in merged.items() if "(contrapresión" in k and kind(k) in INFRA_KINDS)
-    attempts = sum(m["requests"] for k, m in merged.items() if not k.startswith(USER_PREFIX))
-    infra_pct = 100 * infra / max(attempts, 1)
-    all_done = total == good
-    checks.append((f"infraestructura (503 sin marca «busy» y 429 de Google): {infra} de {attempts} intentos = {infra_pct:.3f} % (máximo {INFRA_MAX_PCT} %) y "
-                   f"{'todos' if all_done else 'NO todos'} los usuarios que envían terminaron con resultado", infra_pct <= INFRA_MAX_PCT and all_done))
-    other_5xx = sum(m["requests"] for k, m in merged.items() if "(contrapresión" in k and kind(k) not in INFRA_KINDS + ("503",))
-    other_5xx += sum(v for k, v in errors.items() if any(f" {c}" in k for c in ("500", "501", "502", "504", "505")))
-    checks.append((f"{other_5xx} respuestas 5xx distintas de 503 «busy» y de la infraestructura anterior (0 esperadas: 500, 502, 504 y el 503 de la app sin marca «busy» fallan)", other_5xx == 0))
+    checks += infra_checks(merged, errors, all_done=total == good)
     saturated = [t for t, g in gens if g["cpu_pct"] > 85 or g["lag_p95_ms"] > 200]
     checks.append((f"generadores saturados: {saturated or 'ninguno'}", not saturated))
     if verify:
@@ -170,6 +206,9 @@ def main(paths: list) -> int:
             print("\nFallos por motivo:\n" + "\n".join(f"- {v} × {k}" for k, v in sorted(errors.items(), key=lambda kv: -kv[1])[:10]))
         if scenario == "forms":
             verdict |= forms_criteria(merged, users, errors, gens, verify)
+            continue
+        if scenario == "cedula":
+            verdict |= cedula_criteria(merged, users, errors, gens, verify)
             continue
         target, limit = CRITERIA.get(scenario, (None, None))
         m = merged.get(target)
