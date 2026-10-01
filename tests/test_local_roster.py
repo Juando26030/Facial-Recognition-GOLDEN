@@ -120,3 +120,10 @@ def test_roster_of_8000_people_is_small_and_fast(client, factory, db):
     assert len({p["h"] for p in body["people"]}) == n                                    # sin colisiones de huella
     assert raw < 1_500_000 and zipped < 500_000
     assert elapsed < 5.0
+
+
+def test_registration_page_loads_the_contingency_client_before_directory_js():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "templates" / "kiosk_registro.html").read_text(encoding="utf8")
+    assert html.index("js/contingency.js") < html.index("js/directory.js")
+    assert "GoldenContingency.init({ eventId: window.EVENT_ID })" in html and "canAccredit && window.GoldenContingency" in html

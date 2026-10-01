@@ -697,8 +697,24 @@
       }
     }
 
+    /* Modo contingencia (static/js/contingency.js, Fase 3): sin red NO se espera al servidor. La persona se busca en la copia local (huella de la cédula); si no está, no se admite;
+       si ya constaba como registrada se pide confirmación como siempre; si no, se encola con su `client_id` y marca de tiempo (se sincroniza al volver la red). */
+    async function offlineCheckin(GC, cedula, method, cid) {
+      const found = await GC.scanLocal(cedula);
+      if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return; }
+      if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return; }
+      if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) return;
+      await GC.enqueue(found, method, cid);
+      showToast(`Acreditado: ${found.person.n}`, 'success');
+      const u = allUsers.find(x => x.id === found.cedula);
+      if (u) u.status = 'Registrado';
+      if (cedulaInput) { cedulaInput.value = found.cedula; applyFilters(); }
+    }
+
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
       const cid = clientId || newClientId();
+      const GC = window.GoldenContingency && window.GoldenContingency.instance;
+      if (GC && GC.active()) return offlineCheckin(GC, cedula, method, cid);
       const formData = new FormData();
       formData.append('event_id', window.EVENT_ID);
       formData.append('client_id', cid);
@@ -711,7 +727,15 @@
         if (nameInfo.apellidos) formData.append('last_name', nameInfo.apellidos);
       }
       try {
-        const res = await postWithRetry('/api/checkin-cedula', formData);
+        let res = null;
+        try { res = await postWithRetry('/api/checkin-cedula', formData); } catch (e) { if (!GC) throw e; }
+        if (GC) {
+          if (!res || [502, 503, 504].includes(res.status)) {          // agotó sus reintentos: 2 seguidos activan la contingencia y ESTE escaneo ya se atiende sin red
+            GC.noteScanExhausted();
+            if (GC.active()) return offlineCheckin(GC, cedula, method, cid);
+            if (!res) { showToast('Error de red', 'error'); return; }
+          } else if (res.status < 500 && res.status !== 401 && res.status !== 403) GC.noteAuthGood();
+        }
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {

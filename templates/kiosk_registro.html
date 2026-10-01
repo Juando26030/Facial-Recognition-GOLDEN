@@ -328,6 +328,7 @@
 
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
+<script src="{{ url_for('static', path='js/contingency.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
@@ -415,6 +416,9 @@
             }
         });
     }
+
+    // Modo contingencia (Fase 3): copia local del roster + registro sin red; si el navegador no lo soporta, avisa y todo sigue como siempre.
+    if (canAccredit && window.GoldenContingency) GoldenContingency.init({ eventId: window.EVENT_ID });
 
     window.directorySearch = GoldenDirectory.mountSearch({
         tbodyId: 'directoryTableBody',
