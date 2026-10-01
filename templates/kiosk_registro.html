@@ -435,7 +435,9 @@
     // Service worker del quiosco: solo el caparazón estático, para recargar esta página sin red (nunca la API ni el roster). Sin HTTPS/soporte, no hace nada.
     if (canAccredit && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
         // primera visita: esta página y sus archivos estáticos ya cargaron antes de que el worker tomara el control; se los manda para guardarlos ya
-        const urls = [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.startsWith(location.origin + '/static/'))];
+        // jsQR (escáner de QR por cámara en Safari/iPad) se carga bajo demanda: se guarda desde la primera visita, junto con qr.js, para que funcione sin red
+        const urls = [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.startsWith(location.origin + '/static/')),
+                      ...(window.QrScanner && QrScanner.JSQR_URL ? [location.origin + QrScanner.JSQR_URL] : [])];
         const send = () => { const sw = navigator.serviceWorker.controller || reg.active; if (sw) sw.postMessage({ type: 'precache', urls }); };
         send();
         navigator.serviceWorker.addEventListener('controllerchange', send);      // un despliegue nuevo cambia de worker: el nuevo vuelve a guardar el caparazón

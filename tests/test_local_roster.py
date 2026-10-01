@@ -192,3 +192,17 @@ def test_golden_logo_is_a_local_static_file_used_by_every_page():
     offenders = [p.name for p in (root / "templates").glob("*.html") if "goldenlogisticas.com/wp-content" in p.read_text(encoding="utf8")]
     assert offenders == []
     assert main.LOCAL_LOGO_URL == "/static/img/logo-golden.png" and main.default_logo_url() in (main.LOCAL_LOGO_URL, __import__("os").environ.get("DEFAULT_LOGO_URL"))
+
+
+def test_jsqr_is_vendored_unmodified_with_its_license_and_qr_js_does_not_use_a_cdn():
+    """jsQR 1.4.0 (npm, Apache-2.0 — no MIT) vive en static/vendor/jsqr: archivo sin tocar (hash fijo), licencia al lado, qr.js lo carga de ahí y el registro lo manda a guardar al service worker."""
+    import hashlib
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    vendor = root / "static" / "vendor" / "jsqr"
+    assert hashlib.sha256((vendor / "jsQR.js").read_bytes()).hexdigest() == "bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859"
+    assert "Apache License" in (vendor / "LICENSE").read_text(encoding="utf8") and "Apache-2.0" in (vendor / "README.md").read_text(encoding="utf8")
+    qr = (root / "static" / "js" / "qr.js").read_text(encoding="utf8")
+    assert "cdn.jsdelivr.net" not in qr and "/static/vendor/jsqr/jsQR.js?v=1.4.0" in qr
+    html = (root / "templates" / "kiosk_registro.html").read_text(encoding="utf8")
+    assert "QrScanner.JSQR_URL" in html and "type: 'precache'" in html
