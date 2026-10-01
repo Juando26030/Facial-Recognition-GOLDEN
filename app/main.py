@@ -142,7 +142,17 @@ from app import staticver  # noqa: E402
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
 
-DEFAULT_LOGO_URL = os.getenv("DEFAULT_LOGO_URL", "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png")
+REMOTE_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
+LOCAL_LOGO_FILE = os.path.join("static", "img", "logo-golden.png")          # copia PROPIA del logo: se sirve desde /static y el service worker del quiosco la guarda, así el logo se ve sin red
+LOCAL_LOGO_URL = "/static/img/logo-golden.png"
+
+
+def default_logo_url() -> str:
+    """Logo por defecto del header: `DEFAULT_LOGO_URL` si se define; si no, la copia propia `static/img/logo-golden.png` cuando existe (se ve sin red), y si todavía no está, la URL de Golden."""
+    return os.getenv("DEFAULT_LOGO_URL") or (LOCAL_LOGO_URL if os.path.exists(LOCAL_LOGO_FILE) else REMOTE_LOGO_URL)
+
+
+DEFAULT_LOGO_URL = default_logo_url()          # (compatibilidad: el valor al arrancar)
 
 
 def event_logo_url(event):
@@ -153,7 +163,7 @@ def event_logo_url(event):
         return ""
     if mode == "custom" and event.logo_path:
         return f"/api/events/{event.id}/logo"
-    return DEFAULT_LOGO_URL
+    return default_logo_url()
 
 
 def event_logo_attrs(event):

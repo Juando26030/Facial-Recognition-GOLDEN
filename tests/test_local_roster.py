@@ -161,3 +161,22 @@ def test_roster_carries_the_auto_register_mode_and_its_version_changes_with_it(c
     db.commit()
     again = _get(client, ev, headers={"If-None-Match": first.headers["etag"]})           # al cambiar el modo la copia NO puede seguir «sin cambios»
     assert again.status_code == 200 and again.json()["event"]["auto_register"] is True and again.headers["etag"] != first.headers["etag"]
+
+
+def test_default_logo_is_served_from_static_when_the_local_copy_exists(monkeypatch, tmp_path):
+    from app import main
+    monkeypatch.delenv("DEFAULT_LOGO_URL", raising=False)
+    monkeypatch.setattr(main, "LOCAL_LOGO_FILE", str(tmp_path / "no-existe.png"))
+    assert main.default_logo_url() == main.REMOTE_LOGO_URL                               # mientras no esté la copia propia, la URL de siempre
+    logo = tmp_path / "logo-golden.png"
+    logo.write_bytes(b"\x89PNG\r\n")
+    monkeypatch.setattr(main, "LOCAL_LOGO_FILE", str(logo))
+    assert main.default_logo_url() == "/static/img/logo-golden.png"                      # con la copia propia: desde /static (el service worker la guarda)
+    monkeypatch.setenv("DEFAULT_LOGO_URL", "https://cdn.example/logo.png")
+    assert main.default_logo_url() == "https://cdn.example/logo.png"                     # un valor explícito manda
+    class _Ev:
+        logo_mode, logo_path, id = "default", None, 1
+    monkeypatch.delenv("DEFAULT_LOGO_URL")
+    assert main.event_logo_url(_Ev()) == "/static/img/logo-golden.png"
+    _Ev.logo_mode = "hidden"
+    assert main.event_logo_url(_Ev()) == ""
