@@ -744,6 +744,7 @@
 
     {
       const GC = GCref();
+      if (GC && GC.onSynced) GC.onSynced(() => { if (!localMode) reload(); });          // la cola ya está en el servidor: la lista y los contadores al día
       if (GC && GC.onChange) GC.onChange((st) => { if (st === 'normal' && localMode) reload(); else if (st === 'contingency' && !allUsers.length) reload(); });      // vuelve la red: la lista del servidor
     }
 
@@ -808,7 +809,7 @@
     accreditHooks.push((found) => {
       const u = allUsers.find((x) => (found.cedula && x.id === found.cedula) || (x.__h && x.__h === found.person.h));
       if (u) { u.status = 'Registrado'; rowCache.delete(u); }
-      if (cedulaInput && found.cedula) cedulaInput.value = found.cedula;
+      if (cedulaInput && found.cedula) { cedulaInput.value = found.cedula; localHashes.set(found.cedula.toLowerCase(), found.person.h); }
       applyFilters();
     });
     async function offlineCheckin(GC, cedula, method, cid) {
@@ -816,7 +817,7 @@
       const found = await GC.scanLocal(cedula);
       if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return; }
       if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return; }
-      if (cedulaInput) { cedulaInput.value = found.cedula; applyFilters(); }
+      if (cedulaInput) { cedulaInput.value = found.cedula; localHashes.set(found.cedula.toLowerCase(), found.person.h); applyFilters(); }          // la huella ya se conoce: el filtro de la lista local es inmediato
       const tbody = document.getElementById(opts.tbodyId);
       const row = tbody && (tbody.querySelector(`tr[data-user-id="${CSS.escape(found.cedula)}"]`) || tbody.querySelector(`tr[data-h="${found.person.h}"]`));
       const actionTd = row ? row.querySelector('.action-cell') : null;

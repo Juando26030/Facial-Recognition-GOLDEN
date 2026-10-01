@@ -103,6 +103,8 @@
     c.active = () => !!(c.supported && c.machine && c.machine.state === 'contingency');
     c.state = () => (c.machine ? c.machine.state : 'normal');
     c.onChange = (f) => c.listeners.push(f);
+    c.syncListeners = [];
+    c.onSynced = (f) => c.syncListeners.push(f);                                  // se llama al vaciar la cola con (cuántos se sincronizaron)
 
     /* --- huella de la cédula (igual que roster_fingerprint del servidor) --- */
     c.fingerprint = async (salt, cedula) => {
@@ -196,10 +198,15 @@
       if (c.machine.state === 'contingency') return 'offline';
       if (!force && d.now() < c.nextSyncAt) return 'wait';
       c.syncing = true; render();
+      let synced = 0;
       try {
         for (;;) {
           const q = (await c.queueList()).sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1)).slice(0, SYNC_BATCH);
-          if (!q.length) { c.syncFails = 0; if (c.eventFinished) await c.wipeAll(); return 'empty'; }
+          if (!q.length) {
+            c.syncFails = 0; if (c.eventFinished) await c.wipeAll();
+            if (synced) { if (!c.eventFinished) c.refreshRoster(); c.syncListeners.forEach((f) => f(synced)); }          // lo sincronizado cambia el estado en el servidor: copia local y lista al día
+            return 'empty';
+          }
           let res;
           try {
             res = await d.fetch(`/api/events/${d.eventId}/access-logs/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
@@ -222,7 +229,7 @@
             finished.push(rec.client_id);
           }
           if (!finished.length) return syncFail();                           // sin progreso: no repetir en bucle
-          await c.db.del('queue', finished);
+          await c.db.del('queue', finished); synced += finished.length;
           c.syncFails = 0; c.sessionExpired = false;
           if (c.notice && c.notice.kind === 'syncdenied') c.notice = null;
           await recount();
