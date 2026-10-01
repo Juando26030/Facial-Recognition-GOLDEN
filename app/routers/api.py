@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.timeutil import utcnow
 import re
 import json
@@ -9,6 +9,7 @@ import tempfile
 import csv
 import io
 import hashlib
+import hmac
 import logging
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -24,7 +25,7 @@ from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUse
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, digital_badge, faces, heavy, uploads
+from app import bulk_jobs, crypto, security, digital_badge, faces, heavy, uploads
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -788,6 +789,64 @@ def sync_access_logs(
         results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {})})
     db.commit()
     return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results)}
+
+# ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
+ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
+ROSTER_LIMIT, ROSTER_WINDOW = 12, timedelta(minutes=10)      # descargas por usuario y evento: un quiosco refresca cada pocos minutos; más que esto es un abuso o un bucle
+
+
+def roster_normalize(value: str) -> str:
+    """Misma normalización que el cliente (static/js/contingency.js): sin espacios ni puntos."""
+    return re.sub(r"[\s.]", "", str(value or ""))
+
+
+def roster_salt(event: Event) -> str:
+    """Sal POR EVENTO derivada de SECRET_KEY (sin columna nueva, estable entre procesos). Viaja con el roster: la huella es MINIMIZACIÓN (no se descarga la cédula en claro ni se
+    puede leer a simple vista), NO protección fuerte: quien tenga el roster puede probar cédulas por fuerza bruta (el espacio de cédulas es pequeño). Ver docs/15."""
+    key = (os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production").encode()
+    return hmac.new(key, f"roster-local:{event.tenant_id}:{event.id}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def roster_fingerprint(salt: str, cedula: str) -> str:
+    """Huella de la cédula: los primeros 16 hex (64 bits) de SHA-256(sal + ":" + cédula normalizada). El QR propio de la escarapela trae la cédula, así que UNA huella cubre cédula y QR."""
+    return hashlib.sha256(f"{salt}:{roster_normalize(cedula)}".encode()).hexdigest()[:16]
+
+
+@router.get("/events/{event_id}/local-roster")
+def local_roster(
+    event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
+):
+    """Roster mínimo del evento para el modo contingencia del quiosco (Fase 3): por persona SOLO huella de la cédula (`h`), nombre para mostrar (`n`), categorías (`c`) y estado (`s`:
+    «No registrado» / «Registrado» / «Nuevo»). Sin fotos, encodings, teléfono ni correo. Mismos permisos que acreditar (digitador+ con acceso al evento; el cliente no), no se
+    entrega de un evento finalizado, límite de `ROSTER_LIMIT` descargas por usuario y evento cada 10 min, `ETag` (304 si nada cambió) y gzip. `max_age_s`: vida máxima de la copia."""
+    event = get_event_for_staff(event_id, db, staff)
+    if event.status == "finalizado":
+        raise HTTPException(status_code=409, detail="El evento ya finalizó: no hay roster local")
+    key = f"{staff.id}:{event.id}"
+    if security.minutes_locked(db, "roster_local", key, None, ROSTER_LIMIT, ROSTER_LIMIT, ROSTER_WINDOW):
+        raise HTTPException(status_code=429, detail="Demasiadas descargas del roster local — espera unos minutos.")
+    security.record_event(db, "roster_local", key, None)
+    version = _directory_etag(db, event.id, event.tenant_id, "roster-local")
+    headers = {"Cache-Control": "private, no-cache", "ETag": f'"{version}"'}
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    salt = roster_salt(event)
+    attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
+    log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
+    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories).outerjoin(
+        EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id) & (EventAttendee.event_id == event.id),
+    ).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids))).order_by(User.id).all()
+    counts = {uid: (real, new) for uid, real, new in db.query(
+        AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"), func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo"),
+    ).filter(AccessLog.event_id == event.id).group_by(AccessLog.user_id)}
+    rows = []
+    for uid, first, last, categories in people:
+        real, new = counts.get(uid, (0, 0))
+        rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
+                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado")})
+    return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status},
+                         "salt": salt, "count": len(rows), "people": rows}, headers=headers)
+
 
 @router.patch("/users/{user_id}")
 def update_user(
