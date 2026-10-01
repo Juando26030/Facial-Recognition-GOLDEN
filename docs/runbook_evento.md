@@ -47,6 +47,6 @@ quien opera, no para quien programa. Los enlaces a pantallas suponen rol adminis
 
 ## E. Lo que todavía NO existe (para no prometerlo)
 
-* **Modo contingencia del kiosco** (seguir admitiendo por cédula/QR sin conexión): es la Fase 3. Hoy, sin conexión no se registra.
+* **Modo contingencia del kiosco** (seguir admitiendo por cédula/QR sin conexión): construido en la rama `migra/fase1-2` (Fase 3) y todavía SIN desplegar a producción ni validado en un quiosco real; la política de privacidad de la copia local está pendiente de revisión legal. Hasta pasar el «Simulacro 3» (docs/15), no prometerlo: la VM actual no lo tiene, y sin conexión no se registra.
 * **Tres servicios separados y escalado automático** (Cloud Run + Neon): Fases 1–2. Hoy todo corre en una VM con varios procesos.
 * **Prueba de carga contra staging con simulacros de falla**: Fase 4. Hasta que pase, la respuesta honesta a «¿aguanta una noche de 6 eventos?» es *todavía no está demostrado*.

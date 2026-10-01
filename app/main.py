@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ from urllib.parse import urlsplit
 
 import anyio.to_thread
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -356,6 +357,16 @@ def configuracion_page(request: Request):
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "sidebar_active": "configuracion",
     })
+
+
+@app.get("/kiosk/sw.js", include_in_schema=False)
+def kiosk_service_worker():
+    """Service worker del quiosco (static/js/kiosk-sw.js): solo guarda el caparazón de `/kiosk/<id>/registro` y `/static/*` para recargar la página sin red; nunca la API ni el roster. Va en
+    `/kiosk/` (su alcance por defecto es esa carpeta: solo controla las páginas del quiosco) y ANTES de `/kiosk/{event_id}`. `__BUILD__` = revisión de Cloud Run + huella del archivo:
+    cada despliegue cambia el contenido, el navegador instala el worker nuevo y éste borra los cachés viejos. Sin caché HTTP, para que el navegador vea siempre la última versión."""
+    source = open(os.path.join("static", "js", "kiosk-sw.js"), encoding="utf8").read()
+    build = f"{os.getenv('K_REVISION', 'local')}-{hashlib.sha1(source.encode()).hexdigest()[:10]}"
+    return Response(source.replace("__BUILD__", build), media_type="application/javascript", headers={"Cache-Control": "no-cache, max-age=0"})
 
 
 @app.get("/kiosk/{event_id}")

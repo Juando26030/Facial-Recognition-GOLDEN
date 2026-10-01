@@ -419,6 +419,14 @@
 
     // Modo contingencia (Fase 3): copia local del roster + registro sin red; si el navegador no lo soporta, avisa y todo sigue como siempre.
     if (canAccredit && window.GoldenContingency) GoldenContingency.init({ eventId: window.EVENT_ID });
+    // Service worker del quiosco: solo el caparazón estático, para recargar esta página sin red (nunca la API ni el roster). Sin HTTPS/soporte, no hace nada.
+    if (canAccredit && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
+        // primera visita: esta página y sus archivos estáticos ya cargaron antes de que el worker tomara el control; se los manda para guardarlos ya
+        const urls = [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.startsWith(location.origin + '/static/'))];
+        const send = () => { const sw = navigator.serviceWorker.controller || reg.active; if (sw) sw.postMessage({ type: 'precache', urls }); };
+        send();
+        navigator.serviceWorker.addEventListener('controllerchange', send);      // un despliegue nuevo cambia de worker: el nuevo vuelve a guardar el caparazón
+    }).catch(() => {}));
 
     window.directorySearch = GoldenDirectory.mountSearch({
         tbodyId: 'directoryTableBody',

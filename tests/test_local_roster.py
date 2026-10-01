@@ -127,3 +127,23 @@ def test_registration_page_loads_the_contingency_client_before_directory_js():
     html = (Path(__file__).resolve().parent.parent / "templates" / "kiosk_registro.html").read_text(encoding="utf8")
     assert html.index("js/contingency.js") < html.index("js/directory.js")
     assert "GoldenContingency.init({ eventId: window.EVENT_ID })" in html and "canAccredit && window.GoldenContingency" in html
+
+
+def test_kiosk_service_worker_is_served_fresh_with_a_build_token_and_before_the_event_route(client, monkeypatch):
+    monkeypatch.setenv("K_REVISION", "golden-web-00042-abc")
+    r = client.get("/kiosk/sw.js")                                                    # sin sesión: es solo código; no choca con /kiosk/{event_id}
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/javascript")
+    assert "no-cache" in r.headers["cache-control"] and "max-age=0" in r.headers["cache-control"]
+    assert "__BUILD__" not in r.text and "golden-web-00042-abc-" in r.text
+    monkeypatch.setenv("K_REVISION", "golden-web-00043-def")
+    assert "golden-web-00043-def-" in client.get("/kiosk/sw.js").text                # otra revisión = otro contenido = el navegador instala el worker nuevo
+
+
+def test_registration_page_registers_the_service_worker_and_privacy_has_the_pending_local_copy_section(client):
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "templates" / "kiosk_registro.html").read_text(encoding="utf8")
+    assert "navigator.serviceWorker.register('/kiosk/sw.js')" in html and "canAccredit && 'serviceWorker' in navigator" in html and "type: 'precache'" in html
+    page = client.get("/privacidad").text
+    assert "Copia local en el dispositivo del operador" in page and "PENDIENTE DE REVISIÓN LEGAL: todo este apartado" in page
+    for needle in ("24 horas", "30 días", "no es una protección fuerte", "No se guardan fotografías"):
+        assert needle in page, needle

@@ -44,6 +44,15 @@
 <li><b>Seguridad.</b> Tu fotografía y la representación numérica de tu rostro se guardan <b>cifradas</b> (cifrado en reposo), con acceso restringido al personal autorizado, conexión cifrada y respaldos protegidos.</li>
 </ul>
 
+<h2>5-bis. Copia local en el dispositivo del operador (modo contingencia)</h2>
+<p><span class="pending">[PENDIENTE DE REVISIÓN LEGAL: todo este apartado]</span> Para seguir acreditando asistentes si se cae la conexión a internet del recinto, el navegador del dispositivo del operador guarda una copia temporal de la lista del evento. Esto es lo que se guarda y por cuánto tiempo:</p>
+<ul>
+<li><b>Qué se guarda de la lista del evento:</b> por cada persona, una <b>huella</b> de su número de documento (no el número en claro), su nombre para mostrar, sus categorías y si ya está registrada. <b>No se guardan fotografías, rostros ni representaciones numéricas del rostro, teléfonos ni correos.</b> La huella reduce la exposición, pero no es una protección fuerte (un número de documento puede adivinarse probando valores): por eso solo se usa en dispositivos del operador, con conexión cifrada.</li>
+<li><b>Qué se guarda de los ingresos hechos sin conexión:</b> la huella, el nombre, la hora y el método (cédula o QR), hasta que se envían al servidor al volver la conexión.</li>
+<li><b>Cuánto tiempo:</b> la lista del evento, hasta que el evento finalice y, como máximo, <b>24 horas</b> después de su última actualización. Los ingresos sin enviar se conservan hasta que se sincronicen y, como máximo, <b>30 días</b>.</li>
+<li><b>Cuándo se borra:</b> la lista, al cerrar sesión, al finalizar el evento o al cumplirse las 24 horas; los ingresos, al sincronizarse (o a los 30 días). Si quedan ingresos sin sincronizar al cerrar sesión, el operador es avisado y se conservan en ese dispositivo hasta enviarlos.</li>
+</ul>
+
 <h2>6. Con quién compartimos datos (encargados y terceros)</h2>
 <table>
 <tr><th>Tercero</th><th>Para qué</th></tr>
