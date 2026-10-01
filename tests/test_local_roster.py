@@ -180,3 +180,15 @@ def test_default_logo_is_served_from_static_when_the_local_copy_exists(monkeypat
     assert main.event_logo_url(_Ev()) == "/static/img/logo-golden.png"
     _Ev.logo_mode = "hidden"
     assert main.event_logo_url(_Ev()) == ""
+
+
+def test_golden_logo_is_a_local_static_file_used_by_every_page():
+    """El logo de Golden (25 años) es `static/img/logo-golden.png`: ninguna plantilla lo pide ya a goldenlogisticas.com (sin red no se vería) y el logo por defecto de las páginas del evento apunta a él."""
+    from pathlib import Path
+    from app import main
+    root = Path(__file__).resolve().parent.parent
+    logo = root / "static" / "img" / "logo-golden.png"
+    assert logo.is_file() and logo.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    offenders = [p.name for p in (root / "templates").glob("*.html") if "goldenlogisticas.com/wp-content" in p.read_text(encoding="utf8")]
+    assert offenders == []
+    assert main.LOCAL_LOGO_URL == "/static/img/logo-golden.png" and main.default_logo_url() in (main.LOCAL_LOGO_URL, __import__("os").environ.get("DEFAULT_LOGO_URL"))

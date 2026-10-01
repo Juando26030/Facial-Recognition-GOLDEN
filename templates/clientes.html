@@ -37,7 +37,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
-      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Golden Logísticas Logo">
     </a>
     <nav style="display:flex; gap:14px; align-items:center;">
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
