@@ -82,10 +82,21 @@
   function create(deps) {
     const bound = (name) => (typeof root[name] === 'function' ? root[name].bind(root) : undefined);       // sin `bind`, el navegador lanza «Illegal invocation» al llamarlas como d.setInterval(...)
     const d = Object.assign({ idb: root.indexedDB, fetch: bound('fetch'), now: () => Date.now(), setInterval: bound('setInterval'), clearInterval: bound('clearInterval'),
-      setTimeout: bound('setTimeout'), clearTimeout: bound('clearTimeout'), document: root.document, subtle: root.crypto && root.crypto.subtle, eventId: root.EVENT_ID, uuid: null }, deps || {});
+      storage: root.navigator && root.navigator.storage, setTimeout: bound('setTimeout'), clearTimeout: bound('clearTimeout'), document: root.document, subtle: root.crypto && root.crypto.subtle, eventId: root.EVENT_ID, uuid: null }, deps || {});
     const c = { machine: null, db: null, supported: false, banner: null, bannerSig: '', queueSize: 0, reviewCount: 0, probeAfter: 0, timers: [], listeners: [], lastError: null,
       sessionExpired: false, notice: null, syncing: false, syncFails: 0, nextSyncAt: 0, eventFinished: false };
     const uuid = () => d.uuid ? d.uuid() : (root.crypto && root.crypto.randomUUID ? root.crypto.randomUUID() : `c${d.now()}${Math.random().toString(16).slice(2)}`);
+
+    /* Almacenamiento persistente: el navegador no borra IndexedDB «por falta de espacio» (Safari además la borra tras 7 días sin uso del sitio; Chrome/Edge pueden concederlo solos). Se pide al arrancar,
+       SIN esperar ni depender de la respuesta: si se niega o no existe la API, todo sigue igual (`c.persistent`: true / false / null = sin API). */
+    c.persistent = null;
+    c.requestPersistence = async () => {
+      const st = d.storage;
+      if (!st || typeof st.persist !== 'function') return null;
+      try { c.persistent = (typeof st.persisted === 'function' && await st.persisted()) || await st.persist(); } catch (e) { c.persistent = false; }
+      c.persistent = !!c.persistent;
+      return c.persistent;
+    };
 
     c.isSupported = () => !!(d.idb && d.subtle && d.fetch);
     c.active = () => !!(c.supported && c.machine && c.machine.state === 'contingency');
@@ -308,6 +319,7 @@
       if (!c.isSupported()) { c.lastError = 'unsupported'; render(); return c; }
       try { c.db = await openStore(d.idb, `golden-contingency-${d.eventId}`); } catch (e) { c.lastError = 'unsupported'; render(); return c; }
       c.supported = true;
+      c.persistRequest = c.requestPersistence();                   // sin await: nunca bloquea el arranque
       await c.pruneOld();
       await recount();
       const meta = await c.rosterMeta();

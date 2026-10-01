@@ -192,6 +192,24 @@ const tick = () => new Promise((r) => setImmediate(r));
   const c2 = C.create(deps); await c2.start(); await tick(); await tick();
   assert.strictEqual(await c2.rosterMeta(), undefined, 'la copia vencida se borra al arrancar'); c2.stop();
 
+  // almacenamiento persistente: se pide al arrancar sin bloquear; concedido, negado, ya persistente, API ausente o que falla: el arranque nunca se rompe
+  for (const [label, storage, expected, persistCalls] of [
+    ['concedido', { persisted: async () => false, persist: async () => true }, true, 1],
+    ['negado', { persisted: async () => false, persist: async () => false }, false, 1],
+    ['ya persistente', { persisted: async () => true, persist: async () => { throw new Error('no debe pedirlo otra vez'); } }, true, 0],
+    ['persist falla', { persisted: async () => false, persist: async () => { throw new Error('boom'); } }, false, 1],
+    ['sin API', undefined, null, 0],
+    ['API incompleta', {}, null, 0],
+  ]) {
+    let calls = 0; const st = storage && storage.persist ? { ...storage, persist: (...a) => { calls++; return storage.persist(...a); } } : storage;
+    const cp = C.create({ ...deps, eventId: 20 + calls + Math.floor(Math.random() * 1000), storage: st });
+    await cp.start(); await cp.persistRequest; await tick();
+    assert.strictEqual(cp.supported, true, `${label}: el arranque sigue`); assert.strictEqual(cp.persistent, expected, label); assert.strictEqual(calls, persistCalls, label); cp.stop();
+  }
+  let resolvePersist; const slow = { persisted: async () => false, persist: () => new Promise((r) => { resolvePersist = r; }) };
+  const cs = C.create({ ...deps, eventId: 77, storage: slow }); const started = await Promise.race([cs.start().then(() => 'listo'), new Promise((r) => setTimeout(() => r('bloqueado'), 1500))]);
+  assert.strictEqual(started, 'listo', 'start() no espera la respuesta del permiso'); resolvePersist(true); await cs.persistRequest; assert.strictEqual(cs.persistent, true); cs.stop();
+
   // sin IndexedDB: avisa y se queda en modo normal sin romper nada
   const body2 = new El('body');
   const c3 = C.create({ ...deps, idb: undefined, document: { body: body2, createElement: (t) => new El(t) } });

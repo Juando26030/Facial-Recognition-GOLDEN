@@ -29,7 +29,7 @@ def _service_for(config, path):
 @pytest.mark.parametrize("path", [
     "/f/12/feria", "/f/12/feria/submit", "/b/abc", "/c/tok/pdf", "/r/tok/state", "/webhooks/wompi", "/privacidad", "/terminos",
     "/reembolsos", "/api/email-assets/acme/x.png", "/api/recognize", "/api/register", "/api/bulk_register", "/api/bulk_jobs/9f",
-    "/api/events/3/areas/7/movement-face", "/api/users", "/kiosk/3/registro", "/login", "/", "/health", "/ready", "/healthz", "/readyz", "/api/ops/status",
+    "/api/events/3/areas/7/movement-face", "/api/users", "/kiosk/3/registro", "/kiosk/sw.js", "/login", "/", "/health", "/ready", "/healthz", "/readyz", "/api/ops/status",
 ])
 def test_each_path_goes_to_the_service_that_serves_it(config, path):
     service = _service_for(config, path)
@@ -40,3 +40,8 @@ def test_each_path_goes_to_the_service_that_serves_it(config, path):
 
 def test_static_files_come_from_the_cdn(config):
     assert config["public"] == "public" and config["headers"][0]["source"] == "/static/**"
+
+
+def test_kiosk_service_worker_is_routed_to_web_and_never_cached_by_the_cdn(config):
+    assert _service_for(config, "/kiosk/sw.js") == "golden-web-staging"                  # «**» → web (la app lo sirve en /kiosk/sw.js, ver app/main.py)
+    assert not [h for h in config["headers"] if _glob(h["source"]).match("/kiosk/sw.js")]   # solo /static/** lleva cabeceras del CDN: el worker nunca se cachea fuera de la app

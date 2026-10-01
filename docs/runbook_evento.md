@@ -45,6 +45,15 @@ quien opera, no para quien programa. Los enlaces a pantallas suponen rol adminis
 3. Verificar «Pagos sin conciliar = 0» y correr la conciliación una última vez.
 4. Recordar la retención del dato biométrico (6 meses por defecto tras finalizar) y, si aplica, borrarlo antes desde Parámetros → Privacidad.
 
+
+## Modo contingencia: preparar el quiosco (Fase 3; todavía sin desplegar a producción)
+
+1. **Al llegar al evento, abrir el registro CON conexión** (antes de abrir puertas) y esperar unos segundos: así se descarga la copia de la lista y se guarda la página. Sin esa primera visita con red, sin conexión no hay nada que usar.
+2. **iPad/iPhone: «Añadir a pantalla de inicio»** y abrir el quiosco desde ese icono.
+3. **Safari borra los datos de los sitios sin uso en 7 días:** si el dispositivo estuvo guardado más de una semana, la lista se vuelve a descargar al abrirlo con red; los ingresos pendientes de sincronizar (si había) se envían al volver la red.
+4. **No usar el modo privado/incógnito.**
+5. Si aparece la franja roja «MODO CONTINGENCIA»: seguir escaneando (cédula/QR); quien no esté en la copia → «No registrado: verificar manualmente»; al volver la red la franja se quita sola y la cola se envía. Si dice «Sesión vencida», iniciar sesión de nuevo (enlace de la franja, en otra pestaña). «Revisar (N)» lista a quien también ingresó por otro quiosco durante el corte.
+6. Al terminar la jornada, **cerrar sesión con red** (avisa si quedan ingresos sin enviar).
 ## E. Lo que todavía NO existe (para no prometerlo)
 
 * **Modo contingencia del kiosco** (seguir admitiendo por cédula/QR sin conexión): construido en la rama `migra/fase1-2` (Fase 3) y todavía SIN desplegar a producción ni validado en un quiosco real; la política de privacidad de la copia local está pendiente de revisión legal. Hasta pasar el «Simulacro 3» (docs/15), no prometerlo: la VM actual no lo tiene, y sin conexión no se registra.
