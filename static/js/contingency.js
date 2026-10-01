@@ -275,6 +275,7 @@
       el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
       el.style.cssText = `position:fixed; top:0; left:0; right:0; z-index:10000; padding:8px 14px; text-align:center; font-size:.9rem; font-weight:600; background:${palette[0]}; color:${palette[1]}; border-bottom:3px solid ${palette[2]};`;
       el.dataset.state = b.st;
+      el.setAttribute('data-golden-banner', '1');          // toast.js desplaza los avisos bajo esta franja
       el.textContent = b.text;
       const button = (label, fn) => { const x = doc.createElement('button'); x.textContent = label; x.style.cssText = `margin-left:10px; padding:2px 10px; border:1px solid ${palette[2]}; border-radius:6px; background:#fff; color:${palette[1]}; cursor:pointer; font-weight:600;`; x.addEventListener('click', fn); el.appendChild(x); return x; };
       if (b.link) { const a = doc.createElement('a'); a.textContent = 'Iniciar sesión'; a.setAttribute('href', '/login'); a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener'); a.style.cssText = `margin-left:10px; color:${palette[1]}; text-decoration:underline;`; el.appendChild(a); }

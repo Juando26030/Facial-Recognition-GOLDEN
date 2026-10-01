@@ -8,7 +8,7 @@
     container = document.createElement("div");
     container.id = "toastContainer";
     container.style.cssText = `
-      position: fixed; top: 20px; right: 20px; z-index: 9999;
+      position: fixed; top: 20px; right: 20px; z-index: 10002;
       display: flex; flex-direction: column; gap: 10px; pointer-events: none;
     `;
     document.body.appendChild(container);
@@ -29,7 +29,11 @@
       pointer-events: auto;
     `;
     el.textContent = (type === "success" ? "✓ " : "✕ ") + message;
-    ensureContainer().appendChild(el);
+    const box = ensureContainer();
+    // Los avisos nunca quedan tapados por la franja de contingencia/sesión (static/js/contingency.js, `data-golden-banner`): van por ENCIMA (z-index) y desplazados bajo ella.
+    const banner = document.querySelector && document.querySelector("[data-golden-banner]");
+    box.style.top = (banner && banner.getBoundingClientRect ? Math.ceil(banner.getBoundingClientRect().bottom) + 12 : 20) + "px";
+    box.appendChild(el);
 
     requestAnimationFrame(() => {
       el.style.opacity = "1";
