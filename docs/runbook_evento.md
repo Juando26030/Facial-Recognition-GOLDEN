@@ -54,6 +54,7 @@ quien opera, no para quien programa. Los enlaces a pantallas suponen rol adminis
 4. **No usar el modo privado/incógnito.**
 5. Si aparece la franja roja «MODO CONTINGENCIA»: seguir escaneando (cédula/QR); quien no esté en la copia → «No registrado: verificar manualmente»; al volver la red la franja se quita sola y la cola se envía. Si dice «Sesión vencida», iniciar sesión de nuevo (enlace de la franja, en otra pestaña). «Revisar (N)» lista a quien también ingresó por otro quiosco durante el corte.
 6. Al terminar la jornada, **cerrar sesión con red** (avisa si quedan ingresos sin enviar).
+7. **Reglas del modo contingencia:** (a) **no cambiar el «Modo autoregistro» mientras haya un quiosco sin red** (la copia local guarda el valor anterior hasta refrescarse con red); (b) sin red la **lista local no muestra cédula ni entidad** (nombre, categorías y estado; buscar por nombre o por cédula exacta); (c) con el modo autoregistro **apagado**, escanear **solo busca y resalta**: se acredita con «✅ Acreditar» en la fila o «Editar → Registrado»; con el modo encendido, escanear acredita al instante.
 ## E. Lo que todavía NO existe (para no prometerlo)
 
 * **Modo contingencia del kiosco** (seguir admitiendo por cédula/QR sin conexión): construido en la rama `migra/fase1-2` (Fase 3) y todavía SIN desplegar a producción ni validado en un quiosco real; la política de privacidad de la copia local está pendiente de revisión legal. Hasta pasar el «Simulacro 3» (docs/15), no prometerlo: la VM actual no lo tiene, y sin conexión no se registra.
