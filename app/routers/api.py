@@ -10,6 +10,7 @@ import csv
 import io
 import hashlib
 import hmac
+import time
 import logging
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -21,7 +22,7 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUser, BulkJob
+from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
@@ -736,7 +737,50 @@ def _replayed_checkin(db: Session, event: Event, client_id: str) -> Optional[dic
 
 
 SYNC_MAX_RECORDS = 500
-SYNC_MAX_AGE = 7 * 24 * 3600
+SYNC_MAX_AGE = 30 * 24 * 3600                 # marcas de tiempo aceptadas: hasta 30 días atrás (el quiosco descarta lo que lleve más de 30 días sin sincronizar); más viejas = hora del servidor
+SYNC_AFTER_FINISH = timedelta(days=7)         # un digitador puede sincronizar hasta 7 días después de finalizado el evento (coordinador+ siempre puede)
+SYNC_HASH_RE = re.compile(r"^[0-9a-f]{16}$")
+_ROSTER_MAPS: dict = {}                       # event_id -> (momento, {huella: cédula}); caché por proceso (misma sal que el roster local)
+ROSTER_MAP_TTL, ROSTER_MAP_MIN_REBUILD, ROSTER_MAP_MAX_EVENTS = 60.0, 5.0, 20
+
+
+def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
+    """Como `get_event_for_staff`, pero un digitador autorizado también puede sincronizar un evento FINALIZADO hasta 7 días después (los ingresos guardados sin red no se pierden por
+    haber terminado el evento mientras el quiosco estaba desconectado)."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    if staff.role in ("digitador", "cliente"):
+        if not db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff.id).first():
+            raise HTTPException(status_code=403, detail="No estás autorizado para este evento")
+        recent = event.status == "finalizado" and event.finalized_at is not None and utcnow() - event.finalized_at <= SYNC_AFTER_FINISH
+        if event.status != "en_proceso" and not recent:
+            raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
+    return event
+
+
+def _roster_map(db: Session, event: Event, force: bool = False) -> dict:
+    """{huella: cédula} de las personas del evento (las mismas del roster local), cacheado por proceso 60 s. `force` reconstruye (alguien se agregó después), pero no antes de 5 s
+    desde la última construcción: una huella inventada no puede obligar a recorrer miles de personas en cada registro."""
+    now = time.monotonic()
+    hit = _ROSTER_MAPS.get(event.id)
+    if hit and (now - hit[0] < (ROSTER_MAP_MIN_REBUILD if force else ROSTER_MAP_TTL)):
+        return hit[1]
+    salt = roster_salt(event)
+    attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
+    log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
+    ids = [uid for (uid,) in db.query(User.id).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids)))]
+    mapping = {roster_fingerprint(salt, uid): uid for uid in ids}
+    if len(_ROSTER_MAPS) >= ROSTER_MAP_MAX_EVENTS and event.id not in _ROSTER_MAPS:
+        _ROSTER_MAPS.pop(min(_ROSTER_MAPS, key=lambda k: _ROSTER_MAPS[k][0]), None)
+    _ROSTER_MAPS[event.id] = (now, mapping)
+    return mapping
+
+
+@router.get("/ping-auth")
+def ping_auth(staff: StaffUser = Depends(get_current_staff)):
+    """Sonda LIVIANA autenticada (la usa el quiosco para salir del modo contingencia): 200 = servidor alcanzable y sesión vigente; 401 = sesión vencida. Una sola lectura indexada."""
+    return JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/events/{event_id}/access-logs/sync")
@@ -745,31 +789,49 @@ def sync_access_logs(
 ):
     """Sincronizacion por LOTES de ingresos que un kiosco guardo mientras no tenia conexion (base del modo contingencia, docs/13 §9). Cada registro trae el
     `client_id` que el kiosco genero: repetir el envio (o enviar el mismo lote dos veces) nunca duplica nada. Cuerpo:
-    `{"records": [{"client_id", "cedula", "timestamp" (ISO UTC, opcional), "method" ("qr"|"cedula", opcional)}]}` (maximo 500).
-    Cada resultado dice `created` (nuevo), `replayed` (ya estaba), `unknown` (la cedula no existe en este cliente) o `invalid`; `review: true` marca a quien ya
+    `{"records": [{"client_id", "h" (huella de la cedula, la del roster local) o "cedula" (compatibilidad), "timestamp" (ISO UTC, opcional), "method" ("qr"|"cedula", opcional)}]}`
+    (maximo 500). Con `h` el servidor resuelve la persona con el mapa de huellas del evento (misma sal que `local-roster`): el quiosco nunca guarda la cedula en claro.
+    Cada resultado dice `created` (nuevo), `replayed` (ya estaba), `unknown` (la cedula/huella no existe en ESTE evento) o `invalid`; `review: true` marca a quien ya
     tenia una acreditacion con OTRO client_id (la misma persona entro por dos kioscos durante la desconexion): se registra igual y queda para revision."""
-    event = get_event_for_staff(event_id, db, staff)
+    event = _event_for_sync(db, event_id, staff)
     records = body.get("records")
     if not isinstance(records, list) or not records:
         raise HTTPException(status_code=400, detail="Falta la lista de registros")
     if len(records) > SYNC_MAX_RECORDS:
         raise HTTPException(status_code=400, detail=f"Maximo {SYNC_MAX_RECORDS} registros por lote")
     now = utcnow()
-    results = []
+    clean = []
     for rec in records:
-        client_id = str((rec or {}).get("client_id") or "").strip()[:64]
-        cedula = str((rec or {}).get("cedula") or "").strip()
-        if not client_id or not cedula:
+        rec = rec if isinstance(rec, dict) else {}
+        client_id = str(rec.get("client_id") or "").strip()[:64]
+        cedula = str(rec.get("cedula") or "").strip()
+        h = str(rec.get("h") or "").strip().lower()
+        clean.append((rec, client_id, cedula, h if SYNC_HASH_RE.match(h) else ""))
+    # Un solo recorrido por tabla para todo el lote (500 registros no son 2.500 consultas): ids ya registrados, personas, quién ya tenía acreditación y quién ya está en la lista del evento.
+    known_ids = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([c[1] for c in clean if c[1]]))}
+    rmap = _roster_map(db, event) if any(c[3] and not c[2] for c in clean) else {}
+    rebuilt = False
+    resolved = []
+    for rec, client_id, cedula, h in clean:
+        if client_id and client_id not in known_ids and not cedula and h and h not in rmap and not rebuilt:
+            rmap, rebuilt = _roster_map(db, event, force=True), True              # una huella desconocida: puede ser alguien agregado después de armar el mapa
+        resolved.append(cedula or rmap.get(h, ""))
+    users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_({c for c in resolved if c}))}
+    checked = {uid for (uid,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id.in_(list(users)))}
+    attendees = {uid for (uid,) in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(list(users)))}
+    results = []
+    for (rec, client_id, cedula, h), person_id in zip(clean, resolved):
+        if not client_id or not (cedula or h):
             results.append({"client_id": client_id, "result": "invalid"})
             continue
-        if db.query(AccessLog.id).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id).first():
+        if client_id in known_ids:
             results.append({"client_id": client_id, "result": "replayed"})
             continue
-        user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
+        user = users.get(person_id) if person_id else None
         if not user:
             results.append({"client_id": client_id, "result": "unknown"})
             continue
-        review = _already_checked_in(db, event.id, user.id)
+        review = user.id in checked
         when = now
         try:
             parsed = datetime.fromisoformat(str(rec.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
@@ -781,14 +843,19 @@ def sync_access_logs(
             with db.begin_nested():
                 db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
                                  registration_method="qr" if rec.get("method") == "qr" else "tradicional", client_id=client_id, timestamp=when))
-                _upsert_attendee(db, event.id, user.id, event.tenant_id)
+                if user.id not in attendees:
+                    db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id))
                 db.flush()
         except IntegrityError:
             results.append({"client_id": client_id, "result": "replayed"})
             continue
+        known_ids.add(client_id)
+        checked.add(user.id)
+        attendees.add(user.id)
         results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {})})
     db.commit()
     return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results)}
+
 
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
 ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
