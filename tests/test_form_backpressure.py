@@ -3,6 +3,7 @@ analítica y aviso al worker DESPUÉS de responder, y la política de reintentos
 import json
 import shutil
 import subprocess
+import itertools
 import threading
 import time
 from pathlib import Path
@@ -105,6 +106,8 @@ def test_lock_waiters_cap_rejects_at_once_with_503_and_jitter_and_always_release
         return real(*a, **k)
 
     monkeypatch.setattr(formsvc, "reserve_slot", slow)
+    cycle = itertools.cycle(("1", "2", "3"))
+    monkeypatch.setattr(forms_public.random, "choice", lambda options: int(next(cycle)))      # el jitter es aleatorio: se fija la secuencia para que la prueba no dependa del azar
     first = {}
     t = threading.Thread(target=lambda: first.setdefault("r", _submit(TestClient(app, follow_redirects=False), ev, f, _person_values(), sid="s-1")))
     t.start()
@@ -114,7 +117,7 @@ def test_lock_waiters_cap_rejects_at_once_with_503_and_jitter_and_always_release
         r = _submit(client, ev, f, {**_person_values(), "cedula": f"70{i}"}, sid=f"s-x{i}")   # el resto rebota al instante
         assert r.status_code == 503 and r.json()["busy"] is True
         seen.add(r.headers["retry-after"])
-    assert seen <= {"1", "2", "3"} and len(seen) > 1                                       # Retry-After con jitter
+    assert seen == {"1", "2", "3"}                                                         # Retry-After con jitter: los tres valores posibles
     assert calls == [1]                                                                   # ninguno pidió el bloqueo
     gate.set()
     t.join(15)
