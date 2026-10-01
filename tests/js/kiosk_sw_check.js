@@ -35,6 +35,8 @@ function makeWorker(build) {
           if (res.headers.get && res.headers.get('vary') === '*') throw new TypeError('Cache.put() no admite Vary: *');
           m.set(urlOf(req), { res, reqHeaders: typeof req === 'string' ? {} : headersOf(req) });
         },
+        keys: async () => [...m.keys()].map((url) => ({ url })),
+        delete: async (req) => m.delete(urlOf(req)),
         keysList: () => [...m.keys()],
       };
     },
@@ -133,6 +135,18 @@ const O = 'https://app.test';
   // estáticos de Firebase (Cache-Control público, Vary): sin red, con otro ?v=
   wf.setNet(async () => R2('css', 200, { Vary: 'Accept-Encoding, cookie', 'Cache-Control': 'public, max-age=3600', 'Content-Type': 'text/css' })); await wf.dispatch(`${O}/static/css/style.css?v=1790000000`);
   wf.setNet(async () => { throw new TypeError('x'); }); rf = await wf.dispatch(`${O}/static/css/style.css?v=1790000999`); assert.strictEqual(await rf.res.text(), 'css');
+  // estáticos con VARIAS versiones (?v=): sin red se sirve la EXACTA aunque haya otra guardada antes, y al guardar una nueva se borra la vieja
+  const wv = makeWorker('rev8-v');
+  wv.setNet(async () => R2('version vieja', 200, { 'Content-Type': 'text/javascript' })); await wv.dispatch(`${O}/static/js/directory.js?v=1`);
+  const cv = wv.store.get('golden-kiosk-shell-rev8-v');
+  cv.set(`${O}/static/js/directory.js?v=2`, { res: new Response('version nueva'), reqHeaders: {} });           // como si llegara otra versión por una vía que no poda
+  wv.setNet(async () => { throw new TypeError('x'); });
+  let rv = await wv.dispatch(`${O}/static/js/directory.js?v=2`); assert.strictEqual(await rv.res.text(), 'version nueva', 'sin red: la versión EXACTA, no la más vieja');
+  rv = await wv.dispatch(`${O}/static/js/directory.js?v=1`); assert.strictEqual(await rv.res.text(), 'version vieja');
+  rv = await wv.dispatch(`${O}/static/js/directory.js?v=3`); assert.ok(['version vieja', 'version nueva'].includes(await rv.res.text()), 'sin la exacta: cualquier versión del archivo');
+  wv.setNet(async () => R2('version 4', 200, {})); await wv.dispatch(`${O}/static/js/directory.js?v=4`);
+  assert.deepStrictEqual([...cv.keys()].filter((k) => /directory\.js/.test(k)), [`${O}/static/js/directory.js?v=4`], 'al guardar una versión nueva se borran las viejas del mismo archivo');
+
   // la sesión es por cookie y la página ya redirigió a /login (sesión vencida): NO se guarda ni se sirve en lugar de la buena
   wf.setNet(async () => R2('login', 200, { ...FH })); const redirected = R2('login', 200, FH); Object.defineProperty(redirected, 'redirected', { value: true });
   wf.setNet(async () => redirected); await wf.dispatch(`${O}/kiosk/3/registro`, { mode: 'navigate' });

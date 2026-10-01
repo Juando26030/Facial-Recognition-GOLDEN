@@ -32,6 +32,9 @@ async function keep(cache, key, res) {
     const headers = new Headers(res.headers);
     ['vary', 'content-encoding', 'content-length', 'set-cookie', 'transfer-encoding'].forEach((n) => headers.delete(n));
     await cache.put(key, new Response(body, { status: res.status, statusText: res.statusText, headers }));
+    // Un estático guardado con otro `?v=` queda viejo: se borra (así `ignoreSearch` nunca devuelve una versión vieja pudiendo servir la nueva y el caché no crece con cada despliegue).
+    const u = new URL(key);
+    if (u.search) for (const old of await cache.keys()) { const o = new URL(old.url); if (o.pathname === u.pathname && o.search !== u.search) await cache.delete(old); }
   } catch (e) { /* no se pudo guardar: no afecta a la respuesta en vivo */ }
 }
 
@@ -84,7 +87,8 @@ function withTimeout(req) {
 async function networkFirst(event, req, isPage) {
   const cache = await caches.open(CACHE);
   const key = keyOf(req.url, isPage);
-  const cached = () => cache.match(key, { ignoreSearch: !isPage, ignoreVary: true });        // por texto y sin Vary: no depende de las cabeceras de la petición
+  // Por texto y sin Vary (no depende de las cabeceras de la petición). Un estático: primero EXACTO (con su ?v=) y, si no está, cualquier versión del mismo archivo.
+  const cached = async () => (await cache.match(key, { ignoreVary: true })) || (isPage ? undefined : cache.match(key, { ignoreSearch: true, ignoreVary: true }));
   let res;
   try {
     res = await withTimeout(req);
