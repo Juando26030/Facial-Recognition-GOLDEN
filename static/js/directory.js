@@ -399,7 +399,7 @@
        "la comercial no debe poder imprimir en directorio en vivo") — el backend ya lo bloquea
        (require_role_excluding en badges.py), esto evita mostrarle un botón que le va a fallar. */
     const PRINT_HIDDEN_ROLES = ['cliente', 'comercial'];
-    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE)) {
+    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local) {          // la lista local no tiene la cédula (y sin red no se imprime)
       const printBtn = document.createElement('button');
       printBtn.type = 'button';
       printBtn.innerText = '🖨️';
@@ -554,9 +554,11 @@
       tbody.querySelectorAll('.btn-accredit-pending').forEach(b => b.remove());
       if (!lastFiltered.length) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+        if (localMode) tbody.insertBefore(localNoteRow(), tbody.children[0] || null);
         return;
       }
       const rows = lastFiltered.slice(0, shownLimit).map(rowOf);
+      if (localMode) rows.unshift(localNoteRow());
       if (lastFiltered.length > shownLimit) {
         const more = document.createElement('tr');
         more.className = 'directory-more';
@@ -581,11 +583,16 @@
       const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
       const nombre = wordsOf((nombreInput && nombreInput.value || '').trim());
       const entidad = wordsOf((entidadInput && entidadInput.value || '').trim());
+      let wantH = '';
+      if (localMode && cedula) {                          // lista local: la cédula se compara por huella (exacta); se calcula una vez y se vuelve a filtrar
+        wantH = localHashes.get(cedula);
+        if (wantH === undefined) { wantH = ''; const GC = GCref(); if (GC) GC.hashFor(cedula).then((h) => { localHashes.set(cedula, h); applyFilters(); }); }
+      }
       lastFiltered = allUsers.filter(u => {
         if (onlyNotRegistered && u.status !== 'No registrado') return false;
         if (!cedula && !nombre.length && !entidad.length) return true;
         const k = keysOf(u);
-        if (cedula && !k.id.includes(cedula)) return false;
+        if (cedula && !(u.__local ? (wantH && u.__h === wantH) : k.id.includes(cedula))) return false;
         if (nombre.length && !matchesWords(k.name, nombre)) return false;
         if (entidad.length && !matchesWords(k.entity, entidad)) return false;
         return true;
@@ -609,8 +616,41 @@
     let cursor = null;
     let loading = null;
 
+    /* LISTA LOCAL (modo contingencia): sin red —o ya en contingencia— la tabla sale de la copia local del roster (static/js/contingency.js): nombre, categorías y estado (contando también lo
+       encolado sin red) y los contadores de siempre. La copia NO trae cédula ni entidad: se busca por nombre y por cédula EXACTA (huella); el filtro de entidad se desactiva con un aviso. */
+    let localMode = false;
+    const localHashes = new Map();                       // cédula escrita -> huella (se calcula una vez)
+    const GCref = () => window.GoldenContingency && window.GoldenContingency.instance;
+    const entidadPlaceholder = entidadInput ? entidadInput.placeholder : '';
+    function setLocalMode(on) {
+      localMode = on;
+      if (entidadInput) { entidadInput.disabled = on; entidadInput.placeholder = on ? 'No disponible sin conexión' : entidadPlaceholder; if (on) entidadInput.value = ''; }
+    }
+    async function loadFromLocalCopy() {
+      const GC = GCref();
+      if (!GC) return false;
+      await GC.ready;
+      if (!GC.supported || !(await GC.rosterUsable())) return false;
+      const people = await GC.localPeople();
+      setLocalMode(true);
+      allUsers = people.map((p) => ({ id: '', first_name: p.n, last_name: '', entity: '', opt_1: (p.c || []).join(', '), status: p.s, categories: p.c || [], __h: p.h, __local: true }));
+      applyFilters();
+      return true;
+    }
+    function localNoteRow() {
+      const tr = document.createElement('tr'); tr.className = 'directory-local-note';
+      const td = document.createElement('td'); td.colSpan = 6;
+      td.style.cssText = 'text-align:center; padding:0.6rem; background:#fff8e1; color:#7a5b00; font-weight:600;';
+      td.innerText = 'Sin conexión: se muestra la LISTA LOCAL (nombre, categorías y estado). La cédula, la entidad y demás datos no están en esta copia: busca por nombre o escribe la cédula exacta.';
+      tr.appendChild(td);
+      return tr;
+    }
+
     async function fullLoad() {
       const tbody = document.getElementById(opts.tbodyId);
+      const GC0 = GCref();
+      if (GC0) { await GC0.ready; if (GC0.active() && await loadFromLocalCopy()) return; }          // ya en contingencia: ni se intenta la red
+      if (localMode) { setLocalMode(false); allUsers = []; }
       if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
       try {
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
@@ -630,6 +670,7 @@
         allUsers = [...byId.values()];
         cursor = nextCursor;
       } catch (err) {
+        if (await loadFromLocalCopy()) return;           // sin red: la lista local en vez de «Error conectando al servidor»
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
         return;
       }
@@ -637,7 +678,7 @@
     }
 
     async function refresh() {
-      if (!cursor || loading) return;
+      if (!cursor || loading || localMode) return;
       try {
         const res = await fetch(withEvent('/api/users/changes?cursor=' + encodeURIComponent(cursor)));
         if (!res.ok) return;
@@ -656,6 +697,11 @@
     function reload() {
       if (!loading) loading = fullLoad().finally(() => { loading = null; });
       return loading;
+    }
+
+    {
+      const GC = GCref();
+      if (GC && GC.onChange) GC.onChange((st) => { if (st === 'normal' && localMode) reload(); else if (st === 'contingency' && !allUsers.length) reload(); });      // vuelve la red: la lista del servidor
     }
 
     setInterval(() => {
