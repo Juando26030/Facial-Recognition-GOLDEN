@@ -740,6 +740,8 @@ SYNC_MAX_RECORDS = 500
 SYNC_MAX_AGE = 30 * 24 * 3600                 # marcas de tiempo aceptadas: hasta 30 días atrás (el quiosco descarta lo que lleve más de 30 días sin sincronizar); más viejas = hora del servidor
 SYNC_AFTER_FINISH = timedelta(days=7)         # un digitador puede sincronizar hasta 7 días después de finalizado el evento (coordinador+ siempre puede)
 SYNC_HASH_RE = re.compile(r"^[0-9a-f]{16}$")
+# método del quiosco -> registration_method (el mismo vocabulario de siempre: «tradicional» = cédula/persona confirmada a mano). `manual` = acreditado desde Editar/la fila sin red.
+SYNC_METHODS = {"qr": "qr", "cedula": "tradicional", "manual": "tradicional"}
 _ROSTER_MAPS: dict = {}                       # event_id -> (momento, {huella: cédula}); caché por proceso (misma sal que el roster local)
 ROSTER_MAP_TTL, ROSTER_MAP_MIN_REBUILD, ROSTER_MAP_MAX_EVENTS = 60.0, 5.0, 20
 
@@ -789,7 +791,7 @@ def sync_access_logs(
 ):
     """Sincronizacion por LOTES de ingresos que un kiosco guardo mientras no tenia conexion (base del modo contingencia, docs/13 §9). Cada registro trae el
     `client_id` que el kiosco genero: repetir el envio (o enviar el mismo lote dos veces) nunca duplica nada. Cuerpo:
-    `{"records": [{"client_id", "h" (huella de la cedula, la del roster local) o "cedula" (compatibilidad), "timestamp" (ISO UTC, opcional), "method" ("qr"|"cedula", opcional)}]}`
+    `{"records": [{"client_id", "h" (huella de la cedula, la del roster local) o "cedula" (compatibilidad), "timestamp" (ISO UTC, opcional), "method" ("qr"|"cedula"|"manual", opcional; otro valor = cedula)}]}`
     (maximo 500). Con `h` el servidor resuelve la persona con el mapa de huellas del evento (misma sal que `local-roster`): el quiosco nunca guarda la cedula en claro.
     Cada resultado dice `created` (nuevo), `replayed` (ya estaba), `unknown` (la cedula/huella no existe en ESTE evento) o `invalid`; `review: true` marca a quien ya
     tenia una acreditacion con OTRO client_id (la misma persona entro por dos kioscos durante la desconexion): se registra igual y queda para revision."""
@@ -842,7 +844,7 @@ def sync_access_logs(
         try:
             with db.begin_nested():
                 db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
-                                 registration_method="qr" if rec.get("method") == "qr" else "tradicional", client_id=client_id, timestamp=when))
+                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when))
                 if user.id not in attendees:
                     db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id))
                 db.flush()

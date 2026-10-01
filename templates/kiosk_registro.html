@@ -344,7 +344,11 @@
     const openRegisterModalBtn = document.getElementById('openRegisterModalBtn');
     const closeRegisterModalBtn = document.getElementById('closeRegisterModalBtn');
 
-    function openRegisterModal() { if (registerModal) registerModal.style.display = 'flex'; }
+    function openRegisterModal() {
+        const gc = window.GoldenContingency && window.GoldenContingency.instance;
+        if (gc && gc.active()) { showToast('Sin conexión: no se pueden registrar personas nuevas; espera a que vuelva la red', 'error'); return; }       // alta de personas nuevas sin red: fuera de alcance
+        if (registerModal) registerModal.style.display = 'flex';
+    }
     function closeRegisterModal() { if (registerModal) registerModal.style.display = 'none'; }
 
     if (openRegisterModalBtn) openRegisterModalBtn.addEventListener('click', openRegisterModal);
@@ -419,6 +423,15 @@
 
     // Modo contingencia (Fase 3): copia local del roster + registro sin red; si el navegador no lo soporta, avisa y todo sigue como siempre.
     if (canAccredit && window.GoldenContingency) GoldenContingency.init({ eventId: window.EVENT_ID });
+    // «Registrar nuevo» queda desactivado mientras no haya red (con aviso en su título); al volver la red recupera su estado.
+    if (canAccredit && window.GoldenContingency && openRegisterModalBtn) {
+        const notInProgress = openRegisterModalBtn.disabled, baseTitle = openRegisterModalBtn.title;
+        GoldenContingency.instance.onChange(() => {
+            const off = GoldenContingency.instance.active();
+            openRegisterModalBtn.disabled = off || notInProgress;
+            openRegisterModalBtn.title = off ? 'Sin conexión: no se pueden registrar personas nuevas; espera a que vuelva la red' : baseTitle;
+        });
+    }
     // Service worker del quiosco: solo el caparazón estático, para recargar esta página sin red (nunca la API ni el roster). Sin HTTPS/soporte, no hace nada.
     if (canAccredit && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
         // primera visita: esta página y sus archivos estáticos ya cargaron antes de que el worker tomara el control; se los manda para guardarlos ya

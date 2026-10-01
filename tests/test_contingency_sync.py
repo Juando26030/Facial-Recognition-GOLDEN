@@ -156,3 +156,13 @@ def test_ping_auth_is_light_and_tells_session_state(client, factory):
     login(client, "root")
     r = client.get("/api/ping-auth")
     assert r.status_code == 200 and r.json() == {"ok": True} and r.headers["cache-control"] == "no-store"
+
+
+def test_sync_accepts_the_manual_method_and_maps_methods_to_the_usual_vocabulary(client, factory, db):
+    ev = _setup(factory, people=("1001", "1002", "1003", "1004"))
+    login(client, "root")
+    recs = [{"client_id": f"m-{m}", "h": _h(ev, c), "method": m} for c, m in (("1001", "manual"), ("1002", "qr"), ("1003", "cedula"), ("1004", "inventado"))]
+    r = _sync(client, ev, recs).json()
+    assert [x["result"] for x in r["results"]] == ["created"] * 4
+    got = {l.client_id: l.registration_method for l in db.query(AccessLog).filter_by(event_id=ev.id)}
+    assert got == {"m-manual": "tradicional", "m-qr": "qr", "m-cedula": "tradicional", "m-inventado": "tradicional"}      # «manual» = acreditado a mano: «tradicional», como en línea

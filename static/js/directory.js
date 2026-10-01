@@ -124,6 +124,43 @@
     return found;
   }
 
+  /* Editar SIN red (contingencia): modal limitado. Solo el nombre (lectura) y el «Estado de registro»; el resto de campos no se ofrece y se avisa. «Registrado» se encola igual que un escaneo
+     (client_id, huella de la copia local, método `manual`), con el aviso de DUPLICADO si ya consta o está en la cola. Guardar nunca dice «Error de red» genérico. Devuelve los controles
+     (para las pruebas). */
+  const OFFLINE_EDIT_NOTICE = 'Sin conexión: solo se puede cambiar el estado de registro; para editar datos espera a que vuelva la red';
+  function buildOfflineEditModal(user, GC) {
+    const mk = (tag, text, css) => { const el = document.createElement(tag); if (text) el.textContent = text; if (css) el.style.cssText = css; return el; };
+    const overlay = mk('div', '', 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', 'Editar persona sin conexión');
+    const box = mk('div', '', 'background:white; border-radius:16px; padding:1.8rem; max-width:520px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);');
+    const notice = mk('p', OFFLINE_EDIT_NOTICE, 'background:#fff8e1; color:#7a5b00; border-left:4px solid #f0ad4e; padding:8px 12px; border-radius:8px; font-size:0.85rem; font-weight:600;');
+    notice.setAttribute('role', 'status');
+    const name = mk('input', '', 'width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:0.95rem; background:#f5f5f5; color:#555; margin-bottom:0.8rem;');
+    name.value = `${user.first_name || ''} ${user.last_name || ''}`.trim(); name.readOnly = true; name.disabled = true; name.setAttribute('aria-label', 'Nombre (solo lectura)');
+    const statusLabel = mk('label', 'Estado de registro', 'display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;');
+    const select = mk('select', '', 'width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;');
+    [['no_registrado', 'No registrado'], ['registrado', 'Registrado']].forEach(([v, t]) => { const o = mk('option', t); o.value = v; select.appendChild(o); });
+    select.value = 'registrado';                                              // igual que en línea: «Registrado» preseleccionado
+    const actions = mk('div', '', 'display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;');
+    const cancel = mk('button', 'Cancelar', 'border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;'); cancel.type = 'button';
+    const save = mk('button', 'Guardar cambios', 'border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;'); save.type = 'button';
+    [cancel, save].forEach((b) => actions.appendChild(b));
+    [mk('h4', 'Editar persona', 'margin-top:0; color:var(--golden-dark);'), notice, name, statusLabel, select, actions].forEach((el) => box.appendChild(el));
+    overlay.appendChild(box); document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    cancel.addEventListener('click', close);
+    save.addEventListener('click', async () => {
+      if (!GC.active()) { close(); showToast('Volvió la conexión: abre Editar de nuevo para ver todos los campos', 'success'); return; }
+      if (select.value !== 'registrado') { showToast('Sin conexión: solo se puede registrar; para quitar un registro espera a que vuelva la red', 'error'); return; }
+      save.disabled = true;
+      try {
+        const found = await offlineAccredit(GC, user.__h ? { h: user.__h } : { cedula: user.id }, 'manual');
+        if (found) close();
+      } finally { save.disabled = false; }
+    });
+    return { overlay, box, notice, name, select, save, cancel, close };
+  }
+
   /* Modal flotante de edición (2026-09-16, reemplaza la edición inline contentEditable de antes —
      con 10 columnas en pantalla no cabía nada sin scroll horizontal). Mismos campos que el alta
      manual (incluidos los opcionales dinámicos de este evento, vía window.OPTIONAL_VARIABLES,
@@ -133,6 +170,8 @@
      confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
   function buildEditModal(user, opts) {
+    const GCm = window.GoldenContingency && window.GoldenContingency.instance;
+    if (GCm && GCm.active()) return buildOfflineEditModal(user, GCm);          // sin red: modal limitado (solo estado de registro)
     opts = opts || {};       // { method: 'biometrico' (el ingreso viene de una verificación facial), onSaved(id) }
     // Parámetros del Evento (2026-09-16): las 5 variables fijas + cada opcional_N ya rotulado,
     // con el tipo de control/obligatoriedad/opciones que se haya definido en
@@ -225,6 +264,8 @@
     box.querySelector('#editModalCancel').addEventListener('click', close);
 
     box.querySelector('#editModalSave').addEventListener('click', async () => {
+      const GCs = window.GoldenContingency && window.GoldenContingency.instance;
+      if (GCs && GCs.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto: aviso claro, no «Error de red»
       const form = box.querySelector('#editModalForm');
       if (!form.reportValidity()) return;
 
@@ -363,6 +404,8 @@
 
     if (canManageStatus) {
       box.querySelector('#editModalDelete').addEventListener('click', async () => {
+        const GCd = window.GoldenContingency && window.GoldenContingency.instance;
+        if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
         const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
         const ok = await showConfirm(`⚠️ Esto elimina COMPLETAMENTE a ${fullName || 'esta persona'} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
         if (!ok) return;
