@@ -105,7 +105,7 @@ const tick = () => new Promise((r) => setImmediate(r));
   const qa = await c.enqueue(a, 'cedula', 'cid-a'); await c.enqueue(b, 'qr', 'cid-b');
   const qdump = JSON.stringify(await c.queueList());
   assert.ok(!qdump.includes('1001') && !qdump.includes('1002') && !qdump.includes('cedula":'), 'la cola no guarda la cédula en claro');
-  assert.deepStrictEqual(Object.keys(qa).sort(), ['client_id', 'h', 'method', 'n', 'timestamp']); assert.strictEqual(c.queueSize, 2);
+  assert.deepStrictEqual(Object.keys(qa).sort(), ['client_id', 'h', 'method', 'n', 'prev', 'timestamp']); assert.strictEqual(c.queueSize, 2);
   assert.ok(/2 en cola/.test(body.children[0].textContent));
 
   // salida: 2 chequeos buenos + petición autenticada buena (sonda liviana). Con la sesión vencida (401) NO sale, la franja pide iniciar sesión y la cola queda intacta.

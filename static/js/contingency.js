@@ -161,6 +161,17 @@
 
     /* --- registro sin red --- */
     c.queueList = async () => (c.db ? c.db.getAll('queue') : []);
+    /* «Deshacer» de una acreditación hecha SIN red que todavía no se sincronizó: se quita de la cola. Devuelve true si estaba. */
+    c.unqueue = async (clientId) => {
+      if (!c.db) return false;
+      const q = (await c.queueList()).find((r) => r.client_id === clientId);
+      if (!q) return false;
+      await c.db.del('queue', clientId);
+      const person = (await c.db.getAll('roster')).find((p) => p.h === q.h);
+      if (person && q.prev && person.s === 'Registrado' && q.prev !== 'Registrado') await c.db.put('roster', { ...person, s: q.prev });          // la copia local vuelve a como estaba
+      await c.recount();
+      return true;
+    };
     /* Busca la cédula en el roster local. status: 'found' (+ person, duplicate) | 'not_found' | 'expired'. `duplicate`: ya consta como registrado (copia local o cola de este quiosco).
        Si ya lo admitió OTRO quiosco durante el corte, aquí no se puede saber: el servidor lo marca para revisión al sincronizar. */
     c.scanLocal = async (raw) => {
@@ -187,7 +198,7 @@
     c.localPeople = async () => ((await c.rosterUsable()) ? c.db.getAll('roster') : []);
     /* Encola el ingreso (client_id + marca de tiempo; huella y nombre, NO la cédula) y lo anota como registrado en la copia local. */
     c.enqueue = async (found, method, clientId) => {
-      const rec = { client_id: clientId || uuid(), h: found.person.h, n: found.person.n, timestamp: new Date(d.now()).toISOString(), method: ['qr', 'manual'].includes(method) ? method : 'cedula' };
+      const rec = { client_id: clientId || uuid(), h: found.person.h, n: found.person.n, timestamp: new Date(d.now()).toISOString(), method: ['qr', 'manual'].includes(method) ? method : 'cedula', prev: found.person.s };          // `prev`: estado que tenía en la copia local (para «Deshacer»)
       await c.db.put('queue', rec);
       await c.db.put('roster', { ...found.person, s: 'Registrado' });
       await recount();

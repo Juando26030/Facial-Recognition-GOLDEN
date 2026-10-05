@@ -113,12 +113,14 @@
      cédula). Busca en la copia local; quien no está NO se admite; si ya consta como registrado o está en la cola pide la confirmación de DUPLICADO; si no, encola (client_id, marca de
      tiempo, huella; método `cedula` | `qr` | `manual`) y avisa. Devuelve lo encontrado o null. Las listas abiertas se actualizan por `accreditHooks`. */
   const accreditHooks = [];
+  let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
   async function offlineAccredit(GC, target, method, cid) {
     const found = target.h ? await GC.findByHash(target.h) : await GC.scanLocal(target.cedula);
     if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return null; }
     if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return null; }
     if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) return null;
     await GC.enqueue(found, method, cid);
+    lastAccredit = { cid, name: found.person.n, offline: true, at: Date.now() };
     showToast(`Acreditado: ${found.person.n}`, 'success');
     accreditHooks.forEach((f) => f(found));
     return found;
@@ -424,6 +426,7 @@
     }
   }
 
+  let rowAccredit = null;          // lo fija mountSearch cuando quien mira puede acreditar (digitador o más): botón «✅ Acreditar» en TODAS las filas
   function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
@@ -435,6 +438,16 @@
        (ID/Nombres/Apellidos/Tipo Asistente/Estado) siguen en el mismo orden de siempre. */
     const actionTd = document.createElement('td');
     actionTd.className = 'action-cell';
+
+    /* «✅ Acreditar» en CADA fila (docs/16, 7a): un clic acredita, con «Deshacer» ~8 s (el servidor lo permite solo a quien acreditó y hasta 15 s). La fila ya acreditada muestra «Acreditado» sin acción. */
+    if (rowAccredit) {
+      const done = user.status === 'Registrado' || user.status === 'Nuevo';
+      const acc = document.createElement('button');
+      acc.type = 'button'; acc.className = 'golden-btn btn-table-action btn-accredit-row'; acc.disabled = done;
+      acc.innerText = done ? '✔ Acreditado' : '✅ Acreditar';
+      if (!done) acc.addEventListener('click', () => rowAccredit(user, acc));
+      actionTd.appendChild(acc);
+    }
 
     /* Botón de impresión persistente por fila (Historia 2.2) — vive siempre en la fila para
        poder reimprimir a cualquiera en cualquier momento, no solo recién registrado. cliente es
@@ -808,6 +821,39 @@
        error de red o el tiempo agotado, se reintenta SOLO (hasta 2 reintentos, con espera creciente corta) y con el MISMO `client_id` (el servidor no duplica el ingreso, ver
        /api/checkin-cedula: `replayed`). Mientras reintenta se muestra un aviso discreto y el operador no tiene que hacer nada. */
     const CHECKIN_TIMEOUT_MS = 10000;
+    const UNDO_MS = 8000;           // cuánto se ofrece «Deshacer» en pantalla (el servidor lo permite hasta 15 s)
+    /* Botón «✅ Acreditar» de una fila: acredita como el botón puntual (confirmando) y ofrece «Deshacer». Sin red usa la lista local (la fila local no tiene la cédula: se acredita por huella). */
+    async function acreditarFila(user, btn) {
+      const cid = newClientId(), GC = window.GoldenContingency && window.GoldenContingency.instance;
+      btn.disabled = true; btn.innerText = 'Acreditando...';
+      lastAccredit = null;
+      try {
+        if (GC && (user.__local || GC.active())) await offlineAccredit(GC, user.__h ? { h: user.__h } : { cedula: user.id }, 'manual', cid);         // lista local o sin red: se encola y se envía al volver la red
+        else await fastCheckin(user.id, false, null, true, undefined, cid);
+      } finally {
+        if (lastAccredit && lastAccredit.cid === cid) offerUndo(lastAccredit);
+        else { btn.disabled = false; btn.innerText = '✅ Acreditar'; }
+      }
+    }
+    function offerUndo(acc) {
+      showToast(`${acc.name} acreditado(a)`, 'success', { action: { label: 'Deshacer', onClick: () => undoAccredit(acc) }, duration: UNDO_MS });
+    }
+    async function undoAccredit(acc) {
+      const GC = window.GoldenContingency && window.GoldenContingency.instance;
+      try {
+        if (acc.offline) {
+          if (!(GC && (await GC.unqueue(acc.cid)))) { showToast('Ya se envió al servidor: no se puede deshacer desde aquí', 'error'); return; }
+          await loadFromLocalCopy();
+        } else {
+          const res = await fetch(`/api/events/${window.EVENT_ID}/accreditations/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: acc.cid }) });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { showToast(data.detail || 'No se pudo deshacer', 'error'); return; }
+          await reload();
+        }
+        showToast(`Acreditación de ${acc.name} deshecha`, 'success');
+      } catch (e) { showToast('No se pudo deshacer: sin conexión con el servidor', 'error'); }
+    }
+    rowAccredit = opts.fastCheckin ? acreditarFila : null;
     let retryNote = null;
     function showRetryNote(on) {
       if (!on) { if (retryNote) { retryNote.remove(); retryNote = null; } return; }
@@ -903,6 +949,7 @@
           // explícito) — la "confirmación" es ver la fila aparecer filtrada en el Directorio,
           // como si se hubiera buscado por cédula a mano.
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          lastAccredit = { cid, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
           if (data.data.sibling_events && data.data.sibling_events.length) {
             showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
           }

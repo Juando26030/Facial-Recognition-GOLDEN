@@ -718,6 +718,32 @@ def checkin_cedula(
     return {"result": "SÍ", "data": data}
 
 
+ACCREDIT_UNDO_WINDOW = timedelta(seconds=15)          # «Deshacer» una acreditación: solo quien la hizo y hace menos de 15 s (la pantalla ofrece ~8 s; aquí se verifica en el SERVIDOR)
+
+
+@router.post("/events/{event_id}/accreditations/undo")
+def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Deshace una acreditación recién hecha con el botón «✅ Acreditar» de la fila (docs/16, 7a). Reglas (decididas por J, 2026-10-05): SOLO quien acreditó (`registered_by_staff_id`), hasta
+    `ACCREDIT_UNDO_WINDOW` (15 s) después y con el evento todavía abierto para registrar; se identifica por el `client_id` que generó la pantalla. Borra solo ESE ingreso (la persona vuelve a «No
+    registrado» si era el único). Quien necesite deshacer más tarde o lo de otro usa Editar → Estado de registro (administrador o más), como siempre."""
+    event = get_event_for_staff(event_id, db, staff)
+    require_event_in_progress(event)
+    client_id = str((body or {}).get("client_id") or "").strip()[:64]
+    if not client_id:
+        raise HTTPException(status_code=400, detail="Falta el identificador de la acreditación")
+    log = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id, AccessLog.record_type != "Actualizado").first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Esa acreditación no existe (o ya se deshizo)")
+    if log.registered_by_staff_id != staff.id:
+        raise HTTPException(status_code=403, detail="Solo quien acreditó puede deshacerlo. Pide a un administrador cambiar el estado de registro.")
+    if utcnow() - log.timestamp > ACCREDIT_UNDO_WINDOW:
+        raise HTTPException(status_code=409, detail="Pasaron más de 15 segundos: ya no se puede deshacer desde aquí. Un administrador puede cambiar el estado en Editar.")
+    user_id = log.user_id
+    db.delete(log)
+    db.commit()
+    return {"undone": True, "user_id": user_id}
+
+
 def _person_data(user: User) -> dict:
     return {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,

@@ -49,7 +49,7 @@ global.fetch = async (url) => {
   if (u.pathname === '/api/ping-auth') return json(200, {});
   if (u.pathname.endsWith('/local-roster')) return json(200, { v: 'v1', generated_at: 'x', max_age_s: 86400, event: { id: 1, status: 'en_proceso', auto_register: true }, salt: SALT, count: ROSTER.length, people: ROSTER });
   if (u.pathname === '/api/users/changes') { usersCalls++; return json(200, { cursor: '1:1', total: SERVER.length, users: [] }); }
-  if (u.pathname === '/api/users') { usersCalls++; return json(200, SERVER, { 'X-Total-Count': '1' }); }
+  if (u.pathname === '/api/users') { usersCalls++; return json(200, SERVER, { 'X-Total-Count': String(SERVER.length) }); }
   if (u.pathname.endsWith('/access-logs/sync')) return json(200, { results: [] });
   throw new Error('ruta inesperada ' + u.pathname);
 };

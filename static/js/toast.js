@@ -15,7 +15,9 @@
     return container;
   }
 
-  window.showToast = function (message, type) {
+  /* opts.action = { label, onClick }: botón dentro del aviso (p. ej. «Deshacer»); con acción el aviso dura opts.duration (8 s por defecto) en vez de 3,2 s. Devuelve { close() }. */
+  window.showToast = function (message, type, opts) {
+    opts = opts || {};
     type = type === "error" ? "error" : "success";
     const el = document.createElement("div");
     const colors = type === "success"
@@ -29,6 +31,19 @@
       pointer-events: auto;
     `;
     el.textContent = (type === "success" ? "✓ " : "✕ ") + message;
+    let gone = false;
+    const close = () => {
+      if (gone) return; gone = true;
+      el.style.opacity = "0"; el.style.transform = "translateX(20px)";
+      setTimeout(() => el.remove(), 300);
+    };
+    if (opts.action && opts.action.label) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = opts.action.label;
+      b.style.cssText = "margin-left:12px; padding:4px 12px; border-radius:14px; border:2px solid currentColor; background:transparent; color:inherit; font-weight:700; cursor:pointer;";
+      b.addEventListener("click", () => { close(); try { opts.action.onClick(); } catch (e) { /* la acción maneja sus errores */ } });
+      el.appendChild(b);
+    }
     const box = ensureContainer();
     // Los avisos nunca quedan tapados por la franja de contingencia/sesión (static/js/contingency.js, `data-golden-banner`): van por ENCIMA (z-index) y desplazados bajo ella.
     const banner = document.querySelector && document.querySelector("[data-golden-banner]");
@@ -40,11 +55,8 @@
       el.style.transform = "translateX(0)";
     });
 
-    setTimeout(() => {
-      el.style.opacity = "0";
-      el.style.transform = "translateX(20px)";
-      setTimeout(() => el.remove(), 300);
-    }, 3200);
+    setTimeout(close, opts.action ? (opts.duration || 8000) : 3200);
+    return { close };
   };
 
   /* opts.variant: "danger" (default, blanco + botón rojo, para borrar/sobrescribir) o
