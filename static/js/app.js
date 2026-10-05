@@ -331,7 +331,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const id = idInput.value.trim();
             siblingBanner.style.display = 'none';
             if (!id) return;
-            const res = await fetch(`/api/users/${encodeURIComponent(id)}/sibling-check?event_id=${EVENT_ID}`);
+            let res;
+            try { res = await fetch(`/api/users/${encodeURIComponent(id)}/sibling-check?event_id=${EVENT_ID}`); } catch (e) { return; }       // sin red: no hay aviso de hermanos
             if (!res.ok) return;
             const data = await res.json();
             if (!data.siblings.length || !data.user) return;
@@ -439,8 +440,30 @@ document.addEventListener("DOMContentLoaded", () => {
             const pending = window.getPendingOptionalLabels ? window.getPendingOptionalLabels() : {};
             if (Object.keys(pending).length) formData.append('field_labels', JSON.stringify(pending));
 
+            // SIN RED (modo contingencia + bandeja de salida, B8 R1): la persona se guarda cifrada en este dispositivo, SIN foto, y se envía sola al volver la red.
+            const GCo = window.GoldenContingency && window.GoldenContingency.instance, box = window.GoldenOutbox && window.GoldenOutbox.instance;
+            if (GCo && GCo.active && GCo.active() && box && box.supported) {
+                await queueOffline(formData, box);
+                setButtonLoading(btn, false);
+                return;
+            }
             await submitManualRegister(formData, btn);
             setButtonLoading(btn, false);
         };
+
+        async function queueOffline(formData, box) {
+            const needsSignature = (window.FIELD_CONFIGS || []).filter((c) => c.required && (c.field_type === 'signature' || c.field_type === 'consent'));
+            if (needsSignature.length) { showToast(`Este evento exige ${needsSignature.map((c) => c.label || c.key).join(', ')}: no se puede registrar sin conexión. Espera a que vuelva la red.`, 'error'); return; }
+            const f = {};
+            for (const key of ['id', 'first_name', 'last_name', 'role', 'entity', 'phone', 'email', 'opt_1', 'certificate', 'digital_contact']) { const v = formData.get(key); if (v != null && String(v).trim() !== '') f[key] = String(v).trim(); }
+            for (const key of ['extra_fields', 'categories', 'field_labels']) { const v = formData.get(key); if (v) { try { f[key] = JSON.parse(v); } catch (e) { /* se ignora un JSON roto */ } } }
+            if (!f.id || !f.first_name || !f.last_name) { showToast('Escribe la cédula, los nombres y los apellidos.', 'error'); return; }
+            const photo = formData.get('file');
+            try { await box.enqueue(f, `${f.first_name} ${f.last_name}`); } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); return; }
+            showToast(`Guardado en este dispositivo${photo && photo.size ? ' (la foto no se guarda sin conexión: agrégala después)' : ''}. Se enviará solo al volver la red.`, 'success');
+            regForm.reset();
+            if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
+            if (window.closeRegisterModal) window.closeRegisterModal();
+        }
     }
 });

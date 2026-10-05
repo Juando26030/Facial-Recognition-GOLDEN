@@ -1,5 +1,7 @@
 // IndexedDB falso (lo mínimo que usa static/js/contingency.js: open/onupgradeneeded, object stores con keyPath, get/getAll/put/delete/clear y transacciones con oncomplete).
 // Solo para las pruebas Node; NO es una prueba de un IndexedDB real (ver el reporte: lo que no se probó en un navegador).
+// structuredClone como el IndexedDB real; si un objeto no se puede clonar en esta versión de Node (p. ej. una CryptoKey en Node antiguo) se guarda por referencia.
+const clone = (v) => { try { return structuredClone(v); } catch (e) { return v; } };
 function fakeIndexedDB() {
   const dbs = new Map();
   return {
@@ -29,9 +31,9 @@ function fakeIndexedDB() {
               if (!names.includes(n)) throw new Error(`store ${n} fuera de la transacción`);
               const st = d.stores.get(n);
               return {
-                get: (k) => op(() => { const v = st.data.get(k); return v === undefined ? undefined : structuredClone(v); }),
-                getAll: () => op(() => [...st.data.values()].map((v) => structuredClone(v))),
-                put: (v) => op(() => { st.data.set(v[st.keyPath], structuredClone(v)); return v[st.keyPath]; }),
+                get: (k) => op(() => { const v = st.data.get(k); return v === undefined ? undefined : clone(v); }),
+                getAll: () => op(() => [...st.data.values()].map((v) => clone(v))),
+                put: (v) => op(() => { st.data.set(v[st.keyPath], clone(v)); return v[st.keyPath]; }),
                 delete: (k) => op(() => { st.data.delete(k); }),
                 clear: () => op(() => { st.data.clear(); }),
                 count: () => op(() => st.data.size),

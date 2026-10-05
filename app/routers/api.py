@@ -859,6 +859,107 @@ def sync_access_logs(
     return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results)}
 
 
+# ----------------------------------------------------------------------------------------------------------------------- bandeja de salida (B8, rebanada R1)
+OUTBOX_MAX_OPS = 50
+OUTBOX_PERSON_KEYS = ("role", "entity", "phone", "email", "opt_1")
+
+
+def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list) -> dict:
+    """Una operación `create_person` de la bandeja de salida de un quiosco que estaba sin red (docs/16, B8 R1): crea a la persona como «alta manual» (mismas reglas que `POST /register`, SIN foto).
+    Resultados: `ok` (persona nueva creada y registrada), `existente` (la cédula YA existía: NO se pisan sus datos; solo se registra para este evento y el cliente muestra qué había), `duplicado`
+    (ya estaba registrada en este evento: no se hace nada) o `error` (con el motivo, para corregirlo en el dispositivo). Idempotente por `op_id` (= `AccessLog.client_id`)."""
+    person_id = str(f.get("id") or "").strip()
+    first, last = str(f.get("first_name") or "").strip(), str(f.get("last_name") or "").strip()
+    if not person_id or not first or not last:
+        return {"op_id": op_id, "result": "error", "detail": "Faltan la cédula, los nombres o los apellidos"}
+    if event.status != "en_proceso":                                            # mismo criterio que `require_event_in_progress` (registrar solo con el evento en proceso)
+        return {"op_id": op_id, "result": "error", "detail": "El evento ya no está abierto para registrar personas nuevas"}
+    extras = f.get("extra_fields") if isinstance(f.get("extra_fields"), dict) else {}
+    extras = {str(k): str(v) for k, v in extras.items() if re.fullmatch(r"opcional_\d+", str(k)) and str(v).strip()}
+    labels = f.get("field_labels") if isinstance(f.get("field_labels"), dict) else None
+    missing_labels = set(extras) - set(event.get_optional_labels())
+    if missing_labels and not labels:
+        return {"op_id": op_id, "result": "error", "detail": "Hay campos opcionales sin nombre para este evento"}
+    try:
+        categories = _clean_categories(event, f.get("categories") if isinstance(f.get("categories"), list) else []) if f.get("categories") else []
+        contact = digital_badge.normalize_contact(f.get("digital_contact")) if f.get("digital_contact") else None
+    except ValueError as e:
+        return {"op_id": op_id, "result": "error", "detail": str(e)}
+    values = {k: str(f.get(k) or "") for k in OUTBOX_PERSON_KEYS}
+    values.update({"certificate": str(f.get("certificate") or ""), "digital_contact": contact or "", **extras})
+    existing = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
+    if existing:
+        if _already_checked_in(db, event.id, existing.id):
+            return {"op_id": op_id, "result": "duplicado", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
+        kind = "Existente"
+    else:
+        missing = _missing_required_fields(field_configs, values)
+        if missing:
+            return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
+        bad = _invalid_email_fields(field_configs, values)
+        if bad:
+            return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
+        kind = "Nuevo"
+    try:
+        with db.begin_nested():
+            if labels and missing_labels:
+                _apply_optional_labels(event, set(extras), json.dumps(labels))
+            if kind == "Nuevo":
+                user = User(id=person_id, tenant_id=event.tenant_id, first_name=first, last_name=last, role=values["role"], entity=values["entity"], phone=values["phone"], email=values["email"], opt_1=values["opt_1"])
+                user.set_extras(extras)
+                db.add(user)
+                db.flush()
+            db.add(AccessLog(tenant_id=event.tenant_id, user_id=person_id, record_type=kind, event_id=event.id, registered_by_staff_id=staff.id, registration_method="tradicional",
+                             client_id=op_id, timestamp=when))
+            _upsert_attendee(db, event.id, person_id, event.tenant_id, categories if f.get("categories") else None,
+                             certificate=_truthy(f.get("certificate")) if f.get("certificate") else None, digital_contact=contact)
+            db.flush()
+    except IntegrityError:
+        return {"op_id": op_id, "result": "replayed"}
+    if kind == "Existente":
+        return {"op_id": op_id, "result": "existente", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
+    return {"op_id": op_id, "result": "ok"}
+
+
+@router.post("/events/{event_id}/outbox/sync")
+def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Sincroniza la BANDEJA DE SALIDA de un quiosco (docs/16, B8): operaciones hechas sin red, hasta `OUTBOX_MAX_OPS` por lote. Hoy solo `create_person` (R1: alta sin foto). Cuerpo:
+    `{"ops": [{"op_id", "type": "create_person", "timestamp" (ISO UTC, opcional), "fields": {id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, ...}}]}`.
+    Devuelve `{"results": [{op_id, result, detail?, existing_name?}]}` con `ok | replayed | existente | duplicado | error`: un resultado por operación; repetir un lote nunca duplica (`replayed`)."""
+    event = _event_for_sync(db, event_id, staff)
+    ops = body.get("ops")
+    if not isinstance(ops, list) or not ops:
+        raise HTTPException(status_code=400, detail="Falta la lista de operaciones")
+    if len(ops) > OUTBOX_MAX_OPS:
+        raise HTTPException(status_code=400, detail=f"Máximo {OUTBOX_MAX_OPS} operaciones por lote")
+    now = utcnow()
+    field_configs = parametros.field_configs_for_event(db, event)
+    known = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([str((o or {}).get("op_id") or "")[:64] for o in ops if isinstance(o, dict)]))}
+    results = []
+    for op in ops:
+        op = op if isinstance(op, dict) else {}
+        op_id = str(op.get("op_id") or "").strip()[:64]
+        if not op_id or op.get("type") != "create_person" or not isinstance(op.get("fields"), dict):
+            results.append({"op_id": op_id, "result": "error", "detail": "Operación no válida"})
+            continue
+        if op_id in known:
+            results.append({"op_id": op_id, "result": "replayed"})
+            continue
+        when = now
+        try:
+            parsed = datetime.fromisoformat(str(op.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
+            if now.timestamp() - SYNC_MAX_AGE <= parsed.timestamp() <= now.timestamp() + 300:
+                when = parsed
+        except (TypeError, ValueError):
+            pass
+        res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs)
+        if res["result"] in ("ok", "existente", "replayed"):
+            known.add(op_id)
+        results.append(res)
+    db.commit()
+    return {"results": results, "ok": sum(r["result"] in ("ok", "replayed") for r in results)}
+
+
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
 ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
 ROSTER_LIMIT, ROSTER_WINDOW = 12, timedelta(minutes=10)      # descargas por usuario y evento: un quiosco refresca cada pocos minutos; más que esto es un abuso o un bucle

@@ -268,6 +268,19 @@
     const names = ((await indexedDB.databases()) || []).map((d) => d.name).filter((n) => n && n.startsWith(PREFIX));
     let pending = 0;
     for (const n of names) pending += await pendingIn(n);
+    // Bandeja de salida (B8): altas hechas sin red que aún no se enviaron (el estado va en claro; los datos personales, cifrados). Se conservan hasta enviarlas o hasta que caduquen (7 días).
+    const outboxNames = ((await indexedDB.databases()) || []).map((d) => d.name).filter((n) => n && n.startsWith("golden-outbox-"));
+    let outboxPending = 0;
+    for (const n of outboxNames) {
+      try {
+        const db = await open(n);
+        try { if (db.objectStoreNames.contains("ops")) outboxPending += (await req(db.transaction(["ops"], "readonly").objectStore("ops").getAll())).filter((o) => o.status !== "ok").length; } finally { db.close(); }
+      } catch (e) { /* sin acceso: no se cuenta */ }
+    }
+    if (outboxPending > 0 && window.showConfirm) {
+      const ok = await window.showConfirm(`Quedan <strong>${outboxPending}</strong> persona(s) nueva(s) sin enviar en este dispositivo (se registraron sin conexión). Se conservan, cifradas, y se enviarán cuando vuelvas a iniciar sesión y abras el registro de ese evento; si no se envían en 7 días caducan. ¿Cerrar sesión de todos modos?`);
+      if (!ok) return false;
+    }
     if (pending > 0 && window.showConfirm) {
       const ok = await window.showConfirm(`Quedan <strong>${pending}</strong> ingreso(s) sin sincronizar en este dispositivo (se hicieron sin conexión). Se conservarán y se enviarán cuando vuelvas a iniciar sesión y abras el registro de ese evento.<br><br>¿Cerrar sesión de todos modos?`, { variant: "warning", confirmLabel: "Cerrar sesión" });
       if (!ok) return false;
