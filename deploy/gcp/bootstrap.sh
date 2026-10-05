@@ -203,9 +203,21 @@ fi
 bucket_bind() { gcloud storage buckets add-iam-policy-binding "gs://$1" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null; }
 bucket_bind "$APP_BUCKET" "$SA_APP" roles/storage.objectAdmin
 bucket_bind "$APP_BUCKET" "$SA_OPS" roles/storage.objectAdmin              # la purga biométrica borra fotos
+# El volcado lleva nombres, cédulas y correos EN CLARO: nadie lee su contenido desde la nube. Un rol propio que solo LISTA (nombre, tamaño, fecha) basta para «Último respaldo» (app) y para
+# check-backups (ops); ninguna cuenta de servicio puede descargar ni borrar un respaldo (borrar lo hace el ciclo de vida). Restaurar lo hace una persona (Juan David) con su propia cuenta.
+# En STAGING el bucket es uno solo (archivos de la app + respaldos): ahí la cuenta de la app sí puede leerlo (objectAdmin sobre sus archivos); no es separable sin otro bucket.
+if ! exists gcloud iam roles describe goldenBackupLister --project "$PROJECT_ID"; then
+  gcloud iam roles create goldenBackupLister --project "$PROJECT_ID" --title "Golden: listar respaldos (sin leerlos)" \
+    --permissions storage.objects.list,storage.buckets.get --quiet >/dev/null
+fi
+LISTER="projects/${PROJECT_ID}/roles/goldenBackupLister"
 bucket_bind "$BACKUP_BUCKET" "$SA_OPS" roles/storage.objectCreator          # respaldos: crear…
-bucket_bind "$BACKUP_BUCKET" "$SA_OPS" roles/storage.objectViewer           # …y revisar (no borrar: eso lo hace el ciclo de vida)
-bucket_bind "$BACKUP_BUCKET" "$SA_APP" roles/storage.objectViewer           # «Último respaldo» en /sistema
+bucket_bind "$BACKUP_BUCKET" "$SA_OPS" "$LISTER"                            # …y revisar (check-backups lista; no lee ni borra)
+bucket_bind "$BACKUP_BUCKET" "$SA_APP" "$LISTER"                            # «Último respaldo» en /sistema
+# Cuentas que venían de una versión anterior con objectViewer: se les quita (idempotente)
+for sa in "$SA_OPS" "$SA_APP"; do
+  [ "$APP_BUCKET" = "$BACKUP_BUCKET" ] || gcloud storage buckets remove-iam-policy-binding "gs://$BACKUP_BUCKET" --member "serviceAccount:$(sa_email "$sa")" --role roles/storage.objectViewer --quiet >/dev/null 2>&1 || true
+done
 ok "CORS (${CORS_ORIGINS[*]}), versiones, ciclo de vida y permisos"
 
 # -------------------------------------------------------------------------------------------------------------------------- 7

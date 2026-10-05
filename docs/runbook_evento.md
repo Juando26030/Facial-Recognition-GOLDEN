@@ -80,7 +80,7 @@ Además: **UptimeRobot** en *Up* y ningún correo de «Golden alertas». **Duran
 
 ### P3. Calentamiento previo (antes de abrir) y prueba sin red
 Para **cada dispositivo** de registro (celulares, tabletas, laptops):
-1. **Con internet, al menos 30 minutos antes** de abrir: iniciar sesión y abrir el registro del evento (`/kiosk/<id>/registro`). iPad: abrirlo **como PWA** (Compartir → Añadir a pantalla de inicio) y usar siempre ese ícono.
+1. **Con internet, al menos 30 minutos antes** de abrir: iniciar sesión y abrir el registro del evento (`/kiosk/<id>/registro`). **Los iPad se usan SIEMPRE como PWA instalada** (Safari → Compartir → **Añadir a pantalla de inicio**) y se abren solo desde ese ícono, nunca desde una pestaña de Safari: Safari borra los datos de un sitio tras ~7 días sin uso (la lista local y la bandeja de salida) salvo que esté instalado, y solo ahí el almacenamiento persistente es fiable. En Android/Chrome se puede usar normal o instalada.
 2. Esperar a que la lista local baje y **verificar «LISTA LOCAL: N de N»**, con N = el total del evento en el servidor (hoy esa comparación no existe en pantalla: se compara a mano el contador «registrados de N» con el total de `/sistema` o del directorio; mejora propuesta en `docs/15` D2.5i).
 3. **Prueba de escaneo sin red:** modo avión (o Chrome ▸ Offline), recargar el registro: debe verse la franja de **contingencia en ≤ 5 s** y la **lista local en ≤ 3 s**; escanear **una cédula de prueba** (acredita y queda en cola); quitar el modo avión: debe sincronizar y la persona aparecer registrada en el servidor.
 4. Con **red muerta pero conectada** (wifi sin salida a internet; p. ej. desconectar el módem y dejar el router): repetir el paso 3.

@@ -15,10 +15,15 @@ cd "$(dirname "$0")/.."
 PY="${PYTHON:-python}"; LOG="restore_test_$(date +%Y%m%d).log"
 step() { local n="$1"; shift; local t=$SECONDS; echo "== $n"; "$@"; echo "$(date -Is) $n rc=$? $((SECONDS - t))s" | tee -a "$LOG"; }
 
+# Salvaguarda: el destino se VACÍA (--wipe); si LIVE_ENV_FILE apunta a la misma base, no se hace nada.
+if [ -n "${LIVE_ENV_FILE:-}" ]; then
+  tgt="$(grep -E '^DIRECT_DATABASE_URL=' "$TARGET_ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"')"; liv="$(grep -E '^DIRECT_DATABASE_URL=' "$LIVE_ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"')"
+  [ -n "$tgt" ] && [ "$tgt" != "$liv" ] || { echo "TARGET_ENV_FILE y LIVE_ENV_FILE apuntan a la MISMA base (o falta DIRECT_DATABASE_URL): no se restaura nada." >&2; exit 1; }
+fi
+FILE="restore_test_dump.sql.gz"; trap 'rm -f "$FILE"' EXIT          # el volcado trae datos personales: no se deja en disco aunque falle
 OBJ="$(gcloud storage ls -l "gs://$BACKUP_BUCKET/db/daily/**" | grep '\.sql\.gz$' | sort -k2 | tail -1 | awk '{print $3}')"
 [ -n "$OBJ" ] || { echo "No hay respaldos diarios en gs://$BACKUP_BUCKET/db/daily/" >&2; exit 1; }
 echo "respaldo: $OBJ" | tee -a "$LOG"
-FILE="restore_test_dump.sql.gz"
 step "descargar" gcloud storage cp "$OBJ" "$FILE"
 gzip -t "$FILE" && echo "gzip íntegro ($(du -h "$FILE" | cut -f1))" | tee -a "$LOG"
 step "restaurar + contar + alembic" "$PY" scripts/migrate_db_to_neon.py --source-dump "$FILE" --target-env-file "$TARGET_ENV_FILE" --wipe --migrate
