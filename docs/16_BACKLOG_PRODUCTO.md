@@ -41,18 +41,45 @@ se puede atender como la empresa lo hace; **«No bloquea»** = mejora el trabajo
 3. B6 por fases (docs/17), en paralelo cuando B1 esté probado.
 4. N2 y N3 cuando lleguen la lista de campos clave y los datos del calendario (N1); luego N4 y N5.
 
-## Orden para un PRIMER EVENTO PILOTO (2026-10-05; la empresa mantiene su software actual como respaldo)
-Criterio: «estrictamente necesario» = sin esto el piloto no se puede atender con el sistema nuevo. Como el respaldo es el software de siempre, los eventos sin internet y todo lo que ya tiene alternativa quedan fuera. Tamaños: **S** ≤ 1 día · **M** 2-4 días · **L** 1-2 semanas · **XL** 3 semanas o más (de trabajo de desarrollo, sin contar pruebas con aparatos o personas de terceros).
+## Orden para el PRIMER EVENTO PILOTO (2026-10-05; ~200 asistentes, con internet, el software actual de la empresa corre en paralelo como respaldo)
+Criterio: «necesario» = sin esto el piloto no se atiende con el sistema nuevo. Tamaños: **S** ≤ 1 día · **M** 2-4 días · **L** 1-2 semanas · **XL** 3 semanas o más (desarrollo, sin contar pruebas con aparatos o personas de terceros).
 
 | Orden | # | ¿Necesario para el piloto? | Tamaño | Depende de | Porqué |
 |---|---|---|---|---|---|
-| 1 | **B7** copias a las 3 am activas y verificadas | **Sí (obligatorio)** | S (activar y verificar; el código existe) | El corte (docs/15 D2.5, paso 5) | Sin copias verificadas no se opera con datos reales. |
-| 2 | **B1** impresión desde el celular en la QL-800 | Solo si el piloto imprime escarapelas desde celulares; si imprime como hoy (PDF/impresora del equipo) no | prueba con la impresora real **S**; integrarla al directorio/registro **M** | B7 no; el prototipo `/impresion-usb` ya existe y funcionó en Android | Es lo único que depende de un aparato físico: probarlo ya cuesta casi nada y decide si entra al piloto. |
-| 3 | **B4** compromiso digital de digitadores | No (el formato del Word se sigue firmando como hoy) | **L** (formulario por secciones, firma dibujada, PDF, vencimiento a 30 días y bloqueo) | Ninguna; B3b y B5 dependen de él | Es política interna, no de operación del evento; el bloqueo por vencimiento sí podría estorbar si se enciende antes de tiempo. |
-| 4 | **B2** cédula en el alta de usuarios temporales | No (se teclea) | **S** | La lectura de cédula nueva ya existe (`app/mrz_ocr.py`) | Ahorra tecleo; reutiliza lo hecho. |
-| 5 | **B3** autorregistro por enlace (B3a cliente, B3b digitador) | No (los crea el coordinador como hoy) | B3a **M**, B3b **M** (+ B4) | B3b necesita B4; B3a ninguna | Quita trabajo al coordinador, no bloquea. |
-| 6 | **B5** base de digitadores y clientes, descarga solo admin | No | **S** | B3 y B4 (de ahí salen los datos) | |
-| 7 | **B1b** impresión desde iPad (cola + estación Android) | No | **L** | B1 integrado | Un iPad no puede imprimir directo; el piloto usa Android o computador. |
-| 8 | **B6** servidor local sin internet | **No para un piloto con internet**; sí antes del primer evento sin red (hasta entonces esos eventos siguen en el software de la empresa o con la laptop de siempre) | **XL** (E0-E3 de docs/17) | Preguntas abiertas de docs/17 (equipos, facial offline, quién lo instala) | Lo más grande; es lo único que reemplaza la operación sin internet. |
+| 1 | **B7** copias a las 3 am activas y verificadas | **Sí, obligatorio** | S (activar y verificar con `check-backups`; el código existe) | El corte (docs/15 D2.5, paso 4) | Sin copias verificadas no se opera con datos reales. |
+| 2 | **Pedidos del piloto 7a y 7b** (abajo) | Sí, los pidió J para este evento | 7a **M** · 7b **M** | El corte (rama `producto/piloto` se corta de `migra/fase1-2` después de él) | Acreditar con un clic desde cualquier fila y el logo de la empresa editable. |
+| 3 | **B1** impresión desde el celular en la QL-800 | Solo si el piloto imprime escarapelas desde celulares; si imprime como hoy, no | prueba con la impresora real **S**; integrarla al directorio/registro **M** | El prototipo `/impresion-usb` ya funciona en Android | Es lo único que depende de un aparato físico: probarlo cuesta casi nada y decide si entra. |
+| 4 | **B2** cédula en el alta de usuarios temporales | No (se teclea) | **S** | La lectura de cédula nueva existe (`app/mrz_ocr.py`) | Ahorra tecleo; reutiliza lo hecho. |
+| 5 | **B3** autorregistro por enlace (B3a cliente, B3b digitador) | No (los crea el coordinador como hoy) | B3a **M**, B3b **M** (+ B4) | B3b necesita B4 | Quita trabajo al coordinador. |
+| 6 | **B4** compromiso digital de digitadores | No (el formato del Word se sigue firmando como hoy; el respaldo de la empresa lo cubre) | **L** | Ninguna; B3b y B5 dependen de él | Política interna; el bloqueo por vencimiento solo se enciende cuando esté probado. |
+| 7 | **B5** base de digitadores y clientes, descarga solo admin | No | **S** | B3 y B4 | |
+| 8 | **B1b** impresión desde iPad (cola + estación Android) | No | **L** | B1 integrado | El iPad no imprime directo; el piloto usa Android o computador. |
+| 9 | **B6** servidor local sin internet | **No: el piloto tiene internet**; sí antes del primer evento sin red (esos siguen en el software de la empresa o con la laptop de siempre) | **XL** (E0-E3, docs/17) | Preguntas abiertas de docs/17 | Lo más grande. |
 
-Lo que SÍ necesita el piloto y no es del backlog B: el **corte** (docs/15 D2.5), el modo contingencia apagado o decidido (D2.5d), y la configuración del evento con lo que ya existe hoy. Las piezas de N (estados, ficha, correos, inventario, registro touch) tampoco bloquean el piloto.
+**Qué falta para ESE evento** (además de lo de arriba):
+1. **El corte hecho y verificado** (docs/15 D2.5), con la contingencia apagada en producción (ya fijado en `config.sh`).
+2. **Producción configurada desde cero** (Neon vacío): super administrador, cliente (tenant), evento con sus categorías y campos de registro, coordinador y comercial, logo del cliente si aplica.
+3. **Correo saliente probado en producción** (escarapela digital y formularios) y, si hay pagos, las llaves de Wompi de producción.
+4. **Los 200 asistentes cargados** (carga masiva, con fotos si se usa reconocimiento facial) probados en producción antes del día.
+5. **Ensayo general 1-2 días antes** con los equipos y la red reales del lugar: celulares/tabletas, lector de cédula, cámara, conexión de respaldo (datos móviles).
+6. **Criterio escrito de cuándo se pasa al software de respaldo** (p. ej. 5 min sin poder acreditar) y quién lo decide: con la contingencia apagada, sin internet no hay copia local en el quiosco.
+7. **Quién mira el sistema durante el evento** (`/sistema`, alertas) y a quién se llama.
+8. **Capacidad:** 200 personas es poca carga; no hace falta precalentar instancias (D2.4 paso 4b es para formularios masivos). El reconocimiento facial se prende por evento en Parámetros.
+9. Aviso de privacidad y consentimiento facial vigentes (el texto ya existe; el consentimiento es previo al guardado del rostro).
+
+## Pedidos de producto para el piloto: alcance y tamaño (propuesta, NO implementada)
+Van en una rama `producto/piloto` cortada de `migra/fase1-2` DESPUÉS del cambio de la contingencia (commit con `CONTINGENCY_ENABLED`) y entran a `migra/fase1-2` por PR.
+
+**7a · «✅ Acreditar» en TODAS las filas del directorio en vivo, con «Deshacer» ~8 s — tamaño M.**
+- Hoy: el botón por fila se quitó el 2026-09-16 y solo aparece de forma puntual (`FOUND_PENDING`, tras buscar con el autoregistro apagado); acreditar sale del escaneo/búsqueda o de Editar (admin+).
+- Alcance: botón en cada fila de `static/js/directory.js` (también en la lista local sin red); la fila ya acreditada muestra «Acreditado» deshabilitado. Reutiliza el endpoint de acreditar con su `client_id` idempotente (reintento seguro) y respeta la regla `registration`/`require_event_in_progress`. Roles: los que ya acreditan (digitador+; el cliente no ve el botón).
+- «Deshacer»: toast de ~8 s con un botón (hoy `toast.js` no tiene acciones en los avisos: se agrega) que devuelve a «No registrado» usando el cambio de estado que ya existe. **Decisión de J:** el digitador hoy puede editar datos pero no cambiar el estado; el deshacer se limitaría a quien acreditó hace menos de ~15 s (verificación en el servidor, no solo en pantalla) para no abrirle ese permiso en general.
+- Pruebas: API (acreditar desde fila, idempotente, deshacer solo del propio y dentro de la ventana, evento fuera de «registro») y JS (`tests/js`).
+
+**7b · Logo por defecto cambiable desde Configuración — tamaño M.**
+- Hoy: el logo por defecto es `static/img/logo-golden.png` (fijo en el repo; ya reducido a 400 px / 24 KB) en 8 plantillas y en `default_logo_url()`; el logo propio del evento ya manda sobre él (`event_logo_url`, modo `custom`).
+- Alcance: una fila de configuración global (migración nueva) con la clave del objeto y su hash; en Configuración, sección «Logo por defecto» (admin+): subir, **previsualizar antes de guardar**, **restaurar** el de Golden. Acepta PNG/JPEG/WebP ≤ 2 MB (validado con Pillow, no solo por extensión), se **redimensiona a ~512 px** y se guarda en Cloud Storage con `get_storage()` (nunca en el disco local). Ruta pública `GET /branding/logo?v=<hash>` (sin sesión, `Cache-Control: public, max-age=31536000, immutable`; el hash cambia con cada logo, así que no hay caché vieja); las 8 plantillas y `default_logo_url()` pasan a usarla; sin logo guardado cae al de `static/`.
+- Detalles a cerrar: la ruta `/branding/**` va al servicio `web` (reglas de Firebase Hosting y `appmode`); el service worker del quiosco hoy solo guarda `/static/*`, así que si algún día se enciende la contingencia hay que sumar esta ruta; el logo del evento sigue mandando.
+- Pruebas: subida válida e inválida (tipo, tamaño, imagen corrupta), redimensionado, restaurar, ruta pública con el hash y precedencia del logo del evento.
+
+Fuera del piloto (después): paridad de búsqueda sin red y el error de recarga sin red.
