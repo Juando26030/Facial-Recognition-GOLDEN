@@ -40,3 +40,19 @@ se puede atender como la empresa lo hace; **«No bloquea»** = mejora el trabajo
 2. B2 + B3 + B4 + B5 (un solo bloque: cualquier persona nueva entra por el enlace, con su compromiso y su cédula).
 3. B6 por fases (docs/17), en paralelo cuando B1 esté probado.
 4. N2 y N3 cuando lleguen la lista de campos clave y los datos del calendario (N1); luego N4 y N5.
+
+## Orden para un PRIMER EVENTO PILOTO (2026-10-05; la empresa mantiene su software actual como respaldo)
+Criterio: «estrictamente necesario» = sin esto el piloto no se puede atender con el sistema nuevo. Como el respaldo es el software de siempre, los eventos sin internet y todo lo que ya tiene alternativa quedan fuera. Tamaños: **S** ≤ 1 día · **M** 2-4 días · **L** 1-2 semanas · **XL** 3 semanas o más (de trabajo de desarrollo, sin contar pruebas con aparatos o personas de terceros).
+
+| Orden | # | ¿Necesario para el piloto? | Tamaño | Depende de | Porqué |
+|---|---|---|---|---|---|
+| 1 | **B7** copias a las 3 am activas y verificadas | **Sí (obligatorio)** | S (activar y verificar; el código existe) | El corte (docs/15 D2.5, paso 5) | Sin copias verificadas no se opera con datos reales. |
+| 2 | **B1** impresión desde el celular en la QL-800 | Solo si el piloto imprime escarapelas desde celulares; si imprime como hoy (PDF/impresora del equipo) no | prueba con la impresora real **S**; integrarla al directorio/registro **M** | B7 no; el prototipo `/impresion-usb` ya existe y funcionó en Android | Es lo único que depende de un aparato físico: probarlo ya cuesta casi nada y decide si entra al piloto. |
+| 3 | **B4** compromiso digital de digitadores | No (el formato del Word se sigue firmando como hoy) | **L** (formulario por secciones, firma dibujada, PDF, vencimiento a 30 días y bloqueo) | Ninguna; B3b y B5 dependen de él | Es política interna, no de operación del evento; el bloqueo por vencimiento sí podría estorbar si se enciende antes de tiempo. |
+| 4 | **B2** cédula en el alta de usuarios temporales | No (se teclea) | **S** | La lectura de cédula nueva ya existe (`app/mrz_ocr.py`) | Ahorra tecleo; reutiliza lo hecho. |
+| 5 | **B3** autorregistro por enlace (B3a cliente, B3b digitador) | No (los crea el coordinador como hoy) | B3a **M**, B3b **M** (+ B4) | B3b necesita B4; B3a ninguna | Quita trabajo al coordinador, no bloquea. |
+| 6 | **B5** base de digitadores y clientes, descarga solo admin | No | **S** | B3 y B4 (de ahí salen los datos) | |
+| 7 | **B1b** impresión desde iPad (cola + estación Android) | No | **L** | B1 integrado | Un iPad no puede imprimir directo; el piloto usa Android o computador. |
+| 8 | **B6** servidor local sin internet | **No para un piloto con internet**; sí antes del primer evento sin red (hasta entonces esos eventos siguen en el software de la empresa o con la laptop de siempre) | **XL** (E0-E3 de docs/17) | Preguntas abiertas de docs/17 (equipos, facial offline, quién lo instala) | Lo más grande; es lo único que reemplaza la operación sin internet. |
+
+Lo que SÍ necesita el piloto y no es del backlog B: el **corte** (docs/15 D2.5), el modo contingencia apagado o decidido (D2.5d), y la configuración del evento con lo que ya existe hoy. Las piezas de N (estados, ficha, correos, inventario, registro touch) tampoco bloquean el piloto.
