@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -75,25 +76,71 @@ def verify_event(event: dict, header_checksum: Optional[str] = None) -> Optional
 
 
 STATUS_URL = "https://wompi.statuspage.io/api/v2/status.json"
-_status = {"at": 0.0, "data": None}
+STATUS_TTL = 60.0              # segundos que un resultado se considera vigente
+STATUS_MAX_STALE = 900.0       # y hasta cuándo se sigue usando el último resultado BUENO si las consultas fallan (después: «unknown»)
+STATUS_TIMEOUT = 2.0           # por operación de socket de la consulta (en un hilo propio: nunca la espera una petición de usuario)
+_UNKNOWN = {"indicator": "unknown", "description": ""}
+_status = {"at": 0.0, "data": None, "ok_at": 0.0}       # at = último INTENTO (también el fallido: no se reintenta hasta pasar STATUS_TTL), ok_at = última consulta buena
+_refresh_lock = threading.Lock()
+_refreshing = False
+
+
+def _fetch_status() -> Optional[dict]:
+    """Una consulta a la página de estado de Wompi; None si falla o la respuesta no se entiende."""
+    try:
+        with urllib.request.urlopen(urllib.request.Request(STATUS_URL, headers={"Accept": "application/json"}), timeout=STATUS_TIMEOUT) as res:
+            st = (json.loads(res.read().decode()) or {}).get("status") or {}
+    except (urllib.error.URLError, ValueError, TimeoutError, OSError):
+        return None
+    if st.get("indicator") in ("none", "minor", "major", "critical"):
+        return {"indicator": st["indicator"], "description": str(st.get("description") or "")[:120]}
+    return None
+
+
+def refresh_now() -> dict:
+    """Consulta AHORA (sincrónico: lo usa el hilo de refresco y las pruebas). Si falla, conserva el último resultado bueno hasta STATUS_MAX_STALE y después queda «unknown»."""
+    data, now = _fetch_status(), time.time()
+    if data is not None:
+        _status.update(at=now, ok_at=now, data=data)
+    else:
+        last = _status.get("data")
+        _status.update(at=now, data=last if last is not None and now - _status.get("ok_at", 0.0) < STATUS_MAX_STALE else _UNKNOWN)
+    return _status["data"]
+
+
+def _refresh_in_background() -> None:
+    """UN solo hilo de refresco a la vez por proceso (con la caché vencida, miles de peticiones no lanzan miles de consultas)."""
+    global _refreshing
+    with _refresh_lock:
+        if _refreshing:
+            return
+        _refreshing = True
+
+    def work() -> None:
+        global _refreshing
+        try:
+            refresh_now()
+        except Exception:  # noqa: BLE001 — informativo: nunca debe tumbar nada
+            pass
+        finally:
+            with _refresh_lock:
+                _refreshing = False
+
+    threading.Thread(target=work, name="wompi-status", daemon=True).start()
 
 
 def service_status() -> dict:
     """Estado público del servicio de Wompi (su página de estado): {"indicator": none|minor|major|critical|unknown, "description"}.
-    Caché de 60 s; si la página de estado no responde queda «unknown» (nunca se avisa de un problema que no consta)."""
-    now = time.time()
-    if _status["data"] is not None and now - _status["at"] < 60:
-        return _status["data"]
-    data = {"indicator": "unknown", "description": ""}
-    try:
-        with urllib.request.urlopen(urllib.request.Request(STATUS_URL, headers={"Accept": "application/json"}), timeout=4) as res:
-            st = (json.loads(res.read().decode()) or {}).get("status") or {}
-            if st.get("indicator") in ("none", "minor", "major", "critical"):
-                data = {"indicator": st["indicator"], "description": str(st.get("description") or "")[:120]}
-    except (urllib.error.URLError, ValueError, TimeoutError, OSError):
-        pass
-    _status.update(at=now, data=data)
-    return data
+    NUNCA espera a la red: devuelve lo último que se sabe (vigente 60 s; vencido hasta 15 min si las consultas fallan) y, si venció, lanza un refresco en segundo plano. Sin ningún dato
+    (arranque del proceso) devuelve «unknown»: nunca se avisa de un problema que no consta. Antes consultaba dentro de la petición (hasta ~8 s y una consulta por petición simultánea
+    con la caché vencida)."""
+    now, data = time.time(), _status["data"]
+    if data is not None and now - _status["at"] < STATUS_TTL:
+        return data
+    _refresh_in_background()
+    if data is not None and now - _status.get("ok_at", 0.0) < STATUS_MAX_STALE:
+        return data
+    return _UNKNOWN
 
 
 def service_problem() -> Optional[dict]:

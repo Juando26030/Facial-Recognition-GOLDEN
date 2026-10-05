@@ -577,7 +577,7 @@ def test_v2_refund_in_sandbox_can_be_partial_and_is_confirmed_with_verify(client
     factory.staff("admin", "adm1")
     form = _with_payment(client, ev)
     ref = _submit(client, ev, form, _values()).json()["payment"]["reference"]
-    client.post("/webhooks/wompi", json=_event_for("test", ref, 15000000, "APPROVED", txn="T1", method="NEQUI") | {"signature": {"properties": ["transaction.id", "transaction.status", "transaction.amount_in_cents"], "checksum": hashlib.sha256(f"T1APPROVED150000001700000000prod_events_x".encode()).hexdigest()}})
+    client.post("/webhooks/wompi", json=_event_for("test", ref, 15000000, "APPROVED", txn="T1", method="NEQUI") | {"signature": {"properties": ["transaction.id", "transaction.status", "transaction.amount_in_cents"], "checksum": hashlib.sha256("T1APPROVED150000001700000000prod_events_x".encode()).hexdigest()}})
     login(client, "adm1")
     pay = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments?include_tests=true").json()["rows"][0]
     assert pay["status"] == "approved" and pay["auto_refund"] is True and pay["auto_partial"] is True
@@ -638,9 +638,11 @@ def test_service_status_is_cached_and_never_invents_a_problem(monkeypatch):
 
     monkeypatch.setattr(wompi.urllib.request, "urlopen", fake)
     monkeypatch.setitem(wompi._status, "data", None)
+    assert wompi.refresh_now()["indicator"] == "minor"                      # la consulta real va en segundo plano (service_status no espera la red): aquí se fuerza
     assert wompi.service_status()["indicator"] == "minor" and wompi.service_problem()["description"] == "Degraded"
     wompi.service_status()
-    assert len(calls) == 1                                                  # segunda consulta: de caché
+    assert len(calls) == 1                                                  # lo siguiente, de caché
     monkeypatch.setitem(wompi._status, "data", None)
+    monkeypatch.setitem(wompi._status, "ok_at", 0.0)
     monkeypatch.setattr(wompi.urllib.request, "urlopen", lambda *a, **k: R(b"esto no es json"))
-    assert wompi.service_status()["indicator"] == "unknown" and wompi.service_problem() is None
+    assert wompi.refresh_now()["indicator"] == "unknown" and wompi.service_problem() is None
