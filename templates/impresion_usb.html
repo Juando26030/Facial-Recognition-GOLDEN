@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Impresora USB | Golden Logísticas</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <style>
+        .usb-wrap { max-width: 620px; margin: 1.5rem auto; padding: 0 1rem; }
+        .usb-card { background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.08); padding: 1.4rem 1.4rem 1.6rem; margin-bottom: 1rem; }
+        .usb-card h2 { margin: 0 0 .6rem; font-size: 1.1rem; }
+        .usb-row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+        .usb-row label { font-size: .88rem; }
+        .usb-row input[type=number] { width: 5.5rem; }
+        .usb-status { font-size: .9rem; padding: .5rem .7rem; border-radius: 10px; background: #f3f3f3; margin-top: .6rem; white-space: pre-wrap; }
+        .usb-status.ok { background: rgba(40,167,69,.14); } .usb-status.bad { background: rgba(192,57,43,.12); }
+        #previewBox { background: #eee; padding: .6rem; border-radius: 10px; overflow: auto; max-height: 340px; text-align: center; }
+        #preview { max-width: 100%; background: #fff; box-shadow: 0 0 0 1px #ccc; image-rendering: pixelated; }
+        .usb-help { font-size: .82rem; color: #555; line-height: 1.45; }
+        .usb-help li { margin: .25rem 0; }
+    </style>
+</head>
+<body>
+<div class="usb-wrap">
+    <h1 style="font-size:1.35rem;">Impresora de escarapelas por USB</h1>
+    <p class="usb-help">Imprime directo en la Brother QL-800 desde este celular o tableta (Chrome), por cable USB, sin diálogo de impresión. <b>Prueba inicial:</b> conecte, pruebe la conexión y
+        imprima la etiqueta de prueba; si sale al revés o invertida, marque «Espejo» o «Invertir» y vuelva a probar (se recuerda en este dispositivo).</p>
+
+    <div class="usb-card">
+        <h2>1. Conexión</h2>
+        <div class="usb-row">
+            <button id="btnConnect" class="btn">Conectar impresora</button>
+            <button id="btnStatus" class="btn" disabled>Probar conexión (sin imprimir)</button>
+        </div>
+        <div id="connStatus" class="usb-status">Sin conectar.</div>
+        <ul class="usb-help">
+            <li>Cable USB del celular a la impresora (con adaptador OTG si el celular lo pide) y la impresora <b>encendida</b>.</li>
+            <li>Si no aparece: apague el modo «Editor Lite» (mantenga el botón de la impresora hasta que se apague la luz verde) y cierre la app de Brother si está abierta.</li>
+            <li>Chrome pide permiso una sola vez; después reconoce la impresora solo.</li>
+        </ul>
+    </div>
+
+    <div class="usb-card">
+        <h2>2. Etiqueta de prueba</h2>
+        <div class="usb-row">
+            <label>Cinta: <b>continua 62 mm</b></label>
+            <label>Largo <input type="number" id="lenMm" min="20" max="300" value="60"> mm</label>
+        </div>
+        <div class="usb-row">
+            <label><input type="checkbox" id="optMirror"> Espejo</label>
+            <label><input type="checkbox" id="optInvert"> Invertir (blanco/negro)</label>
+            <label><input type="checkbox" id="optCut" checked> Cortar al final</label>
+        </div>
+        <div id="previewBox"><canvas id="preview"></canvas></div>
+        <div class="usb-row">
+            <button id="btnPrint" class="btn" disabled>Imprimir etiqueta de prueba</button>
+        </div>
+        <div id="printStatus" class="usb-status">La etiqueta de prueba es asimétrica a propósito: una barra negra a la izquierda, un texto y una flecha «→».</div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var DOTS = QLUsb.MEDIA[62].printable;
+
+  function setStatus(el, text, kind) { el.textContent = text; el.className = "usb-status" + (kind ? " " + kind : ""); }
+  function pref(key, def) { try { var v = localStorage.getItem("ql_" + key); return v === null ? def : v === "1"; } catch (e) { return def; } }
+  function savePref(key, val) { try { localStorage.setItem("ql_" + key, val ? "1" : "0"); } catch (e) { /* sin almacenamiento: se usa el valor de esta sesión */ } }
+
+  $("optMirror").checked = pref("mirror", false);
+  $("optInvert").checked = pref("invert", false);
+  $("optCut").checked = pref("cut", true);
+  ["Mirror", "Invert", "Cut"].forEach(function (name) {
+    $("opt" + name).addEventListener("change", function () { savePref(name.toLowerCase(), this.checked); });
+  });
+
+  function drawTest() {
+    var heightDots = QLUsb.mmToDots(Math.max(20, Math.min(300, parseInt($("lenMm").value, 10) || 60)));
+    var canvas = $("preview");
+    canvas.width = DOTS; canvas.height = heightDots;
+    var ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, DOTS, heightDots);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, 40, heightDots);                                         // barra negra a la izquierda: se ve de inmediato si sale en espejo
+    ctx.font = "bold 64px sans-serif"; ctx.textBaseline = "top";
+    ctx.fillText("PRUEBA QL-800", 70, 24);
+    ctx.font = "44px sans-serif";
+    ctx.fillText("Golden Logísticas", 70, 110);
+    ctx.fillText(new Date().toLocaleString("es-CO"), 70, 170);
+    ctx.font = "bold 90px sans-serif";
+    ctx.fillText("→  62 mm", 70, 240);
+    ctx.lineWidth = 4; ctx.strokeStyle = "#000"; ctx.strokeRect(46, 6, DOTS - 52, heightDots - 12);
+    return { canvas: canvas, ctx: ctx, height: heightDots };
+  }
+  drawTest();
+  $("lenMm").addEventListener("input", drawTest);
+
+  async function afterConnect(device) {
+    if (!device) return;
+    $("btnStatus").disabled = false; $("btnPrint").disabled = false;
+    setStatus($("connStatus"), "Conectada: " + (device.productName || "Brother") + ". Pulse «Probar conexión» para ver el estado de la cinta.", "ok");
+  }
+
+  $("btnConnect").addEventListener("click", async function () {
+    try { await afterConnect(await QLUsb.connect(true)); }
+    catch (e) { setStatus($("connStatus"), "No se pudo conectar: " + (e && e.message ? e.message : e), "bad"); }
+  });
+
+  $("btnStatus").addEventListener("click", async function () {
+    try {
+      var st = await QLUsb.readStatus();
+      if (!st) { setStatus($("connStatus"), "La impresora respondió, pero no con un estado entendible.", "bad"); return; }
+      setStatus($("connStatus"), "Cinta de " + st.mediaWidthMm + " mm. " + (st.ready ? "Lista para imprimir." : "Atención: " + st.errors.join(", ") + "."), st.ready ? "ok" : "bad");
+    } catch (e) { setStatus($("connStatus"), "Error al leer el estado: " + (e && e.message ? e.message : e), "bad"); }
+  });
+
+  $("btnPrint").addEventListener("click", async function () {
+    var t = drawTest();
+    try {
+      var rgba = t.ctx.getImageData(0, 0, DOTS, t.height).data;
+      var bitmap = QLUsb.bitmapFromRGBA(rgba, DOTS, t.height, 140, $("optInvert").checked);
+      var job = QLUsb.buildJob({ bitmap: bitmap, height: t.height, mediaWidthMm: 62, mirror: $("optMirror").checked, autoCut: $("optCut").checked });
+      setStatus($("printStatus"), "Enviando " + Math.round(job.length / 1024) + " KB a la impresora…");
+      await QLUsb.sendJob(job);
+      setStatus($("printStatus"), "Enviado. Si no salió nada, pruebe «Probar conexión» y revise la cinta y la cubierta.", "ok");
+    } catch (e) { setStatus($("printStatus"), "No se pudo imprimir: " + (e && e.message ? e.message : e), "bad"); }
+  });
+
+  if (!QLUsb.supported()) {
+    setStatus($("connStatus"), "Este navegador no permite USB. Use Chrome en Android o en un computador (página segura https).", "bad");
+    $("btnConnect").disabled = true;
+  } else {
+    QLUsb.connect(false).then(afterConnect).catch(function () { /* sin permiso previo: se espera al botón */ });
+  }
+})();
+</script>
+</body>
+</html>

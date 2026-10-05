@@ -369,6 +369,15 @@ def configuracion_page(request: Request):
     })
 
 
+@app.get("/impresion-usb")
+def impresion_usb_page(request: Request):
+    """Prueba y ajuste de la impresión directa de escarapelas en la Brother QL por USB (WebUSB desde Chrome de Android o de escritorio; ver static/js/ql-usb.js). Digitador o más."""
+    redirect = _require_page_role(request, "digitador")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="impresion_usb.html", context={})
+
+
 @app.get("/kiosk/sw.js", include_in_schema=False)
 def kiosk_service_worker():
     """Service worker del quiosco (static/js/kiosk-sw.js): solo guarda el caparazón de `/kiosk/<id>/registro` y `/static/*` para recargar la página sin red; nunca la API ni el roster. Va en
