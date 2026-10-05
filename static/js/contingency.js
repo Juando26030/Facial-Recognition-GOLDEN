@@ -324,7 +324,9 @@
       let ok = false;
       const ctl = typeof AbortController === 'function' ? new AbortController() : null;
       const timer = ctl ? d.setTimeout(() => ctl.abort(), HEALTH_TIMEOUT_MS) : null;
+      const h0 = d.now();
       try { const r = await d.fetch('/health', { cache: 'no-store', signal: ctl ? ctl.signal : undefined }); ok = !!(r && r.ok); } catch (e) { ok = false; } finally { if (timer) d.clearTimeout(timer); }
+      T('contingency:health', { ok, ms: d.now() - h0 });
       c.machine.health(ok);
       if (c.machine.readyToProbe() && d.now() >= c.probeAfter) {          // 2 chequeos buenos: falta UNA petición autenticada buena
         const r = await c.probe();
@@ -333,15 +335,19 @@
       } else if (ok && c.machine.state !== 'contingency' && c.queueSize > 0) c.syncQueue();
     };
     c.checkHealth = checkHealth;
+    const T = (n, x) => { if (root.GoldenTrace) root.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
     c.start = async (opts) => {
+      T('contingency:start');
       if (opts && opts.eventId) d.eventId = opts.eventId;
       c.machine = createMachine((s, from) => {
+        T('contingency:state:' + s, { from });
         render(); c.listeners.forEach((f) => f(s));
         if (s === 'normal' && from === 'contingency') { c.refreshRoster(); c.syncQueue(true); }       // volvió la red: copia al día y cola al servidor
       });
       if (!c.isSupported()) { c.lastError = 'unsupported'; render(); c.markReady(); return c; }
       try { c.db = await openStore(d.idb, `golden-contingency-${d.eventId}`); } catch (e) { c.lastError = 'unsupported'; render(); c.markReady(); return c; }
       c.supported = true;
+      T('contingency:idb-open');
       if (d.document && d.document.head && d.document.createElement) {
         const st = d.document.createElement('style');
         st.textContent = '.btn-offline-accredit{display:none !important} body.golden-contingency .btn-offline-accredit{display:inline-block !important}';
@@ -353,6 +359,7 @@
       const meta = await c.rosterMeta();
       if (meta && meta.expires_at && d.now() >= meta.expires_at) await c.wipeRoster();           // vencido mientras el navegador estaba cerrado
       c.markReady();
+      T('contingency:ready');
       c.refreshRoster().then((r) => { if (r === 'ok') { c.machine.authGood(); c.syncQueue(); } });
       c.timers.push(d.setInterval(checkHealth, HEALTH_MS));
       c.timers.push(d.setInterval(async () => {

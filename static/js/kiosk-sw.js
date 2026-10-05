@@ -48,10 +48,15 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+/* Registro de diagnóstico (últimas 150 peticiones que atendió): {path, via, ms}. `via`: red | timeout→copia | error→copia | 5xx→copia | sin copia. La página lo pide con
+   postMessage({type:'trace'}) (static/js/boot-trace.js) para ver de dónde sale cada espera al recargar sin red. Solo en memoria del worker; no guarda nada en disco. */
+const TRACE = [];
+function trace(req, via, since) { TRACE.push({ path: new URL(req.url).pathname, via, ms: Math.round(Date.now() - since) }); if (TRACE.length > 150) TRACE.shift(); }
 /* Primera visita: la página ya cargó ANTES de que el worker tomara el control, así que nada pasó por él. La página le manda su propia URL y la de sus archivos estáticos para guardarlos
    ya (solo `/kiosk/<id>/registro` y `/static/*`; cualquier otra cosa se ignora). */
 self.addEventListener('message', (event) => {
   const data = event.data || {};
+  if (data.type === 'trace' && event.ports && event.ports[0]) { event.ports[0].postMessage({ log: TRACE.slice() }); return; }       // diagnóstico (boot-trace.js)
   if (data.type !== 'precache' || !Array.isArray(data.urls)) return;
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -90,18 +95,22 @@ async function networkFirst(event, req, isPage) {
   // Por texto y sin Vary (no depende de las cabeceras de la petición). Un estático: primero EXACTO (con su ?v=) y, si no está, cualquier versión del mismo archivo.
   const cached = async () => (await cache.match(key, { ignoreVary: true })) || (isPage ? undefined : cache.match(key, { ignoreSearch: true, ignoreVary: true }));
   let res;
+  const since = Date.now();
   try {
     res = await withTimeout(req);
   } catch (e) {
+    const timedOut = Date.now() - since >= NETWORK_TIMEOUT_MS - 50;
     const hit = await cached();
+    trace(req, (timedOut ? 'timeout→' : 'error→') + (hit ? 'copia' : 'sin copia'), since);
     if (hit) return hit;
     if (isPage) return new Response('Sin conexión y sin una copia guardada de esta página. Abre el registro una vez con conexión.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     throw e;
   }
   if (res && res.status === 200 && res.type === 'basic' && !res.redirected) {
     event.waitUntil(keep(cache, key, res));            // guardar no retrasa ni puede romper la respuesta en vivo
+    trace(req, 'red', since);
     return res;
   }
-  if (res && res.status >= 500) { const hit = await cached(); if (hit) return hit; }        // un 502/503 de la infraestructura al recargar: mejor la última página buena
+  if (res && res.status >= 500) { const hit = await cached(); trace(req, '5xx→' + (hit ? 'copia' : 'sin copia'), since); if (hit) return hit; }        // un 502/503 de la infraestructura al recargar: mejor la última página buena
   return res;
 }

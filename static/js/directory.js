@@ -689,12 +689,15 @@
       return tr;
     }
 
+    const T = (n, x) => { if (window.GoldenTrace) window.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
     async function fullLoad() {
+      T('directory:fullLoad:begin');
       const tbody = document.getElementById(opts.tbodyId);
       const GC0 = GCref();
       if (GC0) { await GC0.ready; if (GC0.active() && await loadFromLocalCopy()) return; }          // ya en contingencia: ni se intenta la red
       if (localMode) { setLocalMode(false); allUsers = []; }
       if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
+      T('directory:loading-row-shown');
       try {
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
         const head = await fetch(withEvent('/api/users/changes?cursor=' + NOW_CURSOR));
@@ -713,7 +716,8 @@
         allUsers = [...byId.values()];
         cursor = nextCursor;
       } catch (err) {
-        if (await loadFromLocalCopy()) return;           // sin red: la lista local en vez de «Error conectando al servidor»
+        T('directory:fetch-failed', { error: String((err && err.name) || err) });
+        if (await loadFromLocalCopy()) { T('directory:local-list-shown'); return; }           // sin red: la lista local en vez de «Error conectando al servidor»
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
         return;
       }
@@ -738,6 +742,7 @@
     }
 
     function reload() {
+      if (loading) T('directory:reload-joined-in-flight');          // ya hay una carga en curso: esta llamada espera a ESA (si está colgada en una petición, espera con ella)
       if (!loading) loading = fullLoad().finally(() => { loading = null; });
       return loading;
     }
