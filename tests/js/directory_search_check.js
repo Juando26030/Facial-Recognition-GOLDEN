@@ -51,11 +51,22 @@ const type = (el, text) => { el.value = text; el.listeners.input(); };
   const d = window.GoldenDirectory.mountSearch({ tbodyId: 'tbody', searchIds: { cedula: 'cedula', nombre: 'nombre', entidad: 'entidad' } });
   await d.reload();
 
-  // Tope: 200 filas + la fila «Mostrando 200 de 10000» con su botón.
+  // Paginación: sin parámetro del evento son 200 filas por página + el pie «Mostrando 1-200 de 10000 · Página 1 de 50» con Anterior / Siguiente / Ir a la página (se llega a CUALQUIER fila).
+  const pager = () => more().children[0].children;                 // [Anterior, Siguiente, campo «Ir a la página», Ir]
   assert.strictEqual(dataRows().length, 200);
-  assert.ok(more().children[0].innerText.includes('Mostrando 200 de 10000'));
-  more().children[0].children[0].listeners.click();
-  assert.strictEqual(dataRows().length, 400);
+  assert.ok(more().children[0].innerText.includes('Mostrando 1-200 de 10000 · Página 1 de 50'));
+  assert.strictEqual(pager()[0].disabled, true, 'en la primera página no hay «Anterior»');
+  pager()[1].listeners.click();
+  assert.strictEqual(dataRows().length, 200); assert.ok(more().children[0].innerText.includes('Mostrando 201-400 de 10000 · Página 2 de 50'));
+  pager()[2].value = '50'; pager()[3].listeners.click();           // ir a la última página
+  assert.ok(more().children[0].innerText.includes('Mostrando 9801-10000 de 10000 · Página 50 de 50')); assert.strictEqual(pager()[1].disabled, true, 'en la última no hay «Siguiente»');
+  pager()[2].value = '999'; pager()[3].listeners.click(); assert.ok(more().children[0].innerText.includes('Página 50 de 50'), 'una página fuera de rango se acota');
+  // Parámetro del evento (window.DIRECTORY_PAGE_SIZE): 50 filas por página; un valor no permitido vuelve a 200
+  window.DIRECTORY_PAGE_SIZE = 50; type(els.nombre, 'x'); type(els.nombre, ''); advance(250);
+  assert.strictEqual(dataRows().length, 50); assert.ok(more().children[0].innerText.includes('Mostrando 1-50 de 10000 · Página 1 de 200'), 'el filtro vuelve a la página 1');
+  window.DIRECTORY_PAGE_SIZE = 37; type(els.nombre, 'x'); type(els.nombre, ''); advance(250); assert.strictEqual(dataRows().length, 200, 'un tamaño no permitido usa 200');
+  window.DIRECTORY_PAGE_SIZE = 10; type(els.nombre, 'x'); type(els.nombre, ''); advance(250); assert.strictEqual(dataRows().length, 10);
+  window.DIRECTORY_PAGE_SIZE = undefined; type(els.nombre, 'x'); type(els.nombre, ''); advance(250); assert.strictEqual(dataRows().length, 200);
 
   // Espera: nada se filtra mientras se escribe; sí 250 ms después de la ÚLTIMA tecla.
   const before = body();
@@ -73,11 +84,11 @@ const type = (el, text) => { el.value = text; el.listeners.input(); };
   // Filas reutilizadas: volver a una búsqueda ya vista no construye filas nuevas.
   type(els.nombre, ''); type(els.entidad, 'compania'); advance(250);
   assert.strictEqual(dataRows().length, 200);
-  assert.ok(more().children[0].innerText.includes('de 5000'));
+  assert.ok(more().children[0].innerText.includes('de 5000') && more().children[0].innerText.includes('Página 1 de 25'));
   const createdBefore = created;
   type(els.entidad, 'otra'); advance(250);
   type(els.entidad, 'compania'); advance(250);
-  assert.ok(created - createdBefore <= 402, `se construyeron ${created - createdBefore} filas: deberían reutilizarse`);   // «otra» (200 nuevas) + 2 filas de «Mostrar más»
+  assert.ok(created - createdBefore <= 402, `se construyeron ${created - createdBefore} filas: deberían reutilizarse`);   // «otra» (200 nuevas) + el pie de paginación
 
   // Costo por tecla con 10.000 personas: escribir no filtra nada (solo programa la espera), y filtrar+dibujar es barato.
   let t = process.hrtime.bigint();

@@ -70,6 +70,7 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
   assert.ok(!/Error conectando/.test(els.tbody._html) && !els.tbody.children.some((tr) => /Error conectando/.test(tr.innerHTML || '')), 'no dice «Error conectando al servidor»');
   assert.deepStrictEqual(names(), ['Ana Pérez', 'Luis Gómez', 'Eva Ríos']);
   const note = els.tbody.children.find((tr) => /directory-local-note/.test(tr.className)); assert.ok(note && /LISTA LOCAL/.test(note.children[0].innerText), 'avisa con claridad que es la lista local');
+  assert.ok(/LISTA LOCAL: 3 de \?/.test(note.children[0].innerText), 'sin total del servidor conocido: «3 de ?» (no se hace pasar por la lista completa): ' + note.children[0].innerText);
   assert.deepStrictEqual(rows().map((tr) => tr.children[4].innerText), ['VIP', '', 'Prensa, Staff'], 'categorías');
   assert.deepStrictEqual(rows().map((tr) => tr.children[5].innerText), ['No registrado', 'Registrado', 'No registrado'], 'estado');
   const counters = table.parentNode.children.filter((c) => /counter/.test(c.className)); assert.ok(/2 sin registrar/.test(counters[0].innerText) && /1 registrados de 3/.test(counters[1].innerText), 'contadores: ' + counters.map((c) => c.innerText));
@@ -100,5 +101,14 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
   assert.strictEqual(GC.state(), 'normal'); assert.ok(usersCalls > 0, 'recargó desde el servidor'); assert.deepStrictEqual(names(), ['Ana']);
   assert.strictEqual(els.entidad.disabled, false); assert.strictEqual(els.entidad.placeholder, 'Entidad');
   assert.ok(!els.tbody.children.some((tr) => /directory-local-note/.test(tr.className)));
+  // 6) CONTADOR «LISTA LOCAL: N de N» frente al total que el servidor informó la última vez (se guarda en la copia)
+  const noteText = () => (els.tbody.children.find((tr) => /directory-local-note/.test(tr.className)) || { children: [{ innerText: '' }] }).children[0].innerText;
+  netDown = true; healthOk = false; await GC.checkHealth(); await GC.checkHealth(); assert.strictEqual(GC.active(), true);
+  await d.reload(); await advance(10);
+  assert.ok(/LISTA LOCAL: 3 de 1 — NO COINCIDE/.test(noteText()) && /sobran 2/.test(noteText()), 'la lista en vivo había dicho 1 y la copia tiene 3: avisa que NO coincide: ' + noteText());
+  now += 61_000; await GC.noteServerTotal(3); await d.reload(); await advance(10);
+  assert.ok(/LISTA LOCAL: 3 de 3[^0-9]/.test(noteText()) && !/NO COINCIDE/.test(noteText()), 'coinciden: «3 de 3»: ' + noteText());
+  now += 61_000; await GC.noteServerTotal(5); await d.reload(); await advance(10);
+  assert.ok(/LISTA LOCAL: 3 de 5 — NO COINCIDE/.test(noteText()) && /faltan 2/.test(noteText()), 'al servidor le faltaban 2 a la copia: ' + noteText());
   console.log('directory.js: la tabla sale de la copia local sin red (nombre, categorías, estado, contadores, búsqueda por huella) OK');
 })().catch((e) => { console.error(e); process.exit(1); });

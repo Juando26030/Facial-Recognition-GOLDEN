@@ -194,6 +194,29 @@ def set_digital_badge_enabled(
     return {"digital_badge_enabled": event.digital_badge_enabled}
 
 
+DIRECTORY_PAGE_SIZES = (10, 20, 50, 100, 200)
+
+
+@router.put("/events/{event_id}/directory-page-size")
+def set_directory_page_size(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Filas por página de la tabla del directorio de ESTE evento (en vivo y lista local sin red): 10, 20, 50, 100 o 200. Más filas = más nodos en pantalla (en un celular o un iPad 200 filas pesan);
+    la búsqueda y los contadores siempre cubren a TODAS las personas, y la paginación llega a cualquier fila."""
+    event = get_event_for_staff(event_id, db, staff)
+    raw = data.get("value")
+    try:
+        value = 0 if isinstance(raw, bool) or (isinstance(raw, float) and not raw.is_integer()) else int(raw)         # 20.5 o true no son un tamaño
+    except (TypeError, ValueError):
+        value = 0
+    if value not in DIRECTORY_PAGE_SIZES:
+        raise HTTPException(status_code=400, detail=f"Filas por página: elige una de {', '.join(str(v) for v in DIRECTORY_PAGE_SIZES)}")
+    event.directory_page_size = value
+    db.commit()
+    return {"directory_page_size": event.directory_page_size}
+
+
 @router.put("/events/{event_id}/facial-enabled")
 def set_facial_enabled(
     event_id: int, data: dict, db: Session = Depends(get_db),

@@ -119,6 +119,12 @@
 
     /* --- roster local --- */
     c.rosterMeta = async () => (c.db ? c.db.get('meta', 'roster') : null);
+    /* Total de personas que el SERVIDOR informó la última vez que la lista en vivo se cargó en este dispositivo (`server_total` en `meta`): para el contador «LISTA LOCAL: N de N». */
+    c.noteServerTotal = async (n) => {
+      if (!c.supported || !c.db || !Number.isInteger(n)) return;
+      try { const cur = await c.db.get('meta', 'server_total'); if (cur && cur.n === n && d.now() - cur.at < 60000) return; await c.db.put('meta', { k: 'server_total', n, at: d.now() }); } catch (e) { /* sin total: se avisa */ }
+    };
+    c.serverTotal = async () => { try { return (c.supported && c.db && (await c.db.get('meta', 'server_total'))) || null; } catch (e) { return null; } };
     c.rosterUsable = async () => { const m = await c.rosterMeta(); return !!(m && m.expires_at && d.now() < m.expires_at); };
     c.wipeRoster = async () => { if (c.db) await c.db.clear(['roster', 'meta']); };           // al cerrar sesión, al finalizar el evento y al vencer
     c.wipeAll = async () => { if (c.db) { await c.db.clear(['roster', 'meta', 'queue']); await recount(); } };      // la lista de «revisar» se conserva hasta que el operador la vea

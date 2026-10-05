@@ -566,13 +566,14 @@
        3.000 personas, con el campo de texto congelado mientras tanto):
        - lo que se compara (cédula en minúsculas, palabras del nombre y de la entidad sin tildes) se calcula UNA vez por persona;
        - las filas ya construidas se reutilizan (una por persona; si el servidor manda una versión nueva, es otro objeto y se reconstruye);
-       - se dibujan como máximo RENDER_LIMIT filas, con «Mostrar más» para el resto;
+       - se dibuja UNA página de `pageSize()` filas (parámetro del evento: 10, 20, 50, 100 o 200), con «Anterior / Siguiente» e «Ir a la página» para llegar a cualquier fila;
        - al escribir se espera SEARCH_DELAY_MS después de la última tecla antes de filtrar (la letra aparece al instante). */
-    const RENDER_LIMIT = 200;
+    const PAGE_SIZES = [10, 20, 50, 100, 200];
+    const pageSize = () => { const v = Number(opts.pageSize || window.DIRECTORY_PAGE_SIZE); return PAGE_SIZES.includes(v) ? v : 200; };        // sin parámetro (páginas viejas): 200, como antes
     const SEARCH_DELAY_MS = 250;
     const searchKeys = new WeakMap();
     const rowCache = new WeakMap();
-    let shownLimit = RENDER_LIMIT;
+    let pageIdx = 0;
     let lastFiltered = [];
     let searchTimer = null;
 
@@ -600,25 +601,36 @@
         if (localMode) tbody.insertBefore(localNoteRow(), tbody.children[0] || null);
         return;
       }
-      const rows = lastFiltered.slice(0, shownLimit).map(rowOf);
+      const size = pageSize(), total = lastFiltered.length, pages = Math.max(1, Math.ceil(total / size));
+      if (pageIdx > pages - 1) pageIdx = pages - 1;                    // un filtro o un refresco dejó la página fuera de rango
+      const rows = lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).map(rowOf);
       if (localMode) rows.unshift(localNoteRow());
-      if (lastFiltered.length > shownLimit) {
-        const more = document.createElement('tr');
-        more.className = 'directory-more';
-        const td = document.createElement('td');
-        td.colSpan = 6;
-        td.style.cssText = 'text-align:center; padding:0.8rem; color:#555;';
-        td.innerText = `Mostrando ${shownLimit} de ${lastFiltered.length}. Escribe en el buscador para afinar, o `;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'golden-btn btn-table-action';
-        btn.innerText = `Mostrar ${Math.min(RENDER_LIMIT, lastFiltered.length - shownLimit)} más`;
-        btn.addEventListener('click', () => { shownLimit += RENDER_LIMIT; drawRows(); });
-        td.appendChild(btn);
-        more.appendChild(td);
-        rows.push(more);
-      }
+      if (total > size) rows.push(pagerRow(total, size, pages));
       tbody.replaceChildren(...rows);
+    }
+
+    function goToPage(i, pages) { pageIdx = Math.max(0, Math.min(i, pages - 1)); drawRows(); }
+    function pagerRow(total, size, pages) {
+      const tr = document.createElement('tr');
+      tr.className = 'directory-more';
+      const td = document.createElement('td');
+      td.colSpan = 6;
+      td.style.cssText = 'text-align:center; padding:0.8rem; color:#555;';
+      td.innerText = `Mostrando ${pageIdx * size + 1}-${Math.min(total, (pageIdx + 1) * size)} de ${total} · Página ${pageIdx + 1} de ${pages}. `;
+      const btn = (label, onClick, disabled) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'golden-btn btn-table-action'; b.innerText = label; b.disabled = !!disabled;
+        b.addEventListener('click', onClick); td.appendChild(b); return b;
+      };
+      btn('‹ Anterior', () => goToPage(pageIdx - 1, pages), pageIdx === 0);
+      btn('Siguiente ›', () => goToPage(pageIdx + 1, pages), pageIdx >= pages - 1);
+      const input = document.createElement('input');
+      input.type = 'number'; input.min = '1'; input.max = String(pages); input.placeholder = 'Ir a la página'; input.setAttribute('aria-label', 'Ir a la página');
+      input.style.cssText = 'width:7.5rem; margin:0 6px; padding:5px 8px; border:1px solid #ccc; border-radius:8px;';
+      td.appendChild(input);
+      btn('Ir', () => { const n = parseInt(input.value, 10); if (n >= 1) goToPage(n - 1, pages); }, false);
+      tr.appendChild(td);
+      return tr;
     }
 
     function applyFilters() {
@@ -646,7 +658,7 @@
 
     function onSearchInput() {
       clearTimeout(searchTimer);
-      shownLimit = RENDER_LIMIT;
+      pageIdx = 0;
       searchTimer = setTimeout(applyFilters, SEARCH_DELAY_MS);
     }
 
@@ -675,16 +687,33 @@
       await GC.ready;
       if (!GC.supported || !(await GC.rosterUsable())) return false;
       const people = await GC.localPeople();
+      const st = GC.serverTotal ? await GC.serverTotal() : null, meta = GC.rosterMeta ? await GC.rosterMeta() : null;
+      localStats = { n: people.length, total: st ? st.n : null, at: st ? st.at : null, generated: meta && meta.generated_at ? Date.parse(meta.generated_at) : null };
       setLocalMode(true);
       allUsers = people.map((p) => ({ id: '', first_name: p.n, last_name: '', entity: '', opt_1: (p.c || []).join(', '), status: p.s, categories: p.c || [], __h: p.h, __local: true }));
       applyFilters();
       return true;
     }
+    /* «LISTA LOCAL: N de N»: N = personas de la copia local; el segundo número es el total que el servidor informó la última vez que la lista en vivo se cargó en este dispositivo (se guarda en la copia).
+       Si no coinciden, o el servidor nunca informó, se avisa con claridad (nunca se muestra una lista recortada o vieja como si fuera la completa). */
+    let localStats = null;
+    const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    function localCounterText() {
+      const s = localStats;
+      if (!s) return 'LISTA LOCAL';
+      const ago = s.generated ? ` · copia de hace ${Math.max(0, Math.round((Date.now() - s.generated) / 60000))} min` : '';
+      if (s.total == null) return `LISTA LOCAL: ${s.n} de ? — el servidor aún no informó su total en este dispositivo${ago}`;
+      if (s.total === s.n) return `LISTA LOCAL: ${s.n} de ${s.total}${ago}`;
+      const diff = s.total > s.n ? `faltan ${s.total - s.n}` : `sobran ${s.n - s.total}`;
+      return `LISTA LOCAL: ${s.n} de ${s.total} — NO COINCIDE (el servidor tenía ${s.total} a las ${hhmm(s.at)}; ${diff} en esta copia). Actualiza con conexión antes de confiar en ella${ago}`;
+    }
     function localNoteRow() {
       const tr = document.createElement('tr'); tr.className = 'directory-local-note';
       const td = document.createElement('td'); td.colSpan = 6;
-      td.style.cssText = 'text-align:center; padding:0.6rem; background:#fff8e1; color:#7a5b00; font-weight:600;';
-      td.innerText = 'Sin conexión: se muestra la LISTA LOCAL (nombre, categorías y estado). La cédula, la entidad y demás datos no están en esta copia: busca por nombre o escribe la cédula exacta.';
+      const s = localStats, bad = !s || s.total == null || s.total !== s.n;
+      const colors = !s || s.total == null ? ['#fff8e1', '#7a5b00'] : (bad ? ['#ffebee', '#b71c1c'] : ['#e8f5e9', '#1b5e20']);
+      td.style.cssText = `text-align:center; padding:0.6rem; background:${colors[0]}; color:${colors[1]}; font-weight:600;`;
+      td.innerText = `${localCounterText()}. Sin conexión: se muestra la copia local (nombre, categorías y estado). La cédula, la entidad y demás datos no están en esta copia: busca por nombre o escribe la cédula exacta.`;
       tr.appendChild(td);
       return tr;
     }
@@ -715,6 +744,7 @@
         }
         allUsers = [...byId.values()];
         cursor = nextCursor;
+        { const GCt = GCref(); if (GCt && GCt.noteServerTotal) GCt.noteServerTotal(allUsers.length); }          // total del servidor: lo usa el contador «LISTA LOCAL: N de N»
       } catch (err) {
         T('directory:fetch-failed', { error: String((err && err.name) || err) });
         if (await loadFromLocalCopy()) { T('directory:local-list-shown'); return; }           // sin red: la lista local en vez de «Error conectando al servidor»
@@ -731,6 +761,7 @@
         if (!res.ok) return;
         const delta = await res.json();
         cursor = delta.cursor;
+        { const GCt = GCref(); if (GCt && GCt.noteServerTotal && Number.isInteger(delta.total)) GCt.noteServerTotal(delta.total); }
         if (delta.users.length) {
           const byId = new Map(allUsers.map(u => [u.id, u]));
           delta.users.forEach(u => byId.set(u.id, u));
@@ -972,7 +1003,7 @@
         if (nombreInput) nombreInput.value = '';
         if (entidadInput) entidadInput.value = '';
         onlyNotRegistered = false;
-        shownLimit = RENDER_LIMIT;
+        pageIdx = 0;
         if (counterBtn) { counterBtn.style.background = '#fbe9ea'; counterBtn.style.color = '#a12631'; }
         applyFilters();
       },
