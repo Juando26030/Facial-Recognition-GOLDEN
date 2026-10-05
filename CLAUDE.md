@@ -55,7 +55,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
 
 ## Reglas técnicas (romperlas ya causó caídas o bugs reales; detalle en docs/historial.md)
 - **Endpoints `def`, no `async def`** (todo el acceso a base es síncrono). Excepción: `submit` de formularios y `webhook` de Wompi, que leen
-  el cuerpo y usan `run_in_threadpool`. Los `UploadFile` se leen con `file.file.read()`.
+  el cuerpo y usan `run_in_threadpool`, y `page`/`state`/`quote` del formulario público (sirven una caché en el bucle de eventos, sin hilo ni base). Los `UploadFile` se leen con `file.file.read()`.
 - **Configuración solo por variables de entorno** (`.env.example`, `.env.staging.example`, `deploy/gcp/env/common.yaml`). Nada de valores
   de producción en el código.
 - **Base de datos compatible con el pooler de Neon (modo transacción):** nada de `SET` de sesión, tablas temporales, `LISTEN/NOTIFY` ni
