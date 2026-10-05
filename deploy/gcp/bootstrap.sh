@@ -23,8 +23,8 @@
 #   8. Cloud Run: 3 servicios (web, publico, biometria) y 3 Jobs (migraciones, carga masiva, operaciones), creados con una
 #      imagen de relleno; el primer despliegue real lo hace GitHub Actions. Escalan a cero, máx. 10 instancias cada uno.
 #      Cobro por uso (ver doc 13 §6) ................................................................................... ~5-19
-#   9. Cloud Scheduler: UNA tarea (golden-ops-hourly, cada hora al minuto 05). 3 tareas gratis por cuenta; producción la
-#      activa, staging no (se corre a mano) ............................................................................. 0
+#   9. Cloud Scheduler: UNA tarea (golden-ops-hourly, cada hora al minuto 05), creada por deploy/gcp/scheduler.sh; nace EN PAUSA
+#      en los dos entornos y se reanuda a mano (`scheduler.sh <entorno> ensure --resume`). 3 tareas gratis por cuenta ........... 0
 #  10. Monitoreo: canal de correo, chequeo de disponibilidad a /health cada minuto (NO toca la base: Neon puede apagarse),
 #      alertas de caída, de Jobs fallidos y de errores 5xx. Chequeos: 1 millón/mes gratis; alertas sin costo hasta 2027 ... 0
 #  11. Presupuesto con avisos al 50, 90 y 100 % (solo con production; en la moneda de la cuenta de facturación) ........... 0
@@ -130,7 +130,11 @@ put_secret() {   # nombre-corto  ayuda  obligatorio(0/1)  [generador]
   ok "$s guardado"
 }
 put_secret direct-database-url "cadena DIRECTA de Neon (rama ${GOLDEN_ENV}, rol DUEÑO, host SIN -pooler)" 1
-if [ "$GOLDEN_ENV" = production ]; then
+if [ "$GOLDEN_ENV" = production ] && [ "${FRESH_START:-0}" = 1 ]; then
+  # Producción SIN datos de la VM (decidido 2026-10-05: la VM no tiene datos reales): llaves NUEVAS, generadas aquí. Guarda FACE_ENCRYPTION_KEY a salvo: perderla = perder los rostros que se registren.
+  put_secret secret-key "Enter = generar una nueva" 1 gen_hex
+  put_secret face-encryption-key "Enter = generar una NUEVA (cópiala a un lugar seguro: perderla = perder los rostros)" 1 gen_fernet
+elif [ "$GOLDEN_ENV" = production ]; then
   put_secret secret-key "SECRET_KEY actual de la VM (misma, para no invalidar sesiones ni enlaces ya enviados)" 1
   put_secret face-encryption-key "FACE_ENCRYPTION_KEY actual de la VM (SIN ella no se pueden leer los rostros migrados)" 1
 else
@@ -236,19 +240,16 @@ ok "$SA_DEPLOYER: run.developer sobre los 3 servicios y 3 Jobs de $GOLDEN_ENV (n
 
 # -------------------------------------------------------------------------------------------------------------------------- 9
 step "9. Cloud Scheduler ($SCHEDULER_OPS)"
-if [ "$GOLDEN_ENV" = production ] || [ "${SCHEDULE_STAGING:-0}" = 1 ]; then
-  if ! exists gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION"; then
-    gcloud scheduler jobs create http "$SCHEDULER_OPS" --location "$REGION" --schedule "5 * * * *" --time-zone "America/Bogota" \
-      --uri "https://run.googleapis.com/v2/$(run_path jobs "$JOB_OPS"):run" --http-method POST \
-      --oauth-service-account-email "$(sa_email "$SA_INVOKER")" --description "Respaldos, revisión, purga, cola y precalentamiento"
-    # Se crea EN PAUSA: hasta el día del cambio el Job tiene la imagen de relleno (fallaría cada hora y llenaría el correo de alertas)
-    # y no debe respaldar una base que todavía no es la real. Se reanuda en el runbook del cambio:
-    #   gcloud scheduler jobs resume golden-ops-hourly --location <región>
-    gcloud scheduler jobs pause "$SCHEDULER_OPS" --location "$REGION" >/dev/null
-  fi
+# La tarea la crea/corrige deploy/gcp/scheduler.sh (idempotente; el mismo script la comprueba en move_region.sh verify y en el runbook de corte). Staging TAMBIÉN se programa por defecto
+# (SCHEDULE_STAGING=0 para no hacerlo): sin ella no hay respaldos horarios y `check-backups` avisa con razón (pasó tras mover staging de región, docs/15 D2.5f).
+if [ "$GOLDEN_ENV" = production ] || [ "${SCHEDULE_STAGING:-1}" = 1 ]; then
+  # Se crea EN PAUSA: hasta el día del cambio (producción) o hasta el primer despliegue real (staging) el Job tiene la imagen de relleno y fallaría cada hora llenando el correo de alertas.
+  # Se reanuda con:  bash deploy/gcp/scheduler.sh <entorno> ensure --resume
+  bash deploy/gcp/scheduler.sh "$GOLDEN_ENV" ensure
+  bash deploy/gcp/scheduler.sh "$GOLDEN_ENV" check --paused-ok >/dev/null || true       # solo informa aquí: sin respaldos todavía es lo esperado; el check estricto va en move_region.sh verify y en el runbook
   ok "cada hora al minuto 05 (Bogotá); estado: $(gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION" --format 'value(state)')"
 else
-  ok "staging no se programa (SCHEDULE_STAGING=1 para hacerlo); a mano: gcloud run jobs execute $JOB_OPS --region $REGION"
+  ok "staging no se programa (SCHEDULE_STAGING=0); a mano: gcloud run jobs execute $JOB_OPS --region $REGION"
 fi
 
 # -------------------------------------------------------------------------------------------------------------------------- 10

@@ -37,6 +37,7 @@ case "$ACTION" in
     say "Región VIEJA ($OLD_REGION): lo que hay (esto es lo que genera costo o estorba)"
     present "$OLD_REGION"
     echo "cola de Cloud Tasks ($QUEUE): tareas pendientes = $(gcloud tasks list --queue "$QUEUE" --location "$OLD_REGION" --format 'value(name)' 2>/dev/null | count)"
+    echo "tarea de Scheduler en la región NUEVA ($SCHEDULER_OPS): $(gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION" --format 'value(state)' 2>/dev/null || echo "NO EXISTE: bash deploy/gcp/scheduler.sh $GOLDEN_ENV ensure --resume")"
     echo "tarea de Scheduler ($SCHEDULER_OPS): $(gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$OLD_REGION" --format 'value(state)' 2>/dev/null || echo 'no existe')"
     echo "repositorio de imágenes ($AR_REPO): $(gcloud artifacts repositories describe "$AR_REPO" --location "$OLD_REGION" --format 'value(sizeBytes)' 2>/dev/null || echo 'no existe') bytes"
     [ -z "$OLD_APP_BUCKET" ] || echo "bucket viejo gs://$OLD_APP_BUCKET: $(gcloud storage buckets describe "gs://$OLD_APP_BUCKET" --format 'value(location)' 2>/dev/null || echo 'no existe'), $(gcloud storage du -s "gs://$OLD_APP_BUCKET" 2>/dev/null | awk '{print $1}' || true) bytes"
@@ -82,7 +83,10 @@ p = json.load(sys.stdin); me = "serviceAccount:" + sys.argv[1]
 sys.exit(0 if any(b.get("role") == "roles/iam.serviceAccountTokenCreator" and me in b.get("members", []) for b in p.get("bindings", [])) else 1)' "$(sa_email "$SA_APP")"; then
       echo "  OK    ${SA_APP} puede firmar URLs de subida (serviceAccountTokenCreator sobre sí misma)"
     else echo "  FALTA ${SA_APP} sin serviceAccountTokenCreator sobre sí misma: las subidas directas fallarían"; fail=1; fi
-    [ "$GOLDEN_ENV" = production ] && chk "tarea $SCHEDULER_OPS" gcloud scheduler jobs describe "$SCHEDULER_OPS" --location "$REGION"
+    # Tarea de Cloud Scheduler en la región NUEVA (nombre, región, horario, zona, destino, cuenta, estado) y respaldo reciente posterior al despliegue. Cleanup borra la tarea de la región VIEJA: si esta
+    # comprobación falla, NO limpies; créala con `bash deploy/gcp/scheduler.sh <entorno> ensure --resume` (producción: sin --resume hasta el día del cambio; aquí se acepta en pausa).
+    echo "  Scheduler ($SCHEDULER_OPS en $REGION):"
+    if [ "$GOLDEN_ENV" = production ]; then bash deploy/gcp/scheduler.sh "$GOLDEN_ENV" check --paused-ok || fail=1; else bash deploy/gcp/scheduler.sh "$GOLDEN_ENV" check || fail=1; fi
     for path in health ready; do chk "GET $(run_url "$SVC_WEB")/$path" curl -fsS --max-time 60 "$(run_url "$SVC_WEB")/$path"; done
     [ -z "$FIREBASE_SITE" ] || chk "sitio público $PUBLIC_BASE_URL/health (las reglas de Firebase ya apuntan a $REGION)" curl -fsS --max-time 60 "$PUBLIC_BASE_URL/health"
     # El Job de operaciones debe estar en la región nueva Y el servicio web debe llamar a la cola nueva (variables calculadas por deploy.sh):
