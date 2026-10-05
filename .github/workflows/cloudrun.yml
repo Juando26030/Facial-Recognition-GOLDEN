@@ -1,12 +1,11 @@
-name: Cloud Run (staging; producción preparada y DESACTIVADA)
+name: Cloud Run (staging y producción)
 
-# Staging se despliega solo en cada push a la rama de la migración. Producción queda preparada pero APAGADA (`if: false`) hasta el día del
-# cambio (docs/15_MIGRACION.md): mientras tanto la VM sigue desplegándose con deploy.yml como siempre. Para activarla: cambiar
-# `if: false` por `if: github.ref == 'refs/heads/main'` y agregar `main` a los branches de abajo (y retirar el trigger de deploy.yml).
+# Staging se despliega solo en cada push a la rama de la migración (`migra/fase1-2`; el renombre a `staging` es un paso aparte posterior al corte). Producción se despliega en cada
+# push/merge a `main` y espera la aprobación del revisor del Environment `production` (docs/15 D2.5, docs/19). La VM ya NO se despliega desde `main` (deploy.yml quedó solo manual).
 
 on:
   push:
-    branches: [migra/fase1-2]
+    branches: [migra/fase1-2, main]
   workflow_dispatch:
     inputs:
       force:
@@ -35,7 +34,7 @@ jobs:
 
   production:
     needs: test
-    if: false        # DESACTIVADO hasta el día del cambio
+    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/cloudrun-deploy.yml
     with:
       env: production

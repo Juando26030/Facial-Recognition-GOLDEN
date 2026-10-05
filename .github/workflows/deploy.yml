@@ -13,9 +13,9 @@ name: Deploy to production
 #   en curso o una apertura en las próximas horas; se salta con «force» al lanzarlo a mano). Deja el commit y la fecha en `.build_info` para
 #   «Estado del sistema», y al reiniciar espera a `/readyz` (base + almacenamiento), no solo a la pantalla de login.
 
+# CORTE A CLOUD RUN (docs/15 D2.5, docs/19): este flujo es el de la VM (runner self-hosted) y YA NO se dispara con push a `main` (main = producción en Cloud Run: `cloudrun.yml`).
+# Queda solo manual, por si hubiera que volver a la VM. Sin este cambio, fusionar la migración a `main` bajaría ~82 commits al runner de la VM y migraría su base.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       force:
