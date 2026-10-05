@@ -7,7 +7,9 @@ router = APIRouter()
 
 def _page(request: Request, template: str, title: str):
     from app.main import templates  # import tardío: main.py importa este módulo
-    return templates.TemplateResponse(request=request, name=template, context={"page_title": title})
+    from app import legal
+    name = template.replace("legal_", "").replace(".html", "")
+    return templates.TemplateResponse(request=request, name=template, context={"page_title": title, "review": legal.review_status(name)})
 
 
 @router.get("/privacidad")
