@@ -56,7 +56,7 @@ function makeWorker(build) {
     await Promise.all(waits);
     return out;
   };
-  return { listeners, store, state, dispatch, setNet: (f) => { net = f; } };
+  return { listeners, store, state, dispatch, scope, setNet: (f) => { net = f; } };
 }
 const O = 'https://app.test';
 
@@ -106,10 +106,27 @@ const O = 'https://app.test';
   w.setNet(async () => R('x', 404)); await w.dispatch(`${O}/static/js/no-existe.js`);
   assert.ok(![...cache.keys()].some((k) => /\/9\/|\/10\/|no-existe/.test(k)), 'no guarda redirecciones ni errores');
 
-  // espera máxima de 4 s con la red colgada: usa lo guardado
-  w.setNet((req, init) => new Promise((_, rej) => { init.signal.addEventListener('abort', () => rej(new Error('abortado'))); }));
-  const t0 = Date.now(); r = await w.dispatch(`${O}/kiosk/7/registro`, { mode: 'navigate' }); const waited = Date.now() - t0;
-  assert.strictEqual(await r.res.text(), 'pagina nueva'); assert.ok(waited >= 3900 && waited < 4600, `esperó ${waited} ms (deben ser ~4 s)`);
+  // LOCAL-FIRST con la red COLGADA («lie-fi»): la página espera como mucho 2 s y usa lo guardado; tras ese primer fallo todo espera solo ~0,5 s (la red ya se vio muerta)
+  const hung = () => w.setNet((req, init) => new Promise((_, rej) => { init.signal.addEventListener('abort', () => rej(new Error('abortado'))); }));
+  hung();
+  let t0 = Date.now(); r = await w.dispatch(`${O}/kiosk/7/registro`, { mode: 'navigate' }); let waited = Date.now() - t0;
+  assert.strictEqual(await r.res.text(), 'pagina nueva'); assert.ok(waited >= 1900 && waited < 2600, `esperó ${waited} ms (deben ser ~2 s la primera vez)`);
+  t0 = Date.now(); r = await w.dispatch(`${O}/kiosk/7/registro`, { mode: 'navigate' }); waited = Date.now() - t0;
+  assert.strictEqual(await r.res.text(), 'pagina nueva'); assert.ok(waited >= 400 && waited < 900, `esperó ${waited} ms (modo rápido tras un fallo: ~0,5 s)`);
+  t0 = Date.now(); r = await w.dispatch(`${O}/static/js/otra-cosa.js?v=77`).catch((e) => ({ err: e })); waited = Date.now() - t0;
+  assert.ok(r.err && waited < 900, `un estático SIN copia también espera solo ~0,5 s en modo rápido (esperó ${waited} ms)`);
+  // los estáticos con su ?v= EXACTO guardado salen del caché al instante y SIN tocar la red (cache-first)
+  let calls = 0; w.setNet(async () => { calls++; return R('de la red'); });
+  t0 = Date.now(); r = await w.dispatch(`${O}/static/js/contingency.js?v=111`); waited = Date.now() - t0;
+  assert.strictEqual(await r.res.text(), 'js', 'la versión exacta guardada'); assert.strictEqual(calls, 0, 'cache-first: ni una petición a la red'); assert.ok(waited < 100);
+  // una versión que no está (otro ?v=) sí pide a la red; cuando la red responde se sale del modo rápido
+  r = await w.dispatch(`${O}/static/js/contingency.js?v=999`); assert.strictEqual(await r.res.text(), 'de la red'); assert.strictEqual(calls, 1);
+  // sin red según el navegador (modo avión: navigator.onLine === false): ni se intenta la red, sale lo guardado al instante
+  w.scope.navigator = { onLine: false }; calls = 0; t0 = Date.now();
+  r = await w.dispatch(`${O}/kiosk/7/registro`, { mode: 'navigate' }); waited = Date.now() - t0;
+  assert.strictEqual(await r.res.text(), 'pagina nueva', 'sirve la página guardada'); assert.strictEqual(calls, 0, 'en modo avión no hay petición'); assert.ok(waited < 100, `esperó ${waited} ms`);
+  w.scope.navigator = { onLine: true };
+  hung();
 
   // DETRÁS DE FIREBASE HOSTING: las respuestas llevan Vary: Accept-Encoding, cookie, need-authorization, x-fh-requested-host (y la app, Cookie/Accept-Encoding). Con la Cache API real
   // (semántica de Vary), guardar la respuesta tal cual y buscarla con la petición de navegación NO coincide; el worker guarda una copia sin Vary y busca por texto con ignoreVary.

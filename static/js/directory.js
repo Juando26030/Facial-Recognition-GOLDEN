@@ -690,34 +690,56 @@
     }
 
     const T = (n, x) => { if (window.GoldenTrace) window.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
+    /* LOCAL-FIRST (docs/15 D2.5h): la primera petición (la liviana de cambios) tiene tope de LIST_HEAD_TIMEOUT_MS: con la red muerta («lie-fi») no se espera lo que tarde el navegador en rendirse (20-60 s);
+       si vence o falla se pinta la lista local YA y se reintenta en segundo plano (con backoff). Si la contingencia se activa mientras hay una carga en curso, se aborta (antes `reload()` se unía a ella). */
+    const LIST_HEAD_TIMEOUT_MS = 2000, LIST_PAGE_TIMEOUT_MS = 20000, RETRY_MS = [3000, 6000, 12000, 30000];
+    let loadCtl = null, retryTimer = null, retryN = 0;
+    function fetchT(url, ms) {
+      const ctl = new AbortController(), parent = loadCtl;
+      const onAbort = () => ctl.abort();
+      if (parent) parent.signal.addEventListener('abort', onAbort);
+      const timer = setTimeout(() => ctl.abort(), ms);
+      return fetch(url, { signal: ctl.signal }).finally(() => { clearTimeout(timer); if (parent) parent.signal.removeEventListener('abort', onAbort); });
+    }
+    function scheduleRetry() {
+      if (retryTimer) return;
+      const ms = RETRY_MS[Math.min(retryN++, RETRY_MS.length - 1)];
+      retryTimer = setTimeout(() => { retryTimer = null; if (localMode && document.visibilityState === 'visible') reload(); }, ms);
+    }
     async function fullLoad() {
       T('directory:fullLoad:begin');
       const tbody = document.getElementById(opts.tbodyId);
       const GC0 = GCref();
       if (GC0) { await GC0.ready; if (GC0.active() && await loadFromLocalCopy()) return; }          // ya en contingencia: ni se intenta la red
-      if (localMode) { setLocalMode(false); allUsers = []; }
+      loadCtl = new AbortController();
       if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
       T('directory:loading-row-shown');
       try {
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
-        const head = await fetch(withEvent('/api/users/changes?cursor=' + NOW_CURSOR));
+        const head = await fetchT(withEvent('/api/users/changes?cursor=' + NOW_CURSOR), LIST_HEAD_TIMEOUT_MS);
         if (!head.ok) throw new Error(head.status);
         const nextCursor = (await head.json()).cursor;
         const byId = new Map();
         for (let offset = 0, total = 1; offset < total; offset += PAGE) {
-          const res = await fetch(withEvent(`/api/users?limit=${PAGE}&offset=${offset}`));
+          const res = await fetchT(withEvent(`/api/users?limit=${PAGE}&offset=${offset}`), LIST_PAGE_TIMEOUT_MS);
           if (!res.ok) throw new Error(res.status);
           total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
           const page = await res.json();
           page.forEach(u => byId.set(u.id, u));
           if (!page.length) break;
-          if (offset + PAGE < total) { allUsers = [...byId.values()]; applyFilters(); }   // se ve lo que ya llegó mientras bajan las demás
+          if (offset + PAGE < total && !localMode) { allUsers = [...byId.values()]; applyFilters(); }   // se ve lo que ya llegó mientras bajan las demás (si se muestra la lista local, se espera a tener todo)
         }
         allUsers = [...byId.values()];
         cursor = nextCursor;
+        if (localMode) setLocalMode(false);                  // llegó la lista del servidor: reemplaza a la local
+        retryN = 0;
       } catch (err) {
         T('directory:fetch-failed', { error: String((err && err.name) || err) });
-        if (await loadFromLocalCopy()) { T('directory:local-list-shown'); return; }           // sin red: la lista local en vez de «Error conectando al servidor»
+        if (await loadFromLocalCopy()) {                                  // sin red
+          T('directory:local-list-shown');
+          const GCr = GCref(); if (!(GCr && GCr.active())) scheduleRetry();           // todavía no es contingencia (red lenta o muerta): se reintenta en segundo plano
+          return;
+        }
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
         return;
       }
@@ -750,7 +772,10 @@
     {
       const GC = GCref();
       if (GC && GC.onSynced) GC.onSynced(() => { if (!localMode) reload(); });          // la cola ya está en el servidor: la lista y los contadores al día
-      if (GC && GC.onChange) GC.onChange((st) => { if (st === 'normal' && localMode) reload(); else if (st === 'contingency' && !allUsers.length) reload(); });      // vuelve la red: la lista del servidor
+      if (GC && GC.onChange) GC.onChange((st) => {
+        if (st === 'normal' && localMode) reload();
+        else if (st === 'contingency') { if (loadCtl) loadCtl.abort(); if (!allUsers.length || !localMode) reload(); }          // se aborta la carga colgada y se pinta la lista local
+      });      // vuelve la red: la lista del servidor
     }
 
     setInterval(() => {

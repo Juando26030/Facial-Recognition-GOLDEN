@@ -29,6 +29,7 @@ def test_on_the_page_keeps_the_contingency_client_and_registers_the_worker(clien
     html = _page(client, factory)
     assert "js/contingency.js" in html and "contingency-off.js" not in html
     assert "&& true && 'serviceWorker' in navigator" in html
+    assert "GoldenContingency.init({ eventId: window.EVENT_ID, fastStart: true })" in html          # arranque rápido (recarga sin red, docs/15 D2.5h)
 
 
 @pytest.mark.parametrize("value", ["0", "", "no", "false"])

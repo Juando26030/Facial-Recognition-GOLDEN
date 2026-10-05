@@ -14,7 +14,13 @@
 const BUILD = '__BUILD__';
 const CACHE_PREFIX = 'golden-kiosk-shell-';
 const CACHE = CACHE_PREFIX + BUILD;
-const NETWORK_TIMEOUT_MS = 4000;
+/* LOCAL-FIRST (docs/15 D2.5h): con la red muerta («lie-fi»: wifi conectado, sin internet) ninguna petición falla sola, se queda colgada; cada espera larga multiplicada por los ~12 archivos de la
+   página daba ~13 s en blanco. Ahora: (1) los estáticos con su `?v=` EXACTO guardado salen del caché al instante, sin red (la versión va en la URL: mismo `?v=` = mismo archivo); (2) la página
+   espera a la red como mucho NAV_TIMEOUT_MS; (3) tras CUALQUIER fallo de red, durante FAST_WINDOW_MS todo espera solo FAST_TIMEOUT_MS (la red ya se vio muerta: no se paga el tope completo en
+   cada recurso); (4) si el navegador dice que no hay red (`navigator.onLine === false`, modo avión) no se intenta la red. Solo los estáticos SIN copia exacta esperan STATIC_TIMEOUT_MS. */
+const NAV_TIMEOUT_MS = 2000, STATIC_TIMEOUT_MS = 4000, FAST_TIMEOUT_MS = 500, FAST_WINDOW_MS = 60000;
+let deadUntil = 0;                                     // hasta cuándo se considera muerta la red (se renueva con cada fallo y se borra con cada respuesta)
+const offlineNow = () => !!(self.navigator && self.navigator.onLine === false);
 const KIOSK_PAGE = /^\/kiosk\/\d+\/registro\/?$/;
 
 /* Clave de caché: la página sin `?…` y sin «/» final; los estáticos con su `?v=` (y, sin red, cualquier versión sirve). */
@@ -83,9 +89,9 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(networkFirst(event, req, isPage));
 });
 
-function withTimeout(req) {
+function withTimeout(req, ms) {
   const ctl = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = ctl ? setTimeout(() => ctl.abort(), NETWORK_TIMEOUT_MS) : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), ms) : null;
   return fetch(req, ctl ? { signal: ctl.signal } : undefined).finally(() => { if (timer) clearTimeout(timer); });
 }
 
@@ -94,12 +100,22 @@ async function networkFirst(event, req, isPage) {
   const key = keyOf(req.url, isPage);
   // Por texto y sin Vary (no depende de las cabeceras de la petición). Un estático: primero EXACTO (con su ?v=) y, si no está, cualquier versión del mismo archivo.
   const cached = async () => (await cache.match(key, { ignoreVary: true })) || (isPage ? undefined : cache.match(key, { ignoreSearch: true, ignoreVary: true }));
-  let res;
   const since = Date.now();
+  // Estático con su `?v=` guardado EXACTO: cache-first, sin red (el `?v=` identifica el archivo; un despliegue nuevo trae otras URLs)
+  if (!isPage && /[?&]v=/.test(req.url)) {
+    const exact = await cache.match(key, { ignoreVary: true });
+    if (exact) { trace(req, 'copia exacta', since); return exact; }
+  }
+  const dead = offlineNow() || Date.now() < deadUntil;
+  const ms = dead ? FAST_TIMEOUT_MS : (isPage ? NAV_TIMEOUT_MS : STATIC_TIMEOUT_MS);
+  let res;
   try {
-    res = await withTimeout(req);
+    if (offlineNow()) throw new TypeError('offline');
+    res = await withTimeout(req, ms);
+    deadUntil = 0;
   } catch (e) {
-    const timedOut = Date.now() - since >= NETWORK_TIMEOUT_MS - 50;
+    const timedOut = Date.now() - since >= ms - 50;
+    deadUntil = Date.now() + FAST_WINDOW_MS;
     const hit = await cached();
     trace(req, (timedOut ? 'timeout→' : 'error→') + (hit ? 'copia' : 'sin copia'), since);
     if (hit) return hit;

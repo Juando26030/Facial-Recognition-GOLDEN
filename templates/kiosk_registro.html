@@ -424,7 +424,7 @@
     }
 
     // Modo contingencia (Fase 3): copia local del roster + registro sin red; si el navegador no lo soporta, avisa y todo sigue como siempre.
-    if (canAccredit && window.GoldenContingency) GoldenContingency.init({ eventId: window.EVENT_ID });
+    if (canAccredit && window.GoldenContingency) GoldenContingency.init({ eventId: window.EVENT_ID, fastStart: true });
     // «Registrar nuevo» queda desactivado mientras no haya red (con aviso en su título); al volver la red recupera su estado.
     if (canAccredit && window.GoldenContingency && openRegisterModalBtn) {
         const notInProgress = openRegisterModalBtn.disabled, baseTitle = openRegisterModalBtn.title;

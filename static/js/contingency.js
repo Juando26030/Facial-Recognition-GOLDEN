@@ -13,6 +13,7 @@
 (function (root) {
   const HEALTH_MS = 5000, HEALTH_TIMEOUT_MS = 3000, REFRESH_MS = 4 * 60 * 1000, PROBE_BACKOFF_MS = 30000;
   const FAILS_TO_ENTER = 2, EXHAUSTED_TO_ENTER = 2, OKS_TO_LEAVE = 2;
+  const FAST_HEALTH_TIMEOUT_MS = 2000, REMEMBER_MS = 12 * 3600 * 1000;      // arranque rápido (opts.fastStart): sondas iniciales cortas y estado recordado tras recargar
   const SYNC_BATCH = 500, SYNC_BACKOFF_BASE_MS = 5000, SYNC_BACKOFF_MAX_MS = 5 * 60 * 1000, QUEUE_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
   const normalize = (v) => String(v == null ? '' : v).replace(/[\s.]/g, '');      // igual que roster_normalize (app/routers/api.py)
 
@@ -320,10 +321,10 @@
     };
 
     /* --- arranque --- */
-    const checkHealth = async () => {
+    const checkHealth = async (timeoutMs) => {
       let ok = false;
       const ctl = typeof AbortController === 'function' ? new AbortController() : null;
-      const timer = ctl ? d.setTimeout(() => ctl.abort(), HEALTH_TIMEOUT_MS) : null;
+      const timer = ctl ? d.setTimeout(() => ctl.abort(), timeoutMs || HEALTH_TIMEOUT_MS) : null;
       const h0 = d.now();
       try { const r = await d.fetch('/health', { cache: 'no-store', signal: ctl ? ctl.signal : undefined }); ok = !!(r && r.ok); } catch (e) { ok = false; } finally { if (timer) d.clearTimeout(timer); }
       T('contingency:health', { ok, ms: d.now() - h0 });
@@ -333,14 +334,19 @@
         if (r === 'ok') { c.sessionExpired = false; c.machine.authGood(); render(); }
         else { if (r === 'unauth') c.sessionExpired = true; c.probeAfter = d.now() + PROBE_BACKOFF_MS; render(); }
       } else if (ok && c.machine.state !== 'contingency' && c.queueSize > 0) c.syncQueue();
+      return ok;
     };
     c.checkHealth = checkHealth;
+    /* Sondas de arranque (opts.fastStart): hasta 2 seguidas, SIN esperar los 5 s entre sondas y con tope de 2 s. Con la red muerta se entra a contingencia a los ≤ 4 s del arranque (y a ≤ 2 s del primer
+       fallo); con la red buena y contingencia recordada se sale en menos de un segundo (2 buenas + la sonda autenticada). */
+    c.burst = async () => { for (let i = 0; i < 2; i++) { const ok = await checkHealth(FAST_HEALTH_TIMEOUT_MS); if (ok && c.machine.state !== 'contingency') break; } };
     const T = (n, x) => { if (root.GoldenTrace) root.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
     c.start = async (opts) => {
       T('contingency:start');
       if (opts && opts.eventId) d.eventId = opts.eventId;
       c.machine = createMachine((s, from) => {
         T('contingency:state:' + s, { from });
+        if (c.db && c.db.put) c.db.put('meta', { k: 'state', s, at: d.now() }).catch(() => {});          // se recuerda para que la próxima recarga entre directo
         render(); c.listeners.forEach((f) => f(s));
         if (s === 'normal' && from === 'contingency') { c.refreshRoster(); c.syncQueue(true); }       // volvió la red: copia al día y cola al servidor
       });
@@ -348,6 +354,12 @@
       try { c.db = await openStore(d.idb, `golden-contingency-${d.eventId}`); } catch (e) { c.lastError = 'unsupported'; render(); c.markReady(); return c; }
       c.supported = true;
       T('contingency:idb-open');
+      if (opts && opts.fastStart) {                                // LOCAL-FIRST: tras recargar en contingencia se entra directo (sin esperar timeouts ni sondas)
+        try {
+          const st = await c.db.get('meta', 'state');
+          if (st && st.s === 'contingency' && d.now() - st.at < REMEMBER_MS && c.machine.state === 'normal') { c.machine.state = 'contingency'; c.machine.healthOks = 0; T('contingency:remembered'); render(); }
+        } catch (e) { /* sin estado recordado */ }
+      }
       if (d.document && d.document.head && d.document.createElement) {
         const st = d.document.createElement('style');
         st.textContent = '.btn-offline-accredit{display:none !important} body.golden-contingency .btn-offline-accredit{display:inline-block !important}';
@@ -360,6 +372,7 @@
       if (meta && meta.expires_at && d.now() >= meta.expires_at) await c.wipeRoster();           // vencido mientras el navegador estaba cerrado
       c.markReady();
       T('contingency:ready');
+      if (opts && opts.fastStart) c.burstDone = c.burst();                // sin await: el resto del arranque no espera a la red
       c.refreshRoster().then((r) => { if (r === 'ok') { c.machine.authGood(); c.syncQueue(); } });
       c.timers.push(d.setInterval(checkHealth, HEALTH_MS));
       c.timers.push(d.setInterval(async () => {
