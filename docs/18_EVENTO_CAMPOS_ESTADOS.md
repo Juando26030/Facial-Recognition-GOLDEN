@@ -66,8 +66,28 @@ teclado en pantalla propio para cédula y nombre, sin menús pequeños ni accion
 4. Recursos ligados al inventario con reservas.
 5. Registro touch (puede ir en paralelo).
 
-## 9. Preguntas abiertas
-1. Las listas del software anterior: **Tipo** (¿Congreso, …?), **Estado** (¿Creado, …?), **Jornada** (¿Full, …?), **Tipo de Impresión** (¿Local, …?), **Calidad: Estado y Referencia** (¿Sin Novedad, Staff, …?). Necesito el listado completo de cada una.
-2. «Campos a capturar en registro»: ¿es una lista de los campos de la persona que se piden (como los «Parámetros del evento» de hoy) o un texto libre?
-3. Los estados: ¿cuáles son todos y qué reglas tendría cada uno?
-4. Habeas Data: ¿un texto por evento (como hoy) o uno general con opción de cambiarlo por evento?
+## 9. Decisiones de Juan David (2026-10-05, respuestas a las preguntas)
+1. **Tipo de evento:** una lista que el administrador puede ampliar a su gusto desde el propio formulario (sin código).
+2. **Estados:** los crea el administrador, los que quiera, y a cada uno le adjunta sus reglas (sección 4).
+3. **Jornada:** «Full» o «Medio día»; además cada línea lleva hora de inicio y hora de fin.
+4. **«Tipo de impresión»: se elimina.** Juan David arma la ficha: el sistema solo ofrece crear y ordenar campos (no hay que precargar el contenido del software anterior salvo lo que él decida).
+5. **Inventario con categorías obligatorias (sección 10).**
+6. **«Campos a capturar en registro»:** se puede elegir de una lista (los campos de la persona) o escribir más detalle.
+7. **Habeas Data:** se ignora (no se trabaja ahora).
+8. **Multiimpresión (sección 11).**
+
+## 10. Inventario con categorías (regla central)
+**Catálogo de equipos** (lo que maneja la empresa; Juan David lo puede ampliar): computadores, impresoras QL, impresoras negras, pañoletas (por color), corbatas (por color), lectores bidimensionales, fundas de
+escarapela (por tamaño: 12 o 16 mm), cintas (por tamaño: 12 o 16 mm, y por color), cordones (por color). Cada tipo declara sus **atributos categorizables** (color, tamaño…) con **valores predefinidos** que se
+eligen con botones u opciones, nunca escribiendo texto («300 fundas de 12 mm y 200 de 16 mm», no «200 escarapelas azules» en un campo libre): así los datos siempre son iguales y se pueden contar.
+- **Cantidad total** por tipo en la ficha del evento (la comercial pone, por ejemplo, 500 fundas). Una opción avanzada («categorizar») permite repartir esas 500 por los atributos del tipo (todas iguales, o
+  por tamaño y/o color, combinando atributos).
+- **Regla de cuentas:** al categorizar, la suma de las categorías debe ser EXACTAMENTE el total (500, no 499 ni 501); el sistema lo calcula en vivo y no deja guardar una distribución que no cuadre.
+- **Estado del evento:** mientras esté en `creado` se puede dejar sin categorizar; **para pasar a `en_proceso` todo el inventario del evento debe estar categorizado y cuadrado**, y el sistema dice qué falta.
+- **Disponibilidad (docs/16, N5):** al guardar descuenta del inventario del día en la ciudad del evento; si no alcanza avisa y no deja continuar hasta conseguirlo o alquilarlo. Las reglas de anticipación
+  (1 día si el equipo está en la misma ciudad, alerta de 1 semana si está en otra) y la bodega principal en Bogotá siguen igual.
+
+## 11. Multiimpresión
+En los **Parámetros del evento**, el administrador activa «multiimpresión». Con ella activa, los usuarios activos del evento (digitadores temporales **y el coordinador**, que también registra) pueden elegir **desde
+qué equipo se imprime cada escarapela**: cada usuario/equipo se asigna a la estación que tiene la impresora, y **varios equipos pueden compartir la misma impresora** (más de 2). La estación imprime sola, sin que nadie
+haga nada ahí (docs/16, B1b). Sirve para iPad, para celulares sin cable y para computadores sin impresora. Se construye sobre la cola de impresión y la estación de impresión (aún no construidas).
