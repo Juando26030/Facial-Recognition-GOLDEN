@@ -38,7 +38,8 @@
         <ul class="usb-help">
             <li>Cable USB del celular a la impresora (con adaptador OTG si el celular lo pide) y la impresora <b>encendida</b>.</li>
             <li>Si no aparece: apague el modo «Editor Lite» (mantenga el botón de la impresora hasta que se apague la luz verde) y cierre la app de Brother si está abierta.</li>
-            <li>Chrome pide permiso una sola vez; después reconoce la impresora solo.</li>
+            <li>Chrome pide permiso una sola vez por dispositivo (en el primer toque de «Conectar» o de «Imprimir»); después reconoce la impresora solo en cuanto se enchufa.</li>
+            <li><b>iPad / iPhone:</b> Apple no permite USB desde el navegador. Imprima desde ahí a través de un celular Android que tenga la impresora conectada (cola de impresión; ver docs/16, B8).</li>
         </ul>
     </div>
 
@@ -122,6 +123,8 @@
   $("btnPrint").addEventListener("click", async function () {
     var t = drawTest();
     try {
+      if (!QLUsb.info()) await afterConnect(await QLUsb.connect(true));          // sin impresora conectada, imprimir pide el permiso en ese mismo toque (no hace falta «Conectar» antes)
+      if (!QLUsb.info()) return;
       var rgba = t.ctx.getImageData(0, 0, DOTS, t.height).data;
       var bitmap = QLUsb.bitmapFromRGBA(rgba, DOTS, t.height, 140, $("optInvert").checked);
       var job = QLUsb.buildJob({ bitmap: bitmap, height: t.height, mediaWidthMm: 62, mirror: $("optMirror").checked, autoCut: $("optCut").checked });
@@ -131,6 +134,15 @@
     } catch (e) { setStatus($("printStatus"), "No se pudo imprimir: " + (e && e.message ? e.message : e), "bad"); }
   });
 
+  if (QLUsb.supported()) {
+    // Impresora ya autorizada en este dispositivo: se reconoce sola al enchufarla (la PRIMERA vez Chrome exige un toque del usuario para dar el permiso: no se puede evitar).
+    navigator.usb.addEventListener("connect", function () { QLUsb.connect(false).then(afterConnect).catch(function () { /* se reintenta al imprimir */ }); });
+    navigator.usb.addEventListener("disconnect", async function () {
+      await QLUsb.close();
+      $("btnStatus").disabled = true;
+      setStatus($("connStatus"), "Impresora desconectada.");
+    });
+  }
   if (!QLUsb.supported()) {
     setStatus($("connStatus"), "Este navegador no permite USB. Use Chrome en Android o en un computador (página segura https).", "bad");
     $("btnConnect").disabled = true;
