@@ -7,7 +7,7 @@ from app.auth import get_event_for_staff, require_role
 from app.biometrics import BiometricEngine
 from app.database import get_db
 from app.models import StaffUser
-from app.mrz_ocr import extract_mrz_lines
+from app.mrz_ocr import VARIANTS, extract_mrz_lines
 from app.mrz_parser import parse_mrz_td1
 
 router = APIRouter()
@@ -39,22 +39,27 @@ def scan_cedula_mrz(
     any_lines_detected = False
     for k in _ROTATIONS:
         rotated = np.rot90(img_array, k) if k else img_array
-        try:
-            lines = extract_mrz_lines(rotated)
-        except pytesseract.pytesseract.TesseractNotFoundError:
-            # No es un problema de la foto — el binario de Tesseract no está instalado en este
-            # servidor (`apt install tesseract-ocr` en la VM, ver CLAUDE.md/requirements.txt). Sin
-            # este catch, esto se ve como un 500 críptico en vez de decir claramente qué falta.
-            raise HTTPException(
-                status_code=503,
-                detail="El servidor no tiene instalado el motor de OCR (Tesseract) — contacta a soporte técnico.",
-            )
-        if len(lines) < 3:
-            continue
-        any_lines_detected = True
-        result = parse_mrz_td1(lines[-3], lines[-2], lines[-1])
-        if result["valid"]:
-            best_result = result
+        for variant in range(len(VARIANTS)):
+            try:
+                lines = extract_mrz_lines(rotated, variant)
+            except pytesseract.pytesseract.TesseractNotFoundError:
+                # No es un problema de la foto — el binario de Tesseract no está instalado en este
+                # servidor (`apt install tesseract-ocr` en la VM, ver CLAUDE.md/requirements.txt). Sin
+                # este catch, esto se ve como un 500 críptico en vez de decir claramente qué falta.
+                raise HTTPException(
+                    status_code=503,
+                    detail="El servidor no tiene instalado el motor de OCR (Tesseract) — contacta a soporte técnico.",
+                )
+            if len(lines) < 3:
+                if variant == 0:
+                    break          # con la preparación normal no hay 3 líneas: esta no es la orientación; no se gastan más variantes aquí
+                continue
+            any_lines_detected = True
+            result = parse_mrz_td1(lines[-3], lines[-2], lines[-1])
+            if result["valid"]:
+                best_result = result
+                break              # orientación candidata (3 líneas) pero sin validar: se prueba la siguiente preparación de la imagen (reflejos, fondo con tramas)
+        if best_result is not None:
             break
 
     if best_result is None:
