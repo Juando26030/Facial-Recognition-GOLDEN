@@ -246,6 +246,7 @@ class Event(Base):
     badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría
     logo_path = Column(String, nullable=True)  # archivo del logo propio (solo si logo_mode='custom'), en data/<tenant>/event_logos/
     faces_version = Column(Integer, default=0, server_default='0', nullable=False)  # sube en cada cambio de rostros del evento (app/faces_version.py); el reconocimiento recarga su matriz en memoria cuando cambia
+    state_id = Column(Integer, ForeignKey('event_states.id'), nullable=True)  # estado configurable (docs/18): sus reglas mandan; `status` sigue siendo el estado BASE con el que se comporta (creado | en_proceso | finalizado)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
 
     tenant = relationship("Tenant")
@@ -253,6 +254,7 @@ class Event(Base):
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
     commercial = relationship("StaffUser", foreign_keys=[commercial_staff_id])
     super_event = relationship("SuperEvent", back_populates="events")
+    state = relationship("EventState")
 
     def get_optional_labels(self) -> dict:
         return json.loads(self.optional_field_labels) if self.optional_field_labels else {}
@@ -265,6 +267,24 @@ class Event(Base):
 
     def set_categories(self, data: list) -> None:
         self.categories = json.dumps(data) if data else None
+
+
+class EventState(Base):
+    """Estado de evento CONFIGURABLE (docs/18 §4): el administrador crea los que quiera y a cada uno le adjunta reglas (qué se habilita mientras un evento está en él). `base_status` es el
+    estado clásico con el que el sistema sigue decidiendo lo demás (retención biométrica, «registrar solo en proceso»…): creado | en_proceso | finalizado. `rules_json` = {regla: bool}
+    (ver app/event_rules.py); una regla ausente toma el valor por defecto de su estado base."""
+    __tablename__ = 'event_states'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    base_status = Column(String, nullable=False)
+    color = Column(String, nullable=True)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    is_active = Column(Boolean, nullable=False, default=True, server_default='true')
+    rules_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    def get_rules(self) -> dict:
+        return json.loads(self.rules_json) if self.rules_json else {}
 
 
 class EventStaffAuthorization(Base):
