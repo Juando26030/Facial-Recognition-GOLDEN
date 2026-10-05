@@ -107,6 +107,18 @@ def _clean_tables(_database):
 
 
 @pytest.fixture(autouse=True)
+def _no_wompi_status_network(monkeypatch):
+    """`GET quote` del formulario público consulta la página de estado PÚBLICA de Wompi (`wompi.service_problem`, https://wompi.statuspage.io): una prueba que depende de un servicio externo falla
+    cuando Wompi reporta una incidencia («service» en la respuesta) o tarda en responder (timeout de 4 s). Aquí la caché de ese estado queda fija en «opera normal» y no hay red; las pruebas
+    de `service_status` ponen su propio `urlopen` y vacían `data` (ver tests/test_form_payments.py)."""
+    import time
+
+    from app import wompi
+    monkeypatch.setitem(wompi._status, "at", time.time() + 10 ** 9)
+    monkeypatch.setitem(wompi._status, "data", {"indicator": "none", "description": ""})
+
+
+@pytest.fixture(autouse=True)
 def _jobs_inline(monkeypatch):
     """En produccion los trabajos en segundo plano los ejecuta un worker; en las pruebas «despertar al worker» los ejecuta en el acto (asi el
     comportamiento visible es el de siempre). Las pruebas de la cola usan `jobs.enqueue`/`run_once` directamente."""
