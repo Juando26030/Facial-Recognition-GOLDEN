@@ -137,8 +137,8 @@ def test_legal_pages_are_public_privacy_has_its_reviewed_version_and_the_rest_st
     for path, title in (("/privacidad", "Política de Privacidad"), ("/terminos", "Términos y Condiciones"), ("/reembolsos", "Política de Reembolsos")):
         r = client.get(path)                                                                          # sin sesión
         assert r.status_code == 200 and title in r.text
-        if path == "/privacidad":                                                                     # con constancia escrita de la auditora (2026-10-05): versión 1.0
-            assert "Versión 1.0" in r.text and "5 de octubre de 2026" in r.text and "BORRADOR" not in r.text and "[PENDIENTE DE REVISIÓN LEGAL" not in r.text
+        if path == "/privacidad":                                                                     # versión 1.1 en BORRADOR (5-bis.1): la última revisada es la 1.0 (constancia del 2026-10-05)
+            assert "Cambios posteriores a la versión 1.0" in r.text and "BORRADOR" in r.text and "VERSIÓN 1.1" in r.text
         else:
             assert "PENDIENTE DE REVISIÓN LEGAL" in r.text                                            # borrador hasta que un abogado lo revise (términos y reembolsos no están cubiertos)
         assert "901542833" in r.text and "GOLDEN EVENTOS Y LOGISTICA SAS" in r.text                   # identificación del vendedor/responsable
@@ -315,10 +315,17 @@ def test_privacy_texts_state_7_day_retention_cap_backups_and_processors(client, 
 def test_privacy_policy_goes_back_to_pending_by_itself_when_its_text_changes(client, monkeypatch):
     """Todo cambio posterior a un texto con constancia vuelve a marcarlo como pendiente (docs/19; auditoría 2026-10-05): la huella del texto deja de coincidir."""
     from app import legal
-    assert legal.review_status("privacidad")["reviewed"] is True, "la plantilla cambió sin subir la versión: pide nueva constancia y actualiza la huella en app/legal.py"
+    assert legal.review_status("privacidad")["reviewed"] is False, "en esta rama el texto es la versión 1.1 (borrador): no coincide con la huella de la 1.0 revisada"
     monkeypatch.setitem(legal.REVIEWED["privacidad"], "sha256", "0" * 64)                 # como si el texto hubiera cambiado
     r = client.get("/privacidad")
     assert "BORRADOR" in r.text and "Cambios posteriores a la versión 1.0" in r.text and "Texto con constancia" not in r.text
+
+
+def test_the_1_1_draft_marks_every_new_paragraph_as_pending_and_keeps_1_0_text_intact(client):
+    p = client.get("/privacidad").text
+    assert "5-bis.1" in p and "VERSIÓN 1.1 — PENDIENTE DE REVISIÓN LEGAL: todo este subapartado" in p
+    for needle in ("número de documento en claro", "AES-GCM", "7 días", "no se guardan fotografías ni datos biométricos", "solo se borra cuando el operador lo confirma"):
+        assert needle in p
 
 
 def test_fingerprint_ignores_pending_markers_but_not_words():

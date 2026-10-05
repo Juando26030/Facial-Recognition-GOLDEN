@@ -45,12 +45,23 @@
 </ul>
 
 <h2>5-bis. Copia local en el dispositivo del operador (modo contingencia)</h2>
+<p><small><span class="pending">[VERSIÓN 1.1 — BORRADOR PENDIENTE DE REVISIÓN LEGAL: se agrega el registro de personas nuevas sin conexión (5-bis.1); el resto del apartado es el de la versión 1.0 ya revisada]</span></small></p>
 <p> Para seguir acreditando asistentes si se cae la conexión a internet del recinto, el navegador del dispositivo del operador guarda una copia temporal de la lista del evento. Esto es lo que se guarda y por cuánto tiempo:</p>
 <ul>
-<li><b>Qué se guarda de la lista del evento:</b> por cada persona, una <b>huella</b> de su número de documento (no el número en claro), su nombre para mostrar, sus categorías y si ya está registrada. <b>No se guardan fotografías, rostros ni representaciones numéricas del rostro, teléfonos ni correos.</b> La huella reduce la exposición, pero no es una protección fuerte (un número de documento puede adivinarse probando valores): por eso solo se usa en dispositivos del operador, con conexión cifrada.</li>
+<li><b>Qué se guarda de la lista del evento:</b> por cada persona, una <b>huella</b> de su número de documento (no el número en claro), su nombre para mostrar, sus categorías y si ya está registrada. <b>En la lista del evento no se guardan fotografías, rostros ni representaciones numéricas del rostro, teléfonos ni correos</b> (el registro de personas nuevas sin conexión, que sí guarda otros datos, se describe en 5-bis.1). La huella reduce la exposición, pero no es una protección fuerte (un número de documento puede adivinarse probando valores): por eso solo se usa en dispositivos del operador, con conexión cifrada.</li>
 <li><b>Qué se guarda de los ingresos hechos sin conexión:</b> la huella, el nombre, la hora y el método (cédula o QR), hasta que se envían al servidor al volver la conexión.</li>
 <li><b>Cuánto tiempo:</b> la lista del evento, hasta que el evento finalice y, como máximo, <b>24 horas</b> después de su última actualización. Los ingresos sin enviar se conservan hasta que se sincronicen y, como máximo, <b>30 días</b>.</li>
 <li><b>Cuándo se borra:</b> la lista, al cerrar sesión, al finalizar el evento o al cumplirse las 24 horas; los ingresos, al sincronizarse (o a los 30 días). Si quedan ingresos sin sincronizar al cerrar sesión, el operador es avisado y se conservan en ese dispositivo hasta enviarlos.</li>
+</ul>
+
+<h3>5-bis.1. Registro de personas nuevas sin conexión (bandeja de salida) <span class="pending">[VERSIÓN 1.1 — PENDIENTE DE REVISIÓN LEGAL: todo este subapartado]</span></h3>
+<p>Si se cae la conexión a internet, el operador puede registrar a una persona que no estaba en la lista. En ese caso el dispositivo guarda temporalmente, hasta enviarlos al servidor, los datos que el operador escribe:</p>
+<ul>
+<li><b>Qué se guarda:</b> el <b>número de documento en claro</b> (a diferencia de la lista, que guarda solo una huella), nombres y apellidos, y los demás datos que el evento pida en el formulario (por ejemplo teléfono, correo, entidad, categorías y campos adicionales), más la hora del registro. <b>En esta modalidad no se guardan fotografías ni datos biométricos</b>; si el evento exige firma o autorización escritas, el registro sin conexión no se permite.</li>
+<li><b>Cómo se protegen:</b> se guardan <b>cifrados</b> en el navegador del dispositivo (cifrado AES-GCM de 256 bits) con una clave generada en el propio dispositivo que no se puede exportar. Esta medida reduce la exposición si alguien copia los archivos del dispositivo, pero <b>no protege</b> frente a una persona que use el navegador mientras está abierto: por eso solo debe hacerse en dispositivos asignados por el Organizador o por Golden, con la pantalla bloqueada cuando no se usen.</li>
+<li><b>Cuánto tiempo:</b> hasta que el servidor confirma la recepción y, como máximo, <b>7 días</b>. Cuando el servidor confirma, los datos <b>se borran del dispositivo</b> (solo queda el nombre para mostrar y el resultado durante 24 horas). Desde el tercer día sin enviarse el operador ve un aviso permanente; si pasan 7 días, el registro queda marcado como <b>caducado</b>, no se envía por sí solo y <b>solo se borra cuando el operador lo confirma</b>: el sistema no borra datos pendientes en silencio.</li>
+<li><b>Si la persona ya existía:</b> no se modifican sus datos guardados; se registra su asistencia a este evento y se avisa al operador para que verifique que es la misma persona.</li>
+<li><b>Cerrar sesión:</b> no borra lo que está pendiente de enviar; el operador es avisado y los datos se envían cuando vuelva a iniciar sesión y abra el registro del evento.</li>
 </ul>
 
 <h2>6. Con quién compartimos datos (encargados y terceros)</h2>
