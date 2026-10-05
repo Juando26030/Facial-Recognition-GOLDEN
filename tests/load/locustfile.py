@@ -109,9 +109,11 @@ DONE = {"users": 0}          # usuarios de FormBurst que ya terminaron su recorr
 
 
 try:
-    from scripts.load_cfg import submit_ratio
+    from scripts.load_cfg import PAY_FORM_SLUG, quotes_per_user, submit_ratio
+    QUOTES = quotes_per_user()                               # LOAD_QUOTES: cotizaciones por usuario al formulario con pago (0 = ninguna)
     SUBMIT_RATIO = submit_ratio()                            # LOAD_SUBMIT_RATIO: proporción de los que abren que además envían (0,5 por defecto; 1 = todos)
 except ImportError:                                          # ejecución local sin el repo en el path
+    PAY_FORM_SLUG, QUOTES = "carga-pago", int(os.getenv("LOAD_QUOTES", "0"))
     SUBMIT_RATIO = float(os.getenv("LOAD_SUBMIT_RATIO", "0.5"))
 RETRY_DEADLINE = float(os.getenv("LOAD_RETRY_DEADLINE", "150"))          # s: lo mismo que el navegador real (templates/form_public.html)
 CEDULA_TIMEOUT = float(os.getenv("LOAD_CEDULA_TIMEOUT", "10"))          # s por petición: lo mismo que la estación real (static/js/directory.js)
@@ -192,6 +194,10 @@ class FormBurst(HttpUser):
                 break
             gevent.sleep(_retry_delay(r, attempt))
             attempt += 1
+        for i in range(QUOTES):                       # el formulario con pago cotiza al dibujarse y tras cada cambio (con 250 ms de espera en el navegador)
+            if i:
+                gevent.sleep(random.uniform(0.25, 1.5))
+            _attempt(self.client, "POST", f"/f/{EVENT_ID}/{PAY_FORM_SLUG}/quote", "POST quote", json={"values": {}})
         if random.random() < SUBMIT_RATIO:
             gevent.sleep(random.uniform(1, float(os.getenv("LOAD_THINK_MAX", "30"))))
             n = random.randint(10**9, 10**10 - 1)

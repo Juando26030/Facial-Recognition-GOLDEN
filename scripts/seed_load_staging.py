@@ -34,7 +34,25 @@ from app.auth import hash_password  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
 from app.models import AccessLog, Event, EventAttendee, EventStaffAuthorization, FormSubmission, StaffUser, Tenant, User, WebForm  # noqa: E402
 from app.timeutil import utcnow  # noqa: E402
-from scripts.load_cfg import EVENT_CODE, FORM_SLUG, TENANT, USERNAME, derived_password  # noqa: E402
+from scripts.load_cfg import EVENT_CODE, FORM_SLUG, PAY_FORM_SLUG, TENANT, USERNAME, derived_password  # noqa: E402
+
+
+def payment_form_design() -> dict:
+    """Diseño del formulario de pago de la prueba: los mismos campos y UN campo «Pago» fijo de $50.000. Solo se cotiza (`quote`): en staging no hay llaves de Wompi y un envío con cobro daría 503."""
+    fields = {"cedula": {"id": "cedula", "type": "text_short", "label": "Cédula", "key": "id", "required": True},
+              "nombres": {"id": "nombres", "type": "text_short", "label": "Nombres", "key": "first_name", "required": True},
+              "pago": {"id": "pago", "type": "payment", "label": "Pago de inscripción", "pay": {"mode": "fixed", "amount": 50000}}}
+    return formlib.sanitize_design({"theme": {"title": "Formulario de carga con pago"}, "rows": [{"align": "left", "items": ["cedula", "nombres"]}, {"align": "left", "items": ["pago"]}],
+                                    "fields": fields}, set())
+
+
+def ensure_payment_form(db, ev) -> WebForm:
+    form = db.query(WebForm).filter_by(event_id=ev.id, slug=PAY_FORM_SLUG).first()
+    if not form:
+        form = WebForm(event_id=ev.id, name="Formulario de carga con pago", slug=PAY_FORM_SLUG, manual_status="activo", design_json=json.dumps(payment_form_design()),
+                       settings_json=json.dumps(formlib.sanitize_settings({"feed": "manual"})), test_key="cargapagokey0001")
+        db.add(form)
+    return form
 
 
 def seed(db, people: int, capacity: int) -> dict:
@@ -81,8 +99,9 @@ def seed(db, people: int, capacity: int) -> dict:
         db.add(form)
     else:
         form.capacity = capacity
+    ensure_payment_form(db, ev)
     db.commit()
-    return {"event_id": ev.id, "form_slug": form.slug, "people": db.query(User).filter(User.tenant_id == TENANT).count(), "capacity": capacity}
+    return {"event_id": ev.id, "form_slug": form.slug, "pay_form_slug": PAY_FORM_SLUG, "people": db.query(User).filter(User.tenant_id == TENANT).count(), "capacity": capacity}
 
 
 def verify(db) -> dict:

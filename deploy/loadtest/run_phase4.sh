@@ -107,6 +107,8 @@ case "${1:-}" in
     MODE="${2:-full}"
     WEB_URL="${WEB_URL:-$PUBLIC_BASE_URL}"
     SUBMIT_RATIO="${LOAD_SUBMIT_RATIO:-0.5}"     # proporción de los que abren el formulario que además envían (0.5 = ~5.000 envíos de 10.000; 1 = 10.000 envíos)
+    QUOTES="${LOAD_QUOTES:-0}"                   # cotizaciones por usuario al formulario con pago (0 = ninguna; ejemplo: LOAD_QUOTES=5)
+    [[ "$QUOTES" =~ ^[0-9]+$ && "$QUOTES" -le 50 ]] || { echo "LOAD_QUOTES=$QUOTES no es válido: un entero entre 0 y 50. No se lanzó nada." >&2; exit 1; }
     [[ "$SUBMIT_RATIO" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO no es válido: un número entre 0 y 1 (0.5 o 1). No se lanzó nada." >&2; exit 1; }
     host="$(echo "$WEB_URL" | sed 's#^https://##; s#/.*$##')"
     case ",$(allowed_hosts)," in *",$host,"*) ;; *) echo "WEB_URL=$WEB_URL NO es un destino de staging permitido. Permitidos: $(allowed_hosts | tr ',' ' ')" >&2; exit 1;; esac
@@ -123,7 +125,7 @@ case "${1:-}" in
       # Variables en un ARCHIVO (--env-vars-file), no en --set-env-vars: LOAD_ALLOWED_HOSTS lleva comas y gcloud las tomaría como separador de variables.
       local envfile; envfile="$(mktemp)"
       "${PYTHON3:-python3}" "$(dirname "$0")/job_env.py" "$envfile" "LOAD_SCENARIO=$2" "LOAD_HOST=$WEB_URL" "LOAD_ALLOWED_HOSTS=$(allowed_hosts)" "LOAD_USERS=$3" "LOAD_RATE=$4" \
-        "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=5000" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO" \
+        "LOAD_DURATION=$5" "LOAD_EVENT_ID=$LOAD_EVENT_ID" "LOAD_FORM_SLUG=carga" "LOAD_PEOPLE=5000" "LOAD_THINK_MAX=${LOAD_THINK_MAX:-30}" "LOAD_SUBMIT_RATIO=$SUBMIT_RATIO" "LOAD_QUOTES=$QUOTES" \
         || { rm -f "$envfile"; return 1; }
       gcloud run jobs deploy "$JOB-$1" --project "$PROJECT" --region "$REGION" --image "$IMAGE" --tasks "$6" --parallelism "$6" --max-retries 0 \
         --task-timeout "$(( $5 + 240 ))s" --cpu 1 --memory 1Gi \

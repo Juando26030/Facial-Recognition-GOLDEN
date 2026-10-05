@@ -45,7 +45,7 @@ def seeded(db, monkeypatch):
 
 def _fill_run(db, s, info):
     from app.models import AccessLog, FormSubmission, User, WebForm
-    form = db.query(WebForm).filter_by(event_id=info["event_id"]).one()
+    form = db.query(WebForm).filter_by(event_id=info["event_id"], slug=s.FORM_SLUG).one()
     for i in range(5):
         db.add(FormSubmission(form_id=form.id, event_id=info["event_id"], data_json="{}", person_id=f"p{i}", sid=f"s{i}", status="confirmed"))
     uid = db.query(User).filter_by(tenant_id=s.TENANT).first().id
@@ -434,3 +434,74 @@ def test_cedula_generator_emulates_the_station_timeout_one_retry_same_client_id_
     assert stats["POST checkin-cedula (reintento)"][0] == 2 and stats["POST checkin-cedula (reintento)"][1] == 0
     assert stats["[usuario] escaneo ok tras reintento"] == [2, 0] and stats["[usuario] escaneo sin resultado"] == [1, 1]
     assert stats["POST checkin-cedula"][1] == 1                                                                        # el 500 es el único fallo real
+
+
+# ------------------------------------------------------------------ formulario con pago de la prueba de carga y cotizaciones por usuario
+def test_seed_creates_an_idempotent_payment_form_only_meant_for_quotes(seeded, db):
+    from app import formlib
+    from app.models import WebForm
+    s, info = seeded
+    assert info["pay_form_slug"] == "carga-pago"
+    forms = {f.slug: f for f in db.query(WebForm).filter_by(event_id=info["event_id"])}
+    assert set(forms) == {s.FORM_SLUG, "carga-pago"}
+    field = formlib.payment_field(json.loads(forms["carga-pago"].design_json), {})
+    assert field and field["pay"]["amount"] == 50000 and forms["carga-pago"].manual_status == "activo"
+    assert formlib.payment_field(json.loads(forms[s.FORM_SLUG].design_json), {}) is None            # el formulario de los envíos NO tiene pago (staging no tiene llaves de Wompi)
+    s.seed(db, 30, 10)
+    assert db.query(WebForm).filter_by(event_id=info["event_id"]).count() == 2                       # repetir la siembra no duplica
+    s.delete_all(db)
+    assert db.query(WebForm).filter_by(slug="carga-pago").count() == 0                               # y limpiar lo borra
+
+
+def test_quotes_per_user_parser(monkeypatch):
+    from scripts.load_cfg import quotes_per_user
+    monkeypatch.delenv("LOAD_QUOTES", raising=False)
+    assert quotes_per_user() == 0
+    for raw, want in (("0", 0), ("5", 5), ("50", 50), (" 7 ", 7), ("", 0)):
+        monkeypatch.setenv("LOAD_QUOTES", raw)
+        assert quotes_per_user() == want
+    for bad in ("51", "-1", "abc", "2.5"):
+        monkeypatch.setenv("LOAD_QUOTES", bad)
+        with pytest.raises(SystemExit):
+            quotes_per_user()
+
+
+@pytest.mark.skipif(any(importlib.util.find_spec(m) is None for m in ("gevent", "locust")), reason="requiere locust/gevent (imagen del generador o entorno local; el CI de la app no los instala)")
+@pytest.mark.parametrize("quotes,expected", [("0", 0), ("3", 3)])
+def test_generator_quotes_the_payment_form_as_many_times_as_asked(tmp_path, quotes, expected):
+    import subprocess
+    import sys
+    driver = tmp_path / "drive_quotes.py"
+    driver.write_text('''
+import json, sys, threading, time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import gevent
+import locust
+ROOT = sys.argv[1]
+sys.path[:0] = [ROOT + "/tests/load", ROOT, ROOT + "/deploy/loadtest"]
+paths = []
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"{}"
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", "2"); self.end_headers(); self.wfile.write(body)
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        paths.append(self.path)
+        body = b'{"has_payment": true}'
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def log_message(self, *a): pass
+srv = HTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+import run_task, locustfile
+env = run_task.make_env(locustfile.FormBurst, "http://127.0.0.1:%d" % srv.server_port)
+runner = env.create_local_runner(); runner.start(1, spawn_rate=1)
+t0 = time.time()
+while locustfile.DONE["users"] < 1 and time.time() - t0 < 30: gevent.sleep(0.2)
+runner.quit()
+print("QUOTES", json.dumps([p for p in paths if p.endswith("/quote")]))
+''', encoding="utf8")
+    env = {**os.environ, "LOAD_EVENT_ID": "1", "LOAD_FORM_SLUG": "carga", "OPS_TOKEN": "token-de-prueba", "LOAD_SUBMIT_RATIO": "0", "PYTHONIOENCODING": "utf-8", "LOAD_QUOTES": quotes}
+    r = subprocess.run([sys.executable, str(driver), str(ROOT)], env=env, capture_output=True, text=True, encoding="utf8", timeout=90, cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    sent = json.loads(r.stdout.split("QUOTES ", 1)[1].splitlines()[0])
+    assert sent == ["/f/1/carga-pago/quote"] * expected                                              # al formulario CON pago, no al de los envíos

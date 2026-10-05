@@ -265,3 +265,20 @@ def test_submit_ratio_parser(monkeypatch):
         monkeypatch.setenv("LOAD_SUBMIT_RATIO", bad)
         with pytest.raises(SystemExit):
             submit_ratio()
+
+
+@pytest.mark.skipif(BASH is None, reason="sin bash")
+@pytest.mark.parametrize("value,expected", [(None, "0"), ("5", "5"), ("50", "50")])
+def test_quotes_per_user_reaches_every_job_and_defaults_to_none(tmp_path, value, expected):
+    r, lines = _run(tmp_path, "run", "small", extra_env={"LOAD_QUOTES": value} if value else None)
+    assert r.returncode == 0, r.stdout + r.stderr
+    _, envs = _jobs(lines)
+    assert len(envs) == 3 and all(e["LOAD_QUOTES"] == expected for e in envs)
+
+
+@pytest.mark.skipif(BASH is None, reason="sin bash")
+@pytest.mark.parametrize("bad", ["51", "-1", "abc", "2.5"])
+def test_invalid_quotes_per_user_creates_nothing(tmp_path, bad):
+    r, lines = _run(tmp_path, "run", "small", extra_env={"LOAD_QUOTES": bad})
+    assert r.returncode != 0 and "LOAD_QUOTES" in r.stderr and "No se lanzó nada" in r.stderr
+    assert not [ln for ln in lines if ln.startswith(("DEPLOY", "EXECUTE"))]

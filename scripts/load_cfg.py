@@ -8,6 +8,7 @@ TENANT = "carga-staging"
 EVENT_CODE = "LOAD-STG"
 USERNAME = "carga_dig"
 FORM_SLUG = "carga"
+PAY_FORM_SLUG = "carga-pago"        # segundo formulario con campo «Pago»: SOLO para cotizar (`quote`); nunca se envía (sin llaves de Wompi en staging el envío daría 503)
 
 
 def check_host(url: str, allowed=()):
@@ -38,6 +39,17 @@ def timing_token() -> str:
     """Valor de `X-Timing-Token` para que la app (SERVER_TIMING=1) devuelva `Server-Timing`. Misma fórmula que app/timing.py::token(); vacío sin OPS_TOKEN."""
     token = os.environ.get("OPS_TOKEN", "")
     return hmac.new(token.encode(), b"golden-server-timing", hashlib.sha256).hexdigest()[:20] if token else ""
+
+
+def quotes_per_user() -> int:
+    """Cuántas cotizaciones (`POST /f/<evento>/carga-pago/quote`) hace cada usuario virtual de formularios: LOAD_QUOTES del Job (0 por defecto = ninguna). Un usuario real cotiza una vez al
+    dibujar el formulario con pago y otra tras cada cambio. Entero entre 0 y 50; otra cosa detiene el generador."""
+    raw = os.environ.get("LOAD_QUOTES", "").strip()
+    if not raw:
+        return 0
+    if not raw.isdigit() or int(raw) > 50:
+        raise SystemExit(f"LOAD_QUOTES={raw!r} no es válido: un entero entre 0 y 50 (cotizaciones por usuario; 0 = ninguna).")
+    return int(raw)
 
 
 DEFAULT_SUBMIT_RATIO = 0.5
