@@ -328,7 +328,8 @@
 
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
-<script src="{{ url_for('static', path='js/contingency.js') }}"></script>
+{% if contingency_enabled %}<script src="{{ url_for('static', path='js/contingency.js') }}"></script>
+{% else %}<script src="{{ url_for('static', path='js/contingency-off.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
@@ -433,7 +434,7 @@
         });
     }
     // Service worker del quiosco: solo el caparazón estático, para recargar esta página sin red (nunca la API ni el roster). Sin HTTPS/soporte, no hace nada.
-    if (canAccredit && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
+    if (canAccredit && {{ 'true' if contingency_enabled else 'false' }} && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
         // primera visita: esta página y sus archivos estáticos ya cargaron antes de que el worker tomara el control; se los manda para guardarlos ya
         // jsQR (escáner de QR por cámara en Safari/iPad) se carga bajo demanda: se guarda desde la primera visita, junto con qr.js, para que funcione sin red
         const urls = [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.startsWith(location.origin + '/static/')),

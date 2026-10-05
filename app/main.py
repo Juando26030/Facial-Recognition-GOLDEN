@@ -378,11 +378,20 @@ def impresion_usb_page(request: Request):
     return templates.TemplateResponse(request=request, name="impresion_usb.html", context={})
 
 
+def contingency_enabled() -> bool:
+    """Modo contingencia del quiosco (copia local de la lista + service worker `/kiosk/sw.js`). APAGADO por defecto; lo prende `CONTINGENCY_ENABLED=1` (staging, desde deploy/gcp/config.sh).
+    Encenderlo en producción exige constancia legal escrita, pruebas en dispositivos reales y decisión de Juan David (docs/15, D2.5d)."""
+    return os.getenv("CONTINGENCY_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
 @app.get("/kiosk/sw.js", include_in_schema=False)
 def kiosk_service_worker():
     """Service worker del quiosco (static/js/kiosk-sw.js): solo guarda el caparazón de `/kiosk/<id>/registro` y `/static/*` para recargar la página sin red; nunca la API ni el roster. Va en
     `/kiosk/` (su alcance por defecto es esa carpeta: solo controla las páginas del quiosco) y ANTES de `/kiosk/{event_id}`. `__BUILD__` = revisión de Cloud Run + huella del archivo:
     cada despliegue cambia el contenido, el navegador instala el worker nuevo y éste borra los cachés viejos. Sin caché HTTP, para que el navegador vea siempre la última versión."""
+    if not contingency_enabled():       # apagado: un worker que se desregistra y borra sus cachés (quien lo tenía de antes queda limpio en su próxima visita)
+        source = open(os.path.join("static", "js", "kiosk-sw-off.js"), encoding="utf8").read()
+        return Response(source, media_type="application/javascript", headers={"Cache-Control": "no-cache, max-age=0"})
     source = open(os.path.join("static", "js", "kiosk-sw.js"), encoding="utf8").read()
     build = f"{os.getenv('K_REVISION', 'local')}-{hashlib.sha1(source.encode()).hexdigest()[:10]}"
     return Response(source.replace("__BUILD__", build), media_type="application/javascript", headers={"Cache-Control": "no-cache, max-age=0"})
@@ -473,6 +482,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "field_configs_json": field_configs_json,
         "field_labels": {cfg["key"]: cfg["label"] for cfg in field_configs},
         "sidebar_active": "eventos",
+        "contingency_enabled": contingency_enabled(),
     }
     if extra_context:
         context.update(extra_context)
