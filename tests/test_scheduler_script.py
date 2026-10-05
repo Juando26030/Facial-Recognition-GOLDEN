@@ -34,11 +34,9 @@ case "$1 $2" in
 esac
 exit 0
 '''
-NOW = datetime.now(timezone.utc)
-
-
 def iso(hours_ago):
-    return (NOW - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Hora «hace N horas» respecto de AHORA (no de la importación del módulo: en la suite completa pasan minutos entre pruebas y los 2,5 h se volvían 2,6)."""
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def good_job(**over):
