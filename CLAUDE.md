@@ -5,7 +5,7 @@ formularios web públicos con pagos (Wompi), ruleta, estadísticas y reportes. F
 frontend Jinja2 + JS plano; motor facial `face_recognition`/dlib. Repo público: https://github.com/Juando26030/Facial-Recognition-GOLDEN
 
 **Para retomar el trabajo en curso lee primero [`docs/HANDOFF.md`](docs/HANDOFF.md).** El detalle de cada sprint (porqués, bugs reales y
-cómo se arreglaron) está en [`docs/historial.md`](docs/historial.md). Lo que falta construir (decidido con Juan David) está en [`docs/16_BACKLOG_PRODUCTO.md`](docs/16_BACKLOG_PRODUCTO.md) y el servidor local sin internet en [`docs/17_SERVIDOR_LOCAL.md`](docs/17_SERVIDOR_LOCAL.md). Los documentos de producto (`docs/00`–`06`) los mantiene otra sesión:
+cómo se arreglaron) está en [`docs/historial.md`](docs/historial.md). Lo que falta construir (decidido con Juan David) está en [`docs/16_BACKLOG_PRODUCTO.md`](docs/16_BACKLOG_PRODUCTO.md) y el servidor local sin internet en [`docs/17_SERVIDOR_LOCAL.md`](docs/17_SERVIDOR_LOCAL.md). **Para poner producción en Cloud Run: [`docs/19_GUIA_PRODUCCION.md`](docs/19_GUIA_PRODUCCION.md)** (la ejecuta Juan David; Claude no corre nada en la nube). Los documentos de producto (`docs/00`–`06`) los mantiene otra sesión:
 si no coinciden con el código, manda el código y este archivo.
 
 ## Infraestructura: hoy y destino
