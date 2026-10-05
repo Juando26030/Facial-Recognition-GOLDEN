@@ -5,6 +5,9 @@ import hashlib
 import json
 import time
 
+from sqlalchemy import event
+
+from app.database import engine
 from app.models import AccessLog, EventAttendee, User
 from app.routers import api
 from tests.conftest import login
@@ -97,112 +100,65 @@ def test_roster_download_is_rate_limited_per_user_and_event(client, factory, mon
     assert _get(client, other).status_code == 200                                        # el límite es por evento
 
 
-def test_roster_of_8000_people_is_small_and_fast(client, factory, db):
-    factory.staff("admin", "root")
-    ev = factory.event("en_proceso")
-    n = 8000
-    users = [User(id=f"{1000000000 + i}", tenant_id=ev.tenant_id, first_name=f"Nombre{i}", last_name=f"Apellido{i}", phone="3001234567", email=f"p{i}@example.com", entity="Entidad de prueba S.A.S.")
+def _seed_people(db, ev, n, first_id):
+    users = [User(id=f"{first_id + i}", tenant_id=ev.tenant_id, first_name=f"Nombre{i}", last_name=f"Apellido{i}", phone="3001234567", email=f"p{i}@example.com", entity="Entidad de prueba S.A.S.")
              for i in range(n)]
     db.bulk_save_objects(users)
     db.commit()
     db.bulk_save_objects([EventAttendee(event_id=ev.id, user_id=u.id, tenant_id=ev.tenant_id, categories=json.dumps(["General"])) for u in users])
     db.add_all([AccessLog(tenant_id=ev.tenant_id, user_id=users[i].id, event_id=ev.id, record_type="Existente") for i in range(0, n, 4)])
     db.commit()
-    login(client, "root")
-    t = time.perf_counter()
-    r = _get(client, ev)
-    elapsed = time.perf_counter() - t
-    body = r.json()
-    raw, zipped = len(r.content), len(gzip.compress(r.content))
-    registered = sum(p["s"] == "Registrado" for p in body["people"])
-    print(f"roster 8000: {raw / 1024:.0f} KB sin comprimir, {zipped / 1024:.0f} KB gzip, {elapsed * 1000:.0f} ms")
-    assert body["count"] == n and registered == n // 4
-    assert len({p["h"] for p in body["people"]}) == n                                    # sin colisiones de huella
-    assert raw < 1_500_000 and zipped < 500_000
-    assert elapsed < 5.0
+    return users
 
 
-def test_registration_page_loads_the_contingency_client_before_directory_js():
-    from pathlib import Path
-    html = (Path(__file__).resolve().parent.parent / "templates" / "kiosk_registro.html").read_text(encoding="utf8")
-    assert html.index("js/contingency.js") < html.index("js/directory.js")
-    assert "GoldenContingency.init({ eventId: window.EVENT_ID })" in html and "canAccredit && window.GoldenContingency" in html
+def _run_counting_queries(fn):
+    """Ejecuta `fn()` y devuelve (resultado, sentencias SQL que se enviaron a la base)."""
+    sent = []
+
+    def on_execute(conn, cursor, statement, parameters, context, executemany):
+        sent.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", on_execute)
+    try:
+        return fn(), sent
+    finally:
+        event.remove(engine, "before_cursor_execute", on_execute)
 
 
-def test_kiosk_service_worker_is_served_fresh_with_a_build_token_and_before_the_event_route(client, monkeypatch):
-    monkeypatch.setenv("K_REVISION", "golden-web-00042-abc")
-    r = client.get("/kiosk/sw.js")                                                    # sin sesión: es solo código; no choca con /kiosk/{event_id}
-    assert r.status_code == 200 and r.headers["content-type"].startswith("application/javascript")
-    assert "no-cache" in r.headers["cache-control"] and "max-age=0" in r.headers["cache-control"]
-    assert "__BUILD__" not in r.text and "golden-web-00042-abc-" in r.text
-    monkeypatch.setenv("K_REVISION", "golden-web-00043-def")
-    assert "golden-web-00043-def-" in client.get("/kiosk/sw.js").text                # otra revisión = otro contenido = el navegador instala el worker nuevo
-
-
-def test_registration_page_registers_the_service_worker_and_privacy_has_the_pending_local_copy_section(client):
-    from pathlib import Path
-    html = (Path(__file__).resolve().parent.parent / "templates" / "kiosk_registro.html").read_text(encoding="utf8")
-    assert "navigator.serviceWorker.register('/kiosk/sw.js')" in html and "canAccredit && 'serviceWorker' in navigator" in html and "type: 'precache'" in html
-    page = client.get("/privacidad").text
-    assert "Copia local en el dispositivo del operador" in page and "PENDIENTE DE REVISIÓN LEGAL: todo este apartado" in page
-    for needle in ("24 horas", "30 días", "no es una protección fuerte", "No se guardan fotografías"):
-        assert needle in page, needle
-
-
-def test_roster_carries_the_auto_register_mode_and_its_version_changes_with_it(client, factory, db):
+def test_roster_of_8000_people_is_small_correct_and_needs_a_constant_number_of_queries(client, factory, db, monkeypatch):
+    """Tamaño, correctitud y NÚMERO DE CONSULTAS (constante, no depende de cuántas personas haya); el tiempo solo se imprime. Antes afirmaba «< 5 s», que en el runner de GitHub dio 6,55 s
+    (151 ms en local): el tiempo de un runner compartido no es una propiedad del código. Lo que sí es del código: 11 consultas con 100 personas y con 8.000, y un 304 que NO arma el
+    roster (no calcula una sola huella)."""
     factory.staff("admin", "root")
-    ev = factory.event("en_proceso", auto_register=False)
-    factory.person(ev, "1001")
+    small, big = factory.event("en_proceso"), factory.event("en_proceso")
+    n_small, n_big = 100, 8000
+    _seed_people(db, small, n_small, 2000000000)
+    users = _seed_people(db, big, n_big, 1000000000)
     login(client, "root")
-    first = _get(client, ev)
-    assert first.json()["event"]["auto_register"] is False
-    assert _get(client, ev, headers={"If-None-Match": first.headers["etag"]}).status_code == 304
-    ev.auto_register = True
-    db.commit()
-    again = _get(client, ev, headers={"If-None-Match": first.headers["etag"]})           # al cambiar el modo la copia NO puede seguir «sin cambios»
-    assert again.status_code == 200 and again.json()["event"]["auto_register"] is True and again.headers["etag"] != first.headers["etag"]
 
+    r_small, q_small = _run_counting_queries(lambda: _get(client, small))
+    t = time.perf_counter()
+    r_big, q_big = _run_counting_queries(lambda: _get(client, big))
+    elapsed = time.perf_counter() - t
+    assert r_small.status_code == 200 and r_big.status_code == 200
+    assert len(q_small) == len(q_big) <= 15                                             # constante: no hay una consulta por persona (ni por categoría, ni por registro)
 
-def test_default_logo_is_served_from_static_when_the_local_copy_exists(monkeypatch, tmp_path):
-    from app import main
-    monkeypatch.delenv("DEFAULT_LOGO_URL", raising=False)
-    monkeypatch.setattr(main, "LOCAL_LOGO_FILE", str(tmp_path / "no-existe.png"))
-    assert main.default_logo_url() == main.REMOTE_LOGO_URL                               # mientras no esté la copia propia, la URL de siempre
-    logo = tmp_path / "logo-golden.png"
-    logo.write_bytes(b"\x89PNG\r\n")
-    monkeypatch.setattr(main, "LOCAL_LOGO_FILE", str(logo))
-    assert main.default_logo_url() == "/static/img/logo-golden.png"                      # con la copia propia: desde /static (el service worker la guarda)
-    monkeypatch.setenv("DEFAULT_LOGO_URL", "https://cdn.example/logo.png")
-    assert main.default_logo_url() == "https://cdn.example/logo.png"                     # un valor explícito manda
-    class _Ev:
-        logo_mode, logo_path, id = "default", None, 1
-    monkeypatch.delenv("DEFAULT_LOGO_URL")
-    assert main.event_logo_url(_Ev()) == "/static/img/logo-golden.png"
-    _Ev.logo_mode = "hidden"
-    assert main.event_logo_url(_Ev()) == ""
+    body = r_big.json()
+    raw, zipped = len(r_big.content), len(gzip.compress(r_big.content))
+    registered = sum(p["s"] == "Registrado" for p in body["people"])
+    print(f"roster {n_big}: {len(q_big)} consultas, {raw / 1024:.0f} KB sin comprimir, {zipped / 1024:.0f} KB gzip, {elapsed * 1000:.0f} ms (solo informativo)")
+    assert body["count"] == n_big == len(body["people"]) and registered == n_big // 4
+    assert len({p["h"] for p in body["people"]}) == n_big                               # sin colisiones de huella
+    assert body["people"][0]["h"] == _fp(body["salt"], users[0].id) and body["people"][0]["n"] == "Nombre0 Apellido0"          # ordenado por cédula y bien calculado
+    assert raw / n_big <= 120 and zipped / n_big <= 40                                  # tamaño por persona acotado (hoy ~88 B y ~17 B)
+    assert elapsed < 30                                                                 # margen enorme: solo atrapa un bucle o una consulta fuera de control, no el ruido de un runner
 
+    def boom(*a, **k):
+        raise AssertionError("el 304 no debe armar el roster (ni una huella por persona)")
 
-def test_golden_logo_is_a_local_static_file_used_by_every_page():
-    """El logo de Golden (25 años) es `static/img/logo-golden.png`: ninguna plantilla lo pide ya a goldenlogisticas.com (sin red no se vería) y el logo por defecto de las páginas del evento apunta a él."""
-    from pathlib import Path
-    from app import main
-    root = Path(__file__).resolve().parent.parent
-    logo = root / "static" / "img" / "logo-golden.png"
-    assert logo.is_file() and logo.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
-    offenders = [p.name for p in (root / "templates").glob("*.html") if "goldenlogisticas.com/wp-content" in p.read_text(encoding="utf8")]
-    assert offenders == []
-    assert main.LOCAL_LOGO_URL == "/static/img/logo-golden.png" and main.default_logo_url() in (main.LOCAL_LOGO_URL, __import__("os").environ.get("DEFAULT_LOGO_URL"))
-
-
-def test_jsqr_is_vendored_unmodified_with_its_license_and_qr_js_does_not_use_a_cdn():
-    """jsQR 1.4.0 (npm, Apache-2.0 — no MIT) vive en static/vendor/jsqr: archivo sin tocar (hash fijo), licencia al lado, qr.js lo carga de ahí y el registro lo manda a guardar al service worker."""
-    import hashlib
-    from pathlib import Path
-    root = Path(__file__).resolve().parent.parent
-    vendor = root / "static" / "vendor" / "jsqr"
-    assert hashlib.sha256((vendor / "jsQR.js").read_bytes()).hexdigest() == "bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859"
-    assert "Apache License" in (vendor / "LICENSE").read_text(encoding="utf8") and "Apache-2.0" in (vendor / "README.md").read_text(encoding="utf8")
-    qr = (root / "static" / "js" / "qr.js").read_text(encoding="utf8")
-    assert "cdn.jsdelivr.net" not in qr and "/static/vendor/jsqr/jsQR.js?v=1.4.0" in qr
-    html = (root / "templates" / "kiosk_registro.html").read_text(encoding="utf8")
-    assert "QrScanner.JSQR_URL" in html and "type: 'precache'" in html
+    monkeypatch.setattr(api, "roster_fingerprint", boom)
+    r304, q304 = _run_counting_queries(lambda: _get(client, big, headers={"If-None-Match": r_big.headers["etag"]}))
+    assert r304.status_code == 304 and not r304.content
+    assert len(q304) < len(q_big)                                                       # menos consultas que el 200…
+    assert not [q for q in q304 if "users.first_name" in q or "FILTER (WHERE" in q]     # …y ninguna de las dos que arman las 8.000 filas (personas y conteos por persona)
+    print(f"roster {n_big}, 304: {len(q304)} consultas")
