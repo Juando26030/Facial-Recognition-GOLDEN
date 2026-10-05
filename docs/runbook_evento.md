@@ -55,6 +55,49 @@ quien opera, no para quien programa. Los enlaces a pantallas suponen rol adminis
 5. Si aparece la franja roja «MODO CONTINGENCIA»: seguir escaneando (cédula/QR); quien no esté en la copia → «No registrado: verificar manualmente»; al volver la red la franja se quita sola y la cola se envía. Si dice «Sesión vencida», iniciar sesión de nuevo (enlace de la franja, en otra pestaña). «Revisar (N)» lista a quien también ingresó por otro quiosco durante el corte.
 6. Al terminar la jornada, **cerrar sesión con red** (avisa si quedan ingresos sin enviar).
 7. **Reglas del modo contingencia:** (a) **no cambiar el «Modo autoregistro» mientras haya un quiosco sin red** (la copia local guarda el valor anterior hasta refrescarse con red); (b) sin red la **lista local no muestra cédula ni entidad** (nombre, categorías y estado; buscar por nombre o por cédula exacta); (c) con el modo autoregistro **apagado**, escanear **solo busca y resalta**: se acredita con «✅ Acreditar» en la fila o «Editar → Registrado»; con el modo encendido, escanear acredita al instante.
+## Piloto de ~200 asistentes: criterio de respaldo, `/sistema`, calentamiento y respaldo (2026-10-05, borrador)
+Complementa `docs/observabilidad.md` (qué significa cada color de `/sistema`) y `docs/19_GUIA_PRODUCCION.md`.
+
+### P1. Cuándo se pasa al software de respaldo (criterio concreto)
+Decide **Juan David** (o, si no está, el ingeniero de TI). Se pasa al software de la empresa cuando se cumpla **cualquiera**:
+1. **En la puerta no se puede acreditar ni en línea ni con la lista local** durante **2 minutos seguidos** en **2 o más dispositivos** (los dos modos fallan; con un solo dispositivo fallando se cambia de dispositivo, no de sistema).
+2. Hay **más de 15 personas esperando** y la fila no baja en 3 minutos por una falla del sistema (no por falta de operadores).
+3. `/sistema` está en **rojo** en *Base de datos* o *Cola de trabajos* por más de **3 minutos** y los dispositivos no están en modo «LISTA LOCAL».
+4. Un dispositivo sin red **no tiene** «LISTA LOCAL: N de N» (no se calentó) y es el único en la puerta.
+Al decidirlo: avisar al coordinador, **anotar la hora y el motivo**, y seguir registrando en el software de respaldo. Lo ya acreditado en el sistema nuevo queda; lo acreditado sin red se sincroniza solo al volver la conexión (no se reingresa). Volver al sistema nuevo solo con `/sistema` en verde y un escaneo de prueba bueno.
+*Esto NO es un criterio de rendimiento: la contingencia sin red está para que un corte de internet no pare la puerta.*
+
+### P2. Qué mirar en `/sistema` durante el evento (cada ~15 min y ante cualquier queja)
+| Chequeo | Verde | Mirar (amarillo) | Actuar (rojo) |
+|---|---|---|---|
+| Base de datos | < 100 ms | 100-500 ms | > 500 ms o sin respuesta |
+| Conexiones a la base | < 60 % | 60-85 % | > 85 % (**no reiniciar** en plena carga) |
+| Cola de trabajos | sin fallidos ni esperas | algún fallido o espera > 1 min | ≥ 10 fallidos o espera > 10 min |
+| Último respaldo | ≤ 2 h (horario) | 2-26 h | > 26 h o ninguno |
+| Cargas masivas | ninguna | en curso (no reiniciar) | una > 10 min sin avanzar |
+| Versión desplegada | conocida | desconocida | — |
+Además: **UptimeRobot** en *Up* y ningún correo de «Golden alertas». **Durante el evento no se despliega ni se reinicia nada** (el despliegue de producción respeta el congelamiento; `FORCE` solo en emergencia y con la decisión de Juan David).
+
+### P3. Calentamiento previo (antes de abrir) y prueba sin red
+Para **cada dispositivo** de registro (celulares, tabletas, laptops):
+1. **Con internet, al menos 30 minutos antes** de abrir: iniciar sesión y abrir el registro del evento (`/kiosk/<id>/registro`). iPad: abrirlo **como PWA** (Compartir → Añadir a pantalla de inicio) y usar siempre ese ícono.
+2. Esperar a que la lista local baje y **verificar «LISTA LOCAL: N de N»**, con N = el total del evento en el servidor (hoy esa comparación no existe en pantalla: se compara a mano el contador «registrados de N» con el total de `/sistema` o del directorio; mejora propuesta en `docs/15` D2.5i).
+3. **Prueba de escaneo sin red:** modo avión (o Chrome ▸ Offline), recargar el registro: debe verse la franja de **contingencia en ≤ 5 s** y la **lista local en ≤ 3 s**; escanear **una cédula de prueba** (acredita y queda en cola); quitar el modo avión: debe sincronizar y la persona aparecer registrada en el servidor.
+4. Con **red muerta pero conectada** (wifi sin salida a internet; p. ej. desconectar el módem y dejar el router): repetir el paso 3.
+5. Comprobar la hora del dispositivo y la batería; un cargador por equipo.
+La lista local vive **24 h** desde su última actualización: en eventos de varios días, refrescarla con internet cada mañana.
+
+### P4. Antes de abrir cada evento: respaldo y verificación (Cloud Shell)
+```bash
+gcloud run jobs execute golden-ops --region us-east4 --args="-m,app.ops_runner,backup" --wait          # respaldo ahora mismo
+gcloud run jobs execute golden-ops --region us-east4 --args="-m,app.ops_runner,check-backups" --wait   # debe terminar «successfully completed»
+bash deploy/gcp/scheduler.sh production check                                                          # Scheduler activo y respaldo reciente
+```
+Si `check-backups` falla: **no abrir** hasta entender por qué (`docs/15` D2.5f). Al terminar el evento: dejar el respaldo diario correr o ejecutar `backup-daily`.
+
+### P5. Contactos y registro
+Anotar al inicio: quién vigila `/sistema`, quién decide el cambio al software de respaldo, teléfonos de los dos ingenieros y del coordinador. Durante el evento anotar toda incidencia con hora (qué se vio, qué se hizo): alimenta el postmortem y la lista de mejoras.
+
 ## E. Lo que todavía NO existe (para no prometerlo)
 
 * **Modo contingencia del kiosco** (seguir admitiendo por cédula/QR sin conexión): construido en la rama `migra/fase1-2` (Fase 3) y todavía SIN desplegar a producción ni validado en un quiosco real; la política de privacidad de la copia local está pendiente de revisión legal. Hasta pasar el «Simulacro 3» (docs/15), no prometerlo: la VM actual no lo tiene, y sin conexión no se registra.

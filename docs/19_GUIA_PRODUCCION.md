@@ -1,6 +1,6 @@
 # Guía de ejecución de producción — para Juan David
 
-Qué es: el paso a paso para poner **la primera producción en Google Cloud** con el candidato actual (rama `migra/fase1-2`) y **`CONTINGENCY_ENABLED=0`**. Todo lo de nube lo ejecuta Juan David; Claude Code
+Qué es: el paso a paso para poner **la primera producción en Google Cloud** con el candidato actual (rama `migra/fase1-2`) y **`CONTINGENCY_ENABLED=0`** (no hay usuarios ni datos reales todavía). El modo sin conexión es **requisito del piloto y irá ENCENDIDO en producción**, pero lo enciende **Juan David** (una línea de `deploy/gcp/config.sh`, por PR) después de probarlo en dispositivos reales; `CONTINGENCY_ENABLED` queda como interruptor de emergencia. Claude no cambia ese valor. Todo lo de nube lo ejecuta Juan David; Claude Code
 prepara ramas, flujos y scripts y no corre nada en la nube. Las mejoras (recarga sin red, B8, estados, 7a/7b…) llegan **después**, por PR normal a `migra/fase1-2`.
 Reemplaza el orden de `docs/15` D2.4 y D2.5; los criterios y el porqué siguen allí (D2.5: ramas, neutralizar la VM, runners; D2.5f: respaldos y Scheduler; D2.5g: monitores).
 
@@ -14,14 +14,14 @@ No pegues secretos en este documento ni en el chat: los pide el script a ciegas 
 
 | # | Qué | Decisión / cómo obtenerlo | Ejemplo / valor esperado |
 |---|---|---|---|
-| 0.1 | **ID del proyecto de GCP de producción** (el de «GoldenWeb»; el ID NO es el nombre) | `gcloud projects list` → columna PROJECT_ID. Producción NO va en `goldenweb-staging`. Debe tener la facturación activa. | `<id>` (lo anotas aquí: ____________) |
+| 0.1 | **ID del proyecto de GCP de producción** | `deploy/gcp/config.sh` **no fija ningún ID**: lo lee de `gcloud config get-value project` (nunca se escribe a mano). Lo que sí deriva de él: los buckets `<ID>-golden-app-us-east4` y `<ID>-golden-backups-us-east4` (nombre total ≤ 63 caracteres), el número de proyecto (para las URL de Cloud Run) y el sitio de Firebase `golden-app-<número>`. Recomendado: **`goldenweb-prod`** (como `goldenweb-staging`); 6-30 caracteres, minúsculas, dígitos y guiones. Lo creas tú (paso 1b) en la cuenta de facturación **Golden Logistics – GoldenWeb**. | `goldenweb-prod` (o el que elijas: ____________) |
 | 0.2 | **Región** | Decidida: **us-east4** (junto a Neon en AWS us-east-1). | `us-east4` |
 | 0.3 | **Dominio** | `app.golden-eventos.com`, DNS en Cloudflare (**solo DNS, nube gris**). El sitio de Firebase se llama `golden-app-<número del proyecto>` (lo calcula `config.sh`). | |
-| 0.4 | **Base de datos Neon** | Plan **Launch** activo. Recomendado: un **proyecto Neon NUEVO y vacío** `golden-production` en AWS us-east-1 (una *rama* de staging heredaría sus datos de prueba y los de la carga). Historia de restauración: **1 día**. Necesitas la cadena **directa** (host **sin** `-pooler`) del rol dueño. | `postgresql://…@ep-…us-east-1.aws.neon.tech/…` (la pegas a ciegas en el paso 3) |
+| 0.4 | **Base de datos Neon** | Cuenta de Neon **a nombre de la empresa**, plan **Launch**, **AWS us-east-1**, historial de restauración de **1 día**. Recomendado: un **proyecto NUEVO y vacío** `golden-production` (una *rama* de staging heredaría sus datos de prueba y los de la carga). Necesitas la cadena **directa** (host **sin** `-pooler`) del rol dueño. | `postgresql://…@ep-…us-east-1.aws.neon.tech/…` (la pegas a ciegas en el paso 3) |
 | 0.5 | **Cuentas con acceso** | Google (propietario del proyecto), GitHub (administrador del repositorio: Environments y Actions), Cloudflare (DNS), Neon, Firebase (mismo Google), UptimeRobot, y un **correo para alertas** (`ALERT_EMAIL`). | |
 | 0.6 | **Correo saliente** (escarapela digital, formularios, recuperar contraseña) | Se configura con Microsoft Graph (`azure-tenant-id`, `azure-client-id`, `azure-client-secret`, `graph-sender`). Si no los tienes ahora, el sistema funciona pero **no manda correos**: el piloto los necesita. | prepararlos antes del evento |
 | 0.7 | **Pagos (Wompi)** | Para el corte basta el modo de pruebas (`wompi-sandbox-*`). Las llaves de producción se cargan cuando se activen los pagos. | opcional ahora |
-| 0.8 | **Presupuesto** | Alerta de **US$40/mes** (paso 12). Antes mira la moneda de la cuenta de facturación: ya existe «GoldenWeb mensual» de COP 160.000 (≈ US$40). | `gcloud billing accounts list` |
+| 0.8 | **Presupuesto** | **Ya existe a nivel de la cuenta de facturación y cubre todos los proyectos: no se crea ni se toca.** (`bootstrap.sh`, paso 11, lo detecta y solo lo informa.) | nada que hacer |
 | 0.9 | **Llaves nuevas** | La VM no tiene datos reales, así que producción arranca con `SECRET_KEY` y `FACE_ENCRYPTION_KEY` **nuevas** (las genera el script con `FRESH_START=1`). **Copia `FACE_ENCRYPTION_KEY` a un lugar seguro**: perderla = perder los rostros que se registren. | |
 | 0.10 | **VM** | Se detiene antes del corte (la dejas encendida si prefieres; lo importante es que **no tenga runner** y que `deploy.yml` no se dispare: paso 1). | |
 
@@ -43,10 +43,25 @@ No pegues secretos en este documento ni en el chat: los pide el script a ciegas 
 
 ---
 
+## 1b. Crear el proyecto de GCP de producción (lo haces tú)
+
+*Dónde:* Cloud Shell (o la consola: IAM y administración → Crear proyecto).
+```bash
+gcloud projects create goldenweb-prod --name="GoldenWeb"          # el ID (goldenweb-prod) es el que usarás en todo; el nombre puede ser el que quieras
+gcloud billing accounts list                                       # copia el ID de «Golden Logistics – GoldenWeb» (formato XXXXXX-XXXXXX-XXXXXX)
+gcloud billing projects link goldenweb-prod --billing-account <ID de la cuenta de facturación>
+gcloud config set project goldenweb-prod && gcloud config set run/region us-east4
+gcloud projects describe goldenweb-prod --format='value(projectNumber,lifecycleState)'
+```
+*Debe verse:* `…  ACTIVE` (con el número del proyecto) y, en `gcloud billing projects describe goldenweb-prod`, `billingEnabled: true`. El presupuesto de la cuenta ya cubre el proyecto: no hay que crear nada.
+*Si falla:* sin permiso para vincular facturación necesitas el rol *Billing Account User* en esa cuenta.
+
+---
+
 ## 2. Neon: la base vacía de producción
 
 *Dónde:* console.neon.tech.
-1. Si tienes plan Launch: **New project** → nombre `golden-production`, región **AWS US East (N. Virginia) / us-east-1**, Postgres **la misma versión que staging** (18).
+1. Con la cuenta de Neon de la empresa y plan Launch: **New project** → nombre `golden-production`, región **AWS US East (N. Virginia) / us-east-1**, Postgres **la misma versión que staging** (18).
 2. **Settings → Storage / History retention: 1 día.**
 3. Copia la **cadena de conexión DIRECTA** del rol dueño (en *Connection details*, apaga «Pooled connection»; el host NO debe contener `-pooler`). No la pegues en ningún chat.
 
@@ -69,6 +84,7 @@ FRESH_START=1 bash deploy/gcp/bootstrap.sh production
 Qué pide (a ciegas, por teclado): cadena directa de Neon; `SECRET_KEY` y `FACE_ENCRYPTION_KEY` (**Enter = generar**); `ops-token` (Enter = generar); los opcionales (Wompi, Azure/Graph, `alert-email`: **pon el correo de alertas**) —Enter para omitir—; correo del canal de alertas; el presupuesto (si ya hay uno que cubra el proyecto, solo lo informa).
 Crea: APIs, cuentas de servicio, Workload Identity (solo la rama `main` despliega producción), buckets nuevos en us-east4, cola de Cloud Tasks, 3 servicios y 3 Jobs con imagen de relleno, **la tarea de Cloud Scheduler `golden-ops-hourly` (en pausa)**, el chequeo de disponibilidad `golden-health` y 3 alertas, y el sitio de Firebase.
 
+**Secretos** (todos en Secret Manager, `golden-<nombre>`; nunca en el repositorio ni en el chat): `direct-database-url` (Neon, dueño, directa) · `database-url` (la crea el script para el rol `golden_app`, por el pooler; no la tecleas) · `secret-key`, `face-encryption-key`, `ops-token` (Enter = generar con `FRESH_START=1`; **guarda `face-encryption-key` también en el gestor de contraseñas de la empresa**) · `alert-email` (correo de alertas) · opcionales ahora: `wompi-*` (+ `wompi-sandbox-*` para pruebas), `azure-tenant-id`, `azure-client-id`, `azure-client-secret`, `graph-sender` (correo saliente), `neon-api-key`, `neon-project-id`, `neon-endpoint-id`.
 *Debe verse:* al final un bloque **«LISTO (production). Configura en GitHub → Settings → Environments → «production» → Variables»** con cinco valores (`GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER`, `GCP_DEPLOYER`, `FIREBASE_SITE`) y la URL de Cloud Run del servicio web. **Cópialos** (paso 4).
 Comprobación:
 ```bash
@@ -201,17 +217,13 @@ gcloud monitoring policies list --format='value(displayName)'
 
 ---
 
-## 12. Presupuesto de US$40
+## 12. Presupuesto: nada que crear
 
+El presupuesto mensual **ya existe a nivel de la cuenta de facturación y cubre todos los proyectos**; el bootstrap lo detecta y solo lo informa («ya hay presupuesto para este proyecto, no se crea otro»). Comprobación opcional (solo lee):
 ```bash
-BILLING=$(gcloud billing projects describe <ID del proyecto> --format='value(billingAccountName)' | sed 's#billingAccounts/##')
-gcloud billing accounts describe $BILLING --format='value(currencyCode)'        # USD o COP
-gcloud billing budgets list --billing-account $BILLING --format='table(displayName,amount.specifiedAmount.units,amount.specifiedAmount.currencyCode)'
+gcloud billing budgets list --billing-account <ID de la cuenta de facturación> --format='table(displayName,amount.specifiedAmount.units,amount.specifiedAmount.currencyCode)'
 ```
-- Si la moneda es **USD** y no hay un presupuesto que cubra el proyecto:
-  `gcloud billing budgets create --billing-account $BILLING --display-name "Golden nube US$40" --budget-amount 40USD --threshold-rule percent=0.5 --threshold-rule percent=0.9 --threshold-rule percent=1.0 --filter-projects projects/<ID del proyecto>`
-- Si la moneda es **COP**, el presupuesto debe estar en COP (no se puede en USD): el existente «GoldenWeb mensual» de **160.000 COP ≈ US$40** (a ~4.000 COP/US$) ya cubre ese tope; comprueba que su filtro incluye el proyecto de producción (o que es de toda la cuenta).
-*Debe verse:* un presupuesto con avisos al **50, 90 y 100 %** que cubre el proyecto. (Los avisos **no apagan nada**: son solo correo.) *Para recibirlos:* Billing → Budgets → el presupuesto → *Notifications* con tu correo.
+*Debe verse:* el presupuesto de la cuenta con sus avisos (50/90/100 %). Los avisos **no apagan nada**.
 
 ---
 
@@ -234,6 +246,7 @@ gcloud billing budgets list --billing-account $BILLING --format='table(displayNa
 ---
 
 ## Resumen de una página (orden y responsable)
+0. **J** Crear el proyecto `goldenweb-prod` y vincular la facturación (paso 1b).
 1. **J** GitHub: Environment `production` + revisor, deshabilitar «Deploy to production», runner de la VM detenido.
 2. **J** Neon: proyecto vacío, historia 1 día, cadena directa.
 3. **J** `FRESH_START=1 bash deploy/gcp/bootstrap.sh production` → copiar las 5 variables.
@@ -245,4 +258,4 @@ gcloud billing budgets list --billing-account $BILLING --format='table(displayNa
 9. **J** Evento de prueba.
 10. **J** Dominio (Firebase + Cloudflare gris) y prueba de IP.
 11. **J** Monitores (Google ya creados; UptimeRobot a `/health`).
-12. **J** Presupuesto US$40.
+12. *(Presupuesto: ya existe a nivel de la cuenta; nada que hacer.)*

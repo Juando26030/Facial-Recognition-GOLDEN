@@ -10,3 +10,6 @@ tests/load/.load_env.json
 .env.*.local
 build/
 ensayo_*.log
+restore_test_*.log
+.env.restore
+.env.live
