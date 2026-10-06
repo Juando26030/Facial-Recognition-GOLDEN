@@ -33,6 +33,8 @@ def _register(client, ev, uid="1001", consent=None, photo=True):
     data = {"event_id": ev.id, "id": uid, "first_name": "Ana", "last_name": "Mora"}
     if consent is not None:
         data["biometric_consent"] = consent
+    if photo:
+        data["birth_date"] = "1990-01-01"             # L3: con foto hace falta la fecha de nacimiento (solo mayores de 18)
     files = {"file": ("f.jpg", _photo(), "image/jpeg")} if photo else None
     return client.post("/api/register", data=data, files=files)
 
@@ -48,6 +50,11 @@ def test_a_face_is_never_saved_without_the_persons_explicit_authorization(client
     ok = _register(client, ev, consent="true")
     assert ok.status_code == 200, ok.text
     u = db.query(User).filter_by(id="1001").first()
+    assert u.face_encoding is None and u.face_captured_at and "face_pending" in ok.json()           # REGLA A: la casilla del digitador NO basta para calcular el vector
+    from tests.conftest import accept
+    accept(db, ev, "2002")                                                                           # la PERSONA aceptó (audit_consent_logs): ahora sí se calcula
+    assert _register(client, ev, uid="2002", consent="true").status_code == 200
+    u = db.query(User).filter_by(id="2002").first()
     assert u.face_encoding and u.biometric_consent_at and u.biometric_consent_source == "kiosko"     # queda constancia de cuándo y cómo
 
 
@@ -60,20 +67,36 @@ def test_registering_by_cedula_without_photo_needs_no_biometric_consent(client, 
     assert u.face_encoding is None and u.biometric_consent_at is None
 
 
+def _zip_of(name):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(name, _photo())
+    return buf.getvalue()
+
+
 def test_photo_zip_needs_the_organizers_declaration_and_records_it(client, factory, faces, db):
     from app.models import User
     ev = _kiosk(client, factory, role="coordinador")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("3003.jpg", _photo())
-    files = {"roster_file": ("b.csv", b"id,nombres,apellidos\n3003,Luis,Paz\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
+    files = {"roster_file": ("b.csv", b"id,nombres,apellidos,fecha de nacimiento\n3003,Luis,Paz,1990-04-02\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id)}, files=files)
     assert r.status_code == 400 and "autorización" in r.json()["detail"]
-    files = {"roster_file": ("b.csv", b"id,nombres,apellidos\n3003,Luis,Paz\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
+    files = {"roster_file": ("b.csv", b"id,nombres,apellidos,fecha de nacimiento\n3003,Luis,Paz,1990-04-02\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "photos_authorized": "true"}, files=files)
     assert r.status_code == 200, r.text
     db.expire_all()
-    assert db.query(User).filter_by(id="3003").first().biometric_consent_source == "carga_masiva"
+    from app.storage import get_storage, photo_key
+    u = db.query(User).filter_by(id="3003").first()
+    assert u.face_encoding is None and u.biometric_consent_source is None and u.face_captured_at           # REGLA A: la foto se guarda, el vector NO se calcula antes de que la persona acepte
+    assert get_storage().exists(photo_key(ev.tenant_id, "3003"))
+    ev = factory.event("en_proceso", controller_mode="tercero", organizer_name="O", organizer_nit="1", organizer_privacy_email="o@o.test", precalculo_autorizado=True)      # excepción: tercero con anexo firmado
+    csv = "\n".join(["id,nombres,apellidos,fecha de nacimiento", "4004,Eva,Paz,1990-04-02", ""]).encode()
+    files = {"roster_file": ("b.csv", csv, "text/csv"), "zip_file": ("f.zip", _zip_of("4004.jpg"), "application/zip")}
+    assert client.post("/api/bulk_register", data={"event_id": str(ev.id), "photos_authorized": "true"}, files=files).status_code == 200
+    db.expire_all()
+    assert db.query(User).filter_by(id="4004").first().biometric_consent_source == "carga_masiva"      # con pre-cálculo autorizado sí se calcula al cargar
 
 
 # ------------------------------- borrado / retención -------------------------------
@@ -103,6 +126,8 @@ def test_purge_event_erases_faces_but_keeps_people_who_are_in_another_active_eve
     other = factory.event("en_proceso", facial_enabled=True)
     _with_face(db, ev, "1001")
     _with_face(db, ev, "1002", other_event=other)
+    from tests.conftest import accept
+    accept(db, other, "1002")                                                                                                  # (regla 2026-10-06) solo cuenta si aceptó en ese otro evento
     login(client, "adm1")
     assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={}).status_code == 400                                 # sin confirmación no borra
     assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True, "confirm_name": "otro nombre"}).status_code == 400
@@ -309,7 +334,9 @@ def test_privacy_texts_state_7_day_retention_cap_backups_and_processors(client, 
     ev = factory.event("en_proceso", facial_enabled=True)
     factory.staff("coordinador", "coord1")
     login(client, "coord1")
-    assert "7 días después de que finalicen todos tus eventos" in client.get(f"/kiosk/{ev.id}/registro").text
+    # El aviso del quiosco ahora es la pantalla de autorización de la auditora (L1): trae el plazo de borrado, la excepción de otro evento y el tope de 180 días.
+    shown = " ".join(client.get(f"/api/events/{ev.id}/consent-text").json()["body"])
+    assert "siete (7) días siguientes a la finalización del evento" in shown and "180 días" in shown and "30 días" in shown
 
 
 def test_privacy_policy_goes_back_to_pending_by_itself_when_its_text_changes(client, monkeypatch):

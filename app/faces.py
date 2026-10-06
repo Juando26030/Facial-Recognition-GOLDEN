@@ -26,7 +26,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app import face_worker
+from app import consent, face_worker
 from app.models import Event, EventAttendee, User
 
 log = logging.getLogger("golden.faces")
@@ -157,13 +157,19 @@ def _lock_for(event_id: int) -> threading.Lock:
         return _locks.setdefault(event_id, threading.Lock())
 
 
-def _build(db: Session, event: Event, version: int) -> _Index:
+def _build(db: Session, event: Event, version: int, ungated: bool = False) -> _Index:
     rows = (db.query(User.id, User.face_encoding)
             .join(EventAttendee, and_(EventAttendee.user_id == User.id, EventAttendee.tenant_id == User.tenant_id))
-            .filter(EventAttendee.event_id == event.id, User.tenant_id == event.tenant_id, User.face_encoding != None)  # noqa: E711
+            .filter(EventAttendee.event_id == event.id, User.tenant_id == event.tenant_id, User.face_encoding != None, User.is_biometric_enabled.is_(True))  # noqa: E711   (menores: nunca)
             .all())
+    # NADIE se reconoce por su rostro sin una aceptación registrada para este evento (aunque ya tenga vector). Única excepción, `ungated` (camino 2: evento con pre-cálculo autorizado
+    # y UN clic válido del quiosco): también entran quienes aún no han decidido, pero NUNCA quien ya rechazó o revocó en este evento.
+    allowed = consent.accepted_user_ids(db, event.tenant_id, event.id)
+    denied = consent.denied_user_ids(db, event.tenant_id, event.id) if ungated else None
     ids, vectors, dim = [], [], None
     for uid, raw in rows:
+        if (uid in denied) if ungated else (uid not in allowed):
+            continue
         try:
             arr = np.asarray(json.loads(raw), dtype=np.float32)
         except (TypeError, ValueError):
@@ -184,17 +190,18 @@ def _build(db: Session, event: Event, version: int) -> _Index:
     return _Index(version, ids, matrix)
 
 
-def event_index(db: Session, event: Event) -> _Index:
+def event_index(db: Session, event: Event, ungated: bool = False) -> _Index:
     """Matriz vigente del evento. `event.faces_version` ya viene cargado con el evento (sin una consulta extra por escaneo)."""
     version = event.faces_version or 0
-    idx = _indexes.get(event.id)
+    key = -event.id if ungated else event.id
+    idx = _indexes.get(key)
     if idx is not None and idx.version >= version:
         return idx
-    with _lock_for(event.id):                      # varios escaneos a la vez tras un cambio: uno reconstruye, los demás esperan y reutilizan
-        idx = _indexes.get(event.id)
+    with _lock_for(key):                           # varios escaneos a la vez tras un cambio: uno reconstruye, los demás esperan y reutilizan
+        idx = _indexes.get(key)
         if idx is None or idx.version < version:
-            idx = _build(db, event, version)
-            _indexes[event.id] = idx
+            idx = _build(db, event, version, ungated)
+            _indexes[key] = idx
         return idx
 
 
@@ -215,7 +222,7 @@ def is_doubtful(ranked: List[Tuple[str, float]]) -> bool:
     return len(ranked) >= 2 and (ranked[1][1] - ranked[0][1]) < MATCH_MARGIN
 
 
-def recognize(db: Session, event: Event, image_bytes: bytes) -> Tuple[str, List[Tuple[str, float]]]:
+def recognize(db: Session, event: Event, image_bytes: bytes, ungated: bool = False) -> Tuple[str, List[Tuple[str, float]]]:
     """Devuelve ("NO_FACE", []) | ("NO_MATCH", []) | ("MATCH", ranked) con `ranked` = los TOP_CANDIDATES más cercanos (el primero está dentro de la tolerancia).
     Levanta `Busy` si la cola de cálculo facial está saturada. Un solo cálculo facial y una sola operación numpy: los candidatos no cuestan más."""
     from app.biometrics import BiometricEngine    # import tardío: PIL/numpy solo hacen falta aquí (dlib vive en el proceso hijo)
@@ -224,7 +231,7 @@ def recognize(db: Session, event: Event, image_bytes: bytes) -> Tuple[str, List[
     encoding = extract(image, jitters=RECOGNITION_JITTERS, max_side=RECOGNITION_MAX_SIDE, largest_face=True)
     if not encoding:
         return "NO_FACE", []
-    ranked = event_index(db, event).top(encoding)
+    ranked = event_index(db, event, ungated).top(encoding)
     if ranked and ranked[0][1] < FACE_TOLERANCE:
         return "MATCH", ranked
     return "NO_MATCH", []
@@ -239,6 +246,22 @@ def identify(db: Session, event: Event, image_bytes: bytes) -> Tuple[str, Option
 # ------------------------------------------------------------------ token de coincidencia (evita reconocer dos veces)
 def _serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="face-match")
+
+
+CLICK_TOKEN_TTL = int(os.getenv("CONSENT_CLICK_TTL", "120"))      # segundos que vale UN clic en «Acepto…» del quiosco (camino 2)
+
+
+def make_click_token(event_id: int, staff_id: int, text_hash: str, version: str, at_iso: str) -> str:
+    """Token firmado del clic de UNA persona en la pantalla de autorización del quiosco (solo viaja en cuerpos de petición). Lleva el hash del texto mostrado y la hora del clic."""
+    return URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="consent-click").dumps({"e": event_id, "s": staff_id, "h": text_hash, "v": version, "t": at_iso})
+
+
+def read_click_token(token: str, event_id: int, staff_id: int) -> Optional[dict]:
+    try:
+        data = URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="consent-click").loads(token, max_age=CLICK_TOKEN_TTL)
+    except (BadSignature, SignatureExpired):
+        return None
+    return data if data.get("e") == event_id and data.get("s") == staff_id else None
 
 
 def make_match_token(event_id: int, staff_id: int, user_id: str, ranked: Optional[List[Tuple[str, float]]] = None, doubtful: bool = False) -> str:

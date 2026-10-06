@@ -21,6 +21,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from app.timeutil import utcnow
 
@@ -182,8 +183,80 @@ def hourly(now=None) -> dict:
     return results
 
 
+def export_consent() -> str:
+    """Atención a una autoridad: exporta los registros de consentimiento de UNA persona (`CONSENT_EXPORT_CEDULA`, y opcional `CONSENT_EXPORT_TENANT`) a un archivo en el almacenamiento
+    (`consent-exports/…json`). Solo corre a mano (no está en la tarea horaria). El log y el resultado llevan SOLO la clave del archivo y el conteo, jamás la cédula."""
+    from sqlalchemy import select
+
+    from app import consent
+    from app.database import SessionLocal
+    from app.models import AuditConsentLog
+    from app.storage import get_storage
+    cedula = os.getenv("CONSENT_EXPORT_CEDULA", "").strip()
+    if not cedula:
+        raise RuntimeError("Falta CONSENT_EXPORT_CEDULA")
+    tenant = os.getenv("CONSENT_EXPORT_TENANT", "").strip()
+    h = consent.cedula_hash(cedula)
+    with SessionLocal() as db:
+        q = select(AuditConsentLog).where(AuditConsentLog.cedula_hash == h).order_by(AuditConsentLog.consent_timestamp_utc)
+        if tenant:
+            q = q.where(AuditConsentLog.tenant_id == tenant)
+        rows = [{c.name: (getattr(r, c.name).isoformat() if hasattr(getattr(r, c.name), "isoformat") else getattr(r, c.name)) for c in AuditConsentLog.__table__.columns} for r in db.execute(q).scalars()]
+    key = f"consent-exports/{h[:16]}-{utcnow():%Y%m%dT%H%M%S}.json"
+    get_storage().put(key, json.dumps(rows, ensure_ascii=False, indent=1).encode("utf-8"))
+    return f"{len(rows)} registros en {key}"
+
+
+def bench_vector() -> str:
+    """Mide cuánto tarda calcular el vector facial con 10 y 25 jitters EN ESTE ENTORNO (CPU y memoria del Job o servicio donde corre). Imagen SINTÉTICA generada aquí (ruido determinista, sin
+    datos personales) con la ubicación del rostro dada: así no depende de detectar un rostro y mide justo lo que cuesta los jitters (la detección, ~decenas de ms, no entra).
+    Variables: BENCH_REPS (por defecto 5). Imprime solo tiempos y los recursos visibles; nada personal. Correr con: gcloud run jobs execute <job> --args=-m,app.ops_runner,bench-vector"""
+    import numpy as np
+
+    from app.biometrics import _fr
+    fr = _fr()
+    reps = max(2, int(os.getenv("BENCH_REPS", "5")))
+    img = np.random.default_rng(7).integers(0, 255, (480, 640, 3), dtype=np.uint8)
+    box = [(80, 440, 400, 160)]                                             # (arriba, derecha, abajo, izquierda): un recuadro del tamaño de un rostro cercano
+    out = {"cpus": os.cpu_count(), "reps": reps}
+    for jitters in (10, 25):
+        fr.face_encodings(img, known_face_locations=box, num_jitters=1)       # calentamiento (carga de modelos): no cuenta
+        times = []
+        for _ in range(reps):
+            t0 = time.perf_counter()
+            fr.face_encodings(img, known_face_locations=box, num_jitters=jitters)
+            times.append((time.perf_counter() - t0) * 1000)
+        times.sort()
+        out[f"jitters_{jitters}_ms"] = {"min": round(times[0]), "mediana": round(statistics.median(times)), "max": round(times[-1])}
+    try:
+        with open("/sys/fs/cgroup/memory.max") as f:
+            out["memoria_limite"] = f.read().strip()
+    except OSError:
+        pass
+    return json.dumps(out)
+
+
+def list_minors() -> str:
+    """Revisión (L3): personas con fecha de nacimiento que da MENOS de 18 años y que aún tienen vector o foto. NO borra nada: deja un archivo `minors-review/…json` (cédulas) en el almacenamiento para que
+    una persona lo revise y decida; el resultado solo lleva el conteo y la clave del archivo. Los menores quedan además con `is_biometric_enabled=false` (no se reconocen)."""
+    from app import minors
+    from app.database import SessionLocal
+    from app.models import User
+    from app.storage import get_storage, photo_key
+    found = []
+    with SessionLocal() as db:
+        for u in db.query(User.id, User.tenant_id, User.birth_date, User.face_encoding).filter(User.birth_date.isnot(None)).yield_per(500):
+            if minors.is_minor(u.birth_date) and (u.face_encoding or get_storage().exists(photo_key(u.tenant_id, u.id))):
+                found.append({"tenant": u.tenant_id, "id": u.id})
+    if not found:
+        return "0 menores con datos biométricos"
+    key = f"minors-review/{utcnow():%Y%m%dT%H%M%S}.json"
+    get_storage().put(key, json.dumps(found, ensure_ascii=False, indent=1).encode("utf-8"))
+    return f"{len(found)} menores con datos biométricos en {key}"
+
+
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "check-backups": check_backups, "sweep": sweep, "warmup": warmup}
+         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors}
 
 
 def main(task: str) -> int:

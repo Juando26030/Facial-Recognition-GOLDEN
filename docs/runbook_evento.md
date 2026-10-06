@@ -98,6 +98,24 @@ Si `check-backups` falla: **no abrir** hasta entender por qué (`docs/15` D2.5f)
 ### P5. Contactos y registro
 Anotar al inicio: quién vigila `/sistema`, quién decide el cambio al software de respaldo, teléfonos de los dos ingenieros y del coordinador. Durante el evento anotar toda incidencia con hora (qué se vio, qué se hizo): alimenta el postmortem y la lista de mejoras.
 
+## Reconocimiento facial voluntario: operación del piloto (L6, 2026-10-06; decisiones de la auditora)
+
+**Antes del evento (coordinador):** en Parámetros del evento, sección «Autorización del reconocimiento facial»: confirmar «Evento propio de Golden», dejar «Una sola vez por persona y evento» y, si se quiere que la gente acepte desde el celular, activar la página de aceptación; imprimir el póster con el QR. Cargar el listado (la columna «fecha de nacimiento» es opcional: sin ella la foto del zip no se conserva). Nadie del equipo marca «autoriza» por la persona: **la aceptación la da la persona en la pantalla**.
+
+**En la puerta, dos filas con letrero visible:**
+- **Fila A, reconocimiento facial** (solo personas que ya aceptaron): el digitador escribe o escanea la cédula/QR, el sistema consulta; si ya aceptó, enciende la cámara. Si es la primera vez, la persona ve la pantalla completa y pulsa «ACEPTO…»; se capta su rostro y **hoy entra por cédula**: desde la próxima entrada, por rostro (el vector se calcula aparte, nunca se hace esperar a nadie).
+- **Fila B, cédula o QR:** para quien no quiere rostro, es menor de 18 años, no aparece en la lista facial o no quiere esperar. **Nunca se bloquea la puerta** ni se presiona a nadie.
+- Si la cámara dice «No te encontramos en la lista con reconocimiento facial», se acredita por cédula o QR. No se guarda nada de esa captura.
+- Quien aceptó desde el celular: el digitador pide el documento o el QR y, al ver el cuadro «Confirma su identidad», lo confirma; antes de eso su rostro no se usa.
+
+**Bloqueo de pantalla de los dispositivos (obligatorio):** código alfanumérico o biométrico del operador y bloqueo automático a los **2 minutos**. Sin PIN dentro de la aplicación en el piloto.
+
+**Sin conexión:** hay cédula/QR con la copia local; el rostro necesita servidor. Las decisiones tomadas (aceptar o rechazar) se guardan en el dispositivo y se envían solas; lo no enviado en 7 días se avisa desde el día 3 y se elimina.
+
+**Quien quiera revocar o que se borren sus datos:** admin o super_admin, Parámetros → Privacidad: «Revocar autorización» (borra rostro y deja constancia) o «Suprimir TODOS los datos». Atender la consulta en máximo 10 días hábiles y el reclamo en 15. Correo de privacidad: soporteit@goldenlogisticas.com (se revisa a diario).
+
+**Al terminar:** marcar el evento «finalizado» **el mismo día**: desde ahí corren los 7 días de borrado de rostros. Si queda sin finalizar, el sistema avisa en `/sistema` pasados 3 días del fin.
+
 ## E. Lo que todavía NO existe (para no prometerlo)
 
 * **Modo contingencia del kiosco** (seguir admitiendo por cédula/QR sin conexión): construido en la rama `migra/fase1-2` (Fase 3) y todavía SIN desplegar a producción ni validado en un quiosco real; la política de privacidad de la copia local está pendiente de revisión legal. Hasta pasar el «Simulacro 3» (docs/15), no prometerlo: la VM actual no lo tiene, y sin conexión no se registra.

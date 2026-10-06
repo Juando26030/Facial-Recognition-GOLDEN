@@ -11,7 +11,7 @@ from sqlalchemy import inspect
 
 from app import faces
 from app.models import AccessLog, Event, EventAttendee, User
-from tests.conftest import login
+from tests.conftest import accept, login
 
 
 def _vec(seed: int) -> list:
@@ -46,6 +46,7 @@ def _person_with_face(db, ev, uid, seed, attend=True):
     if attend:
         db.add(EventAttendee(event_id=ev.id, user_id=uid, tenant_id=ev.tenant_id))
     db.commit()
+    accept(db, ev, uid)
     return u
 
 
@@ -67,7 +68,7 @@ def test_recognize_uses_only_people_of_the_event_and_returns_a_match_token(clien
     assert r["result"] == "MATCH_PENDING" and r["data"]["id"] == "1001" and r["match_token"]
 
     scan.face = _vec(2)                                                    # una persona del cliente, pero de OTRO evento: no se reconoce
-    assert _post_scan(client, ev).json() == {"result": "NO", "details": "Denegado"}
+    assert _post_scan(client, ev).json() == {"result": "NO", "details": "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."}
 
     scan.face = None
     assert _post_scan(client, ev).json()["details"] == "Rostro no detectado"

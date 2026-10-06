@@ -26,7 +26,8 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, security, digital_badge, faces, heavy, uploads
+from app import bulk_jobs, crypto, minors, privacy, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -497,7 +498,7 @@ def _private_json(payload: dict) -> JSONResponse:
 @router.post("/recognize")
 def recognize(
     event_id: int = Form(...), file: Optional[UploadFile] = File(None), match_token: str = Form(""), force: bool = Form(False),
-    confirm: bool = Form(False),
+    confirm: bool = Form(False), click_token: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Sprint 2.2 Fase B (2026-09-16): un match facial YA NO acredita solo por defecto — antes
@@ -524,8 +525,9 @@ def recognize(
     else:
         if file is None:
             raise HTTPException(status_code=422, detail="Falta la foto")
+        click = faces.read_click_token(click_token, event.id, staff.id) if (click_token and event.precalculo_autorizado) else None      # camino 2: UN clic válido de este quiosco
         try:
-            status, ranked = faces.recognize(db, event, file.file.read())
+            status, ranked = faces.recognize(db, event, file.file.read(), ungated=bool(click))
         except faces.Busy:
             raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
         except UnidentifiedImageError:
@@ -533,11 +535,16 @@ def recognize(
         if status == "NO_FACE":
             return {"result": "NO", "details": "Rostro no detectado"}
         if status == "NO_MATCH":
-            return {"result": "NO", "details": "Denegado"}
+            return {"result": "NO", "details": NOT_FOUND_FACE}
         user = db.get(User, (ranked[0][0], event.tenant_id))
         if not user:
-            return {"result": "NO", "details": "Denegado"}
+            return {"result": "NO", "details": NOT_FOUND_FACE}
         doubtful = faces.is_doubtful(ranked)
+        if click and not doubtful and not consent_mod.has_acceptance(db, event.tenant_id, user.id, event.id):
+            # Coincidencia con un clic válido: AHORA sí consta la aceptación de la persona identificada (hora del clic, hash del texto exhibido). Sin coincidencia no se atribuye nada a nadie.
+            consent_mod.record(db, tenant_id=event.tenant_id, user_id=user.id, event_id=event.id, version=click["v"], legal_text_hash=click["h"], accepted=True, adult=True, reason="consent",
+                               device=f"staff:{staff.id}", at=datetime.fromisoformat(click["t"]))
+            db.commit()
 
     token = faces.make_match_token(event.id, staff.id, user.id, ranked, doubtful)
     if doubtful:
@@ -987,6 +994,9 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
 
 
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
+NOT_FOUND_FACE = "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."      # texto de la auditora (6 oct): sin coincidencia no se guarda nada (ni el vector temporal ni la foto en vivo)
+SUPPRESSED_MSG = "Esta persona solicitó la supresión de sus datos: no se puede registrar de nuevo sin su autorización."
+_BIRTH_KEYS = ('fecha de nacimiento', 'fecha_nacimiento', 'fecha nacimiento', 'nacimiento', 'birth_date')      # columna opcional del Excel (L3)
 ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
 ROSTER_LIMIT, ROSTER_WINDOW = 12, timedelta(minutes=10)      # descargas por usuario y evento: un quiosco refresca cada pocos minutos; más que esto es un abuso o un bucle
 
@@ -1008,6 +1018,14 @@ def roster_fingerprint(salt: str, cedula: str) -> str:
     return hashlib.sha256(f"{salt}:{roster_normalize(cedula)}".encode()).hexdigest()[:16]
 
 
+def consent_block(event: Event):
+    """Texto de autorización biométrica del evento (con su huella) para que el quiosco lo muestre y registre SIN conexión; None si el evento no usa rostro."""
+    if not event.facial_enabled:
+        return None
+    t = legal_texts.render(event)
+    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox", "blocked")}, "mode": event.consent_prompt_mode, "click_mode": bool(event.precalculo_autorizado), "every_scan": legal_texts.every_scan_prompt()}
+
+
 @router.get("/events/{event_id}/local-roster")
 def local_roster(
     event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
@@ -1022,26 +1040,29 @@ def local_roster(
     if security.minutes_locked(db, "roster_local", key, None, ROSTER_LIMIT, ROSTER_LIMIT, ROSTER_WINDOW):
         raise HTTPException(status_code=429, detail="Demasiadas descargas del roster local — espera unos minutos.")
     security.record_event(db, "roster_local", key, None)
-    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}")      # el modo autoregistro viaja en la copia: si cambia, cambia la versión
+    accepted = consent_mod.accepted_user_ids(db, event.tenant_id, event.id)
+    web_pending = {r[0] for r in db.execute(text("SELECT user_id FROM web_acceptances WHERE tenant_id = :t AND event_id = :e AND verified_at IS NULL"), {"t": event.tenant_id, "e": event.id})}
+    n_consents = db.execute(text("SELECT count(*) FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e"), {"t": event.tenant_id, "e": event.id}).scalar()
+    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}|{n_consents}|{len(web_pending)}|{event.controller_mode}|{event.consent_prompt_mode}|{int(bool(event.facial_enabled))}|{int(bool(event.precalculo_autorizado))}")      # el modo autoregistro y la autorización biométrica viajan en la copia: si cambian, cambia la versión
     headers = {"Cache-Control": "private, no-cache", "ETag": f'"{version}"'}
     if request.headers.get("if-none-match") == headers["ETag"]:
         return Response(status_code=304, headers=headers)
     salt = roster_salt(event)
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
-    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories).outerjoin(
+    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories, User.birth_date).outerjoin(
         EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id) & (EventAttendee.event_id == event.id),
     ).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids))).order_by(User.id).all()
     counts = {uid: (real, new) for uid, real, new in db.query(
         AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"), func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo"),
     ).filter(AccessLog.event_id == event.id).group_by(AccessLog.user_id)}
     rows = []
-    for uid, first, last, categories in people:
+    for uid, first, last, categories, birth in people:
         real, new = counts.get(uid, (0, 0))
         rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
-                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado")})
+                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted and not minors.is_minor(birth) else 0, "b": 1 if minors.is_minor(birth) else 0, "v": 1 if uid in web_pending else 0})      # `v`: aceptó desde el celular y falta verificar su identidad en puerta      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
     return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status, "auto_register": bool(event.auto_register)},
-                         "salt": salt, "count": len(rows), "people": rows}, headers=headers)
+                         "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
 
 
 @router.patch("/users/{user_id}")
@@ -1291,7 +1312,7 @@ def manual_register(
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
-    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None),
+    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None), birth_date: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -1328,8 +1349,24 @@ def manual_register(
         _apply_optional_labels(event, used_optional_keys, field_labels)
         db.commit()
 
+    if file is not None and file.filename and not _truthy(biometric_consent):      # Ley 1581: sin autorización expresa no se guarda el rostro (se evalúa primero)
+        raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
+    birth = minors.parse_birth(birth_date)
+    if str(birth_date or "").strip() and birth is None:
+        raise HTTPException(status_code=400, detail="La fecha de nacimiento no es válida")
+    minor = minors.is_minor(birth)
+    has_photo = file is not None and bool(file.filename)
+    if has_photo and not minor and birth is None:
+        raise HTTPException(status_code=400, detail="Para guardar el rostro hace falta la fecha de nacimiento: solo se capta el rostro de mayores de 18 años")
+    if privacy.is_suppressed(db, event.tenant_id, id):
+        raise HTTPException(status_code=409, detail=SUPPRESSED_MSG)
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
+        if birth is not None:
+            existing.birth_date = birth
+            if minor:
+                existing.is_biometric_enabled = False
+                privacy.purge_person(db, event.tenant_id, existing.id)      # menor de 18: sin vector ni foto
         if not force and _already_checked_in(db, event.id, existing.id):
             return _duplicate_warning(db, event.id, existing)
         log = AccessLog(
@@ -1360,22 +1397,25 @@ def manual_register(
     # que `file is not None` es cierto incluso sin archivo real — hay que revisar `file.filename`
     # también, si no, `file.read()` da bytes vacíos y `Image.open()` truena (500) en vez de
     # tratarlo como "no se adjuntó foto" (CEDULA-08, bug real encontrado en testing 2026-09-21).
-    if file is not None and file.filename:
+    if has_photo and not minor:
         if not _truthy(biometric_consent):      # Ley 1581 (dato sensible): sin autorización expresa de la persona NO se guarda su rostro; puede registrarse por cédula
             raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
         img_array = BiometricEngine.process_image_stream(file.file.read())
-        try:
-            encodings = faces.extract(img_array, is_registration=True)
-        except faces.Busy:
-            raise HTTPException(status_code=503, detail="Hay muchos procesos faciales en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
-        if not encodings:
-            return {"error": "No se detectó un rostro en la fotografía."}
-        face_enc_json = json.dumps(encodings)
+        if consent_mod.has_acceptance(db, event.tenant_id, id, event.id):      # REGLA A: el vector solo se calcula si la PERSONA ya aceptó (la casilla del digitador no cuenta)
+            try:
+                encodings = faces.extract(img_array, is_registration=True)
+            except faces.Busy:
+                raise HTTPException(status_code=503, detail="Hay muchos procesos faciales en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
+            if not encodings:
+                return {"error": "No se detectó un rostro en la fotografía."}
+            face_enc_json = json.dumps(encodings)
 
     user = User(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
         role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json,
         biometric_consent_at=utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
+        birth_date=birth, is_biometric_enabled=not minor,
+        face_captured_at=utcnow() if (img_array is not None and not face_enc_json) else None,          # foto sin vector: el reloj de retención corre igual
     )
     user.set_extras(extras)
     db.add(user)
@@ -1402,6 +1442,10 @@ def manual_register(
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo."}
+    if img_array is not None and not face_enc_json:
+        reply["face_pending"] = "La foto quedó guardada; el reconocimiento facial se activa cuando la persona acepte en la pantalla de autorización."
+    if minor:
+        reply["minor"] = "Es menor de 18 años: se registró SIN rostro (no se capta ni se guarda). Ingresa por cédula o QR."
     if contact_clean and event.digital_badge_enabled:
         reply["digital"] = _send_digital(db, event, user, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
     return reply
@@ -1653,6 +1697,10 @@ def _bulk_register_impl(
     # es el encoding facial (num_jitters=25, ver CLAUDE.md), así que calcularlo dos veces por foto
     # duplicaba sin necesidad el tiempo de procesamiento de cada lote.
     zip_encodings = {}
+    zip_photos = set()
+    # REGLA A (2026-10-06): NINGÚN flujo calcula el vector de alguien que aún no aceptó. Solo se pre-calcula en un evento de un tercero con el pre-cálculo autorizado (anexo firmado, solo super_admin);
+    # en todo lo demás las fotos se guardan cifradas y el vector se calcula DESPUÉS de que la persona acepte (app/enroll.py).
+    precalc = event.controller_mode == "tercero" and bool(event.precalculo_autorizado)
 
     progress = progress or (lambda *a, **k: None)
     photo_entries = []
@@ -1683,12 +1731,17 @@ def _bulk_register_impl(
                     # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
                     # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
                     # persona quedó sin reconocimiento facial funcional).
-                    encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
-                    if not encodings:
-                        errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
-                        continue
-                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, basename))
-                    zip_encodings[os.path.splitext(basename)[0]] = encodings
+                    if precalc:
+                        encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
+                        if not encodings:
+                            errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
+                            continue
+                        zip_encodings[os.path.splitext(basename)[0]] = encodings
+                    zip_photos.add(os.path.splitext(basename)[0])
+                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
+
+        if photo_entries and not precalc:
+            errors.append("ℹ️ Las fotos se guardaron cifradas, pero su vector facial NO se calcula todavía: se calcula cuando cada persona acepta el reconocimiento facial (en la puerta o desde el celular).")
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
         # quitarle a un evento la capacidad de reconocimiento facial que ya tenía. Decide si
@@ -1734,6 +1787,10 @@ def _bulk_register_impl(
             errors.append(f"❌ Fila {row_num} ({where}): sin ID/cédula, se omitió esta fila.")
             continue
 
+        if privacy.is_suppressed(db, event.tenant_id, identificador):
+            errors.append(f"⚠️ Fila {row_num}: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).")
+            continue
+
         if identificador in carried_ids:
             # Ítem 18: un ID repetido entre el evento anterior y el Excel queda como UN solo registro,
             # y prevalece el dato del evento anterior — no se toca a la persona que ya existe.
@@ -1759,13 +1816,25 @@ def _bulk_register_impl(
             face_enc_json = None
             if str(identificador) in zip_encodings:
                 face_enc_json = json.dumps(zip_encodings[str(identificador)])
-            else:
+            elif precalc:
                 img_key = photo_key(event.tenant_id, f"{identificador}")
                 if get_storage().exists(img_key):
                     stored = crypto.read_array(img_key)          # la foto guardada puede estar cifrada
                     enc = faces.extract(stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
                     if enc:
                         face_enc_json = json.dumps(enc)
+            # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
+            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "")
+            birth = minors.parse_birth(birth_raw)
+            row_minor = minors.is_minor(birth)
+            if birth_raw and birth is None:
+                errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD o DD/MM/AAAA).")
+            has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
+            if (face_enc_json or has_photo) and (row_minor or birth is None):
+                face_enc_json = None
+                has_photo = False
+                get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
+                errors.append(f"⚠️ Fila {row_num}: " + ("es menor de 18 años: no se guardó su rostro (solo cédula o QR)." if row_minor else "tiene foto pero no fecha de nacimiento: no se guardó su rostro (solo se capta el rostro de mayores de 18 años)."))
 
             # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
             # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
@@ -1788,6 +1857,13 @@ def _bulk_register_impl(
                 user.phone = telefono
                 user.email = correo
                 user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
+                if birth is not None:
+                    user.birth_date = birth
+                    user.is_biometric_enabled = not row_minor
+                    if row_minor:
+                        user.face_encoding = None
+                if has_photo and not face_enc_json and user.face_captured_at is None:
+                    user.face_captured_at = utcnow()          # foto guardada sin vector: el reloj de retención (7 días / tope de 180) corre igual
 
                 extras = {}
                 for raw_key, value in clean_row.items():

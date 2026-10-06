@@ -46,27 +46,61 @@ document.addEventListener("DOMContentLoaded", () => {
             .then(stream => { video.srcObject = stream; })
             .catch(err => console.error("Sin acceso a cámara", err));
     }
+    function stopCamera() {
+        const stream = video && video.srcObject;
+        if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop());
+        if (video) video.srcObject = null;
+    }
+    // Autorización biométrica (L1): la cámara solo se enciende con una aceptación de la PERSONA registrada (static/js/consent-gate.js). Camino 1: cédula/QR primero; camino 2 (eventos con
+    // pre-cálculo autorizado): la pantalla se muestra a quien se acerca y un clic da un token válido para UNA comparación. Tras cada intento la cámara vuelve a apagarse.
+    let clickToken = '';
+    let enrollCedula = '';                                   // camino A: la persona acaba de aceptar y aún no tiene vector: se capta su rostro y el vector se calcula aparte
+    let afterEnroll = () => {};
+    let resetGate = () => {};
     if (video) {
-        const gate = document.getElementById('bioGate');
-        const ackKey = 'bio_ack_' + EVENT_ID;
-        const goCedula = (e) => { if (e) e.preventDefault(); const tab = document.querySelector('.tab[data-tab="directorio"]'); if (tab) tab.click(); };
+        const gate = window.GoldenConsent ? window.GoldenConsent.create({ eventId: EVENT_ID }) : null;
+        const ident = document.getElementById('bioIdent'), identInput = document.getElementById('bioCedula'), identBtn = document.getElementById('bioIdentBtn'), identMsg = document.getElementById('bioIdentMsg');
+        const cameraBox = document.getElementById('cameraBox'), scanBtn = document.getElementById('escanearBtn'), eventOpen = !(scanBtn && scanBtn.disabled);
+        const goCedula = (e, cedula) => {
+            if (e) e.preventDefault();
+            const tab = document.querySelector('.tab[data-tab="directorio"]'); if (tab) tab.click();
+            if (cedula && window.directorySearch && window.directorySearch.submitScannedCedula) window.directorySearch.submitScannedCedula(cedula);
+        };
         const altLink = document.getElementById('bioAltLink');
         if (altLink) altLink.addEventListener('click', goCedula);
-        let acked = false;
-        try { acked = sessionStorage.getItem(ackKey) === '1'; } catch (err) { /* sin almacenamiento: se vuelve a pedir */ }
-        if (acked || !gate) startCamera();
-        else {
-            gate.style.display = 'block';
-            const scanBtn = document.getElementById('escanearBtn'), wasDisabled = !!(scanBtn && scanBtn.disabled);
-            if (scanBtn) scanBtn.disabled = true;
-            document.getElementById('bioGateAccept').addEventListener('click', () => {
-                try { sessionStorage.setItem(ackKey, '1'); } catch (err) { /* opcional */ }
-                gate.style.display = 'none';
-                if (scanBtn) scanBtn.disabled = wasDisabled;      // vuelve a como estaba (deshabilitado si el evento no está en proceso)
-                startCamera();
-            });
-            document.getElementById('bioGateDecline').addEventListener('click', goCedula);
+        const cameraOn = () => { cameraBox.style.display = 'block'; if (scanBtn) scanBtn.disabled = !eventOpen; ident.style.display = 'none'; startCamera(); };
+        const cameraOff = () => { stopCamera(); cameraBox.style.display = 'none'; if (scanBtn) scanBtn.disabled = true; ident.style.display = 'block'; identInput.value = ''; clickToken = ''; };
+        afterEnroll = (cedula) => { cameraOff(); enrollCedula = ''; goCedula(null, cedula); };
+        resetGate = () => { cameraOff(); setTimeout(startClickScreen, 0); };
+        async function startClickScreen() {                      // camino 2: solo si el evento lo tiene autorizado (el servidor lo confirma al pedir el token)
+            if (!gate || !eventOpen) return;
+            const block = await gate.loadBlock();
+            if (!block || !block.click_mode) return;
+            identMsg.textContent = '';
+            const token = await gate.clickFlow();
+            if (token) { clickToken = token; cameraOn(); } else { identMsg.textContent = 'Sin reconocimiento facial: ingresa por cédula o QR.'; }
         }
+        async function identify() {                              // camino 1
+            const cedula = (identInput.value || '').trim();
+            if (!cedula) { identMsg.textContent = 'Escribe o escanea la cédula.'; return; }
+            if (!gate) { goCedula(null, cedula); return; }
+            identBtn.disabled = true; identMsg.textContent = 'Consultando…';
+            try {
+                let next = await gate.ensure(cedula);
+                if (next === 'verify') {                           // camino B: aceptó desde el celular; confirmar identidad en puerta
+                    const okId = await showConfirm('Esta persona aceptó el reconocimiento facial desde su celular. Confirma su identidad con el documento físico o el QR: ¿coincide con quien está en la puerta?');
+                    next = okId && await gate.verify(cedula) ? await gate.ensure(cedula) : 'cedula';
+                }
+                if (next === 'camera') { identMsg.textContent = ''; cameraOn(); }
+                else if (next === 'enroll') { enrollCedula = cedula; identMsg.textContent = ''; cameraOn(); resTexto.innerText = 'Capta el rostro de la persona: hoy ingresa por cédula; desde la próxima entrada, por rostro.'; resTexto.style.color = '#D4AF37'; }
+                else if (next === 'pending') { identMsg.textContent = 'Tu reconocimiento facial se está preparando: hoy ingresa por cédula o QR.'; goCedula(null, cedula); }
+                else { identMsg.textContent = ''; identInput.value = ''; goCedula(null, cedula); }
+            } finally { identBtn.disabled = false; }
+        }
+        if (identBtn) identBtn.addEventListener('click', identify);
+        if (identInput) identInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); identify(); } });
+        cameraOff();
+        startClickScreen();
     }
 
     const escanearBtn = document.getElementById('escanearBtn');
@@ -305,8 +339,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 captureUrl = URL.createObjectURL(blob);          // la captura solo vive en memoria, para mostrarla junto a la foto de registro
                 const formData = new FormData();
                 formData.append('file', blob, 'webcam.jpg');
+                if (enrollCedula) {                              // camino A: guardar la captura y encolar el vector; la persona entra YA por cédula (nunca se bloquea la puerta)
+                    const fd = new FormData(); fd.append('user_id', enrollCedula); fd.append('file', blob, 'webcam.jpg');
+                    const who = enrollCedula;
+                    fetch(`/api/events/${EVENT_ID}/enroll-face`, { method: 'POST', body: fd }).then((r) => { resTexto.innerText = r.ok ? '✅ Listo. Hoy ingresa por cédula o QR; tu rostro quedará listo en unos momentos.' : '⚠️ No se pudo guardar el rostro: ingresa por cédula o QR.'; resTexto.style.color = r.ok ? '#28a745' : '#f0ad4e'; }).catch(() => { resTexto.innerText = '⚠️ Sin conexión: ingresa por cédula o QR.'; }).finally(() => afterEnroll(who));
+                    return;
+                }
                 formData.append('event_id', EVENT_ID);
-                submitRecognize(formData);
+                if (clickToken) formData.append('click_token', clickToken);
+                submitRecognize(formData).finally(() => { if (video) resetGate(); });
             }, 'image/jpeg', 0.85);
         });
     }

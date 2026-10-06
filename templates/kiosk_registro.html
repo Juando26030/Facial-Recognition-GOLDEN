@@ -136,19 +136,22 @@
         <div id="scanner" class="section active">
             <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
                 <div class="camera-wrapper">
-                    <!-- Aviso y autorización previa para el dato biométrico (Ley 1581 de 2012, dato sensible): la cámara NO se enciende hasta que la persona autoriza;
-                         quien no quiera se registra por cédula. Se recuerda solo en esta sesión del navegador. -->
-                    <div id="bioGate" role="dialog" aria-modal="false" aria-labelledby="bioGateTitle" style="display:none; background:#fff8e1; border:2px solid var(--golden-primary); border-radius:14px; padding:16px; margin-bottom:12px;">
-                        <h4 id="bioGateTitle" style="margin:0 0 6px;">🔒 Reconocimiento facial — aviso y autorización</h4>
-                        <p style="font-size:0.88rem; line-height:1.5; margin:0 0 8px;">Este evento identifica a las personas por su rostro. Tu rostro es un <b>dato biométrico sensible</b> (Ley 1581 de 2012). Se usa solo para identificarte en este evento. Tu foto y tu rostro se borran 7 días después de que finalicen todos tus eventos (máximo 180 días desde que se capturan); pueden quedar en copias de seguridad hasta 30 días más. Puedes negarte: te registramos por cédula, sin usar tu rostro. <em>[PENDIENTE DE REVISIÓN LEGAL]</em> Más información en la <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</p>
+                    <!-- Autorización biométrica voluntaria (L1, Ley 1581): la cámara NO se enciende hasta que la PERSONA acepta en la pantalla completa (static/js/consent-gate.js); quien no acepta
+                         sigue por cédula/QR sin restricción. Primero se identifica a la persona (cédula o QR) y el sistema consulta su aceptación; en eventos con pre-cálculo autorizado la pantalla
+                         se muestra a quien se acerca (un clic). La aceptación NO la da el digitador. -->
+                    <div id="bioIdent" style="background:#fff8e1; border:2px solid var(--golden-primary); border-radius:14px; padding:14px; margin-bottom:12px;">
+                        <label for="bioCedula" style="font-weight:700; display:block; margin-bottom:6px;">🔒 Reconocimiento facial voluntario: identifica primero a la persona</label>
                         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                            <button type="button" id="bioGateAccept" class="golden-btn golden-btn-primary" style="width:auto;">La persona autoriza el escaneo de su rostro</button>
-                            <button type="button" id="bioGateDecline" class="golden-btn" style="width:auto; background:#f0f0f0; color:var(--golden-dark);">No autoriza — registrar por cédula</button>
+                            <input type="text" id="bioCedula" autocomplete="off" inputmode="numeric" placeholder="Cédula o lector de QR" aria-label="Cédula o QR de la persona" style="flex:1 1 180px; min-width:0;">
+                            <button type="button" id="bioIdentBtn" class="golden-btn golden-btn-primary" style="width:auto;">Continuar</button>
                         </div>
+                        <p id="bioIdentMsg" role="status" aria-live="polite" style="font-size:0.82rem; margin:8px 0 0;"></p>
                     </div>
+                    <div id="cameraBox" style="display:none;">
                     <video id="video" autoplay playsinline aria-label="Vista de la cámara para el reconocimiento facial"></video>
                     <canvas id="canvas" style="display:none;"></canvas>
                     <button id="escanearBtn" class="golden-btn golden-btn-primary full-width" {% if event.status != "en_proceso" %}disabled title="El evento no está en proceso"{% endif %}>📸 Escanear Rostro</button>
+                    </div>
                     <p style="font-size:0.78rem; color:#555; margin:8px 0 0; text-align:center;">Si la persona no desea el reconocimiento facial, <a href="#" id="bioAltLink">regístrala por cédula</a> (sin usar su rostro).</p>
                     <h3 id="resultadoTexto" style="text-align:center; margin-top: 15px; height: 30px;" role="status" aria-live="polite"></h3>
                     <button id="printScanBtn" class="golden-btn" style="display:none; width:100%; background:#f0f0f0; color:var(--golden-dark); margin-top:0.5rem;">🖨️ Imprimir Escarapela</button>
@@ -312,6 +315,12 @@
                     </label>
                     {% endif %}
 
+                    {% if event.facial_enabled %}
+                    <div class="form-group" style="margin-top:0.6rem;">
+                        <label for="regBirth">Fecha de nacimiento <span style="font-weight:400; font-size:0.78rem; color:#666;">(obligatoria si se sube foto: solo se capta el rostro de mayores de 18 años; un menor se registra sin foto)</span></label>
+                        <input type="date" id="regBirth" name="birth_date" style="max-width:220px;">
+                    </div>
+                    {% endif %}
                     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1.2rem;">
                         <button type="button" id="closeRegisterModalBtn" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
                         <button type="submit" class="golden-btn golden-btn-primary" style="width:auto;">Guardar Perfil{{ " Biométrico" if event.facial_enabled else "" }}</button>
@@ -333,6 +342,7 @@
 <script src="{{ url_for('static', path='js/outbox.js') }}"></script>
 <script src="{{ url_for('static', path='js/outbox-ui.js') }}"></script>
 {% else %}<script src="{{ url_for('static', path='js/contingency-off.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', path='js/consent-gate.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>

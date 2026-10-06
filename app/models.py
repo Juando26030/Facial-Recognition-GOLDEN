@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import event as sa_event
-from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
 from datetime import datetime
@@ -52,6 +52,8 @@ class User(Base):
     opt_2 = Column(String)  # deprecado (2026-09-20, era "cantidad de empl") — ya no se escribe, reemplazado por extra_fields. Se deja la columna para no perder datos históricos.
     extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
     face_encoding = deferred(Column(EncryptedText))      # deferred: no se descifra/carga al leer la persona (directorio, cédula...), solo cuando de verdad se pide; cifrado en reposo si hay FACE_ENCRYPTION_KEY (app/crypto.py); el código lo usa en claro
+    birth_date = Column(Date, nullable=True)     # L3: la da la persona (formulario web, alta en el quiosco o columna `fecha_nacimiento` de la carga masiva); decide si puede tener captura biométrica
+    is_biometric_enabled = Column(Boolean, default=True, server_default='true', nullable=False)   # False = menor de 18 años: sin cámara, sin pantalla de autorización, sin vector
     biometric_consent_at = Column(DateTime, nullable=True)      # cuándo se autorizó guardar el rostro (Ley 1581: dato sensible, autorización previa y expresa)
     face_captured_at = Column(DateTime, nullable=True, index=True)   # cuándo se guardó el rostro (lo estampa el listener de abajo); el tope de BIOMETRIC_MAX_DAYS cuenta desde aquí
     biometric_consent_source = Column(String, nullable=True)    # 'kiosko' (la persona autorizó ante el digitador) | 'carga_masiva' (declaración del organizador) | 'copiado' (heredado de otro evento)
@@ -248,6 +250,15 @@ class Event(Base):
     faces_version = Column(Integer, default=0, server_default='0', nullable=False)  # sube en cada cambio de rostros del evento (app/faces_version.py); el reconocimiento recarga su matriz en memoria cuando cambia
     state_id = Column(Integer, ForeignKey('event_states.id'), nullable=True)  # estado configurable (docs/18): sus reglas mandan; `status` sigue siendo el estado BASE con el que se comporta (creado | en_proceso | finalizado)
     directory_page_size = Column(Integer, default=50, server_default='50', nullable=False)  # filas por página de la tabla del directorio (en vivo y lista local); 10, 20, 50, 100 o 200 (Parámetros del evento)
+    controller_mode = Column(String, default='golden', server_default='golden', nullable=False)   # L1: 'golden' (evento propio, Golden = Responsable único) | 'tercero' (Golden = Encargado); decide la variante del texto de autorización
+    organizer_name = Column(String, nullable=True)            # razón social del organizador (obligatoria si controller_mode='tercero')
+    organizer_nit = Column(String, nullable=True)
+    organizer_privacy_email = Column(String, nullable=True)   # correo del organizador para consultas y revocación
+    consent_prompt_mode = Column(String, default='once', server_default='once', nullable=False)   # 'once' (una vez por persona y evento) | 'every_scan' (botones cortos antes de cada uso)
+    aceptar_enabled = Column(Boolean, default=False, server_default='false', nullable=False)   # camino B: página pública /aceptar/<código del evento> para aceptar y dar la selfie desde el celular
+    precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
+    precalculo_anexo_ref = Column(String, nullable=True)
+    precalculo_anexo_fecha = Column(Date, nullable=True)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
 
     tenant = relationship("Tenant")
@@ -774,6 +785,44 @@ class SystemEvent(Base):
     ref = Column(String, nullable=True)
     detail = Column(Text, nullable=True)
     at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class SuppressedPerson(Base):
+    """Huella de la cédula de quien pidió la supresión total (L4): evita volver a crearla por error. Sin datos personales."""
+    __tablename__ = 'suppressed_people'
+    tenant_id = Column(String, primary_key=True)
+    cedula_hash = Column(String(64), primary_key=True)
+    suppressed_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class WebAcceptance(Base):
+    """Aceptación hecha desde /aceptar (celular): vale para el reconocimiento facial solo cuando el personal confirma la identidad en puerta (`verified_at`)."""
+    __tablename__ = 'web_acceptances'
+    tenant_id = Column(String, primary_key=True)
+    user_id = Column(String, primary_key=True)
+    event_id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    verified_at = Column(DateTime, nullable=True)
+    verified_by_staff_id = Column(Integer, nullable=True)
+
+
+class AuditConsentLog(Base):
+    """Prueba inmutable de la autorización biométrica (migración 0054): solo INSERT (disparador + REVOKE al rol de la app), SIN llaves foráneas, 3 años mínimo, ninguna purga la toca.
+    Nada en el código la modifica ni la borra; la lectura es solo para super_admin y fuera de la interfaz (ver app/consent.py y scripts/export_consent_logs.py)."""
+    __tablename__ = 'audit_consent_logs'
+    id = Column(String(36), primary_key=True)       # lo genera el dispositivo: un reintento sin conexión no duplica
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    cedula_hash = Column(String(64), nullable=False)
+    event_id = Column(Integer, nullable=False)
+    consent_timestamp_utc = Column(DateTime(timezone=True), nullable=False)
+    consent_version = Column(String(40), nullable=False)
+    legal_text_hash = Column(String(64), nullable=False)
+    accepted_biometric = Column(Boolean, nullable=False)
+    confirmed_adult = Column(Boolean, nullable=False)
+    ip_or_device_id = Column(String, nullable=True)
+    reason = Column(String(20), nullable=False)
+    __table_args__ = (CheckConstraint("reason IN ('consent', 'rejection', 'revocation')", name="ck_audit_consent_reason"),)
 
 
 # ------------------------------------------------------------------ relojes de la retención biométrica (app/privacy.py)

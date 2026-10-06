@@ -6,14 +6,14 @@
      agotaron sus reintentos; un fallo aislado solo deja «degradado»; sale tras 2 chequeos buenos seguidos Y una petición autenticada buena (`/api/ping-auth`; un 429 = servidor alcanzable).
      Con la sesión vencida (401) sigue en contingencia, la cola intacta y la franja pide iniciar sesión de nuevo.
    - Sincronización de la cola: lotes de hasta 500 a `/api/events/{id}/access-logs/sync` con espera creciente si falla; lo sincronizado se borra; los marcados «review» o desconocidos
-     pasan a la lista de «revisar». Entradas con más de 30 días sin sincronizar se descartan con aviso.
+     pasan a la lista de «revisar». Lo no sincronizado a los 7 días se elimina del dispositivo (política v1.1, texto C''' de la auditora) con aviso visible desde el día 3 (amarillo) y el 6 (rojo).
    - Franja visible con `aria-live="polite"` y registro sin red (`scanLocal` + `enqueue`; directory.js pone los avisos). Si falta IndexedDB o crypto.subtle, `start()` avisa y deja el modo normal.
    Retención: el roster dura hasta que el evento finalice (403/409 → se borra, con aviso) y como máximo 24 h desde el último refresco (`expires_at`); se borra al cerrar sesión (static/js/toast.js);
    la cola se conserva hasta sincronizar. */
 (function (root) {
   const HEALTH_MS = 5000, HEALTH_TIMEOUT_MS = 3000, REFRESH_MS = 4 * 60 * 1000, PROBE_BACKOFF_MS = 30000;
   const FAILS_TO_ENTER = 2, EXHAUSTED_TO_ENTER = 2, OKS_TO_LEAVE = 2;
-  const SYNC_BATCH = 500, SYNC_BACKOFF_BASE_MS = 5000, SYNC_BACKOFF_MAX_MS = 5 * 60 * 1000, QUEUE_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
+  const SYNC_BATCH = 500, SYNC_BACKOFF_BASE_MS = 5000, SYNC_BACKOFF_MAX_MS = 5 * 60 * 1000, DAY_MS = 24 * 3600 * 1000, QUEUE_MAX_AGE_MS = 7 * DAY_MS, WARN_AGE_MS = 3 * DAY_MS, URGENT_AGE_MS = 6 * DAY_MS;
   const normalize = (v) => String(v == null ? '' : v).replace(/[\s.]/g, '');      // igual que roster_normalize (app/routers/api.py)
 
   /* ------------------------------------------------------------------------------------------------------------------ máquina de estados (pura) */
@@ -47,11 +47,11 @@
   /* ------------------------------------------------------------------------------------------------------------------ almacén IndexedDB */
   const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error('idb')); });
   const done = (tx) => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error || new Error('idb')); tx.onabort = () => rej(tx.error || new Error('idb abort')); });
-  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id' };
+  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id' };
 
   function openStore(idb, name) {
     return new Promise((resolve, reject) => {
-      const r = idb.open(name, 2);
+      const r = idb.open(name, 3);
       r.onupgradeneeded = () => {
         const db = r.result;
         Object.keys(STORES).forEach((s) => { if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: STORES[s] }); });
@@ -113,9 +113,39 @@
       return Array.from(hash.slice(0, 8)).map((b) => b.toString(16).padStart(2, '0')).join('');
     };
 
-    const recount = async () => { c.queueSize = (await c.queueList()).length; c.reviewCount = (await c.db.getAll('review')).length; render(); };
+    const recount = async () => { const cons = await c.consentList(), q = await c.queueList(); c.consentSize = cons.length; c.queueSize = q.length;
+      const stamps = q.map((r) => Date.parse(r.timestamp)).concat(cons.map((r) => Date.parse(r.at))).filter((t) => !Number.isNaN(t)); c.oldestAgeMs = stamps.length ? d.now() - Math.min(...stamps) : 0; c.reviewCount = (await c.db.getAll('review')).length; render(); };
 
     c.recount = recount;
+
+    /* --- autorización biométrica sin red (L1): decisiones de la persona guardadas con la HUELLA (nunca la cédula) hasta sincronizar --- */
+    c.consentSize = 0;
+    c.consentList = async () => (c.db ? c.db.getAll('consents') : []);
+    c.consentAdd = async (entry) => { await c.db.put('consents', entry); await recount(); };
+    /* Estado local de una persona: la última decisión pendiente manda; si no hay, la bandera `a` de la copia. */
+    c.consentLocal = async (raw) => {
+      const h = await c.hashFor(raw);
+      if (!h) return { known: false, accepted: false, blocked: false };
+      const mine = (await c.consentList()).filter((e) => e.h === h).sort((a, b) => (a.at < b.at ? -1 : 1)), last = mine[mine.length - 1];
+      if (last) return { known: true, accepted: last.decision === 'accept' && !!last.adult, blocked: !!(await c.db.get('roster', h) || {}).b };
+      const person = await c.db.get('roster', h);
+      return { known: !!person, accepted: !!(person && person.a === 1), blocked: !!(person && person.b === 1) };
+    };
+    /* Sincroniza las decisiones locales (lotes de 100; el servidor es idempotente por `id`). Devuelve cuántas quedaron en el servidor. */
+    c.flushConsents = async () => {
+      let sent = 0;
+      for (;;) {
+        const list = (await c.consentList()).sort((a, b) => (a.at < b.at ? -1 : 1)).slice(0, 100);
+        if (!list.length) return sent;
+        let res;
+        try {
+          res = await d.fetch(`/api/events/${d.eventId}/consents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+            body: JSON.stringify({ entries: list.map((e) => ({ id: e.id, h: e.h, decision: e.decision, adult: e.adult, text_hash: e.text_hash, version: e.version, device: e.device, at: e.at })) }) });
+        } catch (e) { return sent; }
+        if (!res.ok) return sent;                                           // 401/403/5xx: se conservan y se reintenta (la bandeja avisa)
+        await c.db.del('consents', list.map((e) => e.id)); sent += list.length; await recount();
+      }
+    };
 
     /* --- roster local --- */
     c.rosterMeta = async () => (c.db ? c.db.get('meta', 'roster') : null);
@@ -154,7 +184,7 @@
       }
       if (!res.ok) return 'error';
       const body = await res.json();
-      await c.db.replaceRoster(body.people, { v: body.v, generated_at: body.generated_at, salt: body.salt, count: body.count, max_age_s: body.max_age_s,
+      await c.db.replaceRoster(body.people, { v: body.v, generated_at: body.generated_at, salt: body.salt, count: body.count, max_age_s: body.max_age_s, consent: body.consent || null,
         event_id: body.event && body.event.id, auto_register: !!(body.event && body.event.auto_register), fetched_at: fetchedAt, expires_at: fetchedAt + (body.max_age_s || 86400) * 1000 });
       return 'ok';
     };
@@ -217,6 +247,7 @@
       c.syncing = true; render();
       let synced = 0;
       try {
+        await c.flushConsents();
         for (;;) {
           const q = (await c.queueList()).sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1)).slice(0, SYNC_BATCH);
           if (!q.length) {
@@ -253,14 +284,17 @@
         }
       } finally { c.syncing = false; render(); }
     };
-    /* Entradas con más de 30 días sin sincronizar: se descartan CON aviso (tope de retención de datos en el dispositivo). */
+    /* Lo no sincronizado a los 7 días se ELIMINA del dispositivo (texto C''' de la auditora: «se suprime de manera automática»), pero NUNCA en silencio: aviso visible desde el día 3 y, al borrar, un aviso que el operador debe ver. */
     c.pruneOld = async () => {
-      const old = (await c.queueList()).filter((r) => d.now() - Date.parse(r.timestamp) > QUEUE_MAX_AGE_MS);
-      if (!old.length) return 0;
-      await c.db.del('queue', old.map((r) => r.client_id));
-      c.notice = { kind: 'pruned', text: () => `${old.length} ingreso(s) llevaban más de 30 días sin sincronizar y se descartaron de este dispositivo: verificar manualmente.` };
+      const tooOld = (t) => d.now() - Date.parse(t) > QUEUE_MAX_AGE_MS;
+      const old = (await c.queueList()).filter((r) => tooOld(r.timestamp)), oldConsents = (await c.consentList()).filter((r) => tooOld(r.at));
+      if (!old.length && !oldConsents.length) return 0;
+      if (old.length) await c.db.del('queue', old.map((r) => r.client_id));
+      if (oldConsents.length) await c.db.del('consents', oldConsents.map((r) => r.id));
+      const n = old.length + oldConsents.length;
+      c.notice = { kind: 'pruned', text: () => `${n} registro(s) llevaban más de 7 días sin sincronizar y se eliminaron de este dispositivo, como indica la política de privacidad: verificar manualmente.` };
       await recount();
-      return old.length;
+      return n;
     };
     /* Antes de cerrar sesión: intenta sincronizar y devuelve cuántos ingresos siguen sin sincronizar (la cola se conserva). */
     c.beforeLogout = async () => { if (c.supported) { await c.syncQueue(true); await recount(); } return c.queueSize; };
@@ -293,6 +327,10 @@
       if (c.sessionExpired && (st === 'contingency' || n > 0)) return { st: 'session', text: `Sesión vencida: inicia sesión de nuevo; ${n} ingreso(s) guardados se sincronizarán.`, link: true };
       if (st === 'contingency') return { st: 'contingency', text: `MODO CONTINGENCIA (sin conexión): se admite por cédula/QR con la copia local y se sincroniza al volver la red${n ? ` · ${n} en cola` : ''}. Quien no esté en la copia: verificar manualmente.` };
       if (c.notice) return { st: 'notice', text: c.notice.text(n), dismiss: true };
+      if ((n > 0 || c.consentSize > 0) && c.oldestAgeMs >= WARN_AGE_MS) {      // lo guardado envejece: avisar ANTES de que se elimine (día 3 amarillo, día 6 rojo)
+        const days = Math.floor(c.oldestAgeMs / DAY_MS), left = Math.max(0, 7 - days);
+        return { st: c.oldestAgeMs >= URGENT_AGE_MS ? 'aging2' : 'aging', text: `Hay registros sin sincronizar hace ${days} días: conecta este dispositivo a internet y sincroniza. A los 7 días se eliminan de forma automática (${left === 0 ? 'hoy' : `faltan ${left}`}).` };
+      }
       if (st === 'degraded') return { st: 'degraded', text: 'Conexión inestable: si se corta, el quiosco pasará solo al modo contingencia.' };
       if (n > 0) return { st: 'syncing', text: `${c.syncing ? 'Sincronizando' : 'Pendientes de sincronizar:'} ${n} ingreso(s) guardados sin conexión…` };
       if (c.reviewCount > 0) return { st: 'review', text: `${c.reviewCount} ingreso(s) para revisar tras la sincronización.` };
@@ -310,7 +348,7 @@
       if (!b) return;
       const el = doc.createElement('div');
       const palette = { degraded: ['#fff8e1', '#7a5b00', '#f0ad4e'], contingency: ['#fbe9ea', '#a12631', '#dc3545'], session: ['#fbe9ea', '#a12631', '#dc3545'], notice: ['#fff8e1', '#7a5b00', '#f0ad4e'],
-        syncing: ['#e8f1fb', '#1d4f87', '#4a90d9'], review: ['#fff8e1', '#7a5b00', '#f0ad4e'], unsupported: ['#eef1f5', '#44505c', '#8a96a3'] }[b.st];
+        syncing: ['#e8f1fb', '#1d4f87', '#4a90d9'], review: ['#fff8e1', '#7a5b00', '#f0ad4e'], aging: ['#fff8e1', '#7a5b00', '#f0ad4e'], aging2: ['#fbe9ea', '#a12631', '#dc3545'], unsupported: ['#eef1f5', '#44505c', '#8a96a3'] }[b.st];
       el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
       el.style.cssText = `position:fixed; top:0; left:0; right:0; z-index:10000; padding:8px 14px; text-align:center; font-size:.9rem; font-weight:600; background:${palette[0]}; color:${palette[1]}; border-bottom:3px solid ${palette[2]};`;
       el.dataset.state = b.st;
@@ -349,7 +387,7 @@
         const r = await c.probe();
         if (r === 'ok') { c.sessionExpired = false; c.machine.authGood(); render(); }
         else { if (r === 'unauth') c.sessionExpired = true; c.probeAfter = d.now() + PROBE_BACKOFF_MS; render(); }
-      } else if (ok && c.machine.state !== 'contingency' && c.queueSize > 0) c.syncQueue();
+      } else if (ok && c.machine.state !== 'contingency' && (c.queueSize > 0 || c.consentSize > 0)) c.syncQueue();
     };
     c.checkHealth = checkHealth;
     const T = (n, x) => { if (root.GoldenTrace) root.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
@@ -380,6 +418,7 @@
       c.refreshRoster().then((r) => { if (r === 'ok') { c.machine.authGood(); c.syncQueue(); } });
       c.timers.push(d.setInterval(checkHealth, HEALTH_MS));
       c.timers.push(d.setInterval(async () => {
+        await c.pruneOld();
         if (c.machine.state !== 'contingency' && !c.eventFinished) { const r = await c.refreshRoster(); if (r === 'ok') c.machine.authGood(); }
       }, REFRESH_MS));
       return c;

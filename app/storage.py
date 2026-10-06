@@ -28,6 +28,7 @@ class Storage(Protocol):
     def get(self, key: str) -> bytes: ...
     def exists(self, key: str) -> bool: ...
     def delete(self, key: str) -> None: ...
+    def delete_all_versions(self, key: str) -> int: ...      # borra también las versiones NO vigentes (bucket con versionado); devuelve cuántas quedaron sin poder borrarse
     def move(self, src: str, dst: str) -> None: ...
     def delete_prefix(self, prefix: str) -> None: ...
     def list(self, prefix: str) -> List[str]: ...
@@ -85,6 +86,10 @@ class LocalStorage:
             os.remove(self._path(key))
         except FileNotFoundError:
             pass
+
+    def delete_all_versions(self, key: str) -> int:      # disco local: no hay versiones
+        self.delete(key)
+        return 0
 
     def move(self, src: str, dst: str) -> None:
         target = self._path(dst)
@@ -157,6 +162,20 @@ class GcsStorage:
             self.bucket.blob(self._name(key)).delete()
         except self._missing:
             pass
+
+    def delete_all_versions(self, key: str) -> int:
+        """Borra la versión vigente y todas las no vigentes de ESE objeto. Devuelve cuántas versiones NO se pudieron borrar (p. ej. por permisos): la supresión lo informa, no lo oculta."""
+        name, failed = self._name(key), 0
+        for blob in self.client.list_blobs(self.bucket, prefix=name, versions=True):
+            if blob.name != name:
+                continue
+            try:
+                blob.delete(generation=blob.generation)
+            except self._missing:
+                pass
+            except Exception:  # noqa: BLE001 — se informa en la respuesta
+                failed += 1
+        return failed
 
     def move(self, src: str, dst: str) -> None:
         try:

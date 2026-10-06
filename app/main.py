@@ -16,10 +16,10 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import appmode, bulk_jobs, faces, jobs, obs, ops, timing
+from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, consents as consents_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
@@ -51,6 +51,7 @@ async def lifespan(_app: FastAPI):
     # sobrantes solo esperarían una conexión libre (y acabarían en 503 tras DB_POOL_TIMEOUT); con menos, la base quedaría subutilizada.
     default_threads = int(os.getenv("DB_POOL_SIZE", "10")) + int(os.getenv("DB_MAX_OVERFLOW", "10")) + faces.FACE_CONCURRENCY
     anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.getenv("THREADPOOL_SIZE", default_threads))
+    crypto.assert_ready()                         # producción sin FACE_ENCRYPTION_KEY: no arranca (falla cerrado)
     worker = None
     if os.getenv("JOBS_WORKER", "on") != "off" and not jobs.uses_cloud_tasks():
         worker = jobs.Worker()
@@ -201,6 +202,8 @@ _include(cedula.router, prefix="/api")
 _include(stats.router, prefix="/api")
 _include(parametros.router, prefix="/api")
 _include(privacy_router.router, prefix="/api")
+_include(consents_router.router, prefix="/api")
+_include(aceptar_router.router)      # /aceptar/<evento> y /api/aceptar/ (públicas)
 _include(legal_public.router)      # /privacidad, /terminos, /reembolsos (públicas)
 _include(event_report.router, prefix="/api")
 _include(event_docs.router, prefix="/api")

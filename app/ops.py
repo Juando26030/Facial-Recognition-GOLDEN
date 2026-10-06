@@ -233,6 +233,20 @@ def check_events(db: Session) -> dict:
                 "No despliegues ni reinicies el servidor mientras haya eventos en curso." if running or openings else "", running=running, openings=openings)
 
 
+STALE_EVENT_DAYS = 3
+
+
+def check_unfinished_events(db: Session) -> dict:
+    """Eventos cuya fecha de fin pasó hace más de 3 días y siguen sin «finalizado»: sin finalizarlos NO corre el borrado de rostros a los 7 días (solo el tope de 180)."""
+    limit = (utcnow() - timedelta(days=STALE_EVENT_DAYS)).date()
+    rows = db.query(Event.event_code, Event.name).filter(Event.status != "finalizado", Event.end_date.isnot(None), Event.end_date < limit).order_by(Event.end_date).limit(10).all()
+    if not rows:
+        return item("unfinished_events", "Eventos por finalizar", "green", "Ninguno pendiente")
+    names = "; ".join(f"{code} · {name}" for code, name in rows)
+    return item("unfinished_events", "Eventos por finalizar", "yellow", f"{len(rows)} evento(s) terminaron hace más de {STALE_EVENT_DAYS} días y siguen abiertos",
+                f"Mientras no se finalicen no corre el borrado de rostros a los 7 días ({names}).", "Márcalos como «finalizado» desde Parámetros del evento.", events=[c for c, _ in rows])
+
+
 def deploy_allowed(db: Session, hours: Optional[int] = None) -> dict:
     """¿Se puede desplegar ahora? No si hay un evento en curso, o uno/un formulario por abrir en las próximas N horas (DEPLOY_FREEZE_HOURS, 3 por defecto)."""
     hours = hours if hours is not None else int(os.getenv("DEPLOY_FREEZE_HOURS", "3"))
@@ -292,7 +306,7 @@ def check_client_ip() -> dict:
 # ------------------------------------------------------------------ estado completo / readiness
 def system_status(db: Session) -> dict:
     checks: List[Callable[[], dict]] = [check_version, check_database, lambda: check_connections(db), lambda: check_queue(db), check_backup, check_client_ip,
-                                        lambda: check_bulk_jobs(db), lambda: check_events(db), lambda: check_emails(db), lambda: check_payments(db),
+                                        lambda: check_bulk_jobs(db), lambda: check_events(db), lambda: check_unfinished_events(db), lambda: check_emails(db), lambda: check_payments(db),
                                         lambda: check_errors(db)]
     results = []
     for fn in checks:

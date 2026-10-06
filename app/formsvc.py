@@ -12,7 +12,7 @@ from typing import Optional, Tuple
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
-from app import formlib, jobs
+from app import formlib, jobs, minors, privacy
 from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
 from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
@@ -474,6 +474,8 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     person_id = str(kv.get("id") or "").strip()
     if not person_id:
         return "La inscripción no trae cédula, no se pudo cargar a la base"
+    if privacy.is_suppressed(db, event.tenant_id, person_id):
+        return "Esta persona solicitó la supresión de sus datos: no se cargó a la base del evento"
     user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
     if not user:
         user = User(id=person_id, tenant_id=event.tenant_id)
@@ -482,6 +484,10 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
                       ("phone", "phone"), ("email", "email"), ("opt_1", "opt_1")):
         if kv.get(key):
             setattr(user, attr, str(kv[key]))
+    birth = minors.parse_birth(kv.get("birth_date"))
+    if birth is not None:                                  # menores (L3): menos de 18 años = sin biometría (la inscripción web nunca calcula vectores, pero la bandera y la fecha se guardan)
+        user.birth_date = birth
+        user.is_biometric_enabled = not minors.is_minor(birth)
     extras = user.get_extras()
     extras.update({k: str(v) for k, v in kv.items() if k.startswith("opcional_")})
     user.set_extras(extras)

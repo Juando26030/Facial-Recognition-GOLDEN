@@ -95,7 +95,9 @@ def _clean_tables(_database):
             t.join(timeout=60)
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE audit_consent_logs DISABLE TRIGGER USER"))      # solo aquí (base de pruebas): en la real esa tabla no se vacía jamás
         conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+        conn.execute(text("ALTER TABLE audit_consent_logs ENABLE TRIGGER USER"))
     _wipe_test_files()
     from app import faces, formsvc
     faces.clear_cache()
@@ -225,3 +227,10 @@ def factory(db):
 
 def login(client, username, password=PASSWORD):
     return client.post("/login", data={"username": username, "password": password})
+
+
+def accept(db, ev, uid, adult=True):
+    """La PERSONA aceptó el reconocimiento facial en ese evento (registro en audit_consent_logs): sin esto el reconocimiento no la usa (L1)."""
+    from app import consent
+    consent.record(db, tenant_id=ev.tenant_id, user_id=uid, event_id=ev.id, version="v1.1_test", legal_text_hash="b" * 64, accepted=True, adult=adult, reason="consent")
+    db.commit()
