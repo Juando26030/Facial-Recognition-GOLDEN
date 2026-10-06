@@ -15,7 +15,9 @@
     return container;
   }
 
-  window.showToast = function (message, type) {
+  /* opts.action = { label, onClick }: botón dentro del aviso (p. ej. «Deshacer»); con acción el aviso dura opts.duration (8 s por defecto) en vez de 3,2 s. Devuelve { close() }. */
+  window.showToast = function (message, type, opts) {
+    opts = opts || {};
     type = type === "error" ? "error" : "success";
     const el = document.createElement("div");
     const colors = type === "success"
@@ -29,6 +31,19 @@
       pointer-events: auto;
     `;
     el.textContent = (type === "success" ? "✓ " : "✕ ") + message;
+    let gone = false;
+    const close = () => {
+      if (gone) return; gone = true;
+      el.style.opacity = "0"; el.style.transform = "translateX(20px)";
+      setTimeout(() => el.remove(), 300);
+    };
+    if (opts.action && opts.action.label) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = opts.action.label;
+      b.style.cssText = "margin-left:12px; padding:4px 12px; border-radius:14px; border:2px solid currentColor; background:transparent; color:inherit; font-weight:700; cursor:pointer;";
+      b.addEventListener("click", () => { close(); try { opts.action.onClick(); } catch (e) { /* la acción maneja sus errores */ } });
+      el.appendChild(b);
+    }
     const box = ensureContainer();
     // Los avisos nunca quedan tapados por la franja de contingencia/sesión (static/js/contingency.js, `data-golden-banner`): van por ENCIMA (z-index) y desplazados bajo ella.
     const banner = document.querySelector && document.querySelector("[data-golden-banner]");
@@ -40,11 +55,8 @@
       el.style.transform = "translateX(0)";
     });
 
-    setTimeout(() => {
-      el.style.opacity = "0";
-      el.style.transform = "translateX(20px)";
-      setTimeout(() => el.remove(), 300);
-    }, 3200);
+    setTimeout(close, opts.action ? (opts.duration || 8000) : 3200);
+    return { close };
   };
 
   /* opts.variant: "danger" (default, blanco + botón rojo, para borrar/sobrescribir) o
@@ -268,6 +280,19 @@
     const names = ((await indexedDB.databases()) || []).map((d) => d.name).filter((n) => n && n.startsWith(PREFIX));
     let pending = 0;
     for (const n of names) pending += await pendingIn(n);
+    // Bandeja de salida (B8): altas hechas sin red que aún no se enviaron (el estado va en claro; los datos personales, cifrados). Se conservan hasta enviarlas o hasta que caduquen (7 días).
+    const outboxNames = ((await indexedDB.databases()) || []).map((d) => d.name).filter((n) => n && n.startsWith("golden-outbox-"));
+    let outboxPending = 0;
+    for (const n of outboxNames) {
+      try {
+        const db = await open(n);
+        try { if (db.objectStoreNames.contains("ops")) outboxPending += (await req(db.transaction(["ops"], "readonly").objectStore("ops").getAll())).filter((o) => o.status !== "ok").length; } finally { db.close(); }
+      } catch (e) { /* sin acceso: no se cuenta */ }
+    }
+    if (outboxPending > 0 && window.showConfirm) {
+      const ok = await window.showConfirm(`Quedan <strong>${outboxPending}</strong> persona(s) nueva(s) sin enviar en este dispositivo (se registraron sin conexión). Se conservan, cifradas, y se enviarán cuando vuelvas a iniciar sesión y abras el registro de ese evento; si no se envían en 7 días caducan. ¿Cerrar sesión de todos modos?`);
+      if (!ok) return false;
+    }
     if (pending > 0 && window.showConfirm) {
       const ok = await window.showConfirm(`Quedan <strong>${pending}</strong> ingreso(s) sin sincronizar en este dispositivo (se hicieron sin conexión). Se conservarán y se enviarán cuando vuelvas a iniciar sesión y abras el registro de ese evento.<br><br>¿Cerrar sesión de todos modos?`, { variant: "warning", confirmLabel: "Cerrar sesión" });
       if (!ok) return false;

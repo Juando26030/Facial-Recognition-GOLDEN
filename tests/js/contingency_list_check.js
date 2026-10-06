@@ -28,6 +28,7 @@ global.window = { EVENT_ID: 1, STAFF_ROLE: 'digitador', OPTIONAL_VARIABLES: [], 
 global.document = { getElementById: (id) => els[id] || null, createElement: (t) => new El(t), visibilityState: 'visible', head: new El('head'), body: new El('body'), addEventListener() {} };
 global.setInterval = () => 1;
 let now = 7_000_000, timers = [];
+const realSetTimeout = global.setTimeout;                       // el reloj virtual de abajo no sirve para esperar a crypto.subtle (hilos reales)
 global.setTimeout = (f, ms) => { const t = { f, at: now + ms }; timers.push(t); return t; };
 global.clearTimeout = (t) => { timers = timers.filter((x) => x !== t); };
 const flush = () => new Promise((r) => setImmediate(r));
@@ -48,7 +49,7 @@ global.fetch = async (url) => {
   if (u.pathname === '/api/ping-auth') return json(200, {});
   if (u.pathname.endsWith('/local-roster')) return json(200, { v: 'v1', generated_at: 'x', max_age_s: 86400, event: { id: 1, status: 'en_proceso', auto_register: true }, salt: SALT, count: ROSTER.length, people: ROSTER });
   if (u.pathname === '/api/users/changes') { usersCalls++; return json(200, { cursor: '1:1', total: SERVER.length, users: [] }); }
-  if (u.pathname === '/api/users') { usersCalls++; return json(200, SERVER, { 'X-Total-Count': '1' }); }
+  if (u.pathname === '/api/users') { usersCalls++; return json(200, SERVER, { 'X-Total-Count': String(SERVER.length) }); }
   if (u.pathname.endsWith('/access-logs/sync')) return json(200, { results: [] });
   throw new Error('ruta inesperada ' + u.pathname);
 };
@@ -56,6 +57,9 @@ eval(fs.readFileSync('static/js/directory.js', 'utf8'));
 const rows = () => els.tbody.children.filter((tr) => !/directory-(local-note|more)/.test(tr.className));
 const names = () => rows().map((tr) => tr.children[2].innerText);                 // columna «Nombres» (después de la de acción y la de ID)
 const type = async (el, text) => { el.value = text; el.listeners.input(); await advance(300); };
+// La huella de la cédula se calcula con crypto.subtle (hilos REALES del sistema): con la máquina cargada (CI) tarda más que unas vueltas de setImmediate y la prueba era intermitente
+// (ya fallaba así en migra/fase1-2 bajo carga). Se espera, con tiempo real y tope de 5 s, a que la tabla refleje el resultado; la aserción de después sigue igual de estricta.
+const typeUntil = async (el, text, ready) => { await type(el, text); for (let i = 0; i < 1000 && !ready(); i++) { await new Promise((r) => realSetTimeout(r, 5)); await advance(10); } };
 
 (async () => {
   ROSTER = [{ h: await fp('1001'), n: 'Ana Pérez', c: ['VIP'], s: 'No registrado' }, { h: await fp('1002'), n: 'Luis Gómez', c: [], s: 'Registrado' }, { h: await fp('1003'), n: 'Eva Ríos', c: ['Prensa', 'Staff'], s: 'No registrado' }];
@@ -70,6 +74,7 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
   assert.ok(!/Error conectando/.test(els.tbody._html) && !els.tbody.children.some((tr) => /Error conectando/.test(tr.innerHTML || '')), 'no dice «Error conectando al servidor»');
   assert.deepStrictEqual(names(), ['Ana Pérez', 'Luis Gómez', 'Eva Ríos']);
   const note = els.tbody.children.find((tr) => /directory-local-note/.test(tr.className)); assert.ok(note && /LISTA LOCAL/.test(note.children[0].innerText), 'avisa con claridad que es la lista local');
+  assert.ok(/LISTA LOCAL: 3 de \?/.test(note.children[0].innerText), 'sin total del servidor conocido: «3 de ?» (no se hace pasar por la lista completa): ' + note.children[0].innerText);
   assert.deepStrictEqual(rows().map((tr) => tr.children[4].innerText), ['VIP', '', 'Prensa, Staff'], 'categorías');
   assert.deepStrictEqual(rows().map((tr) => tr.children[5].innerText), ['No registrado', 'Registrado', 'No registrado'], 'estado');
   const counters = table.parentNode.children.filter((c) => /counter/.test(c.className)); assert.ok(/2 sin registrar/.test(counters[0].innerText) && /1 registrados de 3/.test(counters[1].innerText), 'contadores: ' + counters.map((c) => c.innerText));
@@ -77,7 +82,7 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
 
   // 2) búsqueda por nombre (sobre el roster) y por cédula EXACTA (huella)
   await type(els.nombre, 'eva'); assert.deepStrictEqual(names(), ['Eva Ríos']); await type(els.nombre, '');
-  await type(els.cedula, '1002'); assert.deepStrictEqual(names(), ['Luis Gómez'], 'cédula exacta por huella');
+  await typeUntil(els.cedula, '1002', () => names().length === 1); assert.deepStrictEqual(names(), ['Luis Gómez'], 'cédula exacta por huella');
   await type(els.cedula, '100'); assert.deepStrictEqual(names(), [], 'una cédula parcial no coincide (la copia no tiene la cédula)'); await type(els.cedula, '');
   assert.strictEqual(names().length, 3);
 
@@ -100,5 +105,14 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
   assert.strictEqual(GC.state(), 'normal'); assert.ok(usersCalls > 0, 'recargó desde el servidor'); assert.deepStrictEqual(names(), ['Ana']);
   assert.strictEqual(els.entidad.disabled, false); assert.strictEqual(els.entidad.placeholder, 'Entidad');
   assert.ok(!els.tbody.children.some((tr) => /directory-local-note/.test(tr.className)));
+  // 6) CONTADOR «LISTA LOCAL: N de N» frente al total que el servidor informó la última vez (se guarda en la copia)
+  const noteText = () => (els.tbody.children.find((tr) => /directory-local-note/.test(tr.className)) || { children: [{ innerText: '' }] }).children[0].innerText;
+  netDown = true; healthOk = false; await GC.checkHealth(); await GC.checkHealth(); assert.strictEqual(GC.active(), true);
+  await d.reload(); await advance(10);
+  assert.ok(/LISTA LOCAL: 3 de 1 — NO COINCIDE/.test(noteText()) && /sobran 2/.test(noteText()), 'la lista en vivo había dicho 1 y la copia tiene 3: avisa que NO coincide: ' + noteText());
+  now += 61_000; await GC.noteServerTotal(3); await d.reload(); await advance(10);
+  assert.ok(/LISTA LOCAL: 3 de 3[^0-9]/.test(noteText()) && !/NO COINCIDE/.test(noteText()), 'coinciden: «3 de 3»: ' + noteText());
+  now += 61_000; await GC.noteServerTotal(5); await d.reload(); await advance(10);
+  assert.ok(/LISTA LOCAL: 3 de 5 — NO COINCIDE/.test(noteText()) && /faltan 2/.test(noteText()), 'al servidor le faltaban 2 a la copia: ' + noteText());
   console.log('directory.js: la tabla sale de la copia local sin red (nombre, categorías, estado, contadores, búsqueda por huella) OK');
 })().catch((e) => { console.error(e); process.exit(1); });

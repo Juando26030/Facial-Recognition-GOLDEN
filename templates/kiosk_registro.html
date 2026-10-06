@@ -55,7 +55,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/qr.js') }}"></script>
 
@@ -330,6 +330,8 @@
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
 {% if contingency_enabled %}<script src="{{ url_for('static', path='js/contingency.js') }}"></script>
+<script src="{{ url_for('static', path='js/outbox.js') }}"></script>
+<script src="{{ url_for('static', path='js/outbox-ui.js') }}"></script>
 {% else %}<script src="{{ url_for('static', path='js/contingency-off.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
@@ -425,13 +427,22 @@
 
     // Modo contingencia (Fase 3): copia local del roster + registro sin red; si el navegador no lo soporta, avisa y todo sigue como siempre.
     if (canAccredit && window.GoldenContingency) GoldenContingency.init({ eventId: window.EVENT_ID });
-    // «Registrar nuevo» queda desactivado mientras no haya red (con aviso en su título); al volver la red recupera su estado.
+    // Bandeja de salida (B8 R1): las altas hechas sin red se guardan CIFRADAS en este dispositivo y se envían al volver la red (static/js/outbox.js). Sin soporte (IndexedDB/WebCrypto) vuelve al comportamiento de antes.
+    if (canAccredit && window.GoldenContingency && window.GoldenOutbox) {
+        GoldenOutbox.init({ eventId: window.EVENT_ID }).then((box) => {
+            if (!box.supported || !window.GoldenOutboxUI) return;
+            const ui = GoldenOutboxUI.mount({ outbox: box });
+            GoldenContingency.instance.onChange((st) => { if (st === 'normal') ui.sync(false); });
+            ui.tick();
+        });
+    }
+    // «Registrar nuevo» sin red: con la bandeja disponible se puede (la persona se guarda en este dispositivo, SIN foto, y se envía al volver la red); sin ella queda desactivado hasta que vuelva la red.
     if (canAccredit && window.GoldenContingency && openRegisterModalBtn) {
         const notInProgress = openRegisterModalBtn.disabled, baseTitle = openRegisterModalBtn.title;
         GoldenContingency.instance.onChange(() => {
-            const off = GoldenContingency.instance.active();
-            openRegisterModalBtn.disabled = off || notInProgress;
-            openRegisterModalBtn.title = off ? 'Sin conexión: no se pueden registrar personas nuevas; espera a que vuelva la red' : baseTitle;
+            const off = GoldenContingency.instance.active(), box = window.GoldenOutbox && window.GoldenOutbox.instance, canQueue = !!(box && box.supported);
+            openRegisterModalBtn.disabled = (off && !canQueue) || notInProgress;
+            openRegisterModalBtn.title = off ? (canQueue ? 'Sin conexión: la persona se guarda en este dispositivo (sin foto) y se envía sola al volver la red' : 'Sin conexión: no se pueden registrar personas nuevas; espera a que vuelva la red') : baseTitle;
         });
     }
     // Service worker del quiosco: solo el caparazón estático, para recargar esta página sin red (nunca la API ni el roster). Sin HTTPS/soporte, no hace nada.
