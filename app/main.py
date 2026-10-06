@@ -179,6 +179,7 @@ def event_logo_attrs(event):
     return Markup(f'style="height:{height}px;"')
 
 
+templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
 
