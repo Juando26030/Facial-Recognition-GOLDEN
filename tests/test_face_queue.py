@@ -51,9 +51,9 @@ def test_without_the_faces_queue_everything_keeps_working_through_the_general_on
     assert cloud.created[0][0] == GQ and jobs.general_excludes() is None            # sin cola facial, la general ejecuta también los cálculos faciales
 
 
-def test_the_general_queue_skips_face_jobs_and_the_face_queue_runs_only_them(cloud, db):
+def test_the_general_queue_skips_face_jobs_and_the_face_queue_runs_only_them(cloud, db, monkeypatch):
     ran = []
-    jobs.handler("face_enroll")(lambda payload: ran.append(("faces", payload["n"])))
+    monkeypatch.setitem(jobs._handlers, "face_enroll", lambda payload: ran.append(("faces", payload["n"])))      # sin reemplazar el manejador real para las demás pruebas
     jobs.handler("prueba_general")(lambda payload: ran.append(("general", payload["n"])))
     jobs.enqueue(db, "face_enroll", {"n": 1})
     jobs.enqueue(db, "prueba_general", {"n": 2})
@@ -66,7 +66,7 @@ def test_the_general_queue_skips_face_jobs_and_the_face_queue_runs_only_them(clo
 
 
 def test_a_failed_face_job_retries_through_the_faces_queue(cloud, db, monkeypatch):
-    jobs.handler("face_enroll")(lambda payload: (_ for _ in ()).throw(RuntimeError("dlib ocupado")))
+    monkeypatch.setitem(jobs._handlers, "face_enroll", lambda payload: (_ for _ in ()).throw(RuntimeError("dlib ocupado")))
     jobs.enqueue(db, "face_enroll", {"n": 1})
     db.commit()
     kicks = []
