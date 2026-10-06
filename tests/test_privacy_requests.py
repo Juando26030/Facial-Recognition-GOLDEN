@@ -105,3 +105,14 @@ def test_parameters_page_shows_the_requests_panel_only_to_admins(client, factory
     factory.staff("admin", "adm")
     login(client, "adm")
     assert "id=\"prTabla\"" in client.get(f"/kiosk/{ev.id}/parametros").text
+
+
+def test_the_2026_holiday_list_matches_the_official_one():
+    expected = {date(2026, m, d) for m, d in [(1, 1), (1, 12), (3, 23), (4, 2), (4, 3), (5, 1), (5, 18), (6, 8), (6, 15), (6, 29), (7, 20), (8, 7), (8, 17), (10, 12), (11, 2), (11, 16), (12, 8), (12, 25)]}
+    assert pr.holidays_for_year(2026) == expected
+
+
+def test_there_is_a_holiday_list_loaded_for_the_current_year(monkeypatch):
+    """Si esta prueba falla (p. ej. al llegar 2027), falta cargar los festivos del año nuevo en HOLIDAYS_CO / app/privacy_requests.py: sin ellos los plazos de consultas y reclamos se contarían mal."""
+    monkeypatch.delenv("HOLIDAYS_CO", raising=False)
+    assert pr.holidays_for_year(date.today().year), f"No hay festivos cargados para {date.today().year}: actualiza HOLIDAYS_CO"
