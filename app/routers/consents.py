@@ -6,15 +6,15 @@ import re
 import uuid
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import consent, faces, legal_texts, privacy
+from app import consent, enroll, faces, jobs, legal_texts, privacy
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.routers.api import SYNC_HASH_RE, _event_for_sync, _roster_map
-from app.models import StaffUser
+from app.models import StaffUser, User
 
 router = APIRouter()
 DIGITADOR = require_role("digitador")
@@ -38,7 +38,8 @@ def consent_status(event_id: int, user_id: str, db: Session = Depends(get_db), s
     event = get_event_for_staff(event_id, db, staff)
     last = consent.latest(db, event.tenant_id, user_id, event.id)
     blocked = consent.biometric_blocked(db, event.tenant_id, user_id)
-    return {"accepted": not blocked and consent.has_acceptance(db, event.tenant_id, user_id, event.id), "last": last.reason if last else None, "mode": event.consent_prompt_mode, "blocked": blocked}
+    return {"accepted": not blocked and consent.has_acceptance(db, event.tenant_id, user_id, event.id), "last": last.reason if last else None, "mode": event.consent_prompt_mode, "blocked": blocked,
+            "face": enroll.status(db, event.tenant_id, user_id)}
 
 
 def _when(raw):
@@ -138,3 +139,31 @@ def set_consent_config(event_id: int, data: dict, db: Session = Depends(get_db),
     event.controller_mode, event.organizer_name, event.organizer_nit, event.organizer_privacy_email, event.consent_prompt_mode = mode, name, nit, email, prompt
     db.commit()
     return {"controller_mode": mode, "organizer_name": name, "organizer_nit": nit, "organizer_privacy_email": email, "consent_prompt_mode": prompt}
+
+
+@router.post("/events/{event_id}/enroll-face")
+def enroll_face(event_id: int, user_id: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
+    """CAMINO A: la persona ya aceptó en la pantalla y se captura su rostro en vivo. Guarda la foto cifrada y ENCOLA el cálculo del vector (25 jitters): responde al instante, la puerta no espera.
+    Exige aceptación vigente de ESA persona en ESTE evento y que no sea menor de 18 años. Cuando el vector esté listo, las siguientes entradas son por rostro."""
+    from PIL import Image
+
+    from app import crypto
+    from app.biometrics import BiometricEngine
+    from app.storage import photo_key
+    event = get_event_for_staff(event_id, db, staff)
+    uid = re.sub(r"[\s.]", "", user_id)
+    if not event.facial_enabled:
+        raise HTTPException(status_code=409, detail="Este evento no usa reconocimiento facial")
+    if consent.biometric_blocked(db, event.tenant_id, uid) or not consent.has_acceptance(db, event.tenant_id, uid, event.id):
+        raise HTTPException(status_code=403, detail="Sin autorización registrada de la persona: no se capta su rostro")
+    if not db.query(User.id).filter(User.id == uid, User.tenant_id == event.tenant_id).first():
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    try:
+        arr = BiometricEngine.process_image_stream(file.file.read())
+    except Exception:  # noqa: BLE001 — imagen ilegible
+        raise HTTPException(status_code=400, detail="La imagen no es válida")
+    crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
+    jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "user_id": uid, "event_id": event.id}, max_attempts=3)
+    db.commit()
+    jobs.kick()
+    return {"queued": True, "face": "pending"}

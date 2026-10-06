@@ -70,7 +70,7 @@ def test_endpoints_text_status_and_idempotent_batch(client, factory, db, company
     ev = _op(client, factory)
     t = client.get(f"/api/events/{ev.id}/consent-text").json()
     assert t["hash"] == legal_texts.render(ev)["hash"] and t["mode"] == "once"
-    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": None, "mode": "once", "blocked": False}
+    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": None, "mode": "once", "blocked": False, "face": "none"}
     eid = str(uuid.uuid4())
     body = {"entries": [{"id": eid, "user_id": "1001", "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"], "device": "tablet-1"}]}
     assert client.post(f"/api/events/{ev.id}/consents", json=body).json() == {"inserted": 1, "duplicated": 0, "unknown": 0}
@@ -78,7 +78,7 @@ def test_endpoints_text_status_and_idempotent_batch(client, factory, db, company
     assert client.get(f"/api/events/{ev.id}/consent-status/1001").json()["accepted"] is True
     rej = {"entries": [{"id": str(uuid.uuid4()), "user_id": "1001", "decision": "reject", "adult": False, "text_hash": t["hash"], "version": t["version"]}]}
     client.post(f"/api/events/{ev.id}/consents", json=rej)
-    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": "rejection", "mode": "once", "blocked": False}      # el último registro manda
+    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": "rejection", "mode": "once", "blocked": False, "face": "none"}      # el último registro manda
     no_adult = {"entries": [{"id": str(uuid.uuid4()), "user_id": "2002", "decision": "accept", "adult": False, "text_hash": t["hash"], "version": t["version"]}]}
     client.post(f"/api/events/{ev.id}/consents", json=no_adult)
     assert client.get(f"/api/events/{ev.id}/consent-status/2002").json()["accepted"] is False          # sin la declaración de mayoría de edad NO cuenta como aceptación
@@ -265,3 +265,80 @@ def test_kiosk_pages_render_the_gate_and_the_config(client, factory):
     assert reg.status_code == 200 and "bioIdent" in reg.text and "consent-gate.js" in reg.text and "bioGateAccept" not in reg.text      # la casilla del digitador ya no cuenta como aceptación
     par = client.get(f"/kiosk/{ev.id}/parametros")
     assert par.status_code == 200 and "ccMode" in par.text and "id=\"pcSave\"" not in par.text                  # el pre-cálculo solo lo ve un super_admin en evento de tercero
+
+
+# ----------------------------------------------------------------------------------------------------------- camino A: inscripción asíncrona tras la aceptación
+def _enroll(client, ev, uid="1001"):
+    return client.post(f"/api/events/{ev.id}/enroll-face", data={"user_id": uid}, files={"file": ("w.jpg", _png(), "image/jpeg")})
+
+
+def test_enroll_needs_a_registered_acceptance_and_computes_the_vector_in_a_job(client, factory, db, monkeypatch, company_env):
+    from app import enroll
+    from app.storage import get_storage, photo_key
+    scan = _scan_fixture(monkeypatch)
+    ev = _op(client, factory)
+    factory.person(ev, "1001", "Ana", "Mora")
+    assert _enroll(client, ev).status_code == 403                                           # sin aceptación de la persona no se capta ni se guarda nada
+    assert not get_storage().exists(photo_key(ev.tenant_id, "1001"))
+    accept(db, ev, "1001")
+    scan.face = _vec(5)
+    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json()["face"] == "none"
+    r = _enroll(client, ev)
+    assert r.status_code == 200 and r.json()["queued"] is True
+    db.expire_all()
+    u = db.query(User).filter_by(id="1001").one()
+    assert u.face_encoding and u.biometric_consent_source == "aceptacion_persona"          # en los tests la cola corre al instante; en producción corre aparte (la puerta no espera)
+    assert enroll.status(db, ev.tenant_id, "1001") == "ready"
+    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json()["face"] == "ready"
+    db.refresh(ev)
+    faces.clear_cache()
+    assert faces.event_index(db, ev).ids == ["1001"]                                      # y desde ahora se reconoce por rostro
+
+
+def test_enroll_without_a_detectable_face_leaves_nothing_and_a_minor_is_refused(client, factory, db, monkeypatch, company_env):
+    from app.storage import get_storage, photo_key
+    scan = _scan_fixture(monkeypatch)
+    ev = _op(client, factory)
+    factory.person(ev, "1001", "Ana", "Mora")
+    accept(db, ev, "1001")
+    scan.face = None
+    assert _enroll(client, ev).status_code == 200
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").one().face_encoding is None and not get_storage().exists(photo_key(ev.tenant_id, "1001"))      # sin rostro: no queda la foto
+    from datetime import date
+    factory.person(ev, "2002", "Beto", "Menor")
+    db.query(User).filter_by(id="2002").update({"birth_date": date(date.today().year - 12, 1, 1)})
+    db.commit()
+    accept(db, ev, "2002")
+    assert _enroll(client, ev, "2002").status_code == 403
+
+
+def test_revoking_before_the_job_runs_leaves_no_vector_and_no_photo(client, factory, db, monkeypatch, company_env):
+    from app import jobs
+    from app.storage import get_storage, photo_key
+    scan = _scan_fixture(monkeypatch)
+    ev = _op(client, factory)
+    factory.person(ev, "1001", "Ana", "Mora")
+    accept(db, ev, "1001")
+    scan.face = _vec(5)
+    monkeypatch.setattr(jobs, "kick", lambda: None)                                        # la tarea queda en cola
+    assert _enroll(client, ev).status_code == 200
+    assert get_storage().exists(photo_key(ev.tenant_id, "1001"))
+    consent.record(db, tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, version="r", legal_text_hash="e" * 64, accepted=False, adult=True, reason="revocation")
+    db.commit()
+    jobs.drain()
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").one().face_encoding is None and not get_storage().exists(photo_key(ev.tenant_id, "1001"))
+
+
+def test_no_match_message_and_nothing_is_stored(client, factory, db, monkeypatch, company_env):
+    from app.storage import get_storage
+    scan = _scan_fixture(monkeypatch)
+    ev = _op(client, factory)
+    factory.person(ev, "1001", "Ana", "Mora")
+    accept(db, ev, "1001")
+    scan.face = _vec(9)                                                                   # un rostro que no corresponde a nadie de la lista
+    before = set(get_storage().list(""))
+    r = _scan(client, ev)
+    assert r == {"result": "NO", "details": "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."}
+    assert set(get_storage().list("")) == before                                          # ni la foto en vivo ni el vector temporal se guardaron

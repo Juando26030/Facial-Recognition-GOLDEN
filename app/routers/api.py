@@ -535,10 +535,10 @@ def recognize(
         if status == "NO_FACE":
             return {"result": "NO", "details": "Rostro no detectado"}
         if status == "NO_MATCH":
-            return {"result": "NO", "details": "Denegado"}
+            return {"result": "NO", "details": NOT_FOUND_FACE}
         user = db.get(User, (ranked[0][0], event.tenant_id))
         if not user:
-            return {"result": "NO", "details": "Denegado"}
+            return {"result": "NO", "details": NOT_FOUND_FACE}
         doubtful = faces.is_doubtful(ranked)
         if click and not doubtful and not consent_mod.has_acceptance(db, event.tenant_id, user.id, event.id):
             # Coincidencia con un clic válido: AHORA sí consta la aceptación de la persona identificada (hora del clic, hash del texto exhibido). Sin coincidencia no se atribuye nada a nadie.
@@ -867,6 +867,7 @@ def sync_access_logs(
 
 
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
+NOT_FOUND_FACE = "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."      # texto de la auditora (6 oct): sin coincidencia no se guarda nada (ni el vector temporal ni la foto en vivo)
 SUPPRESSED_MSG = "Esta persona solicitó la supresión de sus datos: no se puede registrar de nuevo sin su autorización."
 _BIRTH_KEYS = ('fecha de nacimiento', 'fecha_nacimiento', 'fecha nacimiento', 'nacimiento', 'birth_date')      # columna opcional del Excel (L3)
 ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)

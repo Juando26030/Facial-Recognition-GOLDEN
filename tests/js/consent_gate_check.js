@@ -23,13 +23,13 @@ const btn = (a) => screen().find((c) => c.dataset.action === a);
 
 const BLOCK = { version: 'v1.1_kiosk_propio', variant: 'golden', hash: 'a'.repeat(64), title: 'AUTORIZACIÓN', body: ['uno', 'dos'], buttons: ['ACEPTO Y DESEO USAR RECONOCIMIENTO FACIAL', 'PREFIERO INGRESAR CON DOCUMENTO / QR'], adult_checkbox: null, blocked: [], mode: 'once', click_mode: false,
   every_scan: { question: '¿Deseas ingresar mediante reconocimiento facial voluntario?', yes: 'SÍ, USAR ROSTRO', no: 'NO, PREFIERO DIGITAR CÉDULA' } };
-let net = true, accepted = new Set(), posts = [], block = BLOCK, clickOk = true;
+let net = true, accepted = new Set(), posts = [], block = BLOCK, clickOk = true, faceState = 'ready';
 const json = (status, data) => ({ ok: status >= 200 && status < 300, status, json: async () => data, headers: { get: () => null } });
 const fetchFake = async (url, opts) => {
   if (!net) throw new TypeError('Failed to fetch');
   const u = new URL(url, 'http://x'), m = (opts && opts.method) || 'GET';
   if (u.pathname.endsWith('/consent-text')) return json(200, block);
-  if (u.pathname.includes('/consent-status/')) return json(200, { accepted: accepted.has(decodeURIComponent(u.pathname.split('/').pop())), last: null, mode: block.mode });
+  if (u.pathname.includes('/consent-status/')) return json(200, { accepted: accepted.has(decodeURIComponent(u.pathname.split('/').pop())), last: null, mode: block.mode, face: faceState });
   if (u.pathname.endsWith('/consents') && m === 'POST') { const b = JSON.parse(opts.body); posts.push(b); b.entries.forEach((e) => { if (e.decision === 'accept' && e.adult) accepted.add(e.user_id || 'h:' + e.h); }); return json(200, { inserted: b.entries.length, duplicated: 0, unknown: 0 }); }
   if (u.pathname.endsWith('/consent-click')) return clickOk ? json(200, { click_token: 'TOKEN', ttl_s: 120 }) : json(409, { detail: 'no' });
   if (u.pathname === '/health') return json(200, {});
@@ -93,6 +93,11 @@ let n = 0; const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12
   net = true; posts = [];
   assert.strictEqual(await GC.flushConsents(), 2); assert.strictEqual(posts.length, 1); assert.ok(posts[0].entries.every((x) => x.h && x.user_id === undefined));
   assert.strictEqual((await GC.consentList()).length, 0); assert.strictEqual(await GC.flushConsents(), 0); assert.strictEqual(posts.length, 1, 'no se vuelve a enviar');
+
+  // 6b) camino A: aceptó pero aún no tiene vector → 'enroll' (captura en vivo; el vector se calcula aparte); con el vector en cola → 'pending' (sin cámara); sin aceptación: pantalla y luego 'enroll'
+  g = mk(); await g.loadBlock(); accepted.add('6006'); faceState = 'none';
+  assert.strictEqual(await g.ensure('6006'), 'enroll'); faceState = 'pending'; assert.strictEqual(await g.ensure('6006'), 'pending');
+  faceState = 'none'; p = g.ensure('6107'); await settle(); btn('accept').click(); assert.strictEqual(await p, 'enroll'); faceState = 'ready';
 
   // 7) camino 2: un clic válido da el token; el botón 2 no
   block = { ...BLOCK, click_mode: true }; g = mk(); await g.loadBlock();
