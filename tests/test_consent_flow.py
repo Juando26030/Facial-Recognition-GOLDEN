@@ -233,17 +233,18 @@ def test_rejecting_keeps_the_vector_if_the_person_accepted_in_another_event(clie
 
 def test_only_a_super_admin_can_authorize_precalculation_and_only_with_the_annex(client, factory):
     factory.staff("admin", "adm")
-    ev = factory.event("en_proceso", facial_enabled=True, controller_mode="tercero")
+    ev = factory.event("en_proceso", facial_enabled=True, controller_mode="tercero", client_photos_before=True)
     login(client, "adm")
-    assert client.put(f"/api/events/{ev.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).status_code == 403
+    assert client.put(f"/api/events/{ev.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01", "garantia": True}).status_code == 403
     client.post("/api/auth/logout")
     factory.staff("super_admin", "sup")
     login(client, "sup")
     url = f"/api/events/{ev.id}/precalculo-autorizado"
     assert client.put(url, json={"enabled": True}).status_code == 400                    # sin referencia ni fecha del anexo
-    assert client.put(url, json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).json()["precalculo_autorizado"] is True
+    assert client.put(url, json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).status_code == 400      # sin la casilla de garantía del cliente
+    assert client.put(url, json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01", "garantia": True}).json()["precalculo_autorizado"] is True
     own = factory.event("en_proceso", facial_enabled=True)
-    assert client.put(f"/api/events/{own.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A", "anexo_fecha": "2026-10-01"}).status_code == 400      # evento propio: no aplica
+    assert client.put(f"/api/events/{own.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A", "anexo_fecha": "2026-10-01", "garantia": True}).status_code == 400      # evento propio: no aplica
 
 
 def test_offline_entries_use_the_roster_fingerprint_not_the_cedula(client, factory, db, company_env):
