@@ -768,6 +768,33 @@ class SystemEvent(Base):
     at = Column(DateTime, nullable=False, default=utcnow)
 
 
+class PrivacyRequestCounter(Base):
+    """Último consecutivo de radicado por año (app/privacy_requests.py: next_radicado)."""
+    __tablename__ = 'privacy_request_counters'
+    year = Column(Integer, primary_key=True)
+    last = Column(Integer, nullable=False, default=0, server_default='0')
+
+
+class PrivacyRequest(Base):
+    """Solicitud de privacidad (consulta o reclamo de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles, estado y bandera «reclamo en trámite» (migración 0061). Sin llaves foráneas."""
+    __tablename__ = 'privacy_requests'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    radicado = Column(String(16), nullable=False, unique=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    channel = Column(String(20), nullable=False)
+    holder_name = Column(String, nullable=False)
+    cedula = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, nullable=True)
+    event_id = Column(Integer, nullable=True)
+    request_type = Column(String(24), nullable=False)
+    due_date = Column(Date, nullable=False)
+    status = Column(String(16), nullable=False, default='recibida', server_default='recibida')
+    claim_flag = Column(Boolean, nullable=False, default=False, server_default='false')
+    claim_flag_due = Column(Date, nullable=True)
+    history_json = Column(Text, nullable=True)
+    created_by_staff_id = Column(Integer, nullable=True)
+
+
 class SuppressedPerson(Base):
     """Huella de la cédula de quien pidió la supresión total (L4): evita volver a crearla por error. Sin datos personales."""
     __tablename__ = 'suppressed_people'

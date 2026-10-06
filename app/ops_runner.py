@@ -255,8 +255,46 @@ def list_minors() -> str:
     return f"{len(found)} menores con datos biométricos en {key}"
 
 
+def export_person_data() -> str:
+    """Atención de una consulta de habeas data: dada una cédula (`EXPORT_CEDULA`), lista QUÉ datos hay de esa persona (mapa de datos: qué campos tienen dato y cuántos registros hay en eventos, accesos,
+    formularios, pagos y consentimientos), SIN biometría ni valores personales. La salida es solo este texto: no se guarda en ningún archivo ni tabla y no lleva la cédula."""
+    from sqlalchemy import text
+
+    from app import consent, minors
+    from app.database import SessionLocal
+    from app.models import User
+    from app.storage import get_storage, photo_key
+    cedula = os.getenv("EXPORT_CEDULA", "").strip()
+    if not cedula:
+        raise RuntimeError("Falta EXPORT_CEDULA")
+    h = consent.cedula_hash(cedula)
+    out = {"personas": [], "suprimida": False}
+    with SessionLocal() as db:
+        p = {"u": cedula}
+        for u in db.query(User).filter(User.id == cedula).all():
+            fields = [c for c in ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1", "opt_2", "extra_fields", "birth_date") if getattr(u, c)]
+            out["personas"].append({"campos_con_dato": fields, "tiene_vector_facial": bool(u.face_encoding), "tiene_foto": get_storage().exists(photo_key(u.tenant_id, u.id)),
+                                    "es_menor": minors.is_minor(u.birth_date), "biometria_habilitada": u.is_biometric_enabled})
+        count = lambda sql: db.execute(text(sql), p).scalar() or 0       # noqa: E731
+        out["eventos_inscrito"] = count("SELECT count(*) FROM event_attendees WHERE user_id = :u")
+        out["ingresos"] = count("SELECT count(*) FROM access_logs WHERE user_id = :u")
+        out["impresiones_de_escarapela"] = count("SELECT count(*) FROM print_logs WHERE user_id = :u")
+        out["movimientos_de_areas"] = count("SELECT count(*) FROM area_movements WHERE user_id = :u")
+        out["entregas_de_inventario"] = count("SELECT count(*) FROM inventory_deliveries WHERE user_id = :u")
+        out["inscripciones_de_formularios"] = count("SELECT count(*) FROM form_submissions WHERE person_id = :u")
+        out["invitaciones_y_listas_de_formularios"] = count("SELECT (SELECT count(*) FROM form_invites WHERE person_id = :u) + (SELECT count(*) FROM form_people WHERE person_id = :u)")
+        out["pagos"] = count("SELECT count(*) FROM form_payments WHERE person_id = :u")
+        out["pagos_con_correo"] = count("SELECT count(*) FROM form_payments WHERE person_id = :u AND payer_email IS NOT NULL")
+        out["consentimientos"] = [{"version": v, "motivo": r, "acepto": a, "mayor_de_edad": ad, "fecha": f.isoformat()} for v, r, a, ad, f in db.execute(
+            text("SELECT consent_version, reason, accepted_biometric, confirmed_adult, consent_timestamp_utc FROM audit_consent_logs WHERE cedula_hash = :h ORDER BY consent_timestamp_utc"), {"h": h}).all()]
+        out["solicitudes_de_privacidad"] = [r for (r,) in db.execute(text("SELECT radicado FROM privacy_requests WHERE cedula = :u ORDER BY id"), p).all()]
+        out["reclamo_en_tramite"] = bool(count("SELECT count(*) FROM privacy_requests WHERE cedula = :u AND claim_flag"))
+        out["suprimida"] = bool(db.execute(text("SELECT 1 FROM suppressed_people WHERE cedula_hash = :h LIMIT 1"), {"h": h}).first())
+    return json.dumps(out, ensure_ascii=False)
+
+
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors}
+         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data}
 
 
 def main(task: str) -> int:
