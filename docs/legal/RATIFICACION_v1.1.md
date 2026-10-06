@@ -4,11 +4,11 @@
 |---|---|
 | Documento ratificado | `docs/legal/POLITICA_v1.1.md` (rama `producto/legal-piloto`) |
 | Fecha de la ratificación | 6 de octubre de 2026 |
-| Quién ratifica | La abogada auditora de la empresa, T.P. 284.912 (nombre completo: completar por Juan David) |
+| Quién ratifica | Dra. María Camila Morales Restrepo, abogada consultora en derecho digital y privacidad, T.P. 284.912 del C.S. de la J. |
 | SHA-256 del archivo ratificado | `d0afc7d95083b62115ce001abeb1ab8e86925e35a14d80011e06bf75e253c844` (guardado también en `docs/legal/POLITICA_v1.1.md.sha256`) |
 | Alcance | Política de Privacidad y Tratamiento de Datos Personales, versión 1.1, tal como está en el archivo con ese hash. Autorizada su publicación en app.golden-eventos.com/privacidad. |
 | Sección 8 (modo de contingencia sin conexión) | Queda como está, sin cambios. |
-| Compuertas levantadas | Las tres que condicionaban la constancia: (1) purga de la cola local a los 7 días, (2) restricción del pre-cálculo de vectores (solo con anexo firmado) y (3) prohibición de captura biométrica a menores de edad. (Confirmar con la auditora que son esas tres.) |
+| Condiciones levantadas (según su constancia) | (1) Cola local de contingencia cifrada, con retención de 7 días y alertas desde el día 3. (2) Bloqueo del pre-cálculo de vectores sin anexo de transmisión firmado y garantía del Responsable. (3) Inhabilitación de captura y cálculo biométrico para quien no acredite ser mayor de 18 años. |
 
 ## Reglas
 

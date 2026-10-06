@@ -73,7 +73,7 @@ La auditora ratificó `docs/legal/POLITICA_v1.1.md` (SHA-256 `d0afc7d95083b62115
 - **Cómo se muestra sin tocar el archivo:** la página lee el archivo, comprueba su hash, omite el párrafo de borrador («ESTADO: PENDIENTE DE RATIFICACIÓN…») y las etiquetas «(texto de la auditora)», y agrega la leyenda «Ratificada el 6 de octubre de 2026 · SHA-256 …». Si el archivo no coincide con el hash, no se muestra y cae a la v1.0.
 - **Activación:** `POLICY_VERSION=1.1`. Staging la activa en cada despliegue; producción NO (aún no existe): el día del corte se agrega esa variable. La v1.0 queda histórica en `/privacidad/v1.0`.
 - **La imagen** lleva el archivo ratificado (excepción en `.dockerignore` y `COPY` en el `Dockerfile`).
-- **Pendiente tuyo:** el nombre completo de la abogada en `RATIFICACION_v1.1.md` y confirmar que las tres compuertas son las que listé.
+- La ratificación quedó completa con el nombre de la abogada y sus tres condiciones levantadas (`RATIFICACION_v1.1.md`).
 
 ## Otras decisiones de esta tanda
 
@@ -81,3 +81,10 @@ La auditora ratificó `docs/legal/POLITICA_v1.1.md` (SHA-256 `d0afc7d95083b62115
 - **Festivos 2026** verificados contra la lista oficial; una prueba falla si el año en curso no tiene lista cargada (`HOLIDAYS_CO`).
 - **Barrido horario:** ya no ejecuta cálculos faciales (los avisa a su cola); nueva tarea `retry-face-jobs` para reintentar los agotados.
 - **Push a `migra/fase1-2`: NO hecho.** El workflow `cloudrun.yml` despliega staging en cada push a esa rama y corre el Job de migraciones contra la base de staging. Se espera tu prueba en la rama de Neon y tu confirmación.
+
+## Datos de la sociedad y cumplimiento (octubre de 2026)
+
+- **RNBD:** el contador certificó en octubre de 2026 activos inferiores a 100.000 UVT, por lo que la sociedad **no está obligada a inscribirse en el RNBD**. Se revisa cada año (si los activos superan ese umbral, hay que inscribir las bases de datos).
+- **Oficial de Protección de Datos Personales:** Paola Bocanegra. El canal público de privacidad sigue siendo **soporteit@goldenlogisticas.com** (se revisa a diario).
+- **Representante legal:** Juan David Ramírez Juzga.
+- **Ratificación de la política v1.1:** Dra. María Camila Morales Restrepo, T.P. 284.912 del C.S. de la J. (6 de octubre de 2026).
