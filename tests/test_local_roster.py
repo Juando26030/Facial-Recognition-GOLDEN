@@ -40,7 +40,7 @@ def test_roster_has_only_the_minimum_and_a_salted_fingerprint(client, factory, d
     assert body["event"] == {"id": ev.id, "status": "en_proceso", "auto_register": False}
     by_name = {p["n"]: p for p in body["people"]}
     ana, luis = by_name["Ana Prueba"], by_name["Luis Gómez"]
-    assert set(ana) == {"h", "n", "c", "s", "a", "b"} and ana["a"] == 0 and ana["b"] == 0                                              # nada más: ni cédula, ni teléfono, ni correo, ni encoding
+    assert set(ana) == {"h", "n", "c", "s", "a", "b", "v"} and ana["a"] == 0 and ana["b"] == 0 and ana["v"] == 0                                              # nada más: ni cédula, ni teléfono, ni correo, ni encoding
     assert ana["h"] == _fp(body["salt"], "1001234")                                      # normalizada: sin puntos ni espacios (igual que el cliente)
     assert ana["c"] == ["Prensa", "Staff"] and ana["s"] == "No registrado" and luis["s"] == "Registrado"
     for secret in ("1001", "2002", "3001112233", "ana@example.com", "VIP", "0.1"):

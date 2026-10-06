@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Reconocimiento facial voluntario</title>
+<style>
+  :root { --ink:#0a0e2e; --bg:#ffffff; --muted:#555; --line:#d8dce6; --accent:#0a0e2e; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#f1f3fb; --bg:#0f1226; --muted:#b5b9cc; --line:#2c3150; --accent:#f1f3fb; } }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:system-ui, sans-serif; line-height:1.55; }
+  main { max-width:640px; margin:0 auto; padding:18px 16px 40px; }
+  label { display:block; font-weight:600; margin:12px 0 4px; }
+  input[type=text], input[type=date], input[type=file] { width:100%; box-sizing:border-box; padding:12px; border:1px solid var(--line); border-radius:10px; background:transparent; color:inherit; font-size:1rem; }
+  button { padding:14px 20px; border-radius:10px; border:2px solid var(--accent); font-weight:700; font-size:1rem; cursor:pointer; margin:6px 8px 0 0; }
+  button.primary { background:var(--accent); color:var(--bg); }
+  button.secondary { background:transparent; color:var(--ink); }
+  button[disabled] { opacity:.5; cursor:not-allowed; }
+  .msg { margin-top:16px; padding:12px; border-radius:10px; border:1px solid var(--line); }
+  p.legal { white-space:pre-line; }
+  .check { display:flex; gap:10px; align-items:flex-start; font-weight:600; margin:14px 0; }
+  .check input { width:20px; height:20px; margin-top:2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 style="font-size:1.3rem;">{{ event_name }}</h1>
+  <section id="step1">
+    <p>Si quieres entrar al evento con reconocimiento facial, completa esto antes de llegar. Es <b>totalmente voluntario</b>: sin hacerlo entras con tu cédula o QR sin ninguna restricción.</p>
+    <label for="cedula">Número de documento</label>
+    <input type="text" id="cedula" inputmode="numeric" autocomplete="off">
+    <label for="birth">Fecha de nacimiento</label>
+    <input type="date" id="birth">
+    <button type="button" class="primary" id="go">Continuar</button>
+  </section>
+  <section id="step2" hidden>
+    <h2 id="title" style="font-size:1.15rem;"></h2>
+    <div id="body"></div>
+    <label class="check" id="adultRow" hidden><input type="checkbox" id="adult"><span id="adultText"></span></label>
+    <div id="selfieRow" hidden>
+      <label for="selfie">Tu selfie (de frente, con buena luz)</label>
+      <input type="file" id="selfie" accept="image/*" capture="user">
+    </div>
+    <button type="button" class="primary" id="yes"></button>
+    <button type="button" class="secondary" id="no"></button>
+  </section>
+  <div id="out" class="msg" role="status" aria-live="polite" hidden></div>
+</main>
+<script>
+(function () {
+  const code = {{ code|tojson }};
+  const $ = (id) => document.getElementById(id);
+  let block = null;
+  const say = (t, bad) => { const o = $('out'); o.hidden = false; o.textContent = t; o.style.borderColor = bad ? '#c0392b' : ''; };
+  async function load() {
+    const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/text`, { cache: 'no-store' });
+    if (!r.ok) { say((await r.json().catch(() => ({}))).detail || 'No disponible', true); return null; }
+    return r.json();
+  }
+  $('go').addEventListener('click', async () => {
+    if (!$('cedula').value.trim() || !$('birth').value) return say('Escribe tu documento y tu fecha de nacimiento.', true);
+    block = await load(); if (!block) return;
+    $('title').textContent = block.title;
+    const body = $('body'); body.replaceChildren();
+    block.body.forEach((p) => { const e = document.createElement('p'); e.className = 'legal'; e.textContent = p; body.appendChild(e); });
+    $('yes').textContent = block.buttons[0]; $('no').textContent = block.buttons[1];
+    if (block.adult_checkbox) { $('adultRow').hidden = false; $('adultText').textContent = block.adult_checkbox; }
+    $('selfieRow').hidden = false;
+    $('step1').hidden = true; $('step2').hidden = false; $('out').hidden = true; window.scrollTo(0, 0);
+  });
+  async function send(decision) {
+    const fd = new FormData();
+    fd.append('cedula', $('cedula').value.trim()); fd.append('birth_date', $('birth').value); fd.append('decision', decision);
+    fd.append('text_hash', block.hash); fd.append('adult', $('adult').checked ? 'true' : 'false');
+    if (decision === 'accept') {
+      const f = $('selfie').files[0];
+      if (!f) return say('Falta tu selfie.', true);
+      fd.append('file', f);
+    }
+    $('yes').disabled = $('no').disabled = true;
+    try {
+      const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}`, { method: 'POST', body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { $('step2').hidden = true; say(j.message || 'Listo.'); }
+      else { say(j.detail || 'No se pudo completar. Intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = false; }
+    } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = false; }
+  }
+  $('yes').addEventListener('click', () => send('accept'));
+  $('no').addEventListener('click', () => send('reject'));
+})();
+</script>
+</body>
+</html>

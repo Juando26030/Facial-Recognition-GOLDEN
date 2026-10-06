@@ -99,6 +99,11 @@ let n = 0; const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12
   assert.strictEqual(await g.ensure('6006'), 'enroll'); faceState = 'pending'; assert.strictEqual(await g.ensure('6006'), 'pending');
   faceState = 'none'; p = g.ensure('6107'); await settle(); btn('accept').click(); assert.strictEqual(await p, 'enroll'); faceState = 'ready';
 
+  // 6c) camino B: aceptó desde el celular y falta verificar identidad en puerta → 'verify'; sin red no hay rostro (cédula/QR)
+  accepted.add('6208'); const gv = G.create({ document: doc, fetch: async (u, o) => !net ? Promise.reject(new TypeError('Failed to fetch')) : (/consent-status/.test(u) ? json(200, { accepted: true, last: 'consent', mode: 'once', blocked: false, face: 'ready', verify: true }) : /web-acceptance/.test(u) ? (posts.push({ verify: u }), json(200, { verified: true })) : fetchFake(u, o)), eventId: 1, gc: () => GC, uuid });
+  assert.strictEqual(await gv.ensure('6208'), 'verify'); assert.strictEqual(await gv.verify('6208'), true); assert.ok(posts.some((x) => x.verify && /web-acceptance\/6208\/verify/.test(x.verify)));
+  net = false; assert.strictEqual(await gv.ensure('6208'), 'cedula', 'sin red no hay rostro: cédula/QR'); net = true;
+
   // 7) camino 2: un clic válido da el token; el botón 2 no
   block = { ...BLOCK, click_mode: true }; g = mk(); await g.loadBlock();
   p = g.clickFlow(); await settle(); btn('accept').click(); assert.strictEqual(await p, 'TOKEN');

@@ -8,6 +8,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
     <style>
         .params-table { width:100%; border-collapse:collapse; }
         .params-table th, .params-table td { padding:0.7rem 0.6rem; border-bottom:1px solid #eee; vertical-align:top; text-align:left; font-size:0.9rem; }
@@ -72,6 +73,13 @@
               <label>Razón social del organizador <input type="text" id="ccName" value="{{ event.organizer_name or '' }}"></label>
               <label>NIT del organizador <input type="text" id="ccNit" value="{{ event.organizer_nit or '' }}"></label>
               <label>Correo de privacidad del organizador <input type="email" id="ccEmail" value="{{ event.organizer_privacy_email or '' }}"></label>
+            </div>
+            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %} style="width:18px; height:18px;"> Permitir aceptar el reconocimiento facial y dar la selfie desde el celular antes del evento (página /aceptar)</label>
+            <div id="aceptarBox" style="display:{{ 'block' if event.aceptar_enabled else 'none' }};">
+              <p style="font-size:0.8rem; margin:0 0 6px;">Enlace (para el correo): <b id="aceptarUrl"></b></p>
+              <div id="aceptarQr" style="width:180px; height:180px;"></div>
+              <button type="button" id="aceptarPrint" class="golden-btn" style="width:auto; margin-top:6px;">Imprimir póster con el QR</button>
+              <p style="color:#666; font-size:0.78rem;">Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en puerta con el documento o el QR.</p>
             </div>
             <label>Cuándo se pide la autorización
               <select id="ccPrompt"><option value="once" {% if event.consent_prompt_mode == "once" %}selected{% endif %}>Una sola vez por persona y evento (recomendado)</option><option value="every_scan" {% if event.consent_prompt_mode == "every_scan" %}selected{% endif %}>Antes de cada uso (botones cortos)</option></select></label>
@@ -435,9 +443,21 @@
     if (ccMode) {
         ccMode.addEventListener('change', () => { document.getElementById('ccOrg').style.display = ccMode.value === 'tercero' ? 'grid' : 'none'; });
         document.getElementById('ccSave').addEventListener('click', async () => {
-            const body = { controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value };
+            const body = { controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value, aceptar_enabled: document.getElementById('ccAceptar').checked };
             const res = await fetch(`/api/events/${window.EVENT_ID}/consent-config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             if (res.ok) { showToast('Guardado', 'success'); setTimeout(() => location.reload(), 600); } else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo guardar', 'error');
+        });
+    }
+    const aceptarUrl = `${location.origin}/aceptar/{{ event.event_code }}`;
+    if (document.getElementById('aceptarUrl')) {
+        document.getElementById('aceptarUrl').textContent = aceptarUrl;
+        const drawQr = () => { try { const qr = qrcode(0, 'M'); qr.addData(aceptarUrl); qr.make(); document.getElementById('aceptarQr').innerHTML = qr.createSvgTag({ scalable: true }); const s = document.querySelector('#aceptarQr svg'); if (s) { s.style.width = '180px'; s.style.height = '180px'; } } catch (e) { /* sin QR: queda el enlace */ } };
+        if (typeof qrcode !== 'undefined') drawQr();
+        document.getElementById('ccAceptar').addEventListener('change', (e) => { document.getElementById('aceptarBox').style.display = e.target.checked ? 'block' : 'none'; });
+        document.getElementById('aceptarPrint').addEventListener('click', () => {
+            const w = window.open('', '_blank'); if (!w) return;
+            w.document.write(`<title>Reconocimiento facial</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1>¿Quieres entrar con tu rostro?</h1><p style="font-size:1.4rem">Escanea el QR desde tu celular y acepta antes de llegar.<br>Es voluntario: sin hacerlo, entras con tu cédula o QR.</p><div style="width:420px;margin:30px auto">${document.getElementById('aceptarQr').innerHTML}</div><p>${aceptarUrl}</p>`);
+            w.document.close(); w.print();
         });
     }
     const pcSave = document.getElementById('pcSave');

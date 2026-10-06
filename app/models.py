@@ -253,6 +253,7 @@ class Event(Base):
     organizer_nit = Column(String, nullable=True)
     organizer_privacy_email = Column(String, nullable=True)   # correo del organizador para consultas y revocación
     consent_prompt_mode = Column(String, default='once', server_default='once', nullable=False)   # 'once' (una vez por persona y evento) | 'every_scan' (botones cortos antes de cada uso)
+    aceptar_enabled = Column(Boolean, default=False, server_default='false', nullable=False)   # camino B: página pública /aceptar/<código del evento> para aceptar y dar la selfie desde el celular
     precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
     precalculo_anexo_ref = Column(String, nullable=True)
     precalculo_anexo_fecha = Column(Date, nullable=True)
@@ -771,6 +772,17 @@ class SuppressedPerson(Base):
     tenant_id = Column(String, primary_key=True)
     cedula_hash = Column(String(64), primary_key=True)
     suppressed_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class WebAcceptance(Base):
+    """Aceptación hecha desde /aceptar (celular): vale para el reconocimiento facial solo cuando el personal confirma la identidad en puerta (`verified_at`)."""
+    __tablename__ = 'web_acceptances'
+    tenant_id = Column(String, primary_key=True)
+    user_id = Column(String, primary_key=True)
+    event_id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    verified_at = Column(DateTime, nullable=True)
+    verified_by_staff_id = Column(Integer, nullable=True)
 
 
 class AuditConsentLog(Base):

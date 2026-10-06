@@ -86,7 +86,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!gate) { goCedula(null, cedula); return; }
             identBtn.disabled = true; identMsg.textContent = 'Consultando…';
             try {
-                const next = await gate.ensure(cedula);
+                let next = await gate.ensure(cedula);
+                if (next === 'verify') {                           // camino B: aceptó desde el celular; confirmar identidad en puerta
+                    const okId = await showConfirm('Esta persona aceptó el reconocimiento facial desde su celular. Confirma su identidad con el documento físico o el QR: ¿coincide con quien está en la puerta?');
+                    next = okId && await gate.verify(cedula) ? await gate.ensure(cedula) : 'cedula';
+                }
                 if (next === 'camera') { identMsg.textContent = ''; cameraOn(); }
                 else if (next === 'enroll') { enrollCedula = cedula; identMsg.textContent = ''; cameraOn(); resTexto.innerText = 'Capta el rostro de la persona: hoy ingresa por cédula; desde la próxima entrada, por rostro.'; resTexto.style.color = '#D4AF37'; }
                 else if (next === 'pending') { identMsg.textContent = 'Tu reconocimiento facial se está preparando: hoy ingresa por cédula o QR.'; goCedula(null, cedula); }

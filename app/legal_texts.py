@@ -40,7 +40,7 @@ def render(event: Event, web: bool = False) -> dict:
         text = text.replace(k, v)
     lines = text.split("\n")
     buttons = {m.group(1): m.group(2) for m in _BUTTON.finditer(text)}
-    body = [p for p in "\n".join(l for l in lines[1:] if not _BUTTON.match(l)).split("\n\n") if p.strip()]
+    body = [p.strip() for p in "\n".join(l for l in lines[1:] if not _BUTTON.match(l)).split("\n\n") if p.strip()]
     return {"version": VERSION_WEB if web else (VERSION_TERCERO if tercero else VERSION_PROPIO), "variant": "tercero" if tercero else "golden", "text": text,
             "hash": consent.text_hash(text), "title": lines[0], "body": body, "buttons": [buttons["1"], buttons["2"]],
             "adult_checkbox": ADULT_CHECKBOX if tercero else None, "blocked": company.blocked(text), "sin_constancia": SIN_CONSTANCIA}

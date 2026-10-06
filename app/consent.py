@@ -66,7 +66,8 @@ SELECT user_id FROM (
   SELECT DISTINCT ON (user_id) user_id, reason, accepted_biometric, confirmed_adult
   FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e
   ORDER BY user_id, consent_timestamp_utc DESC, id DESC) last
-WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult""")
+WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult
+  AND user_id NOT IN (SELECT user_id FROM web_acceptances WHERE tenant_id = :t AND event_id = :e AND verified_at IS NULL)""")
 
 
 def accepted_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
@@ -85,6 +86,11 @@ WHERE reason IN ('rejection', 'revocation')""")
 def denied_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
     """Cédulas cuyo ÚLTIMO registro en este evento es un rechazo o una revocación: jamás se reconocen por el rostro."""
     return {r[0] for r in db.execute(_DENIED_SQL, {"t": tenant_id, "e": event_id})}
+
+
+def web_pending(db: Session, tenant_id: str, user_id: str, event_id: int) -> bool:
+    """¿Aceptó desde el celular (/aceptar) y falta que el personal confirme su identidad en puerta?"""
+    return db.execute(text("SELECT 1 FROM web_acceptances WHERE tenant_id = :t AND user_id = :u AND event_id = :e AND verified_at IS NULL"), {"t": tenant_id, "u": str(user_id), "e": event_id}).first() is not None
 
 
 def biometric_blocked(db: Session, tenant_id: str, user_id: str) -> bool:

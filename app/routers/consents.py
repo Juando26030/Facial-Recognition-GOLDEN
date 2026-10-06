@@ -39,7 +39,7 @@ def consent_status(event_id: int, user_id: str, db: Session = Depends(get_db), s
     last = consent.latest(db, event.tenant_id, user_id, event.id)
     blocked = consent.biometric_blocked(db, event.tenant_id, user_id)
     return {"accepted": not blocked and consent.has_acceptance(db, event.tenant_id, user_id, event.id), "last": last.reason if last else None, "mode": event.consent_prompt_mode, "blocked": blocked,
-            "face": enroll.status(db, event.tenant_id, user_id)}
+            "face": enroll.status(db, event.tenant_id, user_id), "verify": consent.web_pending(db, event.tenant_id, user_id, event.id)}
 
 
 def _when(raw):
@@ -132,13 +132,15 @@ def set_consent_config(event_id: int, data: dict, db: Session = Depends(get_db),
     event = get_event_for_staff(event_id, db, staff)
     mode = str(data.get("controller_mode", event.controller_mode))
     name, nit, email = (str(data.get(k, getattr(event, k)) or "").strip() or None for k in ("organizer_name", "organizer_nit", "organizer_privacy_email"))
+    aceptar = bool(data.get("aceptar_enabled", event.aceptar_enabled))
     err = legal_texts.validate_event_config(mode, name, nit, email)
     prompt = str(data.get("consent_prompt_mode", event.consent_prompt_mode))
     if err or prompt not in ("once", "every_scan"):
         raise HTTPException(status_code=400, detail=err or "El modo de la autorización debe ser «once» o «every_scan»")
     event.controller_mode, event.organizer_name, event.organizer_nit, event.organizer_privacy_email, event.consent_prompt_mode = mode, name, nit, email, prompt
+    event.aceptar_enabled = aceptar
     db.commit()
-    return {"controller_mode": mode, "organizer_name": name, "organizer_nit": nit, "organizer_privacy_email": email, "consent_prompt_mode": prompt}
+    return {"controller_mode": mode, "organizer_name": name, "organizer_nit": nit, "organizer_privacy_email": email, "consent_prompt_mode": prompt, "aceptar_enabled": aceptar}
 
 
 @router.post("/events/{event_id}/enroll-face")
@@ -167,3 +169,21 @@ def enroll_face(event_id: int, user_id: str = Form(...), file: UploadFile = File
     db.commit()
     jobs.kick()
     return {"queued": True, "face": "pending"}
+
+
+@router.post("/events/{event_id}/web-acceptance/{user_id}/verify")
+def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
+    """El personal confirma, con el documento físico o el QR de la persona, que quien aceptó desde el celular es ella: desde aquí el reconocimiento facial puede usarla."""
+    from app import faces_version
+    from app.models import WebAcceptance
+    from app.timeutil import utcnow
+    event = get_event_for_staff(event_id, db, staff)
+    uid = re.sub(r"[\s.]", "", user_id)
+    row = db.get(WebAcceptance, (event.tenant_id, uid, event.id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Esta persona no tiene una aceptación pendiente de verificar")
+    if row.verified_at is None:
+        row.verified_at, row.verified_by_staff_id = utcnow(), staff.id
+        faces_version.bump(db, event_ids=[event.id])
+        db.commit()
+    return {"verified": True}

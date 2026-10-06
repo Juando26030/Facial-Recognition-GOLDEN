@@ -29,7 +29,7 @@
     g.status = async (cedula) => {
       try {
         const r = await d.fetch(`/api/events/${d.eventId}/consent-status/${encodeURIComponent(cedula)}`, { cache: 'no-store' });
-        if (r.ok) { const j = await r.json(); return { accepted: !!j.accepted, blocked: !!j.blocked, known: true, face: j.face, mode: j.mode, source: 'server' }; }
+        if (r.ok) { const j = await r.json(); return { accepted: !!j.accepted, blocked: !!j.blocked, known: true, face: j.face, verify: !!j.verify, mode: j.mode, source: 'server' }; }
       } catch (e) { /* sin red */ }
       const gc = d.gc();
       if (gc && gc.supported) { const s = await gc.consentLocal(cedula); return { accepted: !!s.accepted, blocked: !!s.blocked, known: !!s.known, mode: (g.block && g.block.mode) || 'once', source: 'local' }; }
@@ -100,6 +100,7 @@
       const every = (g.block.mode || st.mode) === 'every_scan';
       const face = st.face || 'none';                            // 'ready' (hay vector) | 'pending' (se está calculando) | 'none'
       const go = () => (face === 'ready' ? 'camera' : face === 'pending' ? 'pending' : 'enroll');      // sin vector: captura en vivo y el vector se calcula aparte (la puerta no espera)
+      if (st.accepted && st.verify && !offline) return 'verify';    // se inscribió desde el celular (/aceptar): el personal confirma su identidad con el documento o el QR antes de usar su rostro
       if (st.accepted && !every) return offline ? 'cedula' : go();
       if (st.accepted && every) {                               // cada uso: botones cortos; la autorización completa ya consta
         const r = await g.showScreen({ every: true });
@@ -109,6 +110,11 @@
       const saved = await g.record(cedula, r.decision, r.adult);
       if (!saved) return 'cedula';
       return r.decision === 'accept' && r.adult && saved === 'server' ? go() : 'cedula';
+    };
+
+    /* El personal confirmó la identidad (documento físico o QR) de quien aceptó desde el celular. */
+    g.verify = async (cedula) => {
+      try { const r = await d.fetch(`/api/events/${d.eventId}/web-acceptance/${encodeURIComponent(cedula)}/verify`, { method: 'POST', cache: 'no-store' }); return !!r.ok; } catch (e) { return false; }
     };
 
     /* CAMINO 2: la persona se acerca, ve la pantalla y pulsa el botón 1 → token de UN clic (el servidor solo lo da si el evento tiene el pre-cálculo autorizado). null = botón 2 o sin token. */
