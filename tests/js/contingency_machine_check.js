@@ -2,7 +2,7 @@
 // Correr: node tests/js/contingency_machine_check.js
 // Comprueba: un fallo aislado NO activa contingencia; 2 fallos de salud seguidos o 2 escaneos seguidos sin reintentos sí; salida con 2 chequeos buenos Y una petición autenticada buena
 // (sonda liviana, 429 = alcanzable); sesión vencida (401) = sigue en contingencia con la cola intacta; roster guardado/renovado/vencido/borrado con aviso; cola SIN cédula en claro;
-// sincronización por lotes de 500 con espera creciente, borrado de lo sincronizado y lista de «revisar»; tope de 30 días; cierre de sesión; sin soporte de IndexedDB.
+// sincronización por lotes de 500 con espera creciente, borrado de lo sincronizado y lista de «revisar»; tope de 7 días con avisos; cierre de sesión; sin soporte de IndexedDB.
 const assert = require('assert');
 const { fakeIndexedDB } = require('./fake_idb');
 const C = require('../../static/js/contingency.js');
@@ -154,11 +154,15 @@ const tick = () => new Promise((r) => setImmediate(r));
   await dialog.children[0].children[2].listeners.click(); await tick(); await tick();
   assert.strictEqual(c.reviewCount, 0); assert.strictEqual(body.children.filter((x) => x.attrs.role === 'dialog').length, 0);
 
-  // tope de 30 días sin sincronizar: se descarta CON aviso
-  await c.db.put('queue', { client_id: 'viejo', h: await fp('1001'), n: 'Ana', timestamp: new Date(now - 31 * 86400 * 1000).toISOString(), method: 'cedula' });
-  await c.db.put('queue', { client_id: 'reciente', h: await fp('1001'), n: 'Ana', timestamp: new Date(now - 29 * 86400 * 1000).toISOString(), method: 'cedula' });
+  // tope de 7 días sin sincronizar: aviso visible desde el día 3 (amarillo) y el 6 (rojo); a los 7 se elimina CON aviso (nunca en silencio)
+  await c.db.put('queue', { client_id: 'tres', h: await fp('1001'), n: 'Ana', timestamp: new Date(now - 3.5 * 86400 * 1000).toISOString(), method: 'cedula' }); await c.recount();
+  assert.strictEqual(body.children[0].dataset.state, 'aging'); assert.ok(/hace 3 días/.test(body.children[0].textContent) && /se eliminan de forma automática/.test(body.children[0].textContent));
+  await c.db.put('queue', { client_id: 'seis', h: await fp('1001'), n: 'Ana', timestamp: new Date(now - 6.5 * 86400 * 1000).toISOString(), method: 'cedula' }); await c.recount();
+  assert.strictEqual(body.children[0].dataset.state, 'aging2'); await c.db.del('queue', ['tres', 'seis']); await c.recount();
+  await c.db.put('queue', { client_id: 'viejo', h: await fp('1001'), n: 'Ana', timestamp: new Date(now - 8 * 86400 * 1000).toISOString(), method: 'cedula' });
+  await c.db.put('queue', { client_id: 'reciente', h: await fp('1001'), n: 'Ana', timestamp: new Date(now - 6 * 86400 * 1000).toISOString(), method: 'cedula' });
   assert.strictEqual(await c.pruneOld(), 1); assert.deepStrictEqual((await c.queueList()).map((x) => x.client_id), ['reciente']);
-  assert.ok(/1 ingreso\(s\) llevaban más de 30 días sin sincronizar/.test(body.children[0].textContent)); assert.strictEqual(body.children[0].dataset.state, 'notice');
+  assert.ok(/1 registro\(s\) llevaban más de 7 días sin sincronizar/.test(body.children[0].textContent)); assert.strictEqual(body.children[0].dataset.state, 'notice');
   await body.children[0].children.find((x) => x.textContent === 'Entendido').listeners.click(); assert.notStrictEqual(body.children[0] && body.children[0].dataset.state, 'notice');
 
   // cierre de sesión: intenta sincronizar y devuelve lo que queda sin sincronizar (la cola se conserva)
@@ -219,5 +223,5 @@ const tick = () => new Promise((r) => setImmediate(r));
   assert.strictEqual(c3.supported, false); assert.strictEqual(c3.active(), false);
   assert.strictEqual(body2.children[0].dataset.state, 'unsupported'); assert.strictEqual(body2.children[0].attrs['aria-live'], 'polite');
   c3.noteScanExhausted(); c3.noteScanExhausted(); assert.strictEqual(c3.active(), false, 'sin soporte nunca entra en contingencia'); assert.strictEqual(c3.state(), 'normal');
-  console.log('contingency.js: máquina de estados, sonda, sincronización, revisar, tope de 30 días y avisos OK');
+  console.log('contingency.js: máquina de estados, sonda, sincronización, revisar, tope de 7 días y avisos OK');
 })().catch((e) => { console.error(e); process.exit(1); });
