@@ -88,9 +88,10 @@ def denied_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
 
 
 def biometric_blocked(db: Session, tenant_id: str, user_id: str) -> bool:
-    """¿La persona es menor de 18 años (o está marcada sin biometría)? Entonces no hay pantalla de autorización, ni cámara, ni vector: solo cédula/QR."""
-    row = db.execute(text("SELECT is_biometric_enabled FROM users WHERE id = :u AND tenant_id = :t"), {"u": str(user_id), "t": tenant_id}).first()
-    return bool(row and row[0] is False)
+    """¿La persona es menor de 18 años (por su fecha de nacimiento)? Entonces no hay pantalla de autorización, ni cámara, ni vector: solo cédula/QR."""
+    from app import minors
+    row = db.execute(text("SELECT birth_date FROM users WHERE id = :u AND tenant_id = :t"), {"u": str(user_id), "t": tenant_id}).first()
+    return bool(row and minors.is_minor(row[0]))
 
 
 def has_any_acceptance(db: Session, tenant_id: str, user_id: str) -> bool:

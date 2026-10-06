@@ -867,6 +867,7 @@ def sync_access_logs(
 
 
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
+SUPPRESSED_MSG = "Esta persona solicitó la supresión de sus datos: no se puede registrar de nuevo sin su autorización."
 _BIRTH_KEYS = ('fecha de nacimiento', 'fecha_nacimiento', 'fecha nacimiento', 'nacimiento', 'birth_date')      # columna opcional del Excel (L3)
 ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
 ROSTER_LIMIT, ROSTER_WINDOW = 12, timedelta(minutes=10)      # descargas por usuario y evento: un quiosco refresca cada pocos minutos; más que esto es un abuso o un bucle
@@ -920,17 +921,17 @@ def local_roster(
     salt = roster_salt(event)
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
-    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories, User.is_biometric_enabled).outerjoin(
+    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories, User.birth_date).outerjoin(
         EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id) & (EventAttendee.event_id == event.id),
     ).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids))).order_by(User.id).all()
     counts = {uid: (real, new) for uid, real, new in db.query(
         AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"), func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo"),
     ).filter(AccessLog.event_id == event.id).group_by(AccessLog.user_id)}
     rows = []
-    for uid, first, last, categories, bio_on in people:
+    for uid, first, last, categories, birth in people:
         real, new = counts.get(uid, (0, 0))
         rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
-                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted and bio_on else 0, "b": 0 if bio_on else 1})      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
+                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted and not minors.is_minor(birth) else 0, "b": 1 if minors.is_minor(birth) else 0})      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
     return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status, "auto_register": bool(event.auto_register)},
                          "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
 
@@ -1228,6 +1229,8 @@ def manual_register(
     has_photo = file is not None and bool(file.filename)
     if has_photo and not minor and birth is None:
         raise HTTPException(status_code=400, detail="Para guardar el rostro hace falta la fecha de nacimiento: solo se capta el rostro de mayores de 18 años")
+    if privacy.is_suppressed(db, event.tenant_id, id):
+        raise HTTPException(status_code=409, detail=SUPPRESSED_MSG)
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
         if birth is not None:
@@ -1640,6 +1643,10 @@ def _bulk_register_impl(
         if not identificador:
             where = info["id_cell"] or f"fila {row_num}"
             errors.append(f"❌ Fila {row_num} ({where}): sin ID/cédula, se omitió esta fila.")
+            continue
+
+        if privacy.is_suppressed(db, event.tenant_id, identificador):
+            errors.append(f"⚠️ Fila {row_num}: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).")
             continue
 
         if identificador in carried_ids:

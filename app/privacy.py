@@ -159,3 +159,85 @@ def purge_expired(db: Session, now=None, batch: int = 200, dry_run: bool = False
             total["by_cap"] += 0 if by_event else 1
         db.commit()
     return total
+
+
+# ------------------------------------------------------------------ supresión individual y revocación (L4)
+REVOCATION_TEXT = "Revocación de la autorización o supresión de datos solicitada por la persona y atendida por el personal autorizado de Golden."
+NOT_IMMEDIATE = ["versiones no vigentes de las fotos en Cloud Storage (se eliminan solas en 1 día)", "historial de la base de datos (Neon, 1 día)",
+                 "copias de seguridad de recuperación técnica (se sobrescriben en un ciclo de hasta 30 días)",
+                 "dispositivos sin conexión: su copia local se actualiza en la próxima sincronización"]
+_FILE_KEYS = ("stored",)
+
+
+def is_suppressed(db: Session, tenant_id: str, cedula: str) -> bool:
+    """¿Esta cédula pidió la supresión total? (evita volver a crearla por error en una carga, un alta o una inscripción)."""
+    from app import consent
+    from app.models import SuppressedPerson
+    return db.get(SuppressedPerson, (tenant_id, consent.cedula_hash(cedula))) is not None
+
+
+def _stored_files(data_json: str) -> list:
+    """Archivos adjuntos (`stored`) dentro del JSON de una inscripción, a cualquier profundidad."""
+    import json
+    out = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            if x.get("stored"):
+                out.append(str(x["stored"]))
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+    try:
+        walk(json.loads(data_json or "{}"))
+    except ValueError:
+        pass
+    return out
+
+
+def erase_person(db: Session, event: Event, user_id: str, scope: str) -> dict:
+    """`scope='biometric'` = REVOCACIÓN: borra vector y foto (todas las versiones posibles), `is_biometric_enabled=false` y registra la `revocation`; la persona sigue entrando por cédula/QR.
+    `scope='all'` además borra sus datos personales (users, asistencia al evento, impresiones, movimientos de áreas, entregas de inventario, invitaciones, listas de formularios y adjuntos),
+    vacía los datos de sus inscripciones (la inscripción y su pago se conservan) y deja `payer_email` en NULL, ANONIMIZA sus `access_logs` de forma irreversible (se desvincula la persona; queda
+    hora, tipo de ingreso y evento) y guarda solo la huella de la cédula para no re-cargarla. NO toca `audit_consent_logs` (3 años, bloqueado) ni lo demás de `form_payments` (10 años, bloqueado).
+    Devuelve conteos y lo que NO se pudo borrar al instante; nunca datos personales."""
+    from app import consent, faces_version
+    from app.models import SuppressedPerson
+    tenant, uid = event.tenant_id, str(user_id)
+    user = db.query(User).filter(User.id == uid, User.tenant_id == tenant).first()
+    if user is None:
+        return {"found": False}
+    result = {"found": True, "scope": scope, "had_biometrics": bool(user.face_encoding), "versions_not_deleted": 0}
+    result["versions_not_deleted"] += get_storage().delete_all_versions(photo_key(tenant, uid))
+    user.face_encoding = None
+    user.biometric_consent_at = None
+    user.biometric_consent_source = None
+    user.is_biometric_enabled = False
+    consent.record(db, tenant_id=tenant, user_id=uid, event_id=event.id, version="revocation", legal_text_hash=consent.text_hash(REVOCATION_TEXT), accepted=False, adult=True, reason="revocation",
+                   device="purga")
+    if scope == "all":
+        p = {"t": tenant, "u": uid}
+        events_of_tenant = "(SELECT id FROM events WHERE tenant_id = :t)"
+        subs = db.execute(text(f"SELECT id, form_id, data_json FROM form_submissions WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).all()
+        for _sid, form_id, data_json in subs:
+            for stored in _stored_files(data_json):
+                from app.storage import form_file_key
+                result["versions_not_deleted"] += get_storage().delete_all_versions(form_file_key(tenant, form_id, stored))
+        result["submissions_emptied"] = db.execute(text(f"UPDATE form_submissions SET data_json = '{{}}', person_id = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).rowcount
+        forms_of_tenant = f"(SELECT id FROM web_forms WHERE event_id IN {events_of_tenant})"
+        db.execute(text(f"DELETE FROM form_people WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)
+        db.execute(text(f"DELETE FROM form_invites WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)
+        db.execute(text(f"UPDATE form_payments SET payer_email = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p)      # contacto fuera; el resto del pago se conserva (10 años, bloqueado)
+        for table in ("event_attendees", "print_logs", "area_movements", "inventory_deliveries"):
+            db.execute(text(f"DELETE FROM {table} WHERE user_id = :u AND tenant_id = :t"), p)
+        result["access_logs_anonymized"] = db.execute(text("UPDATE access_logs SET user_id = NULL WHERE user_id = :u AND tenant_id = :t"), p).rowcount
+        db.flush()
+        db.delete(user)
+        if db.get(SuppressedPerson, (tenant, consent.cedula_hash(uid))) is None:
+            db.add(SuppressedPerson(tenant_id=tenant, cedula_hash=consent.cedula_hash(uid)))
+    faces_version.bump(db, tenant_id=tenant)                       # el reconocimiento recarga su matriz; la versión del roster local cambia sola (cambia lo que contiene)
+    db.commit()
+    result["not_immediate"] = NOT_IMMEDIATE if scope == "all" or result["had_biometrics"] else NOT_IMMEDIATE[2:]
+    return result

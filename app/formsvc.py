@@ -12,7 +12,7 @@ from typing import Optional, Tuple
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
-from app import formlib, jobs, minors
+from app import formlib, jobs, minors, privacy
 from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
 from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
@@ -474,6 +474,8 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     person_id = str(kv.get("id") or "").strip()
     if not person_id:
         return "La inscripción no trae cédula, no se pudo cargar a la base"
+    if privacy.is_suppressed(db, event.tenant_id, person_id):
+        return "Esta persona solicitó la supresión de sus datos: no se cargó a la base del evento"
     user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
     if not user:
         user = User(id=person_id, tenant_id=event.tenant_id)

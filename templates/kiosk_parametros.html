@@ -135,6 +135,8 @@
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <input type="text" id="privCedula" placeholder="Cédula de la persona" aria-label="Cédula de la persona a la que se le borrará el rostro" style="padding:8px; border:1px solid #ccc; border-radius:8px; max-width:200px;">
             <button type="button" id="privPerson" style="padding:8px 14px;">Borrar solo el rostro de esta persona</button>
+            {% if staff_role in ["admin", "super_admin"] %}<button type="button" id="privRevoke" style="padding:8px 14px;" title="Revocación: borra vector y fotos y deja constancia; la persona sigue entrando por cédula o QR">Revocar autorización (borrar rostro y dejar constancia)</button>
+            <button type="button" id="privAll" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px;">Suprimir TODOS los datos de esta persona</button>{% endif %}
             {% if staff_role in ["admin", "super_admin"] %}<button type="button" id="privEvent" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px;">Borrar los datos biométricos de TODO el evento</button>{% endif %}
           </div>
           <div id="privStatus" role="status" aria-live="polite" style="font-size:0.82rem; margin-top:8px;"></div>
@@ -361,6 +363,18 @@
             const r = await fetch(`${base}/users/${encodeURIComponent(id)}/biometrics`, { method: 'DELETE' }); const d = await r.json().catch(() => ({}));
             r.ok ? (say(d.message), load()) : say(d.detail || 'No se pudo borrar', true);
         });
+        const purgeData = async (scope, msg) => {
+            const id = document.getElementById('privCedula').value.trim();
+            if (!id) return say('Escribe la cédula', true);
+            if (!(await showConfirm(msg.replace('{id}', id)))) return;
+            const r = await fetch(`/api/attendees/${encodeURIComponent(id)}/purge-data?event_id=${window.EVENT_ID}&scope=${scope}&confirm=true`, { method: 'DELETE' });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) return say(d.detail || 'No se pudo suprimir', true);
+            say(`Listo. No se borra al instante: ${(d.not_immediate || []).join('; ')}.${d.versions_not_deleted ? ` ATENCIÓN: ${d.versions_not_deleted} versión(es) de archivos no se pudieron borrar; avisa a soporte.` : ''}`); load();
+        };
+        const pr = document.getElementById('privRevoke'), pa = document.getElementById('privAll');
+        if (pr) pr.addEventListener('click', () => purgeData('biometric', '¿Revocar la autorización de la persona con cédula {id}? Se borran su foto y su vector (no se puede deshacer) y queda constancia. Sigue entrando por cédula o QR.'));
+        if (pa) pa.addEventListener('click', () => purgeData('all', '¿Suprimir TODOS los datos de la persona con cédula {id}? Se borran sus datos personales, su rostro y se anonimiza su historial de ingresos. NO se puede deshacer.'));
         const ev = document.getElementById('privEvent');
         if (ev) ev.addEventListener('click', async () => {
             const res = await purgeEventBiometrics(window.EVENT_ID);

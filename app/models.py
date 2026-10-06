@@ -765,6 +765,14 @@ class SystemEvent(Base):
     at = Column(DateTime, nullable=False, default=utcnow)
 
 
+class SuppressedPerson(Base):
+    """Huella de la cédula de quien pidió la supresión total (L4): evita volver a crearla por error. Sin datos personales."""
+    __tablename__ = 'suppressed_people'
+    tenant_id = Column(String, primary_key=True)
+    cedula_hash = Column(String(64), primary_key=True)
+    suppressed_at = Column(DateTime, nullable=False, default=utcnow)
+
+
 class AuditConsentLog(Base):
     """Prueba inmutable de la autorización biométrica (migración 0054): solo INSERT (disparador + REVOKE al rol de la app), SIN llaves foráneas, 3 años mínimo, ninguna purga la toca.
     Nada en el código la modifica ni la borra; la lectura es solo para super_admin y fuera de la interfaz (ver app/consent.py y scripts/export_consent_logs.py)."""
