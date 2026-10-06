@@ -309,7 +309,9 @@ def test_privacy_texts_state_7_day_retention_cap_backups_and_processors(client, 
     ev = factory.event("en_proceso", facial_enabled=True)
     factory.staff("coordinador", "coord1")
     login(client, "coord1")
-    assert "7 días después de que finalicen todos tus eventos" in client.get(f"/kiosk/{ev.id}/registro").text
+    # El aviso del quiosco ahora es la pantalla de autorización de la auditora (L1): trae el plazo de borrado, la excepción de otro evento y el tope de 180 días.
+    shown = " ".join(client.get(f"/api/events/{ev.id}/consent-text").json()["body"])
+    assert "siete (7) días siguientes a la finalización del evento" in shown and "180 días" in shown and "30 días" in shown
 
 
 def test_privacy_policy_goes_back_to_pending_by_itself_when_its_text_changes(client, monkeypatch):

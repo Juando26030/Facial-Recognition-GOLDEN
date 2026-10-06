@@ -100,3 +100,15 @@ def test_export_consent_writes_one_persons_records_without_logging_the_cedula(db
     key = out.split("en ")[1].split('"')[0]
     data = get_storage().get(key)
     assert b"55501" in data and b"66602" not in data
+
+
+def test_bench_vector_prints_only_timings(monkeypatch, capsys):
+    import types
+
+    from app import biometrics, ops_runner
+    calls = []
+    monkeypatch.setattr(biometrics, "_fr", lambda: types.SimpleNamespace(face_encodings=lambda img, known_face_locations, num_jitters: calls.append(num_jitters) or [[0.0]]))
+    monkeypatch.setenv("BENCH_REPS", "3")
+    assert ops_runner.main("bench-vector") == 0
+    out = capsys.readouterr().out
+    assert "jitters_10_ms" in out and "jitters_25_ms" in out and set(calls) == {1, 10, 25} and calls.count(10) == 3 and calls.count(25) == 3

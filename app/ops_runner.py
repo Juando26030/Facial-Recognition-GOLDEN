@@ -21,6 +21,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from app.timeutil import utcnow
 
@@ -206,8 +207,37 @@ def export_consent() -> str:
     return f"{len(rows)} registros en {key}"
 
 
+def bench_vector() -> str:
+    """Mide cuánto tarda calcular el vector facial con 10 y 25 jitters EN ESTE ENTORNO (CPU y memoria del Job o servicio donde corre). Imagen SINTÉTICA generada aquí (ruido determinista, sin
+    datos personales) con la ubicación del rostro dada: así no depende de detectar un rostro y mide justo lo que cuesta los jitters (la detección, ~decenas de ms, no entra).
+    Variables: BENCH_REPS (por defecto 5). Imprime solo tiempos y los recursos visibles; nada personal. Correr con: gcloud run jobs execute <job> --args=-m,app.ops_runner,bench-vector"""
+    import numpy as np
+
+    from app.biometrics import _fr
+    fr = _fr()
+    reps = max(2, int(os.getenv("BENCH_REPS", "5")))
+    img = np.random.default_rng(7).integers(0, 255, (480, 640, 3), dtype=np.uint8)
+    box = [(80, 440, 400, 160)]                                             # (arriba, derecha, abajo, izquierda): un recuadro del tamaño de un rostro cercano
+    out = {"cpus": os.cpu_count(), "reps": reps}
+    for jitters in (10, 25):
+        fr.face_encodings(img, known_face_locations=box, num_jitters=1)       # calentamiento (carga de modelos): no cuenta
+        times = []
+        for _ in range(reps):
+            t0 = time.perf_counter()
+            fr.face_encodings(img, known_face_locations=box, num_jitters=jitters)
+            times.append((time.perf_counter() - t0) * 1000)
+        times.sort()
+        out[f"jitters_{jitters}_ms"] = {"min": round(times[0]), "mediana": round(statistics.median(times)), "max": round(times[-1])}
+    try:
+        with open("/sys/fs/cgroup/memory.max") as f:
+            out["memoria_limite"] = f.read().strip()
+    except OSError:
+        pass
+    return json.dumps(out)
+
+
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent}
+         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector}
 
 
 def main(task: str) -> int:
