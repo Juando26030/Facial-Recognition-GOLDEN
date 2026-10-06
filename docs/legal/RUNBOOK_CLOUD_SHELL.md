@@ -62,7 +62,7 @@ Lo que imprime: `jitters_10_ms` y `jitters_25_ms` con mínimo, mediana y máximo
 
 ## 5. Cola golden-faces-staging: crearla, comprobarla, ver atascos y reintentar (orden exacto)
 
-1. **Crearla** (una sola vez; idempotente): `bash deploy/gcp/faces_queue.sh staging`
+1. **Crearla** (una sola vez; idempotente): `bash deploy/gcp/faces_queue.sh staging` (la región por defecto es `us-east4`; para otra: `REGION=<región> bash deploy/gcp/faces_queue.sh staging`). Ya creada en staging el 6 de octubre de 2026.
 2. **Verificar que existe y sus límites:**
    ```bash
    gcloud tasks queues describe golden-faces-staging --location us-east4 --format="yaml(name,state,rateLimits,retryConfig)"
