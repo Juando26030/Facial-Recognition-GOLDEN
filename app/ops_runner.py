@@ -274,7 +274,7 @@ def main(task: str) -> int:
     print(json.dumps({"ops": task, "results": results}, ensure_ascii=False))
     failed = [k for k, v in results.items() if not v["ok"]]
     if failed:
-        _alert(f"ops-{'-'.join(failed)}", f"[Golden] ⚠️ Falló la tarea de operaciones: {', '.join(failed)}",
+        _alert(f"ops-{'-'.join(failed)}", f"[GoldenWeb 2.0] ⚠️ Falló la tarea de operaciones: {', '.join(failed)}",
                "\n".join(f"- {k}: {results[k]['detail']}" for k in failed))
     return 1 if failed else 0
 
