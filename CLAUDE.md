@@ -1,8 +1,9 @@
-# Golden Biometrics — Facial Recognition GOLDEN
+# GoldenWeb 2.0 (repositorio Facial-Recognition GOLDEN)
 
-SaaS de control de acceso e inscripción para eventos de Golden Logísticas: registro por cédula, QR o reconocimiento facial, escarapelas,
-formularios web públicos con pagos (Wompi), ruleta, estadísticas y reportes. FastAPI + SQLAlchemy (síncrono) + PostgreSQL + Alembic;
-frontend Jinja2 + JS plano; motor facial `face_recognition`/dlib. Repo público: https://github.com/Juando26030/Facial-Recognition-GOLDEN
+Plataforma de gestión de identidades y acceso para eventos de Golden Eventos y Logística S.A.S.: registro por cédula, QR o reconocimiento facial **voluntario**, escarapelas, formularios web públicos
+con pagos (Wompi), ruleta, estadísticas y reportes. FastAPI + SQLAlchemy (síncrono) + PostgreSQL (Neon) en Cloud Run + Alembic; frontend Jinja2 + JS plano; motor facial `face_recognition`/dlib; modo de
+contingencia sin conexión en el quiosco (IndexedDB). Consentimiento explícito de la persona, registrado de forma inmutable (`audit_consent_logs`), y borrado de lo biométrico a los 7 días de finalizado
+el evento. Bloque legal del piloto: `docs/legal/` (textos de la auditora, decisiones y pendientes). Repo público: https://github.com/Juando26030/Facial-Recognition-GOLDEN
 
 **Para retomar el trabajo en curso lee primero [`docs/HANDOFF.md`](docs/HANDOFF.md).** El detalle de cada sprint (porqués, bugs reales y
 cómo se arreglaron) está en [`docs/historial.md`](docs/historial.md). Lo que falta construir (decidido con Juan David) está en [`docs/16_BACKLOG_PRODUCTO.md`](docs/16_BACKLOG_PRODUCTO.md) y el servidor local sin internet en [`docs/17_SERVIDOR_LOCAL.md`](docs/17_SERVIDOR_LOCAL.md). **Para poner producción en Cloud Run: [`docs/19_GUIA_PRODUCCION.md`](docs/19_GUIA_PRODUCCION.md)** (la ejecuta Juan David; Claude no corre nada en la nube). Los documentos de producto (`docs/00`–`06`) los mantiene otra sesión:
@@ -80,7 +81,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
 - **Permisos:** `STAFF_ROLES` = cliente < digitador < coordinador < comercial < admin < super_admin, con excepciones por rol
   (`require_role_excluding`, `effective_roles` para el doble rol coordinador+comercial). Dos puertas distintas: `get_event_for_staff`
   (acceso) y `require_event_in_progress` (registrar/reconocer).
-- **Biometría:** consentimiento expreso antes de guardar un rostro; cifrado con `FACE_ENCRYPTION_KEY` (perderla = perder los rostros);
+- **Biometría (L1-L4, 2026-10):** la aceptación la da la PERSONA en la pantalla de la auditora y queda en `audit_consent_logs` (solo INSERT, 3 años; `app/consent.py`); sin aceptación registrada no hay reconocimiento facial (`app/faces.py`); el vector se calcula DESPUÉS de aceptar, por tarea (`app/enroll.py`), nunca en la puerta; menores de 18 años sin biometría (`app/minors.py`); supresión y revocación en `app/privacy.py` (`DELETE /api/attendees/{id}/purge-data`); los textos legales son LITERALES de la auditora (`app/legal_texts_data.py`, no se editan). Además: consentimiento expreso antes de guardar un rostro; cifrado con `FACE_ENCRYPTION_KEY` (perderla = perder los rostros);
   retención 7 días tras finalizar TODOS los eventos de la persona, tope 180 días desde la captura (`app/privacy.py`, paso `purge` del Job de ops); umbral 0,55, `RECOGNITION_JITTERS=2` y regla DUDOSO `MATCH_MARGIN` (docs/14 §6.2-6.3); el operador verifica con foto de registro y candidatos (`/api/recognize/*`).
 - Mensajes al usuario en español; identificadores en inglés; respuestas como dicts planos.
 
