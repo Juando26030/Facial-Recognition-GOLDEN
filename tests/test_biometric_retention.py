@@ -146,6 +146,7 @@ def test_a_manual_purge_keeps_people_in_other_open_facial_events_only(client, fa
     open_plain = factory.event("en_proceso", facial_enabled=False)
     _person(db, "1001", ev, open_facial)                                                        # otro evento abierto CON rostro: se conserva
     _person(db, "2002", ev, open_plain)                                                         # otro evento abierto sin rostro: no lo necesita, se borra
+    _accept(db, open_facial, "1001")                                                            # (regla 2026-10-06) solo cuenta si aceptó en ese otro evento
     login(client, "adm1")
     r = client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm_name": ev.name}).json()
     assert (r["deleted"], r["kept_in_other_events"]) == (1, 1)
@@ -168,3 +169,66 @@ def test_resending_the_same_status_does_not_restart_the_clock(client, factory, d
     assert client.patch(f"/api/events/{ev.id}", json={"status": "finalizado", "notes": "x"}).status_code == 200
     db.expire_all()
     assert (utcnow() - ev.finalized_at) > timedelta(days=4)
+
+
+# ---- regla de la auditora (2026-10-06): «otro evento abierto» solo cuenta si la persona aceptó en él
+def _accept(db, ev, uid):
+    from app import consent
+    consent.record(db, tenant_id=ev.tenant_id, user_id=uid, event_id=ev.id, version="v", legal_text_hash="a" * 64, accepted=True, adult=True, reason="consent")
+    db.commit()
+
+
+def test_an_open_event_without_acceptance_does_not_hold_the_face(factory, db):
+    old, open_ev = _finalized(factory, db, 8), factory.event("en_proceso")
+    _person(db, "1001", old, open_ev)
+    _accept(db, old, "1001")                                                       # aceptó solo en el que ya cerró hace 8 días
+    assert privacy.purge_expired(db)["people"] == 1 and _has(db, "1001") == (False, False)
+
+
+def test_an_open_event_with_acceptance_holds_it_until_that_event_is_also_over_by_7_days_and_reopening_resets(factory, db):
+    old, other = _finalized(factory, db, 30), factory.event("en_proceso")
+    _person(db, "1001", old, other)
+    _accept(db, old, "1001")
+    _accept(db, other, "1001")
+    assert privacy.purge_expired(db)["people"] == 0 and _has(db, "1001") == (True, True)
+    other.status = "finalizado"
+    other.finalized_at = utcnow() - timedelta(days=6)
+    db.commit()
+    assert privacy.purge_expired(db)["people"] == 0                                # 6 días: todavía no
+    other.status = "en_proceso"                                                    # se reabre: el reloj se reinicia (finalized_at vuelve a NULL)
+    db.commit()
+    db.refresh(other)
+    assert other.finalized_at is None and privacy.purge_expired(db)["people"] == 0
+    other.status = "finalizado"
+    db.commit()
+    assert privacy.purge_expired(db, now=utcnow() + timedelta(days=8))["people"] == 1       # 8 días después del cierre nuevo (fecha simulada)
+
+
+def test_the_180_day_cap_still_applies_with_an_accepted_open_event(factory, db):
+    open_ev = factory.event("en_proceso")
+    _person(db, "1001", open_ev, captured_days_ago=181)
+    _accept(db, open_ev, "1001")
+    r = privacy.purge_expired(db)
+    assert r["people"] == 1 and r["by_cap"] == 1 and _has(db, "1001") == (False, False)
+
+
+def test_manual_event_purge_keeps_people_only_where_they_accepted_in_the_other_open_event(factory, db):
+    ev = factory.event("en_proceso", facial_enabled=True)
+    other = factory.event("en_proceso", facial_enabled=True)
+    _person(db, "1001", ev, other)
+    _person(db, "2002", ev, other)
+    _accept(db, other, "1001")
+    r = privacy.purge_event(db, ev)
+    assert r["deleted"] == 1 and r["kept_in_other_events"] == 1 and _has(db, "1001") == (True, True) and _has(db, "2002") == (False, False)
+
+
+def test_system_status_warns_about_events_that_ended_but_were_never_finalized(factory, db):
+    from datetime import date
+
+    from app import ops
+    late = factory.event("en_proceso", end_date=date.today() - timedelta(days=4))
+    factory.event("en_proceso", end_date=date.today() - timedelta(days=2))          # terminó hace poco: todavía no es alerta
+    factory.event("finalizado", end_date=date.today() - timedelta(days=40))        # ya finalizado: tampoco
+    r = ops.check_unfinished_events(db)
+    assert r["level"] == "yellow" and r["data"]["events"] == [late.event_code] and "7 días" in r["reason"]
+    assert any(i["id"] == "unfinished_events" for i in ops.system_status(db)["items"])

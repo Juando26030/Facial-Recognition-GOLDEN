@@ -105,6 +105,8 @@ def test_purge_event_erases_faces_but_keeps_people_who_are_in_another_active_eve
     other = factory.event("en_proceso", facial_enabled=True)
     _with_face(db, ev, "1001")
     _with_face(db, ev, "1002", other_event=other)
+    from tests.conftest import accept
+    accept(db, other, "1002")                                                                                                  # (regla 2026-10-06) solo cuenta si aceptó en ese otro evento
     login(client, "adm1")
     assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={}).status_code == 400                                 # sin confirmación no borra
     assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True, "confirm_name": "otro nombre"}).status_code == 400

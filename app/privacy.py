@@ -9,6 +9,8 @@ Retención automática (política de Golden, 2026-09-29; debe coincidir con la P
     abierto o finalizado hace menos de 7 días, se conserva y la regla se aplica cuando cierre ese otro evento.
   * Tope: `BIOMETRIC_MAX_DAYS` (180) días desde la captura (`users.face_captured_at`) aunque algún evento siga abierto (eventos que nunca se finalizan).
   * Una persona sin ningún evento (huérfana) solo se borra por el tope.
+  * (2026-10-06, auditora) «Sigue en otro evento abierto» solo cuenta en los eventos donde la persona tiene una aceptación vigente en `audit_consent_logs`; si nunca aceptó en ninguno, cuentan todos
+    los suyos. El tope de 180 días no cambia.
 Borrado manual: el admin puede borrar lo biométrico de un evento (`purge_event`); ahí solo se respeta a quien está en OTRO evento abierto CON reconocimiento
 facial (el principio: no romper un evento en curso que usa rostros). El derecho de supresión de UNA persona (`purge_person`) no tiene salvedades.
 """
@@ -75,9 +77,11 @@ def purge_person(db: Session, tenant_id: str, user_id: str) -> bool:
 
 def _in_other_open_facial_event(db: Session, user: User, event_id: int):
     """Eventos abiertos (no finalizados) CON reconocimiento facial, distintos de `event_id`, donde sigue la persona."""
-    return (db.query(Event.event_code, Event.name).join(EventAttendee, EventAttendee.event_id == Event.id)
+    from app import consent
+    rows = (db.query(Event.id, Event.event_code, Event.name).join(EventAttendee, EventAttendee.event_id == Event.id)
             .filter(EventAttendee.user_id == user.id, EventAttendee.tenant_id == user.tenant_id, Event.id != event_id,
                     Event.status != "finalizado", Event.facial_enabled.is_(True)).all())
+    return [(code, name) for eid, code, name in rows if consent.has_acceptance(db, user.tenant_id, user.id, eid)]      # solo cuentan los eventos donde aceptó
 
 
 def purge_event(db: Session, event: Event) -> dict:
@@ -106,17 +110,27 @@ def purge_event(db: Session, event: Event) -> dict:
 # Quién tiene lo biométrico vencido. Regla A: tiene eventos y NINGUNO está abierto ni finalizado hace menos de :after días. Regla B (tope): capturado
 # hace más de :cap días. `(tenant_id, id) > (...)` recorre por claves: una persona que falla no se vuelve a pedir en esta corrida.
 _EXPIRED_SQL = text("""
+WITH last AS (
+  SELECT DISTINCT ON (tenant_id, user_id, event_id) tenant_id, user_id, event_id, (reason = 'consent' AND accepted_biometric AND confirmed_adult) AS ok
+  FROM audit_consent_logs ORDER BY tenant_id, user_id, event_id, consent_timestamp_utc DESC, id DESC),
+acc AS (SELECT tenant_id, user_id, event_id FROM last WHERE ok),
+-- Eventos que RETIENEN el rostro de una persona: aquellos donde tiene una aceptación vigente; si no tiene aceptación en ninguno (nunca aceptó), todos los suyos (regla de siempre).
+holding AS (
+  SELECT u.tenant_id, u.id AS user_id, a.event_id
+  FROM users u JOIN event_attendees a ON a.user_id = u.id AND a.tenant_id = u.tenant_id
+  WHERE EXISTS (SELECT 1 FROM acc WHERE acc.tenant_id = u.tenant_id AND acc.user_id = u.id AND acc.event_id = a.event_id)
+     OR NOT EXISTS (SELECT 1 FROM acc WHERE acc.tenant_id = u.tenant_id AND acc.user_id = u.id))
 SELECT u.tenant_id, u.id,
        (EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id)
-        AND NOT EXISTS (SELECT 1 FROM event_attendees a JOIN events e ON e.id = a.event_id
-                        WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id
+        AND NOT EXISTS (SELECT 1 FROM holding h JOIN events e ON e.id = h.event_id
+                        WHERE h.user_id = u.id AND h.tenant_id = u.tenant_id
                           AND NOT (e.status = 'finalizado' AND e.finalized_at IS NOT NULL AND e.finalized_at <= :after_cut))) AS by_event
 FROM users u
 WHERE (u.face_encoding IS NOT NULL OR u.biometric_consent_at IS NOT NULL)
   AND (u.tenant_id, u.id) > (:last_tenant, :last_id)
   AND ((EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id)
-        AND NOT EXISTS (SELECT 1 FROM event_attendees a JOIN events e ON e.id = a.event_id
-                        WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id
+        AND NOT EXISTS (SELECT 1 FROM holding h JOIN events e ON e.id = h.event_id
+                        WHERE h.user_id = u.id AND h.tenant_id = u.tenant_id
                           AND NOT (e.status = 'finalizado' AND e.finalized_at IS NOT NULL AND e.finalized_at <= :after_cut)))
        OR u.face_captured_at <= :cap_cut)
 ORDER BY u.tenant_id, u.id
