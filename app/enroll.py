@@ -34,6 +34,8 @@ def run_enroll(payload: dict) -> None:
     with SessionLocal() as db:
         user = db.query(User).filter(User.id == uid, User.tenant_id == tenant).first()
         key = photo_key(tenant, uid)
+        if user is not None and user.face_encoding:
+            return                                             # idempotente: un reintento (o una tarea repetida) no recalcula ni duplica el vector
         if user is None or minors.is_minor(user.birth_date) or not consent.has_acceptance(db, tenant, uid, event_id):
             get_storage().delete(key)                          # sin aceptación vigente (o revocó entre tanto, o es menor): no se calcula nada y no queda foto
             return

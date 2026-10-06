@@ -89,7 +89,7 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
             privacy.purge_person(db, event.tenant_id, uid)      # regla A: quien no acepta no conserva un vector pre-calculado (ni su foto); purge_person hace el commit
     db.commit()
     if inserted:
-        jobs.kick()
+        jobs.kick(pool="faces")
     return {"inserted": inserted, "duplicated": duplicated, "unknown": unknown}
 
 
@@ -170,7 +170,7 @@ def enroll_face(event_id: int, user_id: str = Form(...), file: UploadFile = File
     crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
     jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "user_id": uid, "event_id": event.id}, max_attempts=3)
     db.commit()
-    jobs.kick()
+    jobs.kick(pool="faces")
     return {"queued": True, "face": "pending"}
 
 

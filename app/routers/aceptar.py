@@ -105,5 +105,5 @@ def submit(code: str, request: Request, cedula: str = Form(...), birth_date: str
     crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
     jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "user_id": uid, "event_id": event.id}, max_attempts=3)
     db.commit()
-    jobs.kick()
+    jobs.kick(pool="faces")
     return {"status": "accepted", "message": "¡Gracias! Cuando llegues, muestra tu cédula o QR en la acreditación: el personal confirmará tu identidad y desde ahí podrás entrar con tu rostro."}

@@ -153,7 +153,7 @@ def test_the_door_is_never_blocked_while_the_vector_is_still_being_computed(clie
     factory.person(ev, "1001", "Ana", "Mora")
     op = factory.staff("digitador", "9990001")
     factory.authorize(ev, op)
-    monkeypatch.setattr(jobs, "kick", lambda: None)                                                       # la tarea queda en cola
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: None)                                                       # la tarea queda en cola
     engine.face = _vec(1)
     assert _post(client, ev, "1001").status_code == 200
     login(client, "9990001")

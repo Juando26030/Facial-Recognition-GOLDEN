@@ -324,7 +324,7 @@ def test_revoking_before_the_job_runs_leaves_no_vector_and_no_photo(client, fact
     factory.person(ev, "1001", "Ana", "Mora")
     accept(db, ev, "1001")
     scan.face = _vec(5)
-    monkeypatch.setattr(jobs, "kick", lambda: None)                                        # la tarea queda en cola
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: None)                                        # la tarea queda en cola
     assert _enroll(client, ev).status_code == 200
     assert get_storage().exists(photo_key(ev.tenant_id, "1001"))
     consent.record(db, tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, version="r", legal_text_hash="e" * 64, accepted=False, adult=True, reason="revocation")

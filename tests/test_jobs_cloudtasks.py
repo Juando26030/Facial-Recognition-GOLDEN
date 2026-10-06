@@ -56,7 +56,7 @@ def test_a_failing_cloud_tasks_never_breaks_the_request(monkeypatch, cloud):
 def test_a_failed_job_schedules_its_own_retry(monkeypatch, cloud, db):
     calls = []
     jobs.handler("prueba_falla")(lambda payload: (_ for _ in ()).throw(RuntimeError("smtp caído")))
-    monkeypatch.setattr(jobs, "kick", lambda at=None: calls.append(at))
+    monkeypatch.setattr(jobs, "kick", lambda at=None, pool="general": calls.append(at))
     jobs.enqueue(db, "prueba_falla", {})
     db.commit()
     assert jobs.run_once() == 1
@@ -169,7 +169,7 @@ def test_drain_stops_near_the_budget_and_schedules_the_rest(monkeypatch, db):
     clock = {"t": 1000.0}
     monkeypatch.setattr(jobs.time, "monotonic", lambda: clock["t"])
     kicks = []
-    monkeypatch.setattr(jobs, "kick", lambda at=None: kicks.append(at))
+    monkeypatch.setattr(jobs, "kick", lambda at=None, pool="general": kicks.append(at))
 
     def slow(payload):
         clock["t"] += 10                          # cada trabajo "tarda" 10 s

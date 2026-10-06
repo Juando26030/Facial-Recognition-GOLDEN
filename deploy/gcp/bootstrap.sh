@@ -228,7 +228,11 @@ if ! exists gcloud tasks queues describe "$QUEUE" --location "$REGION"; then
 fi
 gcloud tasks queues add-iam-policy-binding "$QUEUE" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_APP")" \
   --role roles/cloudtasks.enqueuer --quiet >/dev/null
-ok "cola con tope de 5 despachos simultáneos"
+if ! exists gcloud tasks queues describe "$QUEUE_FACES" --location "$REGION"; then      # cola de los cálculos faciales: 2 despachos simultáneos y espera creciente (faces_queue.sh la corrige si difiere)
+  gcloud tasks queues create "$QUEUE_FACES" --location "$REGION" --max-dispatches-per-second 2 --max-concurrent-dispatches 2 --max-attempts 5 --min-backoff 10s --max-backoff 300s --max-doublings 4
+fi
+gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_APP")" --role roles/cloudtasks.enqueuer --quiet >/dev/null
+ok "colas con tope de 5 (general) y 2 (cálculos faciales) despachos simultáneos"
 
 # -------------------------------------------------------------------------------------------------------------------------- 8
 step "8. Cloud Run (servicios y Jobs)"

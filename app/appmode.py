@@ -17,7 +17,7 @@ if MODE not in MODES:
 # Rutas de biometría (dlib): viven en routers compartidos, así que se separan por ruta.
 BIOMETRIC_PATHS = {
     "/api/recognize", "/api/register", "/api/bulk_register", "/api/bulk_jobs/{job_id}",
-    "/api/events/{event_id}/areas/{area_id}/movement-face",
+    "/api/events/{event_id}/areas/{area_id}/movement-face", "/internal/faces/run",      # cola de cálculos faciales (Cloud Tasks → biometría)
 }
 # Rutas públicas (sin sesión): lo que miles de personas abren desde su teléfono.
 PUBLIC_PREFIXES = ("/f/", "/b/", "/c/", "/r/", "/aceptar/", "/api/aceptar/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/api/email-assets/")
