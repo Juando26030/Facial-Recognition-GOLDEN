@@ -14,11 +14,16 @@
 
 **Temas (topics) sugeridos:** `fastapi`, `postgresql`, `cloud-run`, `facial-recognition`, `access-control`, `data-protection`, `offline-first`.
 
-## Backlog nuevo (SIN implementar)
+## Backlog
 
-1. **Tarea de operaciones `export-person-data`** (golden-ops): dada una cédula, lista QUÉ datos hay de esa persona (tablas y conteos, y un archivo con el contenido) para atender una consulta de habeas data. Igual que `export-consent`: el resultado y el log llevan solo conteos y la clave del archivo, nunca la cédula.
-2. **Bandera «reclamo en trámite»** sobre el dato de una persona: se activa en máximo 2 días hábiles desde el reclamo; mientras está activa el dato no se suprime por la purga ordinaria y se muestra la leyenda; se desactiva al resolverse el reclamo.
-3. **`audit-consent-purge`** (después del piloto): cómo purgar `audit_consent_logs` a los 3 años con el disparador de solo inserción: tarea de operaciones que corre con el rol dueño (nunca el de la app), desactiva el disparador SOLO dentro de su transacción (`ALTER TABLE … DISABLE TRIGGER`), borra los registros con más de 3 años y deja constancia del conteo; requiere confirmación de la auditora sobre el plazo exacto y sobre el identificador (cédula) que hoy se conserva.
+**Hecho (6 oct 2026, requisito del piloto para el manual de consultas y reclamos):**
+1. **`export-person-data`** (golden-ops, `EXPORT_CEDULA=<cédula>`): imprime un MAPA de lo que existe de esa persona (qué campos tienen dato; cuántos registros hay en eventos, accesos, formularios, pagos y consentimientos; si hay vector o foto), SIN valores personales, sin biometría y sin la cédula. No se guarda en ningún archivo ni tabla.
+2. **Radicados y registro de solicitudes** (`privacy_requests`): radicado AÑO-CONSECUTIVO (2026-0001), fecha y hora, canal, titular y cédula, evento, tipo, fecha límite en días hábiles (consulta 10, reclamo 15; festivos de Colombia en `HOLIDAYS_CO`, por defecto los de 2026: confirmar cada año) y estado. Panel en Parámetros (admin y super_admin).
+3. **Bandera «reclamo en trámite»**: se activa y se quita desde el panel; el sistema marca como «falta activarla» si pasan 2 días hábiles; queda el historial de quién y cuándo; al resolver o rechazar la solicitud se quita sola.
+4. **Supresión de pagos**: solo `payer_email` queda en NULL; se conservan cédula, valor, fecha y referencia (ni `reference` ni `breakdown_json` llevan datos personales).
+
+**Pendiente:**
+1. **`audit-consent-purge`** (después del piloto): cómo purgar `audit_consent_logs` a los 3 años con el disparador de solo inserción: tarea de operaciones que corre con el rol dueño (nunca el de la app), desactiva el disparador SOLO dentro de su transacción (`ALTER TABLE … DISABLE TRIGGER`), borra los registros con más de 3 años y deja constancia del conteo; requiere confirmación de la auditora sobre el plazo exacto y sobre el identificador (cédula) que hoy se conserva.
 4. **L7** (después del piloto): purga ordinaria de datos personales a los 90 días del cierre del evento (no toca pagos ni consentimientos).
 5. **Modo A de un tercero con anexo firmado y fotos previas** (después del piloto).
 
@@ -51,3 +56,11 @@ La cola de ingresos, las decisiones de autorización pendientes y la lista de «
 ## Cálculo del vector (decisión técnica, 2026-10-06)
 
 El cálculo corre en el servicio de biometría por una cola propia de Cloud Tasks (2 despachos simultáneos, espera creciente, mismo token OIDC), no en el servicio web. Comandos y plan de despliegue: `RUNBOOK_CLOUD_SHELL.md`.
+
+## Paso guiado de biometría del evento (hecho)
+
+En Parámetros del evento hay un paso guiado: 0) usará rostro, 1) Responsable (propio o tercero con razón social, NIT y correo), 2) ¿el cliente entrega fotos antes?, 3) opciones apagadas por defecto (autorización «una vez» o «cada uso», `/aceptar` con QR de cartel) y un resumen en lenguaje simple de lo que pasará en la puerta y lo que falta. **El servidor valida** (lo que protege): un evento de tercero sin los datos del organizador no activa el rostro (ni por el paso, ni por el interruptor, ni por la carga masiva); el pre-cálculo exige evento de tercero, fotos previas del cliente, referencia y fecha del anexo, la casilla de garantía del cliente y un super_admin; si el evento pasa a propio o se quitan las fotos previas, el pre-cálculo se apaga solo.
+
+## Renombre a GoldenWeb 2.0 (en curso)
+
+Hecho: categoría (i), texto visible (33 cambios: 27 títulos de página, encabezados de ingreso y contraseña, título de la API, asunto del correo de restablecimiento, alerta de operaciones y TESTING.md). No existe un manifest de PWA en el repositorio (no hay nada que renombrar). Pendiente de tu OK, categoría (ii): ver el reporte de casos dudosos.
