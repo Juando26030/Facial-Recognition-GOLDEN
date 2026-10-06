@@ -28,3 +28,14 @@
 - Dos caminos que pueden mezclarse en el mismo evento: A (cédula/QR → pantalla → clic → captura en vivo → vector por tarea) y B (`/aceptar/<evento>`, aceptación previa desde el celular).
 - Sin aceptación registrada de la persona no se usa su rostro; el vector no se calcula antes de aceptar (precálculo solo con anexo firmado, solo super_admin).
 - Sin coincidencia en el quiosco: no se guarda nada y se muestra el mensaje de la auditora.
+
+## Decisiones técnicas tomadas (2026-10-06, criterio del consultor; Juan David decide solo el flujo de negocio)
+
+- **Vector después de aceptar, siempre.** Carga masiva y alta en el quiosco guardan la foto cifrada y NO calculan el vector; se calcula por tarea (`app/enroll.py`) cuando la persona acepta (pantalla en puerta o `/aceptar`). Única excepción: evento de un tercero con pre-cálculo autorizado por un super_admin (anexo firmado). Una foto sin vector se borra igual a los 7 días (el reloj corre desde que se guarda).
+- **La puerta nunca espera.** El vector se calcula aparte; mientras tanto la persona entra por cédula o QR.
+- **Aceptación desde el celular = «por verificar».** No sirve para el reconocimiento hasta que el personal confirme la identidad en puerta con el documento o el QR. Código personal por correo: recomendado solo si el listado del organizador trae correos reales; no implementado.
+- **Cola local de ingresos a 7 días.** Aviso amarillo desde el día 3 y rojo desde el 6; a los 7 se elimina automáticamente (texto C''') con un aviso visible, nunca en silencio. La bandeja de salida de R1 (`producto/piloto`) tenía «caducada: solo descarta una persona»: al integrar se ajusta para que a los 7 días se elimine solo, con aviso.
+- **Cifrar la cola de ingresos (costo, sin implementar):** AES-GCM con clave no extraíble guardada en IndexedDB (la misma técnica de R1); el `client_id` queda en claro (llave de no duplicación) y huella, nombre, hora y método van cifrados. Cerca de 1 día con pruebas; riesgo bajo; el roster no se cifra (decisión de Juan David).
+- **Clave facial obligatoria en producción:** sin `FACE_ENCRYPTION_KEY` la aplicación no arranca y no se escribe nada biométrico (falla cerrado). El bootstrap de producción ya crea el secreto `golden-face-encryption-key`.
+- **Regla de borrado:** «sigue en otro evento abierto» solo cuenta donde la persona aceptó; si nunca aceptó en ninguno cuentan todos los suyos; tope de 180 días intacto. `/sistema` avisa de eventos cuyo fin pasó hace más de 3 días y siguen sin finalizar.
+- **Verificar al integrar (R1):** la bandeja de salida de R1 debe quedar sin fotos ni vectores (cumple C''') y con el cifrado AES-GCM de las inscripciones nuevas.

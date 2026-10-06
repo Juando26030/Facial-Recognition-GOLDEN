@@ -47,3 +47,11 @@ def run_enroll(payload: dict) -> None:
         user.biometric_consent_at, user.biometric_consent_source = utcnow(), SOURCE
         user.is_biometric_enabled = True
         db.commit()
+
+
+def maybe_enqueue(db, tenant_id: str, user_id: str, event_id: int) -> bool:
+    """Tras una aceptación: si la persona ya tiene una FOTO guardada (carga masiva o alta) pero aún no vector, se encola el cálculo (el vector nunca se calcula antes de aceptar). No hace commit."""
+    if status(db, tenant_id, user_id) != "pending":
+        return False
+    jobs.enqueue(db, "face_enroll", {"tenant_id": tenant_id, "user_id": str(user_id), "event_id": int(event_id)}, max_attempts=3)
+    return True

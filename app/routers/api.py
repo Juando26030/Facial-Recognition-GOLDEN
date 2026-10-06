@@ -1274,19 +1274,21 @@ def manual_register(
         if not _truthy(biometric_consent):      # Ley 1581 (dato sensible): sin autorización expresa de la persona NO se guarda su rostro; puede registrarse por cédula
             raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
         img_array = BiometricEngine.process_image_stream(file.file.read())
-        try:
-            encodings = faces.extract(img_array, is_registration=True)
-        except faces.Busy:
-            raise HTTPException(status_code=503, detail="Hay muchos procesos faciales en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
-        if not encodings:
-            return {"error": "No se detectó un rostro en la fotografía."}
-        face_enc_json = json.dumps(encodings)
+        if consent_mod.has_acceptance(db, event.tenant_id, id, event.id):      # REGLA A: el vector solo se calcula si la PERSONA ya aceptó (la casilla del digitador no cuenta)
+            try:
+                encodings = faces.extract(img_array, is_registration=True)
+            except faces.Busy:
+                raise HTTPException(status_code=503, detail="Hay muchos procesos faciales en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
+            if not encodings:
+                return {"error": "No se detectó un rostro en la fotografía."}
+            face_enc_json = json.dumps(encodings)
 
     user = User(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
         role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json,
         biometric_consent_at=utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
         birth_date=birth, is_biometric_enabled=not minor,
+        face_captured_at=utcnow() if (img_array is not None and not face_enc_json) else None,          # foto sin vector: el reloj de retención corre igual
     )
     user.set_extras(extras)
     db.add(user)
@@ -1313,6 +1315,8 @@ def manual_register(
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo."}
+    if img_array is not None and not face_enc_json:
+        reply["face_pending"] = "La foto quedó guardada; el reconocimiento facial se activa cuando la persona acepte en la pantalla de autorización."
     if minor:
         reply["minor"] = "Es menor de 18 años: se registró SIN rostro (no se capta ni se guarda). Ingresa por cédula o QR."
     if contact_clean and event.digital_badge_enabled:
@@ -1566,6 +1570,10 @@ def _bulk_register_impl(
     # es el encoding facial (num_jitters=25, ver CLAUDE.md), así que calcularlo dos veces por foto
     # duplicaba sin necesidad el tiempo de procesamiento de cada lote.
     zip_encodings = {}
+    zip_photos = set()
+    # REGLA A (2026-10-06): NINGÚN flujo calcula el vector de alguien que aún no aceptó. Solo se pre-calcula en un evento de un tercero con el pre-cálculo autorizado (anexo firmado, solo super_admin);
+    # en todo lo demás las fotos se guardan cifradas y el vector se calcula DESPUÉS de que la persona acepte (app/enroll.py).
+    precalc = event.controller_mode == "tercero" and bool(event.precalculo_autorizado)
 
     progress = progress or (lambda *a, **k: None)
     photo_entries = []
@@ -1596,12 +1604,17 @@ def _bulk_register_impl(
                     # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
                     # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
                     # persona quedó sin reconocimiento facial funcional).
-                    encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
-                    if not encodings:
-                        errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
-                        continue
+                    if precalc:
+                        encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
+                        if not encodings:
+                            errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
+                            continue
+                        zip_encodings[os.path.splitext(basename)[0]] = encodings
+                    zip_photos.add(os.path.splitext(basename)[0])
                     crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
-                    zip_encodings[os.path.splitext(basename)[0]] = encodings
+
+        if photo_entries and not precalc:
+            errors.append("ℹ️ Las fotos se guardaron cifradas, pero su vector facial NO se calcula todavía: se calcula cuando cada persona acepta el reconocimiento facial (en la puerta o desde el celular).")
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
         # quitarle a un evento la capacidad de reconocimiento facial que ya tenía. Decide si
@@ -1676,7 +1689,7 @@ def _bulk_register_impl(
             face_enc_json = None
             if str(identificador) in zip_encodings:
                 face_enc_json = json.dumps(zip_encodings[str(identificador)])
-            else:
+            elif precalc:
                 img_key = photo_key(event.tenant_id, f"{identificador}")
                 if get_storage().exists(img_key):
                     stored = crypto.read_array(img_key)          # la foto guardada puede estar cifrada
@@ -1689,8 +1702,10 @@ def _bulk_register_impl(
             row_minor = minors.is_minor(birth)
             if birth_raw and birth is None:
                 errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD o DD/MM/AAAA).")
-            if face_enc_json and (row_minor or birth is None):
+            has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
+            if (face_enc_json or has_photo) and (row_minor or birth is None):
                 face_enc_json = None
+                has_photo = False
                 get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
                 errors.append(f"⚠️ Fila {row_num}: " + ("es menor de 18 años: no se guardó su rostro (solo cédula o QR)." if row_minor else "tiene foto pero no fecha de nacimiento: no se guardó su rostro (solo se capta el rostro de mayores de 18 años)."))
 
@@ -1720,6 +1735,8 @@ def _bulk_register_impl(
                     user.is_biometric_enabled = not row_minor
                     if row_minor:
                         user.face_encoding = None
+                if has_photo and not face_enc_json and user.face_captured_at is None:
+                    user.face_captured_at = utcnow()          # foto guardada sin vector: el reloj de retención (7 días / tope de 180) corre igual
 
                 extras = {}
                 for raw_key, value in clean_row.items():

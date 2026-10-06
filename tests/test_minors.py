@@ -52,7 +52,12 @@ def test_a_photo_needs_a_birth_date_and_an_adult_keeps_the_face(client, factory,
     ok = _register(client, ev, "1001", birth=_years_ago(30))
     assert ok.status_code == 200 and "minor" not in ok.json()
     u = db.query(User).filter_by(id="1001").one()
-    assert u.face_encoding and u.is_biometric_enabled is True and u.birth_date is not None
+    assert u.face_encoding is None and u.face_captured_at and u.is_biometric_enabled is True and u.birth_date is not None      # adulto sin aceptación: foto guardada, SIN vector
+    from tests.conftest import accept
+    accept(db, ev, "5005")
+    assert _register(client, ev, "5005", birth=_years_ago(30)).status_code == 200
+    db.expire_all()
+    assert db.query(User).filter_by(id="5005").one().face_encoding                                    # con aceptación de la persona, sí
 
 
 def test_a_minor_is_registered_without_face_and_blocked(client, factory, db, engine):
@@ -128,7 +133,7 @@ def test_bulk_roster_birth_column_blocks_minors_and_requires_a_date_for_a_face(c
     assert r.status_code == 200, r.text
     db.expire_all()
     by = {u.id: u for u in db.query(User).filter(User.id.in_(["1001", "2002", "3003"]))}
-    assert by["1001"].face_encoding and by["1001"].is_biometric_enabled is True
+    assert by["1001"].face_encoding is None and by["1001"].face_captured_at and by["1001"].is_biometric_enabled is True      # adulto: foto guardada, vector solo tras aceptar
     assert by["2002"].face_encoding is None and by["2002"].is_biometric_enabled is False and by["2002"].birth_date is not None
     assert by["3003"].face_encoding is None                                                  # con foto pero sin fecha de nacimiento: no se conserva el rostro
     from app.storage import get_storage, photo_key
@@ -163,3 +168,34 @@ def test_bulk_zip_photos_are_stored_under_the_persons_key_so_the_purge_finds_the
     assert get_storage().exists(photo_key(ev.tenant_id, "1001")) and not get_storage().exists(photo_key(ev.tenant_id, "1001.jpg"))
     from app import privacy
     assert privacy.purge_person(db, ev.tenant_id, "1001") is True and not get_storage().exists(photo_key(ev.tenant_id, "1001"))
+
+
+def test_rule_a_bulk_photo_gets_its_vector_only_after_the_person_accepts_and_photo_only_is_purged(client, factory, db, engine, monkeypatch):
+    """REGLA A: la carga masiva guarda la foto cifrada y NO calcula el vector; al aceptar la persona se calcula por tarea; una foto sin vector también se borra a los 7 días."""
+    import zipfile
+    from datetime import timedelta
+    from app import legal_texts, privacy
+    from app.storage import get_storage, photo_key
+    from app.timeutil import utcnow
+    factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso", facial_enabled=True)
+    login(client, "coord1")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("1001.jpg", _photo())
+        z.writestr("2002.jpg", _photo())
+    csv = "\n".join(["id,nombres,apellidos,fecha de nacimiento", "1001,Ana,Adulta,1990-04-02", "2002,Eva,Otra,1991-01-01", ""]).encode()
+    r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "photos_authorized": "true"}, files={"roster_file": ("b.csv", csv, "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")})
+    assert r.status_code == 200 and any("NO se calcula todavía" in str(e) for e in r.json().get("errors", []))
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").one().face_encoding is None and get_storage().exists(photo_key(ev.tenant_id, "1001"))
+    t = legal_texts.render(ev)
+    body = {"entries": [{"id": str(uuid.uuid4()), "user_id": "1001", "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"]}]}
+    assert client.post(f"/api/events/{ev.id}/consents", json=body).status_code == 200
+    db.expire_all()
+    assert db.query(User).filter_by(id="1001").one().face_encoding and db.query(User).filter_by(id="2002").one().face_encoding is None      # solo quien aceptó
+    # foto sin vector (2002 nunca aceptó): el evento finaliza hace 8 días y la purga borra la foto
+    ev.status, ev.finalized_at = "finalizado", utcnow() - timedelta(days=8)
+    db.commit()
+    privacy.purge_expired(db)
+    assert not get_storage().exists(photo_key(ev.tenant_id, "2002")) and not get_storage().exists(photo_key(ev.tenant_id, "1001"))

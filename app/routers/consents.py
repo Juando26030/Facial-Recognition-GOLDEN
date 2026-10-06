@@ -83,10 +83,13 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
                             device=(str(e.get("device") or f"staff:{staff.id}"))[:120], entry_id=entry_id, at=_when(e.get("at")))
         inserted, duplicated = inserted + ok, duplicated + (not ok)
         if ok and accepted:                                     # volvió a aceptar tras una revocación: el reconocimiento vuelve a estar habilitado para esta persona (adulta)
+            enroll.maybe_enqueue(db, event.tenant_id, uid, event.id)      # si ya tenía una foto guardada, ahora sí se calcula su vector
             db.execute(text("UPDATE users SET is_biometric_enabled = true WHERE id = :u AND tenant_id = :t AND is_biometric_enabled = false"), {"u": uid, "t": event.tenant_id})
         if ok and not accepted and not consent.has_any_acceptance(db, event.tenant_id, uid):
             privacy.purge_person(db, event.tenant_id, uid)      # regla A: quien no acepta no conserva un vector pre-calculado (ni su foto); purge_person hace el commit
     db.commit()
+    if inserted:
+        jobs.kick()
     return {"inserted": inserted, "duplicated": duplicated, "unknown": unknown}
 
 

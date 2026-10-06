@@ -126,7 +126,7 @@ SELECT u.tenant_id, u.id,
                         WHERE h.user_id = u.id AND h.tenant_id = u.tenant_id
                           AND NOT (e.status = 'finalizado' AND e.finalized_at IS NOT NULL AND e.finalized_at <= :after_cut))) AS by_event
 FROM users u
-WHERE (u.face_encoding IS NOT NULL OR u.biometric_consent_at IS NOT NULL)
+WHERE (u.face_encoding IS NOT NULL OR u.biometric_consent_at IS NOT NULL OR u.face_captured_at IS NOT NULL)
   AND (u.tenant_id, u.id) > (:last_tenant, :last_id)
   AND ((EXISTS (SELECT 1 FROM event_attendees a WHERE a.user_id = u.id AND a.tenant_id = u.tenant_id)
         AND NOT EXISTS (SELECT 1 FROM holding h JOIN events e ON e.id = h.event_id
