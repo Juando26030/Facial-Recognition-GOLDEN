@@ -87,6 +87,12 @@ def denied_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
     return {r[0] for r in db.execute(_DENIED_SQL, {"t": tenant_id, "e": event_id})}
 
 
+def biometric_blocked(db: Session, tenant_id: str, user_id: str) -> bool:
+    """¿La persona es menor de 18 años (o está marcada sin biometría)? Entonces no hay pantalla de autorización, ni cámara, ni vector: solo cédula/QR."""
+    row = db.execute(text("SELECT is_biometric_enabled FROM users WHERE id = :u AND tenant_id = :t"), {"u": str(user_id), "t": tenant_id}).first()
+    return bool(row and row[0] is False)
+
+
 def has_any_acceptance(db: Session, tenant_id: str, user_id: str) -> bool:
     """¿Tiene la persona aceptación vigente en ALGÚN evento del cliente? (un rechazo en un evento no borra su vector si aceptó en otro)."""
     rows = db.execute(text("""SELECT 1 FROM (SELECT DISTINCT ON (event_id) event_id, reason, accepted_biometric, confirmed_adult FROM audit_consent_logs

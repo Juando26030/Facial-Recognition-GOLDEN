@@ -160,7 +160,7 @@ def _lock_for(event_id: int) -> threading.Lock:
 def _build(db: Session, event: Event, version: int, ungated: bool = False) -> _Index:
     rows = (db.query(User.id, User.face_encoding)
             .join(EventAttendee, and_(EventAttendee.user_id == User.id, EventAttendee.tenant_id == User.tenant_id))
-            .filter(EventAttendee.event_id == event.id, User.tenant_id == event.tenant_id, User.face_encoding != None)  # noqa: E711
+            .filter(EventAttendee.event_id == event.id, User.tenant_id == event.tenant_id, User.face_encoding != None, User.is_biometric_enabled.is_(True))  # noqa: E711   (menores: nunca)
             .all())
     # NADIE se reconoce por su rostro sin una aceptación registrada para este evento (aunque ya tenga vector). Única excepción, `ungated` (camino 2: evento con pre-cálculo autorizado
     # y UN clic válido del quiosco): también entran quienes aún no han decidido, pero NUNCA quien ya rechazó o revocó en este evento.

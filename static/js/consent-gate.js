@@ -29,10 +29,10 @@
     g.status = async (cedula) => {
       try {
         const r = await d.fetch(`/api/events/${d.eventId}/consent-status/${encodeURIComponent(cedula)}`, { cache: 'no-store' });
-        if (r.ok) { const j = await r.json(); return { accepted: !!j.accepted, mode: j.mode, source: 'server' }; }
+        if (r.ok) { const j = await r.json(); return { accepted: !!j.accepted, blocked: !!j.blocked, known: true, mode: j.mode, source: 'server' }; }
       } catch (e) { /* sin red */ }
       const gc = d.gc();
-      if (gc && gc.supported) { const s = await gc.consentLocal(cedula); return { accepted: !!s.accepted, known: !!s.known, mode: (g.block && g.block.mode) || 'once', source: 'local' }; }
+      if (gc && gc.supported) { const s = await gc.consentLocal(cedula); return { accepted: !!s.accepted, blocked: !!s.blocked, known: !!s.known, mode: (g.block && g.block.mode) || 'once', source: 'local' }; }
       return { accepted: false, known: false, mode: 'once', source: 'local' };
     };
 
@@ -94,6 +94,7 @@
       if (!g.block) await g.loadBlock();
       if (!g.block) return 'cedula';
       const st = await g.status(cedula);
+      if (st.blocked) return 'cedula';                           // menor de 18 años: ni pantalla de autorización ni cámara, solo cédula/QR
       const offline = st.source === 'local';                     // sin servidor no hay reconocimiento facial: la decisión se registra (cola local) pero la puerta sigue por cédula/QR
       if (offline && !st.known) return 'cedula';                 // alguien que no está en la copia local no se puede identificar sin red
       const every = (g.block.mode || st.mode) === 'every_scan';

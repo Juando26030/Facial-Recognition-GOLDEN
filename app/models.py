@@ -52,6 +52,8 @@ class User(Base):
     opt_2 = Column(String)  # deprecado (2026-09-20, era "cantidad de empl") — ya no se escribe, reemplazado por extra_fields. Se deja la columna para no perder datos históricos.
     extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
     face_encoding = deferred(Column(EncryptedText))      # deferred: no se descifra/carga al leer la persona (directorio, cédula...), solo cuando de verdad se pide; cifrado en reposo si hay FACE_ENCRYPTION_KEY (app/crypto.py); el código lo usa en claro
+    birth_date = Column(Date, nullable=True)     # L3: la da la persona (formulario web, alta en el quiosco o columna `fecha_nacimiento` de la carga masiva); decide si puede tener captura biométrica
+    is_biometric_enabled = Column(Boolean, default=True, server_default='true', nullable=False)   # False = menor de 18 años: sin cámara, sin pantalla de autorización, sin vector
     biometric_consent_at = Column(DateTime, nullable=True)      # cuándo se autorizó guardar el rostro (Ley 1581: dato sensible, autorización previa y expresa)
     face_captured_at = Column(DateTime, nullable=True, index=True)   # cuándo se guardó el rostro (lo estampa el listener de abajo); el tope de BIOMETRIC_MAX_DAYS cuenta desde aquí
     biometric_consent_source = Column(String, nullable=True)    # 'kiosko' (la persona autorizó ante el digitador) | 'carga_masiva' (declaración del organizador) | 'copiado' (heredado de otro evento)

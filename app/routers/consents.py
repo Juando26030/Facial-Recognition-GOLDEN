@@ -36,7 +36,8 @@ def consent_status(event_id: int, user_id: str, db: Session = Depends(get_db), s
     """¿Hay aceptación vigente de esta persona en este evento? `last`: 'consent' | 'rejection' | 'revocation' | None."""
     event = get_event_for_staff(event_id, db, staff)
     last = consent.latest(db, event.tenant_id, user_id, event.id)
-    return {"accepted": consent.has_acceptance(db, event.tenant_id, user_id, event.id), "last": last.reason if last else None, "mode": event.consent_prompt_mode}
+    blocked = consent.biometric_blocked(db, event.tenant_id, user_id)
+    return {"accepted": not blocked and consent.has_acceptance(db, event.tenant_id, user_id, event.id), "last": last.reason if last else None, "mode": event.consent_prompt_mode, "blocked": blocked}
 
 
 def _when(raw):
@@ -74,7 +75,7 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
             raise HTTPException(status_code=400, detail="Cada registro necesita un identificador UUID generado en el dispositivo")
         if not uid or not re.fullmatch(r"[0-9a-f]{64}", text_hash) or e.get("decision") not in ("accept", "reject"):
             raise HTTPException(status_code=400, detail="Registro incompleto")
-        accepted = e["decision"] == "accept" and bool(e.get("adult"))
+        accepted = e["decision"] == "accept" and bool(e.get("adult")) and not consent.biometric_blocked(db, event.tenant_id, uid)      # un menor nunca queda como aceptado
         ok = consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=str(e.get("version") or "")[:40] or legal_texts.render(event)["version"],
                             legal_text_hash=text_hash, accepted=accepted, adult=bool(e.get("adult")), reason="consent" if accepted else "rejection",
                             device=(str(e.get("device") or f"staff:{staff.id}"))[:120], entry_id=entry_id, at=_when(e.get("at")))

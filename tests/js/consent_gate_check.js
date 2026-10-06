@@ -101,6 +101,11 @@ let n = 0; const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12
   clickOk = false; p = g.clickFlow(); await settle(); btn('accept').click(); assert.strictEqual(await p, null, 'si el servidor no da el token (evento sin pre-cálculo) no hay cámara'); clickOk = true;
   block = BLOCK; g = mk(); await g.loadBlock(); assert.strictEqual(await g.clickFlow(), null, 'sin click_mode no hay pantalla de un clic');
 
+  // 7b) menor de 18 años: sin pantalla ni cámara, aunque el servidor (o la copia local) diga que no ha decidido
+  const realFetch = fetchFake;
+  g = G.create({ document: doc, fetch: async (u, o) => (/consent-status/.test(u) ? json(200, { accepted: false, last: null, mode: 'once', blocked: true }) : realFetch(u, o)), eventId: 1, gc: () => GC, uuid });
+  assert.strictEqual(await g.ensure('8008'), 'cedula'); assert.ok(!screen(), 'a un menor no se le muestra la pantalla de autorización');
+
   // 8) texto con datos de la empresa sin completar (503 en producción): no se muestra nada → cédula/QR
   block = null; const g2 = G.create({ document: doc, fetch: async (u, o) => (/consent-text/.test(u) ? json(503, { detail: 'x' }) : fetchFake(u, o)), eventId: 1, gc: () => ({ supported: false }), uuid });
   assert.strictEqual(await g2.ensure('9009'), 'cedula'); assert.ok(!screen());

@@ -112,3 +112,14 @@ def test_bench_vector_prints_only_timings(monkeypatch, capsys):
     assert ops_runner.main("bench-vector") == 0
     out = capsys.readouterr().out
     assert "jitters_10_ms" in out and "jitters_25_ms" in out and set(calls) == {1, 10, 25} and calls.count(10) == 3 and calls.count(25) == 3
+
+
+def test_minors_helpers():
+    from datetime import date
+
+    from app import minors
+    assert minors.parse_birth("2010-05-01") == date(2010, 5, 1) and minors.parse_birth("01/05/2010") == date(2010, 5, 1)
+    assert minors.parse_birth("") is None and minors.parse_birth("2999-01-01") is None and minors.parse_birth("31/02/2000") is None
+    assert minors.age_years(date(2008, 10, 7), date(2026, 10, 6)) == 17 and minors.age_years(date(2008, 10, 6), date(2026, 10, 6)) == 18       # cumple 18 ese día
+    assert minors.is_minor(date(2008, 10, 7), date(2026, 10, 6)) is True and minors.is_minor(date(2008, 10, 6), date(2026, 10, 6)) is False
+    assert minors.is_minor(None) is False                                    # sin fecha no se sabe: lo cubre la declaración de mayoría de edad

@@ -124,11 +124,11 @@
     /* Estado local de una persona: la última decisión pendiente manda; si no hay, la bandera `a` de la copia. */
     c.consentLocal = async (raw) => {
       const h = await c.hashFor(raw);
-      if (!h) return { known: false, accepted: false };
+      if (!h) return { known: false, accepted: false, blocked: false };
       const mine = (await c.consentList()).filter((e) => e.h === h).sort((a, b) => (a.at < b.at ? -1 : 1)), last = mine[mine.length - 1];
-      if (last) return { known: true, accepted: last.decision === 'accept' && !!last.adult };
+      if (last) return { known: true, accepted: last.decision === 'accept' && !!last.adult, blocked: !!(await c.db.get('roster', h) || {}).b };
       const person = await c.db.get('roster', h);
-      return { known: !!person, accepted: !!(person && person.a === 1) };
+      return { known: !!person, accepted: !!(person && person.a === 1), blocked: !!(person && person.b === 1) };
     };
     /* Sincroniza las decisiones locales (lotes de 100; el servidor es idempotente por `id`). Devuelve cuántas quedaron en el servidor. */
     c.flushConsents = async () => {

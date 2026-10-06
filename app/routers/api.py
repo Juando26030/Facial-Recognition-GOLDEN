@@ -26,7 +26,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import bulk_jobs, crypto, minors, privacy, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -867,6 +867,7 @@ def sync_access_logs(
 
 
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
+_BIRTH_KEYS = ('fecha de nacimiento', 'fecha_nacimiento', 'fecha nacimiento', 'nacimiento', 'birth_date')      # columna opcional del Excel (L3)
 ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
 ROSTER_LIMIT, ROSTER_WINDOW = 12, timedelta(minutes=10)      # descargas por usuario y evento: un quiosco refresca cada pocos minutos; más que esto es un abuso o un bucle
 
@@ -919,17 +920,17 @@ def local_roster(
     salt = roster_salt(event)
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
-    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories).outerjoin(
+    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories, User.is_biometric_enabled).outerjoin(
         EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id) & (EventAttendee.event_id == event.id),
     ).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids))).order_by(User.id).all()
     counts = {uid: (real, new) for uid, real, new in db.query(
         AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"), func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo"),
     ).filter(AccessLog.event_id == event.id).group_by(AccessLog.user_id)}
     rows = []
-    for uid, first, last, categories in people:
+    for uid, first, last, categories, bio_on in people:
         real, new = counts.get(uid, (0, 0))
         rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
-                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted else 0})      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
+                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted and bio_on else 0, "b": 0 if bio_on else 1})      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
     return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status, "auto_register": bool(event.auto_register)},
                          "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
 
@@ -1181,7 +1182,7 @@ def manual_register(
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
-    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None),
+    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None), birth_date: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -1218,8 +1219,22 @@ def manual_register(
         _apply_optional_labels(event, used_optional_keys, field_labels)
         db.commit()
 
+    if file is not None and file.filename and not _truthy(biometric_consent):      # Ley 1581: sin autorización expresa no se guarda el rostro (se evalúa primero)
+        raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
+    birth = minors.parse_birth(birth_date)
+    if str(birth_date or "").strip() and birth is None:
+        raise HTTPException(status_code=400, detail="La fecha de nacimiento no es válida")
+    minor = minors.is_minor(birth)
+    has_photo = file is not None and bool(file.filename)
+    if has_photo and not minor and birth is None:
+        raise HTTPException(status_code=400, detail="Para guardar el rostro hace falta la fecha de nacimiento: solo se capta el rostro de mayores de 18 años")
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
+        if birth is not None:
+            existing.birth_date = birth
+            if minor:
+                existing.is_biometric_enabled = False
+                privacy.purge_person(db, event.tenant_id, existing.id)      # menor de 18: sin vector ni foto
         if not force and _already_checked_in(db, event.id, existing.id):
             return _duplicate_warning(db, event.id, existing)
         log = AccessLog(
@@ -1250,7 +1265,7 @@ def manual_register(
     # que `file is not None` es cierto incluso sin archivo real — hay que revisar `file.filename`
     # también, si no, `file.read()` da bytes vacíos y `Image.open()` truena (500) en vez de
     # tratarlo como "no se adjuntó foto" (CEDULA-08, bug real encontrado en testing 2026-09-21).
-    if file is not None and file.filename:
+    if has_photo and not minor:
         if not _truthy(biometric_consent):      # Ley 1581 (dato sensible): sin autorización expresa de la persona NO se guarda su rostro; puede registrarse por cédula
             raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
         img_array = BiometricEngine.process_image_stream(file.file.read())
@@ -1266,6 +1281,7 @@ def manual_register(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
         role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json,
         biometric_consent_at=utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
+        birth_date=birth, is_biometric_enabled=not minor,
     )
     user.set_extras(extras)
     db.add(user)
@@ -1292,6 +1308,8 @@ def manual_register(
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo."}
+    if minor:
+        reply["minor"] = "Es menor de 18 años: se registró SIN rostro (no se capta ni se guarda). Ingresa por cédula o QR."
     if contact_clean and event.digital_badge_enabled:
         reply["digital"] = _send_digital(db, event, user, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
     return reply
@@ -1577,7 +1595,7 @@ def _bulk_register_impl(
                     if not encodings:
                         errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
                         continue
-                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, basename))
+                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
                     zip_encodings[os.path.splitext(basename)[0]] = encodings
 
         # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
@@ -1656,6 +1674,16 @@ def _bulk_register_impl(
                     enc = faces.extract(stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
                     if enc:
                         face_enc_json = json.dumps(enc)
+            # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
+            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "")
+            birth = minors.parse_birth(birth_raw)
+            row_minor = minors.is_minor(birth)
+            if birth_raw and birth is None:
+                errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD o DD/MM/AAAA).")
+            if face_enc_json and (row_minor or birth is None):
+                face_enc_json = None
+                get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
+                errors.append(f"⚠️ Fila {row_num}: " + ("es menor de 18 años: no se guardó su rostro (solo cédula o QR)." if row_minor else "tiene foto pero no fecha de nacimiento: no se guardó su rostro (solo se capta el rostro de mayores de 18 años)."))
 
             # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
             # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
@@ -1678,6 +1706,11 @@ def _bulk_register_impl(
                 user.phone = telefono
                 user.email = correo
                 user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
+                if birth is not None:
+                    user.birth_date = birth
+                    user.is_biometric_enabled = not row_minor
+                    if row_minor:
+                        user.face_encoding = None
 
                 extras = {}
                 for raw_key, value in clean_row.items():

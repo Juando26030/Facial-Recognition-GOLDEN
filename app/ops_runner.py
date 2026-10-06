@@ -236,8 +236,27 @@ def bench_vector() -> str:
     return json.dumps(out)
 
 
+def list_minors() -> str:
+    """Revisión (L3): personas con fecha de nacimiento que da MENOS de 18 años y que aún tienen vector o foto. NO borra nada: deja un archivo `minors-review/…json` (cédulas) en el almacenamiento para que
+    una persona lo revise y decida; el resultado solo lleva el conteo y la clave del archivo. Los menores quedan además con `is_biometric_enabled=false` (no se reconocen)."""
+    from app import minors
+    from app.database import SessionLocal
+    from app.models import User
+    from app.storage import get_storage, photo_key
+    found = []
+    with SessionLocal() as db:
+        for u in db.query(User.id, User.tenant_id, User.birth_date, User.face_encoding).filter(User.birth_date.isnot(None)).yield_per(500):
+            if minors.is_minor(u.birth_date) and (u.face_encoding or get_storage().exists(photo_key(u.tenant_id, u.id))):
+                found.append({"tenant": u.tenant_id, "id": u.id})
+    if not found:
+        return "0 menores con datos biométricos"
+    key = f"minors-review/{utcnow():%Y%m%dT%H%M%S}.json"
+    get_storage().put(key, json.dumps(found, ensure_ascii=False, indent=1).encode("utf-8"))
+    return f"{len(found)} menores con datos biométricos en {key}"
+
+
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector}
+         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors}
 
 
 def main(task: str) -> int:

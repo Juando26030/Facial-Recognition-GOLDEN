@@ -70,7 +70,7 @@ def test_endpoints_text_status_and_idempotent_batch(client, factory, db, company
     ev = _op(client, factory)
     t = client.get(f"/api/events/{ev.id}/consent-text").json()
     assert t["hash"] == legal_texts.render(ev)["hash"] and t["mode"] == "once"
-    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": None, "mode": "once"}
+    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": None, "mode": "once", "blocked": False}
     eid = str(uuid.uuid4())
     body = {"entries": [{"id": eid, "user_id": "1001", "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"], "device": "tablet-1"}]}
     assert client.post(f"/api/events/{ev.id}/consents", json=body).json() == {"inserted": 1, "duplicated": 0, "unknown": 0}
@@ -78,7 +78,7 @@ def test_endpoints_text_status_and_idempotent_batch(client, factory, db, company
     assert client.get(f"/api/events/{ev.id}/consent-status/1001").json()["accepted"] is True
     rej = {"entries": [{"id": str(uuid.uuid4()), "user_id": "1001", "decision": "reject", "adult": False, "text_hash": t["hash"], "version": t["version"]}]}
     client.post(f"/api/events/{ev.id}/consents", json=rej)
-    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": "rejection", "mode": "once"}      # el último registro manda
+    assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": "rejection", "mode": "once", "blocked": False}      # el último registro manda
     no_adult = {"entries": [{"id": str(uuid.uuid4()), "user_id": "2002", "decision": "accept", "adult": False, "text_hash": t["hash"], "version": t["version"]}]}
     client.post(f"/api/events/{ev.id}/consents", json=no_adult)
     assert client.get(f"/api/events/{ev.id}/consent-status/2002").json()["accepted"] is False          # sin la declaración de mayoría de edad NO cuenta como aceptación
