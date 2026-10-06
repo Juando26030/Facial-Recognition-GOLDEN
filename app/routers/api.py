@@ -26,7 +26,8 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, security, digital_badge, faces, heavy, uploads
+from app import bulk_jobs, crypto, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -881,6 +882,14 @@ def roster_fingerprint(salt: str, cedula: str) -> str:
     return hashlib.sha256(f"{salt}:{roster_normalize(cedula)}".encode()).hexdigest()[:16]
 
 
+def consent_block(event: Event):
+    """Texto de autorización biométrica del evento (con su huella) para que el quiosco lo muestre y registre SIN conexión; None si el evento no usa rostro."""
+    if not event.facial_enabled:
+        return None
+    t = legal_texts.render(event)
+    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox", "blocked")}, "mode": event.consent_prompt_mode, "every_scan": legal_texts.every_scan_prompt()}
+
+
 @router.get("/events/{event_id}/local-roster")
 def local_roster(
     event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
@@ -895,7 +904,9 @@ def local_roster(
     if security.minutes_locked(db, "roster_local", key, None, ROSTER_LIMIT, ROSTER_LIMIT, ROSTER_WINDOW):
         raise HTTPException(status_code=429, detail="Demasiadas descargas del roster local — espera unos minutos.")
     security.record_event(db, "roster_local", key, None)
-    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}")      # el modo autoregistro viaja en la copia: si cambia, cambia la versión
+    accepted = consent_mod.accepted_user_ids(db, event.tenant_id, event.id)
+    n_consents = db.execute(text("SELECT count(*) FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e"), {"t": event.tenant_id, "e": event.id}).scalar()
+    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}|{n_consents}|{event.controller_mode}|{event.consent_prompt_mode}|{int(bool(event.facial_enabled))}")      # el modo autoregistro y la autorización biométrica viajan en la copia: si cambian, cambia la versión
     headers = {"Cache-Control": "private, no-cache", "ETag": f'"{version}"'}
     if request.headers.get("if-none-match") == headers["ETag"]:
         return Response(status_code=304, headers=headers)
@@ -912,9 +923,9 @@ def local_roster(
     for uid, first, last, categories in people:
         real, new = counts.get(uid, (0, 0))
         rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
-                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado")})
+                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted else 0})      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
     return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status, "auto_register": bool(event.auto_register)},
-                         "salt": salt, "count": len(rows), "people": rows}, headers=headers)
+                         "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
 
 
 @router.patch("/users/{user_id}")

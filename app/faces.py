@@ -26,7 +26,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app import face_worker
+from app import consent, face_worker
 from app.models import Event, EventAttendee, User
 
 log = logging.getLogger("golden.faces")
@@ -162,8 +162,11 @@ def _build(db: Session, event: Event, version: int) -> _Index:
             .join(EventAttendee, and_(EventAttendee.user_id == User.id, EventAttendee.tenant_id == User.tenant_id))
             .filter(EventAttendee.event_id == event.id, User.tenant_id == event.tenant_id, User.face_encoding != None)  # noqa: E711
             .all())
+    allowed = consent.accepted_user_ids(db, event.tenant_id, event.id)      # NADIE se reconoce por su rostro sin una aceptación registrada para este evento (aunque ya tenga vector)
     ids, vectors, dim = [], [], None
     for uid, raw in rows:
+        if uid not in allowed:
+            continue
         try:
             arr = np.asarray(json.loads(raw), dtype=np.float32)
         except (TypeError, ValueError):

@@ -36,11 +36,11 @@ def test_roster_has_only_the_minimum_and_a_salted_fingerprint(client, factory, d
     r = _get(client, ev)
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"v", "generated_at", "max_age_s", "event", "salt", "count", "people"} and body["count"] == 2 and body["max_age_s"] == 86400
+    assert set(body) == {"v", "generated_at", "max_age_s", "event", "salt", "count", "people", "consent"} and body["consent"] is None and body["count"] == 2 and body["max_age_s"] == 86400
     assert body["event"] == {"id": ev.id, "status": "en_proceso", "auto_register": False}
     by_name = {p["n"]: p for p in body["people"]}
     ana, luis = by_name["Ana Prueba"], by_name["Luis Gómez"]
-    assert set(ana) == {"h", "n", "c", "s"}                                              # nada más: ni cédula, ni teléfono, ni correo, ni encoding
+    assert set(ana) == {"h", "n", "c", "s", "a"} and ana["a"] == 0                                              # nada más: ni cédula, ni teléfono, ni correo, ni encoding
     assert ana["h"] == _fp(body["salt"], "1001234")                                      # normalizada: sin puntos ni espacios (igual que el cliente)
     assert ana["c"] == ["Prensa", "Staff"] and ana["s"] == "No registrado" and luis["s"] == "Registrado"
     for secret in ("1001", "2002", "3001112233", "ana@example.com", "VIP", "0.1"):

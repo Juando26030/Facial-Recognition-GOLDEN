@@ -11,7 +11,7 @@ from sqlalchemy import inspect
 
 from app import faces
 from app.models import AccessLog, Event, EventAttendee, User
-from tests.conftest import login
+from tests.conftest import accept, login
 
 
 def _vec(seed: int) -> list:
@@ -46,6 +46,7 @@ def _person_with_face(db, ev, uid, seed, attend=True):
     if attend:
         db.add(EventAttendee(event_id=ev.id, user_id=uid, tenant_id=ev.tenant_id))
     db.commit()
+    accept(db, ev, uid)
     return u
 
 

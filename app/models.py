@@ -246,6 +246,11 @@ class Event(Base):
     badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría
     logo_path = Column(String, nullable=True)  # archivo del logo propio (solo si logo_mode='custom'), en data/<tenant>/event_logos/
     faces_version = Column(Integer, default=0, server_default='0', nullable=False)  # sube en cada cambio de rostros del evento (app/faces_version.py); el reconocimiento recarga su matriz en memoria cuando cambia
+    controller_mode = Column(String, default='golden', server_default='golden', nullable=False)   # L1: 'golden' (evento propio, Golden = Responsable único) | 'tercero' (Golden = Encargado); decide la variante del texto de autorización
+    organizer_name = Column(String, nullable=True)            # razón social del organizador (obligatoria si controller_mode='tercero')
+    organizer_nit = Column(String, nullable=True)
+    organizer_privacy_email = Column(String, nullable=True)   # correo del organizador para consultas y revocación
+    consent_prompt_mode = Column(String, default='once', server_default='once', nullable=False)   # 'once' (una vez por persona y evento) | 'every_scan' (botones cortos antes de cada uso)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
 
     tenant = relationship("Tenant")

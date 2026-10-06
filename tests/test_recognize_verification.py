@@ -10,7 +10,7 @@ from PIL import Image
 from app import faces
 from app.models import AccessLog, StaffUser
 from app.storage import get_storage, photo_key
-from tests.conftest import login
+from tests.conftest import accept, login
 
 
 def _png() -> bytes:
@@ -51,6 +51,8 @@ def _setup(client, factory, db, distances, **event_kw):
         db.add(EventAttendee(event_id=ev.id, user_id=uid, tenant_id=ev.tenant_id))
         get_storage().put(photo_key(ev.tenant_id, uid), b"JPEGDATA-" + uid.encode())
     db.commit()
+    for i in range(len(distances)):
+        accept(db, ev, str(100100 + i))
     login(client, "9990001")
     return ev
 

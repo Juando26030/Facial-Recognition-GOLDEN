@@ -227,3 +227,10 @@ def factory(db):
 
 def login(client, username, password=PASSWORD):
     return client.post("/login", data={"username": username, "password": password})
+
+
+def accept(db, ev, uid, adult=True):
+    """La PERSONA aceptó el reconocimiento facial en ese evento (registro en audit_consent_logs): sin esto el reconocimiento no la usa (L1)."""
+    from app import consent
+    consent.record(db, tenant_id=ev.tenant_id, user_id=uid, event_id=ev.id, version="v1.1_test", legal_text_hash="b" * 64, accepted=True, adult=adult, reason="consent")
+    db.commit()

@@ -11,10 +11,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app import faces_version
 from app.models import AuditConsentLog
 from app.timeutil import utcnow
 
@@ -44,6 +45,8 @@ def record(db: Session, *, tenant_id: str, user_id: str, event_id: int, version:
                event_id=event_id, consent_timestamp_utc=when, consent_version=version, legal_text_hash=legal_text_hash, accepted_biometric=bool(accepted),
                confirmed_adult=bool(adult), ip_or_device_id=(device or None), reason=reason)
     res = db.execute(pg_insert(AuditConsentLog).values(**row).on_conflict_do_nothing(index_elements=["id"]))
+    if res.rowcount == 1:
+        faces_version.bump(db, event_ids=[event_id])          # quién puede ser reconocido cambió: la matriz facial del evento se reconstruye
     return res.rowcount == 1
 
 
@@ -56,3 +59,16 @@ def has_acceptance(db: Session, tenant_id: str, user_id: str, event_id: int) -> 
     """¿Hay aceptación VIGENTE de la persona para este evento? (el último registro es un `consent` con `accepted_biometric` y `confirmed_adult`)."""
     row = latest(db, tenant_id, user_id, event_id)
     return bool(row and row.reason == "consent" and row.accepted_biometric and row.confirmed_adult)
+
+
+_ACCEPTED_SQL = text("""
+SELECT user_id FROM (
+  SELECT DISTINCT ON (user_id) user_id, reason, accepted_biometric, confirmed_adult
+  FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e
+  ORDER BY user_id, consent_timestamp_utc DESC, id DESC) last
+WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult""")
+
+
+def accepted_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
+    """Cédulas con aceptación VIGENTE en este evento (la misma regla de `has_acceptance`, en una sola consulta). Solo estas personas pueden ser reconocidas por su rostro."""
+    return {r[0] for r in db.execute(_ACCEPTED_SQL, {"t": tenant_id, "e": event_id})}
