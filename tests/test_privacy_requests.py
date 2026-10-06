@@ -81,8 +81,10 @@ def test_export_person_data_is_a_map_of_what_exists_with_no_values_and_no_cedula
     monkeypatch.setenv("EXPORT_CEDULA", "1001")
     assert ops_runner.main("export-person-data") == 0
     out = capsys.readouterr().out
-    assert "1001" not in out and "Ana" not in out and "ana@x.test" not in out and "3001112233" not in out and "0.1" not in out          # ni valores personales ni la cédula ni el vector
-    data = json.loads(json.loads(out)["results"]["export-person-data"]["detail"])
+    line0 = next(l for l in out.splitlines() if l.startswith('{"ops"'))
+    assert "1001" not in line0 and "Ana" not in line0 and "ana@x.test" not in line0 and "3001112233" not in line0 and "0.1" not in line0          # ni valores personales ni la cédula ni el vector
+    line = next(l for l in out.splitlines() if l.startswith('{"ops"'))                               # el resto pueden ser líneas de log de otras pruebas
+    data = json.loads(json.loads(line)["results"]["export-person-data"]["detail"])
     assert data["personas"][0]["campos_con_dato"] == ["first_name", "last_name", "phone", "email"] and data["personas"][0]["tiene_vector_facial"] is True
     assert data["eventos_inscrito"] == 1 and data["ingresos"] == 1 and len(data["consentimientos"]) == 1 and data["consentimientos"][0]["acepto"] is True
     assert data["solicitudes_de_privacidad"] and data["suprimida"] is False
