@@ -30,6 +30,11 @@ def holidays() -> set:
     return out
 
 
+def holidays_for_year(year: int) -> set:
+    """Festivos cargados para ese año (vacío = no hay lista: los plazos se contarían sin festivos)."""
+    return {d for d in holidays() if d.year == year}
+
+
 def add_business_days(start: date, n: int) -> date:
     """`start` + n días hábiles (sin sábados, domingos ni festivos); el día de la solicitud no cuenta."""
     day, hol, left = start, holidays(), n
