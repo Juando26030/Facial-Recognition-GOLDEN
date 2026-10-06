@@ -5,13 +5,18 @@
 > Estado: las dos variantes de autorización están **SIN CONSTANCIA** hasta que la auditora emita la suya (fecha, versión, texto exacto).
 > Los textos B (contratos) y D (retracto) no se usan en el piloto y no se guardan aquí.
 
-## PENDIENTE PARA LA AUDITORA (anotado, NO aplicado)
-
-- La última frase del texto C'' dice «garantizando la confidencialidad de los datos». Se deja literal. Pendiente de que la auditora confirme que puede decirse así (la cola local de ingresos no está cifrada y el sistema no puede prometer una garantía absoluta de confidencialidad).
-
 ---
 
-## Texto C ORIGINAL (HISTÓRICO, reemplazado por C'')
+## Texto C''' DEFINITIVO (VIGENTE: el que usa la política v1.1)
+
+```text
+8. FUNCIONAMIENTO LOCAL TEMPORAL EN MODO DE CONTINGENCIA (SIN CONEXIÓN A INTERNET):
+Para garantizar la continuidad ininterrumpida de la acreditación durante eventos masivos frente a caídas imprevistas de red, la plataforma dispone de un modo de contingencia local.
+En dicho escenario, los dispositivos del personal de control almacenan temporalmente en la memoria local del navegador (IndexedDB) una lista técnica de verificación compuesta por: nombre para mostrar, categoría de acreditación, estado del asistente y un resumen criptográfico con sal (hash) del documento de identidad exclusivo para el evento, el cual permite validar el acceso sin conexión activa a internet.
+Bajo ninguna circunstancia se descargan ni conservan fotografías ni vectores biométricos en los navegadores o terminales locales. Los registros de acceso (ingresos marcados en puerta), así como las nuevas inscripciones o modificaciones de datos efectuadas sin red, se almacenan en una cola local en el dispositivo por un término técnico máximo y perentorio de siete (7) días calendario, dentro del cual se sincronizan automáticamente con el servidor central al restablecerse la conectividad. Vencido este plazo sin sincronización, la información residual no transmitida se suprime de manera automática de la memoria del navegador, eliminándose de forma definitiva.
+```
+
+## Texto C ORIGINAL (HISTÓRICO)
 
 ```text
 8. TRATAMIENTO LOCAL TEMPORAL EN MODO DE CONTINGENCIA (SIN CONEXIÓN A INTERNET):
@@ -20,7 +25,7 @@ En virtud de este mecanismo, el navegador de los dispositivos autorizados del pe
 Bajo ninguna circunstancia se almacenan fotografías, imágenes ni vectores biométricos faciales en los dispositivos locales sin conexión. Los registros de acceso efectuados en modo contingencia permanecen en cola local cifrada y se sincronizan automáticamente con el servidor central al restablecerse la red. Si un dispositivo no restablece conexión, la información local no transmitida se conservará por un término técnico máximo y perentorio de siete (7) días calendario, tras el cual se purgará automáticamente, sin perjuicio de las auditorías de sincronización manual de la empresa.
 ```
 
-## Texto C'' APROBADO (el que usa la política v1.1)
+## Texto C'' (HISTÓRICO, reemplazado por C''')
 
 ```text
 8. FUNCIONAMIENTO LOCAL TEMPORAL EN MODO DE CONTINGENCIA (SIN CONEXIÓN A INTERNET):
