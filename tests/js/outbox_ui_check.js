@@ -26,7 +26,7 @@ const flush = () => new Promise((r) => setImmediate(r));
     const s = { total: items.length, unsent: un.length, expired: ex.length, oldest_days: Math.max(0, ...items.map((i) => i.days_old)), min_days_left: un.length ? Math.min(...un.map((i) => i.days_left)) : 0, level: 'ok' };
     s.level = ex.length ? 'expired' : (s.oldest_days >= 6 ? 'urgent' : (s.oldest_days >= 3 ? 'warn' : 'ok')); s.banner = GoldenOutbox.bannerText(s); return s;
   };
-  const outbox = { stats: async () => stats(), list: async () => items, countUnsent: async () => unsent, onChange: (f) => listeners.push(f),
+  const outbox = { dismissPruned: async () => {}, stats: async () => stats(), list: async () => items, countUnsent: async () => unsent, onChange: (f) => listeners.push(f),
     sync: async (opts) => { syncCalls.push(opts || {}); return { sent: 1, ok: 2, revision: 1, error: 0, stopped: null }; }, retry: async () => {}, discard: async (id) => { discarded.push(id); items = items.filter((i) => i.op_id !== id); } };
   const toasts = []; let answer = false, asked = [], reloads = 0, online = true;
   global.directorySearch = { reload: () => { reloads++; } };

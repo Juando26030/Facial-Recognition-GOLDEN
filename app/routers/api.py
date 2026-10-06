@@ -920,6 +920,8 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
         return {"op_id": op_id, "result": "error", "detail": str(e)}
     values = {k: str(f.get(k) or "") for k in OUTBOX_PERSON_KEYS}
     values.update({"certificate": str(f.get("certificate") or ""), "digital_contact": contact or "", **extras})
+    if privacy.is_suppressed(db, event.tenant_id, person_id):
+        return {"op_id": op_id, "result": "error", "detail": SUPPRESSED_MSG}          # L4: quien pidió la supresión no se vuelve a crear (tampoco desde la bandeja sin red)
     existing = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
     if existing:
         if _already_checked_in(db, event.id, existing.id):

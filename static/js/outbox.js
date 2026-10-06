@@ -3,7 +3,7 @@
    - CIFRADO EN REPOSO con WebCrypto (AES-GCM 256) de cada operación; la clave se genera en el dispositivo como NO EXTRAÍBLE y vive en el mismo IndexedDB. Protege contra copiar el archivo del perfil o un
      respaldo del equipo; NO contra quien controle el navegador abierto (límite real: la clave está en el mismo origen que los datos; iOS no da llavero a la web).
    - BORRADO TRAS SINCRONIZAR: apenas el servidor confirma (`ok`/`replayed`) se borran los campos (queda solo el nombre para mostrar y el resultado, 24 h, y se limpian solos).
-   - CADUCIDAD DE 7 DÍAS para lo que NO se envió (pendiente, con error, en revisión): avisos visibles desde el día 3 (amarillo) y el 6 (rojo); pasados los 7 días pasa a «caducada» y NO se envía sola;
+   - CADUCIDAD DE 7 DÍAS para lo que NO se envió (pendiente, con error, en revisión): avisos visibles desde el día 3 (amarillo) y el 6 (rojo); a los 7 días lo no enviado se ELIMINA solo del dispositivo (texto C''' de la auditora: «se suprime de manera automática»), con un aviso visible que la persona debe ver (nunca en silencio);
      NUNCA se borra en silencio: solo la persona, con confirmación («Descartar»), o el servidor al confirmar la recepción. Cerrar sesión no la borra (se avisa, como la cola de ingresos).
    Estados: pendiente → ok | revision (la cédula YA existía: no se pisó; se registró para este evento) | duplicado (ya estaba registrada) | error (con motivo) | caducada.
    Cada operación lleva un `op_id` (UUID): reenviar nunca duplica (el servidor responde `replayed`). La foto, el consentimiento biométrico y la edición de personas existentes NO van en R1. */
@@ -41,8 +41,9 @@
     return daysOld >= URGENT_DAY ? 'urgent' : (daysOld >= WARN_DAY ? 'warn' : 'ok');
   }
   function bannerText(stats) {
-    if (!stats.unsent && !stats.expired) return '';
+    if (!stats.unsent && !stats.expired && !stats.pruned) return '';
     const parts = [];
+    if (stats.pruned) parts.push(`${stats.pruned} ${stats.pruned === 1 ? 'persona nueva llevaba' : 'personas nuevas llevaban'} ${TTL_DAYS} días sin enviarse y se eliminaron de este dispositivo, como indica la política de privacidad: vuelve a registrarlas`);
     if (stats.expired) parts.push(`${stats.expired} ${stats.expired === 1 ? 'persona nueva CADUCÓ' : 'personas nuevas CADUCARON'} sin enviarse (pasaron ${TTL_DAYS} días): no se envían solas; revísalas en la bandeja`);
     if (stats.unsent) {
       const left = Math.max(0, Math.ceil(stats.min_days_left));
@@ -108,12 +109,14 @@
     };
 
     o.stats = async () => {
+      if (o.supported) await o.purge();
       const items = await o.list();
       const unsent = items.filter((i) => UNSENT.includes(i.status)), expired = items.filter((i) => i.status === 'caducada');
       const pend = items.filter((i) => i.status === 'pendiente'), needs = items.filter((i) => ['error', 'revision', 'duplicado'].includes(i.status));
       const all = [...unsent, ...expired], oldest = all.length ? Math.max(...all.map((i) => i.days_old)) : 0, minLeft = unsent.length ? Math.min(...unsent.map((i) => i.days_left)) : 0;
-      const level = all.length ? (expired.length ? 'expired' : (oldest >= URGENT_DAY ? 'urgent' : (oldest >= WARN_DAY ? 'warn' : 'ok'))) : 'ok';
-      const s = { total: items.length, pending: pend.length, needs_attention: needs.length, expired: expired.length, unsent: unsent.length, oldest_days: oldest, min_days_left: minLeft, level };
+      const pruned = await o.prunedCount();
+      const level = pruned ? 'expired' : (all.length ? (expired.length ? 'expired' : (oldest >= URGENT_DAY ? 'urgent' : (oldest >= WARN_DAY ? 'warn' : 'ok'))) : 'ok');
+      const s = { pruned, total: items.length, pending: pend.length, needs_attention: needs.length, expired: expired.length, unsent: unsent.length, oldest_days: oldest, min_days_left: minLeft, level };
       s.banner = bannerText(s);
       return s;
     };
@@ -152,8 +155,19 @@
     o.retry = async (opId) => { const rec = await o.db.get('ops', opId); if (rec && rec.status === 'error') { await o.db.put('ops', { ...rec, status: 'pendiente', result: null }); emit(); } };
     /* Descartar es SIEMPRE una acción de la persona (la pantalla pide confirmación): nada se borra en silencio. */
     o.discard = async (opId) => { await o.db.del('ops', opId); emit(); };
-    /* Solo lo ya ENTREGADO (`ok`) se limpia solo, a las 24 h: ya no lleva ningún dato personal. */
-    o.purge = async () => { const now = d.now(); for (const rec of await o.db.getAll('ops')) if (rec.status === 'ok' && now > rec.expires_at) await o.db.del('ops', rec.op_id); };
+    /* Lo ya ENTREGADO (`ok`) se limpia solo a las 24 h (ya no lleva datos personales). Lo NO entregado se ELIMINA a los 7 días (política v1.1, texto C'''), dejando un aviso persistente hasta que la persona abra la bandeja. */
+    o.purge = async () => {
+      const now = d.now(); let gone = 0;
+      for (const rec of await o.db.getAll('ops')) {
+        if (now <= rec.expires_at) continue;
+        if (rec.status === 'ok') await o.db.del('ops', rec.op_id);
+        else if (UNSENT.includes(rec.status)) { await o.db.del('ops', rec.op_id); gone++; }
+      }
+      if (gone) { const prev = await o.db.get('meta', 'pruned'); await o.db.put('meta', { k: 'pruned', n: (prev ? prev.n : 0) + gone, at: now }); emit(); }
+      return gone;
+    };
+    o.prunedCount = async () => { const m = o.supported ? await o.db.get('meta', 'pruned') : null; return m ? m.n : 0; };
+    o.dismissPruned = async () => { if (o.supported) { await o.db.del('meta', 'pruned'); emit(); } };
     o.countUnsent = async () => (o.supported ? (await o.db.getAll('ops')).filter((r) => UNSENT.includes(r.status)).length : 0);
     o.stop = () => { if (o.db) { o.db.close(); o.db = null; } };
     return o;

@@ -56,7 +56,7 @@ const okAll = async (body) => json(200, { results: body.ops.map((o) => ({ op_id:
   reply = async (body) => json(200, { results: body.ops.map((o) => ({ op_id: o.op_id, result: 'replayed' })) }); s = await box.sync(); assert.strictEqual(s.ok, 1, 'un reenvío ya procesado (replayed) cuenta como entregado');
   assert.strictEqual((await box.stats()).pending, 0);
 
-  // 5) CADUCIDAD DE 7 DÍAS: avisos desde el día 3, rojo el 6, «caducada» a los 7; NO se envía sola y NO se borra en silencio
+  // 5) CADUCIDAD DE 7 DÍAS: avisos desde el día 3, rojo el 6; a los 7 se ELIMINA solo (texto C''' de la auditora) con un aviso persistente: nunca en silencio
   for (const i of await box.list()) if (i.base_status !== 'ok') await box.discard(i.op_id);                      // limpiar (acciones explícitas)
   reply = okAll;
   const oldId = (await box.enqueue(fields('B1'), 'Beatriz Antigua')).op_id;
@@ -64,13 +64,12 @@ const okAll = async (body) => json(200, { results: body.ops.map((o) => ({ op_id:
   now += 2 * DAY; assert.strictEqual((await box.stats()).level, 'ok');
   now += DAY; st = await box.stats(); assert.strictEqual(st.level, 'warn'); assert.ok(/1 persona nueva sin enviar \(la más antigua, hace 3 días; caduca en 4 días\)/.test(st.banner), st.banner);
   now += 3 * DAY; st = await box.stats(); assert.strictEqual(st.level, 'urgent'); assert.ok(/hace 6 días; caduca en 1 día\)/.test(st.banner), st.banner);
-  now += 2 * DAY; st = await box.stats(); assert.strictEqual(st.level, 'expired'); assert.strictEqual(st.expired, 1); assert.ok(/CADUCÓ/.test(st.banner), st.banner);
-  assert.strictEqual((await box.list()).find((i) => i.op_id === oldId).status, 'caducada'); assert.ok((await box.list()).some((i) => i.op_id === oldId), 'NO se borró en silencio');
-  calls = []; s = await box.sync(); assert.strictEqual(calls.length, 0, 'lo caducado NO se envía solo');
-  s = await box.sync({ force: true }); assert.strictEqual(s.ok, 1, 'sí, si la persona lo pide («Enviar de todos modos»)');
-  const again = (await box.enqueue(fields('B2'), 'Otra')).op_id; now += 8 * DAY; await box.purge(); await box.init();
-  assert.ok((await box.list()).some((i) => i.op_id === again && i.status === 'caducada'), 'ni purge ni init borran lo caducado');
-  await box.discard(again); assert.ok(!(await box.list()).some((i) => i.op_id === again), 'solo «Descartar» (con confirmación en la pantalla) lo borra');
+  now += 2 * DAY; calls = []; st = await box.stats();
+  assert.ok(!(await box.list()).some((i) => i.op_id === oldId), 'a los 7 días se eliminó del dispositivo'); assert.strictEqual(calls.length, 0, 'y no se envió');
+  assert.strictEqual(st.pruned, 1); assert.strictEqual(st.level, 'expired'); assert.ok(/se eliminaron de este dispositivo/.test(st.banner), 'NO fue en silencio: ' + st.banner);
+  assert.strictEqual((await box.stats()).pruned, 1, 'el aviso persiste hasta que la persona lo ve'); await box.dismissPruned(); assert.strictEqual((await box.stats()).pruned, 0);
+  const again = (await box.enqueue(fields('B2'), 'Otra')).op_id; now += 8 * DAY; await box.init();
+  assert.ok(!(await box.list()).some((i) => i.op_id === again) && (await box.stats()).pruned === 1, 'init también aplica el plazo y avisa'); await box.dismissPruned();
 
   // 6) LOTES de ≤ 50
   calls = []; now += DAY; for (let i = 0; i < 120; i++) await box.enqueue(fields(`C${i}`), `Persona C${i}`);
@@ -79,5 +78,5 @@ const okAll = async (body) => json(200, { results: body.ops.map((o) => ({ op_id:
   // 7) SIN soporte (sin IndexedDB o WebCrypto): no rompe y lo dice
   const bad = await O.create({ idb: undefined, subtle: undefined, eventId: 7, fetch: async () => json(200, {}) }).init();
   assert.strictEqual(bad.supported, false); await assert.rejects(bad.enqueue({}, 'x'), /no puede guardar/);
-  console.log('outbox.js: cifrado en reposo, borrado tras sincronizar, caducidad de 7 días sin borrado silencioso, lotes y resultados OK');
+  console.log('outbox.js: cifrado en reposo, borrado tras sincronizar, caducidad de 7 días con eliminación automática y aviso, lotes y resultados OK');
 })().catch((e) => { console.error(e); process.exit(1); });

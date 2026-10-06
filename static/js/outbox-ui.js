@@ -24,7 +24,7 @@
     async function refresh() {
       const st = await outbox.stats();
       const attention = st.unsent + st.expired;
-      btn.style.display = st.total ? 'block' : 'none';
+      btn.style.display = (st.total || st.pruned) ? 'block' : 'none';
       btn.textContent = attention ? `📤 Bandeja (${attention})` : '📤 Bandeja';
       banner.style.display = st.banner ? 'block' : 'none';
       if (st.banner) { const c = COLORS[st.level] || COLORS.warn; banner.style.background = st.level === 'ok' ? '#e3f2fd' : c[0]; banner.style.color = st.level === 'ok' ? '#0d47a1' : c[1]; banner.textContent = '📤 ' + st.banner + ' — toca para abrir la bandeja'; }
@@ -66,7 +66,7 @@
       panel.appendChild(table);
     }
 
-    ui.open = async () => { modal.style.display = 'block'; await refresh(); };
+    ui.open = async () => { modal.style.display = 'block'; await refresh(); await outbox.dismissPruned(); };      // abrir la bandeja = ver el aviso de lo eliminado a los 7 días
     btn.addEventListener('click', ui.open); banner.addEventListener('click', ui.open);
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
 
