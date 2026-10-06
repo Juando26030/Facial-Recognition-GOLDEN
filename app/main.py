@@ -19,7 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import appmode, bulk_jobs, faces, jobs, obs, ops, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
@@ -193,6 +193,7 @@ def _include(router, prefix: str = "") -> None:
 _include(auth_router.router)
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")
+_include(event_states.router, prefix="/api")
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
 _include(badges.router, prefix="/api")
