@@ -182,8 +182,32 @@ def hourly(now=None) -> dict:
     return results
 
 
+def export_consent() -> str:
+    """Atención a una autoridad: exporta los registros de consentimiento de UNA persona (`CONSENT_EXPORT_CEDULA`, y opcional `CONSENT_EXPORT_TENANT`) a un archivo en el almacenamiento
+    (`consent-exports/…json`). Solo corre a mano (no está en la tarea horaria). El log y el resultado llevan SOLO la clave del archivo y el conteo, jamás la cédula."""
+    from sqlalchemy import select
+
+    from app import consent
+    from app.database import SessionLocal
+    from app.models import AuditConsentLog
+    from app.storage import get_storage
+    cedula = os.getenv("CONSENT_EXPORT_CEDULA", "").strip()
+    if not cedula:
+        raise RuntimeError("Falta CONSENT_EXPORT_CEDULA")
+    tenant = os.getenv("CONSENT_EXPORT_TENANT", "").strip()
+    h = consent.cedula_hash(cedula)
+    with SessionLocal() as db:
+        q = select(AuditConsentLog).where(AuditConsentLog.cedula_hash == h).order_by(AuditConsentLog.consent_timestamp_utc)
+        if tenant:
+            q = q.where(AuditConsentLog.tenant_id == tenant)
+        rows = [{c.name: (getattr(r, c.name).isoformat() if hasattr(getattr(r, c.name), "isoformat") else getattr(r, c.name)) for c in AuditConsentLog.__table__.columns} for r in db.execute(q).scalars()]
+    key = f"consent-exports/{h[:16]}-{utcnow():%Y%m%dT%H%M%S}.json"
+    get_storage().put(key, json.dumps(rows, ensure_ascii=False, indent=1).encode("utf-8"))
+    return f"{len(rows)} registros en {key}"
+
+
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "check-backups": check_backups, "sweep": sweep, "warmup": warmup}
+         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent}
 
 
 def main(task: str) -> int:

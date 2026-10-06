@@ -32,6 +32,7 @@ def grant_sql(owner: str, db: str) -> list:
         sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(db), r),
         sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(r),
         sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}").format(r),
+        sql.SQL("DO $$ BEGIN IF to_regclass('public.audit_consent_logs') IS NOT NULL THEN REVOKE UPDATE, DELETE, TRUNCATE ON audit_consent_logs FROM {}; END IF; END $$").format(r),   # prueba legal: solo INSERT y SELECT (migración 0054)
         sql.SQL("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {}").format(r),
         sql.SQL("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {}").format(r),
         sql.SQL("ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {}").format(o, r),

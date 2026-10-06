@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import event as sa_event
-from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
 from datetime import datetime
@@ -753,6 +753,25 @@ class SystemEvent(Base):
     ref = Column(String, nullable=True)
     detail = Column(Text, nullable=True)
     at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class AuditConsentLog(Base):
+    """Prueba inmutable de la autorización biométrica (migración 0054): solo INSERT (disparador + REVOKE al rol de la app), SIN llaves foráneas, 3 años mínimo, ninguna purga la toca.
+    Nada en el código la modifica ni la borra; la lectura es solo para super_admin y fuera de la interfaz (ver app/consent.py y scripts/export_consent_logs.py)."""
+    __tablename__ = 'audit_consent_logs'
+    id = Column(String(36), primary_key=True)       # lo genera el dispositivo: un reintento sin conexión no duplica
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    cedula_hash = Column(String(64), nullable=False)
+    event_id = Column(Integer, nullable=False)
+    consent_timestamp_utc = Column(DateTime(timezone=True), nullable=False)
+    consent_version = Column(String(40), nullable=False)
+    legal_text_hash = Column(String(64), nullable=False)
+    accepted_biometric = Column(Boolean, nullable=False)
+    confirmed_adult = Column(Boolean, nullable=False)
+    ip_or_device_id = Column(String, nullable=True)
+    reason = Column(String(20), nullable=False)
+    __table_args__ = (CheckConstraint("reason IN ('consent', 'rejection', 'revocation')", name="ck_audit_consent_reason"),)
 
 
 # ------------------------------------------------------------------ relojes de la retención biométrica (app/privacy.py)

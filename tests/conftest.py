@@ -95,7 +95,9 @@ def _clean_tables(_database):
             t.join(timeout=60)
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE audit_consent_logs DISABLE TRIGGER USER"))      # solo aquí (base de pruebas): en la real esa tabla no se vacía jamás
         conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+        conn.execute(text("ALTER TABLE audit_consent_logs ENABLE TRIGGER USER"))
     _wipe_test_files()
     from app import faces, formsvc
     faces.clear_cache()
