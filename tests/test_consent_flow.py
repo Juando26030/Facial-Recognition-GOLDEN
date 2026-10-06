@@ -22,7 +22,7 @@ def _md_block(heading):
 
 @pytest.fixture()
 def company_env(monkeypatch):
-    for k, v in {"COMPANY_NAME": "Empresa Prueba S.A.S.", "COMPANY_NIT": "900.000.000-1", "PRIVACY_EMAIL": "privacidad@ejemplo.test", "DOMAIN": "app.ejemplo.test"}.items():
+    for k, v in {"COMPANY_NAME": "Empresa Prueba S.A.S.", "COMPANY_NIT": "900.000.000-1", "PRIVACY_EMAIL": "privacidad@ejemplo.test", "DOMAIN": "ejemplo.test", "PUBLIC_BASE_URL": "https://app.ejemplo.test"}.items():
         monkeypatch.setenv(k, v)
 
 
@@ -43,7 +43,7 @@ def test_rendering_only_replaces_the_variables_and_hashes_the_exact_text(factory
 
 
 def test_unresolved_company_markers_block_the_text_in_production_only(factory, monkeypatch):
-    for k in company.NAMES:
+    for k in (*company.NAMES, "PUBLIC_BASE_URL"):
         monkeypatch.delenv(k, raising=False)
     ev = factory.event("en_proceso", facial_enabled=True)
     t = legal_texts.render(ev)
@@ -56,6 +56,9 @@ def test_unresolved_company_markers_block_the_text_in_production_only(factory, m
     monkeypatch.setenv("PRIVACY_EMAIL", "p@x.test")
     monkeypatch.setenv("DOMAIN", "x.test")
     assert legal_texts.render(ev)["blocked"] == []
+    monkeypatch.delenv("DOMAIN")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.x.test")
+    assert legal_texts.render(ev)["blocked"] == []                                  # con el host de la app definido, DOMAIN ya no hace falta para la URL de la política
 
 
 def _op(client, factory, **ev_kw):

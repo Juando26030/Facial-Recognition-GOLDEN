@@ -9,7 +9,7 @@ import os
 import re
 from pathlib import Path
 
-from app import privacy
+from app import company, privacy
 
 # Textos con CONSTANCIA de revisión legal escrita (la auditora, 2026-10-05): política de privacidad versión 1.0, tal como estaba en staging (revisión 00048, con el apartado 5-bis y Neon y Google como
 # encargados). `sha256` = huella del texto de la plantilla SIN los marcadores «pendiente» y con los espacios normalizados (así quitar un marcador no cambia la huella, pero cambiar una palabra sí).
@@ -44,11 +44,11 @@ def info() -> dict:
     refund = os.getenv("REFUND_REQUEST_DAYS", "").strip()
     return {
         "name": os.getenv("LEGAL_NAME", "GOLDEN EVENTOS Y LOGISTICA SAS"),
-        "nit": os.getenv("LEGAL_NIT", "901542833"),
+        "nit": company.nit_display(os.getenv("COMPANY_NIT") or os.getenv("LEGAL_NIT") or "901542833-2"),
         "address": os.getenv("LEGAL_ADDRESS", "Carrera 14a # 71a - 59, Bogotá, Colombia"),
         "phone": os.getenv("LEGAL_PHONE", "+57 317 427 6073"),
         "email": email,
-        "privacy_email": os.getenv("LEGAL_PRIVACY_EMAIL", email),
+        "privacy_email": os.getenv("PRIVACY_EMAIL") or os.getenv("LEGAL_PRIVACY_EMAIL") or "soporteit@goldenlogisticas.com",      # PRIVACY_EMAIL es el único correo de privacidad; LEGAL_PRIVACY_EMAIL es un alias OBSOLETO (se lee solo si falta aquella)
         "retention": f"{days} días después de que finalice el evento (si participas en más de un evento, después de que hayan finalizado todos), y en ningún caso más de {cap} días desde que se captura",
         "cap_days": cap, "backup_days": backup_days,
         "refund_days": f"{refund} días calendario" if refund.isdigit() else "el plazo que indique cada formulario",

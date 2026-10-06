@@ -7,12 +7,26 @@ NAMES = ("COMPANY_NAME", "COMPANY_NIT", "PRIVACY_EMAIL", "DOMAIN")
 _MARK = re.compile(r"\[(?:%s)\]" % "|".join(NAMES))
 
 
+def nit_display(raw: str) -> str:
+    """901542833-2 → 901.542.833-2 (así se muestra en pantalla y en los textos legales). Si no tiene la forma de un NIT con dígito de verificación, se devuelve tal cual."""
+    m = re.fullmatch(r"(\d{3})\.?(\d{3})\.?(\d{3})-?(\d)", (raw or "").strip())
+    return f"{m.group(1)}.{m.group(2)}.{m.group(3)}-{m.group(4)}" if m else (raw or "").strip()
+
+
 def get(name: str) -> str:
-    return (os.getenv(name) or "").strip() or f"[{name}]"
+    value = (os.getenv(name) or "").strip()
+    if not value:
+        return f"[{name}]"
+    return nit_display(value) if name == "COMPANY_NIT" else value
 
 
 def policy_url() -> str:
-    return f"https://{get('DOMAIN')}/privacidad"
+    """Dirección pública de la política: el host de la APP (PUBLIC_BASE_URL, p. ej. https://app.golden-eventos.com) y, si no está, https://app.<DOMAIN>."""
+    base = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if not base:
+        domain = get("DOMAIN")
+        base = f"https://app.{domain}" if not domain.startswith("[") else f"https://{domain}"
+    return f"{base}/privacidad"
 
 
 def unresolved(text: str) -> list:

@@ -26,7 +26,7 @@ def _png():
 
 @pytest.fixture()
 def env(monkeypatch):
-    for k, v in {"COMPANY_NAME": "Golden Eventos y Logística S.A.S.", "COMPANY_NIT": "901.542.833", "PRIVACY_EMAIL": "soporteit@goldenlogisticas.com", "DOMAIN": "app.ejemplo.test"}.items():
+    for k, v in {"COMPANY_NAME": "Golden Eventos y Logística S.A.S.", "COMPANY_NIT": "901542833-2", "PRIVACY_EMAIL": "soporteit@goldenlogisticas.com", "DOMAIN": "ejemplo.test", "PUBLIC_BASE_URL": "https://app.ejemplo.test"}.items():
         monkeypatch.setenv(k, v)
 
 
