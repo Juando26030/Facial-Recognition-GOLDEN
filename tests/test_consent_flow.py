@@ -255,3 +255,13 @@ def test_offline_entries_use_the_roster_fingerprint_not_the_cedula(client, facto
     assert r == {"inserted": 1, "duplicated": 0, "unknown": 1}
     assert client.post(f"/api/events/{ev.id}/consents", json={"entries": [e]}).json()["duplicated"] == 1
     assert consent.has_acceptance(db, ev.tenant_id, "1001", ev.id) and consent.latest(db, ev.tenant_id, "1001", ev.id).consent_timestamp_utc.year == 2026
+
+
+def test_kiosk_pages_render_the_gate_and_the_config(client, factory):
+    factory.staff("admin", "adm")
+    ev = factory.event("en_proceso", facial_enabled=True)
+    login(client, "adm")
+    reg = client.get(f"/kiosk/{ev.id}/registro")
+    assert reg.status_code == 200 and "bioIdent" in reg.text and "consent-gate.js" in reg.text and "bioGateAccept" not in reg.text      # la casilla del digitador ya no cuenta como aceptación
+    par = client.get(f"/kiosk/{ev.id}/parametros")
+    assert par.status_code == 200 and "ccMode" in par.text and "id=\"pcSave\"" not in par.text                  # el pre-cálculo solo lo ve un super_admin en evento de tercero

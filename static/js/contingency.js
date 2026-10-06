@@ -47,11 +47,11 @@
   /* ------------------------------------------------------------------------------------------------------------------ almacén IndexedDB */
   const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error('idb')); });
   const done = (tx) => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error || new Error('idb')); tx.onabort = () => rej(tx.error || new Error('idb abort')); });
-  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id' };
+  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id' };
 
   function openStore(idb, name) {
     return new Promise((resolve, reject) => {
-      const r = idb.open(name, 2);
+      const r = idb.open(name, 3);
       r.onupgradeneeded = () => {
         const db = r.result;
         Object.keys(STORES).forEach((s) => { if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: STORES[s] }); });
@@ -113,9 +113,38 @@
       return Array.from(hash.slice(0, 8)).map((b) => b.toString(16).padStart(2, '0')).join('');
     };
 
-    const recount = async () => { c.queueSize = (await c.queueList()).length; c.reviewCount = (await c.db.getAll('review')).length; render(); };
+    const recount = async () => { c.consentSize = (await c.consentList()).length; c.queueSize = (await c.queueList()).length; c.reviewCount = (await c.db.getAll('review')).length; render(); };
 
     c.recount = recount;
+
+    /* --- autorización biométrica sin red (L1): decisiones de la persona guardadas con la HUELLA (nunca la cédula) hasta sincronizar --- */
+    c.consentSize = 0;
+    c.consentList = async () => (c.db ? c.db.getAll('consents') : []);
+    c.consentAdd = async (entry) => { await c.db.put('consents', entry); await recount(); };
+    /* Estado local de una persona: la última decisión pendiente manda; si no hay, la bandera `a` de la copia. */
+    c.consentLocal = async (raw) => {
+      const h = await c.hashFor(raw);
+      if (!h) return { known: false, accepted: false };
+      const mine = (await c.consentList()).filter((e) => e.h === h).sort((a, b) => (a.at < b.at ? -1 : 1)), last = mine[mine.length - 1];
+      if (last) return { known: true, accepted: last.decision === 'accept' && !!last.adult };
+      const person = await c.db.get('roster', h);
+      return { known: !!person, accepted: !!(person && person.a === 1) };
+    };
+    /* Sincroniza las decisiones locales (lotes de 100; el servidor es idempotente por `id`). Devuelve cuántas quedaron en el servidor. */
+    c.flushConsents = async () => {
+      let sent = 0;
+      for (;;) {
+        const list = (await c.consentList()).sort((a, b) => (a.at < b.at ? -1 : 1)).slice(0, 100);
+        if (!list.length) return sent;
+        let res;
+        try {
+          res = await d.fetch(`/api/events/${d.eventId}/consents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+            body: JSON.stringify({ entries: list.map((e) => ({ id: e.id, h: e.h, decision: e.decision, adult: e.adult, text_hash: e.text_hash, version: e.version, device: e.device, at: e.at })) }) });
+        } catch (e) { return sent; }
+        if (!res.ok) return sent;                                           // 401/403/5xx: se conservan y se reintenta (la bandeja avisa)
+        await c.db.del('consents', list.map((e) => e.id)); sent += list.length; await recount();
+      }
+    };
 
     /* --- roster local --- */
     c.rosterMeta = async () => (c.db ? c.db.get('meta', 'roster') : null);
@@ -148,7 +177,7 @@
       }
       if (!res.ok) return 'error';
       const body = await res.json();
-      await c.db.replaceRoster(body.people, { v: body.v, generated_at: body.generated_at, salt: body.salt, count: body.count, max_age_s: body.max_age_s,
+      await c.db.replaceRoster(body.people, { v: body.v, generated_at: body.generated_at, salt: body.salt, count: body.count, max_age_s: body.max_age_s, consent: body.consent || null,
         event_id: body.event && body.event.id, auto_register: !!(body.event && body.event.auto_register), fetched_at: fetchedAt, expires_at: fetchedAt + (body.max_age_s || 86400) * 1000 });
       return 'ok';
     };
@@ -200,6 +229,7 @@
       c.syncing = true; render();
       let synced = 0;
       try {
+        await c.flushConsents();
         for (;;) {
           const q = (await c.queueList()).sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1)).slice(0, SYNC_BATCH);
           if (!q.length) {
@@ -332,7 +362,7 @@
         const r = await c.probe();
         if (r === 'ok') { c.sessionExpired = false; c.machine.authGood(); render(); }
         else { if (r === 'unauth') c.sessionExpired = true; c.probeAfter = d.now() + PROBE_BACKOFF_MS; render(); }
-      } else if (ok && c.machine.state !== 'contingency' && c.queueSize > 0) c.syncQueue();
+      } else if (ok && c.machine.state !== 'contingency' && (c.queueSize > 0 || c.consentSize > 0)) c.syncQueue();
     };
     c.checkHealth = checkHealth;
     const T = (n, x) => { if (root.GoldenTrace) root.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
