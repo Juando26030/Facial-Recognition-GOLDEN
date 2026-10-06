@@ -64,3 +64,20 @@ En Parámetros del evento hay un paso guiado: 0) usará rostro, 1) Responsable (
 ## Renombre a GoldenWeb 2.0 (en curso)
 
 Hecho: categoría (i), texto visible (33 cambios: 27 títulos de página, encabezados de ingreso y contraseña, título de la API, asunto del correo de restablecimiento, alerta de operaciones y TESTING.md). No existe un manifest de PWA en el repositorio (no hay nada que renombrar). Pendiente de tu OK, categoría (ii): ver el reporte de casos dudosos.
+
+## Política v1.1 ratificada (6 oct 2026) y activación
+
+La auditora ratificó `docs/legal/POLITICA_v1.1.md` (SHA-256 `d0afc7d95083b62115ce001abeb1ab8e86925e35a14d80011e06bf75e253c844`), dejó la sección 8 como está, levantó las tres compuertas y autorizó publicarla en app.golden-eventos.com/privacidad. Datos: `RATIFICACION_v1.1.md`.
+
+- **El archivo y su `.sha256` están congelados** (rama `producto/legal-piloto`, ruta `docs/legal/`). Una prueba falla si cambian.
+- **Cómo se muestra sin tocar el archivo:** la página lee el archivo, comprueba su hash, omite el párrafo de borrador («ESTADO: PENDIENTE DE RATIFICACIÓN…») y las etiquetas «(texto de la auditora)», y agrega la leyenda «Ratificada el 6 de octubre de 2026 · SHA-256 …». Si el archivo no coincide con el hash, no se muestra y cae a la v1.0.
+- **Activación:** `POLICY_VERSION=1.1`. Staging la activa en cada despliegue; producción NO (aún no existe): el día del corte se agrega esa variable. La v1.0 queda histórica en `/privacidad/v1.0`.
+- **La imagen** lleva el archivo ratificado (excepción en `.dockerignore` y `COPY` en el `Dockerfile`).
+- **Pendiente tuyo:** el nombre completo de la abogada en `RATIFICACION_v1.1.md` y confirmar que las tres compuertas son las que listé.
+
+## Otras decisiones de esta tanda
+
+- **Renombre (ii) hecho:** texto decorativo de las plantillas, pie del certificado, título de las páginas legales y consentimiento de ejemplo leen `COMPANY_NAME`; `app/legal.py` no se toca (la v1.0 lleva huella). Los `alt` de los logos dicen «Logo de Golden Eventos y Logística»; la hoja de prueba de la impresora y la entidad de ejemplo de las escarapelas dicen «GoldenWeb 2.0». No se crea manifest de PWA (en iPad una app añadida a la pantalla de inicio guarda sus datos aparte de Safari y puede dejar huérfanas las colas y el roster; se evalúa después del piloto con pruebas).
+- **Festivos 2026** verificados contra la lista oficial; una prueba falla si el año en curso no tiene lista cargada (`HOLIDAYS_CO`).
+- **Barrido horario:** ya no ejecuta cálculos faciales (los avisa a su cola); nueva tarea `retry-face-jobs` para reintentar los agotados.
+- **Push a `migra/fase1-2`: NO hecho.** El workflow `cloudrun.yml` despliega staging en cada push a esa rama y corre el Job de migraciones contra la base de staging. Se espera tu prueba en la rama de Neon y tu confirmación.

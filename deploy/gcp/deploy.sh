@@ -86,6 +86,8 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
     echo "WARM_SERVICE_PUBLICO: \"$(run_path services "$SVC_PUBLICO")\""
     echo "WARM_SERVICE_BIOMETRIA: \"$(run_path services "$SVC_BIOMETRIA")\""
     echo "CONTINGENCY_ENABLED: \"$CONTINGENCY_ENABLED\""
+    # Política de privacidad vigente: la 1.1 ratificada (6 oct 2026) ya está activa en STAGING; en PRODUCCIÓN se activa el día del corte (docs/legal/RATIFICACION_v1.1.md): agregar POLICY_VERSION: "1.1" aquí o en el entorno.
+    if [ "$GOLDEN_ENV" = "staging" ]; then echo "POLICY_VERSION: \"1.1\""; fi
     echo "APP_COMMIT: \"${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || echo desconocido)}\""
     echo "APP_BUILD_DATE: \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
     for kv in "$@"; do echo "${kv%%=*}: \"${kv#*=}\""; done
