@@ -166,7 +166,7 @@ def test_legal_pages_are_public_privacy_has_its_reviewed_version_and_the_rest_st
             assert "Versión 1.0" in r.text and "5 de octubre de 2026" in r.text and "BORRADOR" not in r.text and "[PENDIENTE DE REVISIÓN LEGAL" not in r.text
         else:
             assert "PENDIENTE DE REVISIÓN LEGAL" in r.text                                            # borrador hasta que un abogado lo revise (términos y reembolsos no están cubiertos)
-        assert "901542833" in r.text and "GOLDEN EVENTOS Y LOGISTICA SAS" in r.text                   # identificación del vendedor/responsable
+        assert "901.542.833-2" in r.text and "GOLDEN EVENTOS Y LOGISTICA SAS" in r.text                   # identificación del vendedor/responsable
     p = client.get("/privacidad").text
     for needle in ("Wompi", "Microsoft", "Google Cloud", "biométric", "cédula", "10 días hábiles"):
         assert needle in p
@@ -196,9 +196,9 @@ def test_public_pages_carry_the_legal_footer_and_the_cookie_notice(client, facto
     from tests.test_form_extras import _disc_form
     ev, form, _ = _disc_form(client, factory, [])
     html = client.get(f"/f/{ev.id}/{form['slug']}").text
-    assert "/privacidad" in html and "NIT 901542833" in html and "js/cookie-notice.js" in html
+    assert "/privacidad" in html and "NIT 901.542.833-2" in html and "js/cookie-notice.js" in html
     login_html = client.get("/login").text
-    assert "/terminos" in login_html and "NIT 901542833" in login_html
+    assert "/terminos" in login_html and "NIT 901.542.833-2" in login_html
     js = client.get("/static/js/form-render.js").text
     assert "/reembolsos" in js                                                                            # el cuadro de pago enlaza los términos y los reembolsos
 

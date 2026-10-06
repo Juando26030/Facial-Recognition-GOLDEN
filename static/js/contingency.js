@@ -47,11 +47,11 @@
   /* ------------------------------------------------------------------------------------------------------------------ almacén IndexedDB */
   const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error('idb')); });
   const done = (tx) => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error || new Error('idb')); tx.onabort = () => rej(tx.error || new Error('idb abort')); });
-  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id' };
+  const STORES = { roster: 'h', queue: 'client_id', meta: 'k', review: 'client_id', consents: 'id', keys: 'k' };
 
   function openStore(idb, name) {
     return new Promise((resolve, reject) => {
-      const r = idb.open(name, 3);
+      const r = idb.open(name, 4);
       r.onupgradeneeded = () => {
         const db = r.result;
         Object.keys(STORES).forEach((s) => { if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: STORES[s] }); });
@@ -113,6 +113,37 @@
       return Array.from(hash.slice(0, 8)).map((b) => b.toString(16).padStart(2, '0')).join('');
     };
 
+    /* --- cifrado en reposo de lo que se guarda SIN conexión (cola de ingresos, decisiones de autorización y lista de «revisar»): AES-GCM 256 con una clave NO extraíble generada en este dispositivo
+       (misma técnica que la bandeja de salida, static/js/outbox.js). En claro solo quedan lo que no identifica a nadie (client_id/id y marca de tiempo); huella, nombre, método y decisión van cifrados.
+       La clave vive en su propio almacén (`keys`): sobrevive al borrado de la lista local, que no debe dejar la cola ilegible. Registros viejos en claro se cifran al arrancar. */
+    const SECRET = { queue: ['h', 'n', 'method', 'prev'], consents: ['h', 'decision', 'adult', 'text_hash', 'version', 'device'], review: ['n', 'reason'] };
+    const randomIv = () => (d.random ? d.random(12) : root.crypto.getRandomValues(new Uint8Array(12)));
+    c.qkey = null;
+    const getKey = async () => {
+      if (c.qkey) return c.qkey;
+      const stored = await c.db.get('keys', 'q');
+      if (stored && stored.key) { c.qkey = stored.key; return c.qkey; }
+      c.qkey = await d.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);      // extractable: false
+      await c.db.put('keys', { k: 'q', key: c.qkey });
+      return c.qkey;
+    };
+    const seal = async (store, rec) => {
+      const secret = {}, open = {};
+      Object.keys(rec).forEach((k) => { (SECRET[store].includes(k) ? secret : open)[k] = rec[k]; });
+      const iv = randomIv();
+      const ct = await d.subtle.encrypt({ name: 'AES-GCM', iv }, await getKey(), new TextEncoder().encode(JSON.stringify(secret)));
+      return { ...open, enc: { iv, ct: new Uint8Array(ct) } };
+    };
+    const unseal = async (rec) => {
+      if (!rec || !rec.enc) return rec;                                         // registro viejo en claro
+      const { enc, ...rest } = rec;
+      try { return { ...rest, ...JSON.parse(new TextDecoder().decode(await d.subtle.decrypt({ name: 'AES-GCM', iv: enc.iv }, await getKey(), enc.ct))) }; }
+      catch (e) { return { ...rest, h: '', n: '', method: 'cedula', reason: 'unknown', unreadable: true }; }       // clave perdida o dato dañado: no se inventa nada; el servidor lo marcará para revisar
+    };
+    const putSealed = async (store, rec) => c.db.put(store, await seal(store, rec));
+    const listSealed = async (store) => Promise.all((await c.db.getAll(store)).map(unseal));
+    c.sealLegacy = async () => { for (const store of Object.keys(SECRET)) for (const rec of await c.db.getAll(store)) if (!rec.enc) await putSealed(store, rec); };
+
     const recount = async () => { const cons = await c.consentList(), q = await c.queueList(); c.consentSize = cons.length; c.queueSize = q.length;
       const stamps = q.map((r) => Date.parse(r.timestamp)).concat(cons.map((r) => Date.parse(r.at))).filter((t) => !Number.isNaN(t)); c.oldestAgeMs = stamps.length ? d.now() - Math.min(...stamps) : 0; c.reviewCount = (await c.db.getAll('review')).length; render(); };
 
@@ -120,8 +151,8 @@
 
     /* --- autorización biométrica sin red (L1): decisiones de la persona guardadas con la HUELLA (nunca la cédula) hasta sincronizar --- */
     c.consentSize = 0;
-    c.consentList = async () => (c.db ? c.db.getAll('consents') : []);
-    c.consentAdd = async (entry) => { await c.db.put('consents', entry); await recount(); };
+    c.consentList = async () => (c.db ? listSealed('consents') : []);
+    c.consentAdd = async (entry) => { await putSealed('consents', entry); await recount(); };
     /* Estado local de una persona: la última decisión pendiente manda; si no hay, la bandera `a` de la copia. */
     c.consentLocal = async (raw) => {
       const h = await c.hashFor(raw);
@@ -190,7 +221,7 @@
     };
 
     /* --- registro sin red --- */
-    c.queueList = async () => (c.db ? c.db.getAll('queue') : []);
+    c.queueList = async () => (c.db ? listSealed('queue') : []);
     /* «Deshacer» de una acreditación hecha SIN red que todavía no se sincronizó: se quita de la cola. Devuelve true si estaba. */
     c.unqueue = async (clientId) => {
       if (!c.db) return false;
@@ -229,7 +260,7 @@
     /* Encola el ingreso (client_id + marca de tiempo; huella y nombre, NO la cédula) y lo anota como registrado en la copia local. */
     c.enqueue = async (found, method, clientId) => {
       const rec = { client_id: clientId || uuid(), h: found.person.h, n: found.person.n, timestamp: new Date(d.now()).toISOString(), method: ['qr', 'manual'].includes(method) ? method : 'cedula', prev: found.person.s };          // `prev`: estado que tenía en la copia local (para «Deshacer»)
-      await c.db.put('queue', rec);
+      await putSealed('queue', rec);
       await c.db.put('roster', { ...found.person, s: 'Registrado' });
       await recount();
       return rec;
@@ -237,7 +268,7 @@
 
     /* --- sincronización de la cola --- */
     const REASONS = { review: 'ya había ingresado por otro quiosco (o por otro registro) durante la desconexión: verificar', unknown: 'no se pudo registrar en el servidor (persona no encontrada en el evento): verificar manualmente' };
-    const addReview = (rec, reason) => c.db.put('review', { client_id: rec.client_id, n: rec.n || '', reason, at: new Date(d.now()).toISOString() });
+    const addReview = (rec, reason) => putSealed('review', { client_id: rec.client_id, n: rec.n || '', reason, at: new Date(d.now()).toISOString() });
     const syncFail = (kind) => { c.syncFails++; c.nextSyncAt = d.now() + Math.min(SYNC_BACKOFF_MAX_MS, SYNC_BACKOFF_BASE_MS * 2 ** (c.syncFails - 1)); return kind || 'error'; };
     /* Envía la cola en lotes de hasta 500 (en orden de marca de tiempo). `force` ignora la espera (cierre de sesión). Devuelve 'empty' | 'ok' | 'wait' | 'offline' | 'busy' | 'session' | 'denied' | 'error'. */
     c.syncQueue = async (force) => {
@@ -300,7 +331,7 @@
     c.beforeLogout = async () => { if (c.supported) { await c.syncQueue(true); await recount(); } return c.queueSize; };
 
     /* --- lista de «revisar» --- */
-    c.reviewList = async () => (c.db ? c.db.getAll('review') : []);
+    c.reviewList = async () => (c.db ? listSealed('review') : []);
     c.clearReview = async () => { if (c.db) { await c.db.clear(['review']); await recount(); } };
     c.openReview = async () => {
       const doc = d.document, items = await c.reviewList();
@@ -408,6 +439,7 @@
         st.textContent = '.btn-offline-accredit{display:none !important} body.golden-contingency .btn-offline-accredit{display:inline-block !important}';
         d.document.head.appendChild(st);
       }
+      try { await getKey(); await c.sealLegacy(); } catch (e) { c.lastError = 'unsupported'; c.supported = false; render(); c.markReady(); return c; }      // sin WebCrypto/IndexedDB no se guarda nada sin cifrar: modo normal
       c.persistRequest = c.requestPersistence();                   // sin await: nunca bloquea el arranque
       await c.pruneOld();
       await recount();

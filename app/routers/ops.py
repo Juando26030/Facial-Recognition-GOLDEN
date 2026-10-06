@@ -56,7 +56,8 @@ def google_invoker(request: Request) -> None:
     PARA la audiencia `CLOUD_TASKS_URL` y A NOMBRE de la cuenta `JOBS_INVOKER_SA` del entorno, con el correo verificado.
     Sin token o token inválido → 401; token válido de otra cuenta → 403; sin configurar → 403 (nunca se abre por falta de variables).
     Ningún otro mecanismo (ni sesión de admin ni X-Ops-Token) sirve aquí."""
-    audience, invoker = os.getenv("CLOUD_TASKS_URL"), os.getenv("JOBS_INVOKER_SA")
+    audience = os.getenv("CLOUD_TASKS_FACES_URL" if request.url.path == "/internal/faces/run" else "CLOUD_TASKS_URL")      # cada cola tiene su propia audiencia
+    invoker = os.getenv("JOBS_INVOKER_SA")
     if not audience or not invoker:
         raise HTTPException(status_code=403, detail="No autorizado")
     auth = request.headers.get("authorization", "")
@@ -81,7 +82,15 @@ def run_jobs(_=Depends(google_invoker)) -> dict:
     hasta vaciarla o hasta JOBS_RUN_BUDGET_SECONDS (45 por defecto, por debajo del timeout de 60 de Gunicorn); lo que quede lo toma
     otra tarea de Cloud Tasks."""
     from app import jobs, reconcile  # noqa: F401 — registra `payments_reconcile` (form_feed ya lo registra formsvc)
-    return {"ran": jobs.drain(max_rounds=100_000, budget_seconds=float(os.getenv("JOBS_RUN_BUDGET_SECONDS", "45")))}
+    return {"ran": jobs.drain(max_rounds=100_000, budget_seconds=float(os.getenv("JOBS_RUN_BUDGET_SECONDS", "45")), exclude=jobs.general_excludes())}
+
+
+@router.post("/internal/faces/run")
+def run_face_jobs(_=Depends(google_invoker)) -> dict:
+    """Cola APARTE de los cálculos faciales (vector tras la aceptación): corre en el servicio de biometría (2 CPU, 2 Gi), con tope de 2 despachos simultáneos en Cloud Tasks y reintentos de espera creciente,
+    para que el cálculo no le quite CPU a la puerta. Mismo token OIDC y misma cuenta que la cola general; solo ejecuta trabajos de `jobs.FACE_KINDS` (idempotentes)."""
+    from app import enroll, jobs  # noqa: F401 — enroll registra `face_enroll`
+    return {"ran": jobs.drain(max_rounds=100_000, budget_seconds=float(os.getenv("JOBS_RUN_BUDGET_SECONDS", "45")), kinds=jobs.FACE_KINDS, pool="faces")}
 
 
 @router.get("/api/ops/status")

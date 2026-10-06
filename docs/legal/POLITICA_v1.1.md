@@ -6,7 +6,7 @@ Conforme a la Ley 1581 de 2012, el Decreto 1377 de 2013 (compilado en el Decreto
 
 ## 1. Quiénes somos y qué papel tenemos
 
-**Golden Eventos y Logística S.A.S.**, NIT 901.542.833 («Golden»), presta la plataforma GoldenWeb 2.0 para inscribir, acreditar y controlar el acceso de personas a eventos. Canal de privacidad: **soporteit@goldenlogisticas.com** (se revisa a diario). Sitio: https://app.golden-eventos.com/privacidad.
+**Golden Eventos y Logística S.A.S.**, NIT 901.542.833-2 («Golden»), presta la plataforma GoldenWeb 2.0 para inscribir, acreditar y controlar el acceso de personas a eventos. Canal de privacidad: **soporteit@goldenlogisticas.com** (se revisa a diario). Sitio: https://app.golden-eventos.com/privacidad.
 
 Según quién organice el evento, Golden actúa así:
 

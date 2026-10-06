@@ -135,7 +135,7 @@ def test_realtime_feed_goes_through_the_queue_and_survives_a_failure(client, fac
     f = _create(client, ev)
     _put(client, ev, f, settings={"feed": "realtime"})
     _open(client, ev, f)
-    monkeypatch.setattr(jobs, "kick", lambda: None)                                                    # el worker todavía no corrió
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: None)                                                    # el worker todavía no corrió
     assert _submit(client, ev, f, _person_values()).status_code == 200
     assert db.query(User).filter_by(id="1001").first() is None                                          # la petición NO cargó a la base: eso va a la cola
     job = db.query(Job).filter_by(kind="form_feed").one()

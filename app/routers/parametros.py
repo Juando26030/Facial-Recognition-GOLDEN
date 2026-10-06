@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app import biometric_setup
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
@@ -230,6 +231,10 @@ def set_facial_enabled(
     rostro/encoding ya guardado (si se vuelve a prender, la gente que ya tenía foto se sigue reconociendo);
     solo decide si `/kiosk/{id}/registro` muestra el escáner de cámara o se comporta como cédula tradicional."""
     event = get_event_for_staff(event_id, db, staff)
+    if data.get("enabled"):
+        blockers = biometric_setup.facial_blockers(event)
+        if blockers:
+            raise HTTPException(status_code=400, detail="Para activar el reconocimiento facial en un evento de un tercero falta: " + ", ".join(blockers))
     event.facial_enabled = bool(data.get("enabled"))
     db.commit()
     return {"facial_enabled": event.facial_enabled}

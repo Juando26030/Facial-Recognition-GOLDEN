@@ -39,6 +39,7 @@ POLL_SECONDS = float(os.getenv("JOB_POLL_SECONDS", "5"))
 BACKOFF_SECONDS = (15, 60, 300, 900, 3600)
 
 _handlers: Dict[str, Callable[[dict], None]] = {}
+FACE_KINDS = frozenset({"face_enroll"})                  # cálculos faciales: van por su propia cola, en el servicio de biometría (CLOUD_TASKS_FACES_*)
 _wake = threading.Event()
 
 
@@ -65,14 +66,24 @@ def uses_cloud_tasks() -> bool:
 _tasks_client = None
 
 
-def _cloud_task(at: datetime) -> None:
-    """Pide a Cloud Tasks que llame a /internal/jobs/run en el segundo siguiente a `at` (UTC). Nombre por segundo = sin tareas repetidas."""
+def faces_pool_configured() -> bool:
+    return bool(os.getenv("CLOUD_TASKS_FACES_QUEUE") and os.getenv("CLOUD_TASKS_FACES_URL"))
+
+
+def general_excludes() -> Optional[frozenset]:
+    """La cola general NO ejecuta los cálculos faciales cuando existe la cola de biometría (si no está configurada, los ejecuta ella: nada se queda sin correr)."""
+    return FACE_KINDS if faces_pool_configured() else None
+
+
+def _cloud_task(at: datetime, pool: str = "general") -> None:
+    """Pide a Cloud Tasks que llame a /internal/jobs/run (o a /internal/faces/run del servicio de biometría) en el segundo siguiente a `at` (UTC). Nombre por segundo = sin tareas repetidas."""
     global _tasks_client
     from google.api_core.exceptions import AlreadyExists
     from google.cloud import tasks_v2
     if _tasks_client is None:
         _tasks_client = tasks_v2.CloudTasksClient()
-    queue, url = os.environ["CLOUD_TASKS_QUEUE"], os.environ["CLOUD_TASKS_URL"]
+    faces = pool == "faces" and faces_pool_configured()
+    queue, url = (os.environ["CLOUD_TASKS_FACES_QUEUE"], os.environ["CLOUD_TASKS_FACES_URL"]) if faces else (os.environ["CLOUD_TASKS_QUEUE"], os.environ["CLOUD_TASKS_URL"])
     second = int(at.replace(tzinfo=timezone.utc).timestamp()) + 1
     task = {"name": f"{queue}/tasks/kick-{second}", "schedule_time": datetime.fromtimestamp(second, timezone.utc),
             "http_request": {"http_method": tasks_v2.HttpMethod.POST, "url": url,
@@ -83,25 +94,28 @@ def _cloud_task(at: datetime) -> None:
         pass
 
 
-def kick(at: Optional[datetime] = None) -> None:
-    """Avisa que hay trabajo (nuevo, o que vence en `at`): al hilo local, o con una tarea de Cloud Tasks."""
+def kick(at: Optional[datetime] = None, pool: str = "general") -> None:
+    """Avisa que hay trabajo (nuevo, o que vence en `at`): al hilo local, o con una tarea de Cloud Tasks. `pool="faces"` = la cola de los cálculos faciales."""
     if not uses_cloud_tasks():
         _wake.set()
         return
     try:
-        _cloud_task(at or utcnow())
+        _cloud_task(at or utcnow(), pool)
     except Exception:  # noqa: BLE001 — el trabajo ya está a salvo en la tabla; no se tumba la petición de quien encoló
         log.error("no se pudo crear la tarea de Cloud Tasks; la tomará el siguiente aviso o el barrido programado", exc_info=True)
 
 
-def _claim(limit: int) -> list:
-    """Reclama hasta `limit` trabajos vencidos y los marca en curso. Devuelve [(id, kind, payload)]."""
+def _claim(limit: int, kinds=None, exclude=None) -> list:
+    """Reclama hasta `limit` trabajos vencidos y los marca en curso. Devuelve [(id, kind, payload)]. `kinds`: solo esos tipos; `exclude`: todos menos esos."""
     db = SessionLocal()
     try:
         now = utcnow()
-        rows = (db.query(Job)
-                .filter(((Job.status == "queued") & (Job.run_at <= now)) | ((Job.status == "running") & (Job.locked_until < now)))
-                .order_by(Job.run_at, Job.id).limit(limit).with_for_update(skip_locked=True).all())
+        query = db.query(Job).filter(((Job.status == "queued") & (Job.run_at <= now)) | ((Job.status == "running") & (Job.locked_until < now)))
+        if kinds:
+            query = query.filter(Job.kind.in_(list(kinds)))
+        if exclude:
+            query = query.filter(Job.kind.notin_(list(exclude)))
+        rows = query.order_by(Job.run_at, Job.id).limit(limit).with_for_update(skip_locked=True).all()
         claimed = []
         for job in rows:
             job.status, job.locked_until, job.attempts = "running", now + LEASE, (job.attempts or 0) + 1
@@ -128,16 +142,17 @@ def _finish(job_id: int, error: Optional[str], attempts: int, max_attempts: int)
             job.status, job.last_error = "queued", error[:2000]
             job.run_at = now + timedelta(seconds=BACKOFF_SECONDS[min(attempts - 1, len(BACKOFF_SECONDS) - 1)])
         retry_at = job.run_at if job.status == "queued" else None
+        pool = "faces" if job.kind in FACE_KINDS else "general"
         db.commit()
     finally:
         db.close()
     if retry_at and uses_cloud_tasks():           # con el hilo local no hace falta: el sondeo lo encuentra solo
-        kick(retry_at)
+        kick(retry_at, pool)
 
 
-def run_once(limit: int = 10) -> int:
+def run_once(limit: int = 10, kinds=None, exclude=None) -> int:
     """Ejecuta un lote de trabajos vencidos. Devuelve cuántos ejecutó (los tests y `python -m app.worker --once` lo usan)."""
-    claimed = _claim(limit)
+    claimed = _claim(limit, kinds, exclude)
     for job_id, kind, payload, attempts, max_attempts in claimed:
         fn = _handlers.get(kind)
         try:
@@ -151,7 +166,7 @@ def run_once(limit: int = 10) -> int:
     return len(claimed)
 
 
-def drain(max_rounds: int = 50, budget_seconds: Optional[float] = None) -> int:
+def drain(max_rounds: int = 50, budget_seconds: Optional[float] = None, kinds=None, exclude=None, pool: str = "general") -> int:
     """Ejecuta trabajos hasta que no quede ninguno vencido, EN el hilo de quien llama (nunca en segundo plano).
 
     `budget_seconds`: deja de reclamar lotes nuevos al pasar ese tiempo (el endpoint de Cloud Tasks lo usa para responder antes del
@@ -161,15 +176,15 @@ def drain(max_rounds: int = 50, budget_seconds: Optional[float] = None) -> int:
     total = n = 0
     for _ in range(max_rounds):
         if deadline is not None and time.monotonic() >= deadline:
-            kick()
+            kick(pool=pool)
             break
-        n = run_once(5 if deadline is not None else 50)
+        n = run_once(5 if deadline is not None else 50, kinds, exclude)
         total += n
         if not n:
             break
     else:
         if n:
-            kick()
+            kick(pool=pool)
     return total
 
 

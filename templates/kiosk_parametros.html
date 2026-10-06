@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parámetros del Evento | Golden Logísticas</title>
+    <title>Parámetros del Evento | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
@@ -54,14 +54,6 @@
       </div>
 
       <div class="app-container">
-        <!-- Reconocimiento facial (2026-09-27, pedido explícito): antes solo se encendía sola al subir un
-             zip de fotos y nunca se apagaba; ahora coordinador+ también puede prenderla/apagarla a mano en
-             cualquier momento del evento, sin perder los rostros ya guardados. -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Reconocimiento facial</h4>
-          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="facialEnabled" {% if event.facial_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el escáner de rostro en este evento</label>
-          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Con esto activado, "Registro" muestra la pestaña "Escáner de Acceso" y el alta manual pide foto; apagado, el evento se comporta como cédula tradicional (sin cámara ni foto). Apagarlo NO borra ningún rostro ya guardado — si se vuelve a activar, quienes ya tenían foto se siguen reconociendo. Subir una base con fotos (Adjuntar Base de Datos) lo vuelve a encender solo, así haya quedado apagado aquí.</p>
-        </div>
         <!-- Filas por página de la tabla del directorio (en vivo y lista local). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Filas por página</h4>
@@ -72,10 +64,12 @@
           <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior / Siguiente» y «Ir a la página» llegan a cualquier fila.</p>
         </div>
         <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
-        {% if event.facial_enabled %}
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Autorización del reconocimiento facial</h4>
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Reconocimiento facial: paso guiado</h4>
+          <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
           <div style="display:grid; gap:8px; max-width:560px;">
+            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="bsFacial" {% if event.facial_enabled %}checked{% endif %} style="width:18px; height:18px;"> <b>Paso 0.</b> Este evento usará reconocimiento facial</label>
+            <b>Paso 1. ¿Quién es el Responsable de los datos?</b>
             <label>Responsable del tratamiento
               <select id="ccMode"><option value="golden" {% if event.controller_mode == "golden" %}selected{% endif %}>Evento propio de Golden (Golden es el Responsable)</option><option value="tercero" {% if event.controller_mode == "tercero" %}selected{% endif %}>Evento de un tercero (Golden es el Encargado)</option></select></label>
             <div id="ccOrg" style="display:{{ 'grid' if event.controller_mode == 'tercero' else 'none' }}; gap:8px;">
@@ -83,6 +77,9 @@
               <label>NIT del organizador <input type="text" id="ccNit" value="{{ event.organizer_nit or '' }}"></label>
               <label>Correo de privacidad del organizador <input type="email" id="ccEmail" value="{{ event.organizer_privacy_email or '' }}"></label>
             </div>
+            <b>Paso 2. ¿El cliente entregará fotos de los asistentes ANTES del evento?</b>
+            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="bsPhotos" {% if event.client_photos_before %}checked{% endif %} style="width:18px; height:18px;"> Sí, el cliente entregará fotos antes del evento (si no: el rostro se capta en el momento o por aceptación previa)</label>
+            <b>Paso 3. Opciones (apagadas por defecto)</b>
             <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %} style="width:18px; height:18px;"> Permitir aceptar el reconocimiento facial y dar la selfie desde el celular antes del evento (página /aceptar)</label>
             <div id="aceptarBox" style="display:{{ 'block' if event.aceptar_enabled else 'none' }};">
               <p style="font-size:0.8rem; margin:0 0 6px;">Enlace (para el correo): <b id="aceptarUrl"></b></p>
@@ -92,21 +89,22 @@
             </div>
             <label>Cuándo se pide la autorización
               <select id="ccPrompt"><option value="once" {% if event.consent_prompt_mode == "once" %}selected{% endif %}>Una sola vez por persona y evento (recomendado)</option><option value="every_scan" {% if event.consent_prompt_mode == "every_scan" %}selected{% endif %}>Antes de cada uso (botones cortos)</option></select></label>
-            <button type="button" id="ccSave" class="golden-btn golden-btn-primary" style="width:auto;">Guardar</button>
+            <button type="button" id="ccSave" class="golden-btn golden-btn-primary" style="width:auto;">Guardar y revisar</button>
           </div>
-          {% if staff_role == "super_admin" and event.controller_mode == "tercero" %}
+          <div id="bsSummary" role="status" aria-live="polite" style="margin-top:1rem; padding:12px 14px; border-radius:12px; background:#f6f7fb; font-size:0.86rem; line-height:1.5;"></div>
+          {% if staff_role == "super_admin" %}
           <hr style="margin:1rem 0;">
           <h5 style="margin:0 0 0.4rem;">Pre-cálculo de vectores faciales (solo super administrador)</h5>
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.5rem;">Solo con el anexo firmado (declaraciones, garantías e indemnidad). Permite que la persona entre por rostro en su primera entrada con un clic en la pantalla de autorización.</p>
           <div style="display:grid; gap:8px; max-width:560px;">
             <label>Referencia del anexo firmado <input type="text" id="pcRef" value="{{ event.precalculo_anexo_ref or '' }}"></label>
             <label>Fecha del anexo <input type="date" id="pcDate" value="{{ event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else '' }}"></label>
+            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="pcGarantia" {% if event.precalculo_garantia %}checked{% endif %} style="width:18px; height:18px;"> El cliente garantiza (por escrito) que cada titular dio su autorización previa, expresa e informada, y asume la indemnidad</label>
             <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="pcOn" {% if event.precalculo_autorizado %}checked{% endif %} style="width:18px; height:18px;"> Pre-cálculo autorizado en este evento</label>
             <button type="button" id="pcSave" class="golden-btn" style="width:auto;">Guardar pre-cálculo</button>
           </div>
           {% endif %}
         </div>
-        {% endif %}
         <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Certificados</h4>
@@ -157,6 +155,21 @@
             {% if staff_role in ["admin", "super_admin"] %}<button type="button" id="privEvent" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px;">Borrar los datos biométricos de TODO el evento</button>{% endif %}
           </div>
           <div id="privStatus" role="status" aria-live="polite" style="font-size:0.82rem; margin-top:8px;"></div>
+        </div>
+        {% endif %}
+        <!-- Solicitudes de privacidad (consultas y reclamos de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles y bandera «reclamo en trámite». -->
+        {% if staff_role in ["admin", "super_admin"] %}
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Solicitudes de privacidad (consultas y reclamos)</h4>
+          <p style="color:#666; font-size:0.78rem; margin:0 0 0.6rem;">Consulta: 10 días hábiles. Reclamo: 15 días hábiles. La bandera «reclamo en trámite» se activa en máximo 2 días hábiles. Correo de privacidad: soporteit@goldenlogisticas.com.</p>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-bottom:0.8rem;">
+            <label>Canal <select id="prCanal"><option value="email">Correo</option><option value="presencial">Presencial</option><option value="web">Web</option><option value="telefono">Teléfono</option><option value="otro">Otro</option></select></label>
+            <label>Tipo <select id="prTipo"><option value="consulta">Consulta</option><option value="reclamo">Reclamo</option><option value="actualizacion">Actualización</option><option value="supresion">Supresión</option><option value="revocacion">Revocación</option><option value="prueba_autorizacion">Prueba de la autorización</option></select></label>
+            <label>Titular <input type="text" id="prNombre" style="width:170px;"></label>
+            <label>Cédula <input type="text" id="prCedula" style="width:120px;"></label>
+            <button type="button" id="prCrear" class="golden-btn golden-btn-primary" style="width:auto;">Radicar</button>
+          </div>
+          <div style="overflow-x:auto;"><table id="prTabla" style="width:100%; font-size:0.82rem; border-collapse:collapse;"></table></div>
         </div>
         {% endif %}
         <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
@@ -279,6 +292,37 @@
         if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudieron guardar las categorías', 'error');
     });
 
+    // ---- Solicitudes de privacidad (radicados y bandera «reclamo en trámite»)
+    (function () {
+        const table = document.getElementById('prTabla'); if (!table) return;
+        const call = (url, method, body) => fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
+        const cell = (tr, text, style) => { const td = document.createElement('td'); td.textContent = text; td.style.cssText = 'padding:4px 6px; border-bottom:1px solid #eee;' + (style || ''); tr.appendChild(td); return td; };
+        async function load() {
+            const r = await call('/api/privacy-requests', 'GET'); table.replaceChildren();
+            if (!r.ok) return;
+            const head = document.createElement('tr'); ['Radicado', 'Tipo', 'Titular', 'Límite', 'Estado', 'Reclamo en trámite', ''].forEach((h) => { const th = document.createElement('th'); th.textContent = h; th.style.cssText = 'text-align:left; padding:4px 6px;'; head.appendChild(th); }); table.appendChild(head);
+            r.data.forEach((q) => {
+                const tr = document.createElement('tr');
+                cell(tr, q.radicado); cell(tr, q.request_type); cell(tr, q.holder_name);
+                cell(tr, q.due_date + (q.overdue ? ' · VENCIDA' : ''), q.overdue ? 'color:#a12631; font-weight:700;' : '');
+                cell(tr, q.status);
+                const flag = cell(tr, q.claim_flag ? 'SÍ' : (q.claim_flag_overdue ? 'falta activarla (venció el plazo)' : (q.claim_flag_due ? 'activar antes de ' + q.claim_flag_due : '—')), q.claim_flag ? 'font-weight:700;' : (q.claim_flag_overdue ? 'color:#a12631;' : ''));
+                const act = document.createElement('td'); act.style.cssText = 'padding:4px 6px; border-bottom:1px solid #eee; white-space:nowrap;';
+                const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.style.cssText = 'margin-right:4px; padding:2px 8px;'; b.addEventListener('click', fn); act.appendChild(b); };
+                if (q.status === 'recibida' || q.status === 'en_tramite') {
+                    if (q.request_type !== 'consulta') btn(q.claim_flag ? 'Quitar bandera' : 'Activar bandera', async () => { const x = await call(`/api/privacy-requests/${q.id}/claim-flag`, 'PUT', { active: !q.claim_flag }); if (!x.ok) showToast(x.data.detail || 'No se pudo', 'error'); load(); });
+                    btn('Resolver', async () => { if (await showConfirm('¿Marcar la solicitud ' + q.radicado + ' como resuelta?')) { await call(`/api/privacy-requests/${q.id}/status`, 'PUT', { status: 'resuelta' }); load(); } });
+                }
+                tr.appendChild(act); table.appendChild(tr); void flag;
+            });
+        }
+        document.getElementById('prCrear').addEventListener('click', async () => {
+            const body = { channel: document.getElementById('prCanal').value, request_type: document.getElementById('prTipo').value, holder_name: document.getElementById('prNombre').value, cedula: document.getElementById('prCedula').value, event_id: window.EVENT_ID };
+            const r = await call('/api/privacy-requests', 'POST', body);
+            if (r.ok) { showToast('Radicada: ' + r.data.radicado, 'success'); document.getElementById('prNombre').value = ''; document.getElementById('prCedula').value = ''; load(); } else showToast(r.data.detail || 'No se pudo radicar', 'error');
+        });
+        load();
+    })();
     // ---- Control de Áreas / Inventario (ítem 9): switches + configuración inline ----
     async function api(url, method, body) {
         const res = await fetch(url, { method: method || 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -451,14 +495,25 @@
         const res = await fetch(`/api/events/${window.EVENT_ID}/directory-page-size`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: Number(e.target.value) }) });
         if (res.ok) showToast('Filas por página guardado', 'success'); else showToast('No se pudo guardar las filas por página', 'error');
     });
+    // Paso guiado de biometría: el resumen sale del servidor (lo que protege lo valida el servidor; esto solo guía).
+    function renderSummary(d) {
+        const box = document.getElementById('bsSummary'); if (!box) return;
+        box.replaceChildren();
+        const h = document.createElement('b'); h.textContent = d.ready ? '✅ Listo: así funcionará en la puerta' : '⚠️ Falta algo antes del evento'; box.appendChild(h);
+        const ul = document.createElement('ul'); ul.style.margin = '6px 0 0 18px';
+        (d.missing || []).forEach((m) => { const li = document.createElement('li'); li.textContent = m; li.style.color = '#a12631'; ul.appendChild(li); });
+        (d.door || []).forEach((m) => { const li = document.createElement('li'); li.textContent = m; ul.appendChild(li); });
+        box.appendChild(ul);
+    }
+    if (document.getElementById('bsSummary')) fetch(`/api/events/${window.EVENT_ID}/biometric-setup`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) renderSummary(d); });
     // Autorización del reconocimiento facial (L1).
     const ccMode = document.getElementById('ccMode');
     if (ccMode) {
         ccMode.addEventListener('change', () => { document.getElementById('ccOrg').style.display = ccMode.value === 'tercero' ? 'grid' : 'none'; });
         document.getElementById('ccSave').addEventListener('click', async () => {
-            const body = { controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value, aceptar_enabled: document.getElementById('ccAceptar').checked };
-            const res = await fetch(`/api/events/${window.EVENT_ID}/consent-config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            if (res.ok) { showToast('Guardado', 'success'); setTimeout(() => location.reload(), 600); } else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo guardar', 'error');
+            const body = { facial_enabled: document.getElementById('bsFacial').checked, client_photos_before: document.getElementById('bsPhotos').checked, controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value, aceptar_enabled: document.getElementById('ccAceptar').checked };
+            const res = await fetch(`/api/events/${window.EVENT_ID}/biometric-setup`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const out = await res.json().catch(() => ({})); if (res.ok) { showToast('Guardado', 'success'); renderSummary(out); } else showToast(out.detail || 'No se pudo guardar', 'error');
         });
     }
     const aceptarUrl = `${location.origin}/aceptar/{{ event.event_code }}`;
@@ -475,13 +530,8 @@
     }
     const pcSave = document.getElementById('pcSave');
     if (pcSave) pcSave.addEventListener('click', async () => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/precalculo-autorizado`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: document.getElementById('pcOn').checked, anexo_ref: document.getElementById('pcRef').value, anexo_fecha: document.getElementById('pcDate').value }) });
+        const res = await fetch(`/api/events/${window.EVENT_ID}/precalculo-autorizado`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: document.getElementById('pcOn').checked, anexo_ref: document.getElementById('pcRef').value, anexo_fecha: document.getElementById('pcDate').value, garantia: document.getElementById('pcGarantia').checked }) });
         if (res.ok) showToast('Guardado', 'success'); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo guardar', 'error');
-    });
-    // Reconocimiento facial (2026-09-27): interruptor manual, en cualquier momento del evento.
-    document.getElementById('facialEnabled').addEventListener('change', async (e) => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/facial-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
-        if (res.ok) location.reload(); else { e.target.checked = !e.target.checked; showToast('No se pudo cambiar el reconocimiento facial', 'error'); }
     });
 
     document.getElementById('digitalEnabled').addEventListener('change', async (e) => {

@@ -22,7 +22,7 @@ def _md_block(heading):
 
 @pytest.fixture()
 def company_env(monkeypatch):
-    for k, v in {"COMPANY_NAME": "Empresa Prueba S.A.S.", "COMPANY_NIT": "900.000.000-1", "PRIVACY_EMAIL": "privacidad@ejemplo.test", "DOMAIN": "app.ejemplo.test"}.items():
+    for k, v in {"COMPANY_NAME": "Empresa Prueba S.A.S.", "COMPANY_NIT": "900.000.000-1", "PRIVACY_EMAIL": "privacidad@ejemplo.test", "DOMAIN": "ejemplo.test", "PUBLIC_BASE_URL": "https://app.ejemplo.test"}.items():
         monkeypatch.setenv(k, v)
 
 
@@ -43,7 +43,7 @@ def test_rendering_only_replaces_the_variables_and_hashes_the_exact_text(factory
 
 
 def test_unresolved_company_markers_block_the_text_in_production_only(factory, monkeypatch):
-    for k in company.NAMES:
+    for k in (*company.NAMES, "PUBLIC_BASE_URL"):
         monkeypatch.delenv(k, raising=False)
     ev = factory.event("en_proceso", facial_enabled=True)
     t = legal_texts.render(ev)
@@ -56,6 +56,9 @@ def test_unresolved_company_markers_block_the_text_in_production_only(factory, m
     monkeypatch.setenv("PRIVACY_EMAIL", "p@x.test")
     monkeypatch.setenv("DOMAIN", "x.test")
     assert legal_texts.render(ev)["blocked"] == []
+    monkeypatch.delenv("DOMAIN")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.x.test")
+    assert legal_texts.render(ev)["blocked"] == []                                  # con el host de la app definido, DOMAIN ya no hace falta para la URL de la política
 
 
 def _op(client, factory, **ev_kw):
@@ -230,17 +233,18 @@ def test_rejecting_keeps_the_vector_if_the_person_accepted_in_another_event(clie
 
 def test_only_a_super_admin_can_authorize_precalculation_and_only_with_the_annex(client, factory):
     factory.staff("admin", "adm")
-    ev = factory.event("en_proceso", facial_enabled=True, controller_mode="tercero")
+    ev = factory.event("en_proceso", facial_enabled=True, controller_mode="tercero", client_photos_before=True)
     login(client, "adm")
-    assert client.put(f"/api/events/{ev.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).status_code == 403
+    assert client.put(f"/api/events/{ev.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01", "garantia": True}).status_code == 403
     client.post("/api/auth/logout")
     factory.staff("super_admin", "sup")
     login(client, "sup")
     url = f"/api/events/{ev.id}/precalculo-autorizado"
     assert client.put(url, json={"enabled": True}).status_code == 400                    # sin referencia ni fecha del anexo
-    assert client.put(url, json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).json()["precalculo_autorizado"] is True
+    assert client.put(url, json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).status_code == 400      # sin la casilla de garantía del cliente
+    assert client.put(url, json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01", "garantia": True}).json()["precalculo_autorizado"] is True
     own = factory.event("en_proceso", facial_enabled=True)
-    assert client.put(f"/api/events/{own.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A", "anexo_fecha": "2026-10-01"}).status_code == 400      # evento propio: no aplica
+    assert client.put(f"/api/events/{own.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A", "anexo_fecha": "2026-10-01", "garantia": True}).status_code == 400      # evento propio: no aplica
 
 
 def test_offline_entries_use_the_roster_fingerprint_not_the_cedula(client, factory, db, company_env):
@@ -321,7 +325,7 @@ def test_revoking_before_the_job_runs_leaves_no_vector_and_no_photo(client, fact
     factory.person(ev, "1001", "Ana", "Mora")
     accept(db, ev, "1001")
     scan.face = _vec(5)
-    monkeypatch.setattr(jobs, "kick", lambda: None)                                        # la tarea queda en cola
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: None)                                        # la tarea queda en cola
     assert _enroll(client, ev).status_code == 200
     assert get_storage().exists(photo_key(ev.tenant_id, "1001"))
     consent.record(db, tenant_id=ev.tenant_id, user_id="1001", event_id=ev.id, version="r", legal_text_hash="e" * 64, accepted=False, adult=True, reason="revocation")

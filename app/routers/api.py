@@ -26,7 +26,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, minors, privacy, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import biometric_setup, bulk_jobs, crypto, minors, privacy, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -1749,8 +1749,11 @@ def _bulk_register_impl(
         # quitarle a un evento la capacidad de reconocimiento facial que ya tenía. Decide si
         # /kiosk/{event_id}/registro muestra el escáner de cámara (2026-09-21, ver CLAUDE.md).
         if not event.facial_enabled:
-            event.facial_enabled = True
-            db.commit()
+            if biometric_setup.facial_blockers(event):      # evento de un tercero sin los datos del organizador: el rostro NO se activa solo
+                errors.append("⚠️ Las fotos se guardaron, pero el reconocimiento facial NO se activó: faltan los datos del organizador (razón social, NIT y correo de privacidad) en Parámetros del evento.")
+            else:
+                event.facial_enabled = True
+                db.commit()
 
     # --- Pre-escaneo: identificar cédulas (con corrección del "Excel las volvió número"),
     # detectar cédulas repetidas dentro del mismo archivo, ANTES de tocar la base de datos.

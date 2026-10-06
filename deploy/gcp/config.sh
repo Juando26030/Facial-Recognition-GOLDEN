@@ -70,6 +70,7 @@ cors_origins() {
 
 # Cola, programador
 QUEUE="golden-jobs${SUFFIX}"
+QUEUE_FACES="golden-faces${SUFFIX}"      # cálculos faciales (vector tras la aceptación): cola aparte, 2 despachos simultáneos, ejecuta el servicio de biometría
 SCHEDULER_OPS="golden-ops-hourly${SUFFIX}"
 
 # Buckets: NUEVOS y en la región del entorno (la ubicación de un bucket no se puede cambiar, y los que ya tenía la VM están en otra región: usarlos

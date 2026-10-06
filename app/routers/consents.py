@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import consent, enroll, faces, jobs, legal_texts, privacy
+from app import biometric_setup, consent, enroll, faces, jobs, legal_texts, privacy
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.routers.api import SYNC_HASH_RE, _event_for_sync, _roster_map
@@ -89,7 +89,7 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
             privacy.purge_person(db, event.tenant_id, uid)      # regla A: quien no acepta no conserva un vector pre-calculado (ni su foto); purge_person hace el commit
     db.commit()
     if inserted:
-        jobs.kick()
+        jobs.kick(pool="faces")
     return {"inserted": inserted, "duplicated": duplicated, "unknown": unknown}
 
 
@@ -120,11 +120,10 @@ def set_precalc(event_id: int, data: dict, db: Session = Depends(get_db), staff:
             fecha = date.fromisoformat(str(data.get("anexo_fecha") or ""))
         except ValueError:
             fecha = None
-        if event.controller_mode != "tercero":
-            raise HTTPException(status_code=400, detail="El pre-cálculo solo se autoriza en eventos de un tercero (con anexo firmado)")
-        if not ref or not fecha:
-            raise HTTPException(status_code=400, detail="Registra la referencia y la fecha del anexo firmado")
-        event.precalculo_autorizado, event.precalculo_anexo_ref, event.precalculo_anexo_fecha = True, ref[:200], fecha
+        blockers = biometric_setup.precalc_blockers(event, ref, fecha, data.get("garantia") is True)
+        if blockers:
+            raise HTTPException(status_code=400, detail="Para autorizar el pre-cálculo falta: " + ", ".join(blockers))
+        event.precalculo_autorizado, event.precalculo_anexo_ref, event.precalculo_anexo_fecha, event.precalculo_garantia = True, ref[:200], fecha, True
     db.commit()
     return {"precalculo_autorizado": event.precalculo_autorizado, "anexo_ref": event.precalculo_anexo_ref, "anexo_fecha": event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else None}
 
@@ -170,7 +169,7 @@ def enroll_face(event_id: int, user_id: str = Form(...), file: UploadFile = File
     crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
     jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "user_id": uid, "event_id": event.id}, max_attempts=3)
     db.commit()
-    jobs.kick()
+    jobs.kick(pool="faces")
     return {"queued": True, "face": "pending"}
 
 
@@ -190,3 +189,38 @@ def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get
         faces_version.bump(db, event_ids=[event.id])
         db.commit()
     return {"verified": True}
+
+
+def _setup_config(event) -> dict:
+    return {"facial_enabled": event.facial_enabled, "controller_mode": event.controller_mode, "organizer_name": event.organizer_name, "organizer_nit": event.organizer_nit,
+            "organizer_privacy_email": event.organizer_privacy_email, "client_photos_before": event.client_photos_before, "consent_prompt_mode": event.consent_prompt_mode,
+            "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado}
+
+
+@router.get("/events/{event_id}/biometric-setup")
+def get_biometric_setup(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Paso guiado de biometría: la configuración actual y el resumen en lenguaje simple (qué pasará en la puerta y qué falta)."""
+    event = get_event_for_staff(event_id, db, staff)
+    return {"config": _setup_config(event), **biometric_setup.summary(event)}
+
+
+@router.put("/events/{event_id}/biometric-setup")
+def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Guarda el paso guiado de una vez y validado EN EL SERVIDOR (esto es lo que protege; la pantalla solo guía). Todo o nada. El pre-cálculo NO se activa aquí (solo un super_admin, con anexo y garantía);
+    si la nueva configuración lo deja sin sustento (evento propio, sin fotos previas o rostro apagado) se APAGA solo."""
+    event = get_event_for_staff(event_id, db, staff)
+    cur = _setup_config(event)
+    new = {**cur, **{k: data[k] for k in cur if k in data and k != "precalculo_autorizado"}}
+    for k in ("organizer_name", "organizer_nit", "organizer_privacy_email"):
+        new[k] = (str(new[k] or "").strip() or None)
+    errors = biometric_setup.validate(str(new["controller_mode"]), bool(new["facial_enabled"]), new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"],
+                                      bool(new["client_photos_before"]), bool(new["aceptar_enabled"]), str(new["consent_prompt_mode"]))
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
+    event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]
+    event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])
+    if event.precalculo_autorizado and not (event.facial_enabled and event.controller_mode == "tercero" and event.client_photos_before):
+        event.precalculo_autorizado = False
+    db.commit()
+    return {"config": _setup_config(event), **biometric_setup.summary(event)}

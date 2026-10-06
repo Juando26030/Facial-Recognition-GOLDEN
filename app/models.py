@@ -256,6 +256,8 @@ class Event(Base):
     organizer_privacy_email = Column(String, nullable=True)   # correo del organizador para consultas y revocación
     consent_prompt_mode = Column(String, default='once', server_default='once', nullable=False)   # 'once' (una vez por persona y evento) | 'every_scan' (botones cortos antes de cada uso)
     aceptar_enabled = Column(Boolean, default=False, server_default='false', nullable=False)   # camino B: página pública /aceptar/<código del evento> para aceptar y dar la selfie desde el celular
+    client_photos_before = Column(Boolean, default=False, server_default='false', nullable=False)   # el cliente entregará fotos de los asistentes ANTES del evento (paso guiado de biometría)
+    precalculo_garantia = Column(Boolean, default=False, server_default='false', nullable=False)   # casilla de garantía del cliente (declaraciones, garantías e indemnidad), exigida para el pre-cálculo
     precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
     precalculo_anexo_ref = Column(String, nullable=True)
     precalculo_anexo_fecha = Column(Date, nullable=True)
@@ -785,6 +787,33 @@ class SystemEvent(Base):
     ref = Column(String, nullable=True)
     detail = Column(Text, nullable=True)
     at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class PrivacyRequestCounter(Base):
+    """Último consecutivo de radicado por año (app/privacy_requests.py: next_radicado)."""
+    __tablename__ = 'privacy_request_counters'
+    year = Column(Integer, primary_key=True)
+    last = Column(Integer, nullable=False, default=0, server_default='0')
+
+
+class PrivacyRequest(Base):
+    """Solicitud de privacidad (consulta o reclamo de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles, estado y bandera «reclamo en trámite» (migración 0061). Sin llaves foráneas."""
+    __tablename__ = 'privacy_requests'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    radicado = Column(String(16), nullable=False, unique=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    channel = Column(String(20), nullable=False)
+    holder_name = Column(String, nullable=False)
+    cedula = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, nullable=True)
+    event_id = Column(Integer, nullable=True)
+    request_type = Column(String(24), nullable=False)
+    due_date = Column(Date, nullable=False)
+    status = Column(String(16), nullable=False, default='recibida', server_default='recibida')
+    claim_flag = Column(Boolean, nullable=False, default=False, server_default='false')
+    claim_flag_due = Column(Date, nullable=True)
+    history_json = Column(Text, nullable=True)
+    created_by_staff_id = Column(Integer, nullable=True)
 
 
 class SuppressedPerson(Base):

@@ -26,7 +26,7 @@ def _png():
 
 @pytest.fixture()
 def env(monkeypatch):
-    for k, v in {"COMPANY_NAME": "Golden Eventos y Logística S.A.S.", "COMPANY_NIT": "901.542.833", "PRIVACY_EMAIL": "soporteit@goldenlogisticas.com", "DOMAIN": "app.ejemplo.test"}.items():
+    for k, v in {"COMPANY_NAME": "Golden Eventos y Logística S.A.S.", "COMPANY_NIT": "901542833-2", "PRIVACY_EMAIL": "soporteit@goldenlogisticas.com", "DOMAIN": "ejemplo.test", "PUBLIC_BASE_URL": "https://app.ejemplo.test"}.items():
         monkeypatch.setenv(k, v)
 
 
@@ -153,7 +153,7 @@ def test_the_door_is_never_blocked_while_the_vector_is_still_being_computed(clie
     factory.person(ev, "1001", "Ana", "Mora")
     op = factory.staff("digitador", "9990001")
     factory.authorize(ev, op)
-    monkeypatch.setattr(jobs, "kick", lambda: None)                                                       # la tarea queda en cola
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: None)                                                       # la tarea queda en cola
     engine.face = _vec(1)
     assert _post(client, ev, "1001").status_code == 200
     login(client, "9990001")

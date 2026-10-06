@@ -125,7 +125,7 @@ def _jobs_inline(monkeypatch):
     """En produccion los trabajos en segundo plano los ejecuta un worker; en las pruebas «despertar al worker» los ejecuta en el acto (asi el
     comportamiento visible es el de siempre). Las pruebas de la cola usan `jobs.enqueue`/`run_once` directamente."""
     from app import jobs
-    monkeypatch.setattr(jobs, "kick", lambda: jobs.drain())
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: jobs.drain())
 
 
 @pytest.fixture()
