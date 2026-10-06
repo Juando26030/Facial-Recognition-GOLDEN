@@ -251,6 +251,9 @@ class Event(Base):
     organizer_nit = Column(String, nullable=True)
     organizer_privacy_email = Column(String, nullable=True)   # correo del organizador para consultas y revocación
     consent_prompt_mode = Column(String, default='once', server_default='once', nullable=False)   # 'once' (una vez por persona y evento) | 'every_scan' (botones cortos antes de cada uso)
+    precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
+    precalculo_anexo_ref = Column(String, nullable=True)
+    precalculo_anexo_fecha = Column(Date, nullable=True)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
 
     tenant = relationship("Tenant")

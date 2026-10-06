@@ -9,7 +9,7 @@ from app import company, consent
 from app.legal_texts_data import SIN_CONSTANCIA, TEXT_PROPIO, TEXT_TERCERO  # noqa: F401  (SIN_CONSTANCIA: marca visible en el código)
 from app.models import Event
 
-VERSION_PROPIO, VERSION_TERCERO, VERSION_WEB = "v1.1_kiosk_propio", "v1.1_kiosk_tercero", "v1.1_web"
+VERSION_PROPIO, VERSION_TERCERO, VERSION_WEB, VERSION_CLICK = "v1.1_kiosk_propio", "v1.1_kiosk_tercero", "v1.1_web", "v1.1_kiosk_clic"
 ADULT_CHECKBOX = "Declaro bajo la gravedad de juramento que tengo 18 años o más"       # casilla aparte SOLO en la variante 1 (el texto A de la auditora no trae la declaración)
 EVERY_SCAN_QUESTION = "¿Deseas ingresar mediante reconocimiento facial voluntario?"
 EVERY_SCAN_YES, EVERY_SCAN_NO = "SÍ, USAR ROSTRO", "NO, PREFIERO DIGITAR CÉDULA"

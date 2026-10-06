@@ -498,7 +498,7 @@ def _private_json(payload: dict) -> JSONResponse:
 @router.post("/recognize")
 def recognize(
     event_id: int = Form(...), file: Optional[UploadFile] = File(None), match_token: str = Form(""), force: bool = Form(False),
-    confirm: bool = Form(False),
+    confirm: bool = Form(False), click_token: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Sprint 2.2 Fase B (2026-09-16): un match facial YA NO acredita solo por defecto — antes
@@ -525,8 +525,9 @@ def recognize(
     else:
         if file is None:
             raise HTTPException(status_code=422, detail="Falta la foto")
+        click = faces.read_click_token(click_token, event.id, staff.id) if (click_token and event.precalculo_autorizado) else None      # camino 2: UN clic válido de este quiosco
         try:
-            status, ranked = faces.recognize(db, event, file.file.read())
+            status, ranked = faces.recognize(db, event, file.file.read(), ungated=bool(click))
         except faces.Busy:
             raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
         except UnidentifiedImageError:
@@ -539,6 +540,11 @@ def recognize(
         if not user:
             return {"result": "NO", "details": "Denegado"}
         doubtful = faces.is_doubtful(ranked)
+        if click and not doubtful and not consent_mod.has_acceptance(db, event.tenant_id, user.id, event.id):
+            # Coincidencia con un clic válido: AHORA sí consta la aceptación de la persona identificada (hora del clic, hash del texto exhibido). Sin coincidencia no se atribuye nada a nadie.
+            consent_mod.record(db, tenant_id=event.tenant_id, user_id=user.id, event_id=event.id, version=click["v"], legal_text_hash=click["h"], accepted=True, adult=True, reason="consent",
+                               device=f"staff:{staff.id}", at=datetime.fromisoformat(click["t"]))
+            db.commit()
 
     token = faces.make_match_token(event.id, staff.id, user.id, ranked, doubtful)
     if doubtful:
@@ -887,7 +893,7 @@ def consent_block(event: Event):
     if not event.facial_enabled:
         return None
     t = legal_texts.render(event)
-    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox", "blocked")}, "mode": event.consent_prompt_mode, "every_scan": legal_texts.every_scan_prompt()}
+    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox", "blocked")}, "mode": event.consent_prompt_mode, "click_mode": bool(event.precalculo_autorizado), "every_scan": legal_texts.every_scan_prompt()}
 
 
 @router.get("/events/{event_id}/local-roster")
@@ -906,7 +912,7 @@ def local_roster(
     security.record_event(db, "roster_local", key, None)
     accepted = consent_mod.accepted_user_ids(db, event.tenant_id, event.id)
     n_consents = db.execute(text("SELECT count(*) FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e"), {"t": event.tenant_id, "e": event.id}).scalar()
-    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}|{n_consents}|{event.controller_mode}|{event.consent_prompt_mode}|{int(bool(event.facial_enabled))}")      # el modo autoregistro y la autorización biométrica viajan en la copia: si cambian, cambia la versión
+    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}|{n_consents}|{event.controller_mode}|{event.consent_prompt_mode}|{int(bool(event.facial_enabled))}|{int(bool(event.precalculo_autorizado))}")      # el modo autoregistro y la autorización biométrica viajan en la copia: si cambian, cambia la versión
     headers = {"Cache-Control": "private, no-cache", "ETag": f'"{version}"'}
     if request.headers.get("if-none-match") == headers["ETag"]:
         return Response(status_code=304, headers=headers)

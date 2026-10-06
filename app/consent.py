@@ -72,3 +72,24 @@ WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult""")
 def accepted_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
     """Cédulas con aceptación VIGENTE en este evento (la misma regla de `has_acceptance`, en una sola consulta). Solo estas personas pueden ser reconocidas por su rostro."""
     return {r[0] for r in db.execute(_ACCEPTED_SQL, {"t": tenant_id, "e": event_id})}
+
+
+_DENIED_SQL = text("""
+SELECT user_id FROM (
+  SELECT DISTINCT ON (user_id) user_id, reason
+  FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e
+  ORDER BY user_id, consent_timestamp_utc DESC, id DESC) last
+WHERE reason IN ('rejection', 'revocation')""")
+
+
+def denied_user_ids(db: Session, tenant_id: str, event_id: int) -> set:
+    """Cédulas cuyo ÚLTIMO registro en este evento es un rechazo o una revocación: jamás se reconocen por el rostro."""
+    return {r[0] for r in db.execute(_DENIED_SQL, {"t": tenant_id, "e": event_id})}
+
+
+def has_any_acceptance(db: Session, tenant_id: str, user_id: str) -> bool:
+    """¿Tiene la persona aceptación vigente en ALGÚN evento del cliente? (un rechazo en un evento no borra su vector si aceptó en otro)."""
+    rows = db.execute(text("""SELECT 1 FROM (SELECT DISTINCT ON (event_id) event_id, reason, accepted_biometric, confirmed_adult FROM audit_consent_logs
+                              WHERE tenant_id = :t AND user_id = :u ORDER BY event_id, consent_timestamp_utc DESC, id DESC) last
+                              WHERE reason = 'consent' AND accepted_biometric AND confirmed_adult LIMIT 1"""), {"t": tenant_id, "u": str(user_id)}).first()
+    return rows is not None

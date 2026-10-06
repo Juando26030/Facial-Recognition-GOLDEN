@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from app import company, consent, faces, legal_texts
+from app.models import AuditConsentLog
 from app.legal_texts_data import TEXT_PROPIO, TEXT_TERCERO
 from app.models import EventAttendee, User
 from tests.conftest import accept, login
@@ -72,8 +73,8 @@ def test_endpoints_text_status_and_idempotent_batch(client, factory, db, company
     assert client.get(f"/api/events/{ev.id}/consent-status/1001").json() == {"accepted": False, "last": None, "mode": "once"}
     eid = str(uuid.uuid4())
     body = {"entries": [{"id": eid, "user_id": "1001", "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"], "device": "tablet-1"}]}
-    assert client.post(f"/api/events/{ev.id}/consents", json=body).json() == {"inserted": 1, "duplicated": 0}
-    assert client.post(f"/api/events/{ev.id}/consents", json=body).json() == {"inserted": 0, "duplicated": 1}          # el reintento (o la sincronización) no duplica
+    assert client.post(f"/api/events/{ev.id}/consents", json=body).json() == {"inserted": 1, "duplicated": 0, "unknown": 0}
+    assert client.post(f"/api/events/{ev.id}/consents", json=body).json() == {"inserted": 0, "duplicated": 1, "unknown": 0}          # el reintento (o la sincronización) no duplica
     assert client.get(f"/api/events/{ev.id}/consent-status/1001").json()["accepted"] is True
     rej = {"entries": [{"id": str(uuid.uuid4()), "user_id": "1001", "decision": "reject", "adult": False, "text_hash": t["hash"], "version": t["version"]}]}
     client.post(f"/api/events/{ev.id}/consents", json=rej)
@@ -136,3 +137,121 @@ def test_roster_carries_the_acceptance_flag_and_the_text_without_biometrics(clie
     assert flags == {"Ana Mora": 1, "Luis Gómez": 0}
     c = body["consent"]
     assert c["hash"] == legal_texts.render(ev)["hash"] and c["mode"] == "once" and c["buttons"][1].startswith("PREFIERO")
+
+
+# ----------------------------------------------------------------------------------------------------------- camino 2 (un clic y rostro) y regla A
+def _scan_fixture(monkeypatch):
+    from app.biometrics import BiometricEngine
+    state = type("S", (), {"face": None})()
+    monkeypatch.setattr(BiometricEngine, "extract_encoding", staticmethod(lambda img, is_registration=False, **kw: state.face))
+    return state
+
+
+def _png():
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 40), (90, 90, 90)).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def _scan(client, ev, **extra):
+    return client.post("/api/recognize", data={"event_id": ev.id, **extra}, files={"file": ("s.png", _png(), "image/png")}).json()
+
+
+def _precalc_event(client, factory, db, company_env):
+    ev = _op(client, factory, controller_mode="tercero", organizer_name="Org", organizer_nit="1", organizer_privacy_email="o@o.test", precalculo_autorizado=True)
+    for uid, seed in (("1001", 1), ("2002", 2)):
+        db.add(User(id=uid, tenant_id=ev.tenant_id, first_name=uid, last_name="X", face_encoding=json.dumps(_vec(seed))))
+        db.flush()
+        db.add(EventAttendee(event_id=ev.id, user_id=uid, tenant_id=ev.tenant_id))
+    db.commit()
+    return ev
+
+
+def test_click_lets_the_precalculated_vector_match_and_only_then_records_the_acceptance(client, factory, db, monkeypatch, company_env):
+    scan = _scan_fixture(monkeypatch)
+    ev = _precalc_event(client, factory, db, company_env)
+    scan.face = _vec(1)
+    assert _scan(client, ev)["result"] == "NO"                                           # sin clic: la compuerta sigue cerrada aunque haya vector
+    tok = client.post(f"/api/events/{ev.id}/consent-click").json()["click_token"]
+    assert consent.latest(db, ev.tenant_id, "1001", ev.id) is None                       # el clic solo no atribuye nada a nadie
+    scan.face = None
+    _scan(client, ev, click_token=tok)
+    assert db.query(AuditConsentLog).count() == 0                                # sin coincidencia no se guarda nada
+    scan.face = _vec(1)
+    assert _scan(client, ev, click_token=tok)["data"]["id"] == "1001"
+    row = consent.latest(db, ev.tenant_id, "1001", ev.id)
+    assert row.consent_version == "v1.1_kiosk_clic" and row.legal_text_hash == legal_texts.render(ev)["hash"] and row.reason == "consent" and row.confirmed_adult
+    assert consent.latest(db, ev.tenant_id, "2002", ev.id) is None
+    db.refresh(ev)
+    assert faces.event_index(db, ev).ids == ["1001"]                                     # desde ahora se reconoce sin clic
+    assert _scan(client, ev)["data"]["id"] == "1001"
+
+
+def test_a_forged_or_other_events_click_token_does_not_open_the_gate(client, factory, db, monkeypatch, company_env):
+    scan = _scan_fixture(monkeypatch)
+    ev = _precalc_event(client, factory, db, company_env)
+    scan.face = _vec(2)
+    assert _scan(client, ev, click_token="basura")["result"] == "NO"
+    plain = factory.event("en_proceso", facial_enabled=True)
+    assert client.post(f"/api/events/{plain.id}/consent-click").status_code in (403, 409)
+
+
+def test_someone_who_rejected_is_never_matched_even_with_a_click(client, factory, db, monkeypatch, company_env):
+    scan = _scan_fixture(monkeypatch)
+    ev = _precalc_event(client, factory, db, company_env)
+    t = legal_texts.render(ev)
+    r = client.post(f"/api/events/{ev.id}/consents", json={"entries": [{"id": str(uuid.uuid4()), "user_id": "1001", "decision": "reject", "adult": True, "text_hash": t["hash"], "version": t["version"]}]})
+    assert r.status_code == 200
+    assert db.query(User).filter_by(id="1001").first().face_encoding is None            # regla A: el rechazo borra su vector pre-calculado
+    tok = client.post(f"/api/events/{ev.id}/consent-click").json()["click_token"]
+    scan.face = _vec(1)
+    assert _scan(client, ev, click_token=tok)["result"] == "NO"
+    db.add(User(id="3003", tenant_id=ev.tenant_id, first_name="n", last_name="X", face_encoding=json.dumps(_vec(1))))   # aunque el vector reapareciera
+    db.flush()
+    db.add(EventAttendee(event_id=ev.id, user_id="3003", tenant_id=ev.tenant_id))
+    consent.record(db, tenant_id=ev.tenant_id, user_id="3003", event_id=ev.id, version="v", legal_text_hash="d" * 64, accepted=False, adult=True, reason="rejection")
+    db.commit()
+    assert "3003" not in faces.event_index(db, ev, ungated=True).ids
+
+
+def test_rejecting_keeps_the_vector_if_the_person_accepted_in_another_event(client, factory, db, company_env):
+    ev = _op(client, factory)
+    other = factory.event("en_proceso", facial_enabled=True)
+    db.add(User(id="1001", tenant_id=ev.tenant_id, first_name="A", last_name="B", face_encoding=json.dumps(_vec(1))))
+    db.commit()
+    accept(db, other, "1001")
+    t = legal_texts.render(ev)
+    client.post(f"/api/events/{ev.id}/consents", json={"entries": [{"id": str(uuid.uuid4()), "user_id": "1001", "decision": "reject", "adult": True, "text_hash": t["hash"], "version": t["version"]}]})
+    assert db.query(User).filter_by(id="1001").first().face_encoding                     # sigue sirviendo en el otro evento
+
+
+def test_only_a_super_admin_can_authorize_precalculation_and_only_with_the_annex(client, factory):
+    factory.staff("admin", "adm")
+    ev = factory.event("en_proceso", facial_enabled=True, controller_mode="tercero")
+    login(client, "adm")
+    assert client.put(f"/api/events/{ev.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).status_code == 403
+    client.post("/api/auth/logout")
+    factory.staff("super_admin", "sup")
+    login(client, "sup")
+    url = f"/api/events/{ev.id}/precalculo-autorizado"
+    assert client.put(url, json={"enabled": True}).status_code == 400                    # sin referencia ni fecha del anexo
+    assert client.put(url, json={"enabled": True, "anexo_ref": "A-1", "anexo_fecha": "2026-10-01"}).json()["precalculo_autorizado"] is True
+    own = factory.event("en_proceso", facial_enabled=True)
+    assert client.put(f"/api/events/{own.id}/precalculo-autorizado", json={"enabled": True, "anexo_ref": "A", "anexo_fecha": "2026-10-01"}).status_code == 400      # evento propio: no aplica
+
+
+def test_offline_entries_use_the_roster_fingerprint_not_the_cedula(client, factory, db, company_env):
+    from app.routers.api import roster_fingerprint, roster_salt
+    ev = _op(client, factory)
+    factory.person(ev, "1001", "Ana", "Mora")
+    t = legal_texts.render(ev)
+    h = roster_fingerprint(roster_salt(ev), "1001")
+    e = {"id": str(uuid.uuid4()), "h": h, "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"], "at": "2026-10-06T15:00:00Z"}
+    ghost = {**e, "id": str(uuid.uuid4()), "h": "0" * 16}
+    r = client.post(f"/api/events/{ev.id}/consents", json={"entries": [e, ghost]}).json()
+    assert r == {"inserted": 1, "duplicated": 0, "unknown": 1}
+    assert client.post(f"/api/events/{ev.id}/consents", json={"entries": [e]}).json()["duplicated"] == 1
+    assert consent.has_acceptance(db, ev.tenant_id, "1001", ev.id) and consent.latest(db, ev.tenant_id, "1001", ev.id).consent_timestamp_utc.year == 2026
