@@ -8,6 +8,7 @@
 # Después: redesplegar (deploy.sh agrega CLOUD_TASKS_FACES_QUEUE y CLOUD_TASKS_FACES_URL = <servicio de biometría>/internal/faces/run). Sin esas variables todo sigue funcionando por la cola general.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+export REGION="${REGION:-us-east4}"      # la región decidida (docs/15); config.sh se detenía si gcloud no tenía una región configurada
 source deploy/gcp/config.sh "${1:-}"
 exists() { "$@" >/dev/null 2>&1; }
 ARGS=(--max-dispatches-per-second 2 --max-concurrent-dispatches 2 --max-attempts 5 --min-backoff 10s --max-backoff 300s --max-doublings 4)
