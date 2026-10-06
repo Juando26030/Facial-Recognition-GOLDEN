@@ -149,8 +149,17 @@ def purge() -> str:
 
 
 def sweep() -> str:
+    from sqlalchemy import func
+
     from app import formsvc, jobs, reconcile  # noqa: F401 — registran sus trabajos
-    return f"{jobs.drain()} trabajo(s) pendiente(s) ejecutado(s)"
+    from app.database import SessionLocal
+    from app.models import Job
+    ran = jobs.drain(exclude=jobs.FACE_KINDS)                 # los cálculos faciales NO corren aquí (este Job no tiene el manejador ni la CPU): van por su cola, en el servicio de biometría
+    with SessionLocal() as db:
+        faces_due = db.query(func.count(Job.id)).filter(Job.kind.in_(list(jobs.FACE_KINDS)), Job.status.in_(("queued", "running")), Job.run_at <= utcnow()).scalar() or 0
+    if faces_due:
+        jobs.kick(pool="faces")                               # el barrido horario despierta a la cola facial por si una tarea de Cloud Tasks se perdió
+    return f"{ran} trabajo(s) pendiente(s) ejecutado(s); {faces_due} cálculo(s) facial(es) pendiente(s) avisados a su cola"
 
 
 def warmup() -> str:
@@ -293,8 +302,22 @@ def export_person_data() -> str:
     return json.dumps(out, ensure_ascii=False)
 
 
+def retry_face_jobs() -> str:
+    """Reintenta los cálculos faciales que se agotaron (estado `failed`) o quedaron en curso con el arriendo vencido: vuelven a la cola con los intentos en cero y se despierta a la cola facial."""
+    from app import jobs
+    from app.database import SessionLocal
+    from app.models import Job
+    with SessionLocal() as db:
+        rows = db.query(Job).filter(Job.kind.in_(list(jobs.FACE_KINDS)), Job.status == "failed").all()
+        for j in rows:
+            j.status, j.attempts, j.run_at, j.last_error, j.locked_until = "queued", 0, utcnow(), None, None
+        db.commit()
+    jobs.kick(pool="faces")
+    return f"{len(rows)} cálculo(s) facial(es) devueltos a la cola"
+
+
 TASKS = {"backup": lambda: backup_db("hourly"), "backup-daily": lambda: backup_db("daily"), "purge": purge,
-         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data}
+         "check-backups": check_backups, "sweep": sweep, "warmup": warmup, "export-consent": export_consent, "bench-vector": bench_vector, "list-minors": list_minors, "export-person-data": export_person_data, "retry-face-jobs": retry_face_jobs}
 
 
 def main(task: str) -> int:

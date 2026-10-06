@@ -103,3 +103,33 @@ def test_faces_endpoint_needs_the_invoker_token_for_its_own_audience(client, mon
 def test_the_faces_endpoint_is_served_by_the_biometric_service_only():
     from app import appmode
     assert appmode.route_allowed("/internal/faces/run", mode="biometria") and not appmode.route_allowed("/internal/faces/run", mode="web")
+
+
+def test_the_hourly_sweep_never_runs_face_jobs_itself_but_wakes_their_queue(db, monkeypatch):
+    from app import ops_runner
+    ran, kicks = [], []
+    monkeypatch.setitem(jobs._handlers, "face_enroll", lambda payload: ran.append("faces"))
+    monkeypatch.setitem(jobs._handlers, "prueba_barrido", lambda payload: ran.append("general"))
+    monkeypatch.setattr(jobs, "kick", lambda at=None, pool="general": kicks.append(pool))
+    jobs.enqueue(db, "face_enroll", {"n": 1})
+    jobs.enqueue(db, "prueba_barrido", {"n": 2})
+    db.commit()
+    detail = ops_runner.sweep()
+    assert ran == ["general"] and kicks == ["faces"] and "1 cálculo(s) facial(es)" in detail
+    assert db.query(Job).filter_by(kind="face_enroll").one().status == "queued"            # sigue en cola, sin gastar intentos
+
+
+def test_retry_face_jobs_requeues_the_exhausted_ones_and_wakes_the_faces_queue(db, monkeypatch):
+    from app import ops_runner
+    kicks = []
+    monkeypatch.setattr(jobs, "kick", lambda at=None, pool="general": kicks.append(pool))
+    jobs.enqueue(db, "face_enroll", {"n": 1})
+    jobs.enqueue(db, "face_enroll", {"n": 2})
+    db.commit()
+    first = db.query(Job).order_by(Job.id).first()
+    first.status, first.attempts, first.last_error = "failed", 3, "dlib ocupado"
+    db.commit()
+    assert "1 cálculo(s) facial(es) devueltos" in ops_runner.retry_face_jobs() and kicks == ["faces"]
+    db.expire_all()
+    j = db.query(Job).order_by(Job.id).first()
+    assert (j.status, j.attempts, j.last_error) == ("queued", 0, None)
