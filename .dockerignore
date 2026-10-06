@@ -12,9 +12,13 @@ known_people
 .pytest_cache
 .ruff_cache
 tests
-docs
+docs/*
 perf_results
 *.md
 .build_info
 Dockerfile
 deploy/docker-compose.yml
+# Excepción: el texto ratificado de la política de privacidad v1.1 sí va en la imagen (app/policy_v11.py)
+!docs/legal
+docs/legal/*
+!docs/legal/POLITICA_v1.1.md

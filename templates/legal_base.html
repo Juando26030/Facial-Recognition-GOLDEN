@@ -24,7 +24,9 @@
         <a href="/privacidad">Política de Privacidad</a><a href="/terminos">Términos y Condiciones</a><a href="/reembolsos">Política de Reembolsos</a>
     </nav>
     <article>
-        {% if review and review.reviewed %}<div class="reviewed" role="note"><b>Versión {{ review.version }}</b> · Texto con constancia de revisión legal del {{ review.date }}.</div>
+        {% if historic %}<div class="draft" role="note"><b>Versión histórica.</b> Esta es la versión 1.0; la vigente está en <a href="/privacidad">/privacidad</a>.</div>{% endif %}
+        {% if ratified %}<div class="reviewed" role="note">{{ ratified }}</div>
+        {% elif review and review.reviewed %}<div class="reviewed" role="note"><b>Versión {{ review.version }}</b> · Texto con constancia de revisión legal del {{ review.date }}.</div>
         {% else %}{% if review %}<div class="draft" role="note"><b>Cambios posteriores a la versión {{ review.version }} (revisada el {{ review.date }}).</b> Este texto cambió después de la constancia y vuelve a estar pendiente de revisión legal; la última versión revisada es la {{ review.version }}.</div>{% endif %}
         <div class="draft" role="note"><b>BORRADOR — PENDIENTE DE REVISIÓN LEGAL.</b> Este texto es un borrador de trabajo y no es asesoría legal: debe ser revisado por un abogado especializado en protección de datos y comercio electrónico antes de considerarse definitivo. Lo marcado como <span class="pending">[pendiente]</span> falta por definir.</div>{% endif %}
         {% block content %}{% endblock %}

@@ -32,6 +32,7 @@ COPY --chown=golden:golden alembic ./alembic
 COPY --chown=golden:golden app ./app
 COPY --chown=golden:golden static ./static
 COPY --chown=golden:golden templates ./templates
+COPY --chown=golden:golden docs/legal/POLITICA_v1.1.md ./docs/legal/POLITICA_v1.1.md      # la política ratificada (la página la lee y verifica su hash; el archivo NO se modifica)
 COPY --chown=golden:golden scripts ./scripts
 COPY --chown=golden:golden deploy/gunicorn.conf.py ./deploy/gunicorn.conf.py
 
