@@ -39,3 +39,15 @@
 - **Clave facial obligatoria en producción:** sin `FACE_ENCRYPTION_KEY` la aplicación no arranca y no se escribe nada biométrico (falla cerrado). El bootstrap de producción ya crea el secreto `golden-face-encryption-key`.
 - **Regla de borrado:** «sigue en otro evento abierto» solo cuenta donde la persona aceptó; si nunca aceptó en ninguno cuentan todos los suyos; tope de 180 días intacto. `/sistema` avisa de eventos cuyo fin pasó hace más de 3 días y siguen sin finalizar.
 - **Verificar al integrar (R1):** la bandeja de salida de R1 debe quedar sin fotos ni vectores (cumple C''') y con el cifrado AES-GCM de las inscripciones nuevas.
+
+## Nota para la auditora sobre «modificaciones de datos» sin red (texto C triple prima, no se cambia)
+
+Sin conexión el sistema guarda en el dispositivo, cifradas, las **altas de personas nuevas** y los **ingresos** (y las decisiones de autorización); la edición de datos de personas ya existentes sin red no existe todavía, así que esa parte de la frase hoy no tiene qué almacenar.
+
+## Cola de ingresos cifrada (hecho 2026-10-06)
+
+La cola de ingresos, las decisiones de autorización pendientes y la lista de «revisar» se guardan cifradas en reposo (AES-GCM de 256 bits, clave no extraíble generada en el dispositivo, en un almacén aparte que sobrevive al borrado de la lista local). Solo quedan en claro el identificador del registro y su marca de tiempo (sirven para no duplicar y para vencer a los 7 días). El roster NO se cifra.
+
+## Cálculo del vector (decisión técnica, 2026-10-06)
+
+El cálculo corre en el servicio de biometría por una cola propia de Cloud Tasks (2 despachos simultáneos, espera creciente, mismo token OIDC), no en el servicio web. Comandos y plan de despliegue: `RUNBOOK_CLOUD_SHELL.md`.
