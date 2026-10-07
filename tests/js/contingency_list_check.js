@@ -28,7 +28,6 @@ global.window = { EVENT_ID: 1, STAFF_ROLE: 'digitador', OPTIONAL_VARIABLES: [], 
 global.document = { getElementById: (id) => els[id] || null, createElement: (t) => new El(t), visibilityState: 'visible', head: new El('head'), body: new El('body'), addEventListener() {} };
 global.setInterval = () => 1;
 let now = 7_000_000, timers = [];
-const realSetTimeout = global.setTimeout;                       // el reloj virtual de abajo no sirve para esperar a crypto.subtle (hilos reales)
 global.setTimeout = (f, ms) => { const t = { f, at: now + ms }; timers.push(t); return t; };
 global.clearTimeout = (t) => { timers = timers.filter((x) => x !== t); };
 const flush = () => new Promise((r) => setImmediate(r));
@@ -57,9 +56,6 @@ eval(fs.readFileSync('static/js/directory.js', 'utf8'));
 const rows = () => els.tbody.children.filter((tr) => !/directory-(local-note|more)/.test(tr.className));
 const names = () => rows().map((tr) => tr.children[2].innerText);                 // columna «Nombres» (después de la de acción y la de ID)
 const type = async (el, text) => { el.value = text; el.listeners.input(); await advance(300); };
-// La huella de la cédula se calcula con crypto.subtle (hilos REALES del sistema): con la máquina cargada (CI) tarda más que unas vueltas de setImmediate y la prueba era intermitente
-// (ya fallaba así en migra/fase1-2 bajo carga). Se espera, con tiempo real y tope de 5 s, a que la tabla refleje el resultado; la aserción de después sigue igual de estricta.
-const typeUntil = async (el, text, ready) => { await type(el, text); for (let i = 0; i < 1000 && !ready(); i++) { await new Promise((r) => realSetTimeout(r, 5)); await advance(10); } };
 
 (async () => {
   ROSTER = [{ h: await fp('1001'), n: 'Ana Pérez', c: ['VIP'], s: 'No registrado' }, { h: await fp('1002'), n: 'Luis Gómez', c: [], s: 'Registrado' }, { h: await fp('1003'), n: 'Eva Ríos', c: ['Prensa', 'Staff'], s: 'No registrado' }];
@@ -82,8 +78,10 @@ const typeUntil = async (el, text, ready) => { await type(el, text); for (let i 
 
   // 2) búsqueda por nombre (sobre el roster) y por cédula EXACTA (huella)
   await type(els.nombre, 'eva'); assert.deepStrictEqual(names(), ['Eva Ríos']); await type(els.nombre, '');
-  await typeUntil(els.cedula, '1002', () => names().length === 1); assert.deepStrictEqual(names(), ['Luis Gómez'], 'cédula exacta por huella');
-  await type(els.cedula, '100'); assert.deepStrictEqual(names(), [], 'una cédula parcial no coincide (la copia no tiene la cédula)'); await type(els.cedula, '');
+  // La huella de la cédula se calcula con crypto.subtle (hilos REALES del sistema): con la máquina cargada tarda más que cualquier número fijo de vueltas del bucle de eventos. En vez de esperar un tiempo,
+  // se espera a que el propio buscador diga que terminó (`hashesSettled`): la prueba es determinista y la aserción de después sigue igual de estricta.
+  await type(els.cedula, '1002'); await d.hashesSettled(); await advance(10); assert.deepStrictEqual(names(), ['Luis Gómez'], 'cédula exacta por huella');
+  await type(els.cedula, '100'); await d.hashesSettled(); await advance(10); assert.deepStrictEqual(names(), [], 'una cédula parcial no coincide (la copia no tiene la cédula)'); await type(els.cedula, '');
   assert.strictEqual(names().length, 3);
 
   // 3) lo encolado sin red cuenta como «Registrado» en la lista y en los contadores

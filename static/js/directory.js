@@ -654,7 +654,10 @@
       let wantH = '';
       if (localMode && cedula) {                          // lista local: la cédula se compara por huella (exacta); se calcula una vez y se vuelve a filtrar
         wantH = localHashes.get(cedula);
-        if (wantH === undefined) { wantH = ''; const GC = GCref(); if (GC) GC.hashFor(cedula).then((h) => { localHashes.set(cedula, h); applyFilters(); }); }
+        if (wantH === undefined) {
+          wantH = ''; const GC = GCref();
+          if (GC) { const job = GC.hashFor(cedula).then((h) => { localHashes.set(cedula, h); applyFilters(); }).finally(() => inflightHashes.delete(job)); inflightHashes.add(job); }       // el cálculo de la huella es asíncrono: al terminar se vuelve a filtrar
+        }
       }
       lastFiltered = allUsers.filter(u => {
         if (onlyNotRegistered && u.status !== 'No registrado') return false;
@@ -688,6 +691,7 @@
        encolado sin red) y los contadores de siempre. La copia NO trae cédula ni entidad: se busca por nombre y por cédula EXACTA (huella); el filtro de entidad se desactiva con un aviso. */
     let localMode = false;
     const localHashes = new Map();                       // cédula escrita -> huella (se calcula una vez)
+    const inflightHashes = new Set();                    // huellas que se están calculando (crypto.subtle usa hilos reales): `hashesSettled()` espera a que terminen, sin depender del tiempo
     const GCref = () => window.GoldenContingency && window.GoldenContingency.instance;
     const entidadPlaceholder = entidadInput ? entidadInput.placeholder : '';
     function setLocalMode(on) {
@@ -1042,6 +1046,7 @@
       /* Punto de entrada compartido para cualquier OTRO método que resuelva una cédula+nombre
          fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
+      hashesSettled: async () => { while (inflightHashes.size) await Promise.all([...inflightHashes]); },      // para pruebas y para quien necesite saber que la búsqueda por cédula ya se completó
       submitScannedCedula: (cedula, nameInfo, method) => fastCheckin(cedula, false, nameInfo || null, undefined, method),
       /* "Limpiar filtros" (2026-09-16, pedido explícito) — vacía los 3 campos de búsqueda + el
          filtro de "sin registrar" y vuelve a mostrar el Directorio completo. */
