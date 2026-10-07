@@ -77,8 +77,10 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
 
   // 2) búsqueda por nombre (sobre el roster) y por cédula EXACTA (huella)
   await type(els.nombre, 'eva'); assert.deepStrictEqual(names(), ['Eva Ríos']); await type(els.nombre, '');
-  await type(els.cedula, '1002'); assert.deepStrictEqual(names(), ['Luis Gómez'], 'cédula exacta por huella');
-  await type(els.cedula, '100'); assert.deepStrictEqual(names(), [], 'una cédula parcial no coincide (la copia no tiene la cédula)'); await type(els.cedula, '');
+  // La huella de la cédula se calcula con crypto.subtle (hilos REALES del sistema): con la máquina cargada tarda más que cualquier número fijo de vueltas del bucle de eventos. En vez de esperar un tiempo,
+  // se espera a que el propio buscador diga que terminó (`hashesSettled`): la prueba es determinista y la aserción de después sigue igual de estricta.
+  await type(els.cedula, '1002'); await d.hashesSettled(); await advance(10); assert.deepStrictEqual(names(), ['Luis Gómez'], 'cédula exacta por huella');
+  await type(els.cedula, '100'); await d.hashesSettled(); await advance(10); assert.deepStrictEqual(names(), [], 'una cédula parcial no coincide (la copia no tiene la cédula)'); await type(els.cedula, '');
   assert.strictEqual(names().length, 3);
 
   // 3) lo encolado sin red cuenta como «Registrado» en la lista y en los contadores
