@@ -18,4 +18,9 @@ else
   gcloud tasks queues create "$QUEUE_FACES" --location "$REGION" "${ARGS[@]}"
 fi
 gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_APP")" --role roles/cloudtasks.enqueuer --quiet >/dev/null
+# La cuenta de DESPLIEGUE (GitHub Actions) necesita LEER la cola para que deploy.sh sepa que existe y configure CLOUD_TASKS_FACES_QUEUE/URL (roles/cloudtasks.viewer, solo sobre esta cola).
+gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_DEPLOYER")" --role roles/cloudtasks.viewer --quiet >/dev/null
+# El barrido horario (Job de operaciones) despierta a esta cola si quedó trabajo: necesita encolar en ella y actuar como la cuenta invoker (token OIDC), igual que la cuenta de la app.
+gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_OPS")" --role roles/cloudtasks.enqueuer --quiet >/dev/null
+gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$SA_INVOKER")" --member "serviceAccount:$(sa_email "$SA_OPS")" --role roles/iam.serviceAccountUser --quiet >/dev/null
 echo "Cola $QUEUE_FACES lista (2 despachos simultáneos). Falta: redesplegar para que los servicios la usen."

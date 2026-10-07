@@ -121,3 +121,36 @@ Lo que imprime: `jitters_10_ms` y `jitters_25_ms` con mínimo, mediana y máximo
 - `/ready` y `/health` en 200 en los tres servicios.
 - Un evento de prueba: Parámetros → «Reconocimiento facial: paso guiado» muestra el resumen sin faltantes (con COMPANY_NAME, COMPANY_NIT y PRIVACY_EMAIL definidos).
 - Una aceptación de prueba (sección 5, paso 4) y el comando de `bench-vector` (sección 3), restaurando el job a 1 CPU y 1 Gi.
+
+## 8. Arreglar YA la cola facial en staging (variables ausentes tras el despliegue de a5446ab)
+
+**Qué pasó:** `deploy.sh` agrega `CLOUD_TASKS_FACES_QUEUE` y `CLOUD_TASKS_FACES_URL` solo si puede ver la cola. La cuenta de despliegue de GitHub (`golden-deployer-staging`) no tenía ningún permiso sobre Cloud Tasks, la consulta falló con «permiso denegado» y el script tragaba ese error: siguió como si la cola no existiera. (Corregido: ahora un error detiene el despliegue con el motivo a la vista, y `faces_queue.sh` concede el permiso.)
+
+**Paso 1: conceder los permisos que faltan** (idempotente; es el mismo script de siempre, ahora completo):
+```bash
+bash deploy/gcp/faces_queue.sh staging
+```
+Deja: `roles/cloudtasks.viewer` sobre la cola para `golden-deployer-staging` (leer que existe) y, para `golden-ops-staging`, `roles/cloudtasks.enqueuer` sobre la cola y `roles/iam.serviceAccountUser` sobre `golden-invoker-staging` (para que el barrido horario despierte a la cola).
+
+**Paso 2: fijar las dos variables YA** en los tres servicios y en el Job de operaciones (seguro de repetir: `--update-env-vars` solo pone o reemplaza esas dos):
+```bash
+REGION=us-east4
+PROJECT_ID=$(gcloud config get-value project)
+BIO_URL=$(gcloud run services describe golden-biometria-staging --region "$REGION" --format='value(status.url)')
+FACES_Q="projects/${PROJECT_ID}/locations/${REGION}/queues/golden-faces-staging"
+VARS="CLOUD_TASKS_FACES_QUEUE=${FACES_Q},CLOUD_TASKS_FACES_URL=${BIO_URL}/internal/faces/run"
+echo "$VARS"      # comprueba que ambos valores se vean completos antes de seguir
+for S in golden-web-staging golden-publico-staging golden-biometria-staging; do
+  gcloud run services update "$S" --region "$REGION" --update-env-vars "$VARS"
+done
+gcloud run jobs update golden-ops-staging --region "$REGION" --update-env-vars "$VARS"
+```
+El valor de `CLOUD_TASKS_FACES_URL` es la dirección del servicio de biometría más `/internal/faces/run` (por ejemplo `https://golden-biometria-staging-<número>.us-east4.run.app/internal/faces/run`). Es también la «audiencia» del token: el servicio la compara con esa misma variable.
+
+**Paso 3: comprobar:**
+```bash
+for S in golden-web-staging golden-publico-staging golden-biometria-staging; do echo -n "$S: "; gcloud run services describe "$S" --region us-east4 --format=json | grep -o 'CLOUD_TASKS_FACES_[A-Z]*' | sort -u | tr '\n' ' '; echo; done
+```
+Cada servicio debe mostrar `CLOUD_TASKS_FACES_QUEUE CLOUD_TASKS_FACES_URL`. Luego la prueba de aceptación de la sección 5, paso 4.
+
+**El próximo despliegue** (con el arreglo) pone esas variables solo; si la cuenta de despliegue no puede leer la cola, el despliegue se detiene con el mensaje «roles/cloudtasks.viewer sobre esa cola» en vez de omitirlas en silencio.
