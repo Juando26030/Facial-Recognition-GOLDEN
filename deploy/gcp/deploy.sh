@@ -18,6 +18,13 @@ PLACEHOLDER=0
 if [ "$IMAGE" = "--placeholder" ]; then IMAGE="us-docker.pkg.dev/cloudrun/container/hello"; PLACEHOLDER=1; fi
 WEB_URL="$(run_url "$SVC_WEB")"
 BIOMETRIA_URL="$(run_url "$SVC_BIOMETRIA")"
+source deploy/gcp/lib_faces.sh
+FACES_STATE="$(faces_queue_state)"
+case "$FACES_STATE" in
+  existe) echo "Cola de cálculos faciales $QUEUE_FACES: existe (se configuran CLOUD_TASKS_FACES_QUEUE y CLOUD_TASKS_FACES_URL)." ;;
+  falta)  echo "AVISO: la cola $QUEUE_FACES NO existe (bash deploy/gcp/faces_queue.sh $GOLDEN_ENV): los cálculos faciales correrán por la cola general." >&2 ;;
+  *)      echo "ERROR: no se pudo comprobar la cola $QUEUE_FACES ($FACES_STATE). La cuenta de despliegue necesita roles/cloudtasks.viewer sobre esa cola (faces_queue.sh lo concede). Se detiene el despliegue para no dejar los servicios sin esa configuración." >&2; exit 1 ;;
+esac
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 say() { echo -e "\n== $*"; }
 
@@ -75,7 +82,7 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
     echo "CLOUD_TASKS_QUEUE: \"$(run_path queues "$QUEUE")\""
     echo "CLOUD_TASKS_URL: \"${WEB_URL}/internal/jobs/run\""
     echo "JOBS_INVOKER_SA: \"$(sa_email "$SA_INVOKER")\""
-    if gcloud tasks queues describe "$QUEUE_FACES" --location "$REGION" >/dev/null 2>&1; then      # cola de cálculos faciales (deploy/gcp/faces_queue.sh); sin ella todo corre por la cola general
+    if [ "$FACES_STATE" = "existe" ]; then      # cola de cálculos faciales (deploy/gcp/faces_queue.sh); sin ella todo corre por la cola general
       echo "CLOUD_TASKS_FACES_QUEUE: \"$(run_path queues "$QUEUE_FACES")\""
       echo "CLOUD_TASKS_FACES_URL: \"${BIOMETRIA_URL}/internal/faces/run\""
     fi

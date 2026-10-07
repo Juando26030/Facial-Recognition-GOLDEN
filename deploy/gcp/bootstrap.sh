@@ -232,6 +232,9 @@ if ! exists gcloud tasks queues describe "$QUEUE_FACES" --location "$REGION"; th
   gcloud tasks queues create "$QUEUE_FACES" --location "$REGION" --max-dispatches-per-second 2 --max-concurrent-dispatches 2 --max-attempts 5 --min-backoff 10s --max-backoff 300s --max-doublings 4
 fi
 gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_APP")" --role roles/cloudtasks.enqueuer --quiet >/dev/null
+gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_DEPLOYER")" --role roles/cloudtasks.viewer --quiet >/dev/null      # deploy.sh lee la cola para configurar los servicios
+gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_OPS")" --role roles/cloudtasks.enqueuer --quiet >/dev/null           # el barrido horario despierta a la cola
+gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$SA_INVOKER")" --member "serviceAccount:$(sa_email "$SA_OPS")" --role roles/iam.serviceAccountUser --quiet >/dev/null
 ok "colas con tope de 5 (general) y 2 (cálculos faciales) despachos simultáneos"
 
 # -------------------------------------------------------------------------------------------------------------------------- 8
