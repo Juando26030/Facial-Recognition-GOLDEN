@@ -30,8 +30,8 @@ global.setInterval = () => 1;
 let now = 7_000_000, timers = [];
 global.setTimeout = (f, ms) => { const t = { f, at: now + ms }; timers.push(t); return t; };
 global.clearTimeout = (t) => { timers = timers.filter((x) => x !== t); };
-const flush = () => new Promise((r) => setImmediate(r));
-const advance = async (ms) => { now += ms; const due = timers.filter((t) => t.at <= now); timers = timers.filter((t) => t.at > now); due.forEach((t) => t.f()); for (let i = 0; i < 15; i++) await flush(); };
+const flush = require('./settle').settle;
+const advance = async (ms) => { now += ms; const due = timers.filter((t) => t.at <= now); timers = timers.filter((t) => t.at > now); due.forEach((t) => t.f()); await flush(); };
 global.showToast = () => {};
 global.CSS = { escape: (x) => x };
 

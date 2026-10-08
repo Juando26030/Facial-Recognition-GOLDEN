@@ -27,7 +27,7 @@ global.showToast = (m, t) => toasts.push([m, t]);
 let dupAnswer = false, dupCalls = 0;
 global.confirmDuplicateRegistration = async () => { dupCalls++; return dupAnswer; };
 global.CSS = { escape: (x) => x };
-const flush = async () => { for (let i = 0; i < 15; i++) await new Promise((r) => setImmediate(r)); };
+const flush = require('./settle').settle;
 
 const hex = (buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 const SALT = 'e'.repeat(32);

@@ -4,7 +4,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = require('./settle').settle;
 
 (async () => {
   // ---- página

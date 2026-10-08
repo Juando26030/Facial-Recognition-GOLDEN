@@ -29,7 +29,7 @@ const seed = async (name, { roster = 2, queue = 0 } = {}) => new Promise((resolv
 });
 const size = (name, store) => idb.dbs.get(name).stores.get(store).data.size;
 const form = (action = '/logout') => ({ submitted: false, prevented: false, getAttribute: () => action, submit() { this.submitted = true; } });
-const fire = async (f) => { const ev = { target: f, preventDefault() { f.prevented = true; } }; submitHandler(ev); for (let i = 0; i < 40; i++) await new Promise((r) => setImmediate(r)); };
+const fire = async (f) => { const ev = { target: f, preventDefault() { f.prevented = true; } }; submitHandler(ev); await require('./settle').settle(); };
 
 (async () => {
   assert.ok(submitHandler, 'toast.js registra el manejador de cierre de sesión');

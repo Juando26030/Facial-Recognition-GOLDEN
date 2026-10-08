@@ -32,7 +32,7 @@ global.CSS = { escape: (x) => x };
 let now = 5_000_000, timers = [];
 global.setTimeout = (f, ms) => { const t = { f, at: now + ms }; timers.push(t); return t; };
 global.clearTimeout = (t) => { timers = timers.filter((x) => x !== t); };
-const flush = () => new Promise((r) => setImmediate(r));
+const flush = require('./settle').settle;
 const advance = async (ms) => { now += ms; const due = timers.filter((t) => t.at <= now); timers = timers.filter((t) => t.at > now); due.forEach((t) => t.f()); await flush(); await flush(); };
 const toasts = [];
 global.showToast = (m, t) => toasts.push([m, t]);

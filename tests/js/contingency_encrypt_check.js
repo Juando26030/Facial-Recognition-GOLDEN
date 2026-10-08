@@ -20,7 +20,7 @@ const fetchFake = async (url, opts) => {
   if (u.pathname.endsWith('/consents')) { const b = JSON.parse(opts.body); sent.push(b); return json(200, { inserted: b.entries.length, duplicated: 0, unknown: 0 }); }
   throw new Error('ruta inesperada ' + u.pathname);
 };
-const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+const { settle } = require('./settle');
 const raw = (idb, store) => [...idb.dbs.get('golden-contingency-1').stores.get(store).data.values()];
 
 (async () => {
