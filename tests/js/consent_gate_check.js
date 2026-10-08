@@ -39,8 +39,7 @@ const fetchFake = async (url, opts) => {
 };
 const hex = (b) => Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, '0')).join('');
 const fp = async (c) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${'d'.repeat(32)}:${c}`))).slice(0, 16);
-const tick = () => new Promise((r) => setImmediate(r));
-const settle = async () => { for (let i = 0; i < 20; i++) await tick(); };
+const { settle } = require('./settle');          // espera a que no quede crypto.subtle en vuelo (no «N vueltas»)
 let n = 0; const uuid = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
 
 (async () => {

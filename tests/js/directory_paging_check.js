@@ -48,7 +48,7 @@ global.fetch = async url => {
 eval(fs.readFileSync('static/js/directory.js', 'utf8'));
 const rows = () => tbody.children.filter(tr => tr.className !== 'directory-more').length;   // se dibujan como máximo 200 (ver directory_search_check.js)
 const total = () => +tbody.children.find(tr => tr.className === 'directory-more').children[0].innerText.match(/de (\d+)/)[1];
-const settle = async () => { for (let i = 0; i < 50; i++) await new Promise(r => setImmediate(r)); };
+const { settle } = require('./settle');
 
 (async () => {
   const dir = window.GoldenDirectory.mountSearch({ tbodyId: 'tbody', searchIds: {} });

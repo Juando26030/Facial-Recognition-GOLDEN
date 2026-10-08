@@ -47,7 +47,7 @@ const hex = (buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).p
 const SALT = 'a'.repeat(32);
 const fp = async (cedula) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${SALT}:${cedula}`))).slice(0, 16);
 const json = (status, data, headers = {}) => ({ ok: status >= 200 && status < 300, status, headers: { get: (k) => headers[k] ?? null }, json: async () => data });
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = require('./settle').settle;
 
 (async () => {
   const idb = fakeIndexedDB();
