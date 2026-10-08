@@ -39,7 +39,7 @@ IDENTITY_FIELDS = [
 IDENTITY_KEYS = {k for k, _ in IDENTITY_FIELDS}
 # Campos de los que solo se cambia nombre y posición: identidad + "Categoría" (ítem 14: sus opciones
 # salen de las categorías del evento, no de una lista propia, y se guarda por evento).
-LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact"}
+LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact", "birth_date"}      # birth_date: base del control de menores; solo etiqueta y posición
 
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
 # Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
@@ -49,6 +49,7 @@ CONFIGURABLE_FIXED_FIELDS = [
     ("phone", "Teléfono"),
     ("email", "Correo Electrónico"),
     ("opt_1", "Tipo de Asistente"),
+    ("birth_date", "Fecha de nacimiento"),
 ]
 
 
@@ -78,7 +79,7 @@ def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], ca
             "key": key, "label": label, "default_label": default_label, "locked": locked,
             "label_fixed": key == "certificate",
             "required": bool(row.required) if (row and key in ("certificate", "digital_contact")) else False,
-            "field_type": {"categories": "categories", "certificate": "certificate", "digital_contact": "digital_contact"}.get(key, "text_short"),
+            "field_type": {"categories": "categories", "certificate": "certificate", "digital_contact": "digital_contact", "birth_date": "date"}.get(key, "text_short"),
             "options": categories or [], "help_text": "",
             "default_stat_enabled": False, "default_chart_type": None,
         }

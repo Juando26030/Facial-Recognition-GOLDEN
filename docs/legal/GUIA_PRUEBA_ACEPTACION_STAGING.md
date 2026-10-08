@@ -87,6 +87,14 @@ La cámara solo se enciende para alguien que ya aceptó. Para probar a un **desc
 - **En el celular:** el enlace `/aceptar/PRUEBA-ACEPT-01` → `9990003` y su fecha de nacimiento de hace 15 años → **«Continuar»**. **Debe ver:** «No puedes usar el reconocimiento facial. Ingresa con tu cédula o QR en la acreditación.» (no pide selfie ni muestra la autorización).
 - **En el quiosco:** `9990003` → **«Continuar»**. **Debe ver:** no aparece ninguna pantalla de autorización ni se enciende la cámara; pasa directo a la búsqueda por cédula.
 
+## 7b. Prueba G: la base con títulos propios y las fechas (extra)
+
+Sirve para comprobar la carga por título de columna. Prepara una base de prueba con las columnas **`Cédula`, `Nombres`, `Apellidos`, `Fecha de nacimiento`, `Talla de camisa`** (más una columna vacía llamada `Observaciones`) y súbela en **«Adjuntar Base de Datos»**.
+- **Debe ver:** que NO pregunta qué es «Talla de camisa»; al terminar, una caja **«Columnas del archivo»** con tres listas: **campos reconocidos** (cédula, nombres, apellidos, fecha de nacimiento), **campos nuevos creados** («Talla de camisa») y **columnas no usadas** («Observaciones», por estar vacía).
+- **Fechas:** la columna de fecha de nacimiento acepta `2011-03-10`, `10/03/2011` y la fecha de Excel; una que no se pueda leer queda como observación de esa fila y la persona se carga igual.
+- **«Parámetros del Evento»:** debe aparecer el campo **«Talla de camisa»** y también **«Fecha de nacimiento»** (se puede renombrar o mover, no apagar). **«Editar persona»** muestra la fecha de nacimiento y se puede cambiar; si se cambia a una de menor de edad, se borran su rostro y su foto.
+- **Subir la misma base otra vez** (mismas cédulas): actualiza a las personas, no las duplica y no crea otro campo «Talla de camisa». (Solo se puede mientras el evento no esté «en proceso» con una base ya cargada.)
+
 ## 8. Comprobar que el cálculo pasó por la cola `golden-faces-staging`
 
 **Lo que se ve en la aplicación:** menú lateral **🩺 Estado del sistema** (`/sistema`, solo administrador). El renglón **«Cola de trabajos»** debe quedar así después de las pruebas: «0 pendientes · 0 en curso · 0 fallidos». Mientras el cálculo corre puede decir «1 pendientes».

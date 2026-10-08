@@ -34,6 +34,12 @@
 - Sin aceptación registrada de la persona no se usa su rostro; el vector no se calcula antes de aceptar (precálculo solo con anexo firmado, solo super_admin).
 - Sin coincidencia en el quiosco: no se guarda nada y se muestra el mensaje de la auditora.
 
+## Carga de la base por título de columna y fecha de nacimiento (2026-10-08)
+
+- **Dos formas que conviven:** columnas «opcional N» de la plantilla (el sistema pregunta qué son) y columnas con título propio. Si el título es de un campo conocido (cédula/documento, nombres, apellidos, cargo, entidad, teléfono/celular, correo/e-mail, tipo de asistente, categoría, certificado, fecha de nacimiento; sin mayúsculas ni tildes, con variantes comunes) se asigna a él; si no, se crea un campo opcional de texto con ese título (reutilizando el existente del mismo nombre al volver a cargar). Ninguna columna se ignora en silencio: el resultado lista campos reconocidos / nuevos creados / no usadas con el motivo (`app/roster_columns.py`).
+- **Fecha de nacimiento:** AAAA-MM-DD, DD/MM/AAAA (el día va primero) y fecha de Excel (celda de fecha o número de serie); una ilegible es observación de la fila. Es un campo de fecha (`users.birth_date`), configurable en Parámetros del evento (etiqueta y posición), visible y editable en «Editar persona». Cambiarla a una de menor retira vector y foto.
+- **Estado de registro:** cada cambio (quién, cuándo, estado anterior y nuevo; al deshacer, cuántos accesos se borraron) queda en `person_changes` (migración 0062), igual que los cambios de fecha de nacimiento. Al suprimir a la persona, el historial de estado se conserva sin su cédula y el de fecha se borra.
+
 ## Decisiones técnicas tomadas (2026-10-06, criterio del consultor; Juan David decide solo el flujo de negocio)
 
 - **Vector después de aceptar, siempre.** Carga masiva y alta en el quiosco guardan la foto cifrada y NO calculan el vector; se calcula por tarea (`app/enroll.py`) cuando la persona acepta (pantalla en puerta o `/aceptar`). Única excepción: evento de un tercero con pre-cálculo autorizado por un super_admin (anexo firmado). Una foto sin vector se borra igual a los 7 días (el reloj corre desde que se guarda).

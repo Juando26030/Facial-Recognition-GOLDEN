@@ -217,6 +217,11 @@
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
       if (cfg.field_type === 'digital_contact') return configuredFieldRow({ ...cfg, __sentAt: user.digital_sent_at }, user.digital_contact || '');
+      if (cfg.field_type === 'date') return `<div style="margin-bottom:0.8rem;">
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(cfg.label)}</label>
+        <input type="date" name="${cfg.key}" value="${esc(user.birth_date || '')}" max="${new Date().toISOString().slice(0, 10)}" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+        <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Define si es menor de 18 años: un menor no usa el reconocimiento facial. Si la cambias a una fecha de menor, se borran su rostro y su foto.</p>
+      </div>`;
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
     }).join('');
@@ -355,6 +360,7 @@
         else newExtras[cfg.key] = val(cfg.key);
       });
       payload.extra_fields = newExtras;
+      if (fieldConfigs.some((cfg) => cfg.key === 'birth_date')) payload.birth_date = val('birth_date');
       if (fieldConfigs.some((cfg) => cfg.field_type === 'digital_contact')) {
         payload.digital_contact = val('digital_contact');
         payload.send_digital_now = !!form.querySelector('input[name="send_digital_now"]:checked');  // casilla «Enviar ahora»

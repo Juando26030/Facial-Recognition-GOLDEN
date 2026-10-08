@@ -854,6 +854,22 @@ class AuditConsentLog(Base):
     __table_args__ = (CheckConstraint("reason IN ('consent', 'rejection', 'revocation')", name="ck_audit_consent_reason"),)
 
 
+class PersonChange(Base):
+    """Cambios manuales sobre una persona en un evento, con quién y cuándo (migración 0062): `kind='registration_status'` (valores «Registrado» / «No registrado»; `detail` = cuántos accesos se
+    borraron al deshacer) y `kind='birth_date'` (fechas). Sin llaves foráneas. Al suprimir a la persona, los de estado se anonimizan (`user_id` NULL) y los de fecha de nacimiento se borran."""
+    __tablename__ = 'person_changes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, nullable=False, default=utcnow)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, nullable=False)
+    user_id = Column(String, nullable=True)
+    staff_user_id = Column(Integer, nullable=True)
+    kind = Column(String(24), nullable=False)
+    old_value = Column(String, nullable=True)
+    new_value = Column(String, nullable=True)
+    detail = Column(String, nullable=True)
+
+
 # ------------------------------------------------------------------ relojes de la retención biométrica (app/privacy.py)
 @sa_event.listens_for(Event.status, "set", active_history=True)     # active_history: carga el valor anterior aunque la instancia esté expirada
 def _stamp_finalized(target, value, oldvalue, initiator):

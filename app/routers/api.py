@@ -22,11 +22,11 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PrintLog, StaffUser, BulkJob
+from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import biometric_setup, bulk_jobs, crypto, minors, privacy, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import biometric_setup, bulk_jobs, crypto, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -76,6 +76,17 @@ def _invalid_email_fields(field_configs: list, values: dict) -> list:
     return problems
 
 
+def _cell_text(cell) -> str:
+    """Texto de una celda de Excel. Las fechas (datetime/date) se pasan a AAAA-MM-DD —con hora solo si la trae—, así «fecha de nacimiento» (y cualquier otra columna de fechas) llega legible."""
+    if cell is None:
+        return ""
+    if isinstance(cell, datetime):
+        return cell.strftime("%Y-%m-%d") if (cell.hour, cell.minute, cell.second) == (0, 0, 0) else cell.isoformat(sep=" ")
+    if hasattr(cell, "isoformat") and not isinstance(cell, str):
+        return cell.isoformat()
+    return str(cell).strip()
+
+
 def _read_roster_rows(filename: str, content: bytes):
     """Lee un roster en .csv o .xlsx y devuelve (header_columns, rows): filas normalizadas
     (claves en minúscula, sin espacios) sin importar el formato de origen, y un mapeo
@@ -93,7 +104,7 @@ def _read_roster_rows(filename: str, content: bytes):
             if row is None or all(cell is None for cell in row):
                 continue
             rows.append({
-                headers[i]: (str(cell).strip() if cell is not None else "")
+                headers[i]: _cell_text(cell)
                 for i, cell in enumerate(row) if i < len(headers) and headers[i]
             })
         return header_columns, rows
@@ -376,6 +387,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "entity": u.entity, "phone": u.phone,
             "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
+            "birth_date": u.birth_date.isoformat() if u.birth_date else "",
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta persona.
             "extra_fields": u.get_extras(),
             "categories": att.get_categories() if att else [],
@@ -1075,6 +1087,14 @@ def update_user(
     event = get_event_for_staff(event_id, db, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if user:
+        # Fecha de nacimiento (base del control de menores): se valida ANTES de tocar nada. Vacía = borrarla.
+        birth_change = False
+        if "birth_date" in data:
+            raw_birth = str(data.pop("birth_date") or "").strip()
+            new_birth = minors.parse_birth(raw_birth) if raw_birth else None
+            if raw_birth and new_birth is None:
+                raise HTTPException(status_code=400, detail="La fecha de nacimiento no es válida (usa AAAA-MM-DD o DD/MM/AAAA, y no puede ser futura).")
+            birth_change = new_birth != user.birth_date
         # extra_fields llega como un dict {opcional_N: valor} desde el modal de "Editar" del
         # Directorio (2026-09-16) — no puede pasar por el setattr genérico de abajo: la columna
         # real (`User.extra_fields`) es un Text con JSON serializado a mano (`get_extras()`/
@@ -1111,6 +1131,20 @@ def update_user(
         for key, value in data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
+        if birth_change:
+            was_minor = minors.is_minor(user.birth_date)
+            db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id, kind="birth_date",
+                                old_value=user.birth_date.isoformat() if user.birth_date else "", new_value=new_birth.isoformat() if new_birth else ""))
+            user.birth_date = new_birth
+            if minors.is_minor(new_birth):            # pasó a ser menor: se retira lo biométrico (vector y foto) y solo entra por cédula/QR
+                get_storage().delete_all_versions(photo_key(event.tenant_id, user.id))
+                user.face_encoding = None
+                user.biometric_consent_at = None
+                user.biometric_consent_source = None
+                user.is_biometric_enabled = False
+                faces_version.bump(db, tenant_id=event.tenant_id)
+            elif was_minor and new_birth is not None:
+                user.is_biometric_enabled = True       # corrigieron un error de fecha: ya es mayor; podrá aceptar el reconocimiento facial como cualquiera
 
         field_configs = parametros.field_configs_for_event(db, event)
         final_values = {
@@ -1293,6 +1327,8 @@ def update_registration_status(
     if new_status == "no_registrado" and max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < ROLE_HIERARCHY["coordinador"]:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
 
+    was_registered = _already_checked_in(db, event_id, user_id)
+    deleted_logs = 0
     if new_status == "registrado":
         if not _already_checked_in(db, event_id, user_id):
             log = AccessLog(
@@ -1303,8 +1339,12 @@ def update_registration_status(
             db.add(log)
             _upsert_attendee(db, event_id, user_id, event.tenant_id)
     else:
-        db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+        deleted_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
 
+    if was_registered != (new_status == "registrado"):          # rastro: quién, cuándo (at), estado anterior y nuevo; al deshacer queda cuántos accesos se borraron
+        db.add(PersonChange(tenant_id=event.tenant_id, event_id=event_id, user_id=user_id, staff_user_id=staff.id, kind="registration_status",
+                            old_value="Registrado" if was_registered else "No registrado", new_value="Registrado" if new_status == "registrado" else "No registrado",
+                            detail=f"accesos borrados: {deleted_logs}" if new_status == "no_registrado" else None))
     db.commit()
     return {"message": "Estado de registro actualizado", "status": new_status}
 
@@ -1644,6 +1684,8 @@ def _bulk_register_impl(
         }
 
     header_columns, rows = _read_roster_rows(roster_filename, content)
+    # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
+    header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
 
     # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
     # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
@@ -1670,7 +1712,7 @@ def _bulk_register_impl(
             if norm and (value or "").strip():
                 used_optional_keys.add(norm)
 
-    missing = used_optional_keys - set(event.get_optional_labels().keys())
+    missing = used_optional_keys - set(event.get_optional_labels().keys()) - set(auto_labels)          # los de título propio ya traen su nombre: no se pregunta
     if missing and not field_labels:
         # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
         # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
@@ -1682,8 +1724,16 @@ def _bulk_register_impl(
             "examples": examples,
         }
 
+    labels_to_apply = {}
     if field_labels:
-        _apply_optional_labels(event, used_optional_keys, field_labels)
+        try:
+            labels_to_apply = dict(json.loads(field_labels) or {})
+        except (json.JSONDecodeError, TypeError, ValueError):
+            labels_to_apply = {}
+    for slot, title in auto_labels.items():
+        labels_to_apply.setdefault(slot, title)
+    if labels_to_apply:
+        _apply_optional_labels(event, used_optional_keys, json.dumps(labels_to_apply))
         db.commit()
 
     source_name = ""
@@ -1833,7 +1883,7 @@ def _bulk_register_impl(
             birth = minors.parse_birth(birth_raw)
             row_minor = minors.is_minor(birth)
             if birth_raw and birth is None:
-                errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD o DD/MM/AAAA).")
+                errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD, DD/MM/AAAA o una fecha de Excel).")
             has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
             if (face_enc_json or has_photo) and (row_minor or birth is None):
                 face_enc_json = None
@@ -1908,7 +1958,8 @@ def _bulk_register_impl(
         message += f" Además, {len(carried_ids)} personas traídas de: {source_name}."
     if errors:
         message += f" {len(errors)} observación(es) — revisa el detalle."
-    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels()}
+    message += " " + roster_columns.summary(columns_report)
+    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels(), "columns": columns_report}
 
 @router.get("/report")
 def download_report(
