@@ -206,73 +206,113 @@ El script es idempotente: lo que ya existe no se toca y, cuando pregunta por los
 
 ## 11. Correo con mínimo privilegio: solo enviar, solo como `soporteit@goldenlogisticas.com` (RBAC para aplicaciones), carga de los secretos y rotación
 
-> Reemplaza el paso 6 de la sección 10: las *Application Access Policies* (`New-ApplicationAccessPolicy`) las sustituye «RBAC for Applications» de Exchange Online (Microsoft, doc. actualizada el 21-ago-2026). No se ejecuta nada desde el repositorio: son comandos para el administrador y para ti en Cloud Shell.
+> Reemplaza el paso 6 de la sección 10: las *Application Access Policies* (`New-ApplicationAccessPolicy`) las sustituye «RBAC for Applications» de Exchange Online (Microsoft, doc. actualizada el 21-ago-2026). Ningún comando de esta sección tiene huecos por rellenar: lo que solo tú sabes se pide con una pregunta en pantalla. Nada de esto lo ejecuta el repositorio.
 
 ### 11.1 Qué usa el código de Graph (evidencia) y qué permiso basta
-- **Solo se ENVÍA.** En todo el repositorio, Graph aparece en dos líneas de `app/mailer.py`: el token con `scope = https://graph.microsoft.com/.default` (línea 38) y `POST https://graph.microsoft.com/v1.0/users/{GRAPH_SENDER}/sendMail` (línea 69), con `saveToSentItems = false`. Los adjuntos (`attachments`) viajan DENTRO de ese `sendMail`; no se lee ningún adjunto.
-- **No hay correo entrante:** no existe `imaplib`, `poplib`, `/messages`, `mailFolders` ni lectura de buzón en ningún módulo (búsqueda en `app/`, `scripts/`, `deploy/`, `static/`, `templates/`). Quien llama a `send_mail` solo envía: restablecer contraseña, informe final, alertas del Job de operaciones, invitaciones, escarapela digital, enlace personal de autorización y constancia.
-- **Conclusión:** basta **`Mail.Send` de tipo Aplicación**. `Mail.Read`, `Mail.ReadBasic`, `Mail.ReadBasic.All` y `Mail.ReadWrite` NO se usan y hoy permiten leer (y con `ReadWrite`, modificar y borrar) **todos los buzones de la organización** si alguien obtiene el secreto: hay que quitarlos. `User.Read` delegado no interviene (el flujo es de aplicación, sin usuario) y también se puede quitar.
+- **Solo se ENVÍA.** En todo el repositorio, Graph aparece en dos líneas de `app/mailer.py`: el token con `scope = https://graph.microsoft.com/.default` (línea 38) y `POST https://graph.microsoft.com/v1.0/users/{GRAPH_SENDER}/sendMail` (línea 69), con `saveToSentItems = false`. Los adjuntos viajan DENTRO de ese `sendMail`; no se lee ninguno.
+- **No hay correo entrante:** no existe `imaplib`, `poplib`, `/messages`, `mailFolders` ni lectura de buzón en `app/`, `scripts/`, `deploy/`, `static/` ni `templates/`.
+- **Conclusión:** basta **`Mail.Send` de tipo Aplicación**. `Mail.Read`, `Mail.ReadBasic`, `Mail.ReadBasic.All` y `Mail.ReadWrite` no se usan y permiten leer (y con `ReadWrite`, modificar y borrar) **todos los buzones de la organización** a quien obtenga el secreto: se quitan. `User.Read` delegado no interviene.
 
-### 11.2 Limitar la aplicación a un solo buzón (Exchange Online, RBAC for Applications)
-Quién: un administrador con el rol **Organization Management** de Exchange (y el de **Exchange Administrator** en Entra). Módulo: `ExchangeOnlineManagement` (`Install-Module ExchangeOnlineManagement` si no está).
-**Importante (Microsoft):** los permisos de Entra y los de RBAC *se suman*. Si `Mail.Send` sigue concedido en toda la organización en Entra, el alcance de RBAC **no limita nada**. Por eso el orden es: primero crear la asignación RBAC, comprobarla y **después** quitar los permisos de Entra.
+### 11.2 Limitar la aplicación a un solo buzón y a solo enviar
 
-1. **Datos de Entra** (portal entra.microsoft.com → Aplicaciones empresariales → «Mailer GoldenWeb 2.0»; NO el registro de aplicaciones, ahí el «Id. de objeto» es otro): `AppId` = `2a1f1fb1-30eb-4c23-b355-5163e269a459` y el **Id. de objeto** de la aplicación empresarial (en los comandos, `<OBJECT_ID_APP_EMPRESARIAL>`).
-2. **Conectar y comprobar el buzón** (PowerShell):
+**Dónde se abre:** en el computador del administrador, en **Windows PowerShell** (o PowerShell 7). No hace falta «Ejecutar como administrador». *(Alternativa: el «Cloud Shell» de Azure, portal.azure.com → icono `>_` → PowerShell; no he comprobado que traiga los módulos, si falta alguno el `Install-Module` de abajo lo instala.)*
+**Qué rol hace falta:** **Administrador global** de Microsoft 365 (es miembro de *Organization Management* de Exchange Online y puede dar el consentimiento que pide Graph PowerShell). Con roles mínimos: *Exchange Administrator* + *Organization Management* (Exchange) + *Cloud Application Administrator* (Entra), y un *Privileged Role Administrator* que consienta el permiso de Graph PowerShell del paso 1.
+**Aviso:** si la máquina vieja (VM) usa esta misma aplicación para enviar correo, el paso 7 puede interrumpir su envío hasta 2 horas (caché de Exchange). Hazlo fuera de horario; si el envío como `soporteit` falla después, devuelve `Mail.Send` en Entra y avísame.
+**Orden (Microsoft: los permisos de Entra y los de RBAC *se suman*):** primero se crea y se prueba la regla de RBAC; después se quitan los `Mail.*` de Entra. Si `Mail.Send` siguiera concedido en toda la organización, el alcance no limitaría nada.
+
+**Paso 0. Módulos y datos fijos** (una sola vez; pega todo el bloque).
 ```powershell
-Connect-ExchangeOnline -UserPrincipalName <admin@goldenlogisticas.com>
-Get-Mailbox soporteit@goldenlogisticas.com | Format-List Alias,PrimarySmtpAddress,RecipientTypeDetails
+Install-Module ExchangeOnlineManagement -Scope CurrentUser
+Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Applications -Scope CurrentUser
+$AppId = "2a1f1fb1-30eb-4c23-b355-5163e269a459"
+$Buzon = "soporteit@goldenlogisticas.com"
+$Admin = Read-Host "Tu correo de administrador (el que usas para entrar a Microsoft 365)"
 ```
-3. **Puntero a la aplicación en Exchange:**
+*Debes ver:* la instalación (si pregunta por «repositorio no confiable», responde `S`/`Y`) y la pregunta del correo. Sin errores en rojo.
+
+**Paso 1. Encontrar la aplicación en Entra (su «Id. de objeto» no se teclea: se lee).**
 ```powershell
-New-ServicePrincipal -AppId 2a1f1fb1-30eb-4c23-b355-5163e269a459 -ObjectId <OBJECT_ID_APP_EMPRESARIAL> -DisplayName "Mailer GoldenWeb 2.0"
+Connect-MgGraph -Scopes "Application.Read.All","AppRoleAssignment.ReadWrite.All" -NoWelcome
+$sp = Get-MgServicePrincipal -Filter "appId eq '$AppId'"
+$sp | Format-List DisplayName, Id, AppId
 ```
-4. **Alcance = ese único buzón** (usa el `Alias` que mostró el paso 2; aquí `soporteit`):
+*Debes ver:* se abre una ventana para entrar y consentir; después `DisplayName : Mailer GoldenWeb 2.0`, un `Id` (el Id. de objeto de la aplicación empresarial) y `AppId : 2a1f1fb1-30eb-4c23-b355-5163e269a459`. Si no sale nada, la aplicación no tiene aplicación empresarial: abre Entra → Aplicaciones empresariales y revisa.
+
+**Paso 2. Conectar a Exchange Online y comprobar el buzón.**
 ```powershell
-New-ManagementScope -Name "Mailer GoldenWeb - solo soporteit" -RecipientRestrictionFilter "Alias -eq 'soporteit'"
+Connect-ExchangeOnline -UserPrincipalName $Admin -ShowBanner:$false
+$mbx = Get-Mailbox $Buzon
+$mbx | Format-List Alias, PrimarySmtpAddress, RecipientTypeDetails
 ```
-5. **Rol de solo enviar, con ese alcance:**
+*Debes ver:* `Alias` (p. ej. `soporteit`), `PrimarySmtpAddress : soporteit@goldenlogisticas.com` y `RecipientTypeDetails` (`UserMailbox` o `SharedMailbox`).
+
+**Paso 3. Registrar la aplicación en Exchange.**
 ```powershell
-New-ManagementRoleAssignment -App <OBJECT_ID_APP_EMPRESARIAL> -Role "Application Mail.Send" -CustomResourceScope "Mailer GoldenWeb - solo soporteit"
+New-ServicePrincipal -AppId $AppId -ObjectId $sp.Id -DisplayName "Mailer GoldenWeb 2.0"
 ```
-6. **Prueba de la regla** (simula lo que Exchange permitirá; no incluye lo que Entra conceda aparte):
+*Debes ver:* una fila con `DisplayName`, `ObjectId` y `AppId`. (Si dice que ya existe, es que ya se hizo: sigue.)
+
+**Paso 4. Crear el alcance: solo ese buzón.**
 ```powershell
-Test-ServicePrincipalAuthorization -Identity 2a1f1fb1-30eb-4c23-b355-5163e269a459 -Resource soporteit@goldenlogisticas.com | Format-Table
-Test-ServicePrincipalAuthorization -Identity 2a1f1fb1-30eb-4c23-b355-5163e269a459 -Resource <cualquier-otro-buzon>@goldenlogisticas.com | Format-Table
+New-ManagementScope -Name "Mailer GoldenWeb - solo soporteit" -RecipientRestrictionFilter "Alias -eq '$($mbx.Alias)'"
 ```
-   **Debe verse:** fila `Application Mail.Send` con `InScope = True` para `soporteit` y `InScope = False` para el otro buzón. Si el primero sale `False`, el filtro del paso 4 no apunta al buzón (revisa el `Alias`).
-7. **Quitar de Entra los permisos que sobran** (con Microsoft Graph PowerShell; quitar la fila en «Permisos de API» del registro NO revoca lo ya concedido a la aplicación empresarial):
+*Debes ver:* `ScopeRestrictionType : RecipientScope` y `RecipientFilter : Alias -eq 'soporteit'` (con el alias del paso 2).
+
+**Paso 5. Dar solo el rol de enviar, con ese alcance.**
 ```powershell
-Connect-MgGraph -Scopes "AppRoleAssignment.ReadWrite.All","Application.Read.All"
-$sp    = Get-MgServicePrincipal -Filter "appId eq '2a1f1fb1-30eb-4c23-b355-5163e269a459'"
+New-ManagementRoleAssignment -App $sp.Id -Role "Application Mail.Send" -CustomResourceScope "Mailer GoldenWeb - solo soporteit"
+```
+*Debes ver:* una fila con `Role : Application Mail.Send` y `RoleAssigneeType : ServicePrincipal`.
+
+**Paso 6. Prueba de la regla, con un buzón que sí y otro que no.**
+```powershell
+$otro = (Get-Mailbox -ResultSize 50 | Where-Object { $_.RecipientTypeDetails -eq "UserMailbox" -and $_.PrimarySmtpAddress -ne $mbx.PrimarySmtpAddress } | Select-Object -First 1).PrimarySmtpAddress
+"Buzón de contraste: $otro"
+Test-ServicePrincipalAuthorization -Identity $AppId -Resource $Buzon | Format-Table RoleName, GrantedPermissions, AllowedResourceScope, InScope
+Test-ServicePrincipalAuthorization -Identity $AppId -Resource $otro  | Format-Table RoleName, GrantedPermissions, AllowedResourceScope, InScope
+```
+*Debes ver:* en la primera tabla `Application Mail.Send  Mail.Send  Mailer GoldenWeb - solo soporteit  True`; en la segunda, la misma fila con **`InScope = False`**. Si la primera sale `False`, el filtro del paso 4 no apunta al buzón: revisa el alias del paso 2 y corrígelo con `Set-ManagementScope`. (Esta prueba ignora lo que Entra conceda aparte, por eso el paso siguiente es obligatorio.)
+
+**Paso 7. Quitar de Entra los permisos de correo que sobran.**
+```powershell
 $graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
-$as    = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $sp.Id -All
-$as | ForEach-Object { $r = $graph.AppRoles | Where-Object Id -eq $_.AppRoleId; [pscustomobject]@{ Permiso = $r.Value; AsignacionId = $_.Id } }
-# quita TODOS los Mail.* de Entra (el envío queda cubierto por RBAC, solo para soporteit)
-$as | Where-Object { ($graph.AppRoles | Where-Object Id -eq $_.AppRoleId).Value -like 'Mail.*' } | ForEach-Object { Remove-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $sp.Id -AppRoleAssignmentId $_.Id }
+$as = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $sp.Id -All
+$as | ForEach-Object { $r = $graph.AppRoles | Where-Object Id -eq $_.AppRoleId; [pscustomobject]@{ Permiso = $r.Value; AsignacionId = $_.Id } } | Format-Table
 ```
-   (Si prefieres el portal: Aplicaciones empresariales → la aplicación → Permisos → revocar cada `Mail.*`.) Opcional: borrar también `User.Read` del registro.
-8. **Esperar** de 30 minutos a 2 horas: Exchange guarda en caché los permisos (el comando de prueba del paso 6 no la usa, el envío real sí).
-9. **Prueba real** desde Cloud Shell (no imprime el secreto; el token se descarta al terminar):
+*Debes ver:* la lista de permisos de aplicación concedidos: `Mail.Read`, `Mail.ReadBasic`, `Mail.ReadBasic.All`, `Mail.ReadWrite` y `Mail.Send`. Ahora quítalos todos (el envío queda cubierto por RBAC, solo para `soporteit`):
+```powershell
+$as | Where-Object { ($graph.AppRoles | Where-Object Id -eq $_.AppRoleId).Value -like "Mail.*" } | ForEach-Object { Remove-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $sp.Id -AppRoleAssignmentId $_.Id }
+Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $sp.Id -All | ForEach-Object { ($graph.AppRoles | Where-Object Id -eq $_.AppRoleId).Value }
+```
+*Debes ver:* el primer comando sin salida y el segundo **vacío** (la aplicación ya no tiene ningún permiso de aplicación en Entra). `User.Read` delegado no cuenta y puede quedarse. *(En el portal: Entra → Aplicaciones empresariales → «Mailer GoldenWeb 2.0» → Permisos; quitar la fila del registro de aplicaciones NO revoca lo ya concedido.)*
+
+**Paso 8. Esperar** de 30 minutos a 2 horas (caché de permisos de Exchange; el paso 6 no la usa, el envío real sí).
+
+**Paso 9. Prueba real desde Cloud Shell** (bash). No imprime el secreto; el token se descarta al final.
 ```bash
-read -rp "Tenant ID: " T; read -rp "Client ID: " C; read -rsp "Client secret (no se ve): " S; echo
+read -rp "Tenant ID: " T; read -rp "Client ID: " C; read -rsp "Client secret (no se ve al teclear): " S; echo
 TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/$T/oauth2/v2.0/token" -d "client_id=$C" --data-urlencode "client_secret=$S" -d "scope=https://graph.microsoft.com/.default" -d "grant_type=client_credentials" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])"); unset S
 read -rp "Tu correo, para recibir la prueba: " TO
+read -rp "El buzón de contraste que mostró PowerShell en el paso 6: " OTRO
 enviar() { curl -s -o /dev/null -w "$1 -> HTTP %{http_code}\n" -X POST "https://graph.microsoft.com/v1.0/users/$1/sendMail" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"message\":{\"subject\":\"[PRUEBA RBAC] $1\",\"body\":{\"contentType\":\"Text\",\"content\":\"prueba\"},\"toRecipients\":[{\"emailAddress\":{\"address\":\"$TO\"}}]},\"saveToSentItems\":false}"; }
 enviar soporteit@goldenlogisticas.com
-enviar <otro-buzon>@goldenlogisticas.com
+enviar "$OTRO"
 unset TOKEN
 ```
-   **Debe verse:** `soporteit@… -> HTTP 202` (y llega el correo `[PRUEBA RBAC]`) y `<otro-buzon>@… -> HTTP 403` (`ErrorAccessDenied`). Mientras no hayas quitado los `Mail.*` de Entra (paso 7) o no haya pasado la caché, el segundo puede dar 202: es la señal de que todavía falta uno de los dos.
+*Debes ver:* `soporteit@goldenlogisticas.com -> HTTP 202` (y llega un correo «[PRUEBA RBAC]…» a tu buzón) y `<buzón de contraste> -> HTTP 403` (`ErrorAccessDenied`). Si el segundo da 202: aún no pasó la caché o falta algún `Mail.*` por quitar (repite el paso 7). Si el primero da 403: la regla del paso 4 o 5 no quedó bien.
 
 ### 11.3 Cargar los cuatro secretos de correo de STAGING (lectura silenciosa)
-**De qué rama:** `migra/fase1-2` (staging despliega desde ahí). Hoy está en el commit `0c2baaa` y `deploy/gcp/bootstrap.sh` no cambia en las ramas siguientes (hasta `f48431c` es idéntico), así que sirve cualquier commit de esa rama.
+**De qué rama:** `migra/fase1-2` (staging despliega desde ahí). `deploy/gcp/bootstrap.sh` es idéntico en cualquier commit reciente de esa rama (hoy `e5b19e0`).
+
+**Paso 1. Abrir Cloud Shell en el proyecto de staging y traer el código.**
 ```bash
 cd ~ && { [ -d Facial-Recognition ] || git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN.git Facial-Recognition; } && cd Facial-Recognition
 git fetch origin && git checkout migra/fase1-2 && git pull --ff-only && git log --oneline -1
-gcloud config set run/region us-east4
+gcloud config get-value project
 ```
-**Opción recomendada: solo los cuatro secretos** (hace lo mismo que `put_secret` del bootstrap: crea, guarda la versión y da los permisos de lectura; nada se imprime):
+*Debes ver:* el último commit de `migra/fase1-2` y el ID del proyecto de staging. Si el proyecto no es el de staging, cámbialo con `gcloud config set project <ese ID>` antes de seguir.
+
+**Paso 2. Cargar los cuatro secretos** (pega el bloque completo; después te pregunta cuatro cosas).
 ```bash
 SUF=-staging; PROJECT=$(gcloud config get-value project)
 cargar() {  # nombre-corto
@@ -288,22 +328,39 @@ cargar() {  # nombre-corto
 }
 for n in azure-tenant-id azure-client-id azure-client-secret graph-sender; do cargar "$n"; done
 ```
-Escribe/pega el **tenant id**, el **client id**, el **secreto** (el VALOR, se ve vacío al teclear) y el remitente `soporteit@goldenlogisticas.com`. Comprobar sin ver valores:
+*Debes ver, en orden:* `golden-azure-tenant-id-staging:` (pegas el **Id. de directorio (inquilino)**, no se ve al teclear), `golden-azure-client-id-staging:` (pegas **2a1f1fb1-30eb-4c23-b355-5163e269a459**), `golden-azure-client-secret-staging:` (el **VALOR** del secreto de cliente), y `golden-graph-sender-staging (el buzón remitente):` (escribes `soporteit@goldenlogisticas.com`, este sí se ve). Después de cada uno, `… guardado`.
+
+**Paso 3. Comprobar sin ver valores.**
 ```bash
 for n in azure-tenant-id azure-client-id azure-client-secret graph-sender; do echo -n "golden-$n-staging: "; gcloud secrets versions list "golden-$n-staging" --format='value(name,state)' | head -1; done
 ```
-*Alternativa:* `bash deploy/gcp/bootstrap.sh staging` hace lo mismo (pregunta cada opcional con lectura silenciosa y no toca lo que ya tiene valor), pero además repasa todos los pasos y vuelve a preguntar por los demás opcionales (Enter los omite).
+*Debes ver:* cuatro líneas con una versión `1` (o mayor) en estado `enabled`.
 
-**Redesplegar** para que los servicios y los Jobs monten los secretos: GitHub → Actions → «Cloud Run (staging; producción preparada y DESACTIVADA)» → **Run workflow** → rama `migra/fase1-2` (sin marcar «force»). Cualquier push a esa rama hace lo mismo. Comprobar que quedaron montados (solo muestra nombres):
+**Paso 4. Redesplegar** (los servicios y los Jobs montan los secretos al desplegarse): GitHub → **Actions** → «Cloud Run (staging; producción preparada y DESACTIVADA)» → **Run workflow** → rama `migra/fase1-2` → *no marques* «force» → **Run workflow**. *Debes ver:* la ejecución en verde en unos 4 minutos. Comprobar que quedaron montados (solo nombres):
 ```bash
 gcloud run services describe golden-web-staging --region us-east4 --format=json | grep -o '"name": "\(AZURE_[A-Z_]*\|GRAPH_SENDER\)"' | sort -u
 ```
-**Probar con «Enviar prueba»:** en un evento de staging, tarjeta **«Parámetros del Evento» → Escarapela digital** (si está apagada, actívala), escribe en el campo de prueba un buzón tuyo y pulsa **«Enviar prueba»**. Debe llegar un correo con el asunto `[STAGING] …` desde `soporteit@goldenlogisticas.com`. Si dice «Ni Microsoft Graph ni SMTP están configurados», aún no se redesplegó; si dice «No se pudo enviar el correo (Graph) …», el mensaje trae el motivo de Microsoft (consentimiento, secreto vencido o regla RBAC).
+*Debes ver:* `"name": "AZURE_CLIENT_ID"`, `"name": "AZURE_CLIENT_SECRET"`, `"name": "AZURE_TENANT_ID"` y `"name": "GRAPH_SENDER"`.
 
-### 11.4 Producción: ¿un secreto propio por entorno? Sí
+**Paso 5. Probar con «Enviar prueba».** En el navegador, en un evento de staging: tarjeta **«Parámetros del Evento»** → bloque **«Escarapela digital»** (si el interruptor está apagado, enciéndelo) → en el campo de prueba escribe un buzón tuyo → **«Enviar prueba»**. *Debes ver:* un aviso «Correo enviado a … (Microsoft Graph)» y, en tu buzón, un correo con asunto que empieza por `[STAGING]`, enviado por `soporteit@goldenlogisticas.com`. Si dice «Ni Microsoft Graph ni SMTP están configurados», falta redesplegar (paso 4); si dice «No se pudo enviar el correo (Graph) …», el mensaje trae el motivo de Microsoft (consentimiento, secreto vencido o regla RBAC).
+
+### 11.4 Verificar que la migración quedó en la última versión (0064)
+Después de un despliegue de staging, desde Cloud Shell (lee la cadena directa del secreto sin mostrarla y consulta una sola tabla):
+```bash
+psql "$(gcloud secrets versions access latest --secret golden-direct-database-url-staging)" -tAc "select version_num from alembic_version"
+```
+*Debes ver:* una sola línea, **`0064_accept_link`** (la cabeza actual). Si ves `0063_biometrics_lock`, la migración de ese despliegue no corrió.
+Alternativa con el Job de migraciones (no cambia nada: solo ejecuta `alembic current`; el Job ya trae `alembic` como comando, por eso el argumento es solo `current`):
+```bash
+gcloud run jobs execute golden-migrate-staging --region us-east4 --wait --args=current
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="golden-migrate-staging"' --freshness=15m --limit=30 --format='value(textPayload)' | grep -i "head"
+```
+*Debes ver:* `0064_accept_link (head)`.
+
+### 11.5 Producción: ¿un secreto propio por entorno? Sí
 - **Secretos de Secret Manager separados** (ya es el diseño: `golden-azure-client-secret-staging` y `golden-azure-client-secret`), para que staging nunca lea los de producción.
-- **Un secreto de cliente de Entra distinto por entorno.** Mínimo: en la misma aplicación, dos secretos con descripciones «staging» y «producción» (cada uno se rota y se revoca sin tocar el otro). Más fuerte: dos aplicaciones («Mailer GoldenWeb 2.0 staging» y «… producción»), cada una con su asignación RBAC; útil si algún día staging debe enviar desde otro buzón. Para el piloto basta lo mínimo.
+- **Un secreto de cliente de Entra distinto por entorno.** Mínimo: en la misma aplicación, dos secretos con descripciones «staging» y «producción» (cada uno se rota y se revoca sin tocar el otro). Más fuerte: dos aplicaciones, cada una con su asignación RBAC. Para el piloto basta lo mínimo.
 - **No reutilices el secreto de la máquina vieja (VM)** en Cloud Run: crea secretos nuevos para los dos entornos.
-- **Procedimiento en el corte:** (1) crear en Entra el secreto «producción»; (2) cargarlo con la misma función `cargar` pero con `SUF=` (vacío) y `golden-app`, `golden-ops`, `golden-deployer` sin sufijo — o con `bash deploy/gcp/bootstrap.sh production`, que lo pide en silencio; (3) desplegar producción (con tu autorización) y probar «Enviar prueba» y una constancia real; (4) cuando la VM esté apagada y producción lleve 7 días estable, **borrar en Entra el secreto que usa la VM** (Certificados y secretos → eliminar) y quitar la línea `AZURE_CLIENT_SECRET` de su `.env`.
-- **Rotación:** cada 12 meses o 30 días antes de vencer (el actual vence el 20/09/2028: pon un recordatorio para agosto de 2028). Orden: crear el secreto nuevo en Entra → `printf '%s' "$VALOR" | gcloud secrets versions add golden-azure-client-secret[-staging] --data-file=-` → redesplegar (los servicios leen `:latest` al arrancar una instancia) → «Enviar prueba» → borrar el secreto viejo en Entra y deshabilitar la versión vieja (`gcloud secrets versions disable <n> --secret …`).
+- **Procedimiento en el corte:** (1) crear en Entra el secreto «producción»; (2) cargarlo con la misma función `cargar` pero con `SUF=` (vacío) —la función usa `golden-app`, `golden-ops` y `golden-deployer` sin sufijo— o con `bash deploy/gcp/bootstrap.sh production`, que lo pide en silencio; (3) desplegar producción (con tu autorización) y probar «Enviar prueba» y una constancia real; (4) cuando la VM esté apagada y producción lleve 7 días estable, **borrar en Entra el secreto que usa la VM** (Certificados y secretos → eliminar) y quitar la línea `AZURE_CLIENT_SECRET` de su `.env`.
+- **Rotación:** cada 12 meses o 30 días antes de vencer (el actual vence el 20/09/2028: pon un recordatorio para agosto de 2028). Orden: crear el secreto nuevo en Entra → `printf '%s' "$VALOR" | gcloud secrets versions add golden-azure-client-secret[-staging] --data-file=-` (con `read -rsp` para `$VALOR`) → redesplegar (los servicios leen `:latest` al arrancar una instancia) → «Enviar prueba» → borrar el secreto viejo en Entra y deshabilitar la versión vieja (`gcloud secrets versions disable 1 --secret golden-azure-client-secret[-staging]`).
 - **Si el secreto se filtra:** borrarlo en Entra de inmediato (el envío se interrumpe hasta cargar uno nuevo), crear otro y seguir la rotación.
