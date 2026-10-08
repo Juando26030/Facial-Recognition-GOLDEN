@@ -465,6 +465,21 @@ def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmi
         log.error("no se pudo enviar la escarapela virtual de la inscripción %s", sub.id, exc_info=True)
 
 
+def _send_accept_link(db: Session, event: Event, sub: FormSubmission, person_id: str) -> None:
+    """Enlace personal de autorización por correo (B2a) al confirmar la inscripción. El correo lo escribió quien se inscribió: el enlace NO es confiable (la aceptación queda «por verificar»).
+    Una sola vez por persona y evento; nunca lanza (la inscripción ya quedó cargada)."""
+    from app import acceptlink
+    try:
+        user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
+        att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
+        to = (user.email or "").strip() if user else ""
+        if not (user and att and re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$", to)) or att.accept_sent_at or minors.is_minor(user.birth_date):
+            return
+        acceptlink.send_link(db, event, user, att, to, trusted=False)
+    except Exception:       # noqa: BLE001 — ver docstring
+        log.error("no se pudo enviar el enlace de autorización de la inscripción %s", sub.id, exc_info=True)
+
+
 def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_attendee) -> Optional[str]:
     """Carga UNA inscripción a la base del evento como «No registrado» (Usuario + asistente del evento). Devuelve un
     mensaje de error si no se pudo (p. ej. no trae cédula) o None. No toca AccessLog: no queda registrado."""
@@ -497,6 +512,8 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     sub.fed = True
     if not sub.is_test and wants_digital_badge(db, form):
         _send_digital_badge(db, form, event, sub, person_id, upsert_attendee)
+    if not sub.is_test and event.aceptar_enabled and event.accept_link_email and event.facial_enabled and not event.biometrics_locked:
+        _send_accept_link(db, event, sub, person_id)
     return None
 
 

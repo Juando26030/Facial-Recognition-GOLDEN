@@ -27,8 +27,10 @@
   <h1 style="font-size:1.3rem;">{{ event_name }}</h1>
   <section id="step1">
     <p>Si quieres entrar al evento con reconocimiento facial, completa esto antes de llegar. Es <b>totalmente voluntario</b>: sin hacerlo entras con tu cédula o QR sin ninguna restricción.</p>
+    {% if not token %}
     <label for="cedula">Número de documento</label>
     <input type="text" id="cedula" inputmode="numeric" autocomplete="off">
+    {% endif %}
     <label for="birth">Fecha de nacimiento</label>
     <input type="date" id="birth">
     <button type="button" class="primary" id="go">Continuar</button>
@@ -37,55 +39,76 @@
     <h2 id="title" style="font-size:1.15rem;"></h2>
     <div id="body"></div>
     <label class="check" id="adultRow" hidden><input type="checkbox" id="adult"><span id="adultText"></span></label>
-    <div id="selfieRow" hidden>
+    <button type="button" class="primary" id="yes"></button>
+    <button type="button" class="secondary" id="no"></button>
+  </section>
+  <section id="step3" hidden>
+    <div id="selfieRow">
       <label for="selfie">Tu selfie (de frente, con buena luz)</label>
       <input type="file" id="selfie" accept="image/*" capture="user">
     </div>
-    <button type="button" class="primary" id="yes"></button>
-    <button type="button" class="secondary" id="no"></button>
+    <button type="button" class="primary" id="send">Enviar mi selfie</button>
   </section>
   <div id="out" class="msg" role="status" aria-live="polite" hidden></div>
 </main>
 <script>
 (function () {
   const code = {{ code|tojson }};
+  const token = {{ token|tojson }};
+  const channel = {{ channel|tojson }};
+  const needSelfie = {{ 'true' if need_selfie else 'false' }};
   const $ = (id) => document.getElementById(id);
   let block = null;
   const say = (t, bad) => { const o = $('out'); o.hidden = false; o.textContent = t; o.style.borderColor = bad ? '#c0392b' : ''; };
+  const identity = () => { const fd = new FormData(); if (token) fd.append('token', token); else fd.append('cedula', $('cedula').value.trim()); fd.append('birth_date', $('birth').value); return fd; };
   async function load() {
     const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/text`, { cache: 'no-store' });
     if (!r.ok) { say((await r.json().catch(() => ({}))).detail || 'No disponible', true); return null; }
     return r.json();
   }
+  // Primero la fecha de nacimiento (menores): antes de ver el texto y, sobre todo, antes de que se abra la cámara.
   $('go').addEventListener('click', async () => {
-    if (!$('cedula').value.trim() || !$('birth').value) return say('Escribe tu documento y tu fecha de nacimiento.', true);
-    block = await load(); if (!block) return;
-    $('title').textContent = block.title;
-    const body = $('body'); body.replaceChildren();
-    block.body.forEach((p) => { const e = document.createElement('p'); e.className = 'legal'; e.textContent = p; body.appendChild(e); });
-    $('yes').textContent = block.buttons[0]; $('no').textContent = block.buttons[1];
-    if (block.adult_checkbox) { $('adultRow').hidden = false; $('adultText').textContent = block.adult_checkbox; }
-    $('selfieRow').hidden = false;
-    $('step1').hidden = true; $('step2').hidden = false; $('out').hidden = true; window.scrollTo(0, 0);
+    if ((!token && !$('cedula').value.trim()) || !$('birth').value) return say(token ? 'Escribe tu fecha de nacimiento.' : 'Escribe tu documento y tu fecha de nacimiento.', true);
+    $('go').disabled = true;
+    try {
+      const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/check`, { method: 'POST', body: identity() });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return say(j.detail || 'No se pudo comprobar. Intenta de nuevo o ingresa con tu cédula o QR.', true);
+      if (j.status === 'minor') { $('step1').hidden = true; return say(j.message); }
+      block = await load(); if (!block) return;
+      $('title').textContent = block.title;
+      const body = $('body'); body.replaceChildren();
+      block.body.forEach((p) => { const e = document.createElement('p'); e.className = 'legal'; e.textContent = p; body.appendChild(e); });
+      $('yes').textContent = block.buttons[0]; $('no').textContent = block.buttons[1];
+      if (block.adult_checkbox) { $('adultRow').hidden = false; $('adultText').textContent = block.adult_checkbox; }
+      $('step1').hidden = true; $('step2').hidden = false; $('out').hidden = true; window.scrollTo(0, 0);
+    } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); }
+    finally { $('go').disabled = false; }
   });
   async function send(decision) {
-    const fd = new FormData();
-    fd.append('cedula', $('cedula').value.trim()); fd.append('birth_date', $('birth').value); fd.append('decision', decision);
+    const fd = identity();
+    fd.append('channel', channel); fd.append('decision', decision);
     fd.append('text_hash', block.hash); fd.append('adult', $('adult').checked ? 'true' : 'false');
-    if (decision === 'accept') {
-      const f = $('selfie').files[0];
+    let f = null;
+    if (decision === 'accept' && needSelfie) {
+      f = $('selfie').files[0];
       if (!f) return say('Falta tu selfie.', true);
       fd.append('file', f);
     }
-    $('yes').disabled = $('no').disabled = true;
+    $('yes').disabled = $('no').disabled = $('send').disabled = true;
     try {
       const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}`, { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) { $('step2').hidden = true; say(j.message || 'Listo.'); }
-      else { say(j.detail || 'No se pudo completar. Intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = false; }
-    } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = false; }
+      if (r.ok) { $('step2').hidden = true; $('step3').hidden = true; say(j.message || 'Listo.'); $('selfie').value = ''; f = null; fd.delete('file'); }          // la foto no queda colgada en la pestaña
+      else { say(j.detail || 'No se pudo completar. Intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }
+    } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }
   }
-  $('yes').addEventListener('click', () => send('accept'));
+  // Aceptar primero; la cámara (la selfie) aparece solo después de aceptar.
+  $('yes').addEventListener('click', () => {
+    if (block.adult_checkbox && !$('adult').checked) return say('Marca la declaración de mayoría de edad para continuar.', true);
+    if (needSelfie) { $('step2').hidden = true; $('step3').hidden = false; $('out').hidden = true; window.scrollTo(0, 0); } else send('accept');
+  });
+  $('send').addEventListener('click', () => send('accept'));
   $('no').addEventListener('click', () => send('reject'));
 })();
 </script>

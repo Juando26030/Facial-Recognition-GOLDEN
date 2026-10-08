@@ -121,6 +121,14 @@ def _no_wompi_status_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_public_limiter(monkeypatch):
+    """El límite por IP de las páginas públicas de aceptación vive en memoria del proceso: cada prueba parte de cero (si no, las pruebas de una sola IP se estorban entre sí)."""
+    from app.routers import aceptar
+    from app.ttlcache import SlidingLimiter
+    monkeypatch.setattr(aceptar, "_limiter", SlidingLimiter())
+
+
+@pytest.fixture(autouse=True)
 def _jobs_inline(monkeypatch):
     """En produccion los trabajos en segundo plano los ejecuta un worker; en las pruebas «despertar al worker» los ejecuta en el acto (asi el
     comportamiento visible es el de siempre). Las pruebas de la cola usan `jobs.enqueue`/`run_once` directamente."""
@@ -142,14 +150,16 @@ def outbox(monkeypatch):
     """Correos que la app intentó enviar (no sale nada al exterior)."""
     sent = []
 
-    def fake_send_mail(to, subject, body, attachments=None, html=None):
-        sent.append({"to": to, "subject": subject, "body": body, "html": html})
+    def fake_send_mail(to, subject, body, attachments=None, html=None, reply_to=None):
+        sent.append({"to": to, "subject": subject, "body": body, "html": html, "reply_to": reply_to})
         return {"sent": True, "detail": "prueba"}
 
     monkeypatch.setattr("app.routers.auth.send_mail", fake_send_mail)
     monkeypatch.setattr("app.routers.event_report.send_mail", fake_send_mail)
     monkeypatch.setattr("app.digital_badge.send_mail", fake_send_mail)
     monkeypatch.setattr("app.routers.forms.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.acceptlink.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.consent_receipt.send_mail", fake_send_mail)
     return sent
 
 

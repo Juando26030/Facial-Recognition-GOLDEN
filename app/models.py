@@ -85,6 +85,9 @@ class EventAttendee(Base):
     digital_contact = Column(String, nullable=True)  # ítem 17: correo o teléfono al que se envía la escarapela digital
     digital_token = Column(String, unique=True, nullable=True)  # ítem 17: enlace secreto /b/<token>
     digital_sent_at = Column(DateTime, nullable=True)
+    accept_token = Column(String, unique=True, nullable=True)       # enlace personal de autorización /aceptar/<código>/<token> (0064): uno por persona y evento, revocable (se vuelve a generar)
+    accept_trusted = Column(Boolean, default=False, server_default='false', nullable=False)   # el enlace salió del listado que cargó el organizador (correo propio): abrirlo verifica la aceptación; si salió de un formulario abierto, no
+    accept_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
     __table_args__ = (
@@ -227,6 +230,7 @@ class Event(Base):
     created_at = Column(DateTime, default=utcnow)
     optional_field_labels = Column(Text)  # JSON {"opcional_1": "Talla de camisa", ...} — nombres que el cliente le dio a las columnas "opcional_N" de SU roster (2026-09-20, ver bulk_register)
     facial_enabled = Column(Boolean, default=False, nullable=False)  # se enciende sola la primera vez que se sube un roster con zip de fotos (ver bulk_register); desde 2026-09-27 coordinador+ también puede prenderla/apagarla a mano en cualquier momento desde Parámetros del Evento (set_facial_enabled) — apagarla no borra ningún rostro ya guardado. Decide si /kiosk/{id}/registro muestra el escáner de cámara o se comporta como cédula tradicional.
+    accept_link_email = Column(Boolean, default=False, server_default='false', nullable=False)   # al inscribirse por formulario se envía el enlace personal de autorización por correo (0064)
     biometrics_locked = Column(Boolean, default=False, server_default='false', nullable=False)   # candado «sin biometría» (0063): el servidor no deja activar el rostro, guardar fotos ni encolar vectores en este evento
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
@@ -834,6 +838,7 @@ class WebAcceptance(Base):
     created_at = Column(DateTime, nullable=False, default=utcnow)
     verified_at = Column(DateTime, nullable=True)
     verified_by_staff_id = Column(Integer, nullable=True)
+    verified_via = Column(String(12), nullable=True)      # 'staff' (en la puerta) | 'link' (abrió su enlace personal: dueño del correo)
 
 
 class AuditConsentLog(Base):

@@ -46,13 +46,15 @@ def _graph_token() -> str:
     return _graph_token_cache["token"]
 
 
-def _send_via_graph(to: str, subject: str, body: str, attachments: list, html: Optional[str] = None) -> dict:
+def _send_via_graph(to: str, subject: str, body: str, attachments: list, html: Optional[str] = None, reply_to: Optional[str] = None) -> dict:
     sender = os.environ["GRAPH_SENDER"]
     message = {
         "subject": subject,
         "body": {"contentType": "HTML", "content": html} if html else {"contentType": "Text", "content": body},
         "toRecipients": [{"emailAddress": {"address": to}}],
     }
+    if reply_to:
+        message["replyTo"] = [{"emailAddress": {"address": reply_to}}]
     if attachments:
         message["attachments"] = [
             {"@odata.type": "#microsoft.graph.fileAttachment", "name": name, "contentType": mime,
@@ -82,7 +84,7 @@ def _outbox_fallback(msg: EmailMessage, to: str, reason: str) -> dict:
     return {"sent": False, "detail": f"{reason} — el correo quedó guardado en {key}"}
 
 
-def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = None, html: Optional[str] = None) -> dict:
+def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = None, html: Optional[str] = None, reply_to: Optional[str] = None) -> dict:
     """`attachments`: lista de (nombre_archivo, bytes, mime "tipo/subtipo"). Devuelve
     {"sent": bool, "detail": str} — nunca lanza: quien llama decide qué mostrar. `html`: versión con formato (el `body` queda como texto alterno)."""
     attachments = attachments or []
@@ -90,12 +92,14 @@ def send_mail(to: str, subject: str, body: str, attachments: Optional[list] = No
         subject = "[STAGING] " + subject                      # ningún correo de pruebas se confunde con uno de producción
 
     if all(os.getenv(k) for k in ("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "GRAPH_SENDER")):
-        return _send_via_graph(to, subject, body, attachments, html)
+        return _send_via_graph(to, subject, body, attachments, html, reply_to)
 
     msg = EmailMessage()
     host = os.getenv("SMTP_HOST", "").strip()
     sender = os.getenv("SMTP_FROM") or os.getenv("SMTP_USER") or "no-reply@golden.local"
     msg["From"], msg["To"], msg["Subject"] = sender, to, subject
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.set_content(body)
     if html:
         msg.add_alternative(html, subtype="html")

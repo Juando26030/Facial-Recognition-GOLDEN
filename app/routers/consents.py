@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import biometric_setup, consent, enroll, faces, jobs, legal_texts, privacy
+from app import biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.routers.api import SYNC_HASH_RE, _event_for_sync, _roster_map
@@ -82,6 +82,8 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
                             legal_text_hash=text_hash, accepted=accepted, adult=bool(e.get("adult")), reason="consent" if accepted else "rejection",
                             device=(str(e.get("device") or f"staff:{staff.id}"))[:120], entry_id=entry_id, at=_when(e.get("at")))
         inserted, duplicated = inserted + ok, duplicated + (not ok)
+        if ok and accepted:
+            consent_receipt.enqueue(db, entry_id, event.tenant_id, event.id, uid, consent_receipt.channel_of(str(e.get("device") or "")))      # constancia por correo (si tiene correo); en segundo plano
         if ok and accepted:                                     # volvió a aceptar tras una revocación: el reconocimiento vuelve a estar habilitado para esta persona (adulta)
             enroll.maybe_enqueue(db, event.tenant_id, uid, event.id)      # si ya tenía una foto guardada, ahora sí se calcula su vector
             db.execute(text("UPDATE users SET is_biometric_enabled = true WHERE id = :u AND tenant_id = :t AND is_biometric_enabled = false"), {"u": uid, "t": event.tenant_id})
@@ -194,7 +196,8 @@ def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get
 def _setup_config(event) -> dict:
     return {"facial_enabled": event.facial_enabled, "controller_mode": event.controller_mode, "organizer_name": event.organizer_name, "organizer_nit": event.organizer_nit,
             "organizer_privacy_email": event.organizer_privacy_email, "client_photos_before": event.client_photos_before, "consent_prompt_mode": event.consent_prompt_mode,
-            "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked)}
+            "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked),
+            "accept_link_email": bool(event.accept_link_email)}
 
 
 @router.get("/events/{event_id}/biometric-setup")
@@ -212,16 +215,17 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     cur = _setup_config(event)
     new = {**cur, **{k: data[k] for k in cur if k in data and k != "precalculo_autorizado"}}
     if new["biometrics_locked"] and not cur["biometrics_locked"]:      # al poner el candado, lo que no se pidió expresamente se apaga solo
-        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before"):
+        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before", "accept_link_email"):
             if k not in data:
                 new[k] = False
     for k in ("organizer_name", "organizer_nit", "organizer_privacy_email"):
         new[k] = (str(new[k] or "").strip() or None)
     errors = biometric_setup.validate(str(new["controller_mode"]), bool(new["facial_enabled"]), new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"],
-                                      bool(new["client_photos_before"]), bool(new["aceptar_enabled"]), str(new["consent_prompt_mode"]), locked=bool(new["biometrics_locked"]))
+                                      bool(new["client_photos_before"]), bool(new["aceptar_enabled"]), str(new["consent_prompt_mode"]), locked=bool(new["biometrics_locked"]), accept_link=bool(new["accept_link_email"]))
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
     event.biometrics_locked = bool(new["biometrics_locked"])
+    event.accept_link_email = bool(new["accept_link_email"])
     event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])

@@ -1,8 +1,11 @@
-"""CAMINO B: /aceptar/<código del evento>: la persona acepta (o no) el reconocimiento facial y da su selfie desde su celular, ANTES del evento. Página pública y sin sesión.
+"""CAMINO B: /aceptar/<código del evento>: la persona acepta (o no) el reconocimiento facial y, según el evento, da su selfie desde su celular, ANTES del evento. Página pública y sin sesión.
 
-Reglas: solo quien YA está inscrito en el evento (no se crean personas aquí); el texto que firma es el literal de la auditora (versión `v1.1_web`) y la huella del texto se registra;
-menores de 18 años quedan fuera; el vector se calcula DESPUÉS, por tarea, nunca antes de aceptar; y como alguien podría aceptar con la cédula de otra persona, la aceptación queda «por
-verificar» (`web_acceptances`): no vale para el reconocimiento hasta que el personal confirme la identidad en puerta con el documento o el QR."""
+Tres formas de llegar (canal que luego dice la constancia): el enlace personal `/aceptar/<código>/<token>` (B2a; el correo del enlace identifica a la persona), el QR del cartel (`?c=qr`) y el
+portal web (la dirección sin más). Reglas: solo quien YA está inscrito en el evento (no se crean personas aquí); el texto que firma es el literal de la auditora (versión `v1.1_web`) y la huella
+del texto se registra; la fecha de nacimiento se valida ANTES de mostrar el texto y de abrir la cámara (menores de 18 años quedan fuera, B2e); el vector se calcula DESPUÉS, por tarea, nunca antes
+de aceptar; la fuente de la foto la define el evento (B2c): selfie de la persona, o la foto que entregó el cliente (entonces no se pide selfie). Como alguien podría aceptar con la cédula de otra
+persona, la aceptación queda «por verificar» (`web_acceptances`) hasta que el personal confirme la identidad en puerta; SALVO el enlace personal que salió del listado del organizador (correo
+propio de cada persona): abrirlo verifica (`verified_via='link'`)."""
 import re
 import uuid
 from datetime import timedelta
@@ -13,7 +16,7 @@ from PIL import Image
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import consent, crypto, jobs, legal_texts, minors, privacy, security
+from app import consent, consent_receipt, crypto, enroll, jobs, legal_texts, minors, privacy, security
 from app.database import get_db
 from app.models import Event, EventAttendee, User, WebAcceptance
 from app.storage import photo_key
@@ -24,11 +27,14 @@ router = APIRouter()
 _limiter = SlidingLimiter()
 MAX_SELFIE_BYTES = 8 * 1024 * 1024
 GENERIC_NOT_FOUND = "No encontramos tu inscripción con ese documento y esa fecha. Acércate a la acreditación con tu cédula o QR."
+LINK_NOT_FOUND = "Este enlace no es válido o ya no está vigente. Acércate a la acreditación con tu cédula o QR."
+MINOR_MESSAGE = "No puedes usar el reconocimiento facial. Ingresa con tu cédula o QR en la acreditación."
+DEVICE = {"link": "web-link", "qr": "web-qr", "web": "web-portal"}
 
 
 def _event(db: Session, code: str) -> Event:
     event = db.query(Event).filter(Event.event_code == code).first()
-    if not event or not event.aceptar_enabled or not event.facial_enabled or event.status == "finalizado":
+    if not event or not event.aceptar_enabled or not event.facial_enabled or event.biometrics_locked or event.status == "finalizado":
         raise HTTPException(status_code=404, detail="Esta página no está disponible")
     return event
 
@@ -39,11 +45,68 @@ def _limit(request: Request, kind: str, max_hits: int) -> None:
         raise HTTPException(status_code=429, detail="Demasiados intentos seguidos — espera unos minutos.")
 
 
-@router.get("/aceptar/{code}", response_class=HTMLResponse)
-def page(code: str, request: Request, db: Session = Depends(get_db)):
+def _by_token(db: Session, event: Event, token: str):
+    att = db.query(EventAttendee).filter(EventAttendee.accept_token == token, EventAttendee.event_id == event.id).first() if token else None
+    user = db.query(User).filter(User.id == att.user_id, User.tenant_id == att.tenant_id).first() if att else None
+    return (user, att) if user is not None else (None, None)
+
+
+def _by_cedula(db: Session, event: Event, cedula: str):
+    uid = re.sub(r"[\s.]", "", cedula or "")
+    if not uid:
+        return None, None
+    att = db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id == uid, EventAttendee.tenant_id == event.tenant_id).first()
+    user = db.query(User).filter(User.id == uid, User.tenant_id == event.tenant_id).first() if att else None
+    return (user, att) if user is not None else (None, None)
+
+
+def _resolve(db: Session, event: Event, cedula: str, token: str):
+    """(persona, asistente, vino_por_enlace). 404 genérico: no revela quién está inscrito."""
+    if token:
+        user, att = _by_token(db, event, token)
+        if user is None:
+            raise HTTPException(status_code=404, detail=LINK_NOT_FOUND)
+        return user, att, True
+    user, att = _by_cedula(db, event, cedula)
+    if user is None:
+        raise HTTPException(status_code=404, detail=GENERIC_NOT_FOUND)
+    return user, att, False
+
+
+def _check_birth(user: User, birth_raw: str):
+    """La fecha de nacimiento escrita: válida y, si ya hay una registrada, la misma. 400 si falta o no se entiende; 404 genérico si no coincide."""
+    birth = minors.parse_birth(birth_raw)
+    if birth is None:
+        raise HTTPException(status_code=400, detail="Escribe tu fecha de nacimiento")
+    if user.birth_date is not None and user.birth_date != birth:
+        raise HTTPException(status_code=404, detail=GENERIC_NOT_FOUND)
+    return birth
+
+
+def _need_selfie(event: Event) -> bool:
+    """B2c: fuente B (la persona se toma la selfie) salvo que el cliente entregue las fotos antes (fuente A)."""
+    return not event.client_photos_before
+
+
+def _page(request: Request, event: Event, code: str, token: str, channel: str):
     from app.main import templates
+    return templates.TemplateResponse(request=request, name="aceptar.html", context={"event_name": event.name, "code": code, "token": token, "channel": channel, "need_selfie": _need_selfie(event)})
+
+
+@router.get("/aceptar/{code}", response_class=HTMLResponse)
+def page(code: str, request: Request, c: str = "", db: Session = Depends(get_db)):
     event = _event(db, code)
-    return templates.TemplateResponse(request=request, name="aceptar.html", context={"event_name": event.name, "code": code})
+    return _page(request, event, code, "", "qr" if c == "qr" else "web")
+
+
+@router.get("/aceptar/{code}/{token}", response_class=HTMLResponse)
+def personal_page(code: str, token: str, request: Request, db: Session = Depends(get_db)):
+    _limit(request, "aceptar_link", 60)
+    event = _event(db, code)
+    user, _att = _by_token(db, event, token)
+    if user is None:
+        return HTMLResponse("<meta name='viewport' content='width=device-width, initial-scale=1'><h3 style='font-family:system-ui,sans-serif;text-align:center;margin:20vh 1rem 0'>" + LINK_NOT_FOUND + "</h3>", status_code=404)
+    return _page(request, event, code, token, "link")
 
 
 @router.get("/api/aceptar/{code}/text")
@@ -56,9 +119,24 @@ def consent_text(code: str, request: Request, db: Session = Depends(get_db)):
     return {k: t[k] for k in ("version", "hash", "title", "body", "buttons", "adult_checkbox")}
 
 
+@router.post("/api/aceptar/{code}/check")
+def check(code: str, request: Request, cedula: str = Form(""), token: str = Form(""), birth_date: str = Form(""), db: Session = Depends(get_db)):
+    """B2e: la fecha de nacimiento se valida ANTES de mostrar el texto y de abrir la cámara. Un menor nunca ve la cámara ni se guarda nada suyo."""
+    _limit(request, "aceptar_check", 30)
+    event = _event(db, code)
+    user, _att, _link = _resolve(db, event, cedula, token)
+    birth = _check_birth(user, birth_date)
+    if minors.is_minor(birth):
+        user.birth_date = birth
+        user.is_biometric_enabled = False
+        privacy.purge_person(db, event.tenant_id, user.id)
+        return {"status": "minor", "message": MINOR_MESSAGE}
+    return {"status": "ok", "selfie": _need_selfie(event)}
+
+
 @router.post("/api/aceptar/{code}")
-def submit(code: str, request: Request, cedula: str = Form(...), birth_date: str = Form(""), decision: str = Form(...), text_hash: str = Form(...), adult: bool = Form(False),
-           file: UploadFile = File(None), db: Session = Depends(get_db)):
+def submit(code: str, request: Request, cedula: str = Form(""), token: str = Form(""), channel: str = Form("web"), birth_date: str = Form(""), decision: str = Form(...), text_hash: str = Form(...),
+           adult: bool = Form(False), file: UploadFile = File(None), db: Session = Depends(get_db)):
     _limit(request, "aceptar_post", 15)
     event = _event(db, code)
     t = legal_texts.render(event, web=True)
@@ -68,42 +146,54 @@ def submit(code: str, request: Request, cedula: str = Form(...), birth_date: str
         raise HTTPException(status_code=409, detail="El texto cambió: recarga la página")
     if decision not in ("accept", "reject"):
         raise HTTPException(status_code=400, detail="Decisión no válida")
-    uid = re.sub(r"[\s.]", "", cedula)
-    birth = minors.parse_birth(birth_date)
-    if not uid or birth is None:
-        raise HTTPException(status_code=400, detail="Escribe tu documento y tu fecha de nacimiento")
-    user = (db.query(User).join(EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id))
-            .filter(EventAttendee.event_id == event.id, User.id == uid, User.tenant_id == event.tenant_id).first())
-    if user is None or (user.birth_date is not None and user.birth_date != birth):      # mismo mensaje en ambos casos: no se revela quién está inscrito
-        raise HTTPException(status_code=404, detail=GENERIC_NOT_FOUND)
+    user, att, by_link = _resolve(db, event, cedula, token)
+    uid = user.id
+    ch = "link" if by_link else ("qr" if channel == "qr" else "web")
+    birth = _check_birth(user, birth_date)
     user.birth_date = birth
     if minors.is_minor(birth):
         user.is_biometric_enabled = False
         privacy.purge_person(db, event.tenant_id, uid)
-        return {"status": "minor", "message": "No puedes usar el reconocimiento facial. Ingresa con tu cédula o QR en la acreditación."}
+        return {"status": "minor", "message": MINOR_MESSAGE}
+    device = DEVICE[ch]
     if decision == "reject" or (t["adult_checkbox"] and not adult):
-        consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=t["version"], legal_text_hash=t["hash"], accepted=False, adult=bool(adult), reason="rejection", device="web")
+        consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=t["version"], legal_text_hash=t["hash"], accepted=False, adult=bool(adult), reason="rejection", device=device)
         if not consent.has_any_acceptance(db, event.tenant_id, uid):
             privacy.purge_person(db, event.tenant_id, uid)
         db.commit()
         return {"status": "rejected", "message": "Listo: ingresarás con tu cédula o QR, sin restricción alguna."}
-    if file is None or not file.filename:
-        raise HTTPException(status_code=400, detail="Falta tu selfie")
-    raw = file.file.read(MAX_SELFIE_BYTES + 1)
-    if len(raw) > MAX_SELFIE_BYTES:
-        raise HTTPException(status_code=413, detail="La foto es demasiado grande")
-    try:
-        from app.biometrics import BiometricEngine
-        arr = BiometricEngine.process_image_stream(raw)
-    except Exception:  # noqa: BLE001 — imagen ilegible
-        raise HTTPException(status_code=400, detail="La imagen no es válida")
-    consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=t["version"], legal_text_hash=t["hash"], accepted=True, adult=True, reason="consent", device="web",
-                   entry_id=str(uuid.uuid4()))
-    if db.get(WebAcceptance, (event.tenant_id, uid, event.id)) is None:
-        db.add(WebAcceptance(tenant_id=event.tenant_id, user_id=uid, event_id=event.id, created_at=utcnow()))
+    arr = None
+    if _need_selfie(event):                                   # fuente B: la persona se toma la selfie
+        if file is None or not file.filename:
+            raise HTTPException(status_code=400, detail="Falta tu selfie")
+        raw = file.file.read(MAX_SELFIE_BYTES + 1)
+        if len(raw) > MAX_SELFIE_BYTES:
+            raise HTTPException(status_code=413, detail="La foto es demasiado grande")
+        try:
+            from app.biometrics import BiometricEngine
+            arr = BiometricEngine.process_image_stream(raw)
+        except Exception:  # noqa: BLE001 — imagen ilegible
+            raise HTTPException(status_code=400, detail="La imagen no es válida")
+    entry_id = str(uuid.uuid4())
+    consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=t["version"], legal_text_hash=t["hash"], accepted=True, adult=True, reason="consent", device=device, entry_id=entry_id)
+    now = utcnow()
+    trusted = bool(by_link and att is not None and att.accept_trusted)
+    wa = db.get(WebAcceptance, (event.tenant_id, uid, event.id))
+    if wa is None:
+        wa = WebAcceptance(tenant_id=event.tenant_id, user_id=uid, event_id=event.id, created_at=now)
+        db.add(wa)
+    if trusted and wa.verified_at is None:                  # dueño del correo al que el organizador envió el enlace: verificada, sin confirmación del personal
+        wa.verified_at, wa.verified_via = now, "link"
     db.execute(text("UPDATE users SET is_biometric_enabled = true WHERE id = :u AND tenant_id = :t"), {"u": uid, "t": event.tenant_id})
-    crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
-    jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "user_id": uid, "event_id": event.id}, max_attempts=3)
+    if arr is not None:
+        crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
+        jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "user_id": uid, "event_id": event.id}, max_attempts=3)
+    else:
+        enroll.maybe_enqueue(db, event.tenant_id, uid, event.id)      # fuente A: si el cliente ya entregó su foto, ahora sí se calcula el vector
+    consent_receipt.enqueue(db, entry_id, event.tenant_id, event.id, uid, ch)
     db.commit()
     jobs.kick(pool="faces")
-    return {"status": "accepted", "message": "¡Gracias! Cuando llegues, muestra tu cédula o QR en la acreditación: el personal confirmará tu identidad y desde ahí podrás entrar con tu rostro."}
+    jobs.kick()
+    if trusted:
+        return {"status": "accepted", "verified": True, "message": "¡Gracias! Tu autorización quedó registrada. Si tienes un correo registrado, te enviaremos tu constancia."}
+    return {"status": "accepted", "verified": False, "message": "¡Gracias! Cuando llegues, muestra tu cédula o QR en la acreditación: el personal confirmará tu identidad y desde ahí podrás entrar con tu rostro."}

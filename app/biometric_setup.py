@@ -18,7 +18,7 @@ def tercero_missing(controller: str, name: Optional[str], nit: Optional[str], em
     return [label for label, v in (("la razón social del organizador", name), ("el NIT del organizador", nit), ("el correo de privacidad del organizador", email)) if not (v or "").strip()]
 
 
-def validate(controller: str, facial: bool, name, nit, email, photos_before: bool, aceptar: bool, prompt: str, locked: bool = False) -> List[str]:
+def validate(controller: str, facial: bool, name, nit, email, photos_before: bool, aceptar: bool, prompt: str, locked: bool = False, accept_link: bool = False) -> List[str]:
     """Errores (en español, para mostrar tal cual) de una configuración propuesta; lista vacía = válida."""
     errors = []
     if locked and (facial or aceptar or photos_before):
@@ -31,7 +31,9 @@ def validate(controller: str, facial: bool, name, nit, email, photos_before: boo
         missing = tercero_missing(controller, name, nit, email)
         if missing:
             errors.append("Para activar el reconocimiento facial en un evento de un tercero falta: " + ", ".join(missing))
-    if not facial and (aceptar or photos_before):
+    if accept_link and not aceptar:
+        errors.append("El enlace personal por correo necesita la aceptación desde el celular (página /aceptar) activa")
+    if not facial and (aceptar or photos_before or accept_link):
         errors.append("La aceptación desde el celular y las fotos previas solo aplican con el reconocimiento facial activo")
     return errors
 
@@ -78,6 +80,11 @@ def summary(event: Event) -> dict:
     door.append("La autorización se pide " + ("una sola vez por persona y evento." if event.consent_prompt_mode == "once" else "antes de cada uso, con dos botones cortos."))
     if event.aceptar_enabled:
         door.append("Antes del evento, las personas ya inscritas pueden aceptar desde su celular con el QR del cartel o el enlace; en la puerta el personal confirma su identidad con el documento o el QR y desde ahí entran por rostro.")
+        if event.accept_link_email:
+            door.append("Quien se inscriba por formulario recibirá por correo su enlace personal para autorizar; como el correo lo escribió él mismo, su aceptación igual queda «por verificar»: el personal confirma su identidad en la puerta.")
+        if not event.client_photos_before:
+            door.append("Fuente de la foto: cada persona se toma una selfie desde su celular (enlace, formulario o QR); se guarda cifrada y el rostro se calcula cuando acepta. Antes de abrir la cámara se valida la fecha de nacimiento: un menor no pasa.")
+        door.append("Cuando alguien acepta, recibe por correo su constancia (sin la foto) con la escarapela virtual si el evento la tiene.")
     else:
         door.append("No hay aceptación previa por celular (está apagada).")
     if event.client_photos_before:
