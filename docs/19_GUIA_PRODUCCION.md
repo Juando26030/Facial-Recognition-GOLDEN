@@ -92,8 +92,11 @@ gcloud run services list --region us-east4 --format='value(metadata.name)'     #
 gcloud run jobs list --region us-east4 --format='value(metadata.name)'         # golden-bulk golden-migrate golden-ops
 gcloud scheduler jobs list --location us-east4                                  # golden-ops-hourly … PAUSED
 gcloud secrets list --format='value(name)' | grep -c .                          # ~15-20
+# Firma de URLs de subida (Adjuntar Base de Datos, archivos de formularios): la cuenta de la app debe poder firmar con la API IAM
+gcloud services list --enabled --filter=name:iamcredentials.googleapis.com --format='value(name)'   # debe listar la API
+gcloud iam service-accounts get-iam-policy golden-app@$PROJECT_ID.iam.gserviceaccount.com --format='value(bindings.role)' | grep serviceAccountTokenCreator   # debe aparecer
 ```
-*Si falla:* el script es idempotente: corrígelo (permiso, API, cadena de Neon) y vuelve a correr **el mismo comando**; lo que ya existe no se toca. Si el rol `golden_app` no se crea, la cadena de Neon no es la del dueño o es la *pooled*.
+*Si falla:* el script es idempotente: corrígelo (permiso, API —incluida `iamcredentials.googleapis.com`—, cadena de Neon) y vuelve a correr **el mismo comando**; lo que ya existe no se toca. Si el rol `golden_app` no se crea, la cadena de Neon no es la del dueño o es la *pooled*.
 
 ---
 
