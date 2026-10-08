@@ -138,6 +138,7 @@ class _FakeBlob:
         self.name, self.calls = name, calls
 
     def generate_signed_url(self, **kw):
+        kw["headers"]["Host"] = "storage.googleapis.com"          # lo que hace la biblioteca real con el diccionario que recibe
         self.calls.append((self.name, kw))
         return "https://storage.googleapis.com/firmada"
 
@@ -167,7 +168,7 @@ def test_gcs_signed_put_url_signs_type_and_size_and_uses_iam_without_a_private_k
     url, headers = store.signed_put_url("uploads/acme/bulk_zip/x/fotos.zip", "application/zip", 1000, 900)
     name, kw = calls[0]
     assert url.startswith("https://") and name == "golden/uploads/acme/bulk_zip/x/fotos.zip"
-    assert headers == {"Content-Type": "application/zip", "x-goog-content-length-range": "0,1000"} and kw["headers"] == headers
+    assert headers == {"Content-Type": "application/zip", "x-goog-content-length-range": "0,1000"} and {k: v for k, v in kw["headers"].items() if k != "Host"} == headers and "Host" not in headers
     assert kw["method"] == "PUT" and kw["version"] == "v4" and "access_token" not in kw
 
     # Cloud Run: credenciales de Compute, sin llave privada; el token se obtiene al refrescar y debe venir del alcance cloud-platform

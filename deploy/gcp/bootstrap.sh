@@ -181,12 +181,7 @@ for b in "$APP_BUCKET" "$BACKUP_BUCKET"; do
   gcloud storage buckets describe "gs://$b" --format='json(lifecycle_config)' | sed 's/^/     /'
 done
 mapfile -t CORS_ORIGINS < <(cors_origins)              # deploy/gcp/config.sh: la MISMA lista que comprueba move_region.sh verify
-python3 - "${CORS_ORIGINS[@]}" > "$TMP/cors.json" <<'EOF'
-import json, sys
-rules = json.load(open("deploy/gcs-app-cors.json"))
-rules[0]["origin"] = sorted(set(sys.argv[1:]))
-print(json.dumps(rules))
-EOF
+python3 deploy/gcp/cors_json.py "${CORS_ORIGINS[@]}" > "$TMP/cors.json"
 gcloud storage buckets update "gs://$APP_BUCKET" --cors-file "$TMP/cors.json" --versioning --quiet >/dev/null
 # Sin «soft delete» (retención de lo borrado, 7 días por defecto en GCS): la protección contra borrados es el versionado (30 días) y, para
 # fotos biométricas, lo purgado debe desaparecer en ~1 día. En los respaldos tampoco: nadie puede borrarlos (ninguna cuenta de servicio
@@ -256,6 +251,8 @@ bind_job "$JOB_BULK" "$SA_APP" roles/run.jobsExecutorWithOverrides  # el servici
 bind_job "$JOB_OPS" "$SA_APP" roles/run.jobsExecutorWithOverrides   # y el precalentamiento inmediato
 bind_job "$JOB_OPS" "$SA_INVOKER" roles/run.invoker                  # Cloud Scheduler corre la tarea horaria
 ok "$SA_DEPLOYER: run.developer sobre los 3 servicios y 3 Jobs de $GOLDEN_ENV (nada del otro entorno)"
+# CORS otra vez, ahora que los servicios existen: así entra también la URL corta con hash de Cloud Run (la del paso 6 solo conocía la determinista).
+bash deploy/gcp/cors.sh "$GOLDEN_ENV"
 
 # -------------------------------------------------------------------------------------------------------------------------- 9
 step "9. Cloud Scheduler ($SCHEDULER_OPS)"

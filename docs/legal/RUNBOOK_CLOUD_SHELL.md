@@ -154,3 +154,23 @@ for S in golden-web-staging golden-publico-staging golden-biometria-staging; do 
 Cada servicio debe mostrar `CLOUD_TASKS_FACES_QUEUE CLOUD_TASKS_FACES_URL`. Luego la prueba de aceptación de la sección 5, paso 4.
 
 **El próximo despliegue** (con el arreglo) pone esas variables solo; si la cuenta de despliegue no puede leer la cola, el despliegue se detiene con el mensaje «roles/cloudtasks.viewer sobre esa cola» en vez de omitirlas en silencio.
+
+## 9. CORS del bucket (subida directa de archivos grandes desde el navegador)
+
+**Qué es:** «Adjuntar Base de Datos» y los archivos de los formularios suben DIRECTO al bucket con una URL firmada (PUT). El navegador pregunta antes al bucket si ese origen puede hacerlo (CORS); si el origen no está en la lista, la subida falla con «No 'Access-Control-Allow-Origin' header».
+
+**Por qué falló en staging (8-oct-2026):** Cloud Run da a cada servicio DOS direcciones válidas: la determinista (`golden-web-staging-<número de proyecto>.us-east4.run.app`) y la corta con hash (`golden-web-staging-<hash>-uk.a.run.app`). El script solo conocía la primera; el navegador entró por la segunda. La segunda no se puede calcular, solo leer del servicio, y al correr el bootstrap el servicio aún no existía.
+
+**Aplicarlo (idempotente: lee el bucket, compara y solo cambia si difiere):**
+```bash
+git pull   # rama producto/legal-piloto o integracion/piloto-legal, la que tenga deploy/gcp/cors.sh
+bash deploy/gcp/cors.sh staging
+```
+Imprime la lista de orígenes aplicada (debe incluir las dos direcciones del servicio web). `bootstrap.sh` lo corre solo al final (después de crear los servicios).
+
+**Producción:** lleva el dominio (`https://app.golden-eventos.com`) y los sitios de Firebase, y NO las direcciones `run.app`. Para verificar producción por la dirección de Cloud Run antes del dominio (guía de producción, paso 6): `CORS_INCLUDE_RUN_URLS=1 bash deploy/gcp/cors.sh production`, y al terminar volver a correrlo SIN la variable.
+
+**Comprobar:**
+```bash
+gcloud storage buckets describe gs://$(gcloud config get-value project)-golden-staging-us-east4 --format='yaml(cors_config)'
+```

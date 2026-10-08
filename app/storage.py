@@ -241,7 +241,7 @@ class GcsStorage:
         headers = {"Content-Type": content_type, "x-goog-content-length-range": f"0,{max_bytes}"}
         kwargs = self._signing_kwargs()
         url = self.bucket.blob(self._name(key)).generate_signed_url(
-            version="v4", method="PUT", expiration=timedelta(seconds=expires_seconds), headers=headers, **kwargs)
+            version="v4", method="PUT", expiration=timedelta(seconds=expires_seconds), headers=dict(headers), **kwargs)   # copia: la biblioteca le agrega «Host» a lo que recibe y eso no debe viajar al navegador
         return url, headers
 
     def ping(self) -> None:

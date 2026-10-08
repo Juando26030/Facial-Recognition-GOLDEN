@@ -3,11 +3,13 @@
    DirectUpload.upload(file, {signUrl, body, onProgress}) → token
    DirectUpload.replaceFiles(formData, {campoArchivo: [campoToken, propósito]}, {signUrl, body, onProgress}) → el mismo FormData */
 (function () {
+  // Cabeceras que un navegador se niega a fijar (fetch spec «forbidden header name»): setRequestHeader falla con «Refused to set unsafe header». Las firmadas que el navegador manda solo (Host) no hacen falta.
+  const FORBIDDEN = /^(accept-charset|accept-encoding|access-control-request-headers|access-control-request-method|connection|content-length|cookie2?|date|dnt|expect|host|keep-alive|origin|referer|set-cookie|te|trailer|transfer-encoding|upgrade|via|proxy-.*|sec-.*)$/i;
   function put(sig, file, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open(sig.method || 'PUT', sig.url);
-      Object.entries(sig.headers || {}).forEach(([k, v]) => xhr.setRequestHeader(k, v));   // van firmados: se mandan tal cual
+      Object.entries(sig.headers || {}).forEach(([k, v]) => { if (!FORBIDDEN.test(k)) xhr.setRequestHeader(k, v); });   // van firmados: se mandan tal cual, salvo las que el navegador no deja fijar (Host, Content-Length…: las pone él)
       xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total); };
       xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve()
         : reject(new Error(xhr.status === 413 || xhr.status === 400 ? 'El archivo supera el tamaño permitido' : `No se pudo subir el archivo (código ${xhr.status})`)));
@@ -41,5 +43,5 @@
     return fd;
   }
 
-  window.DirectUpload = { upload, replaceFiles };
+  window.DirectUpload = { upload, replaceFiles, _forbidden: FORBIDDEN };
 })();

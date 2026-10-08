@@ -59,13 +59,24 @@ fi
 
 # Orígenes que el bucket deja hacer PUT directo desde el navegador (CORS de la subida con URL firmada). UNA sola definición: la usan bootstrap.sh (la aplica) y
 # move_region.sh verify (comprueba EXACTAMENTE esta lista), calculada desde el proyecto y la región. Plantilla de la regla: deploy/gcs-app-cors.json (solo su
-# origin cambia). Producción: el dominio propio y los sitios de Firebase, NUNCA run.app. Staging: además la URL run.app del servicio web (para probar directo).
+# origin cambia). Producción: el dominio propio y los sitios de Firebase, sin run.app (salvo CORS_INCLUDE_RUN_URLS=1). Staging: además las dos URL run.app del servicio web (para probar directo).
+# Cloud Run da a cada servicio DOS URL válidas y el navegador puede entrar por cualquiera: la determinista (golden-web-staging-<nº de proyecto>.<región>.run.app) y la corta con hash
+# (golden-web-staging-<hash>-uk.a.run.app, que NO se puede calcular: solo se lee del servicio). El CORS del bucket debe tener las dos (incidente de staging, 2026-10-08: solo estaba la
+# primera y el PUT de la carga de la base se bloqueaba desde la segunda). Si el servicio aún no existe, solo hay la determinista: por eso cors.sh se vuelve a correr al final de bootstrap.sh.
+run_urls() {
+  run_url "$1"
+  gcloud run services describe "$1" --region "$REGION" --format=json 2>/dev/null | python3 -c '
+import json, sys
+meta = json.load(sys.stdin).get("metadata", {})
+print((meta.get("annotations") or {}).get("run.googleapis.com/urls", "[]"))' 2>/dev/null     | python3 -c 'import json, sys; [print(u) for u in json.load(sys.stdin)]' 2>/dev/null || true
+}
 cors_origins() {
   {
     echo "$PUBLIC_BASE_URL"
     [ -z "$FIREBASE_SITE" ] || { echo "https://${FIREBASE_SITE}.web.app"; echo "https://${FIREBASE_SITE}.firebaseapp.com"; }
-    [ "$GOLDEN_ENV" = production ] || run_url "golden-web${SUFFIX}"
-  } | { if [ "$GOLDEN_ENV" = production ]; then grep -v '\.run\.app$'; else cat; fi; } | sort -u
+    # run.app: en staging siempre (se prueba directo); en producción NO (solo el dominio y Firebase) salvo CORS_INCLUDE_RUN_URLS=1 (p. ej. mientras se verifica por la URL de Cloud Run antes del dominio).
+    if [ "$GOLDEN_ENV" != production ] || [ "${CORS_INCLUDE_RUN_URLS:-0}" = 1 ]; then run_urls "golden-web${SUFFIX}"; fi
+  } | { if [ "$GOLDEN_ENV" = production ] && [ "${CORS_INCLUDE_RUN_URLS:-0}" != 1 ]; then grep -v '\.run\.app$'; else cat; fi; } | grep '^https://' | sort -u
 }
 
 # Cola, programador
