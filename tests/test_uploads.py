@@ -142,17 +142,20 @@ class _FakeBlob:
         return "https://storage.googleapis.com/firmada"
 
 
-def _gcs(creds):
+def _gcs(creds, monkeypatch):
+    import google.auth
     from app.storage import GcsStorage
-    calls = []
+    calls, asked = [], []
+    monkeypatch.setattr(google.auth, "default", lambda scopes=None: (asked.append(scopes) or creds, "p"))
     store = GcsStorage.__new__(GcsStorage)
-    store.client = SimpleNamespace(_credentials=creds)
+    store.asked = asked
+    store.client = SimpleNamespace(_credentials=SimpleNamespace(token="solo-storage"))   # el cliente de Storage NO sirve para firmar: su token no trae cloud-platform
     store.bucket = SimpleNamespace(blob=lambda name: _FakeBlob(name, calls))
     store.prefix = "golden"
     return store, calls
 
 
-def test_gcs_signed_put_url_signs_type_and_size_and_uses_iam_without_a_private_key():
+def test_gcs_signed_put_url_signs_type_and_size_and_uses_iam_without_a_private_key(monkeypatch):
     from google.auth.credentials import Signing
 
     class KeyCreds(Signing):
@@ -160,17 +163,31 @@ def test_gcs_signed_put_url_signs_type_and_size_and_uses_iam_without_a_private_k
         def sign_bytes(self, message):  # noqa: E301
             return b""
 
-    store, calls = _gcs(KeyCreds())
+    store, calls = _gcs(KeyCreds(), monkeypatch)
     url, headers = store.signed_put_url("uploads/acme/bulk_zip/x/fotos.zip", "application/zip", 1000, 900)
     name, kw = calls[0]
     assert url.startswith("https://") and name == "golden/uploads/acme/bulk_zip/x/fotos.zip"
     assert headers == {"Content-Type": "application/zip", "x-goog-content-length-range": "0,1000"} and kw["headers"] == headers
     assert kw["method"] == "PUT" and kw["version"] == "v4" and "access_token" not in kw
 
-    metadata_creds = SimpleNamespace(valid=True, service_account_email="app@p.iam.gserviceaccount.com", token="tok")   # Cloud Run: sin llave privada
-    store, calls = _gcs(metadata_creds)
+    # Cloud Run: credenciales de Compute, sin llave privada; el token se obtiene al refrescar y debe venir del alcance cloud-platform
+    class ComputeCreds:
+        valid, token, service_account_email = False, None, "default"
+        def refresh(self, request):  # noqa: E301
+            self.valid, self.token, self.service_account_email = True, "tok-cloud-platform", "app@p.iam.gserviceaccount.com"
+    store, calls = _gcs(ComputeCreds(), monkeypatch)
     store.signed_put_url("uploads/a/b", "text/csv", 10, 900)
-    assert calls[0][1]["service_account_email"] == "app@p.iam.gserviceaccount.com" and calls[0][1]["access_token"] == "tok"
+    assert store.asked == [["https://www.googleapis.com/auth/cloud-platform"]]
+    assert calls[0][1]["service_account_email"] == "app@p.iam.gserviceaccount.com" and calls[0][1]["access_token"] == "tok-cloud-platform"
+    store.signed_put_url("uploads/a/c", "text/csv", 10, 900)
+    assert len(store.asked) == 1                                    # las credenciales se reutilizan
+
+    class NoIdentity(ComputeCreds):
+        def refresh(self, request):  # noqa: E301
+            self.valid, self.token = True, "t"                      # sigue como «default»: no se pudo saber la cuenta
+    store, _ = _gcs(NoIdentity(), monkeypatch)
+    with pytest.raises(RuntimeError):
+        store.signed_put_url("uploads/a/d", "text/csv", 10, 900)
 
 
 @pytest.fixture(autouse=True)

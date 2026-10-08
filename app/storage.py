@@ -211,19 +211,35 @@ class GcsStorage:
                     yield chunk
         return StreamingResponse(chunks(), media_type=media_type or blob.content_type or mimetypes.guess_type(key)[0], headers=out)
 
+    _SIGN_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    def _signing_kwargs(self) -> dict:
+        """Cómo firmar una URL. Con una llave de archivo (desarrollo) las credenciales ya saben firmar: no hace falta nada más. En Cloud Run no hay llave: se firma con la API IAM (signBlob), y esa llamada
+        exige un token con el alcance `cloud-platform`; las credenciales del cliente de Storage solo traen alcances de Storage (error real en staging, 2026-10-07: «insufficient authentication
+        scopes»). Por eso se piden credenciales APARTE con `cloud-platform`, se refrescan y se pasan `service_account_email` y `access_token` a `generate_signed_url`."""
+        from google.auth.credentials import Signing
+        creds = getattr(self, "_sign_creds", None)
+        if creds is None:
+            import google.auth
+            creds, _ = google.auth.default(scopes=self._SIGN_SCOPES)
+            self._sign_creds = creds
+        if isinstance(creds, Signing):
+            return {}
+        if not creds.valid:
+            from google.auth.transport.requests import Request as AuthRequest
+            creds.refresh(AuthRequest())
+        email = getattr(creds, "service_account_email", None)
+        if not email or email == "default" or not creds.token:
+            raise RuntimeError("No se pudo firmar la URL de subida: las credenciales no son de una cuenta de servicio (falta serviceAccountTokenCreator sobre sí misma o la API iamcredentials)")
+        return {"service_account_email": email, "access_token": creds.token}
+
     def signed_put_url(self, key: str, content_type: str, max_bytes: int, expires_seconds: int) -> tuple:
         """URL firmada v4 para que el NAVEGADOR suba directo al bucket (app/uploads.py). Devuelve (url, encabezados que el navegador
         debe mandar tal cual: van firmados). En Cloud Run la cuenta de servicio no tiene llave privada: se firma con la API IAM
         (signBlob), que exige `roles/iam.serviceAccountTokenCreator` de la cuenta sobre sí misma. El bucket necesita CORS para PUT
         desde el dominio de la app (deploy/gcs-app-cors.json)."""
-        from google.auth.credentials import Signing
         headers = {"Content-Type": content_type, "x-goog-content-length-range": f"0,{max_bytes}"}
-        creds, kwargs = self.client._credentials, {}
-        if not isinstance(creds, Signing):
-            from google.auth.transport.requests import Request as AuthRequest
-            if not creds.valid:
-                creds.refresh(AuthRequest())
-            kwargs = {"service_account_email": creds.service_account_email, "access_token": creds.token}
+        kwargs = self._signing_kwargs()
         url = self.bucket.blob(self._name(key)).generate_signed_url(
             version="v4", method="PUT", expiration=timedelta(seconds=expires_seconds), headers=headers, **kwargs)
         return url, headers
