@@ -56,7 +56,7 @@ CONFIGURABLE_FIXED_FIELDS = [
 def _configurable_fields(event: Event):
     """(key, label por defecto) de todo lo configurable para este evento, en el orden POR DEFECTO
     (la identidad primero, igual que el formulario de siempre)."""
-    fields = list(IDENTITY_FIELDS) + list(CONFIGURABLE_FIXED_FIELDS)
+    fields = list(IDENTITY_FIELDS) + [f for f in CONFIGURABLE_FIXED_FIELDS if f[0] != "birth_date" or event.facial_enabled]      # la fecha de nacimiento solo existe con rostro (control de menores)
     if event.get_categories():
         fields.append(("categories", "Categoría"))
     if event.certificates_enabled:
@@ -232,6 +232,8 @@ def set_facial_enabled(
     rostro/encoding ya guardado (si se vuelve a prender, la gente que ya tenía foto se sigue reconociendo);
     solo decide si `/kiosk/{id}/registro` muestra el escáner de cámara o se comporta como cédula tradicional."""
     event = get_event_for_staff(event_id, db, staff)
+    if data.get("enabled") and event.biometrics_locked:
+        raise HTTPException(status_code=409, detail="Este evento está bloqueado SIN biometría: quita el bloqueo en el paso guiado para activar el rostro")
     if data.get("enabled"):
         blockers = biometric_setup.facial_blockers(event)
         if blockers:

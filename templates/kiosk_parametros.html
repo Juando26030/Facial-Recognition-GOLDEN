@@ -68,7 +68,8 @@
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Reconocimiento facial: paso guiado</h4>
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
           <div style="display:grid; gap:8px; max-width:560px;">
-            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="bsFacial" {% if event.facial_enabled %}checked{% endif %} style="width:18px; height:18px;"> <b>Paso 0.</b> Este evento usará reconocimiento facial</label>
+            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="bsFacial" {% if event.facial_enabled %}checked{% endif %} {% if event.biometrics_locked %}disabled{% endif %} style="width:18px; height:18px;"> <b>Paso 0.</b> Este evento usará reconocimiento facial</label>
+            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="checkbox" id="bsLocked" {% if event.biometrics_locked %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span><b>🚫 Este evento NO usa biometría (bloquear).</b> Nadie podrá activar el rostro ni subir fotos: el servidor lo rechaza aunque alguien lo intente. Todo el mundo entra por cédula o QR.</span></label>
             <b>Paso 1. ¿Quién es el Responsable de los datos?</b>
             <label>Responsable del tratamiento
               <select id="ccMode"><option value="golden" {% if event.controller_mode == "golden" %}selected{% endif %}>Evento propio de Golden (Golden es el Responsable)</option><option value="tercero" {% if event.controller_mode == "tercero" %}selected{% endif %}>Evento de un tercero (Golden es el Encargado)</option></select></label>
@@ -499,7 +500,7 @@
     function renderSummary(d) {
         const box = document.getElementById('bsSummary'); if (!box) return;
         box.replaceChildren();
-        const h = document.createElement('b'); h.textContent = d.ready ? '✅ Listo: así funcionará en la puerta' : '⚠️ Falta algo antes del evento'; box.appendChild(h);
+        const h = document.createElement('b'); h.textContent = d.headline || (d.ready ? '✅ Listo: así funcionará en la puerta' : '⚠️ Falta algo antes del evento'); box.appendChild(h);
         const ul = document.createElement('ul'); ul.style.margin = '6px 0 0 18px';
         (d.missing || []).forEach((m) => { const li = document.createElement('li'); li.textContent = m; li.style.color = '#a12631'; ul.appendChild(li); });
         (d.door || []).forEach((m) => { const li = document.createElement('li'); li.textContent = m; ul.appendChild(li); });
@@ -510,8 +511,14 @@
     const ccMode = document.getElementById('ccMode');
     if (ccMode) {
         ccMode.addEventListener('change', () => { document.getElementById('ccOrg').style.display = ccMode.value === 'tercero' ? 'grid' : 'none'; });
+        const lockBox = document.getElementById('bsLocked');
+        if (lockBox) lockBox.addEventListener('change', () => {          // al bloquear, lo biométrico se apaga y se deshabilita
+            const facial = document.getElementById('bsFacial'), photos = document.getElementById('bsPhotos'), aceptar = document.getElementById('ccAceptar');
+            if (lockBox.checked) { facial.checked = false; photos.checked = false; if (aceptar) aceptar.checked = false; }
+            facial.disabled = lockBox.checked;
+        });
         document.getElementById('ccSave').addEventListener('click', async () => {
-            const body = { facial_enabled: document.getElementById('bsFacial').checked, client_photos_before: document.getElementById('bsPhotos').checked, controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value, aceptar_enabled: document.getElementById('ccAceptar').checked };
+            const body = { biometrics_locked: document.getElementById('bsLocked').checked, facial_enabled: document.getElementById('bsFacial').checked, client_photos_before: document.getElementById('bsPhotos').checked, controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value, aceptar_enabled: document.getElementById('ccAceptar').checked };
             const res = await fetch(`/api/events/${window.EVENT_ID}/biometric-setup`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const out = await res.json().catch(() => ({})); if (res.ok) { showToast('Guardado', 'success'); renderSummary(out); } else showToast(out.detail || 'No se pudo guardar', 'error');
         });

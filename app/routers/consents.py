@@ -194,7 +194,7 @@ def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get
 def _setup_config(event) -> dict:
     return {"facial_enabled": event.facial_enabled, "controller_mode": event.controller_mode, "organizer_name": event.organizer_name, "organizer_nit": event.organizer_nit,
             "organizer_privacy_email": event.organizer_privacy_email, "client_photos_before": event.client_photos_before, "consent_prompt_mode": event.consent_prompt_mode,
-            "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado}
+            "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked)}
 
 
 @router.get("/events/{event_id}/biometric-setup")
@@ -211,12 +211,17 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
     event = get_event_for_staff(event_id, db, staff)
     cur = _setup_config(event)
     new = {**cur, **{k: data[k] for k in cur if k in data and k != "precalculo_autorizado"}}
+    if new["biometrics_locked"] and not cur["biometrics_locked"]:      # al poner el candado, lo que no se pidió expresamente se apaga solo
+        for k in ("facial_enabled", "aceptar_enabled", "client_photos_before"):
+            if k not in data:
+                new[k] = False
     for k in ("organizer_name", "organizer_nit", "organizer_privacy_email"):
         new[k] = (str(new[k] or "").strip() or None)
     errors = biometric_setup.validate(str(new["controller_mode"]), bool(new["facial_enabled"]), new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"],
-                                      bool(new["client_photos_before"]), bool(new["aceptar_enabled"]), str(new["consent_prompt_mode"]))
+                                      bool(new["client_photos_before"]), bool(new["aceptar_enabled"]), str(new["consent_prompt_mode"]), locked=bool(new["biometrics_locked"]))
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
+    event.biometrics_locked = bool(new["biometrics_locked"])
     event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]
     event.client_photos_before, event.consent_prompt_mode, event.aceptar_enabled = bool(new["client_photos_before"]), str(new["consent_prompt_mode"]), bool(new["aceptar_enabled"])

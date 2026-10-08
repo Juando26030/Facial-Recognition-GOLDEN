@@ -174,3 +174,32 @@ Imprime la lista de orígenes aplicada (debe incluir las dos direcciones del ser
 ```bash
 gcloud storage buckets describe gs://$(gcloud config get-value project)-golden-staging-us-east4 --format='yaml(cors_config)'
 ```
+
+## 10. Correo (enlaces de autorización, escarapela virtual, constancia): cómo envía hoy y qué falta
+
+**Cómo envía hoy `app/mailer.py`** (tres caminos, en este orden):
+1. **Microsoft Graph (el recomendado):** si existen las cuatro variables `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` y `GRAPH_SENDER` (el buzón remitente, p. ej. `soporteit@goldenlogisticas.com`). Pide un token de aplicación y envía con `POST /users/<buzón>/sendMail`.
+2. **SMTP:** si no hay Graph y existe `SMTP_HOST` (y `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS`).
+3. **Ninguno:** el correo NO sale; se guarda como archivo `.eml` en el almacenamiento (`outbox/` del bucket). El sistema responde «Ni Microsoft Graph ni SMTP están configurados — el correo quedó guardado en …».
+En staging el asunto lleva `[STAGING]` (`DEPLOY_ENV=staging`). La configuración NO está en la base de datos: son variables de entorno, que en Cloud Run vienen de **Secret Manager**.
+
+**Qué falta:** en staging solo existen `LEGAL_EMAIL`, `LEGAL_PRIVACY_EMAIL` y `PRIVACY_EMAIL` (textos legales) y el secreto `golden-alert-email-staging` (a quién avisa el sistema). Los cuatro secretos del correo son OPCIONALES en el bootstrap y se omitieron: `golden-azure-tenant-id-staging`, `golden-azure-client-id-staging`, `golden-azure-client-secret-staging` y `golden-graph-sender-staging` (en producción, los mismos sin el sufijo `-staging`). Mientras no existan, nada sale al exterior (camino 3).
+
+**Pasos para el administrador de Microsoft 365 (una sola vez; sirve para staging y producción):**
+1. Entra a **entra.microsoft.com** → Identidad → Aplicaciones → **Registros de aplicaciones** → **Nuevo registro**. Nombre: «Golden Eventos - Envío de correo». Tipos de cuenta: «Solo este directorio organizativo». Sin URI de redirección → **Registrar**.
+2. En la aplicación: **Permisos de API** → Agregar un permiso → **Microsoft Graph** → **Permisos de aplicación** (NO delegados) → marca **Mail.Send** → Agregar. Luego pulsa **«Conceder consentimiento de administrador para <la organización>»** (lo hace un administrador global o de aplicaciones). Debe quedar con la marca verde «Concedido». Sin este paso el token se emite pero Graph rechaza el envío.
+3. **Certificados y secretos** → Nuevo secreto de cliente → descripción «staging» (otro llamado «producción» para el otro entorno) → vigencia de 12 o 24 meses → copia el **VALOR** en ese momento (solo se muestra una vez; no el «Id. del secreto»).
+4. En **Información general** copia el **Id. de aplicación (cliente)** y el **Id. de directorio (inquilino)**.
+5. **Buzón remitente:** el que firmará los correos, `soporteit@goldenlogisticas.com` (puede ser un buzón compartido). La aplicación no necesita su contraseña.
+6. **Recomendado (seguridad):** restringir la aplicación a ese único buzón. En Exchange Online PowerShell: crea un grupo de seguridad con correo habilitado que contenga SOLO ese buzón y ejecuta `New-ApplicationAccessPolicy -AppId <Id. de aplicación> -PolicyScopeGroupId <grupo@dominio> -AccessRight RestrictAccess -Description "Golden solo soporteit"`; verifica con `Test-ApplicationAccessPolicy -Identity soporteit@goldenlogisticas.com -AppId <Id. de aplicación>` (debe decir «Granted»). Sin esto la aplicación podría enviar como cualquier buzón del tenant.
+7. **Que no caiga en spam:** en el portal de seguridad (security.microsoft.com → Correo y colaboración → Directivas → Autenticación de correo electrónico → DKIM) activa DKIM para `goldenlogisticas.com`; en el DNS del dominio debe existir el SPF que incluye `spf.protection.outlook.com` y un DMARC (al menos `p=none`).
+8. **Límites:** Exchange Online permite unos 30 mensajes por minuto por buzón y 10.000 destinatarios por día. El envío masivo de enlaces irá a un ritmo de 25 por minuto o menos.
+
+**Pasos en Cloud Shell (tú), con los cuatro valores en la mano:**
+```bash
+git fetch && git checkout integracion/piloto-legal && git pull
+bash deploy/gcp/bootstrap.sh staging
+```
+El script es idempotente: lo que ya existe no se toca y, cuando pregunta por los opcionales (`azure-tenant-id`, `azure-client-id`, `azure-client-secret`, `graph-sender`), pegas cada valor (no se ve en pantalla). También da el permiso de lectura a las cuentas de la aplicación y de operaciones. Después hay que **redesplegar** (cualquier push a `migra/fase1-2`, o «Run workflow» del despliegue) para que los servicios monten los secretos. Producción: `bash deploy/gcp/bootstrap.sh production` cuando se prepare el corte.
+
+**Comprobar que sale:** en el evento de pruebas con escarapela digital activa, **Parámetros → correo de la escarapela digital → «Enviar prueba»** a un buzón tuyo; debe llegar con el asunto `[STAGING] [PRUEBA] …`. Si el detalle dice «Ni Microsoft Graph ni SMTP están configurados», el servicio aún no tiene los secretos (falta redesplegar); si dice «No se pudo enviar el correo (Graph) …», el mensaje trae el motivo de Microsoft (casi siempre falta el consentimiento de administrador del paso 2 o la política del paso 6).

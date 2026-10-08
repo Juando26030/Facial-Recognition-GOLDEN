@@ -66,7 +66,7 @@ def test_summary_explains_the_door_in_plain_language_and_lists_what_is_missing(c
     _as(client, factory, "coordinador", "coord1")
     ev = factory.event("en_proceso")
     off = client.get(f"/api/events/{ev.id}/biometric-setup").json()
-    assert off["ready"] is False and "cédula o QR" in " ".join(off["door"]) and "apagado" in off["missing"][0]
+    assert off["ready"] is True and off["missing"] == [] and off["headline"] == "✅ Listo: este evento no usa biometría" and "cédula o QR" in " ".join(off["door"])      # sin rostro no es un problema
     on = _put(client, ev, facial_enabled=True, aceptar_enabled=True, client_photos_before=True).json()
     text = " ".join(on["door"])
     assert on["ready"] is True and "Golden es el Responsable único" in text and "una sola vez" in text and "celular" in text and "NO se calcula hasta que la persona acepte" in text and "nunca se bloquea" in text

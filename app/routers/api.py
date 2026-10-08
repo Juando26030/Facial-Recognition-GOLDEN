@@ -387,7 +387,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "entity": u.entity, "phone": u.phone,
             "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
-            "birth_date": u.birth_date.isoformat() if u.birth_date else "",
+            "birth_date": u.birth_date.isoformat() if (u.birth_date and event.facial_enabled) else "",
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta persona.
             "extra_fields": u.get_extras(),
             "categories": att.get_categories() if att else [],
@@ -1054,9 +1054,12 @@ def local_roster(
     if security.minutes_locked(db, "roster_local", key, None, ROSTER_LIMIT, ROSTER_LIMIT, ROSTER_WINDOW):
         raise HTTPException(status_code=429, detail="Demasiadas descargas del roster local — espera unos minutos.")
     security.record_event(db, "roster_local", key, None)
-    accepted = consent_mod.accepted_user_ids(db, event.tenant_id, event.id)
-    web_pending = {r[0] for r in db.execute(text("SELECT user_id FROM web_acceptances WHERE tenant_id = :t AND event_id = :e AND verified_at IS NULL"), {"t": event.tenant_id, "e": event.id})}
-    n_consents = db.execute(text("SELECT count(*) FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e"), {"t": event.tenant_id, "e": event.id}).scalar()
+    if event.facial_enabled:
+        accepted = consent_mod.accepted_user_ids(db, event.tenant_id, event.id)
+        web_pending = {r[0] for r in db.execute(text("SELECT user_id FROM web_acceptances WHERE tenant_id = :t AND event_id = :e AND verified_at IS NULL"), {"t": event.tenant_id, "e": event.id})}
+        n_consents = db.execute(text("SELECT count(*) FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e"), {"t": event.tenant_id, "e": event.id}).scalar()
+    else:          # sin rostro no hay aceptaciones que llevar al quiosco: ni consultas ni banderas
+        accepted, web_pending, n_consents = set(), set(), 0
     version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}|{n_consents}|{len(web_pending)}|{event.controller_mode}|{event.consent_prompt_mode}|{int(bool(event.facial_enabled))}|{int(bool(event.precalculo_autorizado))}")      # el modo autoregistro y la autorización biométrica viajan en la copia: si cambian, cambia la versión
     headers = {"Cache-Control": "private, no-cache", "ETag": f'"{version}"'}
     if request.headers.get("if-none-match") == headers["ETag"]:
@@ -1074,7 +1077,7 @@ def local_roster(
     for uid, first, last, categories, birth in people:
         real, new = counts.get(uid, (0, 0))
         rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
-                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted and not minors.is_minor(birth) else 0, "b": 1 if minors.is_minor(birth) else 0, "v": 1 if uid in web_pending else 0})      # `v`: aceptó desde el celular y falta verificar su identidad en puerta      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
+                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted and not minors.is_minor(birth) else 0, "b": 1 if (event.facial_enabled and minors.is_minor(birth)) else 0, "v": 1 if uid in web_pending else 0})      # `v`: aceptó desde el celular y falta verificar su identidad en puerta      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
     return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status, "auto_register": bool(event.auto_register)},
                          "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
 
@@ -1089,6 +1092,8 @@ def update_user(
     if user:
         # Fecha de nacimiento (base del control de menores): se valida ANTES de tocar nada. Vacía = borrarla.
         birth_change = False
+        if "birth_date" in data and not event.facial_enabled:
+            data.pop("birth_date")          # sin rostro la fecha de nacimiento no se usa: no se toca
         if "birth_date" in data:
             raw_birth = str(data.pop("birth_date") or "").strip()
             new_birth = minors.parse_birth(raw_birth) if raw_birth else None
@@ -1398,6 +1403,8 @@ def manual_register(
         raise HTTPException(status_code=400, detail="La fecha de nacimiento no es válida")
     minor = minors.is_minor(birth)
     has_photo = file is not None and bool(file.filename)
+    if has_photo and event.biometrics_locked:
+        raise HTTPException(status_code=400, detail="Este evento no usa biometría: no se guardan fotos de las personas. Regístrala sin foto.")
     if has_photo and not minor and birth is None:
         raise HTTPException(status_code=400, detail="Para guardar el rostro hace falta la fecha de nacimiento: solo se capta el rostro de mayores de 18 años")
     if privacy.is_suppressed(db, event.tenant_id, id):
@@ -1540,10 +1547,13 @@ def bulk_register(
     la petición y devuelve el resultado, como siempre."""
     event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
     has_zip = bool(zip_upload) or (zip_file is not None and bool(zip_file.filename))
+    zip_ignored = bool(event.biometrics_locked and has_zip)
+    if zip_ignored:          # candado «sin biometría»: las fotos NO se leen, no se guardan y no encienden el rostro (el aviso sale en el resultado)
+        zip_file, zip_upload, has_zip = None, None, False
     if has_zip and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     if background and bulk_jobs.uses_cloud_run():
-        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id)
+        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored)
     # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
     zip_up = uploads.fetch(zip_upload, "bulk_zip", {"e": event_id})
@@ -1551,7 +1561,7 @@ def bulk_register(
     roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
     zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
     args = dict(event_id=event_id, roster_filename=roster_filename,
-                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id)
+                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored)
 
     def cleanup(result):
         # NEEDS_LABELS: el navegador reenvía la MISMA carga con los nombres de las columnas; los archivos temporales tienen que seguir ahí.
@@ -1575,7 +1585,7 @@ def bulk_register(
     return {"background": True, "job_id": job_id}
 
 
-def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id) -> dict:
+def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored=False) -> dict:
     """BULK_BACKEND=cloudrun: la carga la ejecuta un Cloud Run Job. Aquí NO se descargan los archivos (un ZIP de 2 GB no cabe en el
     servicio web): solo se guardan sus tokens; los que vinieron en la petición se dejan antes en el almacenamiento (`uploads.stash`)."""
     scope = {"e": event.id}
@@ -1589,7 +1599,7 @@ def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_uploa
         return None
 
     spec = {"roster": token(roster_upload, roster_file, "bulk_roster"), "zip": token(zip_upload, zip_file, "bulk_zip"),
-            "field_labels": field_labels, "source_event_id": source_event_id}
+            "field_labels": field_labels, "source_event_id": source_event_id, "zip_ignored": zip_ignored}
     if bulk_jobs.active_job(db, event.id):
         raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
     job_id = bulk_jobs.create_job(db, event.id, staff.id, spec)
@@ -1610,7 +1620,8 @@ def run_bulk_spec(db: Session, job, progress) -> dict:
     zip_up = uploads.fetch(spec.get("zip"), "bulk_zip", {"e": event_id})
     result = _bulk_register_impl(
         db, staff, event_id=event_id, roster_filename=roster_up.filename if roster_up else None, content=roster_up.content if roster_up else None,
-        zip_bytes=zip_up.content if zip_up else None, field_labels=spec.get("field_labels"), source_event_id=spec.get("source_event_id"), progress=progress)
+        zip_bytes=zip_up.content if zip_up else None, field_labels=spec.get("field_labels"), source_event_id=spec.get("source_event_id"), progress=progress,
+        zip_ignored=bool(spec.get("zip_ignored")))
     if not (isinstance(result, dict) and result.get("result") == "NEEDS_LABELS"):     # NEEDS_LABELS: la misma carga vuelve con los nombres
         uploads.discard(roster_up, zip_up)
     return result
@@ -1630,7 +1641,7 @@ def bulk_job_status(
 
 
 def _bulk_register_impl(
-    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None,
+    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -1686,6 +1697,10 @@ def _bulk_register_impl(
     header_columns, rows = _read_roster_rows(roster_filename, content)
     # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
     header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
+    # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
+    birth_used = bool(event.facial_enabled or (zip_bytes and not event.biometrics_locked))
+    if not birth_used:
+        roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
 
     # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
     # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
@@ -1744,6 +1759,8 @@ def _bulk_register_impl(
     # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
     # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
     errors = []
+    if zip_ignored:
+        errors.append("⚠️ Este evento no usa biometría (bloqueado): el zip de fotos se ignoró, no se guardó ninguna foto y el reconocimiento facial no se activó.")
     # identificador -> encoding ya calculada al leer el zip (2026-09-22): antes se calculaba acá
     # Y OTRA VEZ más abajo (al releer la misma foto del disco) — el costo real de una carga masiva
     # es el encoding facial (num_jitters=25, ver CLAUDE.md), así que calcularlo dos veces por foto
@@ -1879,13 +1896,13 @@ def _bulk_register_impl(
                     if enc:
                         face_enc_json = json.dumps(enc)
             # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
-            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "")
+            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "") if birth_used else ""
             birth = minors.parse_birth(birth_raw)
             row_minor = minors.is_minor(birth)
             if birth_raw and birth is None:
                 errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD, DD/MM/AAAA o una fecha de Excel).")
             has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
-            if (face_enc_json or has_photo) and (row_minor or birth is None):
+            if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
                 face_enc_json = None
                 has_photo = False
                 get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))

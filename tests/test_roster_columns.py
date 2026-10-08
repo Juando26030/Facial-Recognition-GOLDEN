@@ -14,6 +14,7 @@ from tests.conftest import login
 
 
 def _coord(client, factory, status="creado", **event_extra):
+    event_extra.setdefault("facial_enabled", True)          # la fecha de nacimiento solo se usa con rostro (sin él la columna se ignora: ver test_no_biometrics.py)
     factory.staff("coordinador", "coord1")
     ev = factory.event(status, **event_extra)
     login(client, "coord1")
@@ -192,7 +193,7 @@ def test_every_change_of_registration_status_leaves_who_when_old_and_new(client,
 def test_suppressing_a_person_keeps_the_status_history_without_them_and_drops_birth_date_changes(client, factory, db):
     from app import privacy
     factory.staff("coordinador", "coord1")
-    ev = factory.event("en_proceso")
+    ev = factory.event("en_proceso", facial_enabled=True)
     factory.person(ev, "1001")
     login(client, "coord1")
     _status(client, ev, "1001", "registrado")
@@ -238,7 +239,7 @@ def test_the_edit_form_shows_and_saves_birth_date_and_a_minor_loses_the_face(cli
 
 def test_birth_date_is_a_field_of_the_event_parameters_and_of_the_registration_form(client, factory):
     factory.staff("admin", "adm")
-    ev = factory.event("en_proceso")
+    ev = factory.event("en_proceso", facial_enabled=True)
     login(client, "adm")
     cfgs = {c["key"]: c for c in client.get(f"/api/events/{ev.id}/field-configs").json()}
     assert cfgs["birth_date"]["label"] == "Fecha de nacimiento" and cfgs["birth_date"]["field_type"] == "date" and cfgs["birth_date"]["locked"] and not cfgs["birth_date"]["required"]

@@ -18,9 +18,11 @@ def tercero_missing(controller: str, name: Optional[str], nit: Optional[str], em
     return [label for label, v in (("la razón social del organizador", name), ("el NIT del organizador", nit), ("el correo de privacidad del organizador", email)) if not (v or "").strip()]
 
 
-def validate(controller: str, facial: bool, name, nit, email, photos_before: bool, aceptar: bool, prompt: str) -> List[str]:
+def validate(controller: str, facial: bool, name, nit, email, photos_before: bool, aceptar: bool, prompt: str, locked: bool = False) -> List[str]:
     """Errores (en español, para mostrar tal cual) de una configuración propuesta; lista vacía = válida."""
     errors = []
+    if locked and (facial or aceptar or photos_before):
+        errors.append("Este evento está marcado como SIN biometría: no se puede activar el rostro, la aceptación desde el celular ni las fotos previas. Quita primero el bloqueo.")
     if controller not in ("golden", "tercero"):
         errors.append("El responsable debe ser Golden (evento propio) o un tercero")
     if prompt not in ("once", "every_scan"):
@@ -63,8 +65,11 @@ def summary(event: Event) -> dict:
         door.append(f"El organizador ({event.organizer_name or 'sin completar'}) es el Responsable de los datos y Golden el Encargado.")
     else:
         door.append("Golden es el Responsable único de los datos de este evento.")
-    if not event.facial_enabled:
-        return {"ready": False, "missing": ["El reconocimiento facial está apagado"], "door": door + ["Todo el mundo entra por cédula o QR."]}
+    if not event.facial_enabled:      # sin rostro NO es un problema: es una configuración completa
+        off = ["Todo el mundo entra por cédula o QR.", "No se pide ninguna autorización biométrica, no se calcula ni se guarda ninguna foto ni vector, y la fecha de nacimiento no se usa."]
+        off.append("Este evento está BLOQUEADO sin biometría: nadie puede activar el rostro ni subir fotos." if getattr(event, "biometrics_locked", False)
+                   else "Si quieres que sea imposible activar el rostro por error (por ejemplo al subir un zip de fotos), marca «Este evento NO usa biometría» y guarda.")
+        return {"ready": True, "headline": "✅ Listo: este evento no usa biometría", "missing": [], "door": door + off}
     missing += [f"Falta {m}" for m in facial_blockers(event)]
     text = legal_texts.render(event)
     for marker in text["blocked"]:

@@ -102,6 +102,16 @@ def canonicalize(header_columns: dict, rows: list, event_labels: dict):
     return new_header, new_rows, report, new_labels
 
 
+def drop_column(header_columns: dict, rows: list, report: dict, canonical: str, reason: str) -> None:
+    """Quita una columna ya reconocida (queda en el informe como «no usada», con el motivo): nada se ignora en silencio."""
+    header_columns.pop(canonical, None)
+    for row in rows:
+        row.pop(canonical, None)
+    for item in [i for i in report["recognized"] if i["field"] == LABELS[canonical]]:
+        report["recognized"].remove(item)
+        report["unused"].append({"title": item["title"], "reason": reason})
+
+
 def merge_reports(*reports) -> dict:
     """Une los informes de varios lotes de una misma carga: una columna cuenta como «nueva» si en algún lote se creó; «no usada» solo si en ningún lote se usó."""
     out = {"recognized": [], "created": [], "unused": []}
