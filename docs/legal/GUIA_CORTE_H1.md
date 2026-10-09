@@ -29,7 +29,7 @@ gcloud config list
 PROJECT_ID=goldenweb-prod
 gcloud projects create "$PROJECT_ID" --name="GoldenWeb"
 ```
-*Debes ver:* `Create in progress … Operation … finished successfully`. **Si dice que el ID ya está en uso** («The project ID you specified is already in use by another project»), otra cuenta lo tiene (los ID de proyecto son globales): cambia SOLO la primera línea por la alternativa recomendada, `PROJECT_ID=goldenweb-prod-co` (o, si también estuviera tomada, `PROJECT_ID=golden-eventos-prod`), y repite este paso. No hay que cambiar nada más: el resto de la guía y los scripts leen el ID desde `gcloud config`. Reglas del ID: 6 a 30 caracteres, minúsculas, números y guiones, empieza con letra y no termina en guion.
+*Debes ver:* `Create in progress … Operation … finished successfully`. **Si dice que el ID ya está en uso** («The project ID you specified is already in use by another project»), otra cuenta lo tiene (los ID de proyecto son globales): cambia SOLO la primera línea por la alternativa recomendada, `PROJECT_ID=goldenweb-prod-co` (o, si también estuviera tomada, `PROJECT_ID=golden-eventos-prod`), y repite este paso. No hay que cambiar nada más: el resto de la guía y los scripts leen el ID desde `gcloud config`. Reglas del ID: 6 a 30 caracteres, minúsculas, números y guiones, empieza con letra y no termina en guion. **Haz los pasos 2 a 5 en la misma ventana de Cloud Shell** (la variable `PROJECT_ID` vive en ella); si se reinicia a la mitad, vuelve a escribir la primera línea del paso 2 con el ID que usaste y sigue.
 
 **Paso 3 — Encontrar la cuenta de facturación «Golden Logistics - GoldenWeb».** ✅
 ```bash
