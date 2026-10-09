@@ -69,6 +69,14 @@ psql "$NEON" -c '\dt'; psql "$NEON" -tAc "select current_database(), version()" 
 
 ## Bloque 2 · `bootstrap.sh production` y la llave de rostros (8 pasos)
 
+**Antes de empezar el bloque, ten a mano** (el bootstrap pide varias cosas seguidas y no se puede pausar a mitad del paso 11):
+1. La **cadena DIRECTA** de Neon (la del Bloque 1).
+2. El **correo de alertas** (el que recibirá los avisos de Cloud Monitoring y de respaldos).
+3. **Tres datos de Neon** para el precalentamiento automático (el paso 11, punto 8, explica dónde sale cada uno): la clave de API, el ID del proyecto y el ID del endpoint. Tómalos ahora en la consola de Neon.
+4. El **gestor de contraseñas de la empresa abierto** (para el paso 13).
+5. El navegador con la cuenta de Google del proyecto (el paso 8 abre un enlace de autorización).
+
+
 **Paso 8 — Preparar la CLI de Firebase (la usa el paso 12 del bootstrap para crear el sitio).** ✅
 ```bash
 firebase --version || sudo npm install -g firebase-tools
@@ -84,11 +92,12 @@ git fetch origin && git checkout migra/fase1-2 && git pull --ff-only && git log 
 ```
 *Debes ver:* `Proyecto: ` con el ID que creaste y el último commit de la rama (hoy `e5b19e0` o uno posterior). No uses otra rama.
 
-**Paso 10 — Ejecutar el bootstrap de producción.** ⚠️ (todo lo que crea se puede borrar; las excepciones están en cada paso)
+**Paso 10 — Ejecutar el bootstrap de producción.** ⚠️ (casi todo lo que crea se puede borrar; lo que NO se deshace del todo está justo debajo del comando)
 ```bash
 FRESH_START=1 bash deploy/gcp/bootstrap.sh production
 ```
 *Debes ver primero:* `Proyecto: <tu ID> (número …) · Entorno: production · Región: us-east4 · Repositorio: Juando26030/Facial-Recognition-GOLDEN` y `¿Continuar? (escribe «si»):` → escribe `si`. Luego van apareciendo `== 1. APIs`, `== 2. Artifact Registry`, `== 3. Cuentas de servicio`, `== 4. Workload Identity Federation`, `== 5. Secret Manager (production)`… cada uno con `✓`.
+**Qué NO se deshace del todo:** (a) convertir el proyecto en proyecto de Firebase (`projects:addfirebase`, paso 12 del bootstrap) no se revierte, y el nombre del sitio `golden-app-<número>` queda reservado aunque se borre; (b) los nombres de los buckets son globales y, si se borran, pueden tardar en poder reutilizarse; (c) un pool de Workload Identity borrado queda reservado 30 días. Todo lo demás (APIs, cuentas de servicio, colas, Scheduler, servicios y Jobs con la imagen «hello», monitores, secretos) se borra o se reemplaza sin consecuencias porque todavía no hay datos ni despliegue.
 
 **Paso 11 — Responder lo que pide el paso 5 (Secret Manager). Todo se escribe «a ciegas»: no se ve al teclear.** ⚠️ (los secretos se pueden desactivar y reemplazar)
 En este orden:
@@ -99,9 +108,13 @@ En este orden:
 5. Los 8 de Wompi (`wompi-public-key`, `wompi-integrity-secret`, `wompi-events-secret`, `wompi-private-key` y los 4 `wompi-sandbox-*`) → **Enter** en cada uno (se cargan cuando se activen los pagos).
 6. `golden-azure-tenant-id`, `golden-azure-client-id`, `golden-azure-client-secret`, `golden-graph-sender` → **Enter** en los cuatro (se cargan en el paso 16 con la función de lectura silenciosa).
 7. `golden-alert-email` → escribe el correo que recibirá las alertas.
-8. `golden-neon-api-key`, `golden-neon-project-id`, `golden-neon-endpoint-id` → **Enter** en los tres (opcionales).
+8. `golden-neon-api-key`, `golden-neon-project-id`, `golden-neon-endpoint-id` → **pega los tres** (recomendado). Con ellos, el Job horario enciende el precalentamiento de Neon durante un evento «En Proceso» o una apertura de formulario (nunca se apaga y mínimo 0,5 CU) y lo devuelve a lo normal después (`app/warmup.py`); **sin ellos se salta Neon** y la primera petición tras un rato de inactividad espera a que despierte. Dónde salen:
+   - **ID del proyecto:** consola de Neon → tu proyecto → **Settings → General → Project ID** (algo como `quiet-cloud-12345678`).
+   - **ID del endpoint:** **Branches → production → Computes**: el identificador `ep-…` (es la parte `ep-xxxx-xxxx` del host de la cadena, sin `-pooler` ni lo que sigue).
+   - **Clave de API:** avatar → **Account settings → API keys → Create new API key** (nombre «goldenweb-precalentamiento»). Se muestra **una sola vez**: pégala aquí y no la guardes en otro lado. Si tu cuenta es una *organización* de Neon, crea una clave de **organización o de proyecto** en lugar de una personal (la personal puede administrar todos tus proyectos de Neon, incluido staging).
+   Si prefieres no cargarlos ahora, **Enter** en los tres (la aplicación funciona igual; solo queda sin precalentar Neon). Para cargarlos después hay que volver a correr el bootstrap, que es idempotente y solo pregunta por lo que falta.
 Después el script crea solo el rol `golden_app` en Neon y la cadena `golden-database-url` (puede tardar 1 o 2 minutos).
-*Debes ver:* `✓ … guardado` en los que escribiste, `(generado al azar)` en los tres generados y `(omitido)` en los demás. Más adelante pregunta `Correo para las alertas` si no guardaste `alert-email`.
+*Debes ver:* `✓ … guardado` en los que escribiste (incluidos los tres de Neon si los pegaste), `(generado al azar)` en los tres generados y `(omitido)` en los demás. Más adelante pregunta `Correo para las alertas` si no guardaste `alert-email`.
 
 **Paso 12 — Esperar el final del bootstrap y guardar el resumen.** ⚠️
 *Debes ver al final:* `LISTO (production). Configura en GitHub → Settings → Environments → «production» → Variables` con cinco valores (`GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER`, `GCP_DEPLOYER`, `FIREBASE_SITE`) y la URL de Cloud Run del servicio web. **No son secretos**: cópialos a tus notas (se vuelven a imprimir en el paso 22). Si algún paso mostró `⚠`, léelo: el script es idempotente, corrige y vuelve a correr **el mismo comando**; lo que ya existe no se toca. Si el sitio de Firebase no se creó, el mensaje trae el comando exacto.
@@ -127,7 +140,7 @@ gcloud secrets list --format='value(name)'
 gcloud services list --enabled --filter=name:iamcredentials.googleapis.com --format='value(name)'
 gcloud iam service-accounts get-iam-policy golden-app@$PROJECT_ID.iam.gserviceaccount.com --format='value(bindings.role)' | grep serviceAccountTokenCreator
 ```
-*Debes ver:* los servicios `golden-biometria golden-publico golden-web`; los Jobs `golden-bulk golden-migrate golden-ops`; el Scheduler `golden-ops-hourly  5 * * * *  PAUSED`; los secretos `golden-alert-email golden-database-url golden-direct-database-url golden-face-encryption-key golden-ops-token golden-secret-key`; la API `iamcredentials.googleapis.com` y la línea `roles/iam.serviceAccountTokenCreator`.
+*Debes ver:* los servicios `golden-biometria golden-publico golden-web`; los Jobs `golden-bulk golden-migrate golden-ops`; el Scheduler `golden-ops-hourly  5 * * * *  PAUSED`; los secretos `golden-alert-email golden-database-url golden-direct-database-url golden-face-encryption-key golden-ops-token golden-secret-key` (más `golden-neon-api-key`, `golden-neon-endpoint-id` y `golden-neon-project-id` si los pegaste en el paso 11); la API `iamcredentials.googleapis.com` y la línea `roles/iam.serviceAccountTokenCreator`.
 
 **Paso 15 — Comprobar buckets, CORS, colas y que NO hay nada desplegado.** ✅
 ```bash
