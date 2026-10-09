@@ -196,11 +196,30 @@ for n in azure-tenant-id azure-client-id azure-client-secret graph-sender; do ca
 ```
 *Debes ver, en orden:* `golden-azure-tenant-id:` (pegas el Id. de directorio), `golden-azure-client-id:` (pegas `2a1f1fb1-30eb-4c23-b355-5163e269a459`), `golden-azure-client-secret:` (pegas el valor del secreto «GoldenWeb producción» de Entra; no se ve) y `golden-graph-sender (el buzón remitente):` (escribes `soporteit@goldenlogisticas.com`), cada uno seguido de `… guardado`. La restricción RBAC de la aplicación ya cubre la cuenta (sección 11 del runbook).
 
+> ⚠️ **«Valor», NO «Id. de secreto» (error real del 8 de octubre de 2026).** En Entra (portal.azure.com → Microsoft Entra ID → Registros de aplicaciones → tu aplicación → **Certificados y secretos**) cada secreto tiene dos columnas: **Valor** (texto largo de unos 40 caracteres, con letras, números y signos como `~` o `.`) e **Id. de secreto** (un GUID: `8-4-4-4-12` caracteres con guiones). Hay que pegar el **Valor**. El Id. de secreto no sirve y el correo fallaría en silencio. **El Valor solo se muestra completo cuando creas el secreto**; si ya no lo ves, crea un secreto nuevo.
+
+**Paso 16b — Comprobar que quedó el valor correcto (sin mostrar nada secreto).** ✅
+```bash
+v() { gcloud secrets versions access latest --secret "golden-$1"; }
+GUID='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+[[ "$(v azure-tenant-id)" =~ $GUID ]] && echo "tenant-id: forma de GUID ✓" || echo "tenant-id: ✗ no parece un GUID"
+[ "$(v azure-client-id)" = "2a1f1fb1-30eb-4c23-b355-5163e269a459" ] && echo "client-id: igual al AppId ✓" || echo "client-id: ✗ NO es el AppId"
+s="$(v azure-client-secret)"
+if [[ "$s" =~ $GUID ]]; then echo "client-secret: ✗ ES UN GUID (es el Id. de secreto, no el Valor)"; else echo "client-secret: ✓ no es GUID; largo ${#s}"; fi; unset s
+```
+*Debes ver:* tres líneas con ✓; el largo del secreto debería ser de unos 40 (el de producción dio 40). Si el secreto sale con ✗, carga el valor correcto como versión nueva y apaga la mala (sustituye `1` por el número de la versión equivocada, que ves en el paso 17):
+```bash
+read -rsp "Valor correcto del secreto: " V; echo
+printf '%s' "$V" | gcloud secrets versions add golden-azure-client-secret --data-file=- >/dev/null; unset V
+gcloud secrets versions disable 1 --secret golden-azure-client-secret
+```
+Luego repite el paso 16b.
+
 **Paso 17 — Comprobar los cuatro secretos sin ver valores.** ✅
 ```bash
-for n in azure-tenant-id azure-client-id azure-client-secret graph-sender; do echo -n "golden-$n: "; gcloud secrets versions list "golden-$n" --format='value(name,state)' | head -1; done
+for n in azure-tenant-id azure-client-id azure-client-secret graph-sender; do echo -n "golden-$n: "; gcloud secrets versions list "golden-$n" --filter='state=ENABLED' --format='value(name,state)' | head -1; done
 ```
-*Debes ver:* cuatro líneas con la versión `1` en estado `enabled`.
+*Debes ver:* cuatro líneas, cada una con su versión **habilitada más reciente** (`1`, o `2` si corregiste el secreto del cliente en el paso 16b) en estado `ENABLED`.
 
 **Paso 18 — Monitores: dejar creado el chequeo pero DESACTIVAR la alerta de `/health`.** ✅ (se reactiva con `--enabled` el día del corte)
 ```bash
@@ -210,7 +229,7 @@ POL=$(gcloud monitoring policies list --filter='displayName="Golden production: 
 gcloud monitoring policies update "$POL" --no-enabled
 gcloud monitoring policies list --filter='displayName:"/health"' --format='value(displayName,enabled)'
 ```
-*Debes ver:* el chequeo `golden-health` (host `golden-web-<número>.us-east4.run.app`, período `60s`) y tres políticas activas («/health no responde», «un Job falló…», «errores 5xx»); tras el `update`, la de «/health no responde» con **`False`**. (La política «el Job horario no corre» se crea después, con `scheduler.sh … alert`.) Sin esto, la imagen «hello» —que no responde `/health`— enviaría correos de falla.
+*Debes ver:* el chequeo `golden-health` (host `golden-web-<número>.us-east4.run.app`, período `60s`) y tres políticas activas («/health no responde», «un Job falló…», «errores 5xx»); tras el `update`, la de «/health no responde» con **`False`**. Anota el ID de la política de `/health` de producción: **`projects/goldenweb-prod/alertPolicies/5492875927882748755`** (se usa en el paso 34). (La política «el Job horario no corre» se crea después, con `scheduler.sh … alert`.) Sin esto, la imagen «hello» —que no responde `/health`— enviaría correos de falla.
 
 **Paso 19 — Comprobar el sitio de Firebase (sin agregar el dominio todavía).** ⚠️ (convertir el proyecto en proyecto de Firebase no se deshace, y el nombre del sitio queda reservado aunque se borre)
 ```bash
@@ -243,23 +262,46 @@ gcloud run services describe golden-web --region us-east4 --format='value(status
 ```
 *Debes ver:* los cinco pares y la dirección de Cloud Run del servicio web (`https://golden-web-<número>.us-east4.run.app`). Guárdalos con las notas del paso 12.
 
-**Paso 23 — Ensayo de la restauración contra STAGING (no toca producción).** ✅ (opcional pero recomendado: el script nunca se ha probado con un respaldo real)
-1. Consola de Neon, proyecto de **staging**: crea una rama temporal llamada `restore-test` y copia su cadena directa.
-2. En Cloud Shell (el ID del proyecto de staging es `goldenweb-staging`; compruébalo con `gcloud projects list`):
+**Paso 23 — Ensayo de la restauración contra STAGING (no toca producción).** ✅ (opcional pero recomendado; el script se probó con un respaldo real el 8 de octubre de 2026, código `ace073d`)
+
+**Antes, una vez por pestaña de Cloud Shell: instalar psql 18.** Cloud Shell trae la 16 y `migrate_db_to_neon.py` exige la 18 (los volcados traen `\restrict`).
 ```bash
-PROD_ID=$(gcloud config get-value project); STAGING_ID=goldenweb-staging
+sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-18
+export PSQL=/usr/lib/postgresql/18/bin/psql PG_DUMP=/usr/lib/postgresql/18/bin/pg_dump
+"$PSQL" --version
+```
+*Debes ver:* `psql (PostgreSQL) 18.x`. Si abres otra pestaña, repite el `export`.
+
+1. Consola de Neon, proyecto de **staging**: crea una rama temporal `restore-test` y copia su cadena **directa** (en *Connect* apaga «Connection pooling»: la cadena **no** debe tener `-pooler`). ⚠️ **Pulsa «Show password» antes de copiar**; si no, la cadena trae puntos en lugar de la contraseña y falla con *password authentication failed for user 'golden_db_owner'*.
+2. En Cloud Shell. El ID del proyecto de staging es `goldenweb-staging` (compruébalo con `gcloud projects list`). **El bucket correcto termina en `-us-east4`: `goldenweb-staging-golden-staging-us-east4`.** Existe uno viejo, `goldenweb-staging-golden-staging`, con respaldos solo hasta el 29 de septiembre: **no lo uses**.
+```bash
+PROD_ID=goldenweb-prod; STAGING_ID=goldenweb-staging
 gcloud config set project "$STAGING_ID"
 cd ~/Facial-Recognition
 python3 -m venv ~/venv && . ~/venv/bin/activate
 grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/req.txt && pip install -q -r /tmp/req.txt
 read -rsp "Cadena DIRECTA de la rama restore-test de STAGING: " U; echo; printf 'DIRECT_DATABASE_URL=%s\n' "$U" > .env.restore; unset U
-python scripts/neon_app_role.py --env-file .env.restore
-BACKUP_BUCKET=$STAGING_ID-golden-staging-us-east4 TARGET_ENV_FILE=.env.restore bash scripts/restore_test.sh
-rm -f .env.restore restore_test_dump.sql.gz
+# Base VIVA de staging (para comparar conteos) y de producción (solo para comprobar que el destino NO es ella): salen de sus secretos, sin mostrarse.
+printf 'DIRECT_DATABASE_URL=%s\n' "$(gcloud secrets versions access latest --secret golden-direct-database-url --project "$STAGING_ID")" > .env.live
+printf 'DIRECT_DATABASE_URL=%s\n' "$(gcloud secrets versions access latest --secret golden-direct-database-url --project "$PROD_ID")" > .env.prod
+# Comprobación del destino (no muestra direcciones, solo el veredicto)
+host_de() { grep -E '^DIRECT_DATABASE_URL=' "$1" | head -1 | cut -d= -f2- | tr -d '"' | python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.stdin.read().strip()).hostname or "")'; }
+T=$(host_de .env.restore); L=$(host_de .env.live); P=$(host_de .env.prod); ok=1
+[ -n "$T" ] || { echo "✗ la cadena de restore-test no tiene host"; ok=0; }
+case "$T" in *-pooler*) echo "✗ la cadena de restore-test es «-pooler»: usa la DIRECTA"; ok=0;; esac
+[ "$T" != "$L" ] || { echo "✗ el destino es la base VIVA de staging"; ok=0; }
+[ "$T" != "$P" ] || { echo "✗ el destino es PRODUCCIÓN"; ok=0; }
+[ "$ok" = 1 ] && echo "✓ el destino es una rama distinta de la viva y de producción, y es directa" || { rm -f .env.restore .env.live .env.prod; echo "DETENTE: no sigas."; }
+rm -f .env.prod
+[ "$ok" = 1 ] && python scripts/neon_app_role.py --env-file .env.restore
+[ "$ok" = 1 ] && BACKUP_BUCKET=$STAGING_ID-golden-staging-us-east4 TARGET_ENV_FILE=.env.restore LIVE_ENV_FILE=.env.live bash scripts/restore_test.sh
+rm -f .env.restore .env.live restore_test_dump.sql.gz
 gcloud config set project "$PROD_ID"
 ```
-3. Borra la rama `restore-test` en la consola de Neon.
-*Debes ver:* `respaldo: gs://…/db/daily/…`, `gzip íntegro`, los conteos por tabla del volcado y del destino **iguales**, y al final `OK — duraciones en restore_test_AAAAMMDD.log`. Si el bucket de staging tiene otro nombre, el error trae el mensaje «No hay respaldos diarios en gs://…».
+3. El script **se detiene a preguntar**: «Se BORRARÁ todo el esquema public de «golden_db» en … Escribe el nombre de la base:». Escribe `golden_db` (el nombre de la base de la **rama temporal**) y Enter. Es la última barrera antes de vaciar el destino: si el nombre o el host que ves no te cuadran, **no escribas nada** y pulsa Ctrl+C.
+4. Borra la rama `restore-test` en la consola de Neon.
+
+*Debes ver:* `✓ el destino es una rama distinta…`, `respaldo: gs://goldenweb-staging-golden-staging-us-east4/db/daily/…`, `gzip íntegro`, los conteos por tabla del volcado y del destino **iguales**, los conteos «vivo» no menores, y al final `OK — duraciones en restore_test_AAAAMMDD.log`. Resultado del 8 de octubre de 2026: 70.553 filas idénticas en 44 tablas; restauración 45,8 s; paso completo 100 s. Si el bucket tiene otro nombre, el error trae «No hay respaldos diarios en gs://…».
 
 ---
 
@@ -329,25 +371,37 @@ bash deploy/gcp/scheduler.sh production alert
 ```
 *Debes ver:* `estado: ENABLED`; los tres Jobs terminan con «Execution … has successfully completed»; `check` imprime solo líneas `OK` y termina con **«Scheduler y respaldos en orden.»**; `alert` dice «creada» o «ya existe». **Una hora después**, `check` otra vez en verde (prueba que el Scheduler dispara). **No relajes los umbrales** si falla.
 
-**Paso 34 — Reactivar la alerta de `/health`.** ✅
+**Paso 34 — Reactivar la alerta de `/health`.** ✅ (solo cuando la aplicación ya responda `/health`, paso 28; la alerta se desactivó en el paso 18)
 ```bash
-POL=$(gcloud monitoring policies list --filter='displayName="Golden production: /health no responde"' --format='value(name)')
-gcloud monitoring policies update "$POL" --enabled
+gcloud monitoring policies update projects/goldenweb-prod/alertPolicies/5492875927882748755 --enabled
 gcloud monitoring policies list --format='table(displayName,enabled)'
 ```
-*Debes ver:* las cuatro políticas con `True`. Haz esto cuando la aplicación ya responda `/health` (paso 28).
+*Debes ver:* las cuatro políticas con `True` (si el ID no existe, búscalo con `gcloud monitoring policies list --filter='displayName="Golden production: /health no responde"' --format='value(name)'`).
 
 **Paso 35 — Prueba de restauración con un respaldo REAL de producción.** ✅ (no toca la base viva: la lee solo para comparar)
-1. Consola de Neon, proyecto `golden-production`: rama temporal `restore-test` (vacía) → copia su cadena directa.
+
+Necesitas psql 18 y las variables `PSQL`/`PG_DUMP` (bloque «Antes» del paso 23; si abriste otra pestaña de Cloud Shell, repítelo).
+1. Consola de Neon, proyecto `golden-production`: rama temporal `restore-test` (vacía) → copia su cadena **directa** (sin `-pooler`) pulsando antes **«Show password»**.
+2. En Cloud Shell. La base viva se toma **siempre del secreto** (no se pega ni se muestra), y antes de restaurar se comprueba el destino:
 ```bash
 cd ~/Facial-Recognition && . ~/venv/bin/activate
+gcloud config set project goldenweb-prod
+export PSQL=/usr/lib/postgresql/18/bin/psql PG_DUMP=/usr/lib/postgresql/18/bin/pg_dump
 read -rsp "Cadena DIRECTA de la rama restore-test de PRODUCCIÓN: " U; echo; printf 'DIRECT_DATABASE_URL=%s\n' "$U" > .env.restore; unset U
-python scripts/neon_app_role.py --env-file .env.restore
-read -rsp "Cadena DIRECTA de la base VIVA de producción (solo lectura, para comparar): " V; echo; printf 'DIRECT_DATABASE_URL=%s\n' "$V" > .env.live; unset V
-BACKUP_BUCKET=$(gcloud config get-value project)-golden-backups-us-east4 TARGET_ENV_FILE=.env.restore LIVE_ENV_FILE=.env.live bash scripts/restore_test.sh
+printf 'DIRECT_DATABASE_URL=%s\n' "$(gcloud secrets versions access latest --secret golden-direct-database-url --project goldenweb-prod)" > .env.live
+host_de() { grep -E '^DIRECT_DATABASE_URL=' "$1" | head -1 | cut -d= -f2- | tr -d '"' | python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.stdin.read().strip()).hostname or "")'; }
+T=$(host_de .env.restore); L=$(host_de .env.live); ok=1     # en producción la base viva ES la de producción
+[ -n "$T" ] || { echo "✗ la cadena de restore-test no tiene host"; ok=0; }
+case "$T" in *-pooler*) echo "✗ la cadena de restore-test es «-pooler»: usa la DIRECTA"; ok=0;; esac
+[ "$T" != "$L" ] || { echo "✗ el destino es la base VIVA de producción: se BORRARÍA"; ok=0; }
+[ "$ok" = 1 ] && echo "✓ el destino es una rama distinta de la base viva, y es directa" || { rm -f .env.restore .env.live; echo "DETENTE: no sigas."; }
+[ "$ok" = 1 ] && python scripts/neon_app_role.py --env-file .env.restore
+[ "$ok" = 1 ] && BACKUP_BUCKET=goldenweb-prod-golden-backups-us-east4 TARGET_ENV_FILE=.env.restore LIVE_ENV_FILE=.env.live bash scripts/restore_test.sh
 rm -f .env.restore .env.live restore_test_dump.sql.gz
 ```
-2. Borra la rama `restore-test` en la consola de Neon.
-*Debes ver:* `respaldo: gs://<tu ID>-golden-backups-us-east4/db/daily/…`, `gzip íntegro`, conteos del volcado y del destino **iguales**, los conteos vivos **no menores** que los del respaldo, y `OK — duraciones en restore_test_AAAAMMDD.log` (anota las duraciones: son el RTO real).
+3. El script pregunta «Escribe el nombre de la base:». Escribe `golden_db` y Enter (solo si el host mostrado es el de la rama temporal; si no te cuadra, Ctrl+C).
+4. Borra la rama `restore-test` en la consola de Neon.
+
+*Debes ver:* `✓ el destino es una rama distinta…`, `respaldo: gs://goldenweb-prod-golden-backups-us-east4/db/daily/…`, `gzip íntegro`, conteos del volcado y del destino **iguales**, los conteos vivos **no menores** que los del respaldo, y `OK — duraciones en restore_test_AAAAMMDD.log` (anota las duraciones: son el RTO real; en el ensayo de staging fueron 45,8 s de restauración y 100 s en total).
 
 **Paso 36 — Dominio (SOLO con una segunda orden escrita: es el cambio de DNS).** ⛔→ reversible en minutos si el TTL es de 1 min: sigue `docs/19` §10 (Firebase «Add custom domain», registros en Cloudflare con la **nube gris**, prueba de IP real) y §11 (UptimeRobot a `/health`). No se ejecuta en esta guía.
