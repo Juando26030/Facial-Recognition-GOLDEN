@@ -246,3 +246,35 @@ def test_birth_date_is_a_field_of_the_event_parameters_and_of_the_registration_f
     assert client.put(f"/api/events/{ev.id}/field-configs/birth_date", json={"label": "Nacimiento", "sort_order": 3}).json()["label"] == "Nacimiento"
     page = client.get(f"/kiosk/{ev.id}/registro")
     assert page.status_code == 200 and 'type="date" name="birth_date"' in page.text and page.text.count('name="birth_date"') == 1
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------- la plantilla descargable
+TEMPLATE = "static/templates/plantilla_carga_base_asistentes.xlsx"
+
+
+def test_the_template_has_the_birth_date_column_right_after_the_email_and_explains_it():
+    from openpyxl import load_workbook
+    wb = load_workbook(TEMPLATE)
+    header = [c.value for c in wb["Base de Asistentes"][1]]
+    assert header[:9] == ["id", "nombres", "apellidos", "cargo", "entidad", "telefono", "correo", "fecha de nacimiento", "tipo de asistente"] and header[-1] == "opcional_30" and len(header) == 40
+    unused = roster_columns.canonicalize({h: "A" for h in header}, [], {})[2]["unused"]
+    assert all(u["title"].startswith("opcional_") for u in unused)                                         # la única "no usada" son las opcionales vacías: la fecha y las demás se reconocen
+    rows = {r[0].value: r[1].value for r in wb["Instrucciones"].iter_rows(min_row=2) if r[0].value and r[1].value}
+    order = [r[0].value for r in wb["Instrucciones"].iter_rows(min_row=2, max_row=10)]
+    assert order.index("fecha de nacimiento") == order.index("correo") + 1
+    text = rows["fecha de nacimiento"]
+    assert "DD/MM/AAAA" in text and "AAAA-MM-DD" in text and "menores" in text and "opcional" in text.lower()
+    assert any("título propio" in str(c.value) for c in wb["Instrucciones"]["A"])                          # y se explica que un título libre se toma como etiqueta
+
+
+def test_the_downloadable_template_loads_as_is_with_its_example_birth_date(client, factory, db):
+    ev = _coord(client, factory)
+    with open(TEMPLATE, "rb") as f:
+        content = f.read()
+    first = _upload(client, ev, content, name="plantilla.xlsx").json()
+    assert first["result"] == "NEEDS_LABELS" and first["fields"] == ["opcional_1", "opcional_2"]            # las dos opcionales del ejemplo traen datos: el sistema pregunta qué son
+    r = _upload(client, ev, content, name="plantilla.xlsx", data={"field_labels": json.dumps({"opcional_1": "Talla", "opcional_2": "Dieta"})})
+    assert r.status_code == 200 and r.json()["count"] == 1, r.text
+    db.expire_all()
+    assert db.query(User).filter_by(id="1020304050").one().birth_date == date(1990, 4, 2)
+    assert not [e for e in r.json()["errors"] if "fecha de nacimiento" in e]
