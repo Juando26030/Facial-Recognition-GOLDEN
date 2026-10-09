@@ -96,11 +96,17 @@ def app_url(owner_direct_url: str, password: str) -> str:
 
 
 def check_app(url: str) -> None:
-    """golden_app entra por el pooler, lee, y NO puede crear tablas."""
+    """golden_app entra por el pooler, lee, y NO puede crear tablas.
+    En una base RECIÉN CREADA (el bootstrap de producción corre ANTES de la primera migración) todavía no existe `alembic_version`: ahí solo se comprueba la conexión y que no pueda crear
+    tablas. Si `alembic_version` existe, SIEMPRE se lee: sin permiso de lectura falla igual que antes (no se debilita la comprobación sobre una base ya migrada)."""
     conn = psycopg2.connect(url, connect_timeout=15)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT count(*) FROM alembic_version")
+            cur.execute("SELECT to_regclass('public.alembic_version')")
+            if cur.fetchone()[0] is not None:
+                cur.execute("SELECT count(*) FROM alembic_version")
+            else:
+                cur.execute("SELECT 1")
             try:
                 cur.execute("CREATE TABLE _golden_app_no_debe_poder (x int)")
                 raise SystemExit("golden_app pudo crear una tabla: los permisos quedaron demasiado amplios")

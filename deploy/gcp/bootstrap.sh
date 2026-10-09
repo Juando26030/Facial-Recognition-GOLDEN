@@ -112,23 +112,7 @@ ok "proveedor ${POOL_PATH}/providers/${PROVIDER}; $SA_DEPLOYER solo desde ${DEPL
 # -------------------------------------------------------------------------------------------------------------------------- 5
 step "5. Secret Manager (${GOLDEN_ENV})"
 echo "   Cada valor se escribe a ciegas (no se ve) y va directo a Secret Manager. Enter en uno opcional = no crearlo."
-gen_hex() { python3 -c "import secrets; print(secrets.token_hex(32))"; }
-gen_fernet() { python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"; }
-ensure_secret() { exists gcloud secrets describe "$1" || gcloud secrets create "$1" --replication-policy automatic >/dev/null; }
-put_secret() {   # nombre-corto  ayuda  obligatorio(0/1)  [generador]
-  local s; s="$(secret_name "$1")"
-  if exists gcloud secrets versions access latest --secret "$s" && [[ " $ROTATE " != *" $1 "* ]]; then ok "$s ya tiene valor"; return; fi
-  local value=""
-  read -rsp "   $s — $2: " value; echo
-  if [ -z "$value" ] && [ -n "${4:-}" ]; then value="$($4)"; echo "     (generado al azar)"; fi
-  if [ -z "$value" ]; then
-    [ "$3" = 1 ] && { echo "   $s es obligatorio." >&2; exit 1; }
-    echo "     (omitido)"; return
-  fi
-  ensure_secret "$s"
-  printf '%s' "$value" | gcloud secrets versions add "$s" --data-file=- >/dev/null
-  ok "$s guardado"
-}
+source deploy/gcp/lib_secrets.sh      # gen_hex, gen_fernet, ensure_secret, secret_has_version, put_secret, secrets_summary (idempotentes; probados en tests/test_bootstrap_secrets.py)
 put_secret direct-database-url "cadena DIRECTA de Neon (rama ${GOLDEN_ENV}, rol DUEÑO, host SIN -pooler)" 1
 if [ "$GOLDEN_ENV" = production ] && [ "${FRESH_START:-0}" = 1 ]; then
   # Producción SIN datos de la VM (decidido 2026-10-05: la VM no tiene datos reales): llaves NUEVAS, generadas aquí. Guarda FACE_ENCRYPTION_KEY a salvo: perderla = perder los rostros que se registren.
@@ -151,11 +135,12 @@ done
 # y la guarda directo en el secreto. Nunca pasa por la pantalla.
 # IDEMPOTENTE: si el secreto ya tiene valor NO se toca (ni se rota la contraseña de golden_app): solo se entra aquí la primera vez o con ROTATE="database-url" explícito.
 # Los secretos son globales del proyecto, así que mover de región tampoco los toca.
-if ! exists gcloud secrets versions access latest --secret "$(secret_name database-url)" || [[ " $ROTATE " == *" database-url "* ]]; then
+if ! secret_has_version "$(secret_name database-url)" || [[ " $ROTATE " == *" database-url "* ]]; then
   ensure_secret "$(secret_name database-url)"
   pip3 install --user --quiet psycopg2-binary >/dev/null 2>&1 || true
   # --rotate: si golden_app ya existía su contraseña no se conoce, así que se le pone una nueva para poder guardarla en el secreto.
   python3 scripts/neon_app_role.py --owner-secret "$(secret_name direct-database-url)" --app-secret "$(secret_name database-url)" --rotate
+  secret_has_version "$(secret_name database-url)" || { echo "   $(secret_name database-url) quedó SIN versión: no se pudo guardar la cadena de golden_app." >&2; exit 1; }
 fi
 secret_access() { gcloud secrets add-iam-policy-binding "$(secret_name "$1")" --member "serviceAccount:$(sa_email "$2")" \
                     --role roles/secretmanager.secretAccessor --quiet >/dev/null 2>&1 || true; }
@@ -383,6 +368,10 @@ else
 fi
 
 # -------------------------------------------------------------------------------------------------------------------------- resumen
+step "Estado de los secretos (${GOLDEN_ENV})"
+SECRET_NAMES=""; for pair in $APP_SECRETS $OPS_SECRETS neon-project-id:x neon-endpoint-id:x; do n="${pair%%:*}"; [[ " $SECRET_NAMES " == *" $n "* ]] || SECRET_NAMES="$SECRET_NAMES $n"; done
+secrets_summary $SECRET_NAMES
+
 cat <<EOF
 
 LISTO ($GOLDEN_ENV). Configura en GitHub → Settings → Environments → «$GOLDEN_ENV» → Variables (no son secretos):

@@ -306,7 +306,9 @@ unset TOKEN
 
 **Paso 1. Abrir Cloud Shell en el proyecto de staging y traer el código.**
 ```bash
-cd ~ && { [ -d Facial-Recognition ] || git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN.git Facial-Recognition; } && cd Facial-Recognition
+gh auth status || gh auth login --hostname github.com --git-protocol https --web   # el repositorio es PRIVADO: muestra un código; ábrelo en https://github.com/login/device
+gh auth setup-git
+cd ~ && { [ -d Facial-Recognition ] || gh repo clone Juando26030/Facial-Recognition-GOLDEN Facial-Recognition; } && cd Facial-Recognition
 git fetch origin && git checkout migra/fase1-2 && git pull --ff-only && git log --oneline -1
 gcloud config get-value project
 ```

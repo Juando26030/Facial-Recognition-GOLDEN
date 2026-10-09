@@ -84,13 +84,24 @@ firebase login --no-localhost
 ```
 *Debes ver:* una versión (p. ej. `13.x`) y, tras abrir el enlace que te muestra y pegar el código, `Success! Logged in as tu-correo`. Debe ser la cuenta con acceso al proyecto.
 
-**Paso 9 — Traer el código de la rama `migra/fase1-2`.** ✅
+**Paso 9 — Traer el código. El repositorio es PRIVADO: primero se autentica Cloud Shell con GitHub (sin escribir tu contraseña).** ✅
+```bash
+gh auth status || gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git
+```
+*Debes ver:* `gh auth login` muestra un **código de 8 caracteres** (`XXXX-XXXX`) y una dirección (`https://github.com/login/device`). Ábrela en el navegador donde tienes tu sesión de GitHub, escribe el código y autoriza. Termina con `✓ Logged in as tu-usuario` (si pregunta «Authenticate Git with your GitHub credentials?», responde `Y`). `gh auth setup-git` no imprime nada. El permiso queda guardado en Cloud Shell: al terminar el corte, `gh auth logout` lo borra.
 ```bash
 PROJECT_ID=$(gcloud config get-value project); echo "Proyecto: $PROJECT_ID"
-cd ~ && { [ -d Facial-Recognition ] || git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN.git Facial-Recognition; } && cd Facial-Recognition
-git fetch origin && git checkout migra/fase1-2 && git pull --ff-only && git log --oneline -1
+cd ~ && { [ -d Facial-Recognition ] || gh repo clone Juando26030/Facial-Recognition-GOLDEN Facial-Recognition; } && cd Facial-Recognition
+git fetch origin && git checkout integracion/piloto-legal && git pull --ff-only && git log --oneline -1
 ```
-*Debes ver:* `Proyecto: ` con el ID que creaste y el último commit de la rama (hoy `e5b19e0` o uno posterior). No uses otra rama.
+*Debes ver:* `Proyecto: ` con el ID que creaste y el último commit de la rama **`integracion/piloto-legal`** (el arreglo del paso 5 del bootstrap vive ahí; cuando `migra/fase1-2` lo tenga también sirve esa rama; el bootstrap no depende de la rama).
+*Si `gh` no existe en tu Cloud Shell:* crea un token de GitHub de **solo lectura de este repositorio** (GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token → *Only select repositories*: este → *Permissions → Contents: Read-only*) y úsalo así (el token queda en `.git/config`, por eso la última línea lo quita):
+```bash
+read -rsp "Token de GitHub (no se ve): " T; echo; git clone "https://x-access-token:$T@github.com/Juando26030/Facial-Recognition-GOLDEN.git" ~/Facial-Recognition; unset T
+cd ~/Facial-Recognition && git remote set-url origin https://github.com/Juando26030/Facial-Recognition-GOLDEN.git
+```
+(luego bórralo en GitHub cuando termines; para actualizar el código tendrías que repetir el `clone`.)
 
 **Paso 10 — Ejecutar el bootstrap de producción.** ⚠️ (casi todo lo que crea se puede borrar; lo que NO se deshace del todo está justo debajo del comando)
 ```bash
@@ -98,6 +109,8 @@ FRESH_START=1 bash deploy/gcp/bootstrap.sh production
 ```
 *Debes ver primero:* `Proyecto: <tu ID> (número …) · Entorno: production · Región: us-east4 · Repositorio: Juando26030/Facial-Recognition-GOLDEN` y `¿Continuar? (escribe «si»):` → escribe `si`. Luego van apareciendo `== 1. APIs`, `== 2. Artifact Registry`, `== 3. Cuentas de servicio`, `== 4. Workload Identity Federation`, `== 5. Secret Manager (production)`… cada uno con `✓`.
 **Qué NO se deshace del todo:** (a) convertir el proyecto en proyecto de Firebase (`projects:addfirebase`, paso 12 del bootstrap) no se revierte, y el nombre del sitio `golden-app-<número>` queda reservado aunque se borre; (b) los nombres de los buckets son globales y, si se borran, pueden tardar en poder reutilizarse; (c) un pool de Workload Identity borrado queda reservado 30 días. Todo lo demás (APIs, cuentas de servicio, colas, Scheduler, servicios y Jobs con la imagen «hello», monitores, secretos) se borra o se reemplaza sin consecuencias porque todavía no hay datos ni despliegue.
+
+**Si ya corriste el bootstrap y se detuvo en el paso 5 con `relation "alembic_version" does not exist` (le pasó a la primera ejecución del 9-oct-2026):** la base de Neon estaba vacía y la comprobación final del rol `golden_app` suponía una base ya migrada. Está corregido en `integracion/piloto-legal` (con prueba). Qué quedó y qué no: ver `docs/legal/GUIA_CORTE_H1.md` → «Reintento»; en corto: **repite el paso 9** (autenticar y traer la rama) y **vuelve a correr el mismo comando del paso 10**; no se regenera ninguna llave.
 
 **Paso 11 — Responder lo que pide el paso 5 (Secret Manager). Todo se escribe «a ciegas»: no se ve al teclear.** ⚠️ (los secretos se pueden desactivar y reemplazar)
 En este orden:
@@ -117,7 +130,7 @@ Después el script crea solo el rol `golden_app` en Neon y la cadena `golden-dat
 *Debes ver:* `✓ … guardado` en los que escribiste (incluidos los tres de Neon si los pegaste), `(generado al azar)` en los tres generados y `(omitido)` en los demás. Más adelante pregunta `Correo para las alertas` si no guardaste `alert-email`.
 
 **Paso 12 — Esperar el final del bootstrap y guardar el resumen.** ⚠️
-*Debes ver al final:* `LISTO (production). Configura en GitHub → Settings → Environments → «production» → Variables` con cinco valores (`GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER`, `GCP_DEPLOYER`, `FIREBASE_SITE`) y la URL de Cloud Run del servicio web. **No son secretos**: cópialos a tus notas (se vuelven a imprimir en el paso 22). Si algún paso mostró `⚠`, léelo: el script es idempotente, corrige y vuelve a correr **el mismo comando**; lo que ya existe no se toca. Si el sitio de Firebase no se creó, el mensaje trae el comando exacto.
+*Debes ver al final, antes del resumen:* `== Estado de los secretos (production)` con una línea por secreto: `✓ golden-…: con versión`, `✗ golden-…: existe pero SIN versión` (si ves alguna `✗`, algo falló: no sigas) o `– golden-…: no existe (opcional omitido)`; nunca muestra valores. *Y al final:* `LISTO (production). Configura en GitHub → Settings → Environments → «production» → Variables` con cinco valores (`GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WIF_PROVIDER`, `GCP_DEPLOYER`, `FIREBASE_SITE`) y la URL de Cloud Run del servicio web. **No son secretos**: cópialos a tus notas (se vuelven a imprimir en el paso 22). Si algún paso mostró `⚠`, léelo: el script es idempotente, corrige y vuelve a correr **el mismo comando**; lo que ya existe no se toca. Si el sitio de Firebase no se creó, el mensaje trae el comando exacto.
 
 **Paso 13 — Copiar la `FACE_ENCRYPTION_KEY` al gestor de contraseñas. Hazlo AHORA: antes de cargar cualquier dato real y antes del primer despliegue.** ✅
 ```bash
@@ -151,6 +164,14 @@ gcloud tasks queues list --location us-east4 --format='value(name.basename())'
 gcloud run services describe golden-web --region us-east4 --format='value(spec.template.spec.containers[0].image)'
 ```
 *Debes ver:* `US-EAST4`; en `cors_config`, el método `PUT` y exactamente tres orígenes (`https://app.golden-eventos.com` y los dos del sitio `golden-app-<número>`: `.web.app` y `.firebaseapp.com`) **sin ningún `run.app`**; en el segundo bucket `US-EAST4`; las colas `golden-faces` y `golden-jobs`; y la imagen `us-docker.pkg.dev/cloudrun/container/hello` (es decir, **la aplicación no está desplegada**).
+
+**Reintento tras el error de `alembic_version` (solo si te pasó).** ⚠️
+*Qué quedó creado antes del error:* APIs, Artifact Registry, cuentas de servicio y Workload Identity (pasos 1 a 4); los secretos con valor `golden-direct-database-url`, `golden-secret-key`, `golden-face-encryption-key`, `golden-ops-token` y `golden-alert-email`; el **contenedor** del secreto `golden-database-url` **sin ninguna versión**; y el rol `golden_app` en Neon, con sus permisos aplicados y sin privilegios de más, pero con una contraseña aleatoria que no se guardó en ninguna parte (no sirve; el reintento la reemplaza). *Qué NO se hizo:* la versión de `golden-database-url`, los permisos de lectura de los secretos y los pasos 6 a 12 (buckets, colas, servicios con la imagen «hello», Scheduler, monitores, presupuesto, Firebase).
+*Antes de repetir*, anota las versiones de la llave de rostros (para comprobar después que no cambió):
+```bash
+gcloud secrets versions list golden-face-encryption-key --format='value(name,state,createTime)'
+```
+*Debes ver:* una sola fila, versión `1`, `enabled`. Repite el **paso 9** y luego el **paso 10**. *Debes ver ahora:* `golden-direct-database-url ya tiene valor`, `golden-secret-key ya tiene valor`, `golden-face-encryption-key ya tiene valor`, `golden-ops-token ya tiene valor` y `golden-alert-email ya tiene valor` (no te los vuelve a pedir); te pregunta otra vez por los opcionales que omitiste (Wompi, Microsoft y los tres de Neon: ahí puedes pegar los de Neon); restablece la contraseña de `golden_app` (la que nadie guardó) y guarda la cadena como la **primera versión** de `golden-database-url` (`Permisos de golden_app aplicados…`, sin error; si la versión no queda, el script se detiene con un mensaje) y continúa hasta `Estado de los secretos` y `LISTO (production)`. **Enter en los opcionales que omitiste es seguro:** no se crea nada y la siguiente corrida los vuelve a preguntar. *Después* repite el comando de arriba: **debe seguir siendo una sola fila, versión `1`, con la misma fecha**. El script nunca regenera una llave que ya tiene valor (solo lo haría si definieras la variable `ROTATE` con su nombre; no la definas).
 
 ---
 
