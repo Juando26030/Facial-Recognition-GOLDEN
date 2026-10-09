@@ -29,8 +29,10 @@ let now = 7_000_000, timers = [];
 const realSetTimeout = global.setTimeout;                       // el reloj virtual de abajo no sirve para esperar a crypto.subtle (hilos reales)
 global.setTimeout = (f, ms) => { const t = { f, at: now + ms }; timers.push(t); return t; };
 global.clearTimeout = (t) => { timers = timers.filter((x) => x !== t); };
-const flush = () => new Promise((r) => setImmediate(r));
-const advance = async (ms) => { now += ms; const due = timers.filter((t) => t.at <= now); timers = timers.filter((t) => t.at > now); due.forEach((t) => t.f()); for (let i = 0; i < 15; i++) await flush(); };
+// Esperas por EVENTO, no por «N vueltas»: cifrar/descifrar la cola (crypto.subtle) corre en hilos reales del sistema y con la máquina cargada tarda más que cualquier número fijo de vueltas
+// (fallaba 35 de 200 corridas con 48 en paralelo, siempre en «Deshacer la quitó de la cola»). settle() espera a que no quede crypto en vuelo; until() espera al aviso real.
+const { settle: flush, until } = require('./settle');
+const advance = async (ms) => { now += ms; const due = timers.filter((t) => t.at <= now); timers = timers.filter((t) => t.at > now); due.forEach((t) => t.f()); await flush(); };
 const toasts = []; global.showToast = (m, t, o) => { toasts.push({ m, t, o }); return { close() {} }; };
 global.CSS = { escape: (x) => x };
 
@@ -79,12 +81,12 @@ const lastToast = () => toasts[toasts.length - 1];
   const checkin = posts.find((p) => p.path === '/api/checkin-cedula'); assert.ok(checkin && checkin.cedula === '1001' && checkin.confirm === 'true' && checkin.client_id, 'acredita con confirm y client_id: ' + JSON.stringify(checkin));
   const undoToast = toasts.find((t) => t.o && t.o.action); assert.ok(undoToast && undoToast.o.action.label === 'Deshacer' && undoToast.o.duration === 8000 && /Ana/.test(undoToast.m), 'ofrece Deshacer ~8 s');
   // Deshacer: llama al servidor con el MISMO client_id
-  posts.length = 0; undoToast.o.action.onClick(); await flush(); await advance(10); await flush();
+  posts.length = 0; undoToast.o.action.onClick(); await until(() => /deshecha/.test((lastToast() || {}).m || ''), 'aviso «deshecha» (en línea)'); await advance(10);
   const undo = posts.find((p) => /undo/.test(p.path)); assert.ok(undo && undo.body.client_id === checkin.client_id, 'deshace con el mismo client_id'); assert.ok(/deshecha/.test(lastToast().m) && lastToast().t === 'success');
   // el servidor puede negarlo (otra persona / pasaron 15 s): se muestra su motivo
   toasts.length = 0; undoReply = { status: 409, body: { detail: 'Pasaron más de 15 segundos: ya no se puede deshacer desde aquí.' } };
   await actionBtn(rowByName('Ana')).listeners.click(); await advance(10); posts.length = 0;
-  toasts.find((t) => t.o && t.o.action).o.action.onClick(); await flush(); await advance(10); await flush();
+  toasts.find((t) => t.o && t.o.action).o.action.onClick(); await until(() => /Pasaron más de 15 segundos/.test((lastToast() || {}).m || ''), 'motivo del servidor'); await advance(10);
   assert.ok(/Pasaron más de 15 segundos/.test(lastToast().m) && lastToast().t === 'error', lastToast().m);
 
   // ---- SIN RED: la fila local se acredita por huella (cola local) y «Deshacer» la quita de la cola (aún no se envió)
@@ -97,7 +99,7 @@ const lastToast = () => toasts[toasts.length - 1];
   assert.strictEqual(rows().length, 2); const b = actionBtn(rowByName('Ana Pérez')); assert.ok(b && !b.disabled, 'botón también en la lista local');
   toasts.length = 0; await b.listeners.click(); await advance(10);
   assert.strictEqual((await GC.queueList()).length, 1, 'quedó en la cola local'); const offToast = toasts.find((t) => t.o && t.o.action); assert.ok(offToast, 'ofrece Deshacer');
-  offToast.o.action.onClick(); await flush(); await advance(10); await flush(); await advance(10);
+  offToast.o.action.onClick(); await until(() => /deshecha|Ya se envió|No se pudo/.test((lastToast() || {}).m || ''), 'aviso de Deshacer (sin red)'); await advance(10);
   assert.strictEqual((await GC.queueList()).length, 0, 'Deshacer la quitó de la cola'); assert.ok(/deshecha/.test(lastToast().m));
   assert.strictEqual(rowByName('Ana Pérez').className, 'row-noregistrado', 'la fila vuelve a «No registrado»'); assert.ok(!actionBtn(rowByName('Ana Pérez')).disabled);
   console.log('directory.js: «✅ Acreditar» en todas las filas con «Deshacer» (en línea y sin red) OK');
