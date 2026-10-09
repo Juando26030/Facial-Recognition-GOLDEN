@@ -287,3 +287,17 @@ def accept_links_csv(event_id: int, db: Session = Depends(get_db), staff: StaffU
 def accept_mail_log_csv(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
     event = get_event_for_staff(event_id, db, staff)
     return _csv(acceptmail.log_csv(db, event), f"registro_envios_{event.event_code}.csv")
+
+
+@router.get("/events/{event_id}/accept-mail/pending")
+def accept_mail_pending(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Personas «sin confirmar» (no se sabe si su correo salió): para reenviarlas a mano, una por una."""
+    return {"pending": acceptmail.pending_list(db, get_event_for_staff(event_id, db, staff))}
+
+
+@router.post("/events/{event_id}/accept-mail/resend")
+def accept_mail_resend(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    r = acceptmail.resend(db, get_event_for_staff(event_id, db, staff), str(data.get("user_id") or ""), staff.id)
+    if not r["ok"]:
+        raise HTTPException(status_code=400, detail=r["detail"])
+    return r

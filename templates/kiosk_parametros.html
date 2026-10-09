@@ -97,6 +97,7 @@
                   <input type="email" id="amTo" placeholder="Correo para la prueba" style="min-width:210px;">
                   <button type="button" id="amTest" class="golden-btn" style="width:auto;">Enviar prueba</button>
                 </div>
+                <div id="amPending" style="margin:6px 0;"></div>
                 <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
                   <button type="button" id="amRefresh" class="golden-btn" style="width:auto;">Actualizar vista previa</button>
                   <button type="button" id="amStart" class="golden-btn golden-btn-primary" style="width:auto;">Iniciar envío</button>
@@ -104,6 +105,7 @@
                   <a class="golden-btn" style="width:auto;" href="/api/events/{{ event.id }}/accept-links.csv">Descargar enlaces (CSV)</a>
                   <a class="golden-btn" style="width:auto;" href="/api/events/{{ event.id }}/accept-mail/log.csv">Descargar registro (CSV)</a>
                 </div>
+                <p style="margin:6px 0 0; color:#a12631; font-size:0.8rem;">🔒 <b>El CSV de enlaces es confidencial:</b> cada enlace es la llave personal de una persona. No lo compartas, no lo subas a carpetas abiertas y bórralo cuando termines. Cada descarga queda registrada (quién y cuándo).</p>
               </div>
               {% endif %}
               <p style="color:#666; font-size:0.78rem;">Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en puerta con el documento o el QR.</p>
@@ -554,7 +556,18 @@
             if (d.blocked) { line(d.blocked, '#a12631'); return; }
             line(`Recibirían el correo: ${d.will_send} personas (unos ${d.minutes} min). Se omiten ${d.omitted_total}.`);
             d.omitted.forEach((o) => line(`   · ${o.count}: ${o.reason}`));
+            if (d.no_birth_date) line(`De ellas, ${d.no_birth_date} no tienen fecha de nacimiento registrada: se invitan igual (la página la pide y bloquea a los menores).`);
             line(`Enviados: ${d.sent} · Fallidos: ${d.failed} · Sin confirmar: ${d.unknown} · ${d.running ? 'ENVÍO EN CURSO' : 'sin envío en curso'}`);
+            const pend = document.getElementById('amPending'); pend.replaceChildren();
+            if (d.unknown) {
+                const pr = await am('/pending'); const pd = pr.ok ? await pr.json() : { pending: [] };
+                const h = document.createElement('div'); h.textContent = 'Sin confirmar (no se sabe si su correo salió). Reenvía solo si la persona lo pide o no lo encuentra:'; pend.appendChild(h);
+                pd.pending.forEach((x) => {
+                    const row = document.createElement('div'); row.style.cssText = 'display:flex; gap:8px; align-items:center; margin:2px 0;';
+                    const t = document.createElement('span'); t.textContent = `${x.user_id} · ${x.name}`; row.appendChild(t);
+                    const b = document.createElement('button'); b.type = 'button'; b.className = 'golden-btn'; b.style.width = 'auto'; b.textContent = 'Reenviar'; b.dataset.uid = x.user_id; row.appendChild(b); pend.appendChild(row);
+                });
+            }
         };
         document.getElementById('amRefresh').addEventListener('click', refresh);
         document.getElementById('amTest').addEventListener('click', async () => {
@@ -571,6 +584,13 @@
         document.getElementById('amStop').addEventListener('click', async () => {
             const res = await post('/stop'); const out = await res.json().catch(() => ({}));
             showToast(res.ok ? 'Envío detenido. Al reanudar no se repite a nadie.' : (out.detail || 'No se pudo detener'), res.ok ? 'success' : 'error'); refresh();
+        });
+        document.getElementById('amPending').addEventListener('click', async (e) => {          // delegación: los botones se generan al leer el estado
+            const b = e.target.closest('button[data-uid]'); if (!b) return;
+            if (!await showConfirm('¿Reenviar el correo a esta persona? Su enlace anterior dejará de servir y recibirá uno nuevo.')) return;
+            b.disabled = true;
+            const res = await post('/resend', { user_id: b.dataset.uid }); const out = await res.json().catch(() => ({}));
+            showToast(res.ok ? 'Reenviado' : (out.detail || 'No se pudo reenviar'), res.ok ? 'success' : 'error'); refresh();
         });
         refresh();
     }

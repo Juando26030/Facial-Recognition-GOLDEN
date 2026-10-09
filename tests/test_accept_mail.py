@@ -289,3 +289,110 @@ def test_the_endpoints_need_a_coordinator_and_an_explicit_confirmation(client, f
     assert client.get(base + "/log.csv").status_code == 200
     page = client.get(f"/kiosk/{ev.id}/parametros").text
     assert 'id="amStart"' in page and 'id="amTest"' in page
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ edad desconocida, «sin confirmar», descargas y retención
+def test_people_without_birth_date_are_invited_and_counted_in_the_preview(factory, db, outbox):
+    ev = _event(factory)
+    _people(factory, db, ev, 2, birth=None)
+    p = acceptmail.preview(db, ev)
+    assert p["will_send"] == 2 and p["no_birth_date"] == 2                                                  # no se omiten: la página de aceptación pide la fecha y bloquea a los menores
+    acceptmail.start(db, ev, 1)
+    _run(db, ev)
+    assert len(outbox) == 2
+
+
+def _cut_in_half(factory, db, ev, uid="2000", age_s=600):
+    """Deja a una persona como si el proceso se hubiera caído justo al enviar: reservada, sin resultado, hace `age_s` segundos."""
+    att = db.query(EventAttendee).filter_by(event_id=ev.id, user_id=uid).one()
+    att.accept_sent_at = utcnow() - timedelta(seconds=age_s)
+    db.add(AcceptMailLog(tenant_id=ev.tenant_id, event_id=ev.id, user_id=uid, kind="bulk", result="reserving", at=utcnow() - timedelta(seconds=age_s)))
+    db.commit()
+
+
+def test_unconfirmed_people_are_listed_and_can_be_resent_one_by_one_without_duplicating(factory, db, outbox):
+    ev = _event(factory)
+    _people(factory, db, ev, 2)
+    _cut_in_half(factory, db, ev)
+    assert [x["user_id"] for x in acceptmail.pending_list(db, ev)] == ["2000"] and acceptmail.preview(db, ev)["unknown"] == 1
+    assert acceptmail.preview(db, ev)["will_send"] == 1                                                     # el envío masivo NO la toca (ya tiene accept_sent_at)
+    old = acceptlink.issue(db, db.query(EventAttendee).filter_by(event_id=ev.id, user_id="2000").one(), True)
+    db.commit()
+    assert acceptmail.resend(db, ev, "2001", 1)["ok"] is False                                              # quien no está sin confirmar, no se reenvía
+    r = acceptmail.resend(db, ev, "2000", 1)
+    assert r["ok"] is True and [m["to"] for m in outbox] == ["p0@example.com"]
+    att = db.query(EventAttendee).filter_by(event_id=ev.id, user_id="2000").one()
+    assert att.accept_token != old and att.accept_trusted is True                                           # el enlace anterior queda sin uso
+    assert acceptmail.pending_list(db, ev) == []
+    again = acceptmail.resend(db, ev, "2000", 1)                                                            # segundo clic: ya no está en la lista
+    assert again["ok"] is False and len(outbox) == 1
+
+
+def test_a_recent_reservation_is_not_unconfirmed_yet(factory, db):
+    ev = _event(factory)
+    _people(factory, db, ev, 1)
+    _cut_in_half(factory, db, ev, age_s=20)                                                                 # puede estar enviándose ahora mismo
+    assert acceptmail.pending_list(db, ev) == []
+
+
+def test_a_failed_resend_keeps_the_person_in_the_list(factory, db, monkeypatch):
+    ev = _event(factory)
+    _people(factory, db, ev, 1)
+    _cut_in_half(factory, db, ev)
+    before = db.query(EventAttendee).filter_by(event_id=ev.id, user_id="2000").one().accept_sent_at
+    monkeypatch.setattr(acceptmail, "send_mail", lambda *a, **k: {"sent": False, "detail": "x"})
+    assert acceptmail.resend(db, ev, "2000", 1)["ok"] is False
+    db.expire_all()
+    assert [x["user_id"] for x in acceptmail.pending_list(db, ev)] == ["2000"]
+    assert db.query(EventAttendee).filter_by(event_id=ev.id, user_id="2000").one().accept_sent_at == before
+
+
+def test_the_resend_endpoints_need_a_coordinator(client, factory, db, outbox):
+    ev = _event(factory)
+    _people(factory, db, ev, 1)
+    _cut_in_half(factory, db, ev)
+    factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    assert client.get(f"/api/events/{ev.id}/accept-mail/pending").json()["pending"][0]["user_id"] == "2000"
+    assert client.post(f"/api/events/{ev.id}/accept-mail/resend", json={"user_id": "2000"}).status_code == 200
+    assert client.post(f"/api/events/{ev.id}/accept-mail/resend", json={"user_id": "2000"}).status_code == 400
+    assert "Reenviar" in client.get(f"/kiosk/{ev.id}/parametros").text or 'id="amPending"' in client.get(f"/kiosk/{ev.id}/parametros").text
+
+
+def test_every_download_of_links_is_recorded_as_a_system_event_and_the_screen_warns(client, factory, db):
+    from app.models import SystemEvent
+    ev = _event(factory)
+    _people(factory, db, ev, 2)
+    staff = factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    assert client.get(f"/api/events/{ev.id}/accept-links.csv").status_code == 200
+    ev_row = db.query(SystemEvent).filter_by(kind="accept_links_export").one()
+    assert ev_row.ref == ev.event_code and "2 enlaces" in ev_row.detail and f"#{staff.id}" in ev_row.detail
+    assert "@" not in ev_row.detail and "2000" not in ev_row.detail                                         # nada de datos personales
+    assert db.query(AcceptMailLog).filter_by(kind="export", staff_user_id=staff.id).count() == 1
+    assert "El CSV de enlaces es confidencial" in client.get(f"/kiosk/{ev.id}/parametros").text
+
+
+def test_the_send_log_is_deleted_with_the_biometric_clock_after_the_event_ends(factory, db, outbox):
+    from app import privacy
+    old = _event(factory)
+    new = _event(factory)
+    for ev in (old, new):
+        _people(factory, db, ev, 1) if ev is old else None
+        db.add(AcceptMailLog(tenant_id=ev.tenant_id, event_id=ev.id, user_id="2000", kind="bulk", result="sent"))
+    old.status, old.finalized_at = "finalizado", utcnow() - timedelta(days=privacy.days_after_event() + 1)
+    new.status, new.finalized_at = "finalizado", utcnow() - timedelta(days=1)
+    db.commit()
+    assert acceptmail.purge_log(db) == 1
+    assert db.query(AcceptMailLog).filter_by(event_id=old.id).count() == 0 and db.query(AcceptMailLog).filter_by(event_id=new.id).count() == 1
+
+
+def test_the_personal_link_stops_working_when_the_event_is_finalized(client, factory, db):
+    ev = _event(factory)
+    _people(factory, db, ev, 1)
+    token = acceptlink.issue(db, db.query(EventAttendee).filter_by(event_id=ev.id, user_id="2000").one(), True)
+    db.commit()
+    assert client.get(f"/aceptar/{ev.event_code}/{token}").status_code == 200
+    ev.status = "finalizado"
+    db.commit()
+    assert client.get(f"/aceptar/{ev.event_code}/{token}").status_code == 404

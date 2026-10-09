@@ -135,11 +135,12 @@ def _alert(key: str, subject: str, body: str) -> None:
 # ------------------------------------------------------------------ otros pasos
 def purge() -> str:
     """Retención biométrica (app/privacy.py): solo conteos en el resultado y en el log. Con errores el paso FALLA (alerta) y se reintenta la hora siguiente."""
-    from app import privacy
+    from app import acceptmail, privacy
     from app.database import SessionLocal
     db = SessionLocal()
     try:
         r = privacy.purge_expired(db)
+        r["mail_log_rows"] = acceptmail.purge_log(db)       # registro de envíos de enlaces personales (misma retención que lo biométrico)
     finally:
         db.close()
     log.info("purga biométrica: %s", json.dumps(r))

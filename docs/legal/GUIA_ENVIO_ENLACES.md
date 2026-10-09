@@ -6,10 +6,10 @@
 
 ## Reglas que el sistema cumple solo
 - **Máximo 25 correos por minuto** (uno cada 2,4 segundos). 200 personas tardan unos 8 minutos.
-- **Solo adultos con correo válido** que no se inscribieron por un formulario abierto (ese correo lo escribió quien se inscribió, no es del listado) y que no han aceptado ni rechazado ya.
+- **Solo adultos con correo válido** (si la persona **no tiene fecha de nacimiento** registrada, se le invita igual: la página de aceptación la pide y bloquea a los menores; la vista previa dice cuántas son) que no se inscribieron por un formulario abierto (ese correo lo escribió quien se inscribió, no es del listado) y que no han aceptado ni rechazado ya.
 - **Nunca dos veces a la misma persona.** Si algo se corta, **no se reenvía solo**: queda como «sin confirmar» en el registro y lo revisas tú.
 - **Se puede detener** en cualquier momento y **reanudar** sin repetir a nadie.
-- **Registro:** quién (cédula), fecha y hora (UTC) y resultado. No se guarda IP ni navegador, ni la dirección de correo.
+- **Registro:** quién (cédula), fecha y hora (UTC) y resultado. No se guarda IP ni navegador, ni la dirección de correo. Se borra solo **7 días después de que el evento se finaliza** (el mismo reloj de lo biométrico).
 
 ## Paso a paso (antes del envío real)
 1. **Actualizar vista previa.** Debes ver: «Recibirían el correo: N personas (unos X min). Se omiten M.» y debajo cuántas se omiten y **por qué** (sin correo, correo no válido, menor de edad, ya se le envió, ya respondió, se inscribió por formulario). Revisa que N sea lo que esperas.
@@ -20,11 +20,11 @@
 
 ## Si algo sale mal
 - **El envío se detiene solo** tras 3 fallos seguidos: casi siempre el correo del sistema no está configurado (secretos `golden-azure-*`). No insistas; avisa al equipo técnico.
-- **«Sin confirmar» mayor que 0:** el sistema se reinició justo al enviar. Esa persona **no se reenvía sola** (para no duplicar). Revisa el registro y, si hace falta, reenvíale su enlace a mano.
+- **«Sin confirmar» mayor que 0:** el sistema se reinició justo al enviar y no se sabe si el correo salió. Esa persona **no se reenvía sola** (para no duplicar). Aparece en una lista bajo la vista previa, con un botón **Reenviar** por persona (aparece pasados 5 minutos). Reenvía solo si ella dice que no le llegó. Al reenviar, su enlace anterior deja de servir y recibe uno nuevo; un doble clic no duplica.
 - **«Fallidos»:** el correo no salió; la persona queda libre y entra en el siguiente envío que inicies.
 
 ## Descargas (botones del mismo cuadro)
-- **Descargar enlaces (CSV):** cédula, nombre, correo y **enlace personal confiable** de cada adulto del listado (incluidos quienes no tienen correo), para enviarlos por otro medio. ⚠️ Cada enlace es la llave de una persona: no lo compartas ni lo dejes en carpetas abiertas.
+- **Descargar enlaces (CSV):** cédula, nombre, correo y **enlace personal confiable** de cada adulto del listado (incluidos quienes no tienen correo), para enviarlos por otro medio. ⚠️ Cada enlace es la llave de una persona: no lo compartas ni lo dejes en carpetas abiertas; bórralo al terminar. Cada descarga queda registrada (quién y cuándo, sin datos personales) en «hechos del sistema». Un enlace sirve hasta que el evento se finaliza (o se desactiva la aceptación por enlace); pasada esa fecha, o si se suprime a la persona, deja de funcionar.
 - **Descargar registro (CSV):** el registro de envíos para auditoría.
 
 ## Lo que debe probar Juan en staging (después de que Claude suba la rama y se despliegue)

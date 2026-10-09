@@ -12,6 +12,7 @@ import csv
 import io
 import logging
 import re
+import secrets
 import uuid
 from collections import Counter
 from datetime import timedelta
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 from app import acceptlink, company, consent, jobs, minors
 from app.database import SessionLocal
 from app.mailer import send_mail
+from app.ops import record_system_event
 from app.models import AcceptMailLog, Event, EventAttendee, FormSubmission, User
 from app.timeutil import utcnow
 
@@ -30,6 +32,7 @@ log = logging.getLogger(__name__)
 
 SPACING = 2.4              # segundos entre un correo y el siguiente: 60 / 2,4 = 25 por minuto
 PER_MINUTE = 25            # tope duro (se cuenta en el registro, por si hubiera dos tandas a la vez)
+STALE_AFTER = 300          # segundos: un envío «reservado» más viejo que esto se da por cortado (sin confirmar)
 MAX_FAIL_STREAK = 3        # tres fallos seguidos detienen la tanda (correo mal configurado): no se insiste
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 REASONS = {"sin_correo": "no tiene correo", "correo_invalido": "el correo no es válido", "menor": "es menor de edad (sin biometría)", "ya_enviado": "ya se le envió el enlace",
@@ -78,20 +81,29 @@ def plan(db: Session, event: Event, run_id: Optional[str] = None, for_export: bo
             omitted[reason] += 1
         else:
             eligible.append((att, user, to))
-    return {"eligible": eligible, "omitted": omitted}
+    return {"eligible": eligible, "omitted": omitted, "no_birth": sum(1 for _a, u, _t in eligible if u.birth_date is None)}
+
+
+def pending_rows(db: Session, event: Event) -> list:
+    """Personas «sin confirmar»: su último intento quedó `unknown` o `reserving` hace más de STALE_AFTER segundos (no se sabe si el correo salió). Es la lista para reenviar a mano."""
+    latest = {}
+    for r in db.query(AcceptMailLog).filter(AcceptMailLog.event_id == event.id, AcceptMailLog.kind.in_(("bulk", "resend")), AcceptMailLog.user_id.isnot(None)).order_by(AcceptMailLog.id):
+        latest[r.user_id] = r
+    cut = utcnow() - timedelta(seconds=STALE_AFTER)
+    return [r for r in latest.values() if r.result == "unknown" or (r.result == "reserving" and r.at < cut)]
 
 
 def _counts(db: Session, event: Event) -> dict:
     rows = dict(db.query(AcceptMailLog.result, func.count(func.distinct(AcceptMailLog.user_id))).filter(AcceptMailLog.event_id == event.id, AcceptMailLog.kind == "bulk").group_by(AcceptMailLog.result).all())
-    return {"sent": rows.get("sent", 0), "failed": rows.get("failed", 0), "unknown": rows.get("unknown", 0) + rows.get("reserving", 0)}
+    return {"sent": rows.get("sent", 0), "failed": rows.get("failed", 0), "unknown": len(pending_rows(db, event))}
 
 
 def preview(db: Session, event: Event) -> dict:
     """Vista previa y estado: cuántas personas recibirían el correo, cuántas se omiten y por qué, y cómo va la tanda."""
     blocked = blocked_reason(event)
-    p = plan(db, event, event.accept_mail_run) if not blocked else {"eligible": [], "omitted": Counter()}
+    p = plan(db, event, event.accept_mail_run) if not blocked else {"eligible": [], "omitted": Counter(), "no_birth": 0}
     n = len(p["eligible"])
-    return {"blocked": blocked, "will_send": n, "omitted": [{"reason": REASONS[k], "count": c} for k, c in p["omitted"].most_common()], "omitted_total": sum(p["omitted"].values()),
+    return {"blocked": blocked, "will_send": n, "omitted": [{"reason": REASONS[k], "count": c} for k, c in p["omitted"].most_common()], "omitted_total": sum(p["omitted"].values()), "no_birth_date": p["no_birth"],
             "running": bool(event.accept_mail_run), "minutes": round(n * SPACING / 60 + 0.4), **_counts(db, event), "per_minute": PER_MINUTE}
 
 
@@ -145,6 +157,61 @@ def send_test(db: Session, event: Event, to: str, staff_id: int) -> dict:
     _log(db, event, "test", "sent" if sent else "failed", staff_id=staff_id)
     db.commit()
     return {"ok": sent, "detail": "Enviado." if sent else "No se pudo enviar (¿el correo está configurado?)."}
+
+
+def purge_log(db: Session, now=None) -> int:
+    """Retención del registro de envíos: se borra al pasar los días de retención biométrica (`privacy.days_after_event()`, 7) desde que el evento se finalizó. Lo llama el paso `purge` del Job horario."""
+    from sqlalchemy import text
+    from app import privacy
+    cut = (now or utcnow()) - timedelta(days=privacy.days_after_event())
+    n = db.execute(text("DELETE FROM accept_mail_log WHERE event_id IN (SELECT id FROM events WHERE status = 'finalizado' AND finalized_at IS NOT NULL AND finalized_at <= :cut)"), {"cut": cut}).rowcount
+    db.commit()
+    return n
+
+
+def pending_list(db: Session, event: Event) -> list:
+    out = []
+    for r in pending_rows(db, event):
+        u = db.query(User).filter(User.id == r.user_id, User.tenant_id == event.tenant_id).first()
+        out.append({"user_id": r.user_id, "name": f"{u.first_name or ''} {u.last_name or ''}".strip() if u else "", "at": r.at.strftime("%Y-%m-%d %H:%M:%S")})
+    return out
+
+
+def resend(db: Session, event: Event, user_id: str, staff_id: int) -> dict:
+    """Reenvío a mano, de UNA persona «sin confirmar». El cambio de `accept_sent_at` es atómico (solo si sigue igual): dos clics o dos coordinadores a la vez no duplican.
+    El enlace se renueva: si el primer correo sí había llegado, su enlace viejo deja de servir y vale el nuevo. Si el correo no sale, la persona sigue en la lista."""
+    blocked = blocked_reason(event)
+    if blocked:
+        return {"ok": False, "detail": blocked}
+    if str(user_id) not in {r.user_id for r in pending_rows(db, event)}:
+        return {"ok": False, "detail": "Esa persona no está en la lista de «sin confirmar»."}
+    att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=str(user_id), tenant_id=event.tenant_id).first()
+    user = db.query(User).filter(User.id == str(user_id), User.tenant_id == event.tenant_id).first()
+    to = (user.email or "").strip() if user else ""
+    if att is None or att.accept_sent_at is None or not EMAIL_RE.match(to):
+        return {"ok": False, "detail": "La persona ya no tiene correo válido o fue retirada del evento."}
+    old = att.accept_sent_at
+    if db.execute(update(EventAttendee).where(EventAttendee.id == att.id, EventAttendee.accept_sent_at == old).values(accept_sent_at=utcnow())).rowcount != 1:
+        db.rollback()
+        return {"ok": False, "detail": "Otro envío se le adelantó. Actualiza la lista."}
+    att.accept_token, att.accept_trusted = secrets.token_urlsafe(18), True
+    entry = _log(db, event, "resend", "reserving", user_id=user.id, staff_id=staff_id)
+    db.commit()
+    link = acceptlink.url(event, att.accept_token)
+    result = {"sent": False}
+    try:
+        if link:
+            subject, body = acceptlink.render_link_email(event, user.first_name or "", link)
+            result = send_mail(to, subject, body, reply_to=company.get("PRIVACY_EMAIL"))
+    except Exception:     # noqa: BLE001 — no se sabe si salió: sigue «sin confirmar»
+        log.error("reenvío de enlace: excepción al enviar (evento %s)", event.id, exc_info=True)
+    if result.get("sent"):
+        entry.result = "sent"
+    else:
+        db.execute(update(EventAttendee).where(EventAttendee.id == att.id).values(accept_sent_at=old))
+        entry.result, entry.detail = "unknown", "el correo no salió"
+    db.commit()
+    return {"ok": bool(result.get("sent")), "detail": "Reenviado." if result.get("sent") else "No se pudo enviar; sigue en la lista."}
 
 
 @jobs.handler("accept_mail")
@@ -229,6 +296,7 @@ def export_links(db: Session, event: Event, staff_id: int) -> Optional[str]:
         n += 1
     _log(db, event, "export", "done", staff_id=staff_id, detail=f"{n} enlaces")
     db.commit()
+    record_system_event("accept_links_export", ref=event.event_code, detail=f"{n} enlaces personales descargados por el personal #{staff_id}")
     return out.getvalue()
 
 
