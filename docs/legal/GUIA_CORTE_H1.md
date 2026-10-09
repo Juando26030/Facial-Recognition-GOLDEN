@@ -282,7 +282,7 @@ python3 -m venv ~/venv && . ~/venv/bin/activate
 grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/req.txt && pip install -q -r /tmp/req.txt
 read -rsp "Cadena DIRECTA de la rama restore-test de STAGING: " U; echo; printf 'DIRECT_DATABASE_URL=%s\n' "$U" > .env.restore; unset U
 # Base VIVA de staging (para comparar conteos) y de producción (solo para comprobar que el destino NO es ella): salen de sus secretos, sin mostrarse.
-printf 'DIRECT_DATABASE_URL=%s\n' "$(gcloud secrets versions access latest --secret golden-direct-database-url --project "$STAGING_ID")" > .env.live
+printf 'DIRECT_DATABASE_URL=%s\n' "$(gcloud secrets versions access latest --secret golden-direct-database-url-staging --project "$STAGING_ID")" > .env.live
 printf 'DIRECT_DATABASE_URL=%s\n' "$(gcloud secrets versions access latest --secret golden-direct-database-url --project "$PROD_ID")" > .env.prod
 # Comprobación del destino (no muestra direcciones, solo el veredicto)
 host_de() { grep -E '^DIRECT_DATABASE_URL=' "$1" | head -1 | cut -d= -f2- | tr -d '"' | python3 -c 'import sys,urllib.parse as u; print(u.urlparse(sys.stdin.read().strip()).hostname or "")'; }

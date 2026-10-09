@@ -294,8 +294,9 @@ falta lo corre Juan David: lista exacta al final de este archivo y en [`docs/HAN
   aplica también las reglas de la app, como hace el bootstrap):**
   ```bash
   python3 -c 'import json; a, b = (json.load(open(f)) for f in ("deploy/gcs-app-lifecycle.json", "deploy/gcs-lifecycle.json")); print(json.dumps({"rule": a["rule"] + b["rule"]}))' > /tmp/lc.json
-  gcloud storage buckets update gs://goldenweb-staging-golden-staging --lifecycle-file /tmp/lc.json --quiet
+  gcloud storage buckets update gs://goldenweb-staging-golden-staging-us-east4 --lifecycle-file /tmp/lc.json --quiet
   ```
+  *Nota (2026-10-08):* el bucket viejo `goldenweb-staging-golden-staging` (sin `-us-east4`) ya no recibe respaldos (los últimos son del 29 de septiembre); el vigente es el de arriba (`config.sh`). No se borra todavía.
   Tras la migración `0051` en staging (la corre el Job `golden-migrate-staging` en el próximo despliegue) el primer `purge` no borra nada por sorpresa (ver B2).
 - [x] B5. Pruebas: `tests/test_biometric_retention.py` (una persona/un evento, dos eventos con uno abierto, reapertura, reenviar el mismo estado, tope de 180,
   huérfanas, idempotencia y lotes, fallo de Storage, dry-run, paso del Job solo con conteos, permisos y nombre del botón, omisión del borrado manual,
