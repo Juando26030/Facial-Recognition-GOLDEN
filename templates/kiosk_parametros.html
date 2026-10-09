@@ -88,6 +88,24 @@
               <p style="font-size:0.8rem; margin:0 0 6px;">Enlace (para el correo): <b id="aceptarUrl"></b></p>
               <div id="aceptarQr" style="width:180px; height:180px;"></div>
               <button type="button" id="aceptarPrint" class="golden-btn" style="width:auto; margin-top:6px;">Imprimir póster con el QR</button>
+              {% if event.controller_mode == "golden" %}
+              <div id="amBox" style="margin:10px 0; padding:10px 12px; border:1px solid #d9dce6; border-radius:12px; font-size:0.86rem;">
+                <b>Enviar el enlace personal por correo a las personas del listado</b>
+                <p style="margin:4px 0 6px; color:#555;">Máximo 25 correos por minuto. Solo adultos con correo, a quienes no se les ha enviado y que no se inscribieron por formulario. Nunca se envía dos veces a la misma persona.</p>
+                <div id="amStatus" role="status" aria-live="polite" style="margin:4px 0 8px;"></div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                  <input type="email" id="amTo" placeholder="Correo para la prueba" style="min-width:210px;">
+                  <button type="button" id="amTest" class="golden-btn" style="width:auto;">Enviar prueba</button>
+                </div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                  <button type="button" id="amRefresh" class="golden-btn" style="width:auto;">Actualizar vista previa</button>
+                  <button type="button" id="amStart" class="golden-btn golden-btn-primary" style="width:auto;">Iniciar envío</button>
+                  <button type="button" id="amStop" class="golden-btn" style="width:auto;">Detener envío</button>
+                  <a class="golden-btn" style="width:auto;" href="/api/events/{{ event.id }}/accept-links.csv">Descargar enlaces (CSV)</a>
+                  <a class="golden-btn" style="width:auto;" href="/api/events/{{ event.id }}/accept-mail/log.csv">Descargar registro (CSV)</a>
+                </div>
+              </div>
+              {% endif %}
               <p style="color:#666; font-size:0.78rem;">Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en puerta con el documento o el QR.</p>
             </div>
             <label>Cuándo se pide la autorización
@@ -524,6 +542,37 @@
             const res = await fetch(`/api/events/${window.EVENT_ID}/biometric-setup`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const out = await res.json().catch(() => ({})); if (res.ok) { showToast('Guardado', 'success'); renderSummary(out); } else showToast(out.detail || 'No se pudo guardar', 'error');
         });
+    }
+    // Envío masivo del enlace personal (app/acceptmail.py): la vista previa, la prueba y el control salen del servidor.
+    if (document.getElementById('amBox')) {
+        const am = (path, opts) => fetch(`/api/events/${window.EVENT_ID}/accept-mail${path}`, opts);
+        const post = (path, body) => am(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+        const refresh = async () => {
+            const box = document.getElementById('amStatus'); const res = await am(''); if (!res.ok) { box.textContent = 'No se pudo leer el estado.'; return; }
+            const d = await res.json(); box.replaceChildren();
+            const line = (t, color) => { const p = document.createElement('div'); p.textContent = t; if (color) p.style.color = color; box.appendChild(p); };
+            if (d.blocked) { line(d.blocked, '#a12631'); return; }
+            line(`Recibirían el correo: ${d.will_send} personas (unos ${d.minutes} min). Se omiten ${d.omitted_total}.`);
+            d.omitted.forEach((o) => line(`   · ${o.count}: ${o.reason}`));
+            line(`Enviados: ${d.sent} · Fallidos: ${d.failed} · Sin confirmar: ${d.unknown} · ${d.running ? 'ENVÍO EN CURSO' : 'sin envío en curso'}`);
+        };
+        document.getElementById('amRefresh').addEventListener('click', refresh);
+        document.getElementById('amTest').addEventListener('click', async () => {
+            const res = await post('/test', { to: document.getElementById('amTo').value }); const out = await res.json().catch(() => ({}));
+            showToast(res.ok ? 'Prueba enviada. Revisa esa bandeja.' : (out.detail || 'No se pudo enviar'), res.ok ? 'success' : 'error');
+        });
+        document.getElementById('amStart').addEventListener('click', async () => {
+            await refresh();
+            const ok = await showConfirm('¿Iniciar el envío? Se enviará el correo a las personas de la vista previa. Puedes detenerlo cuando quieras.');
+            if (!ok) return;
+            const res = await post('/start', { confirm: true }); const out = await res.json().catch(() => ({}));
+            showToast(res.ok ? 'Envío iniciado' : (out.detail || 'No se pudo iniciar'), res.ok ? 'success' : 'error'); refresh();
+        });
+        document.getElementById('amStop').addEventListener('click', async () => {
+            const res = await post('/stop'); const out = await res.json().catch(() => ({}));
+            showToast(res.ok ? 'Envío detenido. Al reanudar no se repite a nadie.' : (out.detail || 'No se pudo detener'), res.ok ? 'success' : 'error'); refresh();
+        });
+        refresh();
     }
     const aceptarUrl = `${location.origin}/aceptar/{{ event.event_code }}`;
     if (document.getElementById('aceptarUrl')) {

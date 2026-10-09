@@ -231,6 +231,7 @@ class Event(Base):
     optional_field_labels = Column(Text)  # JSON {"opcional_1": "Talla de camisa", ...} — nombres que el cliente le dio a las columnas "opcional_N" de SU roster (2026-09-20, ver bulk_register)
     facial_enabled = Column(Boolean, default=False, nullable=False)  # se enciende sola la primera vez que se sube un roster con zip de fotos (ver bulk_register); desde 2026-09-27 coordinador+ también puede prenderla/apagarla a mano en cualquier momento desde Parámetros del Evento (set_facial_enabled) — apagarla no borra ningún rostro ya guardado. Decide si /kiosk/{id}/registro muestra el escáner de cámara o se comporta como cédula tradicional.
     accept_link_email = Column(Boolean, default=False, server_default='false', nullable=False)   # al inscribirse por formulario se envía el enlace personal de autorización por correo (0064)
+    accept_mail_run = Column(String, nullable=True)     # envío masivo de enlaces personales (0065, app/acceptmail.py): id de la tanda en curso; vacío = detenido o terminado
     biometrics_locked = Column(Boolean, default=False, server_default='false', nullable=False)   # candado «sin biometría» (0063): el servidor no deja activar el rostro, guardar fotos ni encolar vectores en este evento
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
@@ -873,6 +874,23 @@ class PersonChange(Base):
     kind = Column(String(24), nullable=False)
     old_value = Column(String, nullable=True)
     new_value = Column(String, nullable=True)
+    detail = Column(String, nullable=True)
+
+
+class AcceptMailLog(Base):
+    """Registro de cada envío del enlace personal de autorización (migración 0065, app/acceptmail.py): quién (cédula), cuándo y con qué resultado. SIN IP ni User-Agent (decisión de la auditora).
+    `kind`: bulk (envío masivo) | test (envío de prueba, sin persona) | export (descarga de enlaces) | control (inicio/parada/fin de una tanda). `result`: reserving (reservado, aún sin respuesta)
+    | sent | failed | unknown (se reservó y el proceso se cayó: NO se reenvía solo) | start | stop | done. Sin llaves foráneas; al suprimir a la persona `user_id` queda en NULL."""
+    __tablename__ = 'accept_mail_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, nullable=False, default=utcnow)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, nullable=False)
+    user_id = Column(String, nullable=True)
+    staff_user_id = Column(Integer, nullable=True)
+    kind = Column(String(8), nullable=False)
+    result = Column(String(10), nullable=False)
+    run_id = Column(String, nullable=True)
     detail = Column(String, nullable=True)
 
 

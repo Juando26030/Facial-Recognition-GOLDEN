@@ -6,11 +6,11 @@ import re
 import uuid
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy
+from app import acceptmail, biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.routers.api import SYNC_HASH_RE, _event_for_sync, _roster_map
@@ -233,3 +233,57 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
         event.precalculo_autorizado = False
     db.commit()
     return {"config": _setup_config(event), **biometric_setup.summary(event)}
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ envío masivo de enlaces personales (app/acceptmail.py)
+def _csv(text: str, name: str) -> Response:
+    return Response(content="﻿" + text, media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
+@router.get("/events/{event_id}/accept-mail")
+def accept_mail_status(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Vista previa y estado del envío masivo: cuántas personas recibirían el correo, cuántas se omiten y por qué."""
+    return acceptmail.preview(db, get_event_for_staff(event_id, db, staff))
+
+
+@router.post("/events/{event_id}/accept-mail/test")
+def accept_mail_test(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Envío de prueba: el correo aprobado, solo a la dirección indicada."""
+    r = acceptmail.send_test(db, get_event_for_staff(event_id, db, staff), str(data.get("to") or ""), staff.id)
+    if not r["ok"]:
+        raise HTTPException(status_code=400, detail=r["detail"])
+    return r
+
+
+@router.post("/events/{event_id}/accept-mail/start")
+def accept_mail_start(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    if data.get("confirm") is not True:
+        raise HTTPException(status_code=400, detail="Falta la confirmación.")
+    r = acceptmail.start(db, get_event_for_staff(event_id, db, staff), staff.id)
+    if not r["ok"]:
+        raise HTTPException(status_code=400, detail=r["detail"])
+    return r
+
+
+@router.post("/events/{event_id}/accept-mail/stop")
+def accept_mail_stop(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    r = acceptmail.stop(db, get_event_for_staff(event_id, db, staff), staff.id)
+    if not r["ok"]:
+        raise HTTPException(status_code=400, detail=r["detail"])
+    return r
+
+
+@router.get("/events/{event_id}/accept-links.csv")
+def accept_links_csv(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    """Enlaces personales confiables de los adultos del listado (para enviarlos por otro medio). Cada enlace es la llave de una persona: se descarga con su sesión y no se guarda en caché."""
+    event = get_event_for_staff(event_id, db, staff)
+    text = acceptmail.export_links(db, event, staff.id)
+    if text is None:
+        raise HTTPException(status_code=400, detail=acceptmail.blocked_reason(event))
+    return _csv(text, f"enlaces_{event.event_code}.csv")
+
+
+@router.get("/events/{event_id}/accept-mail/log.csv")
+def accept_mail_log_csv(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(COORD)):
+    event = get_event_for_staff(event_id, db, staff)
+    return _csv(acceptmail.log_csv(db, event), f"registro_envios_{event.event_code}.csv")

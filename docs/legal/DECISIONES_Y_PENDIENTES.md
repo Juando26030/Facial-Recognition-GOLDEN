@@ -105,3 +105,6 @@ La auditora ratificó `docs/legal/POLITICA_v1.1.md` (SHA-256 `d0afc7d95083b62115
 - **Oficial de Protección de Datos Personales:** Paola Bocanegra. El canal público de privacidad sigue siendo **soporteit@goldenlogisticas.com** (se revisa a diario).
 - **Representante legal:** Juan David Ramírez Juzga.
 - **Ratificación de la política v1.1:** Dra. María Camila Morales Restrepo, T.P. 284.912 del C.S. de la J. (6 de octubre de 2026).
+
+## Envío masivo del enlace personal (entrega 1, rama `producto/envio-enlaces`)
+- `app/acceptmail.py`: exportación de enlaces confiables (CSV) y envío por correo, **25 por minuto como máximo**, solo eventos propios de Golden, solo adultos con correo que no se inscribieron por formulario, **nunca dos veces** (reserva atómica de `accept_sent_at` antes de enviar; un corte a medias queda «sin confirmar» y NO se reenvía solo). Se puede detener y reanudar (`events.accept_mail_run`). Vista previa con motivos de omisión y envío de prueba (asunto «[PRUEBA]», enlace de ejemplo que no sirve). Registro en `accept_mail_log` (migración 0065): cédula, fecha y hora, resultado; sin IP, sin User-Agent, sin correos; al suprimir a la persona queda anónimo. Texto del correo: el aprobado por la auditora (`acceptlink.render_link_email`), sin cambios. Guía: `GUIA_ENVIO_ENLACES.md`.

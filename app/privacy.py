@@ -248,6 +248,7 @@ def erase_person(db: Session, event: Event, user_id: str, scope: str) -> dict:
             db.execute(text(f"DELETE FROM {table} WHERE user_id = :u AND tenant_id = :t"), p)
         result["access_logs_anonymized"] = db.execute(text("UPDATE access_logs SET user_id = NULL WHERE user_id = :u AND tenant_id = :t"), p).rowcount
         db.execute(text("DELETE FROM person_changes WHERE user_id = :u AND tenant_id = :t AND kind = 'birth_date'"), p)
+        db.execute(text("UPDATE accept_mail_log SET user_id = NULL WHERE user_id = :u AND tenant_id = :t"), p)      # el registro de envíos se conserva sin la persona
         db.execute(text("UPDATE person_changes SET user_id = NULL WHERE user_id = :u AND tenant_id = :t"), p)      # el historial del estado de registro se conserva sin la persona
         db.flush()
         db.delete(user)

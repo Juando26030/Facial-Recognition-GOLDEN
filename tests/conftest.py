@@ -159,6 +159,7 @@ def outbox(monkeypatch):
     monkeypatch.setattr("app.digital_badge.send_mail", fake_send_mail)
     monkeypatch.setattr("app.routers.forms.send_mail", fake_send_mail)
     monkeypatch.setattr("app.acceptlink.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.acceptmail.send_mail", fake_send_mail)
     monkeypatch.setattr("app.consent_receipt.send_mail", fake_send_mail)
     return sent
 
