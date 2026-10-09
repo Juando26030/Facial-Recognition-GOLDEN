@@ -41,6 +41,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 step() { echo -e "\n\033[1m== $*\033[0m"; }
 ok() { echo "   ✓ $*"; }
 exists() { "$@" >/dev/null 2>&1; }
+source deploy/gcp/lib_iam.sh    # retry_iam: un rol personalizado recién creado tarda unos segundos en poder asignarse (probado en tests/test_bootstrap_iam_retry.py)
 
 echo "Proyecto: $PROJECT_ID (número $PROJECT_NUMBER) · Entorno: $GOLDEN_ENV · Región: $REGION · Repositorio: $GITHUB_REPO"
 read -rp "¿Continuar? (escribe «si»): " answer; [ "$answer" = "si" ] || { echo "Cancelado."; exit 1; }
@@ -72,9 +73,9 @@ for sa in "$SA_APP:App (servicios y carga masiva)" "$SA_OPS:Operaciones y migrac
   exists gcloud iam service-accounts describe "$(sa_email "$name")" || gcloud iam service-accounts create "$name" --display-name "Golden ${GOLDEN_ENV}: ${sa#*:}"
 done
 sa_bind() {   # cuenta-destino miembro rol
-  gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$1")" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null
+  retry_iam gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$1")" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet
 }
-project_bind() { gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$(sa_email "$1")" --role "$2" --condition=None --quiet >/dev/null; }
+project_bind() { retry_iam gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$(sa_email "$1")" --role "$2" --condition=None --quiet; }
 sa_bind "$SA_APP" "$SA_APP" roles/iam.serviceAccountTokenCreator   # firmar sus propias URLs de subida (signBlob): no tiene llave privada
 sa_bind "$SA_INVOKER" "$SA_APP" roles/iam.serviceAccountUser       # crear tareas de Cloud Tasks con el token OIDC del invoker
 sa_bind "$SA_APP" "$SA_DEPLOYER" roles/iam.serviceAccountUser      # desplegar servicios que corren como app / ops
@@ -180,7 +181,7 @@ else
   gcloud storage buckets update "gs://$APP_BUCKET" --lifecycle-file deploy/gcs-app-lifecycle.json --quiet >/dev/null
   gcloud storage buckets update "gs://$BACKUP_BUCKET" --lifecycle-file deploy/gcs-lifecycle.json --quiet >/dev/null
 fi
-bucket_bind() { gcloud storage buckets add-iam-policy-binding "gs://$1" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null; }
+bucket_bind() { retry_iam gcloud storage buckets add-iam-policy-binding "gs://$1" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet; }
 bucket_bind "$APP_BUCKET" "$SA_APP" roles/storage.objectAdmin
 bucket_bind "$APP_BUCKET" "$SA_OPS" roles/storage.objectAdmin              # la purga biométrica borra fotos
 # El volcado lleva nombres, cédulas y correos EN CLARO: nadie lee su contenido desde la nube. Un rol propio que solo LISTA (nombre, tamaño, fecha) basta para «Último respaldo» (app) y para
@@ -225,8 +226,8 @@ else
   bash deploy/gcp/deploy.sh "$GOLDEN_ENV" --placeholder       # crea los 3 servicios (públicos) y los 3 Jobs con la imagen «hello»
 fi
 # Permisos a nivel de RECURSO (idempotentes). El despliegue ya no da permisos: lo hace esto, con la cuenta de quien corre el bootstrap.
-bind_job() { gcloud run jobs add-iam-policy-binding "$1" --region "$REGION" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null; }
-bind_svc() { gcloud run services add-iam-policy-binding "$1" --region "$REGION" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet >/dev/null; }
+bind_job() { retry_iam gcloud run jobs add-iam-policy-binding "$1" --region "$REGION" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet; }
+bind_svc() { retry_iam gcloud run services add-iam-policy-binding "$1" --region "$REGION" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet; }
 for svc in "$SVC_WEB" "$SVC_PUBLICO" "$SVC_BIOMETRIA"; do
   bind_svc "$svc" "$SA_DEPLOYER" roles/run.developer               # GitHub Actions actualiza SOLO los servicios de su entorno
   bind_svc "$svc" "$SA_OPS" roles/run.developer                    # el precalentamiento cambia sus instancias mínimas
