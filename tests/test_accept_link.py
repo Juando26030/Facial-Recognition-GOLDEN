@@ -354,3 +354,45 @@ def test_the_mailer_passes_reply_to_to_graph_and_smtp(monkeypatch):
         monkeypatch.setenv(k, "x")
     assert mailer.send_mail("a@b.co", "s", "b", reply_to="soporteit@goldenlogisticas.com")["sent"] is True
     assert captured["body"]["message"]["replyTo"] == [{"emailAddress": {"address": "soporteit@goldenlogisticas.com"}}]
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ después de aceptar: solo el estado
+def test_after_accepting_the_link_never_takes_changes_or_renews_the_selfie_it_only_shows_the_status(client, factory, db, engine):
+    from app.models import Job
+    ev, _u, token = _setup(factory, db, trusted=True)
+    assert _accept(client, ev, token).json()["status"] == "accepted"
+    db.expire_all()
+    photo = get_storage().get(photo_key(ev.tenant_id, "1001"))
+    vector, logs, jobs_n, wa = db.query(User).filter_by(id="1001").one().face_encoding, db.query(AuditConsentLog).count(), db.query(Job).count(), db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).created_at
+    engine.face = _vec(99)                                                                                 # si algo recalculara el vector, saldría distinto
+    chk = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "birth_date": "1990-04-02"})
+    assert chk.status_code == 200 and chk.json()["status"] == "already" and "selfie" not in chk.json()
+    assert "privacidad" in chk.json()["message"].lower() or "soporteit@goldenlogisticas.com" in chk.json()["message"]       # dice cómo revocar
+    for decision in ("accept", "reject"):                                                                   # ni siquiera forzando la petición a mano
+        r = _accept(client, ev, token, decision=decision)
+        assert r.status_code == 200 and r.json()["status"] == "already"
+    db.expire_all()
+    assert get_storage().get(photo_key(ev.tenant_id, "1001")) == photo                                     # la foto es la misma
+    assert db.query(User).filter_by(id="1001").one().face_encoding == vector                               # el vector no se recalculó
+    assert db.query(AuditConsentLog).count() == logs and db.query(Job).count() == jobs_n                   # sin registros ni tareas nuevas
+    assert db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).created_at == wa
+    assert "1001" in consent.accepted_user_ids(db, ev.tenant_id, ev.id)                                    # y sigue autorizada
+
+
+def test_the_document_portal_is_closed_the_same_way_after_accepting(client, factory, db, engine):
+    ev, _u, token = _setup(factory, db, trusted=True)
+    _accept(client, ev, token)
+    r = _accept(client, ev, None, cedula="1001")
+    assert r.status_code == 200 and r.json()["status"] == "already"
+    assert client.post(f"/api/aceptar/{ev.event_code}/check", data={"cedula": "1001", "birth_date": "1990-04-02"}).json()["status"] == "already"
+
+
+def test_the_status_is_not_shown_without_the_right_birth_date_and_a_person_who_only_rejected_can_still_accept(client, factory, db, engine):
+    ev, _u, token = _setup(factory, db, trusted=True)
+    _accept(client, ev, token)
+    wrong = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "birth_date": "1991-01-01"})
+    assert wrong.status_code == 404                                                                         # sin la fecha correcta no se revela nada
+    ev2, _u2, token2 = _setup(factory, db, uid="2002", trusted=True)
+    assert _accept(client, ev2, token2, decision="reject").json()["status"] == "rejected"
+    assert _accept(client, ev2, token2).json()["status"] == "accepted"                                      # cambió de opinión: aún no había foto
+    assert _accept(client, ev2, token2).json()["status"] == "already"

@@ -16,7 +16,7 @@ from PIL import Image
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import consent, consent_receipt, crypto, enroll, jobs, legal_texts, minors, privacy, security
+from app import company, consent, consent_receipt, crypto, enroll, jobs, legal_texts, minors, privacy, security
 from app.database import get_db
 from app.models import Event, EventAttendee, User, WebAcceptance
 from app.storage import photo_key
@@ -29,6 +29,14 @@ MAX_SELFIE_BYTES = 8 * 1024 * 1024
 GENERIC_NOT_FOUND = "No encontramos tu inscripción con ese documento y esa fecha. Acércate a la acreditación con tu cédula o QR."
 LINK_NOT_FOUND = "Este enlace no es válido o ya no está vigente. Acércate a la acreditación con tu cédula o QR."
 MINOR_MESSAGE = "No puedes usar el reconocimiento facial. Ingresa con tu cédula o QR en la acreditación."
+
+
+def _already(db: Session, event: Event, uid: str):
+    """Quien YA aceptó no puede volver a tomar, cambiar ni renovar la selfie por esta página (enlace personal o portal): solo ve el estado. El cambio de foto lo hace el personal en acreditación; revocar, por el correo de privacidad o con el personal."""
+    if not consent.has_acceptance(db, event.tenant_id, uid, event.id):
+        return None
+    return {"status": "already", "message": ("Tu autorización ya quedó registrada. Esta página no permite cambiar tu foto: si quieres actualizarla, acércate a la acreditación; "
+                                             f"si quieres revocar tu autorización, escribe a {company.get('PRIVACY_EMAIL')} o díselo al personal.")}
 DEVICE = {"link": "web-link", "qr": "web-qr", "web": "web-portal"}
 
 
@@ -131,7 +139,7 @@ def check(code: str, request: Request, cedula: str = Form(""), token: str = Form
         user.is_biometric_enabled = False
         privacy.purge_person(db, event.tenant_id, user.id)
         return {"status": "minor", "message": MINOR_MESSAGE}
-    return {"status": "ok", "selfie": _need_selfie(event)}
+    return _already(db, event, user.id) or {"status": "ok", "selfie": _need_selfie(event)}
 
 
 @router.post("/api/aceptar/{code}")
@@ -155,6 +163,10 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
         user.is_biometric_enabled = False
         privacy.purge_person(db, event.tenant_id, uid)
         return {"status": "minor", "message": MINOR_MESSAGE}
+    done = _already(db, event, uid)
+    if done:
+        db.rollback()                                          # nada cambia: ni la foto, ni el registro, ni la fecha de nacimiento escrita
+        return done
     device = DEVICE[ch]
     if decision == "reject" or (t["adult_checkbox"] and not adult):
         consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=t["version"], legal_text_hash=t["hash"], accepted=False, adult=bool(adult), reason="rejection", device=device)

@@ -68,7 +68,9 @@ def test_only_people_already_registered_can_accept_and_nothing_is_revealed(clien
     db.query(User).filter_by(id="1001").update({"birth_date": date(1990, 4, 2)})
     db.commit()
     assert _post(client, ev, "1001", birth="1991-01-01").status_code == 404                               # fecha distinta a la ya registrada: mismo mensaje
-    assert _post(client, ev, "1001", selfie=False).status_code == 400
+    assert _post(client, ev, "1001", selfie=False).json()["status"] == "already"                            # quien ya aceptó solo ve su estado (no se le pide otra selfie)
+    factory.person(ev, "1002", "Beto", "Mora")
+    assert _post(client, ev, "1002", selfie=False).status_code == 400                                       # quien aún no acepta sí necesita la selfie
 
 
 def test_accepting_from_the_phone_is_pending_until_staff_verifies_identity(client, factory, db, env, engine):

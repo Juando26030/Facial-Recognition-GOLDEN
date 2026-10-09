@@ -4,12 +4,15 @@
 
 **Dónde está.** En el evento → **Parámetros** → «Permitir aceptar desde el celular» (debe estar marcado) → cuadro **«Enviar el enlace personal por correo…»**. Solo lo ven coordinadores y administradores, y solo en eventos **propios de Golden**.
 
+## Después de aceptar
+Una vez la persona aceptó, su enlace **solo muestra el estado** de su autorización: no deja volver a tomar, cambiar ni renovar la foto. Un cambio de foto lo hace únicamente el personal de Golden en acreditación. Para revocar, la persona escribe a soporteit@goldenlogisticas.com o se lo dice al personal. (Lo mismo vale para el portal con cédula.)
+
 ## Reglas que el sistema cumple solo
 - **Máximo 25 correos por minuto** (uno cada 2,4 segundos). 200 personas tardan unos 8 minutos.
 - **Solo adultos con correo válido** (si la persona **no tiene fecha de nacimiento** registrada, se le invita igual: la página de aceptación la pide y bloquea a los menores; la vista previa dice cuántas son) que no se inscribieron por un formulario abierto (ese correo lo escribió quien se inscribió, no es del listado) y que no han aceptado ni rechazado ya.
 - **Nunca dos veces a la misma persona.** Si algo se corta, **no se reenvía solo**: queda como «sin confirmar» en el registro y lo revisas tú.
 - **Se puede detener** en cualquier momento y **reanudar** sin repetir a nadie.
-- **Registro:** quién (cédula), fecha y hora (UTC) y resultado. No se guarda IP ni navegador, ni la dirección de correo. Se borra solo **7 días después de que el evento se finaliza** (el mismo reloj de lo biométrico).
+- **Registro:** quién (cédula), fecha y hora (UTC) y resultado. No se guarda IP ni navegador, ni la dirección de correo. Cada fila se borra sola **60 días después de su fecha** (decisión de la auditora). La constancia de aceptación (la prueba del consentimiento) **no** se borra con esto.
 
 ## Paso a paso (antes del envío real)
 1. **Actualizar vista previa.** Debes ver: «Recibirían el correo: N personas (unos X min). Se omiten M.» y debajo cuántas se omiten y **por qué** (sin correo, correo no válido, menor de edad, ya se le envió, ya respondió, se inscribió por formulario). Revisa que N sea lo que esperas.

@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 
 SPACING = 2.4              # segundos entre un correo y el siguiente: 60 / 2,4 = 25 por minuto
 PER_MINUTE = 25            # tope duro (se cuenta en el registro, por si hubiera dos tandas a la vez)
+LOG_RETENTION_DAYS = 60    # días calendario desde la fecha de CADA envío (Habeas Data: 15 días hábiles + margen). Única constante del plazo
 STALE_AFTER = 300          # segundos: un envío «reservado» más viejo que esto se da por cortado (sin confirmar)
 MAX_FAIL_STREAK = 3        # tres fallos seguidos detienen la tanda (correo mal configurado): no se insiste
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
@@ -160,11 +161,10 @@ def send_test(db: Session, event: Event, to: str, staff_id: int) -> dict:
 
 
 def purge_log(db: Session, now=None) -> int:
-    """Retención del registro de envíos: se borra al pasar los días de retención biométrica (`privacy.days_after_event()`, 7) desde que el evento se finalizó. Lo llama el paso `purge` del Job horario."""
-    from sqlalchemy import text
-    from app import privacy
-    cut = (now or utcnow()) - timedelta(days=privacy.days_after_event())
-    n = db.execute(text("DELETE FROM accept_mail_log WHERE event_id IN (SELECT id FROM events WHERE status = 'finalizado' AND finalized_at IS NOT NULL AND finalized_at <= :cut)"), {"cut": cut}).rowcount
+    """Retención del registro de envíos (decisión de la auditora, 2026-10-09): cada fila se borra LOG_RETENTION_DAYS días calendario después de su fecha, sin importar el evento. Lo llama el paso `purge`
+    del Job horario. NO toca la constancia de aceptación (`audit_consent_logs`, `web_acceptances`): esa se conserva como prueba de consentimiento."""
+    from sqlalchemy import delete
+    n = db.execute(delete(AcceptMailLog).where(AcceptMailLog.at <= (now or utcnow()) - timedelta(days=LOG_RETENTION_DAYS))).rowcount
     db.commit()
     return n
 

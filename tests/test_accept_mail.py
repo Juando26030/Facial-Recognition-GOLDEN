@@ -373,18 +373,25 @@ def test_every_download_of_links_is_recorded_as_a_system_event_and_the_screen_wa
     assert "El CSV de enlaces es confidencial" in client.get(f"/kiosk/{ev.id}/parametros").text
 
 
-def test_the_send_log_is_deleted_with_the_biometric_clock_after_the_event_ends(factory, db, outbox):
+def test_each_log_row_is_deleted_60_days_after_its_own_date_and_consent_proof_is_never_touched(factory, db):
     from app import privacy
-    old = _event(factory)
-    new = _event(factory)
-    for ev in (old, new):
-        _people(factory, db, ev, 1) if ev is old else None
-        db.add(AcceptMailLog(tenant_id=ev.tenant_id, event_id=ev.id, user_id="2000", kind="bulk", result="sent"))
-    old.status, old.finalized_at = "finalizado", utcnow() - timedelta(days=privacy.days_after_event() + 1)
-    new.status, new.finalized_at = "finalizado", utcnow() - timedelta(days=1)
+    from app.models import AuditConsentLog, WebAcceptance
+    assert acceptmail.LOG_RETENTION_DAYS == 60
+    ev = _event(factory)
+    _people(factory, db, ev, 1)
+    now = utcnow()
+    for days in (61, 59, 1):
+        db.add(AcceptMailLog(tenant_id=ev.tenant_id, event_id=ev.id, user_id="2000", kind="bulk", result="sent", at=now - timedelta(days=days)))
+    accept(db, ev, "2000")
+    db.add(WebAcceptance(tenant_id=ev.tenant_id, user_id="2000", event_id=ev.id, verified_at=now, verified_via="link"))
+    ev.status, ev.finalized_at = "finalizado", now - timedelta(days=30)                                     # el evento terminó hace 30 días: la purga biométrica de 7 días ya aplica
     db.commit()
-    assert acceptmail.purge_log(db) == 1
-    assert db.query(AcceptMailLog).filter_by(event_id=old.id).count() == 0 and db.query(AcceptMailLog).filter_by(event_id=new.id).count() == 1
+    consent_before = db.query(AuditConsentLog).count()
+    privacy.purge_expired(db)                                                                               # 7 días: lo biométrico
+    assert acceptmail.purge_log(db) == 1                                                                    # 60 días: solo la fila de hace 61
+    assert sorted((now - r.at).days for r in db.query(AcceptMailLog)) == [1, 59]
+    assert db.query(AuditConsentLog).count() == consent_before == 1 and db.query(WebAcceptance).count() == 1   # la constancia de aceptación sigue
+    assert acceptmail.purge_log(db, now + timedelta(days=61)) == 2 and db.query(AuditConsentLog).count() == 1 and db.query(WebAcceptance).count() == 1
 
 
 def test_the_personal_link_stops_working_when_the_event_is_finalized(client, factory, db):

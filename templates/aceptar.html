@@ -74,7 +74,7 @@
       const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/check`, { method: 'POST', body: identity() });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return say(j.detail || 'No se pudo comprobar. Intenta de nuevo o ingresa con tu cédula o QR.', true);
-      if (j.status === 'minor') { $('step1').hidden = true; return say(j.message); }
+      if (j.status === 'minor' || j.status === 'already') { $('step1').hidden = true; return say(j.message); }
       block = await load(); if (!block) return;
       $('title').textContent = block.title;
       const body = $('body'); body.replaceChildren();
