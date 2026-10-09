@@ -18,5 +18,5 @@
 
 ## Versiones y activación
 
-- **v1.1 (vigente):** se activa con `POLICY_VERSION=1.1`. El despliegue de **staging** ya la activa (`deploy/gcp/deploy.sh`). En **producción** NO se activa todavía (aún no existe): el día del corte se agrega `POLICY_VERSION: "1.1"` al entorno de producción.
+- **v1.1 (vigente):** se activa con `POLICY_VERSION=1.1`. Está en `deploy/gcp/env/common.yaml`, así que **staging y producción** la activan en cada despliegue (cambio del 9-oct-2026, rama `producto/politica-produccion`; producción se despliega recién en el corte).
 - **v1.0 (histórica):** sigue disponible en `/privacidad/v1.0`, con su constancia del 5 de octubre de 2026.

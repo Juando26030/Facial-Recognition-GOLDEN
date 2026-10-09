@@ -1,5 +1,6 @@
 """Página pública /privacidad con la política v1.1 RATIFICADA: se muestra el archivo exacto (hash verificado) sin la marca de borrador y con la leyenda de ratificación; el archivo no se toca."""
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -64,12 +65,33 @@ def test_v1_0_stays_available_as_historic(client, monkeypatch):
     assert "Versión histórica" in page and "Texto con constancia" in page and "Ratificada el" not in page
 
 
-def test_the_image_carries_the_ratified_file_and_staging_activates_it():
+def test_the_image_carries_the_ratified_file_and_both_environments_activate_it():
     assert "docs/legal/POLITICA_v1.1.md" in Path("Dockerfile").read_text(encoding="utf-8")
     ignore = Path(".dockerignore").read_text(encoding="utf-8").splitlines()
     assert "!docs/legal/POLITICA_v1.1.md" in ignore and ignore.index("!docs/legal/POLITICA_v1.1.md") > ignore.index("*.md")      # la excepción va DESPUÉS de las exclusiones
+    common = Path("deploy/gcp/env/common.yaml").read_text(encoding="utf-8")
+    assert re.findall(r'^POLICY_VERSION:\s*"([^"]*)"', common, re.M) == ["1.1"]                       # staging Y producción (el archivo común lo copian los dos)
     deploy = Path("deploy/gcp/deploy.sh").read_text(encoding="utf-8")
-    assert 'if [ "$GOLDEN_ENV" = "staging" ]; then echo "POLICY_VERSION' in deploy                    # producción NO se activa sola
+    assert "POLICY_VERSION" not in re.sub(r"#.*", "", deploy)                                          # sin un segundo origen: nada que lo apague por entorno ni lo duplique
+
+
+def test_deploy_never_repeats_a_key_that_common_yaml_already_sets():
+    """`env_file` copia common.yaml y le agrega líneas `echo "CLAVE: …"`: una clave en los dos sitios daría un YAML con claves repetidas."""
+    common = set(re.findall(r"^([A-Z][A-Z0-9_]*):", Path("deploy/gcp/env/common.yaml").read_text(encoding="utf-8"), re.M))
+    block = Path("deploy/gcp/deploy.sh").read_text(encoding="utf-8").split("env_file() {", 1)[1].split(chr(10) + "}" + chr(10), 1)[0]
+    added = set(re.findall(r'echo "([A-Z][A-Z0-9_]*):', block))
+    assert common & added == set(), common & added
+    assert {"POLICY_VERSION", "ENVIRONMENT", "DOMAIN"} <= common and "CONTINGENCY_ENABLED" in added                    # contingencia sigue por entorno (config.sh), la política no
+
+
+def test_production_serves_the_ratified_policy_with_the_common_setting(client, monkeypatch):
+    values = dict(re.findall(r'^([A-Z][A-Z0-9_]*):\s*"([^"]*)"', Path("deploy/gcp/env/common.yaml").read_text(encoding="utf-8"), re.M))
+    monkeypatch.setenv("POLICY_VERSION", values["POLICY_VERSION"])
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    for k in ("COMPANY_NAME", "COMPANY_NIT", "PRIVACY_EMAIL", "DOMAIN"):
+        monkeypatch.setenv(k, values[k])
+    page = client.get("/privacidad")
+    assert page.status_code == 200 and "Ratificada el 6 de octubre de 2026" in page.text and "FUNCIONAMIENTO LOCAL TEMPORAL EN MODO DE CONTINGENCIA" in page.text
 
 
 @pytest.mark.parametrize("raw,expected", [("**ESTADO: PENDIENTE DE RATIFICACIÓN** x\n\n# T\n\nhola *a* **b**", "<h1>T</h1>\n<p>hola <i>a</i> <b>b</b></p>")])

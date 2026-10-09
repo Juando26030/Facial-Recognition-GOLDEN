@@ -11,6 +11,9 @@ PRIVACY_EMAIL: "soporteit@goldenlogisticas.com"
 COMPANY_NAME: "Golden Eventos y Logística S.A.S."
 COMPANY_NIT: "901542833-2"      # con dígito de verificación; en pantalla 901.542.833-2
 DOMAIN: "golden-eventos.com"      # la app vive en app.golden-eventos.com (PUBLIC_BASE_URL)
+# Política de privacidad vigente: la 1.1 ratificada por la auditora el 6-oct-2026 (docs/legal/RATIFICACION_v1.1.md). Igual en staging y producción: la constancia de la autorización y la contingencia sin conexión
+# (sección 8) se apoyan en que esta versión esté PUBLICADA. La 1.0 queda como histórica en /privacidad/v1.0.
+POLICY_VERSION: "1.1"
 # Retención biométrica: 7 días después de que TODOS los eventos de la persona estén finalizados; tope de 180 días desde la captura.
 BIOMETRIC_RETENTION_DAYS_AFTER_EVENT: "7"
 BIOMETRIC_MAX_DAYS: "180"

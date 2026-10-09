@@ -88,7 +88,7 @@ La auditora ratificó `docs/legal/POLITICA_v1.1.md` (SHA-256 `d0afc7d95083b62115
 
 - **El archivo y su `.sha256` están congelados** (rama `producto/legal-piloto`, ruta `docs/legal/`). Una prueba falla si cambian.
 - **Cómo se muestra sin tocar el archivo:** la página lee el archivo, comprueba su hash, omite el párrafo de borrador («ESTADO: PENDIENTE DE RATIFICACIÓN…») y las etiquetas «(texto de la auditora)», y agrega la leyenda «Ratificada el 6 de octubre de 2026 · SHA-256 …». Si el archivo no coincide con el hash, no se muestra y cae a la v1.0.
-- **Activación:** `POLICY_VERSION=1.1`. Staging la activa en cada despliegue; producción NO (aún no existe): el día del corte se agrega esa variable. La v1.0 queda histórica en `/privacidad/v1.0`.
+- **Activación:** `POLICY_VERSION=1.1`. Está en `deploy/gcp/env/common.yaml`: staging y producción la activan en cada despliegue (producción se despliega recién en el corte). La v1.0 queda histórica en `/privacidad/v1.0`.
 - **La imagen** lleva el archivo ratificado (excepción en `.dockerignore` y `COPY` en el `Dockerfile`).
 - La ratificación quedó completa con el nombre de la abogada y sus tres condiciones levantadas (`RATIFICACION_v1.1.md`).
 

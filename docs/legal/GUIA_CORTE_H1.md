@@ -9,7 +9,7 @@
 **Qué encontré al verificar `docs/19` (y cómo queda aquí):**
 1. `bootstrap.sh` **no muestra** la `FACE_ENCRYPTION_KEY` que genera (dice «generado al azar» y la guarda directo). Para copiarla al gestor de contraseñas hay un comando aparte (paso 13).
 2. El bootstrap crea una alerta **activa** «/health no responde» que, con la imagen de relleno, dispararía correos. Se **desactiva** (paso 18) y se reactiva en el corte.
-3. **`POLICY_VERSION=1.1` hoy solo se escribe para staging** (`deploy/gcp/deploy.sh`, línea 97). Sin ese cambio de una línea, producción mostraría la política 1.0 y la condición de la auditora para la contingencia («la huella del texto de la constancia coincide con la política vigente») no se cumpliría. Es código: lo preparo en la rama del corte **solo con tu orden escrita** (paso 24).
+3. **`POLICY_VERSION=1.1` se escribía solo para staging.** Sin ese valor, producción mostraría la política 1.0 y la condición de la auditora para la contingencia («la huella del texto de la constancia coincide con la política vigente») no se cumpliría. **Ya está corregido en la rama `producto/politica-produccion`** (ahora vive en `deploy/gcp/env/common.yaml`, igual para staging y producción, con prueba); llega a `main` con el corte (paso 24).
 4. Super administrador, evento de prueba, Scheduler en marcha, respaldos y `restore_test.sh` **necesitan la aplicación desplegada** (tablas creadas por la migración, imagen real). No pueden hacerse en H1: están en los bloques 4 y 5, detrás de la línea de parada.
 5. Los pasos 1, 4 y 5 de `docs/19` (Environment de GitHub, deshabilitar «Deploy to production», variables, PR a `main`) **son el corte**, no H1.
 
@@ -26,9 +26,10 @@ gcloud config list
 
 **Paso 2 — Crear el proyecto `goldenweb-prod`.** ⚠️ (se puede borrar con `gcloud projects delete goldenweb-prod`, pero el ID `goldenweb-prod` queda reservado y no se reutiliza)
 ```bash
-gcloud projects create goldenweb-prod --name="GoldenWeb"
+PROJECT_ID=goldenweb-prod
+gcloud projects create "$PROJECT_ID" --name="GoldenWeb"
 ```
-*Debes ver:* `Create in progress … Operation … finished successfully`. Si dice que el ID ya existe, otra persona lo tiene: dímelo y elegimos otro (cambia en toda la guía).
+*Debes ver:* `Create in progress … Operation … finished successfully`. **Si dice que el ID ya está en uso** («The project ID you specified is already in use by another project»), otra cuenta lo tiene (los ID de proyecto son globales): cambia SOLO la primera línea por la alternativa recomendada, `PROJECT_ID=goldenweb-prod-co` (o, si también estuviera tomada, `PROJECT_ID=golden-eventos-prod`), y repite este paso. No hay que cambiar nada más: el resto de la guía y los scripts leen el ID desde `gcloud config`. Reglas del ID: 6 a 30 caracteres, minúsculas, números y guiones, empieza con letra y no termina en guion.
 
 **Paso 3 — Encontrar la cuenta de facturación «Golden Logistics - GoldenWeb».** ✅
 ```bash
@@ -39,17 +40,17 @@ BILLING=$(gcloud billing accounts list --filter="displayName~'GoldenWeb' AND ope
 
 **Paso 4 — Vincular la facturación al proyecto.** ✅ (se puede desvincular)
 ```bash
-gcloud billing projects link goldenweb-prod --billing-account "$BILLING"
-gcloud billing projects describe goldenweb-prod --format='value(billingEnabled)'
+gcloud billing projects link "$PROJECT_ID" --billing-account "$BILLING"
+gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)'
 ```
 *Debes ver:* `billingEnabled: true` y luego `True`. Si falla por permisos necesitas el rol *Billing Account User* en esa cuenta. El presupuesto de la cuenta **ya cubre** todos los proyectos: no se crea nada.
 
 **Paso 5 — Elegir el proyecto y la región.** ✅
 ```bash
-gcloud config set project goldenweb-prod && gcloud config set run/region us-east4
-gcloud projects describe goldenweb-prod --format='value(projectNumber,lifecycleState)'
+gcloud config set project "$PROJECT_ID" && gcloud config set run/region us-east4
+gcloud projects describe "$PROJECT_ID" --format='value(projectNumber,lifecycleState)'
 ```
-*Debes ver:* un número largo (el número del proyecto) y `ACTIVE`. Anótalo: se usa en nombres de Cloud Run y de Firebase.
+*Debes ver:* un número largo (el número del proyecto) y `ACTIVE`. Anótalo, junto con el ID que usaste: se usan en nombres de Cloud Run y de Firebase. **Desde aquí, cada bloque lee el ID de `gcloud config`** (`PROJECT_ID=$(gcloud config get-value project)`): no hay que volver a escribirlo, ni siquiera si Cloud Shell se reinicia.
 
 **Paso 6 — Crear la base de datos vacía en Neon (consola: console.neon.tech).** ⚠️ (el proyecto de Neon se puede borrar; los datos que luego se escriban no)
 1. Con la cuenta de Neon **de la empresa** (plan Launch): **New project** → nombre `golden-production`, región **AWS US East (N. Virginia) / us-east-1**, Postgres **18** (la misma versión que staging).
@@ -77,16 +78,17 @@ firebase login --no-localhost
 
 **Paso 9 — Traer el código de la rama `migra/fase1-2`.** ✅
 ```bash
+PROJECT_ID=$(gcloud config get-value project); echo "Proyecto: $PROJECT_ID"
 cd ~ && { [ -d Facial-Recognition ] || git clone https://github.com/Juando26030/Facial-Recognition-GOLDEN.git Facial-Recognition; } && cd Facial-Recognition
 git fetch origin && git checkout migra/fase1-2 && git pull --ff-only && git log --oneline -1
 ```
-*Debes ver:* el último commit de la rama (hoy `e5b19e0` o uno posterior). No uses otra rama.
+*Debes ver:* `Proyecto: ` con el ID que creaste y el último commit de la rama (hoy `e5b19e0` o uno posterior). No uses otra rama.
 
 **Paso 10 — Ejecutar el bootstrap de producción.** ⚠️ (todo lo que crea se puede borrar; las excepciones están en cada paso)
 ```bash
 FRESH_START=1 bash deploy/gcp/bootstrap.sh production
 ```
-*Debes ver primero:* `Proyecto: goldenweb-prod (número …) · Entorno: production · Región: us-east4 · Repositorio: Juando26030/Facial-Recognition-GOLDEN` y `¿Continuar? (escribe «si»):` → escribe `si`. Luego van apareciendo `== 1. APIs`, `== 2. Artifact Registry`, `== 3. Cuentas de servicio`, `== 4. Workload Identity Federation`, `== 5. Secret Manager (production)`… cada uno con `✓`.
+*Debes ver primero:* `Proyecto: <tu ID> (número …) · Entorno: production · Región: us-east4 · Repositorio: Juando26030/Facial-Recognition-GOLDEN` y `¿Continuar? (escribe «si»):` → escribe `si`. Luego van apareciendo `== 1. APIs`, `== 2. Artifact Registry`, `== 3. Cuentas de servicio`, `== 4. Workload Identity Federation`, `== 5. Secret Manager (production)`… cada uno con `✓`.
 
 **Paso 11 — Responder lo que pide el paso 5 (Secret Manager). Todo se escribe «a ciegas»: no se ve al teclear.** ⚠️ (los secretos se pueden desactivar y reemplazar)
 En este orden:
@@ -129,8 +131,9 @@ gcloud iam service-accounts get-iam-policy golden-app@$PROJECT_ID.iam.gserviceac
 
 **Paso 15 — Comprobar buckets, CORS, colas y que NO hay nada desplegado.** ✅
 ```bash
-gcloud storage buckets describe gs://goldenweb-prod-golden-app-us-east4 --format='yaml(location,cors_config)'
-gcloud storage buckets describe gs://goldenweb-prod-golden-backups-us-east4 --format='value(location)'
+PROJECT_ID=$(gcloud config get-value project)
+gcloud storage buckets describe gs://$PROJECT_ID-golden-app-us-east4 --format='yaml(location,cors_config)'
+gcloud storage buckets describe gs://$PROJECT_ID-golden-backups-us-east4 --format='value(location)'
 gcloud tasks queues list --location us-east4 --format='value(name.basename())'
 gcloud run services describe golden-web --region us-east4 --format='value(spec.template.spec.containers[0].image)'
 ```
@@ -176,10 +179,10 @@ gcloud monitoring policies list --filter='displayName:"/health"' --format='value
 
 **Paso 19 — Comprobar el sitio de Firebase (sin agregar el dominio todavía).** ⚠️ (convertir el proyecto en proyecto de Firebase no se deshace, y el nombre del sitio queda reservado aunque se borre)
 ```bash
-PN=$(gcloud projects describe goldenweb-prod --format='value(projectNumber)')
-firebase hosting:sites:list --project goldenweb-prod
+PROJECT_ID=$(gcloud config get-value project); PN=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+firebase hosting:sites:list --project "$PROJECT_ID"
 ```
-*Debes ver:* una fila con el sitio `golden-app-<tu número de proyecto>` y la dirección `https://golden-app-<número>.web.app`. Si **no** aparece, créalo: `firebase hosting:sites:create "golden-app-$PN" --project goldenweb-prod --non-interactive`. **No** hagas «Add custom domain» todavía: eso es el corte.
+*Debes ver:* una fila con el sitio `golden-app-<tu número de proyecto>` y la dirección `https://golden-app-<número>.web.app`. Si **no** aparece, créalo: `firebase hosting:sites:create "golden-app-$PN" --project "$PROJECT_ID" --non-interactive`. **No** hagas «Add custom domain» todavía: eso es el corte.
 
 **Paso 20 — Cloudflare: bajar el TTL del registro SIN cambiar a dónde apunta.** ✅
 Primero, en Cloud Shell, guarda cómo responde hoy el dominio:
@@ -196,10 +199,10 @@ Si ya existe uno apuntando a `app.golden-eventos.com/health`, déjalo como está
 
 **Paso 22 — Reimprimir los cinco valores para GitHub y guardar el inventario.** ✅
 ```bash
-PN=$(gcloud projects describe goldenweb-prod --format='value(projectNumber)')
-echo "GCP_PROJECT_ID=goldenweb-prod"; echo "GCP_REGION=us-east4"
+PROJECT_ID=$(gcloud config get-value project); PN=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+echo "GCP_PROJECT_ID=$PROJECT_ID"; echo "GCP_REGION=us-east4"
 echo "GCP_WIF_PROVIDER=projects/$PN/locations/global/workloadIdentityPools/github/providers/github-oidc"
-echo "GCP_DEPLOYER=golden-deployer@goldenweb-prod.iam.gserviceaccount.com"
+echo "GCP_DEPLOYER=golden-deployer@$PROJECT_ID.iam.gserviceaccount.com"
 echo "FIREBASE_SITE=golden-app-$PN"
 gcloud run services describe golden-web --region us-east4 --format='value(status.url)'
 ```
@@ -207,16 +210,18 @@ gcloud run services describe golden-web --region us-east4 --format='value(status
 
 **Paso 23 — Ensayo de la restauración contra STAGING (no toca producción).** ✅ (opcional pero recomendado: el script nunca se ha probado con un respaldo real)
 1. Consola de Neon, proyecto de **staging**: crea una rama temporal llamada `restore-test` y copia su cadena directa.
-2. En Cloud Shell, con el proyecto de staging seleccionado (`gcloud config set project goldenweb-staging`):
+2. En Cloud Shell (el ID del proyecto de staging es `goldenweb-staging`; compruébalo con `gcloud projects list`):
 ```bash
+PROD_ID=$(gcloud config get-value project); STAGING_ID=goldenweb-staging
+gcloud config set project "$STAGING_ID"
 cd ~/Facial-Recognition
 python3 -m venv ~/venv && . ~/venv/bin/activate
 grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/req.txt && pip install -q -r /tmp/req.txt
 read -rsp "Cadena DIRECTA de la rama restore-test de STAGING: " U; echo; printf 'DIRECT_DATABASE_URL=%s\n' "$U" > .env.restore; unset U
 python scripts/neon_app_role.py --env-file .env.restore
-BACKUP_BUCKET=goldenweb-staging-golden-staging-us-east4 TARGET_ENV_FILE=.env.restore bash scripts/restore_test.sh
+BACKUP_BUCKET=$STAGING_ID-golden-staging-us-east4 TARGET_ENV_FILE=.env.restore bash scripts/restore_test.sh
 rm -f .env.restore restore_test_dump.sql.gz
-gcloud config set project goldenweb-prod
+gcloud config set project "$PROD_ID"
 ```
 3. Borra la rama `restore-test` en la consola de Neon.
 *Debes ver:* `respaldo: gs://…/db/daily/…`, `gzip íntegro`, los conteos por tabla del volcado y del destino **iguales**, y al final `OK — duraciones en restore_test_AAAAMMDD.log`. Si el bucket de staging tiene otro nombre, el error trae el mensaje «No hay respaldos diarios en gs://…».
@@ -228,7 +233,7 @@ Lo que sigue **despliega producción, migra la base, toca `main` y/o mueve el do
 
 ## Bloque 4 · El corte (requiere orden escrita) (6 pasos)
 
-**Paso 24 — (Claude) Preparar `corte/main`.** ⚠️ Es una rama de trabajo: `migra/fase1-2` + un commit con tres cambios: `deploy.yml` sin disparo por push a `main`; `cloudrun.yml` con el job `production` para `main`; y `POLICY_VERSION: "1.1"` también en producción (`deploy/gcp/deploy.sh`, línea 97). `CONTINGENCY_ENABLED` se queda en `0` (`deploy/gcp/config.sh`, línea 27). *Debes ver:* la rama con CI en verde y la lista de archivos tocados.
+**Paso 24 — (Claude) Preparar `corte/main`.** ⚠️ Es una rama de trabajo: `migra/fase1-2` + un commit con tres cambios: `deploy.yml` sin disparo por push a `main`; `cloudrun.yml` con el job `production` para `main`; y `POLICY_VERSION: "1.1"` también en producción (ya hecho y probado en `producto/politica-produccion`: vive en `deploy/gcp/env/common.yaml`; se incorpora al corte). `CONTINGENCY_ENABLED` se queda en `0` (`deploy/gcp/config.sh`, línea 27). *Debes ver:* la rama con CI en verde y la lista de archivos tocados.
 
 **Paso 25 — GitHub: dejar la VM fuera del camino.** ⚠️ (reversible: se vuelve a habilitar el flujo y el runner)
 Settings → Environments → **New environment `production`** → *Required reviewers*: tú. Actions → «Deploy to production» → ⋯ → **Disable workflow**. En la VM: `cd ~/actions-runner && sudo ./svc.sh stop`. *Debes ver:* «This workflow is disabled» y el runner `Offline`.
@@ -304,10 +309,10 @@ cd ~/Facial-Recognition && . ~/venv/bin/activate
 read -rsp "Cadena DIRECTA de la rama restore-test de PRODUCCIÓN: " U; echo; printf 'DIRECT_DATABASE_URL=%s\n' "$U" > .env.restore; unset U
 python scripts/neon_app_role.py --env-file .env.restore
 read -rsp "Cadena DIRECTA de la base VIVA de producción (solo lectura, para comparar): " V; echo; printf 'DIRECT_DATABASE_URL=%s\n' "$V" > .env.live; unset V
-BACKUP_BUCKET=goldenweb-prod-golden-backups-us-east4 TARGET_ENV_FILE=.env.restore LIVE_ENV_FILE=.env.live bash scripts/restore_test.sh
+BACKUP_BUCKET=$(gcloud config get-value project)-golden-backups-us-east4 TARGET_ENV_FILE=.env.restore LIVE_ENV_FILE=.env.live bash scripts/restore_test.sh
 rm -f .env.restore .env.live restore_test_dump.sql.gz
 ```
 2. Borra la rama `restore-test` en la consola de Neon.
-*Debes ver:* `respaldo: gs://goldenweb-prod-golden-backups-us-east4/db/daily/…`, `gzip íntegro`, conteos del volcado y del destino **iguales**, los conteos vivos **no menores** que los del respaldo, y `OK — duraciones en restore_test_AAAAMMDD.log` (anota las duraciones: son el RTO real).
+*Debes ver:* `respaldo: gs://<tu ID>-golden-backups-us-east4/db/daily/…`, `gzip íntegro`, conteos del volcado y del destino **iguales**, los conteos vivos **no menores** que los del respaldo, y `OK — duraciones en restore_test_AAAAMMDD.log` (anota las duraciones: son el RTO real).
 
 **Paso 36 — Dominio (SOLO con una segunda orden escrita: es el cambio de DNS).** ⛔→ reversible en minutos si el TTL es de 1 min: sigue `docs/19` §10 (Firebase «Add custom domain», registros en Cloudflare con la **nube gris**, prueba de IP real) y §11 (UptimeRobot a `/health`). No se ejecuta en esta guía.
