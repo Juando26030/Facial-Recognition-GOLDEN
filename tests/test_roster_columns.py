@@ -267,14 +267,11 @@ def test_the_template_has_the_birth_date_column_right_after_the_email_and_explai
     assert any("título propio" in str(c.value) for c in wb["Instrucciones"]["A"])                          # y se explica que un título libre se toma como etiqueta
 
 
-def test_the_downloadable_template_loads_as_is_with_its_example_birth_date(client, factory, db):
+def test_the_downloadable_template_loads_as_is_without_asking_anything_and_reads_its_example_birth_date(client, factory, db):
     ev = _coord(client, factory)
     with open(TEMPLATE, "rb") as f:
-        content = f.read()
-    first = _upload(client, ev, content, name="plantilla.xlsx").json()
-    assert first["result"] == "NEEDS_LABELS" and first["fields"] == ["opcional_1", "opcional_2"]            # las dos opcionales del ejemplo traen datos: el sistema pregunta qué son
-    r = _upload(client, ev, content, name="plantilla.xlsx", data={"field_labels": json.dumps({"opcional_1": "Talla", "opcional_2": "Dieta"})})
-    assert r.status_code == 200 and r.json()["count"] == 1, r.text
+        r = _upload(client, ev, f.read(), name="plantilla.xlsx")
+    assert r.status_code == 200 and r.json()["count"] == 1, r.text                                          # las celdas de ejemplo de opcional_1/2 están vacías: no pregunta etiquetas
     db.expire_all()
     assert db.query(User).filter_by(id="1020304050").one().birth_date == date(1990, 4, 2)
     assert not [e for e in r.json()["errors"] if "fecha de nacimiento" in e]

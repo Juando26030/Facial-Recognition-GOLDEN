@@ -6,6 +6,7 @@ del texto se registra; la fecha de nacimiento se valida ANTES de mostrar el text
 de aceptar; la fuente de la foto la define el evento (B2c): selfie de la persona, o la foto que entregó el cliente (entonces no se pide selfie). Como alguien podría aceptar con la cédula de otra
 persona, la aceptación queda «por verificar» (`web_acceptances`) hasta que el personal confirme la identidad en puerta; SALVO el enlace personal que salió del listado del organizador (correo
 propio de cada persona): abrirlo verifica (`verified_via='link'`)."""
+import hashlib
 import re
 import uuid
 from datetime import timedelta
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app import company, consent, consent_receipt, crypto, enroll, jobs, legal_texts, minors, privacy, security
 from app.database import get_db
-from app.models import Event, EventAttendee, User, WebAcceptance
+from app.models import Event, EventAttendee, RateLimitEvent, User, WebAcceptance
 from app.storage import photo_key
 from app.timeutil import utcnow
 from app.ttlcache import SlidingLimiter
@@ -38,6 +39,39 @@ def _already(db: Session, event: Event, uid: str):
     return {"status": "already", "message": ("Tu autorización ya quedó registrada. Esta página no permite cambiar tu foto: si quieres actualizarla, acércate a la acreditación; "
                                              f"si quieres revocar tu autorización, escribe a {company.get('PRIVACY_EMAIL')} o díselo al personal.")}
 DEVICE = {"link": "web-link", "qr": "web-qr", "web": "web-portal"}
+
+
+LINK_MAX_FAILS, LINK_WINDOW = 5, timedelta(minutes=15)      # intentos fallidos por enlace personal y pausa (sin guardar IP ni User-Agent: la clave es la huella del enlace)
+LINK_BLOCKED = "Demasiados intentos con este enlace. Espera unos 15 minutos o ingresa con tu cédula o QR en la acreditación."
+
+
+def _link_key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()[:32]
+
+
+def _link_failures(db: Session, token: str) -> int:
+    return db.query(RateLimitEvent).filter(RateLimitEvent.kind == "aceptar_link_fail", RateLimitEvent.key == _link_key(token), RateLimitEvent.created_at > utcnow() - LINK_WINDOW).count()
+
+
+def _verify(db: Session, event: Event, cedula: str, token: str, birth_raw: str):
+    """(persona, asistente, vino_por_enlace, fecha_de_nacimiento). Por el enlace personal se exigen la CÉDULA y la fecha de nacimiento de ESA persona (la del código): si alguna no coincide,
+    el mismo mensaje genérico sin decir cuál falló, y tras LINK_MAX_FAILS fallos en LINK_WINDOW el enlace se pausa. El conteo vive en `rate_limit_events` con la huella del enlace (sin IP)."""
+    if not token:
+        user, att, by_link = _resolve(db, event, cedula, token)
+        return user, att, by_link, _check_birth(user, birth_raw)
+    if _link_failures(db, token) >= LINK_MAX_FAILS:
+        raise HTTPException(status_code=429, detail=LINK_BLOCKED)
+    user, att, by_link = _resolve(db, event, "", token)
+    try:
+        if re.sub(r"[\s.]", "", cedula or "") != user.id:
+            raise HTTPException(status_code=404, detail=GENERIC_NOT_FOUND)
+        birth = _check_birth(user, birth_raw)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            security.record_event(db, "aceptar_link_fail", _link_key(token), None)
+        raise
+    security.clear_events(db, "aceptar_link_fail", _link_key(token))
+    return user, att, by_link, birth
 
 
 def _event(db: Session, code: str) -> Event:
@@ -96,9 +130,9 @@ def _need_selfie(event: Event) -> bool:
     return not event.client_photos_before
 
 
-def _page(request: Request, event: Event, code: str, token: str, channel: str):
+def _page(request: Request, event: Event, code: str, token: str, channel: str, already: str = ""):
     from app.main import templates
-    return templates.TemplateResponse(request=request, name="aceptar.html", context={"event_name": event.name, "code": code, "token": token, "channel": channel, "need_selfie": _need_selfie(event)})
+    return templates.TemplateResponse(request=request, name="aceptar.html", context={"event_name": event.name, "code": code, "token": token, "channel": channel, "need_selfie": _need_selfie(event), "already": already})
 
 
 @router.get("/aceptar/{code}", response_class=HTMLResponse)
@@ -112,6 +146,10 @@ def personal_page(code: str, token: str, request: Request, db: Session = Depends
     _limit(request, "aceptar_link", 60)
     event = _event(db, code)
     user, _att = _by_token(db, event, token)
+    if user is not None:                                       # quien ya aceptó ve de inmediato su estado: sin pedir cédula ni fecha y sin ningún dato personal
+        done = _already(db, event, user.id)
+        if done:
+            return _page(request, event, code, token, "link", already=done["message"])
     if user is None:
         return HTMLResponse("<meta name='viewport' content='width=device-width, initial-scale=1'><h3 style='font-family:system-ui,sans-serif;text-align:center;margin:20vh 1rem 0'>" + LINK_NOT_FOUND + "</h3>", status_code=404)
     return _page(request, event, code, token, "link")
@@ -132,8 +170,7 @@ def check(code: str, request: Request, cedula: str = Form(""), token: str = Form
     """B2e: la fecha de nacimiento se valida ANTES de mostrar el texto y de abrir la cámara. Un menor nunca ve la cámara ni se guarda nada suyo."""
     _limit(request, "aceptar_check", 30)
     event = _event(db, code)
-    user, _att, _link = _resolve(db, event, cedula, token)
-    birth = _check_birth(user, birth_date)
+    user, _att, _link, birth = _verify(db, event, cedula, token, birth_date)
     if minors.is_minor(birth):
         user.birth_date = birth
         user.is_biometric_enabled = False
@@ -154,10 +191,9 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
         raise HTTPException(status_code=409, detail="El texto cambió: recarga la página")
     if decision not in ("accept", "reject"):
         raise HTTPException(status_code=400, detail="Decisión no válida")
-    user, att, by_link = _resolve(db, event, cedula, token)
+    user, att, by_link, birth = _verify(db, event, cedula, token, birth_date)
     uid = user.id
     ch = "link" if by_link else ("qr" if channel == "qr" else "web")
-    birth = _check_birth(user, birth_date)
     user.birth_date = birth
     if minors.is_minor(birth):
         user.is_biometric_enabled = False

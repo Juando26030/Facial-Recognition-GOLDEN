@@ -1,6 +1,6 @@
 """Enlace personal de autorización (B2a): `/aceptar/<código del evento>/<token>`, uno por persona y evento.
 
-El token (`event_attendees.accept_token`, aleatorio, guardado) identifica a la persona: no hace falta escribir la cédula, pero SIEMPRE se pide la fecha de nacimiento antes de abrir la cámara (menores, B2e).
+El token (`event_attendees.accept_token`, aleatorio, guardado) identifica a la persona, pero la página SIEMPRE pide también su cédula y su fecha de nacimiento (las de ESA persona) antes de abrir la cámara (menores, B2e); 5 fallos en 15 minutos pausan el enlace. Quien ya aceptó ve de inmediato su estado.
 `accept_trusted` dice de dónde salió el enlace:
   * del listado que cargó el organizador (correo propio de cada persona): abrirlo y aceptar verifica la aceptación (el dueño del correo es la persona) y entra directo a la matriz facial;
   * de un formulario abierto (el correo lo escribió quien se inscribió): la aceptación sigue «por verificar» hasta que el personal confirme la identidad en puerta.

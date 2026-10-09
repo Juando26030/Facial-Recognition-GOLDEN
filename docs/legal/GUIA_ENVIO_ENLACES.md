@@ -4,6 +4,11 @@
 
 **Dónde está.** En el evento → **Parámetros** → «Permitir aceptar desde el celular» (debe estar marcado) → cuadro **«Enviar el enlace personal por correo…»**. Solo lo ven coordinadores y administradores, y solo en eventos **propios de Golden**.
 
+## Qué ve la persona al abrir su enlace
+- **Si aún no ha aceptado:** la página le pide su **cédula y su fecha de nacimiento**. Solo continúa si **las dos** coinciden con **su** registro (no se busca en todo el evento). Si no coinciden, ve el mismo mensaje de siempre, sin saber cuál falló.
+- **Límite:** tras **5 intentos fallidos en 15 minutos**, ese enlace se pausa 15 minutos (aunque después escriba bien los datos). No se guarda IP ni navegador. Un acierto reinicia el conteo.
+- **Si ya aceptó:** ve de inmediato «Tu autorización ya quedó registrada…», **sin** pedir cédula ni fecha y sin ningún dato personal en pantalla.
+
 ## Después de aceptar
 Una vez la persona aceptó, su enlace **solo muestra el estado** de su autorización: no deja volver a tomar, cambiar ni renovar la foto. Un cambio de foto lo hace únicamente el personal de Golden en acreditación. Para revocar, la persona escribe a soporteit@goldenlogisticas.com o se lo dice al personal. (Lo mismo vale para el portal con cédula.)
 

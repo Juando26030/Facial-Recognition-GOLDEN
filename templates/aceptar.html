@@ -25,12 +25,10 @@
 <body>
 <main>
   <h1 style="font-size:1.3rem;">{{ event_name }}</h1>
-  <section id="step1">
+  <section id="step1"{% if already %} hidden{% endif %}>
     <p>Si quieres entrar al evento con reconocimiento facial, completa esto antes de llegar. Es <b>totalmente voluntario</b>: sin hacerlo entras con tu cédula o QR sin ninguna restricción.</p>
-    {% if not token %}
     <label for="cedula">Número de documento</label>
     <input type="text" id="cedula" inputmode="numeric" autocomplete="off">
-    {% endif %}
     <label for="birth">Fecha de nacimiento</label>
     <input type="date" id="birth">
     <button type="button" class="primary" id="go">Continuar</button>
@@ -57,18 +55,20 @@
   const token = {{ token|tojson }};
   const channel = {{ channel|tojson }};
   const needSelfie = {{ 'true' if need_selfie else 'false' }};
+  const already = {{ already|tojson }};
   const $ = (id) => document.getElementById(id);
   let block = null;
   const say = (t, bad) => { const o = $('out'); o.hidden = false; o.textContent = t; o.style.borderColor = bad ? '#c0392b' : ''; };
-  const identity = () => { const fd = new FormData(); if (token) fd.append('token', token); else fd.append('cedula', $('cedula').value.trim()); fd.append('birth_date', $('birth').value); return fd; };
+  const identity = () => { const fd = new FormData(); if (token) fd.append('token', token); fd.append('cedula', $('cedula').value.trim()); fd.append('birth_date', $('birth').value); return fd; };
   async function load() {
     const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/text`, { cache: 'no-store' });
     if (!r.ok) { say((await r.json().catch(() => ({}))).detail || 'No disponible', true); return null; }
     return r.json();
   }
+  if (already) { $('step1').hidden = true; say(already); }          // ya aceptó: solo el estado (el servidor no manda ningún dato personal)
   // Primero la fecha de nacimiento (menores): antes de ver el texto y, sobre todo, antes de que se abra la cámara.
   $('go').addEventListener('click', async () => {
-    if ((!token && !$('cedula').value.trim()) || !$('birth').value) return say(token ? 'Escribe tu fecha de nacimiento.' : 'Escribe tu documento y tu fecha de nacimiento.', true);
+    if (!$('cedula').value.trim() || !$('birth').value) return say('Escribe tu documento y tu fecha de nacimiento.', true);
     $('go').disabled = true;
     try {
       const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/check`, { method: 'POST', body: identity() });

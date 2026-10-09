@@ -52,22 +52,29 @@ def _setup(factory, db, uid="1001", trusted=False, email="ana@example.com", birt
     return ev, u, token
 
 
+def _owner(token):
+    from app.database import SessionLocal
+    with SessionLocal() as s:
+        return s.query(EventAttendee.user_id).filter_by(accept_token=token).scalar()
+
+
 def _accept(client, ev, token, birth="1990-04-02", selfie=True, decision="accept", channel="web", cedula=""):
     t = legal_texts.render(ev, web=True)
     data = {"birth_date": birth, "decision": decision, "text_hash": t["hash"], "channel": channel}
     if token:
         data["token"] = token
+        data["cedula"] = cedula or _owner(token)                                                            # el enlace personal también pide la cédula (la de ESA persona)
     else:
         data["cedula"] = cedula
     return client.post(f"/api/aceptar/{ev.event_code}", data=data, files={"file": ("s.jpg", _png(), "image/jpeg")} if selfie else None)
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------ B2a: la página y el enlace
-def test_the_personal_page_has_no_document_field_and_a_wrong_token_or_event_is_a_404(client, factory, db):
+def test_the_personal_page_asks_for_document_and_birth_date_and_a_wrong_token_or_event_is_a_404(client, factory, db):
     ev, _u, token = _setup(factory, db)
     page = client.get(f"/aceptar/{ev.event_code}/{token}")
-    assert page.status_code == 200 and 'id="cedula"' not in page.text and 'id="birth"' in page.text and f'"{token}"' in page.text.replace("&#34;", '"')
-    assert 'id="cedula"' in client.get(f"/aceptar/{ev.event_code}").text                                  # el portal general sí pide el documento
+    assert page.status_code == 200 and 'id="cedula"' in page.text and 'id="birth"' in page.text and f'"{token}"' in page.text.replace("&#34;", '"')
+    assert 'id="cedula"' in client.get(f"/aceptar/{ev.event_code}").text and 'id="birth"' in client.get(f"/aceptar/{ev.event_code}").text        # el portal general (QR del cartel) también pide documento y fecha
     bad = client.get(f"/aceptar/{ev.event_code}/nope")
     assert bad.status_code == 404 and "no es válido" in bad.text
     other = factory.event("en_proceso", facial_enabled=True, aceptar_enabled=True)
@@ -102,11 +109,11 @@ def test_trusted_only_goes_up(factory, db):
 def test_birth_date_is_checked_before_the_text_and_the_camera_and_a_minor_never_gets_them(client, factory, db, engine):
     ev, u, token = _setup(factory, db, birth=None)
     url = f"/api/aceptar/{ev.event_code}/check"
-    assert client.post(url, data={"token": token}).status_code == 400                                       # sin fecha no se avanza
-    ok = client.post(url, data={"token": token, "birth_date": "1990-04-02"}).json()
+    assert client.post(url, data={"token": token, "cedula": "1001"}).status_code == 400                                       # sin fecha no se avanza
+    ok = client.post(url, data={"token": token, "cedula": "1001", "birth_date": "1990-04-02"}).json()
     assert ok == {"status": "ok", "selfie": True}
     minor_birth = date(date.today().year - 12, 1, 1).isoformat()
-    m = client.post(url, data={"token": token, "birth_date": minor_birth}).json()
+    m = client.post(url, data={"token": token, "cedula": "1001", "birth_date": minor_birth}).json()
     assert m["status"] == "minor" and "No puedes usar el reconocimiento facial" in m["message"]
     db.expire_all()
     u = db.query(User).filter_by(id="1001").one()
@@ -117,7 +124,7 @@ def test_birth_date_is_checked_before_the_text_and_the_camera_and_a_minor_never_
 
 def test_a_known_birth_date_must_match_and_the_answer_does_not_reveal_who_is_enrolled(client, factory, db):
     ev, _u, token = _setup(factory, db)
-    r = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "birth_date": "1991-01-01"})
+    r = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001", "birth_date": "1991-01-01"})
     assert r.status_code == 404 and "No encontramos tu inscripción" in r.json()["detail"]
     ghost = client.post(f"/api/aceptar/{ev.event_code}/check", data={"cedula": "9999", "birth_date": "1990-04-02"})
     assert ghost.status_code == 404 and ghost.json()["detail"] == r.json()["detail"]
@@ -159,7 +166,7 @@ def test_source_b_needs_the_selfie_and_source_a_does_not(client, factory, db, en
     assert _accept(client, ev, token, selfie=False).status_code == 400 and db.query(AuditConsentLog).count() == 0
     assert client.get(f"/aceptar/{ev.event_code}/{token}").text.count("const needSelfie = true") == 1
     evA, _uA, tokenA = _setup(factory, db, uid="3003", trusted=True, client_photos_before=True)
-    assert client.post(f"/api/aceptar/{evA.event_code}/check", data={"token": tokenA, "birth_date": "1990-04-02"}).json()["selfie"] is False
+    assert client.post(f"/api/aceptar/{evA.event_code}/check", data={"token": tokenA, "cedula": _owner(tokenA), "birth_date": "1990-04-02"}).json()["selfie"] is False
     assert "const needSelfie = false" in client.get(f"/aceptar/{evA.event_code}/{tokenA}").text
     get_storage().put(photo_key(evA.tenant_id, "3003"), b"foto-del-cliente")                                # el cliente ya la entregó (carga masiva)
     r = _accept(client, evA, tokenA, selfie=False)
@@ -365,7 +372,7 @@ def test_after_accepting_the_link_never_takes_changes_or_renews_the_selfie_it_on
     photo = get_storage().get(photo_key(ev.tenant_id, "1001"))
     vector, logs, jobs_n, wa = db.query(User).filter_by(id="1001").one().face_encoding, db.query(AuditConsentLog).count(), db.query(Job).count(), db.get(WebAcceptance, (ev.tenant_id, "1001", ev.id)).created_at
     engine.face = _vec(99)                                                                                 # si algo recalculara el vector, saldría distinto
-    chk = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "birth_date": "1990-04-02"})
+    chk = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001", "birth_date": "1990-04-02"})
     assert chk.status_code == 200 and chk.json()["status"] == "already" and "selfie" not in chk.json()
     assert "privacidad" in chk.json()["message"].lower() or "soporteit@goldenlogisticas.com" in chk.json()["message"]       # dice cómo revocar
     for decision in ("accept", "reject"):                                                                   # ni siquiera forzando la petición a mano
@@ -390,9 +397,71 @@ def test_the_document_portal_is_closed_the_same_way_after_accepting(client, fact
 def test_the_status_is_not_shown_without_the_right_birth_date_and_a_person_who_only_rejected_can_still_accept(client, factory, db, engine):
     ev, _u, token = _setup(factory, db, trusted=True)
     _accept(client, ev, token)
-    wrong = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "birth_date": "1991-01-01"})
+    wrong = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001", "birth_date": "1991-01-01"})
     assert wrong.status_code == 404                                                                         # sin la fecha correcta no se revela nada
     ev2, _u2, token2 = _setup(factory, db, uid="2002", trusted=True)
     assert _accept(client, ev2, token2, decision="reject").json()["status"] == "rejected"
     assert _accept(client, ev2, token2).json()["status"] == "accepted"                                      # cambió de opinión: aún no había foto
     assert _accept(client, ev2, token2).json()["status"] == "already"
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ enlace personal: cédula + fecha de ESA persona, límite por enlace y «ya aceptó» directo
+def _check(client, ev, token, cedula="1001", birth="1990-04-02"):
+    return client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": cedula, "birth_date": birth})
+
+
+def test_the_personal_link_continues_only_if_document_and_birth_date_match_that_person_with_a_generic_message(client, factory, db, engine):
+    ev, _u, token = _setup(factory, db)
+    other = factory.person(ev, "2002", "Beto", "Mora")                                                      # otra persona DEL MISMO evento: no se puede entrar con su cédula
+    other.birth_date = date(1990, 4, 2)
+    db.commit()
+    ok = _check(client, ev, token)
+    assert ok.status_code == 200 and ok.json()["status"] == "ok"
+    wrong_doc, wrong_birth, other_person = _check(client, ev, token, cedula="9999"), _check(client, ev, token, birth="1991-01-01"), _check(client, ev, token, cedula="2002")
+    assert {r.status_code for r in (wrong_doc, wrong_birth, other_person)} == {404}
+    assert wrong_doc.json()["detail"] == wrong_birth.json()["detail"] == other_person.json()["detail"]       # no dice cuál falló
+    assert _check(client, ev, token, cedula=" 1.001 ").status_code == 200                                    # espacios y puntos no cuentan
+    assert _accept(client, ev, token, cedula="9999").status_code == 404                                       # y al enviar la aceptación se exige lo mismo
+    assert db.query(AuditConsentLog).count() == 0
+
+
+def test_after_five_failures_the_link_pauses_for_15_minutes_without_storing_ip_and_a_success_resets_it(client, factory, db):
+    from datetime import timedelta
+    from app.models import RateLimitEvent
+    from app.timeutil import utcnow
+    ev, _u, token = _setup(factory, db)
+    for _ in range(4):
+        assert _check(client, ev, token, cedula="9999").status_code == 404
+    assert _check(client, ev, token).status_code == 200                                                     # un acierto limpia el conteo
+    for _ in range(5):
+        assert _check(client, ev, token, cedula="9999").status_code == 404
+    blocked = _check(client, ev, token)
+    assert blocked.status_code == 429 and "Demasiados intentos" in blocked.json()["detail"]                  # ni con los datos buenos
+    assert _accept(client, ev, token).status_code == 429
+    rows = db.query(RateLimitEvent).filter_by(kind="aceptar_link_fail").all()
+    assert len(rows) == 5 and all(r.ip is None and token not in r.key for r in rows)                          # sin IP y sin el código del enlace en claro
+    for r in rows:
+        r.created_at = utcnow() - timedelta(minutes=16)
+    db.commit()
+    assert _check(client, ev, token).status_code == 200                                                      # pasados 15 minutos, vuelve a servir
+
+
+def test_the_failure_count_is_per_link_not_per_event(client, factory, db):
+    ev, _u, token = _setup(factory, db)
+    ev2, _u2, token2 = _setup(factory, db, uid="3003")
+    for _ in range(5):
+        _check(client, ev, token, cedula="9999")
+    assert _check(client, ev, token).status_code == 429
+    assert _check(client, ev2, token2, cedula="3003").status_code == 200
+
+
+def test_who_already_accepted_sees_the_status_right_away_without_document_or_date_or_personal_data(client, factory, db, engine):
+    ev, _u, token = _setup(factory, db, trusted=True)
+    assert _accept(client, ev, token).json()["status"] == "accepted"
+    page = client.get(f"/aceptar/{ev.event_code}/{token}")
+    assert page.status_code == 200 and "Tu autorizaci\\u00f3n ya qued\\u00f3 registrada" in page.text           # el texto va dentro del script, escapado
+    assert "Ana" not in page.text and "Mora" not in page.text and "1001" not in page.text and "ana@example.com" not in page.text      # ningún dato personal
+    assert "hidden" in page.text.split('id="step1"')[1].split(">")[0]                                         # el paso de cédula + fecha no se ofrece
+    fresh_ev, _p, fresh_token = _setup(factory, db, uid="4004")
+    fresh = client.get(f"/aceptar/{fresh_ev.event_code}/{fresh_token}")
+    assert 'const already = ""' in fresh.text                                                              # quien no ha aceptado ve el formulario de siempre
