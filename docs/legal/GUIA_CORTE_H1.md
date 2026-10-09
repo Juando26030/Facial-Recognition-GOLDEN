@@ -333,6 +333,12 @@ curl -s $WEB/kiosk/sw.js | head -3
 ```
 *Debes ver:* `{"status":"ok"}` en `/health` y `"status":"ready"` en `/ready` de los tres; `CONTINGENCY_ENABLED` con valor `0` y `POLICY_VERSION` con valor `1.1`; un número mayor que cero en el `grep -c` (la política v1.1 publicada); y el `sw.js` que empieza con el comentario de «contingencia APAGADO».
 
+> ⚠️ **Dirección de los enlaces personales (aceptación por correo).** Los enlaces de los correos y de la descarga de enlaces salen de la variable `PUBLIC_BASE_URL`, que el despliegue de **producción** fija en **`https://app.golden-eventos.com`** (`deploy/gcp/config.sh`) desde el primer despliegue, aunque el DNS aún apunte a la VM. Consecuencias para el corte:
+> 1. **No envíes invitaciones ni descargues enlaces antes del paso 36** (DNS). Antes de ese paso, esos enlaces llevarían a la VM vieja.
+> 2. En el **paso 32** (humo), para probar la aceptación con un enlace personal, arma el enlace a mano sobre la dirección de Cloud Run: `<dirección de Cloud Run>/aceptar/<código del evento>/<token>` (el token es la última parte del enlace que muestra la aplicación). El portal con cédula (`<dirección de Cloud Run>/aceptar/<código del evento>`) sí funciona tal cual.
+> 3. Tras el paso 36, repite una vez la prueba con un enlace real por `https://app.golden-eventos.com`.
+> 4. La selfie **no** se sube al bucket: viaja por POST a la misma dirección desde la que se abre la página (`/api/aceptar/<código>`), así que el CORS del bucket (solo `app.golden-eventos.com` y los dos sitios de Firebase) **no** la afecta. El CORS solo importa para las cargas directas del personal (fotos de la base).
+
 **Paso 29 — Confirmar la última migración en la base de producción.** ✅
 ```bash
 psql "$(gcloud secrets versions access latest --secret golden-direct-database-url)" -tAc "select version_num from alembic_version"
