@@ -22,6 +22,7 @@ REGISTRATION_METHOD_LABELS = {
     "autoregistro": "Autoregistro",
     "biometrico": "Biométrico",
     "qr": "QR",
+    "rostro_autoservicio": "Rostro (autoservicio)",
 }
 
 # (clave del campo, encabezado). id/first_name/last_name son la identidad — siempre van, tengan

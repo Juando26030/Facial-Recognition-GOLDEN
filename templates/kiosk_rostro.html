@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>Entrar con mi rostro | GoldenWeb 2.0</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <style>
+        body { margin: 0; background: var(--golden-dark, #0a0e2e); color: #fff; font-family: var(--font-body, sans-serif); }
+        .door { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px; box-sizing: border-box; text-align: center; }
+        .door h1 { margin: 0; font-size: clamp(1.4rem, 4vw, 2.2rem); }
+        .btn-face { background: var(--golden-primary, #D4AF37); color: #1a1200; border: none; border-radius: 999px; font-size: clamp(1.3rem, 4vw, 2rem); font-weight: 800; padding: 22px 48px; cursor: pointer; }
+        .btn-doc { background: transparent; color: #fff; border: none; text-decoration: underline; font-size: 1.1rem; cursor: pointer; }
+        .cam { position: relative; width: min(92vw, 520px); aspect-ratio: 3 / 4; border-radius: 18px; overflow: hidden; background: #000; }
+        .cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        .oval { position: absolute; left: 50%; top: 46%; width: 62%; height: 70%; transform: translate(-50%, -50%); border: 4px dashed rgba(255,255,255,.85); border-radius: 50%; box-shadow: 0 0 0 999px rgba(0,0,0,.35); pointer-events: none; }
+        .count { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 5rem; font-weight: 800; text-shadow: 0 2px 12px #000; }
+        .msg { font-size: clamp(1.1rem, 3vw, 1.5rem); max-width: 640px; }
+        .msg.ok { color: #7CFC9A; }
+        .counter { position: fixed; bottom: 10px; right: 14px; font-size: .8rem; opacity: .6; }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+<body>
+<main class="door">
+    <h1>{{ event.name }}</h1>
+    <section id="start">
+        <p><button type="button" class="btn-face" id="faceBtn">Entrar con mi rostro</button></p>
+        <p><button type="button" class="btn-doc" id="docBtn">Ingresar con cédula o QR</button></p>
+    </section>
+    <section id="camera" hidden>
+        <p class="msg">Mira de frente a la cámara, dentro del óvalo.</p>
+        <div class="cam"><video id="video" autoplay playsinline muted></video><div class="oval"></div><div class="count" id="count"></div></div>
+    </section>
+    <p id="out" class="msg" role="status" aria-live="polite" hidden></p>
+</main>
+<div class="counter" id="counter" aria-hidden="true"></div>
+<script>
+(function () {
+    const EVENT_ID = {{ event.id }};
+    const $ = (id) => document.getElementById(id);
+    let stream = null, busy = false;
+    const say = (text, ok) => { const o = $('out'); o.hidden = false; o.textContent = text; o.className = 'msg' + (ok ? ' ok' : ''); };
+    // Sin conexión (o con el modo contingencia del quiosco activo) el botón de rostro NO aparece; «Ingresar con cédula o QR» queda siempre.
+    const canFace = () => navigator.onLine && !document.body.classList.contains('golden-contingency');
+    const refreshButton = () => { $('faceBtn').hidden = !canFace(); };
+    window.addEventListener('online', refreshButton);
+    window.addEventListener('offline', refreshButton);
+    refreshButton();
+    const stop = () => { if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } $('video').srcObject = null; };
+    const reset = (ms) => setTimeout(() => { $('out').hidden = true; $('camera').hidden = true; $('start').hidden = false; busy = false; refreshButton(); }, ms);
+    $('docBtn').addEventListener('click', () => { say('Acércate al personal de acreditación con tu cédula o el QR de tu escarapela.'); reset(5000); });
+    function frame() {                     // un fotograma a 640 px de lado mayor, en JPEG: solo vive en memoria hasta enviarlo
+        const v = $('video'), scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
+        const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        return new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.9));
+    }
+    $('faceBtn').addEventListener('click', async () => {
+        if (busy || !canFace()) return;
+        busy = true; $('out').hidden = true;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 } }, audio: false });
+        } catch (e) { say('No se pudo abrir la cámara. Ingresa con tu cédula o QR en la acreditación.'); busy = false; return; }
+        $('start').hidden = true; $('camera').hidden = false; $('video').srcObject = stream;
+        for (const n of [3, 2, 1]) { $('count').textContent = n; await new Promise((r) => setTimeout(r, 900)); }
+        $('count').textContent = '';
+        const blob = await frame();
+        stop(); $('camera').hidden = true;
+        say('Un momento…');
+        const fd = new FormData(); fd.append('event_id', EVENT_ID); fd.append('file', blob, 'rostro.jpg');
+        try {
+            const r = await fetch('/api/door-face', { method: 'POST', body: fd });
+            const j = await r.json().catch(() => ({}));
+            say(r.ok ? j.message : (j.detail || 'Intenta de nuevo o ingresa con tu cédula o QR.'), r.ok && j.result === 'OK');
+        } catch (e) { say('Sin conexión: ingresa con tu cédula o QR en la acreditación.'); }
+        reset(4500);
+    });
+    async function counter() {             // contador solo numérico, para el personal
+        try { const r = await fetch(`/api/events/${EVENT_ID}/door-face/stats`, { cache: 'no-store' }); if (r.ok) { const d = await r.json(); $('counter').textContent = `Intentos ${d.attempts} · Coincidencias ${d.matches} · Sin coincidencia ${d.no_match}`; } } catch (e) { /* sin red */ }
+    }
+    counter(); setInterval(() => { if (!document.hidden) counter(); }, 30000);
+})();
+</script>
+</body>
+</html>

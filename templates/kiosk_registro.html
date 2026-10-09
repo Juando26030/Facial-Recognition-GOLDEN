@@ -66,6 +66,12 @@
         <span>{{ company_name|upper }}</span>
         <h2>Control de Acceso <span class="gradient-text">{{ "Facial Inteligente" if event.facial_enabled else "por Cédula" }}</span></h2>
       </div>
+      {% if event.face_door_enabled and event.facial_enabled %}
+      <div id="doorStrip" style="margin:0 0 1rem; padding:10px 12px; border:1px solid #d9dce6; border-radius:12px; background:#fff;">
+        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:0.85rem;"><b>Entradas con rostro (autoservicio)</b><span id="doorCounter"></span></div>
+        <div id="doorEntries" style="display:flex; gap:10px; overflow-x:auto; margin-top:8px;"></div>
+      </div>
+      {% endif %}
 
       {% if event.status != "en_proceso" and staff_role != "cliente" %}
       <div style="max-width:700px; margin:0 auto 1.5rem; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.85rem; text-align:center;">
@@ -636,6 +642,40 @@
             });
         });
     }
+})();
+</script>
+<script>
+// B1: franja de supervisión de la entrada con rostro (la ve el personal; foto de REGISTRO, nombre y hora). Se refresca cada 3 s solo con la página visible.
+(function () {
+    const box = document.getElementById('doorEntries'); if (!box) return;
+    const EV = {{ event.id }};
+    const photos = {};
+    async function load() {
+        if (document.hidden) return;
+        try {
+            const [r, st] = await Promise.all([fetch(`/api/events/${EV}/door-face/recent`, { cache: 'no-store' }), fetch(`/api/events/${EV}/door-face/stats`, { cache: 'no-store' })]);
+            if (st.ok) { const d = await st.json(); document.getElementById('doorCounter').textContent = `Intentos ${d.attempts} · Coincidencias ${d.matches} · Sin coincidencia ${d.no_match} · Revertidas ${d.reverted}`; }
+            if (!r.ok) return;
+            const { entries } = await r.json();
+            box.replaceChildren();
+            entries.forEach((e) => {
+                const card = document.createElement('div'); card.style.cssText = 'min-width:120px; text-align:center; font-size:0.8rem;';
+                const img = document.createElement('img'); img.alt = ''; img.style.cssText = 'width:96px; height:120px; object-fit:cover; border-radius:8px; background:#eee;';
+                img.src = photos[e.log_id] || (photos[e.log_id] = `/api/events/${EV}/door-face/photo/${e.log_id}`);
+                const name = document.createElement('div'); name.textContent = e.name;
+                const at = document.createElement('div'); at.textContent = e.at; at.style.color = '#666';
+                const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-table-delete'; b.textContent = 'Revisar'; b.dataset.log = e.log_id;
+                card.append(img, name, at, b); box.appendChild(card);
+            });
+        } catch (err) { /* sin red: se reintenta */ }
+    }
+    box.addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button[data-log]'); if (!b) return;
+        if (!await showConfirm('¿Revertir esta entrada? La persona quedará como no registrada y deberá ingresar con su cédula o QR.')) return;
+        const r = await fetch(`/api/events/${EV}/door-face/revert/${b.dataset.log}`, { method: 'POST' });
+        showToast(r.ok ? 'Entrada revertida' : 'No se pudo revertir', r.ok ? 'success' : 'error'); load();
+    });
+    load(); setInterval(load, 3000);
 })();
 </script>
 </body>
