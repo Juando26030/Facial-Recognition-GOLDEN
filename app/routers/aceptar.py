@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app import company, consent, consent_receipt, crypto, enroll, jobs, legal_texts, minors, privacy, security
 from app.database import get_db
 from app.models import Event, EventAttendee, RateLimitEvent, User, WebAcceptance
-from app.storage import photo_key
+from app.storage import get_storage, photo_key
 from app.timeutil import utcnow
 from app.ttlcache import SlidingLimiter
 
@@ -130,9 +130,27 @@ def _need_selfie(event: Event) -> bool:
     return not event.client_photos_before
 
 
+def _logo_url(event: Event, code: str) -> str:
+    """Logo de la página pública: el propio del evento si lo tiene cargado; si no (o si en el panel está oculto), el de Golden."""
+    from app.main import default_logo_url
+    if event.logo_mode == "custom" and event.logo_path:
+        return f"/api/aceptar/{code}/logo"
+    return default_logo_url()
+
+
 def _page(request: Request, event: Event, code: str, token: str, channel: str, already: str = ""):
     from app.main import templates
-    return templates.TemplateResponse(request=request, name="aceptar.html", context={"event_name": event.name, "code": code, "token": token, "channel": channel, "need_selfie": _need_selfie(event), "already": already})
+    return templates.TemplateResponse(request=request, name="aceptar.html", context={"event_name": event.name, "code": code, "token": token, "channel": channel, "need_selfie": _need_selfie(event), "already": already,
+                                                                                     "logo_url": _logo_url(event, code)})
+
+
+@router.get("/api/aceptar/{code}/logo")
+def public_logo(code: str, db: Session = Depends(get_db)):
+    """El logo propio del evento para la página pública de aceptación (sin sesión): solo mientras la página esté disponible."""
+    event = _event(db, code)
+    if event.logo_mode != "custom" or not event.logo_path or not get_storage().exists(event.logo_path):
+        raise HTTPException(status_code=404, detail="Sin logo propio")
+    return get_storage().response(event.logo_path, headers={"Cache-Control": "public, max-age=300"})
 
 
 @router.get("/aceptar/{code}", response_class=HTMLResponse)

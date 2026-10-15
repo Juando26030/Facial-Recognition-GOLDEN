@@ -290,7 +290,7 @@ def get_badge_print_data(
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
-    has_photo = get_storage().exists(photo_key(event.tenant_id, user.id))
+    has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1): apagado = sin foto biométrica
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
     return {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
@@ -311,6 +311,8 @@ def get_user_photo(
     """La foto biométrica de la persona (si existe) — para el elemento image_variable
     (source: "photo") de la escarapela."""
     event = get_event_for_staff(event_id, db, staff)
+    if not event.badge_bio_photo_allowed:
+        raise HTTPException(status_code=404, detail="La impresión de la foto biométrica en la escarapela está desactivada en este evento")
     key = photo_key(event.tenant_id, user_id)
     if not get_storage().exists(key):
         raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")

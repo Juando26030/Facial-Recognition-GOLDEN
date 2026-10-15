@@ -185,7 +185,7 @@ def test_source_a_without_a_client_photo_accepts_and_leaves_the_capture_for_the_
 def test_the_selfie_reference_is_released_in_the_page_after_a_successful_send(client, factory, db):
     ev, _u, token = _setup(factory, db)
     html = client.get(f"/aceptar/{ev.event_code}/{token}").text
-    assert "$('selfie').value = ''" in html and "fd.delete('file')" in html and "id=\"step3\" hidden" in html          # la cámara/selfie aparece solo tras aceptar y no queda colgada
+    assert "cap.reset(); selfieBlob = null" in html and "fd.delete('file')" in html and "id=\"step3\" hidden" in html          # la cámara/selfie aparece solo tras aceptar y no queda colgada
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------ canales

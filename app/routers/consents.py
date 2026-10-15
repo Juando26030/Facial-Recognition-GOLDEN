@@ -304,3 +304,12 @@ def accept_mail_resend(event_id: int, data: dict, db: Session = Depends(get_db),
     if not r["ok"]:
         raise HTTPException(status_code=400, detail=r["detail"])
     return r
+
+
+@router.put("/events/{event_id}/badge-bio-photo")
+def set_badge_bio_photo(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(SUPER)):
+    """Interruptor de seguridad (A1): permitir imprimir la foto BIOMÉTRICA en la escarapela (física y digital). Apagado por defecto; solo un super administrador lo cambia."""
+    event = get_event_for_staff(event_id, db, staff)
+    event.badge_bio_photo_allowed = bool(data.get("enabled"))
+    db.commit()
+    return {"badge_bio_photo_allowed": event.badge_bio_photo_allowed}

@@ -118,6 +118,8 @@
           <div id="bsSummary" role="status" aria-live="polite" style="margin-top:1rem; padding:12px 14px; border-radius:12px; background:#f6f7fb; font-size:0.86rem; line-height:1.5;"></div>
           {% if staff_role == "super_admin" %}
           <hr style="margin:1rem 0;">
+          <h5 style="margin:0 0 0.4rem;">Foto biométrica en la escarapela (solo super administrador)</h5>
+          <label style="display:flex; gap:8px; align-items:flex-start; margin:0 0 1rem;"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Permitir imprimir la foto biométrica en la escarapela. <b>Apagado</b> (recomendado mientras la auditora no lo apruebe): el elemento «foto» de la escarapela sale como un recuadro vacío, en la impresa y en la digital.</span></label>
           <h5 style="margin:0 0 0.4rem;">Pre-cálculo de vectores faciales (solo super administrador)</h5>
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.5rem;">Solo con el anexo firmado (declaraciones, garantías e indemnidad). Permite que la persona entre por rostro en su primera entrada con un clic en la pantalla de autorización.</p>
           <div style="display:grid; gap:8px; max-width:560px;">
@@ -607,6 +609,11 @@
             w.document.close(); w.print();
         });
     }
+    const bbp = document.getElementById('badgeBioPhoto');
+    if (bbp) bbp.addEventListener('change', async () => {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/badge-bio-photo`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: bbp.checked }) });
+        if (res.ok) showToast('Guardado', 'success'); else { bbp.checked = !bbp.checked; showToast('No se pudo guardar', 'error'); }
+    });
     const pcSave = document.getElementById('pcSave');
     if (pcSave) pcSave.addEventListener('click', async () => {
         const res = await fetch(`/api/events/${window.EVENT_ID}/precalculo-autorizado`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: document.getElementById('pcOn').checked, anexo_ref: document.getElementById('pcRef').value, anexo_fecha: document.getElementById('pcDate').value, garantia: document.getElementById('pcGarantia').checked }) });

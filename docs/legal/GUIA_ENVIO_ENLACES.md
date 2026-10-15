@@ -41,3 +41,17 @@ Una vez la persona aceptó, su enlace **solo muestra el estado** de su autorizac
 3. Iniciar, ver llegar 3 correos, abrir uno: debe pedir fecha de nacimiento y la aceptación debe quedar **verificada**.
 4. Iniciar de nuevo → «No hay personas a quienes enviar».
 5. Con otras 3 personas: iniciar, detener a la mitad, reanudar → ninguna recibe dos correos.
+
+## Cámara y aspecto de la página (A1) — qué probar en staging
+La página de aceptación ahora tiene el **mismo estilo** de los formularios públicos y muestra el **logo del evento** (si tiene uno cargado) o el de Golden. Textos fijos de la auditora: encima del botón de aceptar «Este proceso es 100% voluntario…», debajo «Tecnología biométrica y tratamiento de datos operados por Golden Eventos y Logística S.A.S.» y, bajo la cámara, «Solo guardamos la foto final que decidas enviar…». El texto legal y su huella **no** cambian.
+
+Pruébalo en **Android (Chrome)**, **iPhone (Safari)** y **computador**:
+1. Abre un enlace personal, escribe cédula y fecha, acepta. *Debes ver:* «Abrir la cámara» y, debajo, «O sube una foto desde tu dispositivo».
+2. «Abrir la cámara» → permite el permiso. *Debes ver:* la cámara frontal en vivo con un **óvalo** guía. «Tomar foto» → vista previa con **Repetir** y **Usar esta foto**.
+3. Tápate la cámara con la mano y toma la foto. *Debes ver:* «La foto está muy oscura… Intenta de nuevo» y **sin** botón «Usar esta foto». Repite una segunda vez mal: ahora sí aparece «Usar esta foto» («Si no logras una mejor, puedes usar esta»).
+4. Con una buena foto: «Usar esta foto» → «Enviar mi selfie». *Debes ver:* el mensaje de gracias.
+5. Niega el permiso de cámara en otro dispositivo. *Debes ver:* el aviso y la opción de subir un archivo, que funciona igual.
+6. Anota cualquier equipo donde la cámara no abra o la revisión rechace siempre fotos buenas (marca y modelo): los umbrales se pueden ajustar.
+
+## Foto biométrica en la escarapela (A1)
+En Parámetros, solo un **super administrador** ve «Permitir imprimir la foto biométrica en la escarapela». Viene **apagado**: el elemento «foto» de la escarapela (impresa y digital) sale como un recuadro vacío. Para el piloto del 29 déjalo apagado (y además quita el elemento de foto de la plantilla, como decidiste).

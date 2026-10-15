@@ -281,6 +281,9 @@ def test_photos_are_encrypted_on_disk_and_served_decrypted(client, factory, face
     from app import crypto
     raw = crypto.read_bytes(path)
     assert raw[:2] == b"\xff\xd8"                                                                           # al leerla con la llave vuelve a ser JPEG
+    assert client.get(f"/api/users/1001/photo?event_id={ev.id}").status_code == 404                        # interruptor de la foto biométrica en la escarapela: apagado por defecto (A1)
+    ev.badge_bio_photo_allowed = True
+    db.commit()
     r = client.get(f"/api/users/1001/photo?event_id={ev.id}")
     assert r.status_code == 200 and r.content[:2] == b"\xff\xd8" and r.headers["content-type"] == "image/jpeg"
 
