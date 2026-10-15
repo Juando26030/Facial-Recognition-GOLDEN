@@ -52,3 +52,18 @@ En la pantalla de **Registro** del evento aparece la franja **«Entradas con ros
 - El umbral se cambia sin programar, con la variable `DOOR_AUTO_MAX_DIST` (la ajusto yo en la configuración y se despliega con tu orden).
 
 **Al terminar:** borra el evento de prueba y las personas (sección 9 de la guía de staging) y pide a los voluntarios que, si quieren, revoquen su autorización.
+
+## 5. Prueba de movimiento (prueba de vida) — requisito para el piloto
+**Qué hace.** Tras la cuenta 3-2-1, la pantalla toma una foto **de frente** y enseguida pide **«Ahora gira un poco la cabeza hacia tu IZQUIERDA»** (o DERECHA: lo elige el servidor al azar en cada intento), con una flecha. Toma una segunda foto 1,5 s después. Solo entra quien **giró hacia el lado pedido**, con **una sola cara** y siendo **la misma persona** en las dos fotos. Una foto impresa o una pantalla frente a la cámara **no produce ese giro** y no pasa («No pudimos comprobar el movimiento. Intenta de nuevo siguiendo la indicación.»). Ninguna de las dos fotos se guarda.
+
+**Dónde se enciende.** Parámetros → paso guiado → debajo de «Entrada con rostro»: **«Prueba de movimiento (prueba de vida)»**, encendida por defecto. Si la apagas, vuelve el aviso «⚠️ Sin prueba de vida: requiere supervisión constante».
+
+**Qué probar (en staging, en la tablet/portátil de la puerta):**
+1. Tú, inscrito y con aceptación: pulsa, mira de frente, y gira **hacia el lado que diga la pantalla**. *Debes ver:* «¡Listo! Tu ingreso quedó registrado.» Repite 5 veces (usa «Revisar» en la franja entre intento e intento).
+2. Gira al lado **contrario** al pedido. *Debes ver:* «No pudimos comprobar el movimiento…».
+3. **Tu foto en el celular** (o impresa) frente a la cámara, inclinándola cuando pida el giro. *Debes ver:* «No pudimos comprobar el movimiento…» **siempre**. Repite 5 veces.
+4. Anota cuántas veces falló el paso 1 (personas válidas rechazadas).
+
+**Si el paso 1 falla SIEMPRE** (incluso girando bien), es la dirección de la cámara de ese equipo: dímelo y cambio la variable `LIVENESS_SIGN` (sin programar). **Si falla a veces**, se puede bajar el giro mínimo (`LIVENESS_MIN_TURN`, hoy 0,18). Si no queda confiable para el 26, apaga la casilla y el piloto sale con supervisión humana (C + D), como decidiste.
+
+**Lo que NO cubre:** un **video** de la persona girando justo hacia el lado pedido podría pasar. Por eso la franja de supervisión sigue siendo obligatoria.

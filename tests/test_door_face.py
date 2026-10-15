@@ -24,7 +24,7 @@ def _jpg():
 
 @pytest.fixture()
 def station(client, factory, db):
-    ev = factory.event("en_proceso", facial_enabled=True, aceptar_enabled=True, face_door_enabled=True)
+    ev = factory.event("en_proceso", facial_enabled=True, aceptar_enabled=True, face_door_enabled=True, face_door_liveness=False)      # la prueba de movimiento tiene sus propias pruebas (test_liveness.py)
     st = factory.staff("digitador", "puerta1")
     factory.authorize(ev, st)
     for uid in ("1001", "1002"):
@@ -216,9 +216,12 @@ def test_the_station_cap_is_high_and_the_per_person_limit_lives_in_the_screen(cl
 
 def test_parameters_warn_that_there_is_no_liveness_check_yet(client, factory, db):
     factory.staff("coordinador", "coord9")
-    ev = factory.event("en_proceso", facial_enabled=True, face_door_enabled=True)
+    ev = factory.event("en_proceso", facial_enabled=True, face_door_enabled=True, face_door_liveness=False)
     login(client, "coord9")
     assert "Sin prueba de vida: requiere supervisión constante" in client.get(f"/kiosk/{ev.id}/parametros").text
-    ev.face_door_enabled = False
+    ev.face_door_liveness = True
+    db.commit()
+    assert "Sin prueba de vida" not in client.get(f"/kiosk/{ev.id}/parametros").text                       # con la prueba de movimiento activa, sin aviso
+    ev.face_door_liveness, ev.face_door_enabled = False, False
     db.commit()
     assert "Sin prueba de vida" not in client.get(f"/kiosk/{ev.id}/parametros").text

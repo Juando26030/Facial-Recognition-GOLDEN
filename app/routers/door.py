@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 
-from app import crypto, faces, security
+from app import crypto, faces, liveness, security
+from app.biometrics import BiometricEngine
 from app.auth import get_event_for_staff, require_event_in_progress, require_role
 from app.database import get_db
 from app.models import AccessLog, PersonChange, RateLimitEvent, StaffUser, SystemEvent, User
@@ -57,7 +58,9 @@ def _door_event(db: Session, event_id: int, staff: StaffUser):
 
 
 @router.post("/door-face")
-def door_face(event_id: int = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
+def door_face(event_id: int = Form(...), file: UploadFile = File(...), turn: UploadFile = File(None), challenge: str = Form(""),
+              db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
+    """`file` = fotograma de frente; con la prueba de movimiento activa, además `turn` (tras pedir el giro) y `challenge` (el giro que pidió el servidor, firmado)."""
     event = _door_event(db, event_id, staff)
     require_event_in_progress(event)
     key = f"{event.id}:{staff.id}"
@@ -68,6 +71,23 @@ def door_face(event_id: int = Form(...), file: UploadFile = File(...), db: Sessi
     raw = file.file.read(MAX_FRAME_BYTES + 1)
     if len(raw) > MAX_FRAME_BYTES:
         raise HTTPException(status_code=413, detail="La imagen es demasiado grande")
+    if event.face_door_liveness:
+        direction = liveness.read_challenge(challenge, event.id, staff.id)
+        turned = turn.file.read(MAX_FRAME_BYTES + 1) if turn is not None else b""
+        if direction is None or not turned or len(turned) > MAX_FRAME_BYTES:
+            raise HTTPException(status_code=400, detail="La indicación venció. Intenta de nuevo.")
+        try:
+            front_info = faces.analyze(BiometricEngine.process_image_stream(raw), encode=True)
+            turn_info = faces.analyze(BiometricEngine.process_image_stream(turned), encode=True)
+        except faces.Busy:
+            raise HTTPException(status_code=503, detail=BUSY_MSG, headers={"Retry-After": "3"})
+        except UnidentifiedImageError:
+            raise HTTPException(status_code=400, detail="La imagen no es válida")
+        finally:
+            del turned
+        if not liveness.movement_ok(front_info, turn_info, direction):
+            _count(event, "no_live")
+            return {"result": "NO_LIVE", "message": liveness.FAIL_MSG}
     try:
         status, ranked = faces.recognize(db, event, raw)
     except faces.Busy:
@@ -106,6 +126,13 @@ def _repeat_log_ids(db: Session, event, since) -> list:
     rows = (db.query(SystemEvent.at, SystemEvent.ref).filter(SystemEvent.kind == "door_face_repeat", SystemEvent.ref.like(f"{event.id}:%"), SystemEvent.at >= since)
             .order_by(SystemEvent.id.desc()).limit(RECENT).all())
     return [(at, int(ref.split(":", 1)[1])) for at, ref in rows if ref.split(":", 1)[1].isdigit()]
+
+
+@router.get("/events/{event_id}/door-face/challenge")
+def door_challenge(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
+    """El giro que debe hacer la persona (izquierda o derecha, al azar), firmado y de corta vida. Solo números y una palabra: nada personal."""
+    event = _door_event(db, event_id, staff)
+    return liveness.make_challenge(event.id, staff.id)
 
 
 @router.get("/events/{event_id}/door-face/recent")
@@ -173,7 +200,7 @@ def door_stats(event_id: int, db: Session = Depends(get_db), staff: StaffUser = 
     event = get_event_for_staff(event_id, db, staff)
     now_local = to_local(utcnow())
     since = local_to_utc(datetime(now_local.year, now_local.month, now_local.day))
-    counts = {"match": 0, "match_repeat": 0, "no_match": 0, "no_face": 0, "reverted": 0}
+    counts = {"match": 0, "match_repeat": 0, "no_match": 0, "no_face": 0, "no_live": 0, "reverted": 0}
     dists = {"match": [], "no_match": []}
     for (detail,) in db.query(SystemEvent.detail).filter(SystemEvent.kind == "door_face", SystemEvent.ref == str(event.id), SystemEvent.at >= since):
         parts = (detail or "").split()
@@ -183,7 +210,8 @@ def door_stats(event_id: int, db: Session = Depends(get_db), staff: StaffUser = 
         group = "match" if parts[0].startswith("match") else parts[0]
         if group in dists and len(parts) > 1 and parts[1].startswith("d"):
             dists[group].append(int(parts[1][1:]) / 1000)
-    attempts = counts["match"] + counts["match_repeat"] + counts["no_match"] + counts["no_face"]
-    return {"attempts": attempts, "matches": counts["match"] + counts["match_repeat"], "no_match": counts["no_match"] + counts["no_face"], "no_face": counts["no_face"],
+    attempts = counts["match"] + counts["match_repeat"] + counts["no_match"] + counts["no_face"] + counts["no_live"]
+    return {"attempts": attempts, "matches": counts["match"] + counts["match_repeat"], "no_match": counts["no_match"] + counts["no_face"] + counts["no_live"], "no_face": counts["no_face"],
+            "no_live": counts["no_live"],
             "reverted": counts["reverted"], "auto_max_dist": AUTO_MAX_DIST, "match_margin": faces.MATCH_MARGIN,
             "distances": {k: sorted(v) for k, v in dists.items()}}

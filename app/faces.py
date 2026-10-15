@@ -90,6 +90,24 @@ def extract(image_array, **kwargs) -> Optional[list]:
         _gate.release()
 
 
+def analyze(image_array, **kwargs) -> dict:
+    """Medidas de la cara (ver BiometricEngine.analyze_face) por el MISMO camino que `extract`: tope de pendientes y procesos aparte."""
+    if not _gate.acquire(timeout=FACE_QUEUE_TIMEOUT):
+        raise Busy()
+    try:
+        pool = _get_pool()
+        if pool is None:
+            return face_worker.analyze(image_array, kwargs)
+        try:
+            return pool.submit(face_worker.analyze, image_array, kwargs).result(timeout=FACE_TASK_TIMEOUT)
+        except BrokenProcessPool:
+            log.error("el proceso del motor facial murió; se reinicia", exc_info=True)
+            _reset_pool()
+            raise Busy()
+    finally:
+        _gate.release()
+
+
 def warmup() -> None:
     """Deja listo el motor facial (crea los procesos hijo y carga los modelos). Lo usa el arranque y /readyz."""
     pool = _get_pool()

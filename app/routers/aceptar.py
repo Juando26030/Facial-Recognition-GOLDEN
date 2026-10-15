@@ -17,7 +17,7 @@ from PIL import Image
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import company, consent, consent_receipt, crypto, enroll, jobs, legal_texts, minors, privacy, security
+from app import company, consent, consent_receipt, crypto, enroll, faces, jobs, legal_texts, liveness, minors, privacy, security
 from app.database import get_db
 from app.models import Event, EventAttendee, RateLimitEvent, User, WebAcceptance
 from app.storage import get_storage, photo_key
@@ -253,6 +253,13 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
             arr = BiometricEngine.process_image_stream(raw)
         except Exception:  # noqa: BLE001 — imagen ilegible
             raise HTTPException(status_code=400, detail="La imagen no es válida")
+        try:                                                  # B2d: una sola cara, de tamaño suficiente, nítida y con luz; si no, se repite y NADA queda registrado
+            problem = liveness.selfie_problem(faces.analyze(arr))
+        except faces.Busy:
+            raise HTTPException(status_code=503, detail="Estamos recibiendo muchas fotos. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
+        if problem:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=problem)
     entry_id = str(uuid.uuid4())
     consent.record(db, tenant_id=event.tenant_id, user_id=uid, event_id=event.id, version=t["version"], legal_text_hash=t["hash"], accepted=True, adult=True, reason="consent", device=device, entry_id=entry_id)
     now = utcnow()

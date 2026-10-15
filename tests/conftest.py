@@ -136,6 +136,14 @@ def _jobs_inline(monkeypatch):
     monkeypatch.setattr(jobs, "kick", lambda *a, **k: jobs.drain())
 
 
+@pytest.fixture(autouse=True)
+def _good_face_analysis(monkeypatch):
+    """B2d y la prueba de movimiento miden la cara con dlib (`faces.analyze`). Las imágenes de prueba son cuadros grises: por defecto se simula una selfie buena, de frente;
+    las pruebas de calidad y de movimiento lo cambian."""
+    from app import faces
+    monkeypatch.setattr(faces, "analyze", lambda image, **kw: {"faces": 1, "face_h": 0.5, "yaw": 0.0, "sharp": 100.0, "luma": 120.0, "encoding": [0.0] * 128})
+
+
 @pytest.fixture()
 def db():
     from app.database import SessionLocal

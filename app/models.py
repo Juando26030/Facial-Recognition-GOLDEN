@@ -269,6 +269,7 @@ class Event(Base):
     precalculo_anexo_fecha = Column(Date, nullable=True)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
     face_door_enabled = Column(Boolean, default=False, server_default='false', nullable=False)
+    face_door_liveness = Column(Boolean, default=True, server_default='true', nullable=False)   # 0068: prueba de movimiento en la entrada con rostro (app/liveness.py); encendida por defecto
     badge_bio_photo_allowed = Column(Boolean, default=False, server_default='false', nullable=False)   # A1 (0067): imprimir la foto BIOMÉTRICA en la escarapela; apagado = no se imprime (recuadro gris). Solo super_admin   # B1 (0066): pantalla de autoservicio «Entrar con mi rostro» (app/routers/door.py); apagada por defecto
 
     tenant = relationship("Tenant")

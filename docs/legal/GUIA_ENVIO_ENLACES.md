@@ -55,3 +55,6 @@ Pruébalo en **Android (Chrome)**, **iPhone (Safari)** y **computador**:
 
 ## Foto biométrica en la escarapela (A1)
 En Parámetros, solo un **super administrador** ve «Permitir imprimir la foto biométrica en la escarapela». Viene **apagado**: el elemento «foto» de la escarapela (impresa y digital) sale como un recuadro vacío. Para el piloto del 29 déjalo apagado (y además quita el elemento de foto de la plantilla, como decidiste).
+
+## Revisión de la selfie en el servidor (B2d)
+Además de la revisión simple del celular, el servidor revisa la selfie **antes** de registrar la aceptación: **una sola cara**, de **tamaño suficiente**, **nítida** y con **luz razonable**. Si no, la persona ve el motivo («En la foto aparece más de una persona…», «Tu cara se ve muy pequeña…», etc.), la repite y **nada queda registrado** (ni la aceptación ni la foto). Para probarlo: envía una foto con dos personas, otra muy lejana y otra a oscuras; las tres deben pedir repetir.
