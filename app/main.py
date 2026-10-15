@@ -510,7 +510,8 @@ def kiosk_registro(event_id: int, request: Request, db: Session = Depends(get_db
 @app.get("/kiosk/{event_id}/rostro")
 def kiosk_rostro(event_id: int, request: Request, db: Session = Depends(get_db)):
     """B1: pantalla de autoservicio «Entrar con mi rostro» (la persona pulsa; el equipo está abierto con una cuenta del personal). Ver app/routers/door.py."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_rostro.html")
+    from app.routers.api import NOT_FOUND_FACE
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_rostro.html", extra_context={"not_found": NOT_FOUND_FACE})
 
 
 @app.get("/kiosk/{event_id}/facial")

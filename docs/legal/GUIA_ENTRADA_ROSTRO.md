@@ -24,8 +24,9 @@ En la pantalla de **Registro** del evento aparece la franja **«Entradas con ros
 
 ## 3. Reglas que el sistema cumple solo
 - **Sin conexión** (o con el modo contingencia del quiosco activo) el botón «Entrar con mi rostro» **desaparece**; «Ingresar con cédula o QR» queda **siempre**.
-- **Máximo 5 intentos por minuto por equipo**; luego «Espera un momento e intenta de nuevo». No se guarda IP.
-- Si alguien ya había entrado, no se duplica: «Tu ingreso ya estaba registrado».
+- **Límite por persona, no por equipo:** si alguien no es reconocido **2 veces seguidas**, la pantalla muestra «No te encontramos… dirígete a la acreditación con tu cédula o QR» y **se reinicia sola** a los pocos segundos para la siguiente persona. Solo hay un tope alto por equipo contra abuso (30 intentos por minuto). No se guarda IP.
+- Si alguien **ya había entrado**, no se duplica: la pantalla dice «Ya habías ingresado» (sin nombre) y en la franja del personal esa línea aparece marcada **«ya había entrado»** (con su foto de registro, sin botón de revertir).
+- **Aviso en Parámetros:** mientras no exista la prueba de vida (prueba de movimiento), con la entrada con rostro encendida aparece «⚠️ Sin prueba de vida: requiere supervisión constante». Una foto o una pantalla frente a la cámara **puede pasar**: el personal debe mirar la franja todo el tiempo.
 - La pantalla pública **no muestra el nombre** de nadie.
 - Nada de esto funciona si el evento tiene el candado biométrico o el rostro apagado.
 

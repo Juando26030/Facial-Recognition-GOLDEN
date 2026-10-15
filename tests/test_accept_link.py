@@ -109,7 +109,7 @@ def test_trusted_only_goes_up(factory, db):
 def test_birth_date_is_checked_before_the_text_and_the_camera_and_a_minor_never_gets_them(client, factory, db, engine):
     ev, u, token = _setup(factory, db, birth=None)
     url = f"/api/aceptar/{ev.event_code}/check"
-    assert client.post(url, data={"token": token, "cedula": "1001"}).status_code == 400                                       # sin fecha no se avanza
+    assert client.post(url, data={"token": token, "cedula": "1001"}).json() == {"status": "need_birth"}                     # la base no tiene su fecha: se pide (y sin ella no se avanza)
     ok = client.post(url, data={"token": token, "cedula": "1001", "birth_date": "1990-04-02"}).json()
     assert ok == {"status": "ok", "selfie": True}
     minor_birth = date(date.today().year - 12, 1, 1).isoformat()
@@ -122,9 +122,9 @@ def test_birth_date_is_checked_before_the_text_and_the_camera_and_a_minor_never_
     assert sub.json()["status"] == "minor" and db.query(AuditConsentLog).filter_by(user_id="1001").count() == 0     # nada registrado
 
 
-def test_a_known_birth_date_must_match_and_the_answer_does_not_reveal_who_is_enrolled(client, factory, db):
+def test_on_the_general_page_a_known_birth_date_must_match_and_the_answer_does_not_reveal_who_is_enrolled(client, factory, db):
     ev, _u, token = _setup(factory, db)
-    r = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001", "birth_date": "1991-01-01"})
+    r = client.post(f"/api/aceptar/{ev.event_code}/check", data={"cedula": "1001", "birth_date": "1991-01-01"})
     assert r.status_code == 404 and "No encontramos tu inscripción" in r.json()["detail"]
     ghost = client.post(f"/api/aceptar/{ev.event_code}/check", data={"cedula": "9999", "birth_date": "1990-04-02"})
     assert ghost.status_code == 404 and ghost.json()["detail"] == r.json()["detail"]
@@ -397,8 +397,8 @@ def test_the_document_portal_is_closed_the_same_way_after_accepting(client, fact
 def test_the_status_is_not_shown_without_the_right_birth_date_and_a_person_who_only_rejected_can_still_accept(client, factory, db, engine):
     ev, _u, token = _setup(factory, db, trusted=True)
     _accept(client, ev, token)
-    wrong = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001", "birth_date": "1991-01-01"})
-    assert wrong.status_code == 404                                                                         # sin la fecha correcta no se revela nada
+    wrong = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "9999"})
+    assert wrong.status_code == 404                                                                         # sin la cédula correcta no se revela nada
     ev2, _u2, token2 = _setup(factory, db, uid="2002", trusted=True)
     assert _accept(client, ev2, token2, decision="reject").json()["status"] == "rejected"
     assert _accept(client, ev2, token2).json()["status"] == "accepted"                                      # cambió de opinión: aún no había foto
@@ -410,16 +410,17 @@ def _check(client, ev, token, cedula="1001", birth="1990-04-02"):
     return client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": cedula, "birth_date": birth})
 
 
-def test_the_personal_link_continues_only_if_document_and_birth_date_match_that_person_with_a_generic_message(client, factory, db, engine):
+def test_the_personal_link_asks_only_for_that_persons_document_and_takes_the_age_from_the_base(client, factory, db, engine):
     ev, _u, token = _setup(factory, db)
     other = factory.person(ev, "2002", "Beto", "Mora")                                                      # otra persona DEL MISMO evento: no se puede entrar con su cédula
     other.birth_date = date(1990, 4, 2)
     db.commit()
-    ok = _check(client, ev, token)
+    ok = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001"})        # solo la cédula: la fecha ya está en la base
     assert ok.status_code == 200 and ok.json()["status"] == "ok"
-    wrong_doc, wrong_birth, other_person = _check(client, ev, token, cedula="9999"), _check(client, ev, token, birth="1991-01-01"), _check(client, ev, token, cedula="2002")
-    assert {r.status_code for r in (wrong_doc, wrong_birth, other_person)} == {404}
-    assert wrong_doc.json()["detail"] == wrong_birth.json()["detail"] == other_person.json()["detail"]       # no dice cuál falló
+    assert _check(client, ev, token, birth="1991-01-01").json()["status"] == "ok"                           # una fecha escrita no cuenta: manda la de la base
+    wrong_doc, other_person = _check(client, ev, token, cedula="9999"), _check(client, ev, token, cedula="2002")
+    assert {r.status_code for r in (wrong_doc, other_person)} == {404}
+    assert wrong_doc.json()["detail"] == other_person.json()["detail"] and "documento" in wrong_doc.json()["detail"]
     assert _check(client, ev, token, cedula=" 1.001 ").status_code == 200                                    # espacios y puntos no cuentan
     assert _accept(client, ev, token, cedula="9999").status_code == 404                                       # y al enviar la aceptación se exige lo mismo
     assert db.query(AuditConsentLog).count() == 0
@@ -465,3 +466,21 @@ def test_who_already_accepted_sees_the_status_right_away_without_document_or_dat
     fresh_ev, _p, fresh_token = _setup(factory, db, uid="4004")
     fresh = client.get(f"/aceptar/{fresh_ev.event_code}/{fresh_token}")
     assert 'const already = ""' in fresh.text                                                              # quien no ha aceptado ve el formulario de siempre
+
+
+def test_the_personal_link_blocks_a_minor_from_the_base_without_asking_anything(client, factory, db, engine):
+    kid_birth = date(date.today().year - 12, 1, 1)
+    ev, _u, token = _setup(factory, db, birth=kid_birth)
+    m = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001"}).json()
+    assert m["status"] == "minor"
+    assert _accept(client, ev, token, birth="1990-04-02").json()["status"] == "minor"                       # escribir otra fecha no lo salta
+    assert db.query(AuditConsentLog).count() == 0
+
+
+def test_the_personal_page_only_shows_the_document_field_until_the_date_is_needed(client, factory, db):
+    ev, _u, token = _setup(factory, db)
+    personal = client.get(f"/aceptar/{ev.event_code}/{token}").text
+    assert '<div id="birthRow" hidden>' in personal and "need_birth" in personal
+    general = client.get(f"/aceptar/{ev.event_code}").text
+    assert '<div id="birthRow">' in general                                                                  # el portal del QR sigue con cédula + fecha
+

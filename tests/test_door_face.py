@@ -77,7 +77,7 @@ def test_a_second_scan_of_someone_already_inside_does_not_duplicate(client, db, 
     _ranked(monkeypatch, "MATCH", [("1001", 0.30)])
     _scan(client, station)
     r = _scan(client, station)
-    assert r.json()["message"] == door.REPEAT_MSG and len(_logs(db, station)) == 1
+    assert r.json() == {"result": "ALREADY", "message": door.REPEAT_MSG} and len(_logs(db, station)) == 1
 
 
 def test_nothing_is_stored_from_the_frame(client, db, station, monkeypatch):
@@ -189,3 +189,36 @@ def test_the_self_service_page_has_both_buttons_and_hides_the_face_one_offline(c
     page = client.get(f"/kiosk/{station.id}/rostro").text
     assert "Entrar con mi rostro" in page and "Ingresar con cédula o QR" in page
     assert "navigator.onLine" in page and "golden-contingency" in page
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ correcciones tras la prueba en staging
+def test_someone_already_inside_sees_ya_habias_ingresado_and_the_strip_marks_it(client, db, station, monkeypatch):
+    get_storage().put(photo_key(station.tenant_id, "1001"), _jpg())
+    db.add(AccessLog(tenant_id=station.tenant_id, user_id="1001", record_type="Existente", event_id=station.id, registration_method="tradicional"))      # entró antes por cédula
+    db.commit()
+    _ranked(monkeypatch, "MATCH", [("1001", 0.30)])
+    r = _scan(client, station)
+    assert r.json() == {"result": "ALREADY", "message": "Ya habías ingresado."} and "P1001" not in r.text
+    assert len(_logs(db, station)) == 1                                                                    # no se duplica
+    entries = client.get(f"/api/events/{station.id}/door-face/recent").json()["entries"]
+    assert len(entries) == 1 and entries[0]["repeat"] is True and entries[0]["name"] == "P1001 Prueba"
+    assert client.get(f"/api/events/{station.id}/door-face/photo/{entries[0]['log_id']}").status_code == 200      # el digitador ve la foto de registro
+    assert client.post(f"/api/events/{station.id}/door-face/revert/{entries[0]['log_id']}").status_code == 404    # la entrada por cédula no se revierte desde aquí
+    events = [ref for (ref,) in db.query(SystemEvent.ref).filter_by(kind="door_face_repeat")]
+    assert events == [f"{station.id}:{entries[0]['log_id']}"]                                              # solo números internos, sin cédula
+
+
+def test_the_station_cap_is_high_and_the_per_person_limit_lives_in_the_screen(client, station):
+    assert door.DOOR_ATTEMPTS_PER_MIN == 30
+    page = client.get(f"/kiosk/{station.id}/rostro").text
+    assert "MAX_MISSES = 2" in page and "No te encontramos en la lista con reconocimiento facial" in page
+
+
+def test_parameters_warn_that_there_is_no_liveness_check_yet(client, factory, db):
+    factory.staff("coordinador", "coord9")
+    ev = factory.event("en_proceso", facial_enabled=True, face_door_enabled=True)
+    login(client, "coord9")
+    assert "Sin prueba de vida: requiere supervisión constante" in client.get(f"/kiosk/{ev.id}/parametros").text
+    ev.face_door_enabled = False
+    db.commit()
+    assert "Sin prueba de vida" not in client.get(f"/kiosk/{ev.id}/parametros").text

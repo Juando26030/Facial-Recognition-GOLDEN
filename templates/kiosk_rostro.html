@@ -40,7 +40,10 @@
 (function () {
     const EVENT_ID = {{ event.id }};
     const $ = (id) => document.getElementById(id);
-    let stream = null, busy = false;
+    let stream = null, busy = false, misses = 0, turnTimer = null;
+    const NOT_FOUND = {{ not_found|tojson }};
+    // Límite POR PERSONA (turno): 2 intentos seguidos sin coincidencia → «No te encontramos…» y la pantalla se reinicia sola para la siguiente persona (nunca bloquea el equipo).
+    const MAX_MISSES = 2;
     const say = (text, ok) => { const o = $('out'); o.hidden = false; o.textContent = text; o.className = 'msg' + (ok ? ' ok' : ''); };
     // Sin conexión (o con el modo contingencia del quiosco activo) el botón de rostro NO aparece; «Ingresar con cédula o QR» queda siempre.
     const canFace = () => navigator.onLine && !document.body.classList.contains('golden-contingency');
@@ -50,6 +53,7 @@
     refreshButton();
     const stop = () => { if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } $('video').srcObject = null; };
     const reset = (ms) => setTimeout(() => { $('out').hidden = true; $('camera').hidden = true; $('start').hidden = false; busy = false; refreshButton(); }, ms);
+    const endTurn = () => { misses = 0; clearTimeout(turnTimer); };
     $('docBtn').addEventListener('click', () => { say('Acércate al personal de acreditación con tu cédula o el QR de tu escarapela.'); reset(5000); });
     function frame() {                     // un fotograma a 640 px de lado mayor, en JPEG: solo vive en memoria hasta enviarlo
         const v = $('video'), scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
@@ -73,9 +77,17 @@
         try {
             const r = await fetch('/api/door-face', { method: 'POST', body: fd });
             const j = await r.json().catch(() => ({}));
-            say(r.ok ? j.message : (j.detail || 'Intenta de nuevo o ingresa con tu cédula o QR.'), r.ok && j.result === 'OK');
+            if (r.ok && (j.result === 'OK' || j.result === 'ALREADY')) { endTurn(); say(j.message, true); reset(4500); return; }
+            if (r.ok) {                                   // sin coincidencia o sin rostro: cuenta para el turno de ESTA persona
+                misses++;
+                clearTimeout(turnTimer); turnTimer = setTimeout(endTurn, 30000);          // si nadie vuelve a intentar en 30 s, es otra persona
+                if (misses >= MAX_MISSES) { endTurn(); say(NOT_FOUND); reset(6000); return; }
+                say(j.result === 'NO_FACE' ? j.message : 'No te reconocimos. Intenta una vez más, mirando de frente.');
+                reset(2500); return;
+            }
+            say(j.detail || 'Intenta de nuevo o ingresa con tu cédula o QR.');
         } catch (e) { say('Sin conexión: ingresa con tu cédula o QR en la acreditación.'); }
-        reset(4500);
+        endTurn(); reset(4500);
     });
     async function counter() {             // contador solo numérico, para el personal
         try { const r = await fetch(`/api/events/${EVENT_ID}/door-face/stats`, { cache: 'no-store' }); if (r.ok) { const d = await r.json(); $('counter').textContent = `Intentos ${d.attempts} · Coincidencias ${d.matches} · Sin coincidencia ${d.no_match}`; } } catch (e) { /* sin red */ }

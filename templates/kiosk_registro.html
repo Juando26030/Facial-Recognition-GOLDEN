@@ -661,9 +661,14 @@
             entries.forEach((e) => {
                 const card = document.createElement('div'); card.style.cssText = 'min-width:120px; text-align:center; font-size:0.8rem;';
                 const img = document.createElement('img'); img.alt = ''; img.style.cssText = 'width:96px; height:120px; object-fit:cover; border-radius:8px; background:#eee;';
-                img.src = photos[e.log_id] || (photos[e.log_id] = `/api/events/${EV}/door-face/photo/${e.log_id}`);
+                img.src = photos[e.log_id] || (photos[e.log_id] = `/api/events/${EV}/door-face/photo/${e.log_id}`);      // la misma URL para la misma entrada (sin recargar la foto cada 3 s)
                 const name = document.createElement('div'); name.textContent = e.name;
                 const at = document.createElement('div'); at.textContent = e.at; at.style.color = '#666';
+                if (e.repeat) {                                  // ya había entrado: no hay entrada nueva que revertir, solo se avisa
+                    card.style.outline = '2px solid #f0ad4e'; card.style.borderRadius = '8px';
+                    const tag = document.createElement('div'); tag.textContent = 'ya había entrado'; tag.style.cssText = 'color:#8a5a00; font-weight:700;';
+                    card.append(img, name, at, tag); box.appendChild(card); return;
+                }
                 const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-table-delete'; b.textContent = 'Revisar'; b.dataset.log = e.log_id;
                 card.append(img, name, at, b); box.appendChild(card);
             });

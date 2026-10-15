@@ -42,6 +42,7 @@ DEVICE = {"link": "web-link", "qr": "web-qr", "web": "web-portal"}
 
 
 LINK_MAX_FAILS, LINK_WINDOW = 5, timedelta(minutes=15)      # intentos fallidos por enlace personal y pausa (sin guardar IP ni User-Agent: la clave es la huella del enlace)
+LINK_DOC_NOT_FOUND = "No encontramos tu inscripción con ese documento. Acércate a la acreditación con tu cédula o QR."
 LINK_BLOCKED = "Demasiados intentos con este enlace. Espera unos 15 minutos o ingresa con tu cédula o QR en la acreditación."
 
 
@@ -53,25 +54,31 @@ def _link_failures(db: Session, token: str) -> int:
     return db.query(RateLimitEvent).filter(RateLimitEvent.kind == "aceptar_link_fail", RateLimitEvent.key == _link_key(token), RateLimitEvent.created_at > utcnow() - LINK_WINDOW).count()
 
 
+class NeedBirth(Exception):
+    """Enlace personal: la cédula coincide pero la base no tiene la fecha de nacimiento de esa persona: hay que pedirla (y bloquear si es menor)."""
+
+
 def _verify(db: Session, event: Event, cedula: str, token: str, birth_raw: str):
-    """(persona, asistente, vino_por_enlace, fecha_de_nacimiento). Por el enlace personal se exigen la CÉDULA y la fecha de nacimiento de ESA persona (la del código): si alguna no coincide,
-    el mismo mensaje genérico sin decir cuál falló, y tras LINK_MAX_FAILS fallos en LINK_WINDOW el enlace se pausa. El conteo vive en `rate_limit_events` con la huella del enlace (sin IP)."""
+    """(persona, asistente, vino_por_enlace, fecha_de_nacimiento).
+    * Página general (sin enlace): cédula + fecha, como siempre.
+    * Enlace personal: SOLO la cédula de ESA persona (la del código); la mayoría de edad sale de la fecha de nacimiento ya cargada en la base. Si la base no la tiene, entonces y solo
+      entonces se pide (NeedBirth) y se bloquea si es menor. Cédula equivocada = el mismo mensaje genérico; tras LINK_MAX_FAILS fallos en LINK_WINDOW el enlace se pausa
+      (conteo en `rate_limit_events` con la huella del enlace, sin IP)."""
     if not token:
         user, att, by_link = _resolve(db, event, cedula, token)
         return user, att, by_link, _check_birth(user, birth_raw)
     if _link_failures(db, token) >= LINK_MAX_FAILS:
         raise HTTPException(status_code=429, detail=LINK_BLOCKED)
     user, att, by_link = _resolve(db, event, "", token)
-    try:
-        if re.sub(r"[\s.]", "", cedula or "") != user.id:
-            raise HTTPException(status_code=404, detail=GENERIC_NOT_FOUND)
-        birth = _check_birth(user, birth_raw)
-    except HTTPException as exc:
-        if exc.status_code == 404:
-            security.record_event(db, "aceptar_link_fail", _link_key(token), None)
-        raise
+    if re.sub(r"[\s.]", "", cedula or "") != user.id:
+        security.record_event(db, "aceptar_link_fail", _link_key(token), None)
+        raise HTTPException(status_code=404, detail=LINK_DOC_NOT_FOUND)
     security.clear_events(db, "aceptar_link_fail", _link_key(token))
-    return user, att, by_link, birth
+    if user.birth_date is not None:
+        return user, att, by_link, user.birth_date
+    if not (birth_raw or "").strip():
+        raise NeedBirth()
+    return user, att, by_link, _check_birth(user, birth_raw)
 
 
 def _event(db: Session, code: str) -> Event:
@@ -188,7 +195,10 @@ def check(code: str, request: Request, cedula: str = Form(""), token: str = Form
     """B2e: la fecha de nacimiento se valida ANTES de mostrar el texto y de abrir la cámara. Un menor nunca ve la cámara ni se guarda nada suyo."""
     _limit(request, "aceptar_check", 30)
     event = _event(db, code)
-    user, _att, _link, birth = _verify(db, event, cedula, token, birth_date)
+    try:
+        user, _att, _link, birth = _verify(db, event, cedula, token, birth_date)
+    except NeedBirth:
+        return {"status": "need_birth"}
     if minors.is_minor(birth):
         user.birth_date = birth
         user.is_biometric_enabled = False
@@ -209,7 +219,10 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
         raise HTTPException(status_code=409, detail="El texto cambió: recarga la página")
     if decision not in ("accept", "reject"):
         raise HTTPException(status_code=400, detail="Decisión no válida")
-    user, att, by_link, birth = _verify(db, event, cedula, token, birth_date)
+    try:
+        user, att, by_link, birth = _verify(db, event, cedula, token, birth_date)
+    except NeedBirth:
+        raise HTTPException(status_code=400, detail="Escribe tu fecha de nacimiento")
     uid = user.id
     ch = "link" if by_link else ("qr" if channel == "qr" else "web")
     user.birth_date = birth
