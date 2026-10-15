@@ -225,3 +225,44 @@ def test_parameters_warn_that_there_is_no_liveness_check_yet(client, factory, db
     ev.face_door_liveness, ev.face_door_enabled = False, False
     db.commit()
     assert "Sin prueba de vida" not in client.get(f"/kiosk/{ev.id}/parametros").text
+
+
+def test_after_a_revert_the_person_can_enter_again_by_face_and_the_new_entry_is_marked(client, db, station, monkeypatch):
+    get_storage().put(photo_key(station.tenant_id, "1001"), _jpg())
+    _ranked(monkeypatch, "MATCH", [("1001", 0.30)])
+    assert _scan(client, station).json()["result"] == "OK"
+    first = client.get(f"/api/events/{station.id}/door-face/recent").json()["entries"][0]
+    assert client.post(f"/api/events/{station.id}/door-face/revert/{first['log_id']}").status_code == 200
+    again = _scan(client, station)
+    assert again.json()["result"] == "OK"                                                                  # revertir anula SOLO esa entrada
+    entries = client.get(f"/api/events/{station.id}/door-face/recent").json()["entries"]
+    assert entries[0]["after_revert"] is True and entries[0]["repeat"] is False and len(_logs(db, station)) == 1
+
+
+def test_with_auto_print_the_face_entry_opens_the_badge_like_the_document_entry(client, db, station, monkeypatch):
+    station.auto_print_badge = True
+    db.commit()
+    _ranked(monkeypatch, "MATCH", [("1001", 0.30)])
+    r = _scan(client, station).json()
+    assert r["result"] == "OK" and r["print_user_id"] == "1001"
+    page = client.get(f"/kiosk/{station.id}/rostro").text
+    assert "escarapela/imprimir" in page and "print-log" in page
+    station.auto_print_badge = False
+    db.commit()
+    db.query(AccessLog).delete()
+    db.commit()
+    assert "print_user_id" not in _scan(client, station).json()
+
+
+def test_the_door_screen_checks_the_server_actively_and_is_white(client, station):
+    page = client.get(f"/kiosk/{station.id}/rostro").text
+    assert "/health?t=" in page and "AbortController" in page and "setInterval(ping" in page and "setUp(false)" in page
+    assert "background: #fff" in page
+
+
+def test_registro_has_a_switch_to_open_the_door_screen_only_when_enabled(client, db, station):
+    page = client.get(f"/kiosk/{station.id}/registro").text
+    assert 'id="openDoorScreen"' in page and f"/kiosk/{station.id}/rostro" in page
+    station.face_door_enabled = False
+    db.commit()
+    assert 'id="openDoorScreen"' not in client.get(f"/kiosk/{station.id}/registro").text

@@ -140,6 +140,12 @@
         {% if event.facial_enabled %}
         <!-- PESTAÑA: ESCÁNER Y EDICIÓN EN VIVO (solo si el evento tiene reconocimiento facial activo) -->
         <div id="scanner" class="section active">
+            {% if event.face_door_enabled and event.facial_enabled %}
+            <div style="display:flex; justify-content:flex-end; margin-bottom:0.6rem;">
+                <label style="display:flex; gap:8px; align-items:center; font-weight:600; cursor:pointer;"><input type="checkbox" id="openDoorScreen" style="width:18px; height:18px;"> Pantalla de autoservicio «Entrar con mi rostro»</label>
+            </div>
+            <script>document.getElementById('openDoorScreen').addEventListener('change', (e) => { if (e.target.checked) location.href = '/kiosk/{{ event.id }}/rostro'; });</script>
+            {% endif %}
             <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
                 <div class="camera-wrapper">
                     <!-- Autorización biométrica voluntaria (L1, Ley 1581): la cámara NO se enciende hasta que la PERSONA acepta en la pantalla completa (static/js/consent-gate.js); quien no acepta
@@ -670,6 +676,11 @@
                     card.append(img, name, at, tag); box.appendChild(card); return;
                 }
                 const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-table-delete'; b.textContent = 'Revisar'; b.dataset.log = e.log_id;
+                if (e.after_revert) {                            // le habían revertido una entrada antes: que el personal la mire
+                    card.style.outline = '2px solid #dc3545'; card.style.borderRadius = '8px';
+                    const tag = document.createElement('div'); tag.textContent = 'entrada tras reversión'; tag.style.cssText = 'color:#a12631; font-weight:700;';
+                    card.append(img, name, at, tag, b); box.appendChild(card); return;
+                }
                 card.append(img, name, at, b); box.appendChild(card);
             });
         } catch (err) { /* sin red: se reintenta */ }

@@ -29,7 +29,18 @@ _limiter = SlidingLimiter()
 MAX_SELFIE_BYTES = 8 * 1024 * 1024
 GENERIC_NOT_FOUND = "No encontramos tu inscripción con ese documento y esa fecha. Acércate a la acreditación con tu cédula o QR."
 LINK_NOT_FOUND = "Este enlace no es válido o ya no está vigente. Acércate a la acreditación con tu cédula o QR."
-MINOR_MESSAGE = "No puedes usar el reconocimiento facial. Ingresa con tu cédula o QR en la acreditación."
+# Mensaje para menores: texto APROBADO por la auditora, en bloques separados y sin cambiar palabras. Si la fecha la escribió la propia persona (no venía en la base), se omite
+# solo la palabra «registrada» (decisión del dueño del producto: el resto es literal).
+MINOR_TITLE = "Acceso facial restringido por edad"
+MINOR_REASON = "Según tu fecha de nacimiento registrada, eres menor de 18 años."
+MINOR_REASON_TYPED = "Según tu fecha de nacimiento, eres menor de 18 años."
+MINOR_SOLUTION = "🎫 Tu entrada está garantizada: Puedes ingresar al evento sin restricciones presentando tu documento de identidad o el código QR de tu escarapela."
+MINOR_ERROR = "¿Hay un error en tu fecha de nacimiento? Escribe a soporteit@goldenlogisticas.com o actualiza el dato directamente en la zona de acreditación el día del evento."
+
+
+def _minor(from_base: bool) -> dict:
+    blocks = {"title": MINOR_TITLE, "reason": MINOR_REASON if from_base else MINOR_REASON_TYPED, "solution": MINOR_SOLUTION, "error": MINOR_ERROR}
+    return {"status": "minor", "minor": blocks, "message": " ".join(blocks.values())}
 
 
 def _already(db: Session, event: Event, uid: str):
@@ -200,10 +211,11 @@ def check(code: str, request: Request, cedula: str = Form(""), token: str = Form
     except NeedBirth:
         return {"status": "need_birth"}
     if minors.is_minor(birth):
+        from_base = user.birth_date is not None
         user.birth_date = birth
         user.is_biometric_enabled = False
         privacy.purge_person(db, event.tenant_id, user.id)
-        return {"status": "minor", "message": MINOR_MESSAGE}
+        return _minor(from_base)
     return _already(db, event, user.id) or {"status": "ok", "selfie": _need_selfie(event)}
 
 
@@ -225,11 +237,12 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
         raise HTTPException(status_code=400, detail="Escribe tu fecha de nacimiento")
     uid = user.id
     ch = "link" if by_link else ("qr" if channel == "qr" else "web")
+    from_base = user.birth_date is not None
     user.birth_date = birth
     if minors.is_minor(birth):
         user.is_biometric_enabled = False
         privacy.purge_person(db, event.tenant_id, uid)
-        return {"status": "minor", "message": MINOR_MESSAGE}
+        return _minor(from_base)
     done = _already(db, event, uid)
     if done:
         db.rollback()                                          # nada cambia: ni la foto, ni el registro, ni la fecha de nacimiento escrita

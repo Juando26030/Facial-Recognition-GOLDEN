@@ -7,6 +7,8 @@ Reglas (decididas con Juan David):
   * Supervisión sin clics: el personal ve la franja de las últimas entradas (foto de registro, nombre y hora) y puede revertir una con «revisar».
   * El límite de intentos es por PERSONA/turno y lo lleva la pantalla: tras 2 intentos seguidos sin coincidencia muestra «No te encontramos…» y se reinicia sola para la
     siguiente persona. El servidor solo pone un tope ALTO por equipo contra abuso (DOOR_ATTEMPTS_PER_MIN por cuenta del personal y evento; `rate_limit_events`, sin IP).
+  * «Revisar» anula SOLO esa entrada: si la persona sigue aceptada (foto y vector intactos) puede volver a entrar por rostro, y esa nueva entrada sale marcada
+    «entrada tras reversión» en la franja.
   * Si la persona ya había entrado: «Ya habías ingresado» (sin nombre) y la franja lo muestra marcado «ya había entrado» (hecho `door_face_repeat` con la entrada original).
   * Contador SOLO numérico (intentos, coincidencias, sin coincidencia) en `system_events` (sin tabla nueva): la distancia y el margen se guardan como números para calibrar el 0,50."""
 import json
@@ -39,6 +41,7 @@ PHOTO_WINDOW = timedelta(hours=12)        # la foto de registro solo se ve en la
 NO_FACE_MSG = "No vimos tu rostro. Mira de frente a la cámara e intenta de nuevo."
 OK_MSG = "¡Listo! Tu ingreso quedó registrado."
 REPEAT_MSG = "Ya habías ingresado."
+REVERT_DETAIL = "entrada con rostro revertida por el personal"
 BUSY_MSG = "Espera un momento e intenta de nuevo."
 OFF_MSG = "La entrada con rostro no está activa en este evento."
 
@@ -114,9 +117,16 @@ def door_face(event_id: int = Form(...), file: UploadFile = File(...), turn: Upl
         _count(event, "match_repeat", best[1], margin)
         record_system_event("door_face_repeat", ref=f"{event.id}:{first[0]}")       # solo el número interno de la entrada original: la franja la muestra «ya había entrado»
         return {"result": "ALREADY", "message": REPEAT_MSG}
-    db.add(AccessLog(tenant_id=event.tenant_id, user_id=uid, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id, registration_method=METHOD))
+    log = AccessLog(tenant_id=event.tenant_id, user_id=uid, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id, registration_method=METHOD)
+    db.add(log)
     _upsert_attendee(db, event.id, uid, event.tenant_id)
     db.commit()
+    reverted_before = db.query(PersonChange.id).filter(PersonChange.event_id == event.id, PersonChange.user_id == uid, PersonChange.detail == REVERT_DETAIL).first()
+    if reverted_before:                                   # ya le habían revertido una entrada por rostro: la franja marca esta para que el personal la mire
+        record_system_event("door_face_after_revert", ref=f"{event.id}:{log.id}")
+    if event.auto_print_badge:                            # autoimpresión del evento: la pantalla de la puerta abre la escarapela (la cédula viaja solo al equipo del personal, no se muestra)
+        _count(event, "match", best[1], margin)
+        return {"result": "OK", "message": OK_MSG, "print_user_id": uid}
     _count(event, "match", best[1], margin)
     return {"result": "OK", "message": OK_MSG}                      # sin nombre en la pantalla pública
 
@@ -141,13 +151,15 @@ def door_recent(event_id: int, db: Session = Depends(get_db), staff: StaffUser =
     event = get_event_for_staff(event_id, db, staff)
     rows = (db.query(AccessLog, User).join(User, (User.id == AccessLog.user_id) & (User.tenant_id == AccessLog.tenant_id))
             .filter(AccessLog.event_id == event.id, AccessLog.registration_method == METHOD).order_by(AccessLog.id.desc()).limit(RECENT).all())
+    marked = {int(ref.split(":", 1)[1]) for (ref,) in db.query(SystemEvent.ref).filter(SystemEvent.kind == "door_face_after_revert", SystemEvent.ref.like(f"{event.id}:%"))
+              if ref.split(":", 1)[1].isdigit()}
     out = [{"log_id": log.id, "user_id": u.id, "name": f"{u.first_name or ''} {u.last_name or ''}".strip(), "at": to_local(log.timestamp).strftime("%H:%M:%S"),
-            "repeat": False, "_sort": log.timestamp} for log, u in rows]
+            "repeat": False, "after_revert": log.id in marked, "_sort": log.timestamp} for log, u in rows]
     for at, log_id in _repeat_log_ids(db, event, utcnow() - PHOTO_WINDOW):
         log = db.get(AccessLog, log_id)
         u = db.get(User, (log.user_id, event.tenant_id)) if log is not None and log.event_id == event.id else None
         if u is not None:
-            out.append({"log_id": log.id, "user_id": u.id, "name": f"{u.first_name or ''} {u.last_name or ''}".strip(), "at": to_local(at).strftime("%H:%M:%S"), "repeat": True, "_sort": at})
+            out.append({"log_id": log.id, "user_id": u.id, "name": f"{u.first_name or ''} {u.last_name or ''}".strip(), "at": to_local(at).strftime("%H:%M:%S"), "repeat": True, "after_revert": False, "_sort": at})
     out = sorted(out, key=lambda e: e["_sort"], reverse=True)[:RECENT]
     for e in out:
         e.pop("_sort")
@@ -188,7 +200,7 @@ def door_revert(event_id: int, log_id: int, db: Session = Depends(get_db), staff
     uid = log.user_id
     db.delete(log)
     db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=uid, staff_user_id=staff.id, kind="registration_status",
-                        old_value="Registrado", new_value="No registrado", detail="entrada con rostro revertida por el personal"))
+                        old_value="Registrado", new_value="No registrado", detail=REVERT_DETAIL))
     db.commit()
     record_system_event("door_face", ref=str(event.id), detail="reverted")
     return {"reverted": True}

@@ -58,3 +58,8 @@ En Parámetros, solo un **super administrador** ve «Permitir imprimir la foto b
 
 ## Revisión de la selfie en el servidor (B2d)
 Además de la revisión simple del celular, el servidor revisa la selfie **antes** de registrar la aceptación: **una sola cara**, de **tamaño suficiente**, **nítida** y con **luz razonable**. Si no, la persona ve el motivo («En la foto aparece más de una persona…», «Tu cara se ve muy pequeña…», etc.), la repite y **nada queda registrado** (ni la aceptación ni la foto). Para probarlo: envía una foto con dos personas, otra muy lejana y otra a oscuras; las tres deben pedir repetir.
+
+## Mensaje para menores (texto de la auditora)
+Cuando la persona resulta menor de 18 años (en el enlace personal o en la página del QR), ve en bloques: «Acceso facial restringido por edad» / «Según tu fecha de nacimiento registrada, eres menor de 18 años.» / el recuadro destacado «🎫 Tu entrada está garantizada: …» / y al final «¿Hay un error en tu fecha de nacimiento? …». Si la fecha la **escribió la propia persona** (no venía en la base), la segunda frase dice «Según tu fecha de nacimiento, eres menor de 18 años.» (sin «registrada»).
+
+**Casilla de mayoría de edad:** solo aparece en eventos de **terceros** (es la declaración «Declaro bajo la gravedad de juramento que tengo 18 años o más», que acompaña al texto de la auditora para ese tipo de evento). En eventos propios no debe verse; un error de estilo la mostraba vacía y ya quedó corregido.

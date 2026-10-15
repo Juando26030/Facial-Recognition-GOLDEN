@@ -67,3 +67,10 @@ En la pantalla de **Registro** del evento aparece la franja **«Entradas con ros
 **Si el paso 1 falla SIEMPRE** (incluso girando bien), es la dirección de la cámara de ese equipo: dímelo y cambio la variable `LIVENESS_SIGN` (sin programar). **Si falla a veces**, se puede bajar el giro mínimo (`LIVENESS_MIN_TURN`, hoy 0,18). Si no queda confiable para el 26, apaga la casilla y el piloto sale con supervisión humana (C + D), como decidiste.
 
 **Lo que NO cubre:** un **video** de la persona girando justo hacia el lado pedido podría pasar. Por eso la franja de supervisión sigue siendo obligatoria.
+
+## 6. Cambios tras la prueba del 16 de octubre
+- **Sin conexión, con la pantalla abierta:** la pantalla consulta al servidor cada 4 segundos. Si no responde (o falla cualquier petición), el botón «Entrar con mi rostro» **desaparece** y queda «Ingresar con cédula o QR»; vuelve solo cuando el servidor responde otra vez. *Prueba:* abre la pantalla, apaga el wifi y espera unos 5 segundos → el botón desaparece; enciéndelo → vuelve.
+- **Después de «Revisar»:** revertir anula **solo esa entrada**. Si la persona sigue aceptada, puede volver a entrar por rostro; esa nueva entrada sale en la franja marcada en rojo **«entrada tras reversión»** para que la mires. (En el código no había nada que la bloqueara; si en tu prueba no la reconoció, lo más probable es que su distancia quedara por encima de 0,50 en ese intento: mira las distancias del contador.)
+- **Autoimpresión:** si el evento tiene la autoimpresión activada, al entrar por rostro se abre la escarapela para imprimir, igual que con cédula. En el equipo de la puerta **permite las ventanas emergentes** del sitio (el navegador lo pregunta la primera vez). La foto biométrica de la escarapela sigue en blanco mientras su interruptor esté apagado.
+- **Desde Registro:** en la pestaña «Escáner de Acceso» hay un interruptor «Pantalla de autoservicio «Entrar con mi rostro»» (solo si el evento tiene la entrada con rostro activada) que abre esta pantalla.
+- **Diseño:** fondo blanco con detalles azules y dorados, botones grandes, legible a distancia.

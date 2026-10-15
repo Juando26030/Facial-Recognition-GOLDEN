@@ -26,6 +26,10 @@
   .check input { width:20px; height:20px; margin-top:2px; }
   .voluntary { font-weight:700; font-size:1.02rem; background:#fff8e1; border:1px solid #f0d27a; border-radius:10px; padding:10px 12px; margin:14px 0 4px; }
   .operator { font-size:.8rem; color:var(--muted); margin:10px 0 0; }
+  [hidden] { display:none !important; }          /* sin esto, `.check { display:flex }` mostraba la casilla de mayoría de edad vacía en los eventos propios */
+  .minor h2 { font-size:1.15rem; margin:0 0 8px; color:var(--dark); }
+  .minor .solution { font-weight:700; background:#fff8e1; border:2px solid var(--gold); border-radius:12px; padding:12px 14px; margin:12px 0; }
+  .minor .error { font-size:.9rem; color:var(--muted); margin-top:16px; }
 </style>
 </head>
 <body>
@@ -59,6 +63,12 @@
     <button type="button" class="primary" id="send" disabled>Enviar mi selfie</button>
   </section>
   <div id="out" class="msg" role="status" aria-live="polite" hidden></div>
+  <section id="minorBox" class="minor" role="status" aria-live="polite" hidden>
+    <h2 id="minorTitle"></h2>
+    <p id="minorReason"></p>
+    <p id="minorSolution" class="solution"></p>
+    <p id="minorError" class="error"></p>
+  </section>
 </main>
 <script src="{{ url_for('static', path='js/photo-capture.js') }}"></script>
 <script>
@@ -70,6 +80,11 @@
   const already = {{ already|tojson }};
   const $ = (id) => document.getElementById(id);
   let block = null, selfieBlob = null;
+  const showMinor = (m) => {                     // texto de la auditora, en bloques separados
+    ['step1', 'step2', 'step3'].forEach((id) => { $(id).hidden = true; }); $('out').hidden = true;
+    $('minorTitle').textContent = m.title; $('minorReason').textContent = m.reason; $('minorSolution').textContent = m.solution; $('minorError').textContent = m.error;
+    $('minorBox').hidden = false; window.scrollTo(0, 0);
+  };
   const cap = window.PhotoCapture.mount($('selfieBox'), { onChange: (b) => { selfieBlob = b; $('send').disabled = !b; } });
   const say = (t, bad) => { const o = $('out'); o.hidden = false; o.textContent = t; o.style.borderColor = bad ? '#c0392b' : ''; };
   const identity = () => { const fd = new FormData(); if (token) fd.append('token', token); fd.append('cedula', $('cedula').value.trim()); fd.append('birth_date', $('birth').value); return fd; };
@@ -89,6 +104,7 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return say(j.detail || 'No se pudo comprobar. Intenta de nuevo o ingresa con tu cédula o QR.', true);
       if (j.status === 'need_birth') { $('birthRow').hidden = false; $('cedula').readOnly = true; return say('Escribe también tu fecha de nacimiento y pulsa «Continuar».'); }
+      if (j.status === 'minor' && j.minor) return showMinor(j.minor);
       if (j.status === 'minor' || j.status === 'already') { $('step1').hidden = true; return say(j.message); }
       block = await load(); if (!block) return;
       $('title').textContent = block.title;
@@ -114,6 +130,7 @@
     try {
       const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}`, { method: 'POST', body: fd });
       const j = await r.json().catch(() => ({}));
+      if (r.ok && j.status === 'minor' && j.minor) { cap.reset(); selfieBlob = null; fd.delete('file'); return showMinor(j.minor); }
       if (r.ok) { $('step2').hidden = true; $('step3').hidden = true; say(j.message || 'Listo.'); cap.reset(); selfieBlob = null; f = null; fd.delete('file'); }          // la foto no queda colgada en la pestaña
       else { say(j.detail || 'No se pudo completar. Intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }
     } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }

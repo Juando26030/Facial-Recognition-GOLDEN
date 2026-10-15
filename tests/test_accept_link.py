@@ -114,7 +114,7 @@ def test_birth_date_is_checked_before_the_text_and_the_camera_and_a_minor_never_
     assert ok == {"status": "ok", "selfie": True}
     minor_birth = date(date.today().year - 12, 1, 1).isoformat()
     m = client.post(url, data={"token": token, "cedula": "1001", "birth_date": minor_birth}).json()
-    assert m["status"] == "minor" and "No puedes usar el reconocimiento facial" in m["message"]
+    assert m["status"] == "minor" and m["minor"]["title"] == "Acceso facial restringido por edad" and m["minor"]["reason"] == "Según tu fecha de nacimiento, eres menor de 18 años."
     db.expire_all()
     u = db.query(User).filter_by(id="1001").one()
     assert u.is_biometric_enabled is False and u.face_encoding is None and not get_storage().exists(photo_key(ev.tenant_id, "1001"))
@@ -484,3 +484,29 @@ def test_the_personal_page_only_shows_the_document_field_until_the_date_is_neede
     general = client.get(f"/aceptar/{ev.event_code}").text
     assert '<div id="birthRow">' in general                                                                  # el portal del QR sigue con cédula + fecha
 
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ mensaje de menor (texto de la auditora) y casilla de mayoría de edad
+def test_a_minor_from_the_base_sees_the_auditors_message_in_separate_blocks(client, factory, db):
+    from app.routers import aceptar
+    ev, _u, token = _setup(factory, db, birth=date(date.today().year - 12, 1, 1))
+    m = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "1001"}).json()
+    assert m["status"] == "minor" and m["minor"] == {"title": "Acceso facial restringido por edad", "reason": "Según tu fecha de nacimiento registrada, eres menor de 18 años.",
+                                                     "solution": aceptar.MINOR_SOLUTION, "error": aceptar.MINOR_ERROR}
+    assert aceptar.MINOR_SOLUTION.startswith("🎫 Tu entrada está garantizada:") and "soporteit@goldenlogisticas.com" in aceptar.MINOR_ERROR
+
+
+def test_a_minor_who_typed_the_date_on_the_qr_page_sees_it_without_registrada(client, factory, db):
+    ev, _u, _token = _setup(factory, db, birth=None)
+    kid = date(date.today().year - 12, 1, 1).isoformat()
+    m = client.post(f"/api/aceptar/{ev.event_code}/check", data={"cedula": "1001", "birth_date": kid}).json()
+    assert m["minor"]["reason"] == "Según tu fecha de nacimiento, eres menor de 18 años."
+    page = client.get(f"/aceptar/{ev.event_code}").text
+    assert 'id="minorBox"' in page and 'class="solution"' in page
+
+
+def test_the_adult_checkbox_stays_hidden_in_golden_events(client, factory, db):
+    ev, _u, token = _setup(factory, db)
+    page = client.get(f"/aceptar/{ev.event_code}/{token}").text
+    assert "[hidden] { display:none !important; }" in page and 'id="adultRow" hidden' in page
+    assert legal_texts.render(ev, web=True)["adult_checkbox"] is None                                       # en eventos propios no hay casilla aparte (solo en eventos de terceros)
