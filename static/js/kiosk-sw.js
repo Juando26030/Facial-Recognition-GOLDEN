@@ -1,5 +1,5 @@
 /* Service worker del quiosco (Fase 3, docs/15 «Modo contingencia»): SOLO guarda el «caparazón» para poder recargar la página de registro sin red:
-     - la página `/kiosk/<id>/registro` (el HTML del propio quiosco: nombre del operador y datos del evento, sin la lista de personas), y
+     - las páginas `/kiosk/<id>/registro` y `/kiosk/<id>/rostro` (el HTML del propio quiosco: nombre del operador y datos del evento, sin la lista de personas), y
      - los archivos estáticos `/static/*` (JS, CSS, imágenes) que esa página usa.
    NUNCA toca (ni guarda) respuestas de la API (`/api/*`, incluido el roster local), `/health`, `/ready`, el inicio/cierre de sesión, otros orígenes ni peticiones que no sean GET: para
    todo eso el worker no interviene y el navegador va directo a la red.
@@ -15,7 +15,7 @@ const BUILD = '__BUILD__';
 const CACHE_PREFIX = 'golden-kiosk-shell-';
 const CACHE = CACHE_PREFIX + BUILD;
 const NETWORK_TIMEOUT_MS = 4000;
-const KIOSK_PAGE = /^\/kiosk\/\d+\/registro\/?$/;
+const KIOSK_PAGE = /^\/kiosk\/\d+\/(registro|rostro)\/?$/;       // el registro y la pantalla de la puerta (autoservicio «Entrar con mi rostro»)
 
 /* Clave de caché: la página sin `?…` y sin «/» final; los estáticos con su `?v=` (y, sin red, cualquier versión sirve). */
 function keyOf(rawUrl, isPage) {

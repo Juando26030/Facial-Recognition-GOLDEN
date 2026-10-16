@@ -74,3 +74,22 @@ En la pantalla de **Registro** del evento aparece la franja **«Entradas con ros
 - **Autoimpresión:** si el evento tiene la autoimpresión activada, al entrar por rostro se abre la escarapela para imprimir, igual que con cédula. En el equipo de la puerta **permite las ventanas emergentes** del sitio (el navegador lo pregunta la primera vez). La foto biométrica de la escarapela sigue en blanco mientras su interruptor esté apagado.
 - **Desde Registro:** en la pestaña «Escáner de Acceso» hay un interruptor «Pantalla de autoservicio «Entrar con mi rostro»» (solo si el evento tiene la entrada con rostro activada) que abre esta pantalla.
 - **Diseño:** fondo blanco con detalles azules y dorados, botones grandes, legible a distancia.
+
+## 7. Recargar la pantalla de la puerta SIN red (modo contingencia)
+**Qué hace.** Con el **modo contingencia encendido en el servidor**, el equipo guarda la pantalla de la puerta y la de **Registro** (con sus archivos). Si la pantalla se recarga sin red, **abre igual** (sin pantalla en blanco) y, al ver que no hay conexión, oculta «Entrar con mi rostro» y deja el botón **«Ingresar con cédula o QR (sin conexión)»**, que lleva a **Registro**, donde se acredita por cédula o QR con la **lista guardada en el equipo** (sin red).
+
+**Importante:** esto **solo funciona si el modo contingencia está encendido** (en staging sí; en producción sigue **apagado** hasta tu orden escrita). Con la contingencia apagada, esta pantalla **no** se guarda y sin red no abre.
+
+**Preparar el equipo (una vez, CON conexión):**
+1. Entra con el usuario del personal y abre **`/kiosk/<evento>/registro`** y espera a que cargue la lista (el sistema guarda la copia local de la lista de personas).
+2. Abre **`/kiosk/<evento>/rostro`** y déjala unos segundos: guarda esta pantalla y los archivos de Registro.
+3. (iPad/tablet) Instálala como app («Agregar a pantalla de inicio») si así la vas a usar.
+
+**Qué probar (del 21 al 23, en cada equipo real: portátil, iPad instalado, Android):**
+1. Con la pantalla de la puerta abierta, apaga el wifi. *Debes ver:* en unos 5 segundos el botón de rostro desaparece, aparece el aviso «Sin conexión…» y el botón «Ingresar con cédula o QR (sin conexión)».
+2. **Recarga** la página sin red (F5 o cierra y abre). *Debes ver:* la pantalla **abre** (no queda en blanco ni da error).
+3. Pulsa «Ingresar con cédula o QR (sin conexión)». *Debes ver:* Registro abierto; busca una cédula y acredítala con la lista local. Verifica que aparezca la franja o marca de modo contingencia.
+4. Enciende el wifi y recarga. *Debes ver:* vuelve «Entrar con mi rostro» y, en Registro, la cola de acreditaciones sin red se envía sola.
+5. Anota cualquier equipo donde el paso 2 dé pantalla en blanco (marca, modelo y navegador): en Safari puede variar.
+
+**Qué NO cubre:** el escáner de QR con cámara en iPad usa una pieza que se descarga la primera vez que se abre Registro con conexión; si no se abrió así, sin red solo funciona escribir la cédula.

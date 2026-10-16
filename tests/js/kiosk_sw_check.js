@@ -156,5 +156,13 @@ const O = 'https://app.test';
   const w2 = makeWorker('rev2-bbb'); w2.store.set('golden-kiosk-shell-rev1-aaa', new Map());
   await new Promise((resolve) => w2.listeners.activate({ waitUntil: (p) => p.then(resolve) }));
   assert.deepStrictEqual([...w2.store.keys()], []); await w2.dispatch(`${O}/static/js/a.js`); assert.deepStrictEqual([...w2.store.keys()], ['golden-kiosk-shell-rev2-bbb']);
+  // la pantalla de la puerta (autoservicio) también se guarda: recargada sin red sale de la copia, igual que Registro
+  const wd = makeWorker('rev9-door');
+  wd.setNet(async () => R2('pantalla de la puerta', 200, {})); let rd = await wd.dispatch(`${O}/kiosk/5/rostro`, { mode: 'navigate' }); assert.ok(rd.handled, 'la pantalla de la puerta la atiende el worker');
+  wd.setNet(async () => { throw new TypeError('sin red'); }); rd = await wd.dispatch(`${O}/kiosk/5/rostro`, { mode: 'navigate' }); assert.strictEqual(await rd.res.text(), 'pantalla de la puerta', 'sin red: la copia guardada de la puerta');
+  rd = await wd.dispatch(`${O}/kiosk/5/rostro?x=1`, { mode: 'navigate' }); assert.strictEqual(await rd.res.text(), 'pantalla de la puerta', 'con ?… también');
+  assert.strictEqual((await wd.dispatch(`${O}/api/door-face`, { method: 'POST' })).handled, false, 'la API de la puerta nunca pasa por el worker');
+  assert.strictEqual((await wd.dispatch(`${O}/api/events/5/door-face/recent`)).handled, false);
+  assert.strictEqual((await wd.dispatch(`${O}/kiosk/5/otra`, { mode: 'navigate' })).handled, false, 'otras páginas del quiosco: no');
   console.log('kiosk-sw.js: solo caparazón, red primero, versionado y sin API OK');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -44,6 +44,7 @@
 <script>
 (function () {
     const EVENT_ID = {{ event.id }};
+    const CONTINGENCY = {{ 'true' if contingency_enabled else 'false' }};      // modo contingencia del servidor (copia local de la lista + service worker)
     const LIVENESS = {{ 'true' if event.face_door_liveness else 'false' }};      // prueba de movimiento: un fotograma de frente y otro tras pedir un giro elegido por el servidor
     const $ = (id) => document.getElementById(id);
     let stream = null, busy = false, misses = 0, turnTimer = null;
@@ -54,10 +55,10 @@
     // Sin conexión (o con el modo contingencia del quiosco activo) el botón de rostro NO aparece; «Ingresar con cédula o QR» queda siempre.
     // `navigator.onLine` no basta (con el wifi apagado muchos equipos siguen diciendo «en línea»): se consulta /health cada 4 s con 2,5 s de espera, y cualquier fallo de red
     // de una petición también cuenta como «sin conexión». El botón vuelve solo cuando el servidor responde de nuevo.
-    let serverUp = true;
+    let serverUp = navigator.onLine;       // si la página abrió desde la copia guardada, sin red, nace «sin conexión»
     const canFace = () => serverUp && navigator.onLine && !document.body.classList.contains('golden-contingency');
     const refreshButton = () => { $('faceBtn').hidden = !canFace(); };
-    const setUp = (up) => { if (serverUp !== up) { serverUp = up; refreshButton(); } };
+    const setUp = (up) => { if (serverUp !== up) { serverUp = up; refreshButton(); if (typeof syncDocButton === 'function') { syncDocButton(); offlineNotice(); } } };
     async function ping() {
         const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2500);
         try { const r = await fetch('/health?t=' + Date.now(), { cache: 'no-store', signal: ctl.signal }); setUp(r.ok); }
@@ -71,7 +72,17 @@
     const stop = () => { if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } $('video').srcObject = null; };
     const reset = (ms) => setTimeout(() => { $('out').hidden = true; $('camera').hidden = true; $('start').hidden = false; busy = false; refreshButton(); }, ms);
     const endTurn = () => { misses = 0; clearTimeout(turnTimer); };
-    $('docBtn').addEventListener('click', () => { say('Acércate al personal de acreditación con tu cédula o el QR de tu escarapela.'); reset(5000); });
+    const REGISTRO = `/kiosk/${EVENT_ID}/registro`;
+    // «Ingresar con cédula o QR»: con conexión, la persona se dirige al personal; SIN conexión lleva a Registro, que (con el modo contingencia) abre desde su copia guardada y acredita por
+    // cédula o QR con la lista local, sin red.
+    const syncDocButton = () => { $('docBtn').textContent = serverUp ? 'Ingresar con cédula o QR' : 'Ingresar con cédula o QR (sin conexión)'; };
+    $('docBtn').addEventListener('click', () => {
+        if (!serverUp) { location.href = REGISTRO; return; }
+        say('Acércate al personal de acreditación con tu cédula o el QR de tu escarapela.'); reset(5000);
+    });
+    syncDocButton();
+    // Sin conexión y con el modo contingencia: el propio equipo ofrece la entrada por cédula/QR de inmediato (sin pantalla en blanco ni esperar al personal).
+    const offlineNotice = () => { if (!serverUp && CONTINGENCY) say('Sin conexión. Ingresa con tu cédula o QR en el modo sin conexión.'); else if (serverUp && !busy) $('out').hidden = true; };
     function frame() {                     // un fotograma a 640 px de lado mayor, en JPEG: solo vive en memoria hasta enviarlo
         const v = $('video'), scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
         const c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
@@ -130,6 +141,20 @@
     async function counter() {             // contador solo numérico, para el personal
         try { const r = await fetch(`/api/events/${EVENT_ID}/door-face/stats`, { cache: 'no-store' }); if (r.ok) { const d = await r.json(); $('counter').textContent = `Intentos ${d.attempts} · Coincidencias ${d.matches} · Sin coincidencia ${d.no_match}`; } } catch (e) { /* sin red */ }
     }
+    // Service worker del quiosco (solo con el modo contingencia): guarda esta pantalla y la de Registro con sus archivos para que, si se recarga sin red, abra y lleve a la entrada
+    // por cédula/QR sin conexión. Nunca guarda la API ni la lista (eso lo hace contingency.js al abrir Registro con conexión).
+    if (CONTINGENCY && 'serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/kiosk/sw.js').then(() => navigator.serviceWorker.ready).then(async (reg) => {
+        const own = [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((e) => e.name).filter((n) => n.startsWith(location.origin + '/static/'))];
+        let extra = [location.origin + REGISTRO];
+        try {                                   // los archivos que usa Registro (la página que atiende la entrada sin red): se leen de su HTML
+            const html = await (await fetch(REGISTRO, { credentials: 'same-origin' })).text();
+            extra = extra.concat([...html.matchAll(/(?:src|href)="(\/static\/[^"]+)"/g)].map((m) => location.origin + m[1]));
+        } catch (e) { /* sin red ahora: queda lo que ya estaba guardado */ }
+        const urls = [...new Set(own.concat(extra))];
+        const send = () => { const sw = navigator.serviceWorker.controller || reg.active; if (sw) sw.postMessage({ type: 'precache', urls }); };
+        send();
+        navigator.serviceWorker.addEventListener('controllerchange', send);
+    }).catch(() => {}));
     counter(); setInterval(() => { if (!document.hidden) counter(); }, 30000);
 })();
 </script>

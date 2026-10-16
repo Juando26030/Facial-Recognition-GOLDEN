@@ -266,3 +266,26 @@ def test_registro_has_a_switch_to_open_the_door_screen_only_when_enabled(client,
     station.face_door_enabled = False
     db.commit()
     assert 'id="openDoorScreen"' not in client.get(f"/kiosk/{station.id}/registro").text
+
+
+def test_the_door_screen_survives_a_reload_without_network_when_contingency_is_on(client, station, monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "contingency_enabled", lambda: True)
+    page = client.get(f"/kiosk/{station.id}/rostro").text
+    assert "const CONTINGENCY = true" in page and "register('/kiosk/sw.js')" in page                       # el service worker guarda esta pantalla y la de Registro
+    assert "const REGISTRO = `/kiosk/${EVENT_ID}/registro`" in page and "location.href = REGISTRO" in page    # sin conexión, «cédula o QR» lleva a Registro (contingencia)
+    assert "let serverUp = navigator.onLine" in page and "Ingresar con cédula o QR (sin conexión)" in page
+    assert "Sin conexión. Ingresa con tu cédula o QR en el modo sin conexión." in page
+
+
+def test_with_contingency_off_the_door_screen_does_not_register_anything(client, station, monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "contingency_enabled", lambda: False)
+    assert "const CONTINGENCY = false" in client.get(f"/kiosk/{station.id}/rostro").text                   # en producción (contingencia apagada) todo esto queda inactivo
+    sw = client.get("/kiosk/sw.js")
+    assert "kiosk-sw-off" in sw.text or "unregister" in sw.text
+
+
+def test_the_service_worker_serves_the_door_page_and_never_its_api():
+    src = open("static/js/kiosk-sw.js", encoding="utf-8").read()
+    assert "(registro|rostro)" in src and "/api/" not in src.split("const KIOSK_PAGE")[1].split("\n")[0]
