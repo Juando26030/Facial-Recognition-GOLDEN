@@ -153,12 +153,16 @@ def test_the_birth_date_column_is_ignored_with_a_notice_in_an_event_without_the_
     assert db.query(User).filter_by(id="2001").one().birth_date == date(2011, 3, 10)                     # con rostro, se guarda
 
 
-def test_without_the_face_and_without_the_lock_a_zip_still_enables_it_and_then_the_date_is_used(client, factory, db):
+def test_a_zip_never_turns_the_face_on_the_choice_lives_only_in_parameters(client, factory, db):
     ev = _coord(client, factory)
     r = _bulk(client, ev, "id,nombres,apellidos,fecha de nacimiento\n1001,Ana,Mora,1990-04-02\n", _zip("1001"))
-    assert r.status_code == 200
+    assert r.status_code == 400 and "origen A" in r.json()["detail"]                                        # Fase 0: una sola fuente de verdad (el paso guiado)
     db.refresh(ev)
-    assert ev.facial_enabled is True and db.query(User).filter_by(id="1001").one().birth_date == date(1990, 4, 2)
+    assert ev.facial_enabled is False
+    ev.facial_enabled, ev.client_photos_before = True, True                                                  # elegido en Parámetros: ahora sí
+    db.commit()
+    r = _bulk(client, ev, "id,nombres,apellidos,fecha de nacimiento\n1001,Ana,Mora,1990-04-02\n", _zip("1001"))
+    assert r.status_code == 200 and db.query(User).filter_by(id="1001").one().birth_date == date(1990, 4, 2)
 
 
 def test_a_birth_date_column_never_deletes_a_photo_that_belongs_to_another_event(client, factory, db):

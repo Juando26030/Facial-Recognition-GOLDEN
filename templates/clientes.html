@@ -188,7 +188,7 @@ tenantsListEl.addEventListener("change", async (e) => {
   if (!select) return;
   const newStatus = select.value;
   const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
-  const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
+  const confirmed = await confirmStatusChange(newStatus, STATUS_LABELS[newStatus]);
   if (!confirmed) { select.value = previousStatus; return; }
   await setEventStatus(select.dataset.eventId, newStatus, select);
 });

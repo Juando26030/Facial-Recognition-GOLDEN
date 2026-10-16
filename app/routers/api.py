@@ -1550,6 +1550,9 @@ def bulk_register(
     zip_ignored = bool(event.biometrics_locked and has_zip)
     if zip_ignored:          # candado «sin biometría»: las fotos NO se leen, no se guardan y no encienden el rostro (el aviso sale en el resultado)
         zip_file, zip_upload, has_zip = None, None, False
+    if has_zip and not (event.facial_enabled and event.client_photos_before):
+        # Fuente de verdad única (Fase 0): el uso del rostro y el origen de la foto se eligen SOLO en Parámetros (paso guiado). Las fotos del cliente (zip) solo caben en el origen A.
+        raise HTTPException(status_code=400, detail="Las fotos (zip) solo se cargan si el evento usa reconocimiento facial con fotos entregadas por el cliente (origen A). Cámbialo en Parámetros → Reconocimiento facial: paso guiado.")
     if has_zip and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     if background and bulk_jobs.uses_cloud_run():
@@ -1698,7 +1701,7 @@ def _bulk_register_impl(
     # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
     header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
     # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
-    birth_used = bool(event.facial_enabled or (zip_bytes and not event.biometrics_locked))
+    birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
     birth_ignored_rows = 0
     if not birth_used:
         birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
@@ -1814,15 +1817,7 @@ def _bulk_register_impl(
         if photo_entries and not precalc:
             errors.append("ℹ️ Las fotos se guardaron cifradas, pero su vector facial NO se calcula todavía: se calcula cuando cada persona acepta el reconocimiento facial (en la puerta o desde el celular).")
 
-        # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
-        # quitarle a un evento la capacidad de reconocimiento facial que ya tenía. Decide si
-        # /kiosk/{event_id}/registro muestra el escáner de cámara (2026-09-21, ver CLAUDE.md).
-        if not event.facial_enabled:
-            if biometric_setup.facial_blockers(event):      # evento de un tercero sin los datos del organizador: el rostro NO se activa solo
-                errors.append("⚠️ Las fotos se guardaron, pero el reconocimiento facial NO se activó: faltan los datos del organizador (razón social, NIT y correo de privacidad) en Parámetros del evento.")
-            else:
-                event.facial_enabled = True
-                db.commit()
+        # (Fase 0, 2026-10-17) La carga ya NO enciende el reconocimiento facial: llegar aquí con fotos exige que el paso guiado ya diga «usa rostro» con origen A.
 
     # --- Pre-escaneo: identificar cédulas (con corrección del "Excel las volvió número"),
     # detectar cédulas repetidas dentro del mismo archivo, ANTES de tocar la base de datos.

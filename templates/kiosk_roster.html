@@ -61,6 +61,17 @@
           cédula, facial o QR. No es necesario volver a subir un archivo distinto por cada método.
         </p>
 
+        <!-- Fase 0: el uso del rostro y el origen de la foto se eligen SOLO en Parámetros; aquí solo se muestran. -->
+        <div id="facialState" role="note" style="margin:0 0 1rem; padding:12px 14px; border-radius:12px; font-size:0.95rem; line-height:1.5; background:{{ '#eef6ee' if event.facial_enabled else '#fff4e5' }}; border:1px solid {{ '#b7d8b7' if event.facial_enabled else '#f0c36d' }};">
+          {% if event.facial_enabled %}
+          <b>Este evento usa reconocimiento facial</b> — {{ 'fotos entregadas por el cliente (origen A): adjunta el zip abajo.' if event.client_photos_before else 'cada persona se toma una selfie (origen B): no hace falta zip.' }}
+          La fecha de nacimiento del archivo se guarda.
+          {% else %}
+          <b>Este evento NO usa reconocimiento facial.</b> La columna «fecha de nacimiento» del archivo <b>no se guardará</b>.
+          {% endif %}
+          <a href="/kiosk/{{ event.id }}/parametros" style="font-weight:600;">Cambiar en Parámetros</a>
+        </div>
+
         <!-- Ítem 18 (reunión 2026-09-21): traer a todas las personas de otro evento DEL MISMO CLIENTE. -->
         <div class="badge-input-group" style="display:flex; align-items:center; gap:10px;">
           <input type="checkbox" id="useSourceEvent" style="width:auto;">
@@ -81,16 +92,13 @@
           <p style="font-size:0.78rem; color:#666; margin-top:0.4rem;">Para bases grandes (miles de personas con foto), no hace falta partir el archivo a mano: si el Excel + el zip juntos pesan mucho, el sistema los divide solo en varios envíos seguidos, sin que muevas nada.</p>
         </div>
 
-        <div class="badge-input-group" style="display:flex; align-items:center; gap:10px; margin-top:1.2rem;">
-          <input type="checkbox" id="enableFacial" style="width:auto;">
-          <label for="enableFacial" style="margin:0;">¿Desea activar el reconocimiento facial?</label>
-        </div>
         <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; margin-top:0.6rem;">
-          <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" style="width:auto; margin-top:3px;">
-          <span>Reemplazar las fechas de nacimiento que ya están guardadas (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
+          <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" aria-labelledby="overwriteBirthText" style="width:20px; height:20px; margin-top:3px;">
+          <span id="overwriteBirthText">Reemplazar las fechas de nacimiento que ya están guardadas (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
         </label>
 
-        <div id="facialZipGroup" class="badge-input-group" style="display:none; margin-top:0.8rem;">
+        {% if event.facial_enabled and event.client_photos_before %}
+        <div id="facialZipGroup" class="badge-input-group" style="margin-top:0.8rem;">
           <label>Fotos de las personas (.zip, cada foto nombrada como la cédula, ej. 123456.jpg)</label>
           <input type="file" name="zip_file" accept=".zip">
           <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; line-height:1.4; margin-top:10px; background:#fff8e1; padding:10px 12px; border-radius:10px;">
@@ -98,6 +106,7 @@
             <span><b>Declaro que cuento con la autorización previa, expresa e informada de cada persona</b> para tratar su fotografía y su rostro (dato biométrico sensible, Ley 1581 de 2012) para identificarla en este evento, y que las personas que no la dieron no están en el zip (se registran por cédula). <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
           </label>
         </div>
+        {% endif %}
 
         <button type="submit" class="golden-btn golden-btn-primary" style="margin-top: 1.5rem;">Cargar Base de Datos</button>
       </fieldset>
@@ -108,11 +117,8 @@
 </main>
 
 <script>
-const enableFacial = document.getElementById("enableFacial");
+const ZIP_ALLOWED = {{ 'true' if (event.facial_enabled and event.client_photos_before) else 'false' }};      // origen A (Parámetros): solo así hay zip
 const facialZipGroup = document.getElementById("facialZipGroup");
-enableFacial.addEventListener("change", () => {
-    facialZipGroup.style.display = enableFacial.checked ? "block" : "none";
-});
 
 const useSourceEvent = document.getElementById("useSourceEvent");
 const sourceEventGroup = document.getElementById("sourceEventGroup");
@@ -311,7 +317,6 @@ async function submitRoster(formData) {
 
 function resetRosterForm() {
     rosterForm.reset();
-    facialZipGroup.style.display = "none";
     sourceEventGroup.style.display = "none";
     rosterFileInput.required = true;
 }
@@ -487,7 +492,7 @@ rosterForm.addEventListener("submit", async (e) => {
 
     const formData = new FormData(e.target);
     formData.append("event_id", window.EVENT_ID);
-    if (!enableFacial.checked) formData.delete("zip_file");
+    if (!ZIP_ALLOWED) formData.delete("zip_file");
     if (!useSourceEvent.checked) formData.delete("source_event_id");
 
     const rosterFile = formData.get("roster_file");

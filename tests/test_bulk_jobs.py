@@ -41,9 +41,9 @@ def _wait(client, job_id, timeout=30):
     raise AssertionError("la carga no terminó a tiempo")
 
 
-def _admin(client, factory, status="creado"):
+def _admin(client, factory, status="creado", **extra):
     factory.staff("admin", "root")
-    ev = factory.event(status)
+    ev = factory.event(status, **extra)
     login(client, "root")
     return ev
 
@@ -74,7 +74,7 @@ def test_background_mode_returns_a_job_and_finishes_with_the_same_result(client,
 
 def test_progress_is_weighted_so_photos_dominate(client, factory, monkeypatch):
     _fake_faces(monkeypatch)
-    ev = _admin(client, factory)
+    ev = _admin(client, factory, facial_enabled=True, client_photos_before=True)      # fotos del cliente (origen A), elegido en Parámetros
     job = _wait(client, _post(client, ev, zip_bytes=_photo_zip(["1001", "1002", "1003"])).json()["job_id"])
     assert job["status"] == "done"
     from app import bulk_jobs

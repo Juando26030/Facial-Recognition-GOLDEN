@@ -77,6 +77,8 @@ def _zip_of(name):
 def test_photo_zip_needs_the_organizers_declaration_and_records_it(client, factory, faces, db):
     from app.models import User
     ev = _kiosk(client, factory, role="coordinador")
+    ev.client_photos_before = True                                                                           # fotos del cliente (origen A), elegido en Parámetros
+    db.commit()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("3003.jpg", _photo())
@@ -91,7 +93,7 @@ def test_photo_zip_needs_the_organizers_declaration_and_records_it(client, facto
     u = db.query(User).filter_by(id="3003").first()
     assert u.face_encoding is None and u.biometric_consent_source is None and u.face_captured_at           # REGLA A: la foto se guarda, el vector NO se calcula antes de que la persona acepte
     assert get_storage().exists(photo_key(ev.tenant_id, "3003"))
-    ev = factory.event("en_proceso", controller_mode="tercero", organizer_name="O", organizer_nit="1", organizer_privacy_email="o@o.test", precalculo_autorizado=True)      # excepción: tercero con anexo firmado
+    ev = factory.event("en_proceso", controller_mode="tercero", organizer_name="O", organizer_nit="1", organizer_privacy_email="o@o.test", precalculo_autorizado=True, facial_enabled=True, client_photos_before=True)      # excepción: tercero con anexo firmado
     csv = "\n".join(["id,nombres,apellidos,fecha de nacimiento", "4004,Eva,Paz,1990-04-02", ""]).encode()
     files = {"roster_file": ("b.csv", csv, "text/csv"), "zip_file": ("f.zip", _zip_of("4004.jpg"), "application/zip")}
     assert client.post("/api/bulk_register", data={"event_id": str(ev.id), "photos_authorized": "true"}, files=files).status_code == 200

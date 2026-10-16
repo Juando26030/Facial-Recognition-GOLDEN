@@ -63,6 +63,12 @@
      "warning" (amarillo pastel, para advertir sin necesariamente ser destructivo — ej. "esta
      persona ya se había registrado, ¿seguro quieres registrarla de nuevo?"). opts.confirmLabel
      permite personalizar el texto del botón de confirmar. */
+  /* Confirmación al pasar un evento a «Finalizado» (Fase 0): dice qué pasa, en vez del genérico «¿Cambiar el estado…?». */
+  window.FINALIZE_CONFIRM = "¿Finalizar el evento? Desde ese momento nadie podrá registrar ni entrar con su rostro, y empieza el plazo de 7 días para borrar los rostros. Se puede reabrir después.";
+  window.confirmStatusChange = function (newStatus, label) {
+    if (newStatus === "finalizado") return window.showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: "Sí, finalizar" });
+    return window.showConfirm(`¿Cambiar el estado del evento a "${label}"?`);
+  };
   window.showConfirm = function (message, opts) {
     opts = opts || {};
     const isWarning = opts.variant === "warning";

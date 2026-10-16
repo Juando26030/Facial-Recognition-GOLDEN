@@ -122,7 +122,7 @@ def test_birth_date_from_the_web_form_flags_the_person(db, factory):
 def test_bulk_roster_birth_column_blocks_minors_and_requires_a_date_for_a_face(client, factory, db, engine):
     import zipfile
     factory.staff("coordinador", "coord1")
-    ev = factory.event("en_proceso", facial_enabled=True)
+    ev = factory.event("en_proceso", facial_enabled=True, client_photos_before=True)
     login(client, "coord1")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
@@ -157,7 +157,7 @@ def test_bulk_zip_photos_are_stored_under_the_persons_key_so_the_purge_finds_the
     import zipfile
     from app.storage import get_storage, photo_key
     factory.staff("coordinador", "coord1")
-    ev = factory.event("en_proceso", facial_enabled=True)
+    ev = factory.event("en_proceso", facial_enabled=True, client_photos_before=True)
     login(client, "coord1")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
@@ -178,7 +178,7 @@ def test_rule_a_bulk_photo_gets_its_vector_only_after_the_person_accepts_and_pho
     from app.storage import get_storage, photo_key
     from app.timeutil import utcnow
     factory.staff("coordinador", "coord1")
-    ev = factory.event("en_proceso", facial_enabled=True)
+    ev = factory.event("en_proceso", facial_enabled=True, client_photos_before=True)
     login(client, "coord1")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:

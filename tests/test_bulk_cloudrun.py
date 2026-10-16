@@ -20,7 +20,7 @@ def cloud(monkeypatch):
 
 def test_web_only_launches_and_the_job_does_the_work(client, factory, db, cloud, monkeypatch):
     _fake_faces(monkeypatch)
-    ev = _admin(client, factory)
+    ev = _admin(client, factory, facial_enabled=True, client_photos_before=True)      # fotos del cliente (origen A), elegido en Parámetros
     r = _post(client, ev, zip_bytes=_photo_zip(["1001", "1002"]))
     assert r.status_code == 200 and cloud == [r.json()["job_id"]]
     job_id = cloud[0]

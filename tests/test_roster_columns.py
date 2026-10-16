@@ -134,7 +134,7 @@ def test_uploading_the_same_base_again_updates_by_cedula_without_duplicating_and
     from app.models import EventAttendee
     from app.storage import get_storage, photo_key
     monkeypatch.setattr("app.routers.api.BiometricEngine.process_image_stream", staticmethod(lambda raw: __import__("numpy").zeros((40, 40, 3), dtype="uint8")))
-    ev = _coord(client, factory, facial_enabled=True)
+    ev = _coord(client, factory, facial_enabled=True, client_photos_before=True)
 
     def zip_with(*ids):
         buf = io.BytesIO()

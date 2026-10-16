@@ -86,7 +86,7 @@ def test_company_markers_unresolved_in_production_show_up_as_missing(client, fac
     assert s["ready"] is False and any("COMPANY_NIT" in m for m in s["missing"])
 
 
-def test_bulk_photos_do_not_turn_faces_on_for_an_incomplete_third_party_event(client, factory, db, monkeypatch):
+def test_bulk_photos_are_refused_unless_parameters_say_face_with_client_photos(client, factory, db, monkeypatch):
     import io
     import zipfile
 
@@ -99,9 +99,9 @@ def test_bulk_photos_do_not_turn_faces_on_for_an_incomplete_third_party_event(cl
         z.writestr("1001.jpg", img.getvalue())
     csv = "\n".join(["id,nombres,apellidos,fecha de nacimiento", "1001,Ana,Mora,1990-01-01", ""]).encode()
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "photos_authorized": "true"}, files={"roster_file": ("b.csv", csv, "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 400 and "origen A" in r.json()["detail"] and "Parámetros" in r.json()["detail"]      # Fase 0: la carga ya no enciende el rostro
     db.refresh(ev)
-    assert ev.facial_enabled is False and any("NO se activó" in str(e) for e in r.json().get("errors", []))
+    assert ev.facial_enabled is False
 
 
 def test_parameters_page_shows_the_guided_step(client, factory):

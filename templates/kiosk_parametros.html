@@ -68,8 +68,12 @@
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Reconocimiento facial: paso guiado</h4>
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
           <div style="display:grid; gap:8px; max-width:560px;">
-            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="bsFacial" {% if event.facial_enabled %}checked{% endif %} {% if event.biometrics_locked %}disabled{% endif %} style="width:18px; height:18px;"> <b>Paso 0.</b> Este evento usará reconocimiento facial</label>
-            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="checkbox" id="bsLocked" {% if event.biometrics_locked %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span><b>🚫 Este evento NO usa biometría (bloquear).</b> Nadie podrá activar el rostro ni subir fotos: el servidor lo rechaza aunque alguien lo intente. Todo el mundo entra por cédula o QR.</span></label>
+            <fieldset style="border:0; padding:0; margin:0; display:grid; gap:8px;">
+              <legend style="font-weight:700; margin-bottom:4px;">Paso 0. ¿Este evento usa reconocimiento facial?</legend>
+              <!-- Única fuente de verdad (Fase 0): aquí y solo aquí se decide si el evento usa rostro. Las dos opciones se guardan como facial_enabled / biometrics_locked. -->
+              <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled %}checked{% endif %} style="width:20px; height:20px; margin-top:2px;"> <span><b>Usa rostro.</b> Quien acepte podrá entrar con su rostro; quien no, entra por cédula o QR.</span></label>
+              <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled %}checked{% endif %} style="width:20px; height:20px; margin-top:2px;"> <span><b>No usa rostro (bloqueado).</b> Nadie podrá activar el rostro ni subir fotos: todo el mundo entra por cédula o QR.</span></label>
+            </fieldset>
             <b>Paso 1. ¿Quién es el Responsable de los datos?</b>
             <label>Responsable del tratamiento
               <select id="ccMode"><option value="golden" {% if event.controller_mode == "golden" %}selected{% endif %}>Evento propio de Golden (Golden es el Responsable)</option><option value="tercero" {% if event.controller_mode == "tercero" %}selected{% endif %}>Evento de un tercero (Golden es el Encargado)</option></select></label>
@@ -82,7 +86,7 @@
             <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsSource" id="bsSourceSelfie" value="selfie" {% if not event.client_photos_before %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span><b>B.</b> Cada persona se toma una selfie (por su enlace, el formulario o el QR del cartel, o en la puerta). Se guarda cifrada y el rostro se calcula cuando la persona acepta.</span></label>
             <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsSource" id="bsPhotos" value="client" {% if event.client_photos_before %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span><b>A.</b> El cliente entrega las fotos de los asistentes antes del evento (en el zip de la carga). Se guardan cifradas y el rostro se calcula cuando la persona acepta; no se le pide selfie.</span></label>
             <b>Paso 3. Opciones (apagadas por defecto)</b>
-            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %} style="width:18px; height:18px;"> Permitir aceptar el reconocimiento facial y dar la selfie desde el celular antes del evento (página /aceptar)</label>
+            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %} style="width:18px; height:18px;"> Permitir aceptar el reconocimiento facial y dar la selfie desde el celular antes del evento</label>
             <div id="aceptarBox" style="display:{{ 'block' if event.aceptar_enabled else 'none' }};">
               <label style="display:flex; gap:8px; align-items:flex-start; margin:4px 0 8px;"><input type="checkbox" id="ccAcceptLink" {% if event.accept_link_email %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Enviar por correo, al inscribirse por formulario, el <b>enlace personal</b> para autorizar. (Como el correo lo escribe la propia persona, su aceptación igual queda «por verificar».)</span></label>
               <p style="font-size:0.8rem; margin:0 0 6px;">Enlace (para el correo): <b id="aceptarUrl"></b></p>
@@ -110,7 +114,7 @@
               {% endif %}
               <p style="color:#666; font-size:0.78rem;">Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en puerta con el documento o el QR.</p>
             </div>
-            <label style="display:flex; gap:8px; align-items:flex-start; margin:4px 0 8px;"><input type="checkbox" id="ccFaceDoor" {% if event.face_door_enabled %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Entrada con rostro en autoservicio («Entrar con mi rostro»): la persona pulsa el botón y mira a la cámara; con una coincidencia clara el ingreso se registra solo y el personal lo supervisa. Pantalla: <a href="/kiosk/{{ event.id }}/rostro">/kiosk/{{ event.id }}/rostro</a></span></label>
+            <label style="display:flex; gap:8px; align-items:flex-start; margin:4px 0 8px;"><input type="checkbox" id="ccFaceDoor" {% if event.face_door_enabled %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Entrada con rostro en autoservicio («Entrar con mi rostro»): la persona pulsa el botón y mira a la cámara; con una coincidencia clara el ingreso se registra solo y el personal lo supervisa. <a href="/kiosk/{{ event.id }}/rostro">Abrir la pantalla de la puerta</a></span></label>
             {% if event.face_door_enabled %}<p id="faceDoorNoLiveness" role="alert" style="margin:0 0 8px; padding:8px 10px; border-radius:8px; background:#fdecea; color:#a12631; font-weight:700;">⚠️ Sin prueba de vida: requiere supervisión constante. Regla del día del evento: siempre una persona frente a la pantalla de la puerta.</p>{% endif %}
             <label>Cuándo se pide la autorización
               <select id="ccPrompt"><option value="once" {% if event.consent_prompt_mode == "once" %}selected{% endif %}>Una sola vez por persona y evento (recomendado)</option><option value="every_scan" {% if event.consent_prompt_mode == "every_scan" %}selected{% endif %}>Antes de cada uso (botones cortos)</option></select></label>
@@ -142,7 +146,7 @@
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
-          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo sale por SMTP y el SMS por Twilio si están configurados (ver <code>.env.example</code>); si no, el mensaje queda guardado en <code>data/outbox/</code> y NO sale a nadie.</p>
+          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo y el SMS salen solo si el envío está configurado en el sistema; si no, el mensaje no le llega a nadie (pregunta al equipo técnico si tienes dudas).</p>
           {% if event.digital_badge_enabled %}
           <div id="mailEditor" style="margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
             <h5 style="margin:0 0 0.4rem;">✉️ Correo que recibe la persona</h5>
@@ -172,7 +176,7 @@
         <div id="privacyCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">🔒 Privacidad de datos biométricos</h4>
           <p id="privInfo" style="font-size:0.85rem; margin:0 0 0.5rem;">Cargando…</p>
-          <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y encoding) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
+          <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
           <p style="color:#555; font-size:0.78rem; margin:0 0 0.8rem;">💡 Para autorizar el uso del rostro en los formularios web, crea (más abajo, en los campos del evento) un campo <b>de consentimiento aparte</b> y usa «Insertar texto tipo → Autorización del dato biométrico». Debe ser una casilla separada de la autorización general de datos.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <input type="text" id="privCedula" placeholder="Cédula de la persona" aria-label="Cédula de la persona a la que se le borrará el rostro" style="padding:8px; border:1px solid #ccc; border-radius:8px; max-width:200px;">
@@ -447,7 +451,7 @@
         document.getElementById('privPerson').addEventListener('click', async () => {
             const id = document.getElementById('privCedula').value.trim();
             if (!id) return say('Escribe la cédula', true);
-            if (!(await showConfirm(`¿Borrar el rostro (foto y encoding) de la persona con cédula ${id}? No se puede deshacer; su registro de asistencia se conserva.`))) return;
+            if (!(await showConfirm(`¿Borrar el rostro (foto y datos del rostro) de la persona con cédula ${id}? No se puede deshacer; su registro de asistencia se conserva.`))) return;
             const r = await fetch(`${base}/users/${encodeURIComponent(id)}/biometrics`, { method: 'DELETE' }); const d = await r.json().catch(() => ({}));
             r.ok ? (say(d.message), load()) : say(d.detail || 'No se pudo borrar', true);
         });
@@ -538,11 +542,12 @@
     if (ccMode) {
         ccMode.addEventListener('change', () => { document.getElementById('ccOrg').style.display = ccMode.value === 'tercero' ? 'grid' : 'none'; });
         const lockBox = document.getElementById('bsLocked');
-        if (lockBox) lockBox.addEventListener('change', () => {          // al bloquear, lo biométrico se apaga y se deshabilita
-            const facial = document.getElementById('bsFacial'), photos = document.getElementById('bsPhotos'), aceptar = document.getElementById('ccAceptar');
-            if (lockBox.checked) { facial.checked = false; document.getElementById('bsSourceSelfie').checked = true; if (aceptar) aceptar.checked = false; const al = document.getElementById('ccAcceptLink'); if (al) al.checked = false; const fd = document.getElementById('ccFaceDoor'); if (fd) fd.checked = false; }
-            facial.disabled = lockBox.checked;
-        });
+        const applyUse = () => {                 // «No usa rostro (bloqueado)»: lo biométrico se apaga en pantalla, como antes con la casilla del candado
+            if (!lockBox || !lockBox.checked) return;
+            document.getElementById('bsSourceSelfie').checked = true;
+            ['ccAceptar', 'ccAcceptLink', 'ccFaceDoor'].forEach((id) => { const el = document.getElementById(id); if (el) el.checked = false; });
+        };
+        document.querySelectorAll('input[name="bsUse"]').forEach((r) => r.addEventListener('change', applyUse));
         document.getElementById('ccSave').addEventListener('click', async () => {
             const body = { biometrics_locked: document.getElementById('bsLocked').checked, facial_enabled: document.getElementById('bsFacial').checked, client_photos_before: document.getElementById('bsPhotos').checked, accept_link_email: document.getElementById('ccAcceptLink') ? document.getElementById('ccAcceptLink').checked : false, face_door_enabled: (document.getElementById('ccFaceDoor') || {}).checked === true, controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value, aceptar_enabled: document.getElementById('ccAceptar').checked };
             const res = await fetch(`/api/events/${window.EVENT_ID}/biometric-setup`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
