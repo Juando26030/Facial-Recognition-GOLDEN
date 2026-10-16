@@ -91,7 +91,7 @@ def test_a_load_never_turns_the_face_on(client, factory, db):
 def test_the_replace_dates_checkbox_has_an_accessible_name(client, factory, db):
     ev = _coord(client, factory, facial_enabled=True)
     page = client.get(f"/kiosk/{ev.id}/roster").text
-    assert 'id="overwriteBirth" value="true" aria-labelledby="overwriteBirthText"' in page and 'id="overwriteBirthText">Reemplazar las fechas' in page
+    assert '<label for="overwriteBirth"' in page and 'id="overwriteBirth" value="true" aria-labelledby="overwriteBirthText"' in page and 'id="overwriteBirthText">Reemplazar las fechas' in page
 
 
 def test_finalizing_an_event_asks_with_its_consequences_everywhere(client, factory):
@@ -110,4 +110,5 @@ def test_no_technical_jargon_is_visible_in_parameters_or_the_roster_card(client,
     for word in (".env.example", "data/outbox", "SMTP", "Twilio", "encoding", "página /aceptar", f"/kiosk/{ev.id}/rostro"):
         assert word not in visible, word
     menu = client.get(f"/kiosk/{ev.id}").text
-    assert "marca la casilla de reconocimiento facial" not in menu and "El reconocimiento facial se elige en Parámetros" in menu
+    assert "marca la casilla de reconocimiento facial" not in menu and "Carga masiva desde Excel/CSV</div>" in menu
+    assert "Paso 0" not in visible

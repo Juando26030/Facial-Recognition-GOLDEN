@@ -69,7 +69,7 @@
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
           <div style="display:grid; gap:8px; max-width:560px;">
             <fieldset style="border:0; padding:0; margin:0; display:grid; gap:8px;">
-              <legend style="font-weight:700; margin-bottom:4px;">Paso 0. ¿Este evento usa reconocimiento facial?</legend>
+              <legend style="font-weight:700; margin-bottom:4px;">¿Este evento usa reconocimiento facial?</legend>
               <!-- Única fuente de verdad (Fase 0): aquí y solo aquí se decide si el evento usa rostro. Las dos opciones se guardan como facial_enabled / biometrics_locked. -->
               <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled %}checked{% endif %} style="width:20px; height:20px; margin-top:2px;"> <span><b>Usa rostro.</b> Quien acepte podrá entrar con su rostro; quien no, entra por cédula o QR.</span></label>
               <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled %}checked{% endif %} style="width:20px; height:20px; margin-top:2px;"> <span><b>No usa rostro (bloqueado).</b> Nadie podrá activar el rostro ni subir fotos: todo el mundo entra por cédula o QR.</span></label>

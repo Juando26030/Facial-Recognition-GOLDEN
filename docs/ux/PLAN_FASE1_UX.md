@@ -1,47 +1,54 @@
-# Plan de Fase 1 de UX (después del piloto) — solo documento, sin código
+# Plan de UX: Fase 1 (noviembre, después del piloto) y Fase 2 (con usuarios) — solo documento, sin código
 
-Punto de partida: la página pública `/aceptar` (Montserrat, fondo claro, tarjeta blanca, botones dorados), que ya es la más limpia de la app. Diagnóstico en `docs/ux/ANALISIS_FLUJO_Y_UX.md`.
+Sigue la estructura de la revisión del 16 de octubre (`docs/ux/26_REVISION_VISUAL_2026-10-16.md`) y las cifras medidas en `docs/ux/ANALISIS_FLUJO_Y_UX.md`. La Fase 0 ya está hecha en la rama `producto/fase0-ux`.
 
-## 1. Sistema visual con *tokens* (variables CSS en un solo archivo)
-| Token | Valor propuesto | Por qué |
-|---|---|---|
-| Cuerpo | **16 px**, interlineado **24 px** | hoy 320 de 441 tamaños son < 14 px |
-| Escala | 14 · 16 · 20 · 24 · 32 px (solo esas) | menos tamaños sueltos |
-| Texto de ayuda | 14 px mínimo, color `#5c5f6b` (≥ 5,9:1) | reemplaza `#777`, `#888`, `#999`, `#aaa`, `#bbb` (no llegan a 4,5:1) |
-| Avisos | rojo `#a12631` (7,4:1), ámbar `#8a5a00` (5,9:1), verde `#1e7a3a` | `#b26a00` no llega |
-| Marca | azul `#0a0e2e`; dorado `#D4AF37` **solo como fondo** con texto oscuro | el dorado como texto da 2,1:1 |
-| Espaciado | 4 · 8 · 12 · 16 · 24 · 32 px | consistencia |
-| Objetivos táctiles | **≥ 24 × 24 px** (WCAG 2.5.8); en la puerta y celulares, 44–48 px (Apple HIG / Android) | casillas de 18 px hoy |
-| Íconos | set **SVG** con `aria-hidden` y texto visible al lado, en vez de emoji | los emoji cambian según el equipo y los lectores de pantalla los leen en voz alta |
+## Fase 1 — sistema visual (noviembre)
 
-Se aplica por capas: primero `/aceptar` y la puerta (público), luego Parámetros, Registro y Adjuntar Base de Datos.
+### 1. Tokens de diseño (un solo archivo de variables), con /aceptar como base
+| Token | Valor | Por qué (medido) | Fuente |
+|---|---|---|---|
+| Fuente | **una sola** para panel y páginas públicas (hoy panel = Agrandir, /aceptar = Montserrat) | coherencia | NN/g #4 |
+| Escala | 5 tamaños: display 32 · título 24 · subtítulo 20 · **cuerpo 16 / interlineado 24** · etiqueta 14 px | hoy 320 de 441 tamaños < 14 px | Material 3 type scale |
+| Ayuda | 14 px mínimo, gris `#5c5f6b` (≈ 6:1) | `#777`, `#888`, `#999`, `#aaa`, `#bbb` no llegan a 4,5:1 | WCAG 1.4.3 |
+| Avisos | rojo `#a12631` (7,4:1), ámbar `#8a5a00` (5,9:1), verde `#1e7a3a` | `#b26a00` da 4,24:1 | WCAG 1.4.3 |
+| Marca | azul `#0a0e2e`; dorado `#D4AF37` **solo como fondo** con texto oscuro | dorado como texto: 2,1:1 | WCAG 1.4.3 |
+| Espaciado y radios | 4 · 8 · 12 · 16 · 24 · 32 px; radios 8 / 12 / 20 | consistencia | — |
+| Objetivos táctiles | ≥ 24 × 24 px en el panel; **44–48 px** en la puerta, /aceptar, iPad y celular | 16 casillas de 18 px en Parámetros | WCAG 2.5.8; Apple HIG; Android core quality |
+| Íconos | set **SVG** propio, con texto al lado y `aria-hidden` | los emoji cambian por equipo y los lee el lector de pantalla | revisión §2 |
 
-## 2. Parámetros en pestañas, un Guardar por pestaña
-Pestañas: **General** · **Reconocimiento facial** · **Invitaciones** · **Escarapelas y certificados** · **Campos** · **Privacidad**.
-- Cada pestaña tiene **un solo botón «Guardar»**, abajo y fijo; los interruptores que hoy guardan solos pasan a guardar con ese botón (o, si se quedan inmediatos, lo dicen: «se guarda al cambiar»).
-- Aviso si se sale de la pestaña con cambios sin guardar (WCAG 3.3.7 *Redundant Entry*: no volver a pedir lo ya escrito).
-- **Reconocimiento facial** reúne: Paso 0 (usa / no usa), Responsable, origen A/B, aceptación desde el celular, entrada con rostro, autoregistro del escáner, foto en la escarapela (super administrador). Revelación progresiva (NN/g): si «No usa rostro», el resto ni se muestra.
-- **Invitaciones** reúne el envío masivo y «enviar el enlace al inscribirse por formulario», explicando la diferencia.
+### 2. Contraste, tamaños y lector de pantalla en todo el panel
+- Reemplazar los colores que no llegan (tabla del análisis) y subir los textos de ayuda a 14 px.
+- Nombre accesible para los 33 controles detectados sin etiqueta (Parámetros 18, Registro 13, carga 2).
+- Prueba con lector de pantalla (NVDA en Windows y VoiceOver en iPad) de: carga, Parámetros, Registro, /aceptar.
+- Revisión automática en el CI: ningún texto < 14 px ni color < 4,5:1 en las plantillas.
 
-## 3. Acciones destructivas
-En **Privacidad** (borrar rostros de una persona, del evento, supresión): confirmación con el nombre de lo que se borra y el efecto («no se puede deshacer»; «su registro de asistencia se conserva»), botón rojo con verbo concreto («Borrar el rostro»), nunca «Aceptar». Lo mismo para finalizar evento (ya hecho en Fase 0).
+### 3. Parámetros en pestañas, un Guardar por pestaña
+**General** · **Reconocimiento facial** · **Invitaciones** · **Escarapelas y certificados** · **Campos del formulario** · **Privacidad**.
+- Un botón **Guardar** por pestaña, fijo abajo, con aviso **«Cambios sin guardar»** al salir (WCAG 3.3.7).
+- No mezclar interruptores de efecto inmediato con casillas que se aplican al guardar en la misma sección (NN/g, *toggle switches*).
+- **Reconocimiento facial** sigue el modelo del paso guiado (resumen «✅ Listo: así funcionará en la puerta»), con revelación progresiva: si «No usa rostro», nada más aparece. Reúne también el autoregistro del escáner, la entrada con rostro y la foto en la escarapela (super administrador).
+- **Invitaciones** junta el envío masivo y «enviar el enlace al inscribirse por formulario», explicando la diferencia.
+- **Privacidad**: borrar fotos del evento, revocar y suprimir, en rojo, **nunca** como botón principal, con confirmación escribiendo el código del evento (hoy el borrado del evento ya pide escribir el nombre; revocar y suprimir piden confirmar) (Apple HIG Buttons).
 
-## 4. Menú del evento ordenado por su ciclo
-1. **Preparar**: Parámetros · Adjuntar Base de Datos · Formularios · Escarapelas · Invitaciones
-2. **Durante el evento**: Registro · Entrada con rostro · Áreas · Inventario · Ruleta
-3. **Después**: Estadísticas · Certificados · Documentos · Legalizaciones · Usuarios
-Cada tarjeta, una frase que diga **para qué sirve** (GOV.UK: una cosa por página; escribir para la tarea, no para el sistema).
+### 4. Menú del evento por el ciclo, con «Primeros pasos»
+1 **Configurar** (Parámetros) → 2 **Cargar personas** → 3 **Invitar y aceptación** → 4 **Puerta** (Registro, entrada con rostro, áreas, inventario, ruleta) → 5 **Después** (estadísticas, certificados, documentos, legalizaciones).
+Arriba, una lista **«Primeros pasos»** con ✓ (rostro elegido, lista cargada, invitaciones enviadas, puerta probada). Cada tarjeta dice para qué sirve en una frase.
 
-## 5. Escritura de interfaces (GOV.UK, NN/g)
-- Sin rutas, nombres de archivos ni de proveedores en pantalla (SMTP, Twilio, `.env`, `/kiosk/...`).
-- Botones con verbos («Guardar invitaciones», «Enviar prueba»); mensajes de error que digan qué pasó y qué hacer.
-- Interruptores (NN/g, *toggle switches*) solo para cambios que se aplican al instante; si hay que guardar, casillas.
+### 5. Otros de la revisión
+- **Nombre público del evento**: un campo aparte para /aceptar, la puerta y los correos (o validar que el nombre no sea un número o un nombre de persona).
+- **Registro**: título por la tarea, «Registro y acceso».
+- **Escritura** (GOV.UK): sin rutas, archivos ni proveedores en pantalla; botones con verbo («Cargar lista», «Guardar invitaciones»); errores cortos que digan qué hacer.
+- Retirar `PUT /facial-enabled` (segunda vía de encender el rostro) o hacerla pasar por la validación del paso guiado.
+- Diseñador de escarapelas: avisar que la foto sale en blanco mientras su interruptor esté apagado.
 
-## 6. Criterios de aceptación de Fase 1
-- 0 textos < 14 px en el panel; 0 colores de texto < 4,5:1 (revisión automática en CI).
-- 0 controles sin nombre accesible (revisión automática).
-- Objetivos ≥ 24 px en el panel y ≥ 44 px en la puerta y `/aceptar`.
-- Una sola fuente de verdad por ajuste (lista de la sección b del análisis cerrada).
+### Criterios de aceptación de la Fase 1
+- 0 textos < 14 px y 0 colores de texto < 4,5:1 en el panel (revisión automática).
+- 0 controles sin nombre accesible.
+- Objetivos ≥ 24 px en el panel y ≥ 44 px en la puerta y /aceptar.
+- Cada ajuste se decide en un solo lugar (lista de incongruencias del análisis cerrada).
+
+## Fase 2 — con usuarios reales
+Prueba de usabilidad con **5 coordinadores** (NN/g: con 5 personas aparecen la mayoría de los problemas). Tarea completa: crear un evento con rostro por selfie → cargar la lista → enviar invitaciones → abrir la puerta. Medir **tiempo**, **errores** y **dónde dudan**; ajustar y repetir con otras 5 personas.
 
 ## Referencias
-NN/g: 10 heurísticas de usabilidad; *Progressive Disclosure*; *Toggle-Switch Guidelines*. GOV.UK Design System: *One thing per page*; *Writing for user interfaces*. WCAG 2.2: 1.4.3 Contraste mínimo, 2.5.8 Tamaño del objetivo (mínimo), 3.3.7 Entrada redundante. Apple Human Interface Guidelines: *Buttons*. Android: *Core app quality* (objetivos táctiles de 48 dp).
+Las de la revisión del 16 de octubre (NN/g: heurísticas, consistencia, revelación progresiva, interruptores, carga cognitiva en formularios; GOV.UK: *Question pages*, *Structuring forms*, *Writing for user interfaces*; W3C WCAG 2.2: 1.4.3, 2.5.8, 3.3.7; Apple HIG *Buttons*; Android *Core app quality*; Material *Typography*).
