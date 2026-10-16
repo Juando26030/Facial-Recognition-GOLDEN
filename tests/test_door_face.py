@@ -214,15 +214,12 @@ def test_the_station_cap_is_high_and_the_per_person_limit_lives_in_the_screen(cl
     assert "MAX_MISSES = 2" in page and "No te encontramos en la lista con reconocimiento facial" in page
 
 
-def test_parameters_warn_that_there_is_no_liveness_check_yet(client, factory, db):
+def test_parameters_warn_that_there_is_no_liveness_check_while_the_door_is_on(client, factory, db):
     factory.staff("coordinador", "coord9")
-    ev = factory.event("en_proceso", facial_enabled=True, face_door_enabled=True, face_door_liveness=False)
+    ev = factory.event("en_proceso", facial_enabled=True, face_door_enabled=True)
     login(client, "coord9")
     assert "Sin prueba de vida: requiere supervisión constante" in client.get(f"/kiosk/{ev.id}/parametros").text
-    ev.face_door_liveness = True
-    db.commit()
-    assert "Sin prueba de vida" not in client.get(f"/kiosk/{ev.id}/parametros").text                       # con la prueba de movimiento activa, sin aviso
-    ev.face_door_liveness, ev.face_door_enabled = False, False
+    ev.face_door_enabled = False
     db.commit()
     assert "Sin prueba de vida" not in client.get(f"/kiosk/{ev.id}/parametros").text
 
@@ -289,3 +286,16 @@ def test_with_contingency_off_the_door_screen_does_not_register_anything(client,
 def test_the_service_worker_serves_the_door_page_and_never_its_api():
     src = open("static/js/kiosk-sw.js", encoding="utf-8").read()
     assert "(registro|rostro)" in src and "/api/" not in src.split("const KIOSK_PAGE")[1].split("\n")[0]
+
+
+def test_a_rejected_attempt_records_why_for_diagnosis_without_personal_data(client, db, station, monkeypatch):
+    for status, ranked in (("MATCH", [("1001", 0.52), ("1002", 0.80)]), ("MATCH", [("1001", 0.40), ("1002", 0.44)]), ("NO_MATCH", [])):
+        _ranked(monkeypatch, status, ranked)
+        _scan(client, station)
+    details = [d for (d,) in db.query(SystemEvent.detail).filter_by(kind="door_face").order_by(SystemEvent.id)]
+    assert details == ["no_match d520 m280 far", "no_match d400 m40 doubtful", "no_match none"]
+    st = client.get(f"/api/events/{station.id}/door-face/stats").json()
+    assert st["reasons"] == {"far": 1, "doubtful": 1, "none": 1}
+    newest = st["recent_attempts"][0]
+    assert newest == {"at": newest["at"], "result": "no_match", "dist": None, "margin": None, "reason": "none"} and st["recent_attempts"][2]["dist"] == 0.52
+    assert not any("1001" in d for d in details)

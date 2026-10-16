@@ -403,3 +403,50 @@ def test_the_personal_link_stops_working_when_the_event_is_finalized(client, fac
     ev.status = "finalizado"
     db.commit()
     assert client.get(f"/aceptar/{ev.event_code}/{token}").status_code == 404
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ menores: ni enlace ni correo
+def test_a_minor_by_the_base_birth_date_gets_no_email_and_is_logged_as_omitted(factory, db, outbox):
+    ev = _event(factory)
+    _people(factory, db, ev, 2)
+    kid = factory.person(ev, "7001", "Cata", "Menor")
+    kid.email, kid.birth_date = "cata@example.com", date(date.today().year - 10, 1, 1)
+    nodate = factory.person(ev, "7002", "Nico", "SinFecha")
+    nodate.email = "nico@example.com"
+    db.commit()
+    assert acceptmail.start(db, ev, 1)["ok"] is True
+    _run(db, ev)
+    assert sorted(m["to"] for m in outbox) == ["nico@example.com", "p0@example.com", "p1@example.com"]       # al menor no; a quien no tiene fecha, el flujo de siempre
+    row = db.query(AcceptMailLog).filter_by(user_id="7001").one()
+    assert (row.kind, row.result, row.detail) == ("bulk", "omitido", "menor de edad")                      # sin más datos (ni correo, ni hora de envío, ni enlace)
+    assert db.query(EventAttendee).filter_by(user_id="7001").one().accept_token is None                       # ni siquiera se emitió su enlace
+    assert acceptmail.preview(db, db.get(Event, ev.id))["omitted_minor"] == 1
+    assert "7001" in acceptmail.log_csv(db, ev) and "omitido: menor de edad" in acceptmail.log_csv(db, ev)
+
+
+def test_the_omitted_minor_is_logged_once_and_a_list_with_only_minors_starts_nothing(factory, db, outbox):
+    ev = _event(factory)
+    kid = factory.person(ev, "7001", "Cata", "Menor")
+    kid.email, kid.birth_date = "cata@example.com", date(date.today().year - 10, 1, 1)
+    db.commit()
+    r = acceptmail.start(db, ev, 1)
+    assert r["ok"] is False and "menores" in r["detail"] and db.get(Event, ev.id).accept_mail_run is None
+    acceptmail.start(db, ev, 1)
+    assert db.query(AcceptMailLog).filter_by(user_id="7001", result="omitido").count() == 1 and outbox == []
+
+
+def test_a_minor_is_never_resent_to_by_hand_and_the_status_shows_the_omitted_count(factory, db, outbox, client):
+    ev = _event(factory)
+    _people(factory, db, ev, 1)
+    kid = factory.person(ev, "7001", "Cata", "Menor")
+    kid.email, kid.birth_date = "cata@example.com", date.today().replace(year=date.today().year - 10)
+    att = db.query(EventAttendee).filter_by(event_id=ev.id, user_id="7001").one()
+    att.accept_sent_at = utcnow() - timedelta(seconds=600)
+    db.add(AcceptMailLog(tenant_id=ev.tenant_id, event_id=ev.id, user_id="7001", kind="bulk", result="unknown", at=utcnow() - timedelta(seconds=600)))
+    db.commit()
+    assert acceptmail.resend(db, ev, "7001", 1)["ok"] is False and outbox == []
+    acceptmail.start(db, ev, 1)
+    factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    assert client.get(f"/api/events/{ev.id}/accept-mail").json()["omitted_minor"] == 1
+    assert "Omitidos por menor de edad" in client.get(f"/kiosk/{ev.id}/parametros").text

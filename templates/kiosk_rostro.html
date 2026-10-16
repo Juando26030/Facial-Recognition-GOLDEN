@@ -36,7 +36,6 @@
     <section id="camera" hidden>
         <p class="msg">Mira de frente a la cámara, dentro del óvalo.</p>
         <div class="cam"><video id="video" autoplay playsinline muted></video><div class="oval"></div><div class="count" id="count"></div></div>
-        <p class="msg" id="challengeText" hidden></p>
     </section>
     <p id="out" class="msg" role="status" aria-live="polite" hidden></p>
 </main>
@@ -45,7 +44,6 @@
 (function () {
     const EVENT_ID = {{ event.id }};
     const CONTINGENCY = {{ 'true' if contingency_enabled else 'false' }};      // modo contingencia del servidor (copia local de la lista + service worker)
-    const LIVENESS = {{ 'true' if event.face_door_liveness else 'false' }};      // prueba de movimiento: un fotograma de frente y otro tras pedir un giro elegido por el servidor
     const $ = (id) => document.getElementById(id);
     let stream = null, busy = false, misses = 0, turnTimer = null;
     const NOT_FOUND = {{ not_found|tojson }};
@@ -92,11 +90,6 @@
     $('faceBtn').addEventListener('click', async () => {
         if (busy || !canFace()) return;
         busy = true; $('out').hidden = true;
-        let ch = null;
-        if (LIVENESS) {
-            try { const cr = await fetch(`/api/events/${EVENT_ID}/door-face/challenge`, { cache: 'no-store' }); if (cr.ok) ch = await cr.json(); } catch (e) { setUp(false); }
-            if (!ch) { say('Sin conexión: ingresa con tu cédula o QR en la acreditación.'); busy = false; return; }
-        }
         try {
             stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 } }, audio: false });
         } catch (e) { say('No se pudo abrir la cámara. Ingresa con tu cédula o QR en la acreditación.'); busy = false; return; }
@@ -104,18 +97,9 @@
         for (const n of [3, 2, 1]) { $('count').textContent = n; await new Promise((r) => setTimeout(r, 900)); }
         $('count').textContent = '';
         const blob = await frame();
-        let turned = null;
-        if (ch) {                                     // la indicación se muestra DESPUÉS del fotograma de frente: no hay cómo preparar el giro de antemano
-            $('challengeText').hidden = false; $('challengeText').textContent = ch.text;
-            $('count').textContent = ch.direction === 'izquierda' ? '⬅' : '➡';
-            await new Promise((r) => setTimeout(r, 1500));
-            turned = await frame();
-            $('challengeText').hidden = true; $('count').textContent = '';
-        }
         stop(); $('camera').hidden = true;
         say('Un momento…');
         const fd = new FormData(); fd.append('event_id', EVENT_ID); fd.append('file', blob, 'rostro.jpg');
-        if (ch) { fd.append('turn', turned, 'giro.jpg'); fd.append('challenge', ch.token); }
         try {
             const r = await fetch('/api/door-face', { method: 'POST', body: fd });
             const j = await r.json().catch(() => ({}));

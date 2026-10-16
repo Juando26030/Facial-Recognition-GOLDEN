@@ -57,13 +57,14 @@ def plan(db: Session, event: Event, run_id: Optional[str] = None, for_export: bo
     denied = consent.denied_user_ids(db, event.tenant_id, event.id)
     from_form = {r[0] for r in db.query(FormSubmission.person_id).filter(FormSubmission.event_id == event.id, FormSubmission.is_test == False, FormSubmission.person_id.isnot(None)).distinct()}  # noqa: E712
     failed = {r[0] for r in db.query(AcceptMailLog.user_id).filter(AcceptMailLog.run_id == run_id, AcceptMailLog.kind == "bulk", AcceptMailLog.result == "failed")} if run_id else set()
-    eligible, omitted = [], Counter()
+    eligible, omitted, minor_ids = [], Counter(), []
     rows = (db.query(EventAttendee, User).join(User, (User.id == EventAttendee.user_id) & (User.tenant_id == EventAttendee.tenant_id))
             .filter(EventAttendee.event_id == event.id).order_by(EventAttendee.id).all())
     for att, user in rows:
         to = (user.email or "").strip()
         if minors.is_minor(user.birth_date):
             reason = "menor"
+            minor_ids.append(user.id)
         elif user.id in from_form:
             reason = "formulario"
         elif user.id in accepted or user.id in denied:
@@ -82,7 +83,7 @@ def plan(db: Session, event: Event, run_id: Optional[str] = None, for_export: bo
             omitted[reason] += 1
         else:
             eligible.append((att, user, to))
-    return {"eligible": eligible, "omitted": omitted, "no_birth": sum(1 for _a, u, _t in eligible if u.birth_date is None)}
+    return {"eligible": eligible, "omitted": omitted, "minor_ids": minor_ids, "no_birth": sum(1 for _a, u, _t in eligible if u.birth_date is None)}
 
 
 def pending_rows(db: Session, event: Event) -> list:
@@ -96,7 +97,12 @@ def pending_rows(db: Session, event: Event) -> list:
 
 def _counts(db: Session, event: Event) -> dict:
     rows = dict(db.query(AcceptMailLog.result, func.count(func.distinct(AcceptMailLog.user_id))).filter(AcceptMailLog.event_id == event.id, AcceptMailLog.kind == "bulk").group_by(AcceptMailLog.result).all())
-    return {"sent": rows.get("sent", 0), "failed": rows.get("failed", 0), "unknown": len(pending_rows(db, event))}
+    return {"sent": rows.get("sent", 0), "failed": rows.get("failed", 0), "unknown": len(pending_rows(db, event)), "omitted_minor": omitted_minor(db, event)}
+
+
+def omitted_minor(db: Session, event: Event) -> int:
+    """Cuántas personas quedaron registradas como «omitido: menor de edad» en los envíos de este evento."""
+    return db.query(func.count(func.distinct(AcceptMailLog.user_id))).filter(AcceptMailLog.event_id == event.id, AcceptMailLog.kind == "bulk", AcceptMailLog.result == "omitido").scalar() or 0
 
 
 def preview(db: Session, event: Event) -> dict:
@@ -120,16 +126,28 @@ def start(db: Session, event: Event, staff_id: int) -> dict:
         return {"ok": False, "detail": blocked}
     if event.accept_mail_run:
         return {"ok": False, "detail": "Ya hay un envío en curso."}
-    n = len(plan(db, event)["eligible"])
-    if not n:
+    p = plan(db, event)
+    n = len(p["eligible"])
+    if not n and not p["minor_ids"]:
         return {"ok": False, "detail": "No hay personas a quienes enviar."}
     run = uuid.uuid4().hex
+    _log_minors(db, event, p["minor_ids"], run)           # a los menores (por la fecha de la base) no se les envía nada: queda «omitido: menor de edad», sin más datos
+    if not n:                                             # solo había menores: se registran como omitidos y no arranca ninguna tanda
+        db.commit()
+        return {"ok": False, "detail": "No hay personas a quienes enviar (los menores de edad quedaron omitidos)."}
     event.accept_mail_run = run
     _log(db, event, "control", "start", staff_id=staff_id, run_id=run, detail=f"{n} por enviar")
     jobs.enqueue(db, "accept_mail", {"event_id": event.id, "run": run})
     db.commit()
     jobs.kick()
     return {"ok": True, "will_send": n}
+
+
+def _log_minors(db: Session, event: Event, ids: list, run: str) -> None:
+    done = {r[0] for r in db.query(AcceptMailLog.user_id).filter(AcceptMailLog.event_id == event.id, AcceptMailLog.kind == "bulk", AcceptMailLog.result == "omitido")}
+    for uid in ids:
+        if uid not in done:
+            _log(db, event, "bulk", "omitido", user_id=uid, run_id=run, detail="menor de edad")
 
 
 def stop(db: Session, event: Event, staff_id: int) -> dict:
@@ -188,6 +206,8 @@ def resend(db: Session, event: Event, user_id: str, staff_id: int) -> dict:
     att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=str(user_id), tenant_id=event.tenant_id).first()
     user = db.query(User).filter(User.id == str(user_id), User.tenant_id == event.tenant_id).first()
     to = (user.email or "").strip() if user else ""
+    if user is not None and minors.is_minor(user.birth_date):
+        return {"ok": False, "detail": "La persona es menor de edad: no se le envía el enlace."}
     if att is None or att.accept_sent_at is None or not EMAIL_RE.match(to):
         return {"ok": False, "detail": "La persona ya no tiene correo válido o fue retirada del evento."}
     old = att.accept_sent_at
@@ -306,5 +326,5 @@ def log_csv(db: Session, event: Event) -> str:
     w = csv.writer(out)
     w.writerow(["cedula", "fecha_hora_utc", "tipo", "resultado"])
     for r in db.query(AcceptMailLog).filter(AcceptMailLog.event_id == event.id).order_by(AcceptMailLog.id):
-        w.writerow([_safe(r.user_id), r.at.strftime("%Y-%m-%d %H:%M:%S"), r.kind, r.result])
+        w.writerow([_safe(r.user_id), r.at.strftime("%Y-%m-%d %H:%M:%S"), r.kind, f"{r.result}: {r.detail}" if r.result == "omitido" else r.result])
     return out.getvalue()

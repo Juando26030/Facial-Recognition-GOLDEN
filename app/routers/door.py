@@ -19,8 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 
-from app import crypto, faces, liveness, security
-from app.biometrics import BiometricEngine
+from app import crypto, faces, security
 from app.auth import get_event_for_staff, require_event_in_progress, require_role
 from app.database import get_db
 from app.models import AccessLog, PersonChange, RateLimitEvent, StaffUser, SystemEvent, User
@@ -46,11 +45,11 @@ BUSY_MSG = "Espera un momento e intenta de nuevo."
 OFF_MSG = "La entrada con rostro no está activa en este evento."
 
 
-def _count(event, outcome: str, dist: float = None, margin: float = None) -> None:
+def _count(event, outcome: str, dist: float = None, margin: float = None, reason: str = "") -> None:
     """Contador numérico: «resultado dNNN mNNN» (distancia y margen en milésimas; sin cédula, sin nombre, sin imagen). Las milésimas van con letra delante para que el
     enmascarado de datos personales de `system_events` no las tome por un número largo."""
     nums = "" if dist is None else f" d{round(dist * 1000)}" + ("" if margin is None else f" m{round(margin * 1000)}")
-    record_system_event("door_face", ref=str(event.id), detail=outcome + nums)
+    record_system_event("door_face", ref=str(event.id), detail=outcome + nums + (f" {reason}" if reason else ""))
 
 
 def _door_event(db: Session, event_id: int, staff: StaffUser):
@@ -61,9 +60,9 @@ def _door_event(db: Session, event_id: int, staff: StaffUser):
 
 
 @router.post("/door-face")
-def door_face(event_id: int = Form(...), file: UploadFile = File(...), turn: UploadFile = File(None), challenge: str = Form(""),
-              db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
-    """`file` = fotograma de frente; con la prueba de movimiento activa, además `turn` (tras pedir el giro) y `challenge` (el giro que pidió el servidor, firmado)."""
+def door_face(event_id: int = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
+    """`file` = un fotograma. Sin prueba de vida (decisión del dueño del producto, 2026-10-16): la validación la hace la persona del equipo que supervisa la franja; regla del día del
+    evento: SIEMPRE una persona frente a la pantalla de la puerta."""
     event = _door_event(db, event_id, staff)
     require_event_in_progress(event)
     key = f"{event.id}:{staff.id}"
@@ -74,23 +73,6 @@ def door_face(event_id: int = Form(...), file: UploadFile = File(...), turn: Upl
     raw = file.file.read(MAX_FRAME_BYTES + 1)
     if len(raw) > MAX_FRAME_BYTES:
         raise HTTPException(status_code=413, detail="La imagen es demasiado grande")
-    if event.face_door_liveness:
-        direction = liveness.read_challenge(challenge, event.id, staff.id)
-        turned = turn.file.read(MAX_FRAME_BYTES + 1) if turn is not None else b""
-        if direction is None or not turned or len(turned) > MAX_FRAME_BYTES:
-            raise HTTPException(status_code=400, detail="La indicación venció. Intenta de nuevo.")
-        try:
-            front_info = faces.analyze(BiometricEngine.process_image_stream(raw), encode=True)
-            turn_info = faces.analyze(BiometricEngine.process_image_stream(turned), encode=True)
-        except faces.Busy:
-            raise HTTPException(status_code=503, detail=BUSY_MSG, headers={"Retry-After": "3"})
-        except UnidentifiedImageError:
-            raise HTTPException(status_code=400, detail="La imagen no es válida")
-        finally:
-            del turned
-        if not liveness.movement_ok(front_info, turn_info, direction):
-            _count(event, "no_live")
-            return {"result": "NO_LIVE", "message": liveness.FAIL_MSG}
     try:
         status, ranked = faces.recognize(db, event, raw)
     except faces.Busy:
@@ -105,7 +87,10 @@ def door_face(event_id: int = Form(...), file: UploadFile = File(...), turn: Upl
     best = ranked[0] if ranked else None
     margin = (ranked[1][1] - best[1]) if len(ranked) >= 2 else None
     if status != "MATCH" or best[1] > AUTO_MAX_DIST or faces.is_doubtful(ranked):
-        _count(event, "no_match", best[1] if best else None, margin)
+        # motivo (solo para diagnosticar): none = ningún candidato dentro de 0,55 (o la persona no está en la matriz: sin aceptación vigente / sin vector); far = el mejor está entre
+        # AUTO_MAX_DIST y 0,55; doubtful = el margen sobre el segundo es menor que MATCH_MARGIN
+        reason = "none" if status != "MATCH" else ("doubtful" if faces.is_doubtful(ranked) and best[1] <= AUTO_MAX_DIST else "far")
+        _count(event, "no_match", best[1] if best else None, margin, reason)
         return {"result": "NO_MATCH", "message": NOT_FOUND_FACE}
     uid = best[0]
     if db.get(User, (uid, event.tenant_id)) is None:
@@ -136,13 +121,6 @@ def _repeat_log_ids(db: Session, event, since) -> list:
     rows = (db.query(SystemEvent.at, SystemEvent.ref).filter(SystemEvent.kind == "door_face_repeat", SystemEvent.ref.like(f"{event.id}:%"), SystemEvent.at >= since)
             .order_by(SystemEvent.id.desc()).limit(RECENT).all())
     return [(at, int(ref.split(":", 1)[1])) for at, ref in rows if ref.split(":", 1)[1].isdigit()]
-
-
-@router.get("/events/{event_id}/door-face/challenge")
-def door_challenge(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(DIGITADOR)):
-    """El giro que debe hacer la persona (izquierda o derecha, al azar), firmado y de corta vida. Solo números y una palabra: nada personal."""
-    event = _door_event(db, event_id, staff)
-    return liveness.make_challenge(event.id, staff.id)
 
 
 @router.get("/events/{event_id}/door-face/recent")
@@ -213,12 +191,20 @@ def door_stats(event_id: int, db: Session = Depends(get_db), staff: StaffUser = 
     now_local = to_local(utcnow())
     since = local_to_utc(datetime(now_local.year, now_local.month, now_local.day))
     counts = {"match": 0, "match_repeat": 0, "no_match": 0, "no_face": 0, "no_live": 0, "reverted": 0}
+    reasons: dict = {}
+    attempts_list = []      # no_live: solo filas viejas de la prueba de movimiento retirada
     dists = {"match": [], "no_match": []}
-    for (detail,) in db.query(SystemEvent.detail).filter(SystemEvent.kind == "door_face", SystemEvent.ref == str(event.id), SystemEvent.at >= since):
+    for at, detail in db.query(SystemEvent.at, SystemEvent.detail).filter(SystemEvent.kind == "door_face", SystemEvent.ref == str(event.id), SystemEvent.at >= since).order_by(SystemEvent.id):
         parts = (detail or "").split()
         if not parts or parts[0] not in counts:
             continue
         counts[parts[0]] += 1
+        nums = {p[0]: int(p[1:]) / 1000 for p in parts[1:] if p[0] in "dm" and p[1:].isdigit()}
+        reason = next((p for p in parts[1:] if p in ("none", "far", "doubtful")), "")
+        if reason:
+            reasons[reason] = reasons.get(reason, 0) + 1
+        if parts[0] != "reverted":                       # solo números y el resultado: sin cédula ni nombre. Sirve para cruzar con la hora de un intento propio
+            attempts_list.append({"at": to_local(at).strftime("%H:%M:%S"), "result": parts[0], "dist": nums.get("d"), "margin": nums.get("m"), "reason": reason})
         group = "match" if parts[0].startswith("match") else parts[0]
         if group in dists and len(parts) > 1 and parts[1].startswith("d"):
             dists[group].append(int(parts[1][1:]) / 1000)
@@ -226,4 +212,4 @@ def door_stats(event_id: int, db: Session = Depends(get_db), staff: StaffUser = 
     return {"attempts": attempts, "matches": counts["match"] + counts["match_repeat"], "no_match": counts["no_match"] + counts["no_face"] + counts["no_live"], "no_face": counts["no_face"],
             "no_live": counts["no_live"],
             "reverted": counts["reverted"], "auto_max_dist": AUTO_MAX_DIST, "match_margin": faces.MATCH_MARGIN,
-            "distances": {k: sorted(v) for k, v in dists.items()}}
+            "distances": {k: sorted(v) for k, v in dists.items()}, "reasons": reasons, "recent_attempts": attempts_list[-20:][::-1]}

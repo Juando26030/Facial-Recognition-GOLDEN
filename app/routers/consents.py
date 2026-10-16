@@ -197,8 +197,7 @@ def _setup_config(event) -> dict:
     return {"facial_enabled": event.facial_enabled, "controller_mode": event.controller_mode, "organizer_name": event.organizer_name, "organizer_nit": event.organizer_nit,
             "organizer_privacy_email": event.organizer_privacy_email, "client_photos_before": event.client_photos_before, "consent_prompt_mode": event.consent_prompt_mode,
             "aceptar_enabled": event.aceptar_enabled, "precalculo_autorizado": event.precalculo_autorizado, "biometrics_locked": bool(event.biometrics_locked),
-            "accept_link_email": bool(event.accept_link_email), "face_door_enabled": bool(event.face_door_enabled),
-            "face_door_liveness": bool(event.face_door_liveness)}
+            "accept_link_email": bool(event.accept_link_email), "face_door_enabled": bool(event.face_door_enabled)}
 
 
 @router.get("/events/{event_id}/biometric-setup")
@@ -229,7 +228,6 @@ def put_biometric_setup(event_id: int, data: dict, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="; ".join(errors))
     event.biometrics_locked = bool(new["biometrics_locked"])
     event.face_door_enabled = bool(new["face_door_enabled"])
-    event.face_door_liveness = bool(new["face_door_liveness"])
     event.accept_link_email = bool(new["accept_link_email"])
     event.facial_enabled, event.controller_mode = bool(new["facial_enabled"]), str(new["controller_mode"])
     event.organizer_name, event.organizer_nit, event.organizer_privacy_email = new["organizer_name"], new["organizer_nit"], new["organizer_privacy_email"]

@@ -53,20 +53,13 @@ En la pantalla de **Registro** del evento aparece la franja **«Entradas con ros
 
 **Al terminar:** borra el evento de prueba y las personas (sección 9 de la guía de staging) y pide a los voluntarios que, si quieren, revoquen su autorización.
 
-## 5. Prueba de movimiento (prueba de vida) — requisito para el piloto
-**Qué hace.** Tras la cuenta 3-2-1, la pantalla toma una foto **de frente** y enseguida pide **«Ahora gira un poco la cabeza hacia tu IZQUIERDA»** (o DERECHA: lo elige el servidor al azar en cada intento), con una flecha. Toma una segunda foto 1,5 s después. Solo entra quien **giró hacia el lado pedido**, con **una sola cara** y siendo **la misma persona** en las dos fotos. Una foto impresa o una pantalla frente a la cámara **no produce ese giro** y no pasa («No pudimos comprobar el movimiento. Intenta de nuevo siguiendo la indicación.»). Ninguna de las dos fotos se guarda.
+## 5. Sin prueba de vida: regla del día del evento
+**Decisión del dueño del producto (16 de octubre de 2026):** la puerta de autoservicio **no** tiene prueba de movimiento. La validación la hace **la persona del equipo que supervisa**.
 
-**Dónde se enciende.** Parámetros → paso guiado → debajo de «Entrada con rostro»: **«Prueba de movimiento (prueba de vida)»**, encendida por defecto. Si la apagas, vuelve el aviso «⚠️ Sin prueba de vida: requiere supervisión constante».
+> **REGLA DEL DÍA DEL EVENTO: SIEMPRE UNA PERSONA FRENTE A LA PANTALLA DE LA PUERTA.**
+> Mientras la entrada con rostro esté encendida, alguien del equipo mira la **franja de supervisión** (foto de registro, nombre y hora de cada entrada) y pulsa **«Revisar»** si la foto no es quien acaba de entrar. Una **foto o una pantalla frente a la cámara puede pasar**.
 
-**Qué probar (en staging, en la tablet/portátil de la puerta):**
-1. Tú, inscrito y con aceptación: pulsa, mira de frente, y gira **hacia el lado que diga la pantalla**. *Debes ver:* «¡Listo! Tu ingreso quedó registrado.» Repite 5 veces (usa «Revisar» en la franja entre intento e intento).
-2. Gira al lado **contrario** al pedido. *Debes ver:* «No pudimos comprobar el movimiento…».
-3. **Tu foto en el celular** (o impresa) frente a la cámara, inclinándola cuando pida el giro. *Debes ver:* «No pudimos comprobar el movimiento…» **siempre**. Repite 5 veces.
-4. Anota cuántas veces falló el paso 1 (personas válidas rechazadas).
-
-**Si el paso 1 falla SIEMPRE** (incluso girando bien), es la dirección de la cámara de ese equipo: dímelo y cambio la variable `LIVENESS_SIGN` (sin programar). **Si falla a veces**, se puede bajar el giro mínimo (`LIVENESS_MIN_TURN`, hoy 0,18). Si no queda confiable para el 26, apaga la casilla y el piloto sale con supervisión humana (C + D), como decidiste.
-
-**Lo que NO cubre:** un **video** de la persona girando justo hacia el lado pedido podría pasar. Por eso la franja de supervisión sigue siendo obligatoria.
+En Parámetros, con la entrada con rostro encendida, queda el aviso «⚠️ Sin prueba de vida: requiere supervisión constante». (La migración 0068 y su columna quedan sin uso; ya no hay ninguna casilla de prueba de movimiento.)
 
 ## 6. Cambios tras la prueba del 16 de octubre
 - **Sin conexión, con la pantalla abierta:** la pantalla consulta al servidor cada 4 segundos. Si no responde (o falla cualquier petición), el botón «Entrar con mi rostro» **desaparece** y queda «Ingresar con cédula o QR»; vuelve solo cuando el servidor responde otra vez. *Prueba:* abre la pantalla, apaga el wifi y espera unos 5 segundos → el botón desaparece; enciéndelo → vuelve.
