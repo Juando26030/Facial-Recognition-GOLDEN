@@ -337,12 +337,22 @@ def test_badge_email_link_is_absolute_and_uses_the_events_own_template(client, f
     ev = _setup(client, factory, role="coordinador")
     _register(client, ev, "1001", send="true")
     import re
-    assert re.search(r"https?://\S+/b/\w+", outbox[0]["body"]) and 'href="http' in outbox[0]["html"]           # nunca «/b/…» a secas (no sirve en un correo)
+    assert re.search(r"https?://\S+/b/[\w-]+", outbox[0]["body"]) and 'href="http' in outbox[0]["html"]           # nunca «/b/…» a secas (no sirve en un correo). [\w-]: el token puede empezar por «-» (1 de cada 64)
     r = client.put(f"/api/events/{ev.id}/digital-email", json={"subject": "Tu pase, {nombre}", "body": "<p>Entra: {boton}</p>"})
     assert r.status_code == 200 and client.get(f"/api/events/{ev.id}/digital-email").json()["custom"] is True
     outbox.clear()
     _register(client, ev, "1002", send="true")
     assert outbox[0]["subject"] == "Tu pase, Ana" and "Entra:" in outbox[0]["body"]
+
+
+def test_the_badge_link_is_absolute_even_when_the_token_starts_with_a_dash(client, factory, outbox, monkeypatch):
+    """Regresión del fallo intermitente del despliegue a staging (3aa23de): el token de la escarapela puede empezar por «-» y la prueba usaba \w+ (1,6 % de las corridas)."""
+    import re
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setattr("app.digital_badge.secrets.token_urlsafe", lambda n=32: "-Abc_123-xyz")
+    ev = _setup(client, factory, role="coordinador")
+    _register(client, ev, "1001", send="true")
+    assert re.search(r"https?://\S+/b/[\w-]+", outbox[0]["body"]).group(0).endswith("/b/-Abc_123-xyz")
 
 
 def test_email_template_editing_rules(client, factory, outbox):
