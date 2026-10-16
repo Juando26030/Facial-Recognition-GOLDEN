@@ -117,7 +117,7 @@ def test_birth_date_is_read_in_the_three_formats_and_an_unreadable_one_is_a_row_
     births = {u.id: u.birth_date for u in db.query(User).filter(User.id.in_(["1", "2", "3", "4", "5"]))}
     assert births == {"1": date(2011, 3, 10), "2": date(2011, 3, 10), "3": date(2011, 3, 10), "4": None, "5": None}
     notes = [e for e in r.json()["errors"] if "fecha de nacimiento" in e]
-    assert len(notes) == 1 and "Fila 5" in notes[0] and "el diez de marzo" in notes[0]                      # solo la ilegible, con su fila (la 4.ª persona está en la fila 5 del archivo)
+    assert len(notes) == 2 and "fila(s) 5" in notes[0] and "Fila 5" in notes[1] and "el diez de marzo" in notes[1]      # el resumen y la ilegible con su fila (la 4.ª persona está en la fila 5 del archivo)
 
 
 def test_birth_date_from_a_real_excel_file_as_a_date_cell_or_as_a_serial_number(client, factory, db):
@@ -275,3 +275,61 @@ def test_the_downloadable_template_loads_as_is_without_asking_anything_and_reads
     db.expire_all()
     assert db.query(User).filter_by(id="1020304050").one().birth_date == date(1990, 4, 2)
     assert not [e for e in r.json()["errors"] if "fecha de nacimiento" in e]
+
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------- fecha de nacimiento: causa del enlace que la pedía (2026-10-16)
+def _one(birth, cedula="9990000028"):
+    return _xlsx([["cédula", "nombres", "apellidos", "correo", "fecha de nacimiento"], [cedula, "Ana", "Prueba", "a@example.com", birth]])
+
+
+def test_text_ddmmyyyy_and_an_excel_date_cell_are_both_read_and_the_personal_link_does_not_ask_for_it(client, factory, db):
+    from datetime import datetime as dt
+    from app import acceptlink
+    from app.models import EventAttendee
+    ev = _coord(client, factory, aceptar_enabled=True)
+    for cedula, birth in (("9990000028", "26/03/2005"), ("9990000029", dt(2005, 3, 26))):
+        r = _upload(client, ev, _one(birth, cedula), name="p.xlsx")
+        assert r.status_code == 200 and r.json()["count"] == 1 and r.json()["birth"]["completed"] == 1
+        db.expire_all()
+        assert db.query(User).filter_by(id=cedula).one().birth_date == date(2005, 3, 26)
+    att = db.query(EventAttendee).filter_by(event_id=ev.id, user_id="9990000028").one()
+    token = acceptlink.issue(db, att, True)
+    db.commit()
+    chk = client.post(f"/api/aceptar/{ev.event_code}/check", data={"token": token, "cedula": "9990000028"}).json()
+    assert chk == {"status": "ok", "selfie": True}                                                          # toma la fecha de la base: no la pregunta
+
+
+def test_a_load_without_facial_on_does_not_keep_the_date_and_says_so_and_a_reload_after_enabling_completes_it(client, factory, db):
+    ev = _coord(client, factory, facial_enabled=False)
+    first = _upload(client, ev, _one("26/03/2005"), name="p.xlsx").json()
+    db.expire_all()
+    assert db.query(User).filter_by(id="9990000028").one().birth_date is None                              # causa reproducida: la columna se ignoró
+    assert first["birth"]["ignored_rows"] == 1 and "NO se guardaron" in first["errors"][0] and "reconocimiento facial activo" in first["errors"][0]
+    ev.facial_enabled = True
+    db.commit()
+    second = _upload(client, ev, _one("26/03/2005"), name="p.xlsx").json()
+    db.expire_all()
+    assert db.query(User).filter_by(id="9990000028").one().birth_date == date(2005, 3, 26) and second["birth"]["completed"] == 1     # la recarga completa a quien existía sin fecha
+
+
+def test_a_reload_does_not_overwrite_a_valid_date_unless_asked(client, factory, db):
+    ev = _coord(client, factory)
+    _upload(client, ev, _one("26/03/2005"), name="p.xlsx")
+    r = _upload(client, ev, _one("01/01/1980"), name="p.xlsx").json()
+    db.expire_all()
+    assert db.query(User).filter_by(id="9990000028").one().birth_date == date(2005, 3, 26)                  # manda la guardada
+    assert r["birth"]["kept_rows"] == [2] and any("no se cambió" in e for e in r["errors"])
+    r = _upload(client, ev, _one("01/01/1980"), name="p.xlsx", data={"overwrite_birth": "true"}).json()
+    db.expire_all()
+    assert db.query(User).filter_by(id="9990000028").one().birth_date == date(1980, 1, 1) and r["birth"]["replaced"] == 1
+    ch = db.query(PersonChange).filter_by(user_id="9990000028", kind="birth_date").one()
+    assert (ch.old_value, ch.new_value) == ("2005-03-26", "1980-01-01") and "recarga" in ch.detail        # queda el rastro del cambio
+
+
+def test_the_summary_counts_the_unreadable_dates_with_their_rows(client, factory, db):
+    ev = _coord(client, factory)
+    content = _csv("id,nombres,apellidos,fecha de nacimiento", "1,A,Uno,26/03/2005", "2,B,Dos,ayer", "3,C,Tres,", "4,D,Cuatro,31/02/2000")
+    r = _upload(client, ev, content).json()
+    assert r["birth"]["unreadable_rows"] == [3, 5] and r["birth"]["completed"] == 1                         # filas del archivo (la 1 es el encabezado)
+    assert r["errors"][0].startswith("⚠️ 2 fila(s) con fecha de nacimiento que no se pudo entender: fila(s) 3, 5")

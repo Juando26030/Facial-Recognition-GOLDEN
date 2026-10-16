@@ -142,7 +142,8 @@ def test_the_birth_date_column_is_ignored_with_a_notice_in_an_event_without_the_
     assert r.status_code == 200 and r.json()["count"] == 2
     cols = r.json()["columns"]
     assert {"title": "fecha de nacimiento", "reason": "no se usa en este evento (no tiene reconocimiento facial)"} in cols["unused"]
-    assert not any("Fecha de nacimiento" == c["field"] for c in cols["recognized"]) and not [e for e in r.json()["errors"] if "fecha de nacimiento" in e]      # ni siquiera se valida
+    assert not any("Fecha de nacimiento" == c["field"] for c in cols["recognized"])       # ni siquiera se valida cada fecha...
+    assert r.json()["birth"]["ignored_rows"] == 2 and r.json()["errors"][0].startswith("⚠️ 2 fila(s) traían fecha de nacimiento y NO se guardaron") and len(r.json()["errors"]) == 1      # ...pero SÍ se avisa, una sola vez
     db.expire_all()
     assert db.query(User).filter_by(id="1001").one().birth_date is None
     on = factory.event("creado", facial_enabled=True)

@@ -1538,7 +1538,7 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
     field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
-    roster_upload: str = Form(None), zip_upload: str = Form(None),
+    roster_upload: str = Form(None), zip_upload: str = Form(None), overwrite_birth: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
@@ -1553,7 +1553,7 @@ def bulk_register(
     if has_zip and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     if background and bulk_jobs.uses_cloud_run():
-        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored)
+        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored, _truthy(overwrite_birth))
     # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
     zip_up = uploads.fetch(zip_upload, "bulk_zip", {"e": event_id})
@@ -1561,7 +1561,7 @@ def bulk_register(
     roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
     zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
     args = dict(event_id=event_id, roster_filename=roster_filename,
-                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored)
+                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth))
 
     def cleanup(result):
         # NEEDS_LABELS: el navegador reenvía la MISMA carga con los nombres de las columnas; los archivos temporales tienen que seguir ahí.
@@ -1585,7 +1585,7 @@ def bulk_register(
     return {"background": True, "job_id": job_id}
 
 
-def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored=False) -> dict:
+def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored=False, overwrite_birth=False) -> dict:
     """BULK_BACKEND=cloudrun: la carga la ejecuta un Cloud Run Job. Aquí NO se descargan los archivos (un ZIP de 2 GB no cabe en el
     servicio web): solo se guardan sus tokens; los que vinieron en la petición se dejan antes en el almacenamiento (`uploads.stash`)."""
     scope = {"e": event.id}
@@ -1599,7 +1599,7 @@ def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_uploa
         return None
 
     spec = {"roster": token(roster_upload, roster_file, "bulk_roster"), "zip": token(zip_upload, zip_file, "bulk_zip"),
-            "field_labels": field_labels, "source_event_id": source_event_id, "zip_ignored": zip_ignored}
+            "field_labels": field_labels, "source_event_id": source_event_id, "zip_ignored": zip_ignored, "overwrite_birth": overwrite_birth}
     if bulk_jobs.active_job(db, event.id):
         raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
     job_id = bulk_jobs.create_job(db, event.id, staff.id, spec)
@@ -1621,7 +1621,7 @@ def run_bulk_spec(db: Session, job, progress) -> dict:
     result = _bulk_register_impl(
         db, staff, event_id=event_id, roster_filename=roster_up.filename if roster_up else None, content=roster_up.content if roster_up else None,
         zip_bytes=zip_up.content if zip_up else None, field_labels=spec.get("field_labels"), source_event_id=spec.get("source_event_id"), progress=progress,
-        zip_ignored=bool(spec.get("zip_ignored")))
+        zip_ignored=bool(spec.get("zip_ignored")), overwrite_birth=bool(spec.get("overwrite_birth")))
     if not (isinstance(result, dict) and result.get("result") == "NEEDS_LABELS"):     # NEEDS_LABELS: la misma carga vuelve con los nombres
         uploads.discard(roster_up, zip_up)
     return result
@@ -1641,7 +1641,7 @@ def bulk_job_status(
 
 
 def _bulk_register_impl(
-    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False,
+    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -1699,7 +1699,9 @@ def _bulk_register_impl(
     header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
     # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
     birth_used = bool(event.facial_enabled or (zip_bytes and not event.biometrics_locked))
+    birth_ignored_rows = 0
     if not birth_used:
+        birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
         roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
 
     # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
@@ -1848,6 +1850,7 @@ def _bulk_register_impl(
             )
 
     count = 0
+    birth_bad_rows, birth_kept_rows, birth_completed, birth_replaced = [], [], 0, 0
     for row_i, info in enumerate(row_infos, start=1):
         done_units += bulk_jobs.ROW_WEIGHT
         progress(f"Guardando personas ({row_i} de {len(row_infos)})", done_units, total_units)
@@ -1898,9 +1901,23 @@ def _bulk_register_impl(
             # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
             birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "") if birth_used else ""
             birth = minors.parse_birth(birth_raw)
-            row_minor = minors.is_minor(birth)
             if birth_raw and birth is None:
                 errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD, DD/MM/AAAA o una fecha de Excel).")
+                birth_bad_rows.append(row_num)
+            # Una persona que ya tenía una fecha válida distinta NO la pierde por una recarga (salvo que el coordinador marque «reemplazar»): manda la guardada. Quien no tenía fecha, la completa.
+            stored_birth = db.query(User.birth_date).filter(User.id == identificador, User.tenant_id == event.tenant_id).scalar()
+            birth_action = ""
+            if birth is not None and stored_birth is not None and stored_birth != birth:
+                if overwrite_birth:
+                    birth_action = "replaced"
+                else:
+                    birth_action = "kept"
+                    birth_kept_rows.append(row_num)
+                    errors.append(f"⚠️ Fila {row_num}: ya tenía una fecha de nacimiento guardada distinta a la del archivo; no se cambió (marca «Reemplazar fechas ya guardadas» si quieres cambiarla).")
+                    birth = stored_birth
+            elif birth is not None and stored_birth is None:
+                birth_action = "completed"
+            row_minor = minors.is_minor(birth)
             has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
             if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
                 face_enc_json = None
@@ -1929,7 +1946,13 @@ def _bulk_register_impl(
                 user.phone = telefono
                 user.email = correo
                 user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
-                if birth is not None:
+                if birth is not None and birth_action != "kept":
+                    if birth_action == "replaced":
+                        db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id if staff else None, kind="birth_date",
+                                            old_value=stored_birth.isoformat(), new_value=birth.isoformat(), detail="reemplazada por una recarga de la base"))
+                        birth_replaced += 1
+                    elif birth_action == "completed":
+                        birth_completed += 1
                     user.birth_date = birth
                     user.is_biometric_enabled = not row_minor
                     if row_minor:
@@ -1969,6 +1992,13 @@ def _bulk_register_impl(
     if (count > 0 or carried_ids) and not event.roster_uploaded:
         event.roster_uploaded = True
 
+    # Resumen de las fechas de nacimiento (avisa lo que no se pudo guardar y por qué)
+    if birth_ignored_rows:
+        errors.insert(0, f"⚠️ {birth_ignored_rows} fila(s) traían fecha de nacimiento y NO se guardaron porque este evento no tiene el reconocimiento facial activo. Actívalo y vuelve a cargar el mismo archivo: se completarán las fechas.")
+    if birth_bad_rows:
+        shown = ", ".join(str(n) for n in birth_bad_rows[:30]) + ("…" if len(birth_bad_rows) > 30 else "")
+        errors.insert(0, f"⚠️ {len(birth_bad_rows)} fila(s) con fecha de nacimiento que no se pudo entender: fila(s) {shown}. Usa DD/MM/AAAA, AAAA-MM-DD o una fecha de Excel.")
+    birth_summary = {"completed": birth_completed, "replaced": birth_replaced, "kept_rows": birth_kept_rows, "unreadable_rows": birth_bad_rows, "ignored_rows": birth_ignored_rows}
     db.commit()
     message = f"Carga completa: {count} perfiles cargados."
     if carried_ids:
@@ -1976,7 +2006,7 @@ def _bulk_register_impl(
     if errors:
         message += f" {len(errors)} observación(es) — revisa el detalle."
     message += " " + roster_columns.summary(columns_report)
-    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels(), "columns": columns_report}
+    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels(), "columns": columns_report, "birth": birth_summary}
 
 @router.get("/report")
 def download_report(

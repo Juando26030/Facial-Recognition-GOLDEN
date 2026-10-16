@@ -85,6 +85,10 @@
           <input type="checkbox" id="enableFacial" style="width:auto;">
           <label for="enableFacial" style="margin:0;">¿Desea activar el reconocimiento facial?</label>
         </div>
+        <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; margin-top:0.6rem;">
+          <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" style="width:auto; margin-top:3px;">
+          <span>Reemplazar las fechas de nacimiento que ya están guardadas (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
+        </label>
 
         <div id="facialZipGroup" class="badge-input-group" style="display:none; margin-top:0.8rem;">
           <label>Fotos de las personas (.zip, cada foto nombrada como la cédula, ej. 123456.jpg)</label>
@@ -445,6 +449,7 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
         const group = groups[i];
         const fd = new FormData();
         fd.append("event_id", window.EVENT_ID);
+        if (document.getElementById("overwriteBirth") && document.getElementById("overwriteBirth").checked) fd.append("overwrite_birth", "true");
         if (i === 0) (sourceEventIds || []).forEach(id => fd.append("source_event_id", id));  // los eventos anteriores entran una sola vez, con el primer lote
         fd.append("roster_file", buildRosterBlob(kind, header, group.rows), `lote_${i + 1}.${kind}`);
         const zipBlob = await buildBatchZip(zip, group.ids);
