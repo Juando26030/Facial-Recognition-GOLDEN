@@ -70,7 +70,7 @@ def summary(event: Event) -> dict:
     if not event.facial_enabled:      # sin rostro NO es un problema: es una configuración completa
         off = ["Todo el mundo entra por cédula o QR.", "No se pide ninguna autorización biométrica, no se calcula ni se guarda ninguna foto ni vector, y la fecha de nacimiento no se usa."]
         off.append("Este evento está BLOQUEADO sin biometría: nadie puede activar el rostro ni subir fotos." if getattr(event, "biometrics_locked", False)
-                   else "Si quieres que sea imposible activar el rostro por error (por ejemplo al subir un zip de fotos), marca «Este evento NO usa biometría» y guarda.")
+                   else "Para que sea imposible activar el rostro por error, elige «No usa rostro (bloqueado)» y guarda.")
         return {"ready": True, "headline": "✅ Listo: este evento no usa biometría", "missing": [], "door": door + off}
     missing += [f"Falta {m}" for m in facial_blockers(event)]
     text = legal_texts.render(event)

@@ -91,11 +91,12 @@ def test_the_summary_says_ready_without_biometrics_and_the_lock_is_explained(cli
     s = client.get(f"/api/events/{ev.id}/biometric-setup").json()
     assert s["ready"] is True and s["missing"] == [] and s["headline"] == "✅ Listo: este evento no usa biometría"
     text = " ".join(s["door"])
-    assert "cédula o QR" in text and "no se calcula ni se guarda ninguna foto ni vector" in text and "marca «Este evento NO usa biometría»" in text
+    assert "cédula o QR" in text and "no se calcula ni se guarda ninguna foto ni vector" in text and "elige «No usa rostro (bloqueado)»" in text
     assert client.put(f"/api/events/{ev.id}/biometric-setup", json={"biometrics_locked": True}).status_code == 200
     s = client.get(f"/api/events/{ev.id}/biometric-setup").json()
     assert s["config"]["biometrics_locked"] is True and "BLOQUEADO sin biometría" in " ".join(s["door"])
-    assert "Paso 0" in client.get(f"/kiosk/{ev.id}/parametros").text and 'id="bsLocked"' in client.get(f"/kiosk/{ev.id}/parametros").text
+    page = client.get(f"/kiosk/{ev.id}/parametros").text
+    assert "¿Este evento usa reconocimiento facial?" in page and 'id="bsLocked" value="off" checked' in page           # opción única (Fase 0), marcada en «No usa rostro»
 
 
 # ------------------------------------------------------------------------------------------------------------------------------- candado
