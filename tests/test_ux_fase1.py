@@ -214,3 +214,46 @@ def test_text_under_18_px_uses_agrandir_regular_and_thin_is_kept_for_18_px_or_mo
     assert sizes["body"] == 16 and sizes["label"] == 14 and all(px >= 18 for name, px in sizes.items() if name not in ("body", "label"))      # lo que no es Regular (>= 18 px) son títulos
     agrandir = open("static/css/agrandir.css", encoding="utf-8").read()
     assert "font-weight: 100 500" in agrandir and "font-weight: 600 900" in agrandir and "agrandir-regular.otf" in agrandir.split("font-weight: 600 900")[0].rsplit("@font-face", 1)[1]
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ ronda de revisión del dueño (17 oct)
+def test_radios_and_checkboxes_align_with_the_first_line_of_their_text():
+    rule = re.search(r'body\.ux1 label:has\(> input\[type="checkbox"\]\), body\.ux1 label:has\(> input\[type="radio"\]\) \{(.*?)\}', CSS, re.S).group(1)
+    assert "align-items: flex-start !important" in rule and "align-items: center" not in rule and "padding: 10px 0" in rule      # 24 px de línea + 20 = 44 px de objetivo
+    assert 'label:has(> input[type="radio"]) > input { margin: 0 !important; }' in CSS
+
+
+def test_the_fixed_save_bar_never_covers_the_last_lines_or_buttons():
+    assert ":root:has(body.ux1) { scroll-padding-bottom: 112px; }" in CSS and "body.ux1 .ux-panel > :nth-last-child(2) { margin-bottom: var(--ux-s6, 32px); }" in CSS
+    assert "position: sticky; bottom: 0" in CSS
+
+
+def test_the_six_tabs_stay_in_one_scrollable_row_and_the_active_one_is_centered(client, factory, db):
+    tabs = re.search(r"body\.ux1 \.ux-tabs \{(.*?)\}", CSS, re.S).group(1)
+    assert "flex-wrap: nowrap" in tabs and "overflow-x: auto" in tabs and "flex-wrap: wrap" not in tabs
+    assert "flex: none; white-space: nowrap" in CSS
+    factory.staff("super_admin", "su")
+    ev = factory.event("creado", facial_enabled=True)
+    login(client, "su")
+    page = client.get(f"/kiosk/{ev.id}/parametros").text
+    assert "function centerActive(id)" in page and "bar.scrollLeft +=" in page and "centerActive(id);" in page
+    assert "fieldset > * { min-width: 0; }" in CSS and "grid-template-columns: minmax(0, 1fr)" in CSS            # a 375 px nada ensancha la página
+
+
+def test_event_menu_has_no_loose_event_name_and_the_status_badge_is_14_px_with_enough_contrast(client, factory, db):
+    ev = _event(client, factory, "coordinador")
+    page = client.get(f"/kiosk/{ev.id}").text
+    assert f"letter-spacing:2px; font-size:0.85rem;\">{ev.name}</span>" not in page and "¿Qué vas a hacer hoy?" in page
+    assert "body.ux1 .status-pill { font-size: var(--ux-fs-label);" in CSS
+    for state, bg, fg in (("creado", "#e3eefb", "ux-link"), ("en_proceso", "#e1f3e6", "ux-ok"), ("finalizado", "#e9eaf0", "ux-ink-2")):
+        assert f"body.ux1 .status-{state} {{ background: {bg}; color: var(--{fg}); }}" in CSS
+        assert _ratio(_token(fg), bg) >= 4.5, state
+
+
+def test_the_repeated_card_heading_of_the_facial_tab_is_kept_only_for_screen_readers(client, factory, db):
+    factory.staff("super_admin", "su")
+    ev = factory.event("creado", facial_enabled=True)
+    login(client, "su")
+    page = client.get(f"/kiosk/{ev.id}/parametros").text
+    assert "Reconocimiento facial: paso guiado" in page                                                  # sigue en la página (lectores de pantalla y pruebas existentes)
+    assert 'body.ux1 [data-ux-tab="facial"] > h4:first-child { position: absolute; width: 1px; height: 1px;' in CSS

@@ -23,3 +23,15 @@ Los archivos traen: «Copyright © 2018 by Alexander Slobzheninov. All rights re
 ## Decisión del dueño (17 oct 2026): aplicada
 Todo texto de menos de 18 px (cuerpo, ayuda, etiquetas y campos de formulario) usa el peso 600 = Agrandir Regular (`--ux-weight-small` en `static/css/ux1.css`); Thin queda para 18 px o más (hoy ningún texto: los títulos ya van en 700). Medido: ayuda 14 px, 8,4:1 también en el trazo; cuerpo 16 px, 16,7:1. Capturas: `capturas/agrandir_*.png`.
 Efecto secundario a tener en cuenta: como Thin y Regular ahora se ven iguales de pesados, una negrilla dentro de un párrafo («**Usa rostro.** Quien acepte…») ya no se distingue por peso (700 también cae en Regular); si hace falta énfasis, hay que usar color o tamaño. Y si alguien elige otra tipografía en Configuración > Apariencia, 600 es semi-negrita en esa familia.
+
+## Verificación sobre la página real (Parámetros > Reconocimiento facial, Chrome, 17 oct, tras aplicar el peso 600)
+Núcleo del trazo = 0,25 % de píxeles más oscuros del elemento, contra su fondo real.
+| Elemento | Peso / tamaño | Monitor normal (1×) | iPad / celular (2×) |
+|---|---|---|---|
+| Ayuda bajo el título de la tarjeta | 600 / 14 px | **8,4:1** | 8,4:1 |
+| Etiqueta («Responsable del tratamiento») | 600 / 16 px | **16,7:1** | 16,7:1 |
+| Campo de formulario (select) | 600 / 16 px | **16,7:1** | 16,7:1 |
+| «Todo guardado» | 600 / 14 px | **8,4:1** | 8,4:1 |
+| Introducción de la pestaña | 600 / 16 px | **7,5:1** (sobre el fondo gris de la página) | 7,5:1 |
+
+Todos cumplen 4,5:1 en el trazo (antes, con Thin, la ayuda llegaba a 5,0:1 en un monitor normal). Comparación visual: `capturas_ronda2/paso1_antes_thin_ipad.png` y `paso1_despues_regular_ipad.png`.

@@ -64,7 +64,9 @@ body.ux1 [style*="color:#a12631"] { color: var(--ux-danger) !important; }
 
 /* ------------------------------------------------------------------ objetivos táctiles */
 body.ux1 input[type="checkbox"], body.ux1 input[type="radio"] { width: 24px !important; height: 24px !important; min-width: 24px; accent-color: var(--ux-navy); flex: none; }
-body.ux1 label:has(> input[type="checkbox"]), body.ux1 label:has(> input[type="radio"]) { min-height: var(--ux-target); align-items: center !important; padding: var(--ux-s1) 0; cursor: pointer; }
+/* el control se alinea con la PRIMERA línea del texto (si el texto ocupa dos, el control no baja al centro); 10 px arriba y abajo con línea de 24 px = 44 px de objetivo táctil */
+body.ux1 label:has(> input[type="checkbox"]), body.ux1 label:has(> input[type="radio"]) { align-items: flex-start !important; gap: var(--ux-s2) !important; padding: 10px 0; cursor: pointer; }
+body.ux1 label:has(> input[type="checkbox"]) > input, body.ux1 label:has(> input[type="radio"]) > input { margin: 0 !important; }
 body.ux1 button, body.ux1 .golden-btn, body.ux1 .small-btn, body.ux1 a.small-btn { min-height: var(--ux-target); min-width: 24px; font-size: var(--ux-fs-label); font-family: var(--ux-font); font-weight: 700; padding-left: var(--ux-s4); padding-right: var(--ux-s4); cursor: pointer; }
 body.ux1 .btn-table-delete, body.ux1 button.ux-compact { min-height: 32px; }
 body.ux1 input[type="text"], body.ux1 input[type="email"], body.ux1 input[type="date"], body.ux1 input[type="number"], body.ux1 input[type="search"], body.ux1 select, body.ux1 textarea {
@@ -103,8 +105,8 @@ body.ux1 .mode-card .mode-icon { width: 48px; height: 48px; border-radius: var(-
 body.ux1 .mode-card .mode-title { font-size: 1.0625rem; }
 
 /* ------------------------------------------------------------------ Parámetros en pestañas */
-body.ux1 .ux-tabs { display: flex; gap: var(--ux-s2); flex-wrap: wrap; margin: 0 0 var(--ux-s4); border-bottom: 2px solid var(--ux-line); padding-bottom: 0; }
-body.ux1 .ux-tab { background: transparent; border: 0; border-bottom: 4px solid transparent; border-radius: 0; margin-bottom: -2px; color: var(--ux-ink-2); font-weight: 700; padding: var(--ux-s3) var(--ux-s4); }
+body.ux1 .ux-tabs { display: flex; gap: var(--ux-s2); flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; margin: 0 0 var(--ux-s4); border-bottom: 2px solid var(--ux-line); padding-bottom: 0; }      /* una sola fila: en celular se desliza y la pestaña activa se centra (JS) */
+body.ux1 .ux-tab { flex: none; white-space: nowrap; background: transparent; border: 0; border-bottom: 4px solid transparent; border-radius: 0; margin-bottom: -2px; color: var(--ux-ink-2); font-weight: 700; padding: var(--ux-s3) var(--ux-s4); }
 body.ux1 .ux-tab[aria-selected="true"] { color: var(--ux-navy); border-bottom-color: var(--ux-gold); }
 body.ux1 .ux-tab .ux-dot { display: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ux-danger); margin-left: var(--ux-s2); vertical-align: middle; }
 body.ux1 .ux-tab.dirty .ux-dot { display: inline-block; }
@@ -127,3 +129,20 @@ body.ux1 .ux-lead { color: var(--ux-ink-2); font-size: var(--ux-fs-body); max-wi
 body.ux1 .golden-main { padding-top: var(--ux-s5); }
 body.ux1 a[style*="golden-primary"] { color: var(--ux-link) !important; }
 body.ux1 .ux-help { margin-top: var(--ux-s4); }
+
+/* ------------------------------------------------------------------ ronda de revisión del dueño (17 oct): barra fija, encabezado repetido, sello de estado */
+/* la barra «Guardar» es fija: ni el desplazamiento por teclado ni el final de la pestaña dejan texto o botones debajo de ella */
+:root:has(body.ux1) { scroll-padding-bottom: 112px; }
+body.ux1 .ux-panel { padding-bottom: var(--ux-s4); }
+body.ux1 .ux-panel > :nth-last-child(2) { margin-bottom: var(--ux-s6, 32px); }
+/* el nombre de la pestaña ya titula el contenido: el encabezado de la tarjeta queda solo para lectores de pantalla */
+body.ux1 [data-ux-tab="facial"] > h4:first-child { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* sello de estado del evento: 14 px mínimo y colores que cumplen 4,5:1 */
+body.ux1 .status-pill { font-size: var(--ux-fs-label); padding: 6px 16px; }
+body.ux1 .status-creado { background: #e3eefb; color: var(--ux-link); }
+body.ux1 .status-en_proceso { background: #e1f3e6; color: var(--ux-ok); }
+body.ux1 .status-finalizado { background: #e9eaf0; color: var(--ux-ink-2); }
+/* celular de 375 px: un fieldset o un select con una opción larga no pueden ensanchar la página (el navegador la achicaba) */
+body.ux1 fieldset, body.ux1 fieldset > * { min-width: 0; }
+body.ux1 select, body.ux1 input, body.ux1 textarea { max-width: 100%; }
+body.ux1 [style*="display:grid"]:not([style*="grid-template"]), body.ux1 [style*="display: grid"]:not([style*="grid-template"]) { grid-template-columns: minmax(0, 1fr); }      /* una pista de grid «auto» crece hasta el texto más largo; así se queda dentro de la pantalla */

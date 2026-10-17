@@ -951,8 +951,16 @@
             tabEl.setAttribute('aria-selected', on ? 'true' : 'false');
             tabEl.tabIndex = on ? 0 : -1;
         });
+        centerActive(id);
         if (push !== false && history.replaceState) history.replaceState(null, '', '#' + id);
     }
+    // En celular las pestañas van en UNA fila que se desliza: la activa se centra para que siempre se vea.
+    function centerActive(id) {
+        const act = document.getElementById(`uxtab-${id}`);
+        if (!act) return;
+        bar.scrollLeft += act.getBoundingClientRect().left - bar.getBoundingClientRect().left - (bar.clientWidth - act.offsetWidth) / 2;
+    }
+    window.addEventListener('load', () => { const cur = present.find((t) => !panels[t.id].hidden); if (cur) centerActive(cur.id); });
     const fromHash = (location.hash || '').slice(1);
     show(present.some((t) => t.id === fromHash) ? fromHash : present[0].id, false);
     window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (present.some((t) => t.id === h)) show(h, false); });
