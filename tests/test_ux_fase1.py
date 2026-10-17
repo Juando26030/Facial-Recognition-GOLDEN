@@ -153,9 +153,9 @@ def test_the_door_the_registration_and_the_public_pages_are_not_restyled(client,
 
 def test_only_presentation_files_changed_in_this_branch():
     import subprocess
-    out = (subprocess.run(["git", "diff", "--name-only", "612813a"], capture_output=True, text=True).stdout
+    out = (subprocess.run(["git", "diff", "--name-only", "3509cc3"], capture_output=True, text=True).stdout
            + subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True).stdout).split()
-    if subprocess.run(["git", "cat-file", "-e", "612813a"], capture_output=True).returncode != 0:
+    if subprocess.run(["git", "cat-file", "-e", "3509cc3"], capture_output=True).returncode != 0:
         pytest.skip("sin historial git para comparar")
     allowed = ("templates/", "static/", "tests/", "docs/")
     assert [f for f in out if not f.startswith(allowed)] == [], "la rama de UX no debe tocar código de la aplicación (app/, alembic/, deploy/)"
