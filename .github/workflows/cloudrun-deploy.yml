@@ -28,6 +28,7 @@ jobs:
       PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       REGION: ${{ vars.GCP_REGION }}
       FIREBASE_SITE: ${{ vars.FIREBASE_SITE }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}      # dirección pública del entorno (staging: el sitio de Firebase; producción: https://app.golden-eventos.com); vacía = el valor por defecto de deploy/gcp/config.sh
       FORCE: ${{ inputs.force && '1' || '0' }}
     steps:
       - uses: actions/checkout@v7

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
-from app import security
+from app import publicurl, security
 from app.storage import badge_asset_key, get_storage
 from app.auth import get_event_for_staff, require_role_excluding
 from app.database import get_db
@@ -108,7 +108,7 @@ def certificate_asset(token: str, tenant_id: str, filename: str, db: Session = D
 
 
 def _public_url(request: Request, event: Event) -> str:
-    base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    base = publicurl.base(str(request.base_url))
     return f"{base}/c/{event.certificates_token}"
 
 

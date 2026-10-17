@@ -3,6 +3,8 @@ Mientras no estén definidas se usa un marcador visible «[COMPANY_NAME]». En p
 import os
 import re
 
+from app import publicurl
+
 NAMES = ("COMPANY_NAME", "COMPANY_NIT", "PRIVACY_EMAIL", "DOMAIN")
 _MARK = re.compile(r"\[(?:%s)\]" % "|".join(NAMES))
 
@@ -22,7 +24,7 @@ def get(name: str) -> str:
 
 def policy_url() -> str:
     """Dirección pública de la política: el host de la APP (PUBLIC_BASE_URL, p. ej. https://app.golden-eventos.com) y, si no está, https://app.<DOMAIN>."""
-    base = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    base = publicurl.configured()
     if not base:
         domain = get("DOMAIN")
         base = f"https://app.{domain}" if not domain.startswith("[") else f"https://{domain}"

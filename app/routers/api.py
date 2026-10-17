@@ -26,7 +26,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import biometric_setup, bulk_jobs, crypto, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import biometric_setup, bulk_jobs, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -1010,6 +1010,7 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
 NOT_FOUND_FACE = "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."      # texto de la auditora (6 oct): sin coincidencia no se guarda nada (ni el vector temporal ni la foto en vivo)
 SUPPRESSED_MSG = "Esta persona solicitó la supresión de sus datos: no se puede registrar de nuevo sin su autorización."
+OVERWRITE_BIRTH_LABEL = "Reemplazar las fechas de nacimiento que ya están guardadas"      # UN solo texto: la casilla de la carga y el aviso del resumen dicen lo mismo (kiosk_roster.html lo recibe del servidor)
 _BIRTH_KEYS = ('fecha de nacimiento', 'fecha_nacimiento', 'fecha nacimiento', 'nacimiento', 'birth_date')      # columna opcional del Excel (L3)
 ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
 ROSTER_LIMIT, ROSTER_WINDOW = 12, timedelta(minutes=10)      # descargas por usuario y evento: un quiosco refresca cada pocos minutos; más que esto es un abuso o un bucle
@@ -1665,22 +1666,11 @@ def _bulk_register_impl(
     field_labels (JSON, ej. {"opcional_1": "Talla de camisa"}) para que se guarden y se continúe
     con la carga."""
     event = get_event_for_staff(event_id, db, staff)
-    if event.status == "finalizado":
-        raise HTTPException(status_code=400, detail="No se puede cargar la base de un evento finalizado")
-    # Bloqueo real (no solo el aviso que ya hace el frontend antes de mandar la petición, ver
-    # kiosk_roster.html) — un evento en_proceso que YA tuvo una carga exitosa antes no puede
-    # recibir otra: es casi siempre alguien resubiendo por error, y pisaría/duplicaría registros
-    # de gente que ya se acreditó en vivo. Si de verdad necesitan cargar otra base, la salida es
-    # crear un evento nuevo, no reintentar sobre este (2026-09-22, pedido explícito del usuario).
-    if event.status == "en_proceso" and event.roster_uploaded:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Este evento ya tiene una base cargada y está EN PROCESO. Para evitar conflictos "
-                "con los registros que ya se hicieron en vivo, no se puede volver a cargar otra "
-                "base sobre este evento — si necesitas cargar una base distinta, crea un evento nuevo."
-            ),
-        )
+    # Una sola regla (app/event_rules.py `roster_block_reason`), la misma que usa la pantalla para avisar ANTES: finalizado nunca; en proceso solo si todavía no tuvo una carga exitosa
+    # (volver a cargar pisaría o duplicaría registros hechos en vivo, 2026-09-22).
+    blocked = event_rules.roster_block_reason(event)
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
 
     # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
     # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
@@ -1908,7 +1898,7 @@ def _bulk_register_impl(
                 else:
                     birth_action = "kept"
                     birth_kept_rows.append(row_num)
-                    errors.append(f"⚠️ Fila {row_num}: ya tenía una fecha de nacimiento guardada distinta a la del archivo; no se cambió (marca «Reemplazar fechas ya guardadas» si quieres cambiarla).")
+                    errors.append(f"⚠️ Fila {row_num}: ya tenía una fecha de nacimiento guardada distinta a la del archivo; no se cambió (marca «{OVERWRITE_BIRTH_LABEL}» si quieres cambiarla).")
                     birth = stored_birth
             elif birth is not None and stored_birth is None:
                 birth_action = "completed"

@@ -9,7 +9,7 @@ import os
 import secrets
 from typing import Optional
 
-from app import company
+from app import company, publicurl
 from app.mailer import send_mail
 from app.models import Event, EventAttendee, User
 from app.timeutil import utcnow
@@ -33,7 +33,7 @@ def regenerate(db, attendee: EventAttendee) -> str:
 
 
 def base_url(request_base: str = "") -> str:
-    return (os.getenv("PUBLIC_BASE_URL") or request_base or "").rstrip("/")
+    return publicurl.base(request_base)
 
 
 def url(event: Event, token: str, request_base: str = "") -> Optional[str]:

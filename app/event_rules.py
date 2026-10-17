@@ -33,6 +33,23 @@ DEFAULTS_BY_BASE = {
 BASE_STATUSES = tuple(DEFAULTS_BY_BASE)
 
 
+# Mensajes de «Adjuntar Base de Datos» cuando el evento no admite la carga (los usa el servidor Y la pantalla: una sola regla, para que no vuelvan a divergir).
+ROSTER_BLOCKED_FINALIZED = ("Este evento está FINALIZADO: ya no se puede cargar la base de datos. Si de verdad necesitas cargarla, un administrador puede reabrir el evento "
+                            "(pasarlo a «Creado» desde la lista de eventos).")
+ROSTER_BLOCKED_IN_PROGRESS = ("Este evento ya tiene una base cargada y está EN PROCESO. Para evitar conflictos con los registros que ya se hicieron en vivo, no se puede volver a cargar otra "
+                              "base sobre este evento. Qué hacer: vuelve el evento a «Creado» desde la lista de eventos (solo si todavía no se acreditó a nadie) o crea un evento nuevo.")
+
+
+def roster_block_reason(event: Event) -> Optional[str]:
+    """None si el evento admite cargar la base; si no, el motivo en palabras simples (qué pasa y qué hacer). Regla del servidor: finalizado nunca; en proceso solo si todavía no tuvo
+    una carga exitosa (`roster_uploaded`: volver a cargar pisaría o duplicaría registros hechos en vivo)."""
+    if event.status == "finalizado":
+        return ROSTER_BLOCKED_FINALIZED
+    if event.status == "en_proceso" and event.roster_uploaded:
+        return ROSTER_BLOCKED_IN_PROGRESS
+    return None
+
+
 def effective_rules(event: Event, state: Optional[EventState] = None) -> dict:
     """{regla: bool} del evento: los valores por defecto de su estado base, con lo que el estado configurado diga encima."""
     state = state if state is not None else event.state

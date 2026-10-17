@@ -16,7 +16,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, heavy, ops, warmup, wompi
+from app import bulk_jobs, formlib, formsvc, heavy, ops, publicurl, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -39,7 +39,7 @@ def _get_form(db: Session, event: Event, form_id: int) -> WebForm:
 
 
 def _base_url(request: Request) -> str:
-    return (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    return publicurl.base(str(request.base_url))
 
 
 def _urls(request: Request, form: WebForm) -> dict:

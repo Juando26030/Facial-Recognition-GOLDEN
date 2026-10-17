@@ -47,14 +47,14 @@
       <h2>Adjuntar <span class="gradient-text">Base de Datos</span></h2>
     </div>
 
-    {% if event.status == "finalizado" %}
-    <div style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.85rem; text-align:center; margin-bottom:1.5rem;">
-      ⚠️ Este evento está <strong>Finalizado</strong> — no se puede cargar la base.
+    {% if roster_blocked %}
+    <div id="rosterBlocked" role="alert" style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.95rem; line-height:1.5; text-align:left; margin-bottom:1.5rem;">
+      ⚠️ {{ roster_blocked }}
     </div>
     {% endif %}
 
     <form id="rosterForm" class="golden-badge-builder">
-      <fieldset {% if event.status == "finalizado" %}disabled{% endif %} style="border:none; padding:0; margin:0;">
+      <fieldset {% if roster_blocked %}disabled{% endif %} style="border:none; padding:0; margin:0;">
         <div class="badge-form-title">Cargar asistentes esperados</div>
         <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1.5rem;">
           Sube el Excel (.xlsx) o CSV con los datos de las personas. Sirve para cualquier método de registro —
@@ -94,7 +94,7 @@
 
         <label for="overwriteBirth" style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; margin-top:0.6rem;">
           <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" aria-labelledby="overwriteBirthText" style="width:20px; height:20px; margin-top:3px;">
-          <span id="overwriteBirthText">Reemplazar las fechas de nacimiento que ya están guardadas (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
+          <span id="overwriteBirthText">{{ overwrite_birth_label }} (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
         </label>
 
         {% if event.facial_enabled and event.client_photos_before %}
@@ -108,7 +108,7 @@
         </div>
         {% endif %}
 
-        <button type="submit" class="golden-btn golden-btn-primary" style="margin-top: 1.5rem;">Cargar Base de Datos</button>
+        <button type="submit" id="rosterSubmit" class="golden-btn golden-btn-primary" style="margin-top: 1.5rem;"{% if roster_blocked %} disabled aria-disabled="true"{% endif %}>Cargar Base de Datos</button>
       </fieldset>
     </form>
 
@@ -141,6 +141,7 @@ useSourceEvent.addEventListener("change", async () => {
 const rosterForm = document.getElementById("rosterForm");
 const rosterResult = document.getElementById("rosterResult");
 const EVENT_STATUS = "{{ event.status }}";
+const ROSTER_BLOCKED = {{ 'true' if roster_blocked else 'false' }};      // el servidor decide (app/event_rules.py roster_block_reason); aquí solo se muestra
 
 /* El backend prefija cada mensaje con ❌ (fila omitida por completo), ⚠️ (se guardó igual, pero
    revisa el dato) o ℹ️ (corrección automática, ej. Excel volvió número una cédula) — los
@@ -476,12 +477,11 @@ rosterForm.addEventListener("submit", async (e) => {
     // ya se hicieron en vivo. Avisamos SIEMPRE antes de intentarlo; si de verdad es un re-upload
     // (el evento ya tuvo una carga exitosa antes), el backend lo rechaza de plano sin importar
     // esta confirmación (ver bulk_register, "no te deje" — pedido explícito del usuario 2026-09-22).
-    if (EVENT_STATUS === "en_proceso") {
+    if (ROSTER_BLOCKED) return;      // no se ofrece «cargar de todas formas»: el botón está deshabilitado y el servidor lo rechazaría igual
+    if (EVENT_STATUS === "en_proceso") {      // primera carga de un evento que ya arrancó (permitida): solo se avisa del riesgo de pisar registros hechos en vivo
         const seguro = await showConfirm(
-            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>¿Estás seguro de que quieres cargar la base de datos? " +
-            "Si el evento ya tenía una base cargada, esto puede significar que la estás subiendo por error — revisa antes de continuar. " +
-            "Si necesitas otra base para el mismo evento, mejor crea un evento nuevo en vez de recargar este.",
-            { variant: "warning", confirmLabel: "Sí, cargar de todas formas" }
+            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después no podrás volver a cargar otra base sobre este evento. ¿Continuar?",
+            { variant: "warning", confirmLabel: "Sí, cargar la base" }
         );
         if (!seguro) return;
     }

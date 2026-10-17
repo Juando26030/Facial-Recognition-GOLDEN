@@ -16,7 +16,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, timing
+from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
@@ -58,6 +58,7 @@ async def lifespan(_app: FastAPI):
         worker.start()
     if appmode.loads_model():
         await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib (en los procesos hijo): el primer escaneo no paga la carga del modelo
+    publicurl.check_at_startup()          # avisa en el log si en producción falta PUBLIC_BASE_URL o apunta al host de Cloud Run
     log.info("aplicación lista (modo %s)", appmode.MODE)
     yield
     log.info("apagando: deteniendo trabajos en segundo plano")
@@ -181,6 +182,7 @@ def event_logo_attrs(event):
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
 
 
@@ -528,7 +530,11 @@ def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db))
     # ENCIMA de 'coordinador' en STAFF_ROLES (hereda su acceso operativo por diseño, Fase 0), pero
     # explícitamente NO debe ver "Adjuntar Base de Datos" — un min_role jerárquico no alcanza para
     # excluir un rol que está por encima del mínimo.
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"])
+    from app import event_rules
+    from app.routers.api import OVERWRITE_BIRTH_LABEL
+    event_obj = db.get(Event, event_id)
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"],
+                               extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL})
 
 
 @app.get("/kiosk/{event_id}/usuarios")

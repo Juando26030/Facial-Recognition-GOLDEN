@@ -34,7 +34,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy.orm import Session
 
-from app import heavy, security
+from app import heavy, publicurl, security
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import AccessLog, Event, EventAttendee, RouletteConfig, RouletteDraw, StaffUser, User
@@ -338,7 +338,7 @@ def display_link(event_id: int, request: Request, regenerate: bool = False, db: 
     if regenerate or not cfg.display_token:
         cfg.display_token = secrets.token_urlsafe(18)
         db.commit()
-    base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    base = publicurl.base(str(request.base_url))
     return {"url": f"{base}/r/{cfg.display_token}"}
 
 
@@ -346,7 +346,7 @@ def display_link(event_id: int, request: Request, regenerate: bool = False, db: 
 def get_display_link(event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
-    base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    base = publicurl.base(str(request.base_url))
     return {"url": f"{base}/r/{cfg.display_token}" if cfg.display_token else None}
 
 

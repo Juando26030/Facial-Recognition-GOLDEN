@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app import biometric_setup
+from app import biometric_setup, publicurl
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
@@ -388,7 +388,7 @@ _DIGITAL_MAIL = require_role_excluding("coordinador", ("comercial",))
 
 
 def _public_base(request: Request) -> str:
-    return (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    return publicurl.base(str(request.base_url))
 
 
 @router.get("/events/{event_id}/digital-email")

@@ -47,7 +47,7 @@
 </head>
 <body class="has-sidebar">
 {% include "_kiosk_top.html" %}
-<script>window.STAFF_ROLE = "{{ staff_role }}"; window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
+<script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.STAFF_ROLE = "{{ staff_role }}"; window.EVENT_ID = {{ event.id }}; window.FORM_ID = {{ form_id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
 <main class="golden-main">
   <section class="golden-section"><div class="golden-container" style="max-width:1400px;">
     <div class="card">
@@ -480,7 +480,7 @@ let CODES = [], codesLoaded = false;
 async function loadCodes() { try { CODES = await j(`${api}/discount-codes`); } catch (e) { CODES = []; } codesLoaded = true; renderProps(); }
 function linkBox(item, what) {
   if (!item.link_key) return `<div class="hint" style="background:#fff8e1; padding:5px 8px; border-radius:8px; margin-top:4px;">🔗 Guarda el diseño para generar el enlace de este ${what}.</div>`;
-  const url = `${location.origin}/f/${EV}/${($('fslug') && $('fslug').value) || form.slug}?d=${item.link_key}`;
+  const url = `${window.PUBLIC_BASE || location.origin}/f/${EV}/${($('fslug') && $('fslug').value) || form.slug}?d=${item.link_key}`;
   return `<div style="display:flex; gap:4px; margin-top:4px;"><input type="text" readonly value="${esc(url)}" style="font-size:0.72rem;"><button type="button" class="small-btn" data-copy="${esc(url)}">Copiar</button></div>
     <div class="hint">Solo quien entre por este enlace tendrá este ${what}. Compártelo únicamente con quien deba recibirlo. (Si el formulario está en «Pruebas», el enlace real necesita además <code>&amp;k=…</code>).</div>`;
 }
@@ -810,7 +810,7 @@ async function loadPayments() {
   const ws = d.wompi_status || {};
   const wtxt = ws.indicator === 'none' ? '✅ operando con normalidad' : (ws.indicator === 'unknown' || !ws.indicator) ? 'sin datos' : `⚠️ ${esc(ws.description || 'incidencia')}`;
   $('payCfg').innerHTML = `Estado del servicio de Wompi: <b>${wtxt}</b> (<a href="https://wompi.statuspage.io" target="_blank" rel="noopener">página de estado</a>) · Llaves de pruebas (enlace «Probar»): ${okc(form.payments.sandbox_configured)} · Llaves de producción: ${okc(form.payments.production_configured)}.<br>URL de eventos que debes registrar en Wompi (Desarrolladores → Seguimiento de transacciones): <b>${esc(location.origin)}/webhooks/wompi</b> <button class="small-btn" id="copyHook">Copiar</button>`;
-  $('copyHook').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${location.origin}/webhooks/wompi`); } catch (e) {} showToast('URL copiada', 'success'); });
+  $('copyHook').addEventListener('click', async () => { try { await navigator.clipboard.writeText(`${window.PUBLIC_BASE || location.origin}/webhooks/wompi`); } catch (e) {} showToast('URL copiada', 'success'); });
   const net = $('payView').value === 'net';
   $('payAmtHead').textContent = net ? 'Neto estimado (COP)' : 'Monto (COP)';
   $('payTotal').textContent = net ? `Ingresos netos de comisión (estimada): ${cop(d.net_after_fees_cop)} COP · comisión Wompi estimada ${cop(d.fees_cop)} COP` : `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;

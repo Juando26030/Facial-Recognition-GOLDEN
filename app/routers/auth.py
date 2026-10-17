@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import staticver
+from app import publicurl, staticver
 from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
@@ -94,7 +94,7 @@ def forgot_submit(request: Request, username: str = Form(...), db: Session = Dep
     staff = db.query(StaffUser).filter(func.lower(StaffUser.username) == username.lower(), StaffUser.is_active == True).first()
     if staff and staff.email:
         token = security.create_reset_token(db, staff.id)
-        base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+        base = publicurl.base(str(request.base_url))
         send_mail(
             staff.email, "Restablecer tu contraseña — GoldenWeb 2.0",
             f"Hola {staff.full_name or staff.username}, recibimos una solicitud para elegir una contraseña nueva.\n\n"

@@ -43,7 +43,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+<script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.EVENT_ID = {{ event.id }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
@@ -604,7 +604,7 @@
         });
         refresh();
     }
-    const aceptarUrl = `${location.origin}/aceptar/{{ event.event_code }}`;
+    const aceptarUrl = `${window.PUBLIC_BASE || location.origin}/aceptar/{{ event.event_code }}`;          // el QR del cartel lleva la dirección PÚBLICA, no la del panel desde el que se abrió
     if (document.getElementById('aceptarUrl')) {
         document.getElementById('aceptarUrl').textContent = aceptarUrl;
         const drawQr = () => { try { const qr = qrcode(0, 'M'); qr.addData(aceptarUrl + '?c=qr'); qr.make(); document.getElementById('aceptarQr').innerHTML = qr.createSvgTag({ scalable: true }); const s = document.querySelector('#aceptarQr svg'); if (s) { s.style.width = '180px'; s.style.height = '180px'; } } catch (e) { /* sin QR: queda el enlace */ } };
