@@ -1,0 +1,4 @@
+/* Montserrat alojada en el propio servidor (OFL, static/fonts/OFL-Montserrat.txt): ninguna página pide fuentes a Google, para no enviarle la IP de las personas a un tercero. Solo latín (cubre el español) y solo los pesos que se usan. */
+@font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/montserrat-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }

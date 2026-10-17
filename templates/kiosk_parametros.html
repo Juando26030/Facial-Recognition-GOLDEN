@@ -871,6 +871,19 @@
     present.forEach((t) => root.append(panels[t.id]));
 
     // Un solo Guardar por pestaña
+    // Cada botón de guardar de siempre termina con UN aviso (éxito o error); se escucha ese aviso para saber cómo terminó el guardado real, sin tocar su lógica.
+    let saveWaiter = null;
+    const toastOrig = window.showToast;
+    window.showToast = function (msg, type) {
+        const out = toastOrig.apply(this, arguments);
+        if (saveWaiter && (type === 'success' || type === 'error')) { const w = saveWaiter; saveWaiter = null; w(type === 'success' ? { ok: true } : { ok: false, msg: String(msg || 'El servidor lo rechazó.') }); }
+        return out;
+    };
+    const runSave = (g) => new Promise((resolve) => {
+        const timer = setTimeout(() => { saveWaiter = null; resolve({ ok: false, msg: 'El servidor no respondió.' }); }, 45000);
+        saveWaiter = (r) => { clearTimeout(timer); resolve(r); };
+        g.buttons.forEach((id) => { const b = document.getElementById(id); if (b) b.click(); });
+    });
     const dirty = {};
     const groupsOf = (tabId) => GROUPS.filter((g) => g.tabs.includes(tabId) && g.buttons.some((id) => document.getElementById(id)));
     const refresh = () => {
@@ -898,13 +911,19 @@
             save.type = 'button';
             save.className = 'golden-btn golden-btn-primary';
             save.textContent = 'Guardar';
-            save.addEventListener('click', () => {
+            save.addEventListener('click', async () => {
                 const todo = groups.filter((g) => dirty[g.id]);
                 if (!todo.length) { showToast('No hay cambios por guardar en esta pestaña.', 'info'); return; }
-                const done = new Set();
-                todo.forEach((g) => g.buttons.forEach((id) => { const b = document.getElementById(id); if (b && !done.has(id)) { done.add(id); b.click(); } }));
-                todo.forEach((g) => { dirty[g.id] = false; });
+                save.disabled = true;
+                sb.querySelector('.ux-state').textContent = 'Guardando…';
+                let failure = null;
+                for (const g of todo) {                         // un guardado a la vez; solo se da por guardado lo que el servidor confirmó
+                    const r = await runSave(g);
+                    if (r.ok) dirty[g.id] = false; else { failure = r.msg; break; }
+                }
+                save.disabled = false;
                 refresh();
+                if (failure) { sb.querySelector('.ux-state').textContent = 'No se guardó: ' + failure + ' Los cambios siguen sin guardar.'; sb.classList.add('dirty'); }
             });
             sb.append(save);
             panels[t.id].append(sb);

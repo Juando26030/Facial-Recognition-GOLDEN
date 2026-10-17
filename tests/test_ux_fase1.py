@@ -159,3 +159,46 @@ def test_only_presentation_files_changed_in_this_branch():
         pytest.skip("sin historial git para comparar")
     allowed = ("templates/", "static/", "tests/", "docs/")
     assert [f for f in out if not f.startswith(allowed)] == [], "la rama de UX no debe tocar código de la aplicación (app/, alembic/, deploy/)"
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ fuentes propias y guardado honesto
+FONT_HOSTS = ("fonts.googleapis.com", "fonts.gstatic.com", "use.typekit.net", "fonts.bunny.net", "cdnjs.cloudflare.com/ajax/libs/font")
+# Pantallas que todavía eligen entre ~40 tipografías de Google para escarapelas, certificados, formularios y ruleta (decisión pendiente del dueño: alojarlas o reducir la lista). Nada nuevo puede sumarse aquí.
+LEGACY_GOOGLE_FONTS = {"templates/badge_editor.html", "templates/badge_print.html", "templates/certificate_public.html", "templates/digital_badge.html", "templates/form_public.html",
+                       "templates/kiosk_certificados.html", "templates/kiosk_formulario_editor.html", "templates/kiosk_ruleta_visual.html", "templates/roulette_display.html",
+                       "static/js/roulette-render.js", "static/js/theme.js"}
+
+
+def test_no_page_asks_a_third_party_for_fonts_except_the_listed_legacy_pickers():
+    import pathlib
+    offenders = set()
+    for root in ("templates", "static/css", "static/js"):
+        for f in pathlib.Path(root).rglob("*"):
+            if f.suffix in (".html", ".css", ".js") and any(h in f.read_text(encoding="utf-8", errors="ignore") for h in FONT_HOSTS):
+                offenders.add(f.as_posix())
+    assert offenders - LEGACY_GOOGLE_FONTS == set(), "una página nueva pide fuentes a un tercero: aloja la fuente en static/fonts"
+    for page in ("templates/aceptar.html", "templates/_ux_head.html", "templates/kiosk_select.html", "templates/kiosk_parametros.html", "templates/eventos.html"):
+        assert page not in offenders, page
+
+
+def test_montserrat_is_served_from_our_own_static_files(client, factory, db):
+    css = open("static/css/montserrat.css", encoding="utf-8").read()
+    files = re.findall(r"url\('\.\./fonts/([\w.-]+\.woff2)'\)", css)
+    assert len(files) == 3 and not any(h in css for h in FONT_HOSTS)
+    for name in files:
+        assert client.get(f"/static/fonts/{name}").status_code == 200, name
+    ev = _event(client, factory, "coordinador", facial_enabled=True, aceptar_enabled=True)
+    assert "css/montserrat.css" in client.get(f"/kiosk/{ev.id}").text and "fonts.g" not in client.get(f"/kiosk/{ev.id}").text
+    ev.facial_enabled, ev.aceptar_enabled = True, True
+    db.commit()
+    client.cookies.clear()
+    assert "css/montserrat.css" in client.get(f"/aceptar/{ev.event_code}").text and "fonts.g" not in client.get(f"/aceptar/{ev.event_code}").text
+
+
+def test_a_tab_is_marked_saved_only_when_the_real_save_finishes_ok(client, factory, db):
+    factory.staff("super_admin", "su")
+    ev = factory.event("creado", facial_enabled=True)
+    login(client, "su")
+    page = client.get(f"/kiosk/{ev.id}/parametros").text
+    assert "const runSave" in page and "saveWaiter" in page and "r.ok) dirty[g.id] = false; else" in page          # solo se limpia «sin guardar» con el éxito que avisa el guardado de siempre
+    assert "No se guardó: " in page and "Los cambios siguen sin guardar." in page and "dirty[g.id] = false;\n                });" not in page
