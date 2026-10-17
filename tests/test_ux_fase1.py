@@ -181,18 +181,20 @@ def test_no_page_asks_a_third_party_for_fonts_except_the_listed_legacy_pickers()
         assert page not in offenders, page
 
 
-def test_montserrat_is_served_from_our_own_static_files(client, factory, db):
-    css = open("static/css/montserrat.css", encoding="utf-8").read()
-    files = re.findall(r"url\('\.\./fonts/([\w.-]+\.woff2)'\)", css)
-    assert len(files) == 3 and not any(h in css for h in FONT_HOSTS)
-    for name in files:
+def test_agrandir_stays_the_default_font_everywhere_and_the_redesign_imposes_no_other(client, factory, db):
+    css = open("static/css/ux1.css", encoding="utf-8").read()
+    assert "--ux-font: var(--font-body" in css and "--ux-font-heading: var(--font-heading-secondary" in css and "Montserrat" not in css      # sigue lo que diga Configuración > Apariencia
+    assert not __import__("pathlib").Path("static/css/montserrat.css").exists()
+    own = open("static/css/agrandir.css", encoding="utf-8").read()
+    assert own.count("@font-face") == 2 and "agrandir-thin.ttf" in own and "agrandir-regular.otf" in own
+    for name in ("agrandir-thin.ttf", "agrandir-regular.otf"):
         assert client.get(f"/static/fonts/{name}").status_code == 200, name
     ev = _event(client, factory, "coordinador", facial_enabled=True, aceptar_enabled=True)
-    assert "css/montserrat.css" in client.get(f"/kiosk/{ev.id}").text and "fonts.g" not in client.get(f"/kiosk/{ev.id}").text
-    ev.facial_enabled, ev.aceptar_enabled = True, True
-    db.commit()
+    menu = client.get(f"/kiosk/{ev.id}").text
+    assert "css/style.css" in menu and "montserrat" not in menu.lower() and "fonts.g" not in menu
     client.cookies.clear()
-    assert "css/montserrat.css" in client.get(f"/aceptar/{ev.event_code}").text and "fonts.g" not in client.get(f"/aceptar/{ev.event_code}").text
+    page = client.get(f"/aceptar/{ev.event_code}").text
+    assert "css/agrandir.css" in page and "font-family:'Agrandir'" in page and "Montserrat" not in page and "fonts.g" not in page
 
 
 def test_a_tab_is_marked_saved_only_when_the_real_save_finishes_ok(client, factory, db):

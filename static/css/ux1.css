@@ -1,12 +1,13 @@
 /* Fase 1 de UX (rama ux/fase1-visual): sistema visual del panel. SOLO presentación.
    Se activa con `body.ux1` (opt-in por página): la puerta (/kiosk/<id>/rostro), la contingencia y las páginas públicas NO lo cargan.
-   Base: la página pública /aceptar (Montserrat, tarjeta blanca, botones dorados, un botón principal).
+   Base: la página pública /aceptar (Agrandir, tarjeta blanca, botones dorados, un botón principal).
    Medido en docs/ux/ANALISIS_FLUJO_Y_UX.md: 320 de 441 tamaños < 14 px; grises #777…#bbb y #b26a00 por debajo de 4,5:1; casillas de 18 px. */
 
 /* ------------------------------------------------------------------ tokens */
 :root {
   /* tipografía: cuerpo 16/24; escala fija de 5 tamaños (WCAG 1.4.4, Material 3 type scale) */
-  --ux-font: 'Montserrat', 'Agrandir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ux-font: var(--font-body, 'Agrandir', sans-serif);              /* Agrandir de siempre (style.css) y lo que se elija en Configuración > Apariencia: el rediseño no impone otra fuente */
+  --ux-font-heading: var(--font-heading-secondary, 'Agrandir', sans-serif);
   --ux-fs-display: 2rem;      /* 32 px */
   --ux-fs-title: 1.5rem;      /* 24 px */
   --ux-fs-subtitle: 1.25rem;  /* 20 px */
@@ -37,7 +38,7 @@
 
 /* ------------------------------------------------------------------ base */
 body.ux1 { font-family: var(--ux-font); font-size: var(--ux-fs-body); line-height: var(--ux-lh-body); color: var(--ux-ink); }
-body.ux1 h1, body.ux1 h2, body.ux1 h3, body.ux1 h4, body.ux1 .mode-title { font-family: var(--ux-font); color: var(--ux-navy); }
+body.ux1 h1, body.ux1 h2, body.ux1 h3, body.ux1 h4, body.ux1 .mode-title { font-family: var(--ux-font-heading); color: var(--ux-navy); }
 body.ux1 h2 { font-size: var(--ux-fs-display); line-height: 2.5rem; }
 body.ux1 h3 { font-size: var(--ux-fs-subtitle); line-height: 1.75rem; }
 body.ux1 h4 { font-size: var(--ux-fs-subtitle); line-height: 1.75rem; margin-bottom: var(--ux-s3); }
