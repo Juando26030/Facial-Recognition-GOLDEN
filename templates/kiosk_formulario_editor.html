@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editor de formulario | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Playfair+Display:wght@400;700&family=Inter:wght@400;700&family=Bebas+Neue&family=Merriweather:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=Rubik:wght@400;700&family=Comfortaa:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
@@ -197,7 +198,7 @@ async function j(url, opts) { const r = await fetch(url, opts); const d = await 
 const jput = (url, body) => j(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const jpost = (url, body) => j(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 const assetUrl = (p) => `/api/badge-assets/${p}`;
-const FONTS = ['Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald', 'Raleway', 'Poppins', 'Playfair Display', 'Inter', 'Bebas Neue', 'Merriweather', 'Nunito', 'Ubuntu', 'Rubik', 'Comfortaa', 'Space Grotesk', 'Manrope', 'Zilla Slab'];
+const FONTS = GoldenFonts.choices;          // las 6 tipografías alojadas
 const TYPES = {
   text_short: ['Texto corto', '✏️'], text_long: ['Texto largo', '📄'], email: ['Correo', '✉️'], phone: ['Teléfono', '📞'], number: ['Número', '🔢'], date: ['Fecha', '📅'],
   checkbox: ['Casilla sí/no', '☑️'], select: ['Lista desplegable', '▾'], radio: ['Opción única', '◉'], multiselect: ['Selección múltiple', '☰'], file: ['Archivo adjunto', '📎'],
@@ -599,7 +600,7 @@ function renderTheme() {
   const t = design.theme;
   $('themeBox').innerHTML = fieldInput('tTitle', 'Título', t.title) + fieldInput('tSub', 'Subtítulo', t.subtitle) + fieldInput('tBtn', 'Texto del botón', t.button_text) +
     ['bg_color', 'card_color', 'text_color', 'accent'].map((k) => `<div class="fld"><label>${COLOR_LABELS[k]}</label><input type="color" data-color="${k}" value="${t[k]}" style="width:100%; height:34px; padding:2px;"></div>`).join('') +
-    `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${t.font === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
+    `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${GoldenFonts.resolve(t.font) === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
      <div class="fld"><label>Logo o banner</label><input type="file" id="tLogo" accept="image/*"> <button class="small-btn" id="tLogoX">Quitar</button></div>
      <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" style="width:100%;"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
      <label style="display:flex; gap:6px; font-size:0.82rem; margin-bottom:0.6rem;"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>

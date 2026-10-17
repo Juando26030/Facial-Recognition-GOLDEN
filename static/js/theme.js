@@ -22,20 +22,12 @@
     return luminance > 0.6 ? '#000000' : '#ffffff';
   };
 
-  // Mismas 40 familias tipográficas que ya ofrece el editor de escarapelas (badge_editor.html:
-  // FONT_FAMILIES) — un solo <link> de Google Fonts, idéntico al de ahí, inyectado una vez por
+  // 6 familias tipográficas alojadas por nosotros (static/fonts, las mismas de los diseñadores) más «Original» (Agrandir) — un solo <link> a static/css/fonts-propias.css, inyectado una vez por
   // página (no todas las páginas lo tenían, y sin cargarlo la fuente elegida no se ve aunque la
   // variable CSS ya diga cuál es). Si la página ya lo trae (ej. badge_editor.html), no se duplica.
-  var FONTS_URL = "https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap";
+  var FONTS_URL = "/static/css/fonts-propias.css";
 
-  window.GOLDEN_FONT_FAMILIES = [
-    'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald', 'Raleway', 'Poppins', 'Merriweather',
-    'Playfair Display', 'Nunito', 'Ubuntu', 'PT Sans', 'Noto Sans', 'Source Sans Pro', 'Rubik',
-    'Inter', 'Work Sans', 'Quicksand', 'Fira Sans', 'Barlow', 'Karla', 'Mulish', 'Josefin Sans',
-    'Bebas Neue', 'Dancing Script', 'Pacifico', 'Lobster', 'Caveat', 'Anton', 'Archivo Black',
-    'Cormorant Garamond', 'Crimson Text', 'Libre Baskerville', 'EB Garamond', 'Abril Fatface',
-    'Comfortaa', 'DM Sans', 'Space Grotesk', 'Manrope', 'Zilla Slab',
-  ];
+  window.GOLDEN_FONT_FAMILIES = ['Roboto', 'Open Sans', 'Montserrat', 'Playfair Display', 'Merriweather', 'Bebas Neue'];          // las mismas 6 de static/js/fonts-propias.js
 
   // Expuesta globalmente (2026-09-16) — configuracion.html la reusa al aplicar un cambio EN LA
   // MISMA carga de página (este IIFE solo corre una vez, al inicio, con lo que ya había en

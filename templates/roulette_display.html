@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
     <title>{{ event_name }} — Sorteo</title>
-    <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
     <script src="{{ url_for('static', path='js/roulette-render.js') }}"></script>
     <style>
         html, body { margin:0; height:100%; overflow:hidden; }
@@ -43,7 +43,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function paintStyle(s) {
     style = s;
-    document.getElementById('fontsLink').href = RouletteRender.fontsUrl([s.font_family, s.title_font]);
     RouletteRender.applyBackground(document.body, s, assetUrl);
     $('title').textContent = s.title || '';
     $('title').style.fontFamily = `'${s.title_font}', sans-serif`; $('title').style.color = s.title_color;

@@ -1,0 +1,80 @@
+/* GENERADO por scripts/gen_fonts_css.py: no se edita a mano. Tipografías alojadas en static/fonts (licencias en static/fonts/licencias): 6 familias, solo latín y pesos 400/700.
+   Las demás familias de Google que un diseño viejo pueda traer son alias de la más parecida, para no pedirle nada a un tercero. */
+@font-face { font-family: 'Roboto'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Roboto'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Open Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Open Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Montserrat'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Playfair Display'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/playfair-display-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Playfair Display'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/playfair-display-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Merriweather'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/merriweather-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Merriweather'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/merriweather-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Bebas Neue'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('../fonts/bebas-neue-latin-400-normal.woff2') format('woff2'); }
+/* alias */
+@font-face { font-family: 'Lato'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lato'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Noto Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Source Sans Pro'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Source Sans Pro'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'PT Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'PT Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Fira Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Fira Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Karla'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Karla'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Nunito'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Nunito'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Mulish'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Mulish'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Ubuntu'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/open-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Ubuntu'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/open-sans-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Work Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Work Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Rubik'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Rubik'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/roboto-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/roboto-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Poppins'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Poppins'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Raleway'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Raleway'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Quicksand'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Quicksand'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Comfortaa'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Comfortaa'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Josefin Sans'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Josefin Sans'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Archivo Black'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/montserrat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Archivo Black'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/montserrat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Oswald'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('../fonts/bebas-neue-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Anton'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('../fonts/bebas-neue-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Abril Fatface'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/playfair-display-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Abril Fatface'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/playfair-display-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Cormorant Garamond'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/playfair-display-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Cormorant Garamond'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/playfair-display-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Dancing Script'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/playfair-display-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Dancing Script'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/playfair-display-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Pacifico'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/playfair-display-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Pacifico'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/playfair-display-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lobster'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/playfair-display-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lobster'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/playfair-display-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Caveat'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/playfair-display-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Caveat'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/playfair-display-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Crimson Text'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/merriweather-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Crimson Text'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/merriweather-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Libre Baskerville'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/merriweather-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Libre Baskerville'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/merriweather-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'EB Garamond'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/merriweather-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'EB Garamond'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/merriweather-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Zilla Slab'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/merriweather-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Zilla Slab'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/merriweather-latin-700-normal.woff2') format('woff2'); }

@@ -1,0 +1,6 @@
+/* GENERADO por scripts/gen_fonts_css.py: no se edita a mano. Las 6 opciones de tipografía y la equivalencia de las familias que ya no se ofrecen. */
+window.GoldenFonts = {
+  choices: ["Roboto", "Open Sans", "Montserrat", "Playfair Display", "Merriweather", "Bebas Neue"],
+  map: {"Lato": "Open Sans", "Noto Sans": "Open Sans", "Source Sans Pro": "Open Sans", "PT Sans": "Open Sans", "Fira Sans": "Open Sans", "Karla": "Open Sans", "Nunito": "Open Sans", "Mulish": "Open Sans", "Ubuntu": "Open Sans", "Inter": "Roboto", "Work Sans": "Roboto", "Barlow": "Roboto", "DM Sans": "Roboto", "Manrope": "Roboto", "Rubik": "Roboto", "Space Grotesk": "Roboto", "Poppins": "Montserrat", "Raleway": "Montserrat", "Quicksand": "Montserrat", "Comfortaa": "Montserrat", "Josefin Sans": "Montserrat", "Archivo Black": "Montserrat", "Oswald": "Bebas Neue", "Anton": "Bebas Neue", "Abril Fatface": "Playfair Display", "Cormorant Garamond": "Playfair Display", "Dancing Script": "Playfair Display", "Pacifico": "Playfair Display", "Lobster": "Playfair Display", "Caveat": "Playfair Display", "Crimson Text": "Merriweather", "Libre Baskerville": "Merriweather", "EB Garamond": "Merriweather", "Zilla Slab": "Merriweather"},
+  resolve: function (name) { return this.choices.indexOf(name) >= 0 ? name : (this.map[name] || this.choices[0]); },
+};

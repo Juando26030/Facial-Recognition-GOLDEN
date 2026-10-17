@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ruleta — Apariencia | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/roulette-render.js') }}"></script>
@@ -77,7 +78,6 @@ const staffAsset = (p) => `/api/badge-assets/${p}`;
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
 
 function paintPreview() {
-  $('fontsLink').href = RouletteRender.fontsUrl([style.font_family, style.title_font]);
   RouletteRender.applyBackground($('preview'), style, staffAsset);
   $('pTitle').textContent = style.title; $('pTitle').style.fontFamily = `'${style.title_font}', sans-serif`; $('pTitle').style.color = style.title_color;
   $('pLogo').style.display = style.logo ? 'inline' : 'none'; if (style.logo) $('pLogo').src = staffAsset(style.logo);
@@ -101,13 +101,12 @@ async function upload(input, key) {
 (async function init() {
   const cfg = await j(api);
   style = cfg.style;
-  const fill = (id) => { $(id).innerHTML = cfg.fonts.map((f) => `<option ${style[id] === f ? 'selected' : ''}>${f}</option>`).join(''); $(id).addEventListener('change', () => { style[id] = $(id).value; paintPreview(); }); };
+  const fill = (id) => { $(id).innerHTML = GoldenFonts.choices.map((f) => `<option ${GoldenFonts.resolve(style[id]) === f ? 'selected' : ''}>${f}</option>`).join(''); $(id).addEventListener('change', () => { style[id] = $(id).value; paintPreview(); }); };   // solo las 6 tipografías alojadas; un diseño viejo muestra la equivalente
   fill('title_font'); fill('font_family');
   $('title').value = style.title; $('title').addEventListener('input', () => { style.title = $('title').value; paintPreview(); });
   ['title_color', 'text_color', 'background_color', 'pointer_color', 'winner_bg', 'winner_color'].forEach(bindColor);
   $('wheel_style').value = style.wheel_style || 'circular'; $('wheel_style').addEventListener('change', () => { style.wheel_style = $('wheel_style').value; paintPreview(); });
   $('spin_seconds').value = style.spin_seconds; $('spin_seconds').addEventListener('input', () => { style.spin_seconds = +$('spin_seconds').value || 6; });
-  $('fontsLink').href = RouletteRender.fontsUrl(cfg.fonts);   // carga todas para que el selector se vea bien
   renderPalette(); paintPreview();
   $('addColor').addEventListener('click', () => { if (style.colors.length >= 12) return; style.colors.push('#888888'); renderPalette(); paintPreview(); });
   $('bgFile').addEventListener('change', () => upload($('bgFile'), 'background_image')); $('logoFile').addEventListener('change', () => upload($('logoFile'), 'logo'));
