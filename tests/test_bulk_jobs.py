@@ -85,7 +85,7 @@ def test_progress_is_weighted_so_photos_dominate(client, factory, monkeypatch):
 def test_errors_reach_the_browser_as_before(client, factory):
     ev = _admin(client, factory, status="finalizado")
     job = _wait(client, _post(client, ev).json()["job_id"])
-    assert job["status"] == "error" and job["error"]["status"] == 400 and "finalizado" in job["error"]["detail"]
+    assert job["status"] == "error" and job["error"]["status"] == 400 and "finalizado" in job["error"]["detail"].lower()
 
 
 def test_needs_labels_comes_back_as_the_job_result(client, factory):

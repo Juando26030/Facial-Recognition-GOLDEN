@@ -43,7 +43,7 @@ def test_job_errors_reach_the_browser_as_before(client, factory, cloud):
     job_id = _post(client, ev).json()["job_id"]
     bulk_runner.main(job_id)
     state = client.get(f"/api/bulk_jobs/{job_id}").json()
-    assert state["status"] == "error" and state["error"]["status"] == 400 and "finalizado" in state["error"]["detail"]
+    assert state["status"] == "error" and state["error"]["status"] == 400 and "finalizado" in state["error"]["detail"].lower()
 
 
 def test_photos_still_need_the_authorization_before_launching(client, factory, cloud):
