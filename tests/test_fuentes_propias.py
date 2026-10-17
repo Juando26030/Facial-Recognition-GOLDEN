@@ -76,3 +76,38 @@ def test_emails_ask_for_agrandir_first_and_a_safe_sans_serif_as_fallback():
     html = email_template.render.__code__.co_consts                                                     # el envoltorio del cuerpo vive dentro de render()
     assert any("font-family:Agrandir,Arial,Helvetica,sans-serif" in str(c) for c in html)
     assert "font-family:Agrandir,Arial,Helvetica,sans-serif" in pathlib.Path("app/consent_receipt.py").read_text(encoding="utf-8")
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ scripts de terceros
+# Lo único que todavía se pide fuera: pantallas del PERSONAL (decisión del dueño: después del piloto) y el traductor de Google del formulario público (política v1.2).
+EXTERNAL_SCRIPTS_ALLOWED = {
+    "templates/kiosk_certificados.html": {"cdnjs.cloudflare.com"},          # JSZip
+    "templates/kiosk_estadisticas.html": {"cdnjs.cloudflare.com"},          # Chart.js
+    "templates/kiosk_formulario_editor.html": {"cdnjs.cloudflare.com"},     # Chart.js
+    "templates/kiosk_roster.html": {"cdnjs.cloudflare.com"},                # SheetJS y JSZip
+    "templates/form_public.html": {"translate.google.com"},                 # botón «Translate»
+}
+SCRIPT_URL = re.compile(r"""(?:<script[^>]+src=|\.src\s*=\s*)["'](https?://([^/"']+)[^"']*)["']""")
+
+
+def test_attendee_pages_load_every_script_from_our_own_server_and_staff_pages_are_the_only_listed_exceptions():
+    found = {}
+    for f in pathlib.Path("templates").glob("*.html"):
+        hosts = {m.group(2) for m in SCRIPT_URL.finditer(f.read_text(encoding="utf-8"))}
+        if hosts:
+            found[f.as_posix()] = hosts
+    assert found == EXTERNAL_SCRIPTS_ALLOWED, "un script externo nuevo (o uno que ya no está): aloja el script en static/vendor con su licencia"
+    for js in pathlib.Path("static/js").glob("*.js"):                                                   # los scripts propios tampoco inyectan scripts externos
+        assert not SCRIPT_URL.search(js.read_text(encoding="utf-8", errors="ignore")), js.name
+
+
+def test_barcode_pdf_and_canvas_libraries_are_hosted_with_their_licenses(client):
+    for name, lic, marker in (("JsBarcode-3.12.3.all.min.js", "JsBarcode-LICENSE.txt", "JsBarcode"), ("html2canvas-1.4.1.min.js", "html2canvas-LICENSE.txt", "html2canvas"),
+                              ("jspdf-2.5.1.umd.min.js", "jspdf-LICENSE.txt", "jsPDF")):
+        r = client.get(f"/static/vendor/{name}")
+        assert r.status_code == 200 and marker in r.text[:400], name
+        assert "Permission is hereby granted" in pathlib.Path("static/vendor", lic).read_text(encoding="utf-8"), lic
+    for page in ("digital_badge", "certificate_public"):
+        text = pathlib.Path(f"templates/{page}.html").read_text(encoding="utf-8")
+        assert "vendor/JsBarcode-3.12.3.all.min.js" in text and "cdnjs" not in text, page
+    assert "vendor/html2canvas-1.4.1.min.js" in pathlib.Path("templates/certificate_public.html").read_text(encoding="utf-8")

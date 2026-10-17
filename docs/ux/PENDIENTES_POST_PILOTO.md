@@ -1,15 +1,19 @@
-# Pendientes de terceros en las páginas (después del piloto del 29 de octubre)
+# Pendientes de terceros y de tipografía (después del piloto del 29 de octubre)
 
-Decisión del dueño (17 oct 2026): estos scripts se siguen cargando desde `cdnjs.cloudflare.com`. Son pantallas del personal, no de los asistentes, así que no se alojan antes del piloto.
+Decisiones del dueño, 17 oct 2026.
 
+## Scripts de terceros que se siguen pidiendo a `cdnjs.cloudflare.com` (solo pantallas del PERSONAL)
 | Script | Pantallas |
 |---|---|
-| JsBarcode 3.12.3 | editor de escarapelas, impresión, escarapela digital, certificados (personal y público) |
-| html2canvas 1.4.1, jsPDF 2.5.1 | certificados (personal y público) |
-| JSZip 3.10.1 | certificados, carga de lista (roster) |
+| JSZip 3.10.1 | certificados (diseñador), carga de lista (roster) |
 | Chart.js 4.5.1 | estadísticas, editor de formulario |
 | SheetJS (xlsx) 0.18.5 | carga de lista (roster) |
 
-**Ojo (verificado en el navegador, 17 oct):** la escarapela digital (`/b/<token>`: JsBarcode) y el certificado público (JsBarcode, html2canvas, jsPDF) SON páginas que abren los asistentes, no el personal. Con el diseño de hoy esas páginas todavía le entregan la IP a `cdnjs.cloudflare.com`. Si el dueño quiere cerrar eso antes del piloto, son 3 archivos (~600 KB).
+Cerrado antes del piloto (alojado en `static/vendor/` con su licencia): `qrcode-generator` 1.4.4, JsBarcode 3.12.3, html2canvas 1.4.1 y jsPDF 2.5.1. Las páginas de los asistentes (`/b/<token>`, certificado público, formulario público, `/aceptar`, ruleta) ya no piden ningún script ni fuente a terceros, salvo el botón «Translate» (abajo). `tests/test_fuentes_propias.py` falla si aparece un script o una fuente externa nueva fuera de esta lista.
 
-Ya alojado: `qrcode-generator` 1.4.4 (`static/vendor/`). Cuando se alojen los demás, se hace igual: archivo en `static/vendor/` con su licencia y una prueba que falle si reaparece el dominio.
+## Para la política v1.2
+- **Botón «Translate» del formulario público** (`templates/form_public.html`): al pulsarlo carga `translate.google.com/translate_a/element.js` y le entrega la IP de la persona a Google. El texto del banner ya lo dice («Google puede guardar las suyas»). Decidir en la política v1.2 si se deja, se avisa de otra forma o se quita.
+
+## Para después del piloto
+- **Tema por defecto de formularios nuevos** (`app/formlib.py`, `DEFAULT_THEME["font"] = "Montserrat"`): el dueño pidió que Agrandir sea la fuente por defecto de toda la app; los formularios NUEVOS siguen naciendo en Montserrat. Cambiarlo toca lógica de la aplicación, por eso se deja. Los formularios ya guardados no cambian.
+- **Licencia web de Agrandir:** la gestiona el dueño con el proveedor; ver `docs/legal/LICENCIA_AGRANDIR.md`.
