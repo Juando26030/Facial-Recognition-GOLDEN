@@ -64,7 +64,8 @@
     <div class="golden-container">
       <div class="golden-section-title">
         <span>{{ company_name|upper }}</span>
-        <h2>Control de Acceso <span class="gradient-text">{{ "Facial Inteligente" if event.facial_enabled else "por Cédula" }}</span></h2>
+        <h2>Registro <span class="gradient-text">y acceso</span></h2>
+        <p style="margin:6px 0 0;">{{ "Escáner facial, cédula y QR" if event.facial_enabled else "Cédula (lector o manual) y QR" }}</p>
       </div>
       {% if event.face_door_enabled and event.facial_enabled %}
       <div id="doorStrip" style="margin:0 0 1rem; padding:10px 12px; border:1px solid #d9dce6; border-radius:12px; background:#fff;">

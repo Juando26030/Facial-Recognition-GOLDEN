@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eventos | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_ux_head.html" %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
@@ -25,7 +26,7 @@
         .status-filter { padding:0 1.2rem; border-radius:30px; border:1px solid #ddd; font-size:0.9rem; min-width:180px; }
     </style>
 </head>
-<body class="has-sidebar">
+<body class="ux1 has-sidebar">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
@@ -48,25 +49,26 @@
       <span>PANEL</span>
       <h2>Eventos</h2>
     </div>
+    <p class="ux-lead">Elige un evento para entrar a trabajar en él. Aquí también cambias su estado (Creado → En proceso → Finalizado) o editas sus datos.</p>
 
     <div class="search-row">
-      <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre o código de evento...">
-      <select id="statusFilter" class="status-filter">
+      <input type="text" id="searchBox" class="search-box" placeholder="Buscar por nombre o código de evento..." aria-label="Buscar eventos por nombre o código">
+      <select id="statusFilter" class="status-filter" aria-label="Filtrar por estado">
         <option value="">Todos los estados</option>
         <option value="creado">Creado</option>
         <option value="en_proceso">En Proceso</option>
         <option value="finalizado">Finalizado</option>
       </select>
       {% if staff_role == "comercial" %}
-      <select id="mineFilter" class="status-filter">
+      <select id="mineFilter" class="status-filter" aria-label="Mostrar mis eventos o todos">
         <option value="mine">Mis eventos</option>
         <option value="all">Todos</option>
       </select>
       {% elif staff_role in ("admin", "super_admin") %}
-      <select id="commercialFilter" class="status-filter">
+      <select id="commercialFilter" class="status-filter" aria-label="Filtrar por comercial">
         <option value="">Todas las comerciales</option>
       </select>
-      <select id="coordinatorFilter" class="status-filter">
+      <select id="coordinatorFilter" class="status-filter" aria-label="Filtrar por coordinador">
         <option value="">Todos los coordinadores</option>
       </select>
       {% endif %}
@@ -91,13 +93,13 @@ function eventCard(e) {
         <div class="meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}${e.super_event_name ? ` · 🔗 Superevento: ${esc(e.super_event_name)}` : ""}</div>
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
-        <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
+        <select class="small-btn" data-status-select data-event-id="${e.id}" aria-label="Estado del evento ${esc(e.name)}" style="cursor:pointer;">
           ${Object.entries(STATUS_LABELS).map(([value, label]) =>
             `<option value="${value}" ${value === e.status ? "selected" : ""}>${label}</option>`
           ).join("")}
         </select>
-        <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
-        <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
+        <button type="button" class="small-btn" data-edit-event="${e.id}" aria-label="Editar el evento ${esc(e.name)}">Editar</button>
+        <a class="small-btn primary" href="/kiosk/${e.id}" aria-label="Ingresar al evento ${esc(e.name)}">Ingresar →</a>
       </div>
     </div></div>
   `;

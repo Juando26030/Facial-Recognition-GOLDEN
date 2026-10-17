@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parámetros del Evento | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_ux_head.html" %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -19,7 +20,7 @@
         .params-field-name { font-weight:700; color:var(--golden-dark); }
     </style>
 </head>
-<body class="has-sidebar">
+<body class="ux1 has-sidebar">
 {% include "_sidebar.html" %}
 
 <header class="golden-header">
@@ -55,7 +56,7 @@
 
       <div class="app-container">
         <!-- Filas por página de la tabla del directorio (en vivo y lista local). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="general" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Filas por página</h4>
           <label style="display:flex; gap:8px; align-items:center;">Filas por página de la tabla de registros:
             <select id="directoryPageSize" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
@@ -64,7 +65,7 @@
           <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior / Siguiente» y «Ir a la página» llegan a cualquier fila.</p>
         </div>
         <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="facial" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Reconocimiento facial: paso guiado</h4>
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
           <div style="display:grid; gap:8px; max-width:560px;">
@@ -137,13 +138,13 @@
           {% endif %}
         </div>
         <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="escarapelas" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Certificados</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
           <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
         </div>
         <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="escarapelas" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
           <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo y el SMS salen solo si el envío está configurado en el sistema; si no, el mensaje no le llega a nadie (pregunta al equipo técnico si tienes dudas).</p>
@@ -173,7 +174,7 @@
         </div>
         {% if event.facial_enabled %}
         <!-- Privacidad de datos biométricos (Ley 1581 de 2012: dato sensible). -->
-        <div id="privacyCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="privacidad" data-ux-privacy="1" id="privacyCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">🔒 Privacidad de datos biométricos</h4>
           <p id="privInfo" style="font-size:0.85rem; margin:0 0 0.5rem;">Cargando…</p>
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
@@ -190,7 +191,7 @@
         {% endif %}
         <!-- Solicitudes de privacidad (consultas y reclamos de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles y bandera «reclamo en trámite». -->
         {% if staff_role in ["admin", "super_admin"] %}
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="privacidad" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Solicitudes de privacidad (consultas y reclamos)</h4>
           <p style="color:#666; font-size:0.78rem; margin:0 0 0.6rem;">Consulta: 10 días hábiles. Reclamo: 15 días hábiles. La bandera «reclamo en trámite» se activa en máximo 2 días hábiles. Correo de privacidad: soporteit@goldenlogisticas.com.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-bottom:0.8rem;">
@@ -204,7 +205,7 @@
         </div>
         {% endif %}
         <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="general" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Áreas</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de entrada/salida por zonas</label>
           <div id="areasConfig" style="display:{{ 'block' if event.areas_enabled else 'none' }}; margin-top:0.8rem;">
@@ -217,7 +218,7 @@
             <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Con "permitir reingresos" apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula/QR/facial) usa el "Modo autoregistro" del evento. <a href="/kiosk/{{ event.id }}/areas" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Áreas →</a></p>
           </div>
         </div>
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="general" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Inventario</h4>
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de inventario (repartir insumos)</label>
           <div id="inventoryConfig" style="display:{{ 'block' if event.inventory_enabled else 'none' }}; margin-top:0.8rem;">
@@ -233,7 +234,7 @@
         </div>
         <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE
              evento; los demás eventos siguen con el logo de Golden. Se aplica al elegir, sin "Guardar cambios". -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="general" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Logo del evento</h4>
           <div style="display:flex; gap:1.2rem; flex-wrap:wrap; align-items:center;" id="logoOptions">
             <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="default" {% if event.logo_mode == "default" %}checked{% endif %}> Mostrar logo de Golden</label>
@@ -251,13 +252,13 @@
         </div>
         <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar
              y las plantillas de escarapela por categoría (editor de escarapelas). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+        <div data-ux-tab="campos" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Categorías del evento</h4>
           <textarea id="categoriesBox" rows="3" placeholder="Una categoría por línea (ej. VIP, Prensa, Staff)" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-family:inherit;">{{ (event.categories | fromjson) | join("\n") if event.categories else "" }}</textarea>
           <div style="display:flex; justify-content:flex-end; margin-top:0.5rem;"><button type="button" id="saveCategoriesBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">Guardar categorías</button></div>
           <p style="color:#666; font-size:0.78rem; margin:0.3rem 0 0;">Al haber categorías aparece el campo "Categoría" (casillas, se puede marcar más de una) en Registrar/Editar, una columna en el reporte y la columna "categoria" en la carga de base; en el editor de escarapelas podrás usar una plantilla distinta por categoría.</p>
         </div>
-        <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+        <div data-ux-tab="campos" style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
           <p style="color:#666; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
             Define, para cada campo de este evento: cómo se llama (solo aquí, no cambia el nombre en otros eventos), en qué orden aparece en "Registrar nuevo" y "Editar persona" (arrastra las filas con ☰), si es obligatorio, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (nombres, apellidos, cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.
           </p>
@@ -778,6 +779,167 @@
         setButtonLoading(btn, false);
     });
 })();
+</script>
+<script>
+// Parámetros del evento en pestañas (Fase 1 de UX). SOLO presentación: reparte las tarjetas que ya existen en pestañas, deja UN botón «Guardar» por pestaña que dispara los botones de guardar de
+// siempre (los mismos endpoints, la misma lógica) y avisa «Cambios sin guardar». Los interruptores que guardan al instante siguen guardando al instante y la pestaña lo dice.
+(function () {
+    const root = document.querySelector('.app-container');
+    if (!root) return;
+    const TABS = [
+        { id: 'general', label: 'General', intro: 'Cómo se ve y se organiza el evento.' },
+        { id: 'facial', label: 'Reconocimiento facial', intro: 'Si el evento usa rostro, de dónde salen las fotos y cómo entra la gente por la puerta.' },
+        { id: 'invitaciones', label: 'Invitaciones', intro: 'Que cada persona acepte el reconocimiento facial desde su celular antes del evento (es voluntario).' },
+        { id: 'escarapelas', label: 'Escarapelas y certificados', intro: 'Escarapela digital y certificados de asistencia.' },
+        { id: 'campos', label: 'Campos del formulario', intro: 'Qué datos se piden de cada persona y sus categorías.' },
+        { id: 'privacidad', label: 'Privacidad', intro: 'Borrar rostros y atender solicitudes de las personas. Las acciones de esta pestaña no se pueden deshacer.' },
+    ];
+    // Qué botones de guardar de siempre cubre cada grupo de campos y qué controles lo «ensucian». Cada pestaña con grupos muestra UN Guardar.
+    const GROUPS = [
+        { id: 'guiada', buttons: ['ccSave'], tabs: ['facial', 'invitaciones'], watch: '#bsFacial, #bsLocked, input[name="bsSource"], #ccMode, #ccName, #ccNit, #ccEmail, #ccAceptar, #ccAcceptLink, #ccFaceDoor, #ccPrompt' },
+        { id: 'precalculo', buttons: ['pcSave'], tabs: ['facial'], watch: '#pcRef, #pcDate, #pcGarantia, #pcOn' },
+        { id: 'categorias', buttons: ['saveCategoriesBtn'], tabs: ['campos'], watch: '#categoriesBox' },
+        { id: 'campos', buttons: ['saveParamsBtn'], tabs: ['campos'], watch: '#paramsTableBody input, #paramsTableBody select' },
+    ];
+    const present = TABS.filter((t) => root.querySelector(`[data-ux-tab="${t.id}"]`) || t.id === 'invitaciones');
+
+    // «Invitaciones»: el cuadro de aceptación/invitaciones vive dentro del paso guiado; se muestra en su propia pestaña (mismos ids, mismos controles).
+    const box = document.getElementById('aceptarBox');
+    const invCard = document.createElement('div');
+    invCard.dataset.uxTab = 'invitaciones';
+    invCard.style.cssText = 'background:white; padding:1.4rem 2rem; border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;';
+    const invNote = document.createElement('p');
+    invNote.className = 'ux-note';
+    invNote.id = 'invNote';
+    invNote.textContent = 'Para usar las invitaciones, activa «Permitir aceptar el reconocimiento facial y dar la selfie desde el celular» en la pestaña Reconocimiento facial y guarda.';
+    invCard.append(invNote);
+    if (box) invCard.append(box);
+    root.append(invCard);
+    const syncInv = () => { const a = document.getElementById('ccAceptar'); invNote.hidden = !!(a && a.checked); };
+    const aceptar = document.getElementById('ccAceptar');
+    if (aceptar) aceptar.addEventListener('change', syncInv);
+    syncInv();
+
+    // Zona de privacidad (rojo) y botones de guardar de siempre ocultos (los reemplaza el Guardar de la pestaña)
+    const priv = root.querySelector('[data-ux-privacy]');
+    if (priv) priv.classList.add('ux-privacy-zone');
+    GROUPS.forEach((g) => g.buttons.forEach((id) => { const b = document.getElementById(id); if (b) b.classList.add('ux-hidden-save'); }));
+
+    // Paneles
+    const bar = document.createElement('div');
+    bar.className = 'ux-tabs';
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', 'Secciones de los parámetros del evento');
+    root.prepend(bar);
+    const panels = {};
+    present.forEach((t) => {
+        const panel = document.createElement('section');
+        panel.className = 'ux-panel';
+        panel.id = `uxpanel-${t.id}`;
+        panel.setAttribute('role', 'tabpanel');
+        panel.setAttribute('aria-labelledby', `uxtab-${t.id}`);
+        panel.hidden = true;
+        const intro = document.createElement('p');
+        intro.className = 'ux-lead';
+        intro.textContent = t.intro;
+        panel.append(intro);
+        panels[t.id] = panel;
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'ux-tab';
+        tab.id = `uxtab-${t.id}`;
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-controls', panel.id);
+        tab.setAttribute('aria-selected', 'false');
+        tab.tabIndex = -1;
+        tab.innerHTML = '<span></span><span class="ux-dot" aria-hidden="true"></span><span class="ux-sr" style="position:absolute;left:-9999px;"> (cambios sin guardar)</span>';
+        tab.firstChild.textContent = t.label;
+        tab.lastChild.hidden = true;
+        bar.append(tab);
+        tab.addEventListener('click', () => show(t.id));
+        tab.addEventListener('keydown', (e) => {
+            const i = present.findIndex((x) => x.id === t.id);
+            const next = e.key === 'ArrowRight' ? present[(i + 1) % present.length] : e.key === 'ArrowLeft' ? present[(i - 1 + present.length) % present.length] : e.key === 'Home' ? present[0] : e.key === 'End' ? present[present.length - 1] : null;
+            if (next) { e.preventDefault(); show(next.id); document.getElementById(`uxtab-${next.id}`).focus(); }
+        });
+    });
+    // Mover cada tarjeta a su panel, en el orden en que estaban
+    Array.from(root.children).forEach((el) => {
+        const id = el.dataset && el.dataset.uxTab;
+        if (id && panels[id]) panels[id].append(el);
+    });
+    present.forEach((t) => root.append(panels[t.id]));
+
+    // Un solo Guardar por pestaña
+    const dirty = {};
+    const groupsOf = (tabId) => GROUPS.filter((g) => g.tabs.includes(tabId) && g.buttons.some((id) => document.getElementById(id)));
+    const refresh = () => {
+        present.forEach((t) => {
+            const isDirty = groupsOf(t.id).some((g) => dirty[g.id]);
+            const tabEl = document.getElementById(`uxtab-${t.id}`);
+            tabEl.classList.toggle('dirty', isDirty);
+            tabEl.lastChild.hidden = !isDirty;
+            tabEl.lastChild.style.display = isDirty ? 'inline' : 'none';
+            const sb = panels[t.id].querySelector('.ux-savebar');
+            if (sb) { sb.classList.toggle('dirty', isDirty); sb.querySelector('.ux-state').textContent = isDirty ? 'Cambios sin guardar' : 'Todo guardado'; }
+        });
+    };
+    present.forEach((t) => {
+        const sb = document.createElement('div');
+        sb.className = 'ux-savebar';
+        const state = document.createElement('span');
+        state.className = 'ux-state';
+        state.setAttribute('role', 'status');
+        sb.append(state);
+        const groups = groupsOf(t.id);
+        if (groups.length) {
+            state.textContent = 'Todo guardado';
+            const save = document.createElement('button');
+            save.type = 'button';
+            save.className = 'golden-btn golden-btn-primary';
+            save.textContent = 'Guardar';
+            save.addEventListener('click', () => {
+                const todo = groups.filter((g) => dirty[g.id]);
+                if (!todo.length) { showToast('No hay cambios por guardar en esta pestaña.', 'info'); return; }
+                const done = new Set();
+                todo.forEach((g) => g.buttons.forEach((id) => { const b = document.getElementById(id); if (b && !done.has(id)) { done.add(id); b.click(); } }));
+                todo.forEach((g) => { dirty[g.id] = false; });
+                refresh();
+            });
+            sb.append(save);
+            panels[t.id].append(sb);
+        } else {                                       // sin campos que guardar en bloque: no hay barra, solo la aclaración
+            const note = document.createElement('p');
+            note.className = 'ux-help';
+            note.textContent = t.id === 'privacidad' ? 'Aquí no hay nada que guardar: cada acción se hace al pulsar su botón y pide confirmación.' : 'Lo que cambies en esta pestaña se guarda al instante.';
+            panels[t.id].append(note);
+        }
+    });
+    const onEdit = (e) => {
+        if (!(e.target instanceof Element)) return;
+        GROUPS.forEach((g) => { if (g.watch && e.target.matches(g.watch)) dirty[g.id] = true; });
+        refresh();
+    };
+    document.addEventListener('input', onEdit);
+    document.addEventListener('change', onEdit);
+    window.addEventListener('beforeunload', (e) => { if (GROUPS.some((g) => dirty[g.id])) { e.preventDefault(); e.returnValue = ''; } });
+
+    function show(id, push) {
+        present.forEach((t) => {
+            const on = t.id === id;
+            panels[t.id].hidden = !on;
+            const tabEl = document.getElementById(`uxtab-${t.id}`);
+            tabEl.setAttribute('aria-selected', on ? 'true' : 'false');
+            tabEl.tabIndex = on ? 0 : -1;
+        });
+        if (push !== false && history.replaceState) history.replaceState(null, '', '#' + id);
+    }
+    const fromHash = (location.hash || '').slice(1);
+    show(present.some((t) => t.id === fromHash) ? fromHash : present[0].id, false);
+    window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (present.some((t) => t.id === h)) show(h, false); });
+    refresh();
+})();
+
 </script>
 </body>
 </html>

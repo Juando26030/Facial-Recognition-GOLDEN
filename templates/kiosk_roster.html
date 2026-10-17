@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ event.name }} — Base de Datos | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_ux_head.html" %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -15,7 +16,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
-<body class="has-sidebar">
+<body class="ux1 has-sidebar">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">

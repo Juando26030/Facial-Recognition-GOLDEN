@@ -1,0 +1,124 @@
+/* Fase 1 de UX (rama ux/fase1-visual): sistema visual del panel. SOLO presentación.
+   Se activa con `body.ux1` (opt-in por página): la puerta (/kiosk/<id>/rostro), la contingencia y las páginas públicas NO lo cargan.
+   Base: la página pública /aceptar (Montserrat, tarjeta blanca, botones dorados, un botón principal).
+   Medido en docs/ux/ANALISIS_FLUJO_Y_UX.md: 320 de 441 tamaños < 14 px; grises #777…#bbb y #b26a00 por debajo de 4,5:1; casillas de 18 px. */
+
+/* ------------------------------------------------------------------ tokens */
+:root {
+  /* tipografía: cuerpo 16/24; escala fija de 5 tamaños (WCAG 1.4.4, Material 3 type scale) */
+  --ux-font: 'Montserrat', 'Agrandir', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ux-fs-display: 2rem;      /* 32 px */
+  --ux-fs-title: 1.5rem;      /* 24 px */
+  --ux-fs-subtitle: 1.25rem;  /* 20 px */
+  --ux-fs-body: 1rem;         /* 16 px, interlineado 24 px */
+  --ux-fs-label: 0.875rem;    /* 14 px: mínimo para ayuda y etiquetas */
+  --ux-lh-body: 1.5rem;
+  /* colores (contraste calculado sobre blanco / #F4F5F9) */
+  --ux-ink: #1b1d2a;          /* texto: 16,5:1 */
+  --ux-ink-2: #4a4d5c;        /* texto de ayuda: 8,6:1 / 7,9:1 (reemplaza #777 #888 #999 #aaa #bbb) */
+  --ux-navy: #0a0e2e;         /* marca */
+  --ux-gold: #D4AF37;         /* marca: SOLO como fondo con texto oscuro (como texto da 2,1:1) */
+  --ux-gold-ink: #6b4f00;     /* dorado oscuro para texto/enlaces sobre claro: 7,3:1 */
+  --ux-link: #0b4fa8;         /* enlaces: 7,6:1 */
+  --ux-bg: #F4F5F9;
+  --ux-card: #ffffff;
+  --ux-line: #c9ccd6;
+  --ux-danger: #a12631;       /* 7,4:1 */
+  --ux-danger-bg: #fdecea;
+  --ux-warn: #8a5a00;         /* 5,9:1 (reemplaza #b26a00 = 4,24:1) */
+  --ux-warn-bg: #fff4e5;
+  --ux-ok: #1e7a3a;           /* 5,5:1 */
+  --ux-ok-bg: #eef6ee;
+  /* espaciado y radios */
+  --ux-s1: 4px; --ux-s2: 8px; --ux-s3: 12px; --ux-s4: 16px; --ux-s5: 24px; --ux-s6: 32px;
+  --ux-r1: 8px; --ux-r2: 12px; --ux-r3: 20px;
+  --ux-target: 44px;          /* objetivo táctil (Apple HIG 44 pt, Android 48 dp); mínimo WCAG 2.5.8 = 24 px */
+}
+
+/* ------------------------------------------------------------------ base */
+body.ux1 { font-family: var(--ux-font); font-size: var(--ux-fs-body); line-height: var(--ux-lh-body); color: var(--ux-ink); }
+body.ux1 h1, body.ux1 h2, body.ux1 h3, body.ux1 h4, body.ux1 .mode-title { font-family: var(--ux-font); color: var(--ux-navy); }
+body.ux1 h2 { font-size: var(--ux-fs-display); line-height: 2.5rem; }
+body.ux1 h3 { font-size: var(--ux-fs-subtitle); line-height: 1.75rem; }
+body.ux1 h4 { font-size: var(--ux-fs-subtitle); line-height: 1.75rem; margin-bottom: var(--ux-s3); }
+body.ux1 p, body.ux1 li, body.ux1 label, body.ux1 td, body.ux1 th { font-size: var(--ux-fs-body); line-height: var(--ux-lh-body); }
+body.ux1 :focus-visible { outline: 3px solid var(--ux-link); outline-offset: 2px; border-radius: 4px; }      /* WCAG 2.4.7 */
+body.ux1 main a:not(.golden-btn):not(.small-btn):not(.mode-card) { color: var(--ux-link); }
+
+/* texto de ayuda: nunca menos de 14 px ni menos de 4,5:1, aunque venga con estilo en la plantilla */
+body.ux1 small, body.ux1 .meta, body.ux1 .mode-sub, body.ux1 .help, body.ux1 .status-note, body.ux1 .ux-help { font-size: var(--ux-fs-label) !important; line-height: 1.25rem; color: var(--ux-ink-2); }
+body.ux1 [style*="font-size:0.6"], body.ux1 [style*="font-size: 0.6"],
+body.ux1 [style*="font-size:0.7"], body.ux1 [style*="font-size: 0.7"],
+body.ux1 [style*="font-size:0.8"], body.ux1 [style*="font-size: 0.8"],
+body.ux1 [style*="font-size:11px"], body.ux1 [style*="font-size:12px"], body.ux1 [style*="font-size:13px"] { font-size: var(--ux-fs-label) !important; line-height: 1.25rem; }
+body.ux1 [style*="color:#666"], body.ux1 [style*="color: #666"], body.ux1 [style*="color:#777"], body.ux1 [style*="color: #777"], body.ux1 [style*="color:#888"], body.ux1 [style*="color: #888"],
+body.ux1 [style*="color:#999"], body.ux1 [style*="color: #999"], body.ux1 [style*="color:#aaa"], body.ux1 [style*="color: #aaa"], body.ux1 [style*="color:#bbb"], body.ux1 [style*="color: #bbb"],
+body.ux1 [style*="color:#555"], body.ux1 [style*="color:#a66"] { color: var(--ux-ink-2) !important; }
+body.ux1 [style*="color:#b26a00"] { color: var(--ux-warn) !important; }
+body.ux1 [style*="color:#a12631"] { color: var(--ux-danger) !important; }
+
+/* ------------------------------------------------------------------ objetivos táctiles */
+body.ux1 input[type="checkbox"], body.ux1 input[type="radio"] { width: 24px !important; height: 24px !important; min-width: 24px; accent-color: var(--ux-navy); flex: none; }
+body.ux1 label:has(> input[type="checkbox"]), body.ux1 label:has(> input[type="radio"]) { min-height: var(--ux-target); align-items: center !important; padding: var(--ux-s1) 0; cursor: pointer; }
+body.ux1 button, body.ux1 .golden-btn, body.ux1 .small-btn, body.ux1 a.small-btn { min-height: var(--ux-target); min-width: 24px; font-size: var(--ux-fs-label); font-family: var(--ux-font); font-weight: 700; padding-left: var(--ux-s4); padding-right: var(--ux-s4); cursor: pointer; }
+body.ux1 .btn-table-delete, body.ux1 button.ux-compact { min-height: 32px; }
+body.ux1 input[type="text"], body.ux1 input[type="email"], body.ux1 input[type="date"], body.ux1 input[type="number"], body.ux1 input[type="search"], body.ux1 select, body.ux1 textarea {
+  min-height: var(--ux-target); font-size: var(--ux-fs-body); font-family: var(--ux-font); border: 1px solid var(--ux-line); border-radius: var(--ux-r1); color: var(--ux-ink); }
+body.ux1 button:disabled, body.ux1 .golden-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ------------------------------------------------------------------ botones: uno principal por vista (dorado con texto oscuro); el destructivo en rojo y NUNCA principal */
+body.ux1 .golden-btn-primary, body.ux1 .small-btn.primary { text-decoration: none; background: var(--ux-gold); color: #111; border: 2px solid var(--ux-gold); border-radius: 26px; }
+body.ux1 .golden-btn:not(.golden-btn-primary) { background: #fff; color: var(--ux-navy); border: 2px solid var(--ux-navy); border-radius: 26px; }
+body.ux1 .ux-danger, body.ux1 #privAll, body.ux1 #privEvent, body.ux1 #privRevoke { background: var(--ux-danger-bg) !important; color: var(--ux-danger) !important; border: 2px solid var(--ux-danger) !important; border-radius: var(--ux-r1) !important; font-weight: 700; }
+body.ux1 #privPerson { background: #fff; color: var(--ux-ink); border: 2px solid var(--ux-line); border-radius: var(--ux-r1); }
+
+/* ------------------------------------------------------------------ tarjetas de contenido */
+body.ux1 .ux-card { background: var(--ux-card); border-radius: var(--ux-r3); box-shadow: 0 6px 24px rgba(10,14,46,.08); padding: var(--ux-s5) var(--ux-s6); margin-bottom: var(--ux-s4); }
+body.ux1 .ux-note { padding: var(--ux-s3) var(--ux-s4); border-radius: var(--ux-r2); background: var(--ux-warn-bg); border: 1px solid #f0c36d; color: #5c3b00; }
+body.ux1 .ux-ok { background: var(--ux-ok-bg); border-color: #b7d8b7; color: #174d27; }
+
+/* ------------------------------------------------------------------ íconos SVG */
+.ux-icon { display: inline-block; vertical-align: middle; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ------------------------------------------------------------------ menú del evento */
+body.ux1 .ux-steps { max-width: 760px; margin: var(--ux-s5) auto var(--ux-s6); background: var(--ux-card); border-radius: var(--ux-r3); box-shadow: 0 6px 24px rgba(10,14,46,.08); padding: var(--ux-s5) var(--ux-s6); text-align: left; }
+body.ux1 .ux-steps h3 { margin: 0 0 var(--ux-s3); }
+body.ux1 .ux-steps ol { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--ux-s2); }
+body.ux1 .ux-steps li { display: flex; gap: var(--ux-s3); align-items: center; min-height: var(--ux-target); }
+body.ux1 .ux-steps .ux-check { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--ux-line); display: inline-flex; align-items: center; justify-content: center; flex: none; color: transparent; }
+body.ux1 .ux-steps li.done .ux-check { background: var(--ux-ok); border-color: var(--ux-ok); color: #fff; }
+body.ux1 .ux-steps li.done a { color: var(--ux-ink-2); }
+body.ux1 .ux-steps a { font-weight: 600; }
+body.ux1 .ux-group { max-width: 1100px; margin: var(--ux-s6) auto 0; text-align: left; }
+body.ux1 .ux-group > h3 { margin: 0 0 var(--ux-s1); font-size: var(--ux-fs-subtitle); }
+body.ux1 .ux-group > p { margin: 0 0 var(--ux-s3); color: var(--ux-ink-2); font-size: var(--ux-fs-label); }
+body.ux1 .ux-group .mode-grid { margin-top: var(--ux-s3); justify-content: flex-start; gap: var(--ux-s4); }
+body.ux1 .mode-card { width: 250px; padding: var(--ux-s5) var(--ux-s4); border-radius: var(--ux-r3); text-align: left; }
+body.ux1 .mode-card .mode-icon { width: 48px; height: 48px; border-radius: var(--ux-r2); background: #eef0f8; color: var(--ux-navy); display: flex; align-items: center; justify-content: center; margin-bottom: var(--ux-s3); font-size: 0; }
+body.ux1 .mode-card .mode-title { font-size: 1.0625rem; }
+
+/* ------------------------------------------------------------------ Parámetros en pestañas */
+body.ux1 .ux-tabs { display: flex; gap: var(--ux-s2); flex-wrap: wrap; margin: 0 0 var(--ux-s4); border-bottom: 2px solid var(--ux-line); padding-bottom: 0; }
+body.ux1 .ux-tab { background: transparent; border: 0; border-bottom: 4px solid transparent; border-radius: 0; margin-bottom: -2px; color: var(--ux-ink-2); font-weight: 700; padding: var(--ux-s3) var(--ux-s4); }
+body.ux1 .ux-tab[aria-selected="true"] { color: var(--ux-navy); border-bottom-color: var(--ux-gold); }
+body.ux1 .ux-tab .ux-dot { display: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ux-danger); margin-left: var(--ux-s2); vertical-align: middle; }
+body.ux1 .ux-tab.dirty .ux-dot { display: inline-block; }
+body.ux1 .ux-panel[hidden] { display: none !important; }
+body.ux1 .ux-savebar { position: sticky; bottom: 0; z-index: 5; display: flex; gap: var(--ux-s3); align-items: center; justify-content: flex-end; flex-wrap: wrap; background: #fff; border-top: 2px solid var(--ux-line); padding: var(--ux-s3) var(--ux-s4); margin-top: var(--ux-s4); border-radius: var(--ux-r2) var(--ux-r2) 0 0; box-shadow: 0 -6px 18px rgba(10,14,46,.08); }
+body.ux1 .ux-savebar .golden-btn { width: auto; min-width: 160px; }
+body.ux1 .ux-savebar .ux-state { margin-right: auto; color: var(--ux-ink-2); font-size: var(--ux-fs-label); }
+body.ux1 .ux-savebar.dirty .ux-state { color: var(--ux-danger); font-weight: 700; }
+body.ux1 .ux-hidden-save { display: none !important; }
+body.ux1 .ux-privacy-zone { border: 2px solid var(--ux-danger); border-radius: var(--ux-r3); padding: var(--ux-s4) var(--ux-s5); background: #fff; }
+body.ux1 .ux-privacy-zone h4 { color: var(--ux-danger); }
+
+/* ------------------------------------------------------------------ lista de eventos y Registro */
+body.ux1 .tenant-card { border-radius: var(--ux-r3); }
+body.ux1 .tenant-card h3 { font-size: var(--ux-fs-subtitle); }
+body.ux1 .tenant-card .meta { font-size: var(--ux-fs-label); color: var(--ux-ink-2); }
+body.ux1 .ux-lead { color: var(--ux-ink-2); font-size: var(--ux-fs-body); max-width: 760px; margin: 0 0 var(--ux-s4); }
+
+/* detalles: espacio bajo la franja del evento, enlaces dorados (2,1:1) a color de enlace, tamaño de la nota de pestañas sin guardado */
+body.ux1 .golden-main { padding-top: var(--ux-s5); }
+body.ux1 a[style*="golden-primary"] { color: var(--ux-link) !important; }
+body.ux1 .ux-help { margin-top: var(--ux-s4); }

@@ -1,10 +1,11 @@
-<!DOCTYPE html>
+{% from "_icons.html" import icon %}<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ event.name }} | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_ux_head.html" %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
@@ -26,7 +27,7 @@
         .status-note { font-size:0.8rem; color:#a66; margin-top:1.5rem; max-width:420px; margin-left:auto; margin-right:auto; }
     </style>
 </head>
-<body{% if staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+<body class="ux1{% if staff_role not in ['digitador', 'cliente'] %} has-sidebar{% endif %}">
 {% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
 <header class="golden-header">
   <div class="golden-header-container">
@@ -53,7 +54,7 @@
 <main class="golden-main">
   <div class="golden-container" style="padding: 4rem 2rem; text-align:center;">
     <span style="color: var(--golden-primary); font-weight:600; text-transform:uppercase; letter-spacing:2px; font-size:0.85rem;">{{ event.name }}</span>
-    <h2 style="font-family: var(--font-heading-primary); font-size:2rem; color: var(--golden-dark); margin-top:10px;">¿Qué vas a hacer hoy?</h2>
+    <h2 style="margin-top:10px;">¿Qué vas a hacer hoy?</h2>
     <p style="color:#666; margin-top:0.5rem;">Distintas personas pueden operar al mismo tiempo en el mismo evento.</p>
     <div>
       <span class="status-pill status-{{ event.status }}">
@@ -61,112 +62,170 @@
       </span>
     </div>
 
-    <div class="mode-grid">
-      <a href="/kiosk/{{ event.id }}/registro" class="mode-card enabled">
-        <div class="mode-icon">{{ "📸" if event.facial_enabled else "🪪" }}</div>
-        <div class="mode-title">Registro</div>
-        <div class="mode-sub">
-          {% if event.facial_enabled %}
-          Escáner facial, cédula y directorio en vivo
-          {% else %}
-          Cédula (lector o manual) y directorio en vivo
-          {% endif %}
-        </div>
-      </a>
-      {% if event.areas_enabled and staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/areas" class="mode-card enabled">
-        <div class="mode-icon">🚪</div>
-        <div class="mode-title">Control de Áreas</div>
-        <div class="mode-sub">Entradas y salidas por zona (cédula, QR o facial)</div>
-      </a>
-      {% endif %}
-      {% if event.inventory_enabled and staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/inventario" class="mode-card enabled">
-        <div class="mode-icon">📦</div>
-        <div class="mode-title">Control de Inventario</div>
-        <div class="mode-sub">Entrega de insumos y combos, con el disponible al día</div>
-      </a>
-      {% endif %}
-      {% if staff_role != "digitador" %}
-      {# Sprint 2.4 Fase 6 (2026-09-16, pedido explícito): 'comercial' no debe ver Adjuntar Base
-         de Datos, Escarapelas ni Parámetros del Evento — literal que no aparezcan, no solo que
-         estén bloqueadas al entrar. Usuarios del Evento y Estadísticas SÍ quedan visibles para
-         comercial (Usuarios del Evento queda accesible pero solo para crear cuentas cliente, el
-         propio formulario ya oculta la opción Digitador para ese rol desde la Fase 0). #}
-      {% if staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/roster" class="mode-card enabled">
-        <div class="mode-icon">📎</div>
-        <div class="mode-title">Adjuntar Base de Datos</div>
-        <div class="mode-sub">Carga masiva desde Excel/CSV</div>
-      </a>
-      <a href="/kiosk/{{ event.id }}/escarapela" class="mode-card enabled">
-        <div class="mode-icon">🎫</div>
-        <div class="mode-title">Escarapelas</div>
-        <div class="mode-sub">Diseña la escarapela de este evento e imprímela al registrar</div>
-      </a>
-      {% endif %}
-      {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
-      <a href="/kiosk/{{ event.id }}/formularios" class="mode-card enabled">
-        <div class="mode-icon">📝</div>
-        <div class="mode-title">Formularios Web</div>
-        <div class="mode-sub">Crea formularios de inscripción con tu diseño, cupo, fechas y contraseña; alimentan la base del evento</div>
-      </a>
-      <a href="/kiosk/{{ event.id }}/ruleta" class="mode-card enabled">
-        <div class="mode-icon">🎡</div>
-        <div class="mode-title">Ruleta</div>
-        <div class="mode-sub">Sorteos entre los asistentes: elige cómo se escoge al ganador y cómo se ve en pantalla</div>
-      </a>
-      {% endif %}
-      <a href="/kiosk/{{ event.id }}/estadisticas" class="mode-card enabled">
-        <div class="mode-icon">📊</div>
-        <div class="mode-title">Estadísticas</div>
-        <div class="mode-sub">Exporta el reporte y consulta gráficos del evento</div>
-      </a>
-      <a href="/kiosk/{{ event.id }}/usuarios" class="mode-card enabled">
-        <div class="mode-icon">👥</div>
-        <div class="mode-title">Usuarios del Evento</div>
-        <div class="mode-sub">Cuentas temporales de digitador/cliente para este evento</div>
-      </a>
-      {% if event.certificates_enabled and staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/certificado" class="mode-card enabled">
-        <div class="mode-icon">🎓</div>
-        <div class="mode-title">Diseñar Certificado</div>
-        <div class="mode-sub">Plantilla del certificado (PDF) para quienes tengan Certificado = Sí</div>
-      </a>
-      {% if event.status == "finalizado" %}
-      <a href="/kiosk/{{ event.id }}/certificados" class="mode-card enabled">
-        <div class="mode-icon">📜</div>
-        <div class="mode-title">Certificados</div>
-        <div class="mode-sub">Genera el ZIP con los certificados en PDF</div>
-      </a>
-      {% endif %}
-      {% endif %}
-      <a href="/kiosk/{{ event.id }}/documentos" class="mode-card enabled">
-        <div class="mode-icon">📁</div>
-        <div class="mode-title">Documentos del Evento</div>
-        <div class="mode-sub">Adjunta archivos del evento y descárgalos todos juntos en un ZIP</div>
-      </a>
-      {% if event.report_pdf_path %}
-      <a href="/api/events/{{ event.id }}/final-report" class="mode-card enabled" target="_blank" rel="noopener">
-        <div class="mode-icon">⬇️</div>
-        <div class="mode-title">Descargar informe</div>
-        <div class="mode-sub">El informe final que se adjuntó al evento (el mismo que se envió a la comercial)</div>
-      </a>
-      {% endif %}
-      <a href="/kiosk/{{ event.id }}/legalizaciones" class="mode-card enabled">
-        <div class="mode-icon">🧾</div>
-        <div class="mode-title">Legalizaciones</div>
-        <div class="mode-sub">Gastos del evento con evidencia, y reporte con el total</div>
-      </a>
-      {% if staff_role != "comercial" %}
-      <a href="/kiosk/{{ event.id }}/parametros" class="mode-card enabled">
-        <div class="mode-icon">⚙️</div>
-        <div class="mode-title">Parámetros del Evento</div>
-        <div class="mode-sub">Define qué campos son obligatorios, su tipo, y qué variables generan estadística sola</div>
-      </a>
-      {% endif %}
-      {% endif %}
-    </div>
+    {# ---- «Primeros pasos»: solo para quien configura el evento (coordinador+). Usa únicamente datos que el evento ya tiene (sin consultas nuevas). ---- #}
+    {% if staff_role in ["coordinador", "admin", "super_admin"] %}
+    <section class="ux-steps" aria-labelledby="stepsTitle">
+      <h3 id="stepsTitle">Primeros pasos</h3>
+      <ol>
+        <li class="{{ 'done' if (event.facial_enabled or event.biometrics_locked) else '' }}"><span class="ux-check">{{ icon("check", 18) }}</span>
+          <a href="/kiosk/{{ event.id }}/parametros#facial">Elegir si el evento usa reconocimiento facial</a></li>
+        <li class="{{ 'done' if event.roster_uploaded else '' }}"><span class="ux-check">{{ icon("check", 18) }}</span>
+          <a href="/kiosk/{{ event.id }}/roster">Cargar la lista de personas</a></li>
+        <li class="{{ 'done' if event.aceptar_enabled else '' }}"><span class="ux-check">{{ icon("check", 18) }}</span>
+          <a href="/kiosk/{{ event.id }}/parametros#invitaciones">Activar la aceptación e invitar a las personas</a></li>
+        <li class="{{ 'done' if event.status != 'creado' else '' }}"><span class="ux-check">{{ icon("check", 18) }}</span>
+          <a href="/eventos">Pasar el evento a «En proceso» el día del evento</a></li>
+      </ol>
+    </section>
+    {% endif %}
+
+    {# ---- 1 · Configurar ---- #}
+    {% if staff_role != "digitador" %}
+    <section class="ux-group" aria-labelledby="grpConfig">
+      <h3 id="grpConfig">1 · Configurar</h3>
+      <p>Antes del evento: cómo funciona, qué se le pide a la gente y cómo se ven sus escarapelas.</p>
+      <div class="mode-grid">
+        {% if staff_role != "comercial" %}
+        <a href="/kiosk/{{ event.id }}/parametros" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("gear") }}</div>
+          <div class="mode-title">Parámetros del Evento</div>
+          <div class="mode-sub">Define qué campos son obligatorios, su tipo, y qué variables generan estadística sola</div>
+        </a>
+        <a href="/kiosk/{{ event.id }}/escarapela" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("ticket") }}</div>
+          <div class="mode-title">Escarapelas</div>
+          <div class="mode-sub">Diseña la escarapela de este evento e imprímela al registrar</div>
+        </a>
+        {% endif %}
+        {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
+        <a href="/kiosk/{{ event.id }}/formularios" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("form") }}</div>
+          <div class="mode-title">Formularios Web</div>
+          <div class="mode-sub">Crea formularios de inscripción con tu diseño, cupo, fechas y contraseña; alimentan la base del evento</div>
+        </a>
+        {% endif %}
+        {% if event.certificates_enabled and staff_role != "comercial" %}
+        <a href="/kiosk/{{ event.id }}/certificado" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("award") }}</div>
+          <div class="mode-title">Diseñar Certificado</div>
+          <div class="mode-sub">Plantilla del certificado (PDF) para quienes tengan Certificado = Sí</div>
+        </a>
+        {% endif %}
+        <a href="/kiosk/{{ event.id }}/usuarios" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("users") }}</div>
+          <div class="mode-title">Usuarios del Evento</div>
+          <div class="mode-sub">Cuentas temporales de digitador/cliente para este evento</div>
+        </a>
+      </div>
+    </section>
+
+    {# ---- 2 · Cargar personas ---- #}
+    {% if staff_role != "comercial" %}
+    <section class="ux-group" aria-labelledby="grpLoad">
+      <h3 id="grpLoad">2 · Cargar personas</h3>
+      <p>La lista de asistentes esperados.</p>
+      <div class="mode-grid">
+        <a href="/kiosk/{{ event.id }}/roster" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("paperclip") }}</div>
+          <div class="mode-title">Adjuntar Base de Datos</div>
+          <div class="mode-sub">Carga masiva desde Excel/CSV</div>
+        </a>
+      </div>
+    </section>
+
+    {# ---- 3 · Invitar ---- #}
+    <section class="ux-group" aria-labelledby="grpInvite">
+      <h3 id="grpInvite">3 · Invitar</h3>
+      <p>Que cada persona acepte el reconocimiento facial desde su celular antes del evento (es voluntario).</p>
+      <div class="mode-grid">
+        <a href="/kiosk/{{ event.id }}/parametros#invitaciones" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("mail") }}</div>
+          <div class="mode-title">Invitaciones y aceptación</div>
+          <div class="mode-sub">Envía el enlace personal por correo, descarga los enlaces o imprime el cartel con el QR</div>
+        </a>
+      </div>
+    </section>
+    {% endif %}
+    {% endif %}
+
+    {# ---- 4 · Puerta ---- #}
+    <section class="ux-group" aria-labelledby="grpDoor">
+      <h3 id="grpDoor">{{ "4" if staff_role != "digitador" else "1" }} · Puerta</h3>
+      <p>Durante el evento: acreditar a las personas y controlar el acceso.</p>
+      <div class="mode-grid">
+        <a href="/kiosk/{{ event.id }}/registro" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("camera" if event.facial_enabled else "id") }}</div>
+          <div class="mode-title">Registro</div>
+          <div class="mode-sub">
+            {% if event.facial_enabled %}
+            Escáner facial, cédula y directorio en vivo
+            {% else %}
+            Cédula (lector o manual) y directorio en vivo
+            {% endif %}
+          </div>
+        </a>
+        {% if event.areas_enabled and staff_role != "comercial" %}
+        <a href="/kiosk/{{ event.id }}/areas" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("door") }}</div>
+          <div class="mode-title">Control de Áreas</div>
+          <div class="mode-sub">Entradas y salidas por zona (cédula, QR o facial)</div>
+        </a>
+        {% endif %}
+        {% if event.inventory_enabled and staff_role != "comercial" %}
+        <a href="/kiosk/{{ event.id }}/inventario" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("box") }}</div>
+          <div class="mode-title">Control de Inventario</div>
+          <div class="mode-sub">Entrega de insumos y combos, con el disponible al día</div>
+        </a>
+        {% endif %}
+        {% if staff_role in ["coordinador", "comercial", "admin", "super_admin"] %}
+        <a href="/kiosk/{{ event.id }}/ruleta" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("wheel") }}</div>
+          <div class="mode-title">Ruleta</div>
+          <div class="mode-sub">Sorteos entre los asistentes: elige cómo se escoge al ganador y cómo se ve en pantalla</div>
+        </a>
+        {% endif %}
+      </div>
+    </section>
+
+    {# ---- 5 · Después ---- #}
+    {% if staff_role != "digitador" %}
+    <section class="ux-group" aria-labelledby="grpAfter">
+      <h3 id="grpAfter">5 · Después</h3>
+      <p>Resultados, documentos y gastos del evento.</p>
+      <div class="mode-grid">
+        <a href="/kiosk/{{ event.id }}/estadisticas" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("chart") }}</div>
+          <div class="mode-title">Estadísticas</div>
+          <div class="mode-sub">Exporta el reporte y consulta gráficos del evento</div>
+        </a>
+        {% if event.certificates_enabled and staff_role != "comercial" and event.status == "finalizado" %}
+        <a href="/kiosk/{{ event.id }}/certificados" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("award") }}</div>
+          <div class="mode-title">Certificados</div>
+          <div class="mode-sub">Genera el ZIP con los certificados en PDF</div>
+        </a>
+        {% endif %}
+        <a href="/kiosk/{{ event.id }}/documentos" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("folder") }}</div>
+          <div class="mode-title">Documentos del Evento</div>
+          <div class="mode-sub">Adjunta archivos del evento y descárgalos todos juntos en un ZIP</div>
+        </a>
+        {% if event.report_pdf_path %}
+        <a href="/api/events/{{ event.id }}/final-report" class="mode-card enabled" target="_blank" rel="noopener">
+          <div class="mode-icon">{{ icon("download") }}</div>
+          <div class="mode-title">Descargar informe</div>
+          <div class="mode-sub">El informe final que se adjuntó al evento (el mismo que se envió a la comercial)</div>
+        </a>
+        {% endif %}
+        <a href="/kiosk/{{ event.id }}/legalizaciones" class="mode-card enabled">
+          <div class="mode-icon">{{ icon("receipt") }}</div>
+          <div class="mode-title">Legalizaciones</div>
+          <div class="mode-sub">Gastos del evento con evidencia, y reporte con el total</div>
+        </a>
+      </div>
+    </section>
+    {% endif %}
 
     {% if event.status != "en_proceso" %}
     <p class="status-note">⚠️ El evento no está "En Proceso" — puedes entrar a ver el directorio y gestionar usuarios, pero el escáner y el registro no van a funcionar hasta que un coordinador lo active.</p>
