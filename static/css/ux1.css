@@ -33,10 +33,14 @@
   /* espaciado y radios */
   --ux-s1: 4px; --ux-s2: 8px; --ux-s3: 12px; --ux-s4: 16px; --ux-s5: 24px; --ux-s6: 32px;
   --ux-r1: 8px; --ux-r2: 12px; --ux-r3: 20px;
+  --ux-weight-small: 600;     /* Regular para texto de menos de 18 px (Agrandir: 100–500 = Thin, 600+ = Regular) */
+  --ux-weight-large: 400;     /* Thin solo desde 18 px */
   --ux-target: 44px;          /* objetivo táctil (Apple HIG 44 pt, Android 48 dp); mínimo WCAG 2.5.8 = 24 px */
 }
 
 /* ------------------------------------------------------------------ base */
+/* Agrandir Thin (peso 400) dibuja un trazo de 0,64 px a 16 px y la ayuda llega a 5,0:1 en pantallas normales (docs/ux/MEDICION_AGRANDIR.md): todo texto de menos de 18 px (cuerpo, ayuda, etiquetas, campos) usa el peso 600 = Agrandir Regular. Thin solo queda para texto de 18 px o más (ninguno hoy: los títulos ya van en 700). */
+body.ux1 { font-weight: var(--ux-weight-small); }
 body.ux1 { font-family: var(--ux-font); font-size: var(--ux-fs-body); line-height: var(--ux-lh-body); color: var(--ux-ink); }
 body.ux1 h1, body.ux1 h2, body.ux1 h3, body.ux1 h4, body.ux1 .mode-title { font-family: var(--ux-font-heading); color: var(--ux-navy); }
 body.ux1 h2 { font-size: var(--ux-fs-display); line-height: 2.5rem; }
@@ -64,7 +68,7 @@ body.ux1 label:has(> input[type="checkbox"]), body.ux1 label:has(> input[type="r
 body.ux1 button, body.ux1 .golden-btn, body.ux1 .small-btn, body.ux1 a.small-btn { min-height: var(--ux-target); min-width: 24px; font-size: var(--ux-fs-label); font-family: var(--ux-font); font-weight: 700; padding-left: var(--ux-s4); padding-right: var(--ux-s4); cursor: pointer; }
 body.ux1 .btn-table-delete, body.ux1 button.ux-compact { min-height: 32px; }
 body.ux1 input[type="text"], body.ux1 input[type="email"], body.ux1 input[type="date"], body.ux1 input[type="number"], body.ux1 input[type="search"], body.ux1 select, body.ux1 textarea {
-  min-height: var(--ux-target); font-size: var(--ux-fs-body); font-family: var(--ux-font); border: 1px solid var(--ux-line); border-radius: var(--ux-r1); color: var(--ux-ink); }
+  min-height: var(--ux-target); font-size: var(--ux-fs-body); font-weight: var(--ux-weight-small); font-family: var(--ux-font); border: 1px solid var(--ux-line); border-radius: var(--ux-r1); color: var(--ux-ink); }
 body.ux1 button:disabled, body.ux1 .golden-btn:disabled { opacity: .6; cursor: not-allowed; }
 
 /* ------------------------------------------------------------------ botones: uno principal por vista (dorado con texto oscuro); el destructivo en rojo y NUNCA principal */

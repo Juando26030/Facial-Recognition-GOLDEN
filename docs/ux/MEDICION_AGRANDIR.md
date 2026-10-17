@@ -19,3 +19,7 @@ Conclusión: con Thin los colores cumplen 4,5:1 sobre el papel, pero en un monit
 
 ## Licencia
 Los archivos traen: «Copyright © 2018 by Alexander Slobzheninov. All rights reserved.» No traen texto de licencia, ni URL de licencia; el campo de permisos de incrustación (`fsType`) vale 4 («solo vista previa e impresión»), que en la práctica no autoriza servirla como fuente web. En el repositorio no consta ninguna licencia web (`docs/historial.md` solo dice «fuente comercial… provista por Juan David»). Hay que pedirle al proveedor la licencia web y guardarla en `docs/legal/`.
+
+## Decisión del dueño (17 oct 2026): aplicada
+Todo texto de menos de 18 px (cuerpo, ayuda, etiquetas y campos de formulario) usa el peso 600 = Agrandir Regular (`--ux-weight-small` en `static/css/ux1.css`); Thin queda para 18 px o más (hoy ningún texto: los títulos ya van en 700). Medido: ayuda 14 px, 8,4:1 también en el trazo; cuerpo 16 px, 16,7:1. Capturas: `capturas/agrandir_*.png`.
+Efecto secundario a tener en cuenta: como Thin y Regular ahora se ven iguales de pesados, una negrilla dentro de un párrafo («**Usa rostro.** Quien acepte…») ya no se distingue por peso (700 también cae en Regular); si hace falta énfasis, hay que usar color o tamaño. Y si alguien elige otra tipografía en Configuración > Apariencia, 600 es semi-negrita en esa familia.

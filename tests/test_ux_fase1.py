@@ -204,3 +204,13 @@ def test_a_tab_is_marked_saved_only_when_the_real_save_finishes_ok(client, facto
     page = client.get(f"/kiosk/{ev.id}/parametros").text
     assert "const runSave" in page and "saveWaiter" in page and "r.ok) dirty[g.id] = false; else" in page          # solo se limpia «sin guardar» con el éxito que avisa el guardado de siempre
     assert "No se guardó: " in page and "Los cambios siguen sin guardar." in page and "dirty[g.id] = false;\n                });" not in page
+
+
+def test_text_under_18_px_uses_agrandir_regular_and_thin_is_kept_for_18_px_or_more():
+    assert "--ux-weight-small: 600;" in CSS and "--ux-weight-large: 400;" in CSS and "body.ux1 { font-weight: var(--ux-weight-small); }" in CSS
+    inputs = re.search(r"body\.ux1 input\[type=\"text\"\].*?\{(.*?)\}", CSS, re.S).group(1)
+    assert "font-weight: var(--ux-weight-small)" in inputs                                          # los campos de formulario no heredan el peso: se pone aparte
+    sizes = {name: float(v) * 16 for name, v in re.findall(r"--ux-fs-([a-z]+):\s*([0-9.]+)rem", CSS)}
+    assert sizes["body"] == 16 and sizes["label"] == 14 and all(px >= 18 for name, px in sizes.items() if name not in ("body", "label"))      # lo que no es Regular (>= 18 px) son títulos
+    agrandir = open("static/css/agrandir.css", encoding="utf-8").read()
+    assert "font-weight: 100 500" in agrandir and "font-weight: 600 900" in agrandir and "agrandir-regular.otf" in agrandir.split("font-weight: 600 900")[0].rsplit("@font-face", 1)[1]
