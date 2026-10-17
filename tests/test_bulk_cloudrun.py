@@ -26,7 +26,7 @@ def test_web_only_launches_and_the_job_does_the_work(client, factory, db, cloud,
     job_id = cloud[0]
     job = db.get(BulkJob, job_id)
     spec = json.loads(job.spec_json)
-    assert job.status == "queued" and spec["roster"] and spec["zip"] and "1001" not in job.spec_json     # tokens, nunca el contenido
+    assert job.status == "queued" and spec["roster"] and spec["zip"] and "1001," not in job.spec_json and "1001.jpg" not in job.spec_json     # tokens, nunca el contenido (se buscan la fila del CSV y el nombre de la foto: las claves llevan hexadecimales al azar)
     assert db.query(EventAttendee).filter_by(event_id=ev.id).count() == 0                               # el servicio web no procesó nada
 
     assert bulk_runner.main(job_id) == 0                                                                 # lo que corre el Cloud Run Job

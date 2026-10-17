@@ -2,7 +2,8 @@
 import io
 import json
 import uuid
-from datetime import date
+import re
+from datetime import date, datetime
 
 import numpy as np
 import pytest
@@ -141,14 +142,21 @@ def test_bulk_roster_birth_column_blocks_minors_and_requires_a_date_for_a_face(c
     assert any("menor de 18" in str(e) for e in r.json().get("errors", [])) and any("no fecha de nacimiento" in str(e) for e in r.json().get("errors", []))
 
 
-def test_list_minors_reports_but_deletes_nothing(db, factory, capsys):
+# La clave del archivo lleva la hora (minors-review/YYYYMMDDTHHMMSS.json): a las 20:02:02 contiene «2002». Se prueba también con esa hora fija.
+@pytest.mark.parametrize("now", [None, datetime(2026, 10, 17, 20, 2, 2)])
+def test_list_minors_reports_but_deletes_nothing(db, factory, capsys, monkeypatch, now):
+    if now:
+        monkeypatch.setattr(ops_runner, "utcnow", lambda: now)
     ev = factory.event("en_proceso", facial_enabled=True)
     db.add(User(id="2002", tenant_id=ev.tenant_id, first_name="N", last_name="X", face_encoding="[[0.1]]", birth_date=date.fromisoformat(_years_ago(12)), is_biometric_enabled=True))
     db.add(User(id="3003", tenant_id=ev.tenant_id, first_name="N", last_name="X", face_encoding="[[0.1]]", birth_date=date.fromisoformat(_years_ago(40))))
     db.commit()
     assert ops_runner.main("list-minors") == 0
     out = capsys.readouterr().out
-    assert "1 menores con datos biométricos en minors-review/" in out and "2002" not in out
+    shown = re.sub(r"minors-review/\S+\.json", "minors-review/<archivo>.json", out)           # el nombre del archivo lleva la hora; lo que importa es que la cédula no salga en el resto
+    assert "1 menores con datos biométricos en minors-review/" in out and "2002" not in shown
+    assert not now or "T200202" in out                                                      # con la hora fija, «2002» SÍ está en la salida (en el nombre del archivo)
+    assert not now or "T200202" in out                                                      # con la hora fija, «2002» SÍ está en la salida (en el nombre del archivo)
     assert db.query(User).filter_by(id="2002").one().face_encoding                     # solo se lista: la decisión de borrar es de una persona
 
 

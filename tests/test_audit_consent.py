@@ -88,18 +88,26 @@ def test_cedula_hash_is_stable_and_not_the_plain_cedula():
     assert consent.cedula_hash("1.001 234") == consent.cedula_hash("1001234") and "1001234" not in consent.cedula_hash("1001234")
 
 
-def test_export_consent_writes_one_persons_records_without_logging_the_cedula(db, monkeypatch, capsys):
+# La clave lleva la hora (…-YYYYMMDDTHHMMSS.json): a las 15:55:01 contiene «55501». Se prueba también con esa hora fija.
+@pytest.mark.parametrize("now", [None, __import__("datetime").datetime(2026, 10, 17, 15, 55, 1)])
+def test_export_consent_writes_one_persons_records_without_logging_the_cedula(db, monkeypatch, capsys, now):
+    import json
+    import re
     from app import ops_runner
+    if now:
+        monkeypatch.setattr(ops_runner, "utcnow", lambda: now)
     from app.storage import get_storage
     _rec(db, user="55501")
     _rec(db, user="66602")
     monkeypatch.setenv("CONSENT_EXPORT_CEDULA", "55501")
     assert ops_runner.main("export-consent") == 0
     out = capsys.readouterr().out
-    assert "55501" not in out and "1 registros en consent-exports/" in out          # el resultado no lleva la cédula
+    shown = re.sub(r"consent-exports/\S+\.json", "consent-exports/<archivo>.json", out)        # la clave lleva la huella y la hora: no cuentan como «cédula en la salida»
+    assert "55501" not in shown and "1 registros en consent-exports/" in out          # el resultado no lleva la cédula
+    assert not now or "T155501" in out                                                    # con la hora fija, «55501» SÍ está en la salida (en el nombre del archivo)
     key = out.split("en ")[1].split('"')[0]
     data = get_storage().get(key)
-    assert b"55501" in data and b"66602" not in data
+    assert [r["user_id"] for r in json.loads(data)] == ["55501"]                   # solo los registros de esa persona (se lee el JSON: las huellas y los ids son hexadecimales al azar)
 
 
 def test_bench_vector_prints_only_timings(monkeypatch, capsys):

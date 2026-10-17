@@ -227,7 +227,9 @@ def test_the_log_has_no_ip_or_user_agent_or_mail_addresses(factory, db, outbox):
     assert "2000" in csv_text and "@" not in csv_text and csv_text.splitlines()[0] == "cedula,fecha_hora_utc,tipo,resultado"
 
 
-def test_the_export_gives_trusted_links_to_adults_including_people_without_mail(factory, db):
+def test_the_export_gives_trusted_links_to_adults_including_people_without_mail(factory, db, monkeypatch):
+    counter = iter(range(100))                                                                 # los enlaces llevan un código al azar: aquí uno que contiene «4002» para comprobar que la prueba no se confunde
+    monkeypatch.setattr(acceptlink.secrets, "token_urlsafe", lambda n: f"x4002x{next(counter)}")
     ev = _event(factory)
     _people(factory, db, ev, 2)
     nomail = factory.person(ev, "4001")
@@ -237,7 +239,7 @@ def test_the_export_gives_trusted_links_to_adults_including_people_without_mail(
     db.commit()
     text = acceptmail.export_links(db, ev, 1)
     rows = text.splitlines()
-    assert rows[0] == "cedula,nombre,correo,enlace,enlace_enviado_por_correo" and len(rows) == 4 and "4002" not in text
+    assert rows[0] == "cedula,nombre,correo,enlace,enlace_enviado_por_correo" and len(rows) == 4 and not any(r.startswith("4002,") for r in rows)       # el menor no sale (se mira la cédula de cada fila, no cualquier «4002» del texto)
     assert all("https://app.ejemplo.test/aceptar/" in r for r in rows[1:])
     assert all(a.accept_trusted for a in db.query(EventAttendee).filter(EventAttendee.event_id == ev.id, EventAttendee.user_id != "4002"))
     assert acceptmail.export_links(db, _event(factory, controller_mode="tercero"), 1) is None

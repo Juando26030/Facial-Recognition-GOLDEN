@@ -461,7 +461,8 @@ def test_who_already_accepted_sees_the_status_right_away_without_document_or_dat
     assert _accept(client, ev, token).json()["status"] == "accepted"
     page = client.get(f"/aceptar/{ev.event_code}/{token}")
     assert page.status_code == 200 and "Tu autorizaci\\u00f3n ya qued\\u00f3 registrada" in page.text           # el texto va dentro del script, escapado
-    assert "Ana" not in page.text and "Mora" not in page.text and "1001" not in page.text and "ana@example.com" not in page.text      # ningún dato personal
+    body = page.text.replace(token, "")                                                                     # el código del enlace es al azar y puede contener «Ana» o «1001»
+    assert "Ana" not in body and "Mora" not in body and "1001" not in body and "ana@example.com" not in body      # ningún dato personal
     assert "hidden" in page.text.split('id="step1"')[1].split(">")[0]                                         # el paso de cédula + fecha no se ofrece
     fresh_ev, _p, fresh_token = _setup(factory, db, uid="4004")
     fresh = client.get(f"/aceptar/{fresh_ev.event_code}/{fresh_token}")

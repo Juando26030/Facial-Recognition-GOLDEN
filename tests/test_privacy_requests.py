@@ -1,5 +1,6 @@
 """Solicitudes de privacidad: radicado AÑO-CONSECUTIVO, fechas límite en días hábiles, bandera «reclamo en trámite» desde el panel y export-person-data (mapa de datos sin valores)."""
 import json
+import re
 from datetime import date
 
 from app import privacy_requests as pr
@@ -82,6 +83,7 @@ def test_export_person_data_is_a_map_of_what_exists_with_no_values_and_no_cedula
     assert ops_runner.main("export-person-data") == 0
     out = capsys.readouterr().out
     line0 = next(l for l in out.splitlines() if l.startswith('{"ops"'))
+    line0 = re.sub(r'"fecha": "[^"]*"', '"fecha": "-"', line0)                                 # las fechas llevan microsegundos al azar («0.1» sale cuando el segundo termina en 0)
     assert "1001" not in line0 and "Ana" not in line0 and "ana@x.test" not in line0 and "3001112233" not in line0 and "0.1" not in line0          # ni valores personales ni la cédula ni el vector
     line = next(l for l in out.splitlines() if l.startswith('{"ops"'))                               # el resto pueden ser líneas de log de otras pruebas
     data = json.loads(json.loads(line)["results"]["export-person-data"]["detail"])
