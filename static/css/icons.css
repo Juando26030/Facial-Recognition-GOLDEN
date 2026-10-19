@@ -1,0 +1,2 @@
+/* Íconos SVG del panel (templates/_icons.html). Cualquier página que use el menú lateral (templates/_sidebar.html) o la macro icon() carga este archivo; ux1.css (solo páginas rediseñadas) NO es necesario para que se vean bien. */
+.ux-icon { display: inline-block; vertical-align: middle; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }

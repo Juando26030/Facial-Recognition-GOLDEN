@@ -85,7 +85,7 @@ body.ux1 .ux-note { padding: var(--ux-s3) var(--ux-s4); border-radius: var(--ux-
 body.ux1 .ux-ok { background: var(--ux-ok-bg); border-color: #b7d8b7; color: #174d27; }
 
 /* ------------------------------------------------------------------ íconos SVG */
-.ux-icon { display: inline-block; vertical-align: middle; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* los íconos (.ux-icon) viven en static/css/icons.css: lo cargan todas las páginas con menú lateral, no solo las rediseñadas */
 
 /* ------------------------------------------------------------------ menú del evento */
 body.ux1 .ux-steps { max-width: 760px; margin: var(--ux-s5) auto var(--ux-s6); background: var(--ux-card); border-radius: var(--ux-r3); box-shadow: 0 6px 24px rgba(10,14,46,.08); padding: var(--ux-s5) var(--ux-s6); text-align: left; }

@@ -5,7 +5,7 @@
      "eventos" porque es el punto de entrada más cercano, aunque no haya una coincidencia exacta.
      Reemplaza los botones "Métodos"/"Panel" que existían antes — queda el atrás del navegador +
      estos links para volver a cualquier parte de la app. -->
-{% from "_icons.html" import icon %}{% include "_env_badge.html" %}
+{% from "_icons.html" import icon %}<link rel="stylesheet" href="{{ url_for('static', path='css/icons.css') }}">{% include "_env_badge.html" %}
 <button type="button" class="golden-sidebar-toggle" id="sidebarToggleBtn" aria-label="Abrir menú">{{ icon("list", 22) }}</button>
 <div class="golden-sidebar-backdrop" id="sidebarBackdrop"></div>
 <aside class="golden-sidebar">

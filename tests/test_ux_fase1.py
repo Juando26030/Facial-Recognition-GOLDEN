@@ -257,3 +257,39 @@ def test_the_repeated_card_heading_of_the_facial_tab_is_kept_only_for_screen_rea
     page = client.get(f"/kiosk/{ev.id}/parametros").text
     assert "Reconocimiento facial: paso guiado" in page                                                  # sigue en la página (lectores de pantalla y pruebas existentes)
     assert 'body.ux1 [data-ux-tab="facial"] > h4:first-child { position: absolute; width: 1px; height: 1px;' in CSS
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ íconos del menú lateral en TODAS las pantallas
+def _loads_icons_css(name, seen=()):
+    """¿La plantilla carga static/css/icons.css, directamente o por una plantilla que incluye?"""
+    import pathlib
+    text = pathlib.Path("templates", name).read_text(encoding="utf-8")
+    if "css/icons.css" in text:
+        return True
+    return any(_loads_icons_css(inc, seen + (name,)) for inc in re.findall(r'\{%\s*include\s+"([^"]+)"', text) if inc not in seen and pathlib.Path("templates", inc).exists())
+
+
+def test_every_template_that_uses_icons_or_the_sidebar_loads_the_icon_css():
+    import pathlib
+    users = [f.name for f in sorted(pathlib.Path("templates").glob("*.html"))
+             if f.name != "_icons.html" and re.search(r'_icons\.html|_sidebar\.html', f.read_text(encoding="utf-8"))]
+    assert len(users) >= 15 and "configuracion.html" in users and "clientes.html" in users and "calendario.html" in users and "sistema.html" in users and "kiosk_select.html" in users
+    assert [n for n in users if not _loads_icons_css(n)] == [], "una plantilla con íconos SVG no carga static/css/icons.css: los íconos se verían rellenos de negro"
+    rule = open("static/css/icons.css", encoding="utf-8").read()
+    assert ".ux-icon {" in rule and "fill: none" in rule and "stroke: currentColor" in rule
+
+
+def test_the_icon_rules_are_not_in_the_redesign_stylesheet_and_it_is_not_spread_to_other_screens():
+    import pathlib
+    assert ".ux-icon {" not in CSS and ".ux-icon{" not in CSS                                         # la regla ya no vive aquí (solo un comentario que dice dónde está)
+    redesigned = sorted(f.name for f in pathlib.Path("templates").glob("*.html") if f.name != "_ux_head.html" and re.search(r"_ux_head\.html|css/ux1\.css", f.read_text(encoding="utf-8")))
+    assert redesigned == ["eventos.html", "kiosk_parametros.html", "kiosk_roster.html", "kiosk_select.html"]   # ux1.css pisa estilos: solo las pantallas ya revisadas
+
+
+def test_non_redesigned_screens_get_the_icons_without_the_redesign(client, factory, db):
+    factory.staff("super_admin", "su")
+    ev = factory.event("creado")
+    login(client, "su")
+    for path in ("/configuracion", "/clientes", "/calendario", "/sistema", f"/kiosk/{ev.id}/usuarios", f"/kiosk/{ev.id}/estadisticas"):
+        page = client.get(path)
+        assert page.status_code == 200 and "css/icons.css" in page.text and "ux1.css" not in page.text and 'class="ux-icon"' in page.text, path
