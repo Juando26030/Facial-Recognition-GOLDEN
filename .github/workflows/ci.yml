@@ -40,7 +40,7 @@ jobs:
       - name: "Instalar dependencias (sin dlib/face-recognition; las pruebas usan un doble del motor biométrico)"
         run: |
           grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/requirements-ci.txt
-          pip install -r /tmp/requirements-ci.txt pytest httpx
+          pip install -r /tmp/requirements-ci.txt pytest httpx pyyaml      # pyyaml: solo lo usa tests/test_cutover_workflows.py (lee los flujos de GitHub); no es dependencia de la app
       - name: Pruebas
         run: python -m pytest -q
       - name: Pruebas de JS (DOM falso, sin navegador)
