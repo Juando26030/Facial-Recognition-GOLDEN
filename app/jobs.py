@@ -150,9 +150,28 @@ def _finish(job_id: int, error: Optional[str], attempts: int, max_attempts: int)
         kick(retry_at, pool)
 
 
+def runnable_kinds(kinds=None, exclude=None) -> set:
+    """Tipos que ESTE proceso puede ejecutar: los que tienen manejador registrado (dentro de `kinds`, si se da), menos `exclude`."""
+    allowed = set(_handlers) if kinds is None else set(kinds) & set(_handlers)
+    return allowed - set(exclude or ())
+
+
+def unhandled_due(db: Session, exclude=FACE_KINDS, since: Optional[datetime] = None) -> list:
+    """Trabajos en cola y vencidos cuyo tipo NO tiene manejador en este proceso (fuera de `exclude`): [(id, kind)]. `since`: solo los creados desde entonces."""
+    q = db.query(Job.id, Job.kind).filter(Job.status == "queued", Job.run_at <= utcnow(), Job.kind.notin_(list(set(_handlers) | set(exclude or ()))))
+    if since is not None:
+        q = q.filter(Job.created_at >= since)
+    return [(i, k) for i, k in q.order_by(Job.id).all()]
+
+
 def run_once(limit: int = 10, kinds=None, exclude=None) -> int:
-    """Ejecuta un lote de trabajos vencidos. Devuelve cuántos ejecutó (los tests y `python -m app.worker --once` lo usan)."""
-    claimed = _claim(limit, kinds, exclude)
+    """Ejecuta un lote de trabajos vencidos. Devuelve cuántos ejecutó (los tests y `python -m app.worker --once` lo usan).
+    Solo reclama tipos con manejador en ESTE proceso: un trabajo cuyo manejador no se cargó aquí se queda en cola, sin gastar intentos, para el proceso
+    que sí lo tenga (Hallazgo 4, 21-oct-2026: el Job horario reclamaba la constancia, no tenía su manejador y la dejaba fallida para siempre)."""
+    allowed = runnable_kinds(kinds, exclude)
+    if not allowed:
+        return 0
+    claimed = _claim(limit, allowed, None)
     for job_id, kind, payload, attempts, max_attempts in claimed:
         fn = _handlers.get(kind)
         try:
