@@ -37,7 +37,7 @@ def test_the_accept_page_has_the_three_fixed_texts_and_the_shared_camera(client,
     html = client.get(f"/aceptar/{ev.event_code}/{token}").text
     assert VOLUNTARY in html and OPERATOR in html
     assert html.index(VOLUNTARY) < html.index('id="yes"') < html.index(OPERATOR)                          # encima y debajo del botón de aceptar
-    assert "js/photo-capture.js" in html and 'id="selfieBox"' in html and "Montserrat" in html
+    assert "js/photo-capture.js" in html and 'id="selfieBox"' in html and "Agrandir" in html
     js = open("static/js/photo-capture.js", encoding="utf-8").read()
     assert CAMERA_NOTE in js and "ALLOW_AFTER_FAILS = 2" in js and "getUserMedia" in js and 'type: \'file\'' in js and "Usar esta foto" in js and "Repetir" in js
 

@@ -5,13 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ event.name }} — {{ 'Certificado' if template_kind == 'certificate' else 'Escarapela' }} | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+    <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
     <style>
         .badge-toolbar {
@@ -230,14 +229,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   // hacer scroll). El arrastre/redimensión no dependen de este número — derivan el ratio px/mm
   // de canvasEl.getBoundingClientRect() en cada momento (ver startDrag/startResize más abajo),
   // así que cualquier valor de EDITOR_SCALE sigue funcionando igual de bien.
-  const FONT_FAMILIES = [
-    'Roboto','Open Sans','Lato','Montserrat','Oswald','Raleway','Poppins','Merriweather',
-    'Playfair Display','Nunito','Ubuntu','PT Sans','Noto Sans','Source Sans Pro','Rubik',
-    'Inter','Work Sans','Quicksand','Fira Sans','Barlow','Karla','Mulish','Josefin Sans',
-    'Bebas Neue','Dancing Script','Pacifico','Lobster','Caveat','Anton','Archivo Black',
-    'Cormorant Garamond','Crimson Text','Libre Baskerville','EB Garamond','Abril Fatface',
-    'Comfortaa','DM Sans','Space Grotesk','Manrope','Zilla Slab',
-  ];
+  const FONT_FAMILIES = GoldenFonts.choices;          // las 6 tipografías alojadas (static/js/fonts-propias.js)
   const FIXED_VARIABLES = [
     ['first_name', 'Nombres'], ['last_name', 'Apellidos'], ['entity', 'Entidad'],
     ['role', 'Cargo'], ['id', 'Cédula / ID'], ['phone', 'Teléfono'], ['email', 'Correo'],
@@ -593,7 +585,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   // ---------- Panel de propiedades ----------
 
   function fontOptionsHtml(selected) {
-    return FONT_FAMILIES.map(f => `<option value="${f}" ${f === selected ? 'selected' : ''}>${f}</option>`).join('');
+    return FONT_FAMILIES.map(f => `<option value="${f}" ${f === GoldenFonts.resolve(selected) ? 'selected' : ''}>${f}</option>`).join('');
   }
 
   function variableOptionsHtml(selected) {

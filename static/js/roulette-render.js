@@ -6,16 +6,10 @@
    RouletteRender.stage(host, style)              -> { idle(names), spin(pool, winner, seconds) : Promise, kind }
                                                      dibuja la ruleta CIRCULAR o la columna vertical estilo casino («jackpot») según style.wheel_style
    RouletteRender.buildReelList(pool, winner)     -> { rows, winnerRow }   (lista que recorre la columna del estilo casino)
-   RouletteRender.fontsUrl(families)              -> URL de Google Fonts
    RouletteRender.applyBackground(el, style, assetUrl)
    RouletteRender.reveal(container, winner, style)  -> pinta la tarjeta del ganador                                          */
 (function () {
   const TAU = Math.PI * 2;
-
-  function fontsUrl(families) {
-    const list = Array.from(new Set(families.filter(Boolean))).map((f) => 'family=' + encodeURIComponent(f).replace(/%20/g, '+') + ':wght@400;700');
-    return 'https://fonts.googleapis.com/css2?' + list.join('&') + '&display=swap';
-  }
 
   function applyBackground(el, style, assetUrl) {
     el.style.backgroundColor = style.background_color || '#0A0E2E';
@@ -207,6 +201,6 @@
     </div>`;
   }
 
-  if (typeof window !== 'undefined') window.RouletteRender = { wheel, buildSegments, buildReelList, stage, fontsUrl, applyBackground, reveal };
+  if (typeof window !== 'undefined') window.RouletteRender = { wheel, buildSegments, buildReelList, stage, applyBackground, reveal };
   if (typeof module !== 'undefined') module.exports = { buildSegments, buildReelList };
 })();
