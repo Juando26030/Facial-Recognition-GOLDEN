@@ -92,6 +92,7 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
     db.commit()
     if inserted:
         jobs.kick(pool="faces")
+        jobs.kick()                                             # la constancia por correo (consent_receipt) va por la cola GENERAL: sin este aviso esperaba al barrido horario (igual que aceptar.py)
     return {"inserted": inserted, "duplicated": duplicated, "unknown": unknown}
 
 
