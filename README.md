@@ -1,8 +1,9 @@
-# Golden Biometrics
+# GoldenWeb 2.0
 
-Plataforma de registro y control de acceso a eventos de Golden Logísticas: carga de asistentes (Excel/CSV, con fotos
-opcionales), registro por cédula, rostro o QR, escarapelas y certificados, control de áreas e inventario, reportes.
-FastAPI + PostgreSQL + Alembic, reconocimiento facial con `face_recognition` (dlib), frontend server-rendered (Jinja2 + JS).
+Plataforma de gestión de identidades y acceso para eventos de Golden Eventos y Logística S.A.S.: inscripción, acreditación y control de acceso por cédula, QR o **reconocimiento facial voluntario**,
+escarapelas y certificados, control de áreas e inventario, formularios web con pagos y reportes. FastAPI + PostgreSQL (Neon) sobre Cloud Run, con **modo de contingencia sin conexión** en el quiosco.
+Privacidad por diseño (Ley 1581 de 2012): el rostro solo se usa con la **autorización explícita y registrada de la persona** (nunca por casilla del operador), los menores de edad quedan fuera del
+reconocimiento facial, el rostro se **borra 7 días después de finalizado el evento** y cada persona puede revocar o pedir la supresión de sus datos.
 
 > El detalle técnico y las decisiones de diseño viven en [`CLAUDE.md`](CLAUDE.md). Los documentos de producto, en [`docs/`](docs/00_README.md).
 

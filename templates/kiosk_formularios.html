@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Formularios Web | Golden Logísticas</title>
+    <title>Formularios Web | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -26,7 +26,7 @@
 <script>window.EVENT_ID = {{ event.id }};</script>
 <main class="golden-main">
   <section class="golden-section"><div class="golden-container">
-    <div class="golden-section-title"><span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span><h2>Formularios <span class="gradient-text">Web</span></h2></div>
+    <div class="golden-section-title"><span>{{ company_name|upper }}</span><h2>Formularios <span class="gradient-text">Web</span></h2></div>
     <div class="app-container">
       <div class="card">
         <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Crear un formulario de inscripción</h4>

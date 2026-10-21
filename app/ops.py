@@ -9,6 +9,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 from typing import Callable, Dict, List, Optional
 
 from sqlalchemy import func, text
@@ -43,7 +44,7 @@ def record_system_event(kind: str, ref: Optional[str] = None, detail: Optional[s
     from app.obs import mask_pii
     db = SessionLocal()
     try:
-        db.add(SystemEvent(kind=kind, ref=(ref or "")[:80] or None, detail=mask_pii(detail)[:500] if detail else None, at=datetime.utcnow()))
+        db.add(SystemEvent(kind=kind, ref=(ref or "")[:80] or None, detail=mask_pii(detail)[:500] if detail else None, at=utcnow()))
         db.commit()
     except Exception:  # noqa: BLE001 — ver docstring
         log.error("no se pudo registrar el hecho %s del sistema", kind, exc_info=True)
@@ -51,15 +52,17 @@ def record_system_event(kind: str, ref: Optional[str] = None, detail: Optional[s
         db.close()
 
 
-def record_5xx(request_id: str, method: str, path: str, status: int) -> None:
-    """Cuenta un error 5xx (máximo uno por segundo por proceso: en plena caída no hay que escribir miles de filas; el resto se suma al siguiente)."""
+def record_5xx(request_id: str, method: str, path: str, status: int):
+    """Cuenta un error 5xx (máximo uno por segundo por proceso: en plena caída no hay que escribir miles de filas; el resto se suma al siguiente). La escritura en la base va en un
+    HILO (`_pool`): se llama desde el middleware de registro, dentro del bucle de eventos, y una consulta síncrona ahí (con el pool agotado, hasta DB_POOL_TIMEOUT) congelaba todas las peticiones
+    del proceso. Devuelve el `Future` de la escritura (o None si se omitió por el límite de un segundo); los 503 de contrapresión con `Retry-After` NO llegan aquí (obs.py)."""
     global _last_5xx_write, _skipped_5xx
     now = time.monotonic()
     if now - _last_5xx_write < 1.0:
         _skipped_5xx += 1
-        return
+        return None
     extra, _skipped_5xx, _last_5xx_write = _skipped_5xx, 0, now
-    record_system_event("error_5xx", request_id, f"{method} {path} -> {status}" + (f" (+{extra} más en el último segundo)" if extra else ""))
+    return _pool.submit(record_system_event, "error_5xx", request_id, f"{method} {path} -> {status}" + (f" (+{extra} más en el último segundo)" if extra else ""))
 
 
 # ------------------------------------------------------------------ versión
@@ -162,7 +165,7 @@ def check_emails(db: Session) -> dict:
 
 def check_bulk_jobs(db: Session) -> dict:
     running = db.query(BulkJob).filter(BulkJob.status.in_(("queued", "running"))).all()
-    stuck = [j for j in running if j.updated_at and j.updated_at < datetime.utcnow() - timedelta(minutes=10)]
+    stuck = [j for j in running if j.updated_at and j.updated_at < utcnow() - timedelta(minutes=10)]
     if stuck:
         return item("bulk_jobs", "Cargas masivas", "red", f"{len(running)} en curso, {len(stuck)} sin avanzar", "Una carga lleva más de 10 minutos sin avanzar.",
                     "Avisa a quien la lanzó; si el servidor se reinició, debe volver a subir la carga.", running=len(running), stuck=len(stuck))
@@ -172,8 +175,10 @@ def check_bulk_jobs(db: Session) -> dict:
 
 # ------------------------------------------------------------------ respaldos
 def check_backup() -> dict:
-    folder = os.getenv("BACKUP_DIR")
     max_age = float(os.getenv("BACKUP_MAX_AGE_HOURS", "26"))
+    if os.getenv("BACKUP_BUCKET"):
+        return _check_backup_bucket(os.environ["BACKUP_BUCKET"], max_age)
+    folder = os.getenv("BACKUP_DIR")
     if not folder or not os.path.isdir(folder):
         return item("backup", "Último respaldo", "yellow", "no configurado", "El sistema no sabe dónde buscar los respaldos (BACKUP_DIR).",
                     "Define BACKUP_DIR con la carpeta de los volcados o verifica el respaldo directamente en el bucket.")
@@ -185,6 +190,22 @@ def check_backup() -> dict:
     level = "green" if age_h <= max_age else "yellow" if age_h <= max_age * 2 else "red"
     return item("backup", "Último respaldo", level, f"hace {age_h:.0f} h", "" if level == "green" else "El respaldo más reciente es más viejo de lo esperado.",
                 "" if level == "green" else "Revisa el cron del respaldo (backup.log) y corre scripts/backup_db.sh a mano.", age_hours=round(age_h, 1))
+
+
+def _check_backup_bucket(bucket_name: str, max_age: float, client=None) -> dict:
+    """Cloud Run: el respaldo más reciente se lee DIRECTO del bucket (el Job de operaciones los deja en db/hourly y db/daily)."""
+    try:
+        from google.cloud import storage as gcs
+        client = client or gcs.Client()
+        newest = max((b for b in client.list_blobs(bucket_name, prefix="db/") if b.name.endswith(".sql.gz")), key=lambda b: b.updated, default=None)
+    except Exception as e:  # noqa: BLE001
+        return item("backup", "Último respaldo", "red", "sin acceso", f"No se pudo leer el bucket de respaldos: {e}", "Revisa el permiso de lectura del bucket.")
+    if newest is None:
+        return item("backup", "Último respaldo", "red", "ninguno", f"No hay volcados en gs://{bucket_name}/db/.", "Revisa el Job de operaciones (golden-ops).")
+    age_h = (datetime.now(newest.updated.tzinfo) - newest.updated).total_seconds() / 3600
+    level = "green" if age_h <= max_age else "yellow" if age_h <= max_age * 2 else "red"
+    return item("backup", "Último respaldo", level, f"hace {age_h:.0f} h", "" if level == "green" else "El respaldo más reciente es más viejo de lo esperado.",
+                "" if level == "green" else "Revisa las ejecuciones del Job golden-ops en Cloud Run.", age_hours=round(age_h, 1), name=newest.name)
 
 
 # ------------------------------------------------------------------ eventos y formularios
@@ -212,6 +233,20 @@ def check_events(db: Session) -> dict:
                 "No despliegues ni reinicies el servidor mientras haya eventos en curso." if running or openings else "", running=running, openings=openings)
 
 
+STALE_EVENT_DAYS = 3
+
+
+def check_unfinished_events(db: Session) -> dict:
+    """Eventos cuya fecha de fin pasó hace más de 3 días y siguen sin «finalizado»: sin finalizarlos NO corre el borrado de rostros a los 7 días (solo el tope de 180)."""
+    limit = (utcnow() - timedelta(days=STALE_EVENT_DAYS)).date()
+    rows = db.query(Event.event_code, Event.name).filter(Event.status != "finalizado", Event.end_date.isnot(None), Event.end_date < limit).order_by(Event.end_date).limit(10).all()
+    if not rows:
+        return item("unfinished_events", "Eventos por finalizar", "green", "Ninguno pendiente")
+    names = "; ".join(f"{code} · {name}" for code, name in rows)
+    return item("unfinished_events", "Eventos por finalizar", "yellow", f"{len(rows)} evento(s) terminaron hace más de {STALE_EVENT_DAYS} días y siguen abiertos",
+                f"Mientras no se finalicen no corre el borrado de rostros a los 7 días ({names}).", "Márcalos como «finalizado» desde Parámetros del evento.", events=[c for c, _ in rows])
+
+
 def deploy_allowed(db: Session, hours: Optional[int] = None) -> dict:
     """¿Se puede desplegar ahora? No si hay un evento en curso, o uno/un formulario por abrir en las próximas N horas (DEPLOY_FREEZE_HOURS, 3 por defecto)."""
     hours = hours if hours is not None else int(os.getenv("DEPLOY_FREEZE_HOURS", "3"))
@@ -219,10 +254,10 @@ def deploy_allowed(db: Session, hours: Optional[int] = None) -> dict:
     running = db.query(Event.event_code).filter(Event.status == "en_proceso").all()
     if running:
         reasons.append(f"Hay {len(running)} evento(s) en curso ({', '.join(r[0] for r in running[:5])}).")
-    horizon = datetime.utcnow() + timedelta(hours=hours)
+    horizon = utcnow() + timedelta(hours=hours)
     for ev in db.query(Event).filter(Event.status == "creado", Event.start_date != None).all():  # noqa: E711
         start = local_to_utc(datetime.combine(ev.start_date, datetime.strptime(ev.event_time_start or "00:00", "%H:%M").time()))
-        if datetime.utcnow() <= start <= horizon:
+        if utcnow() <= start <= horizon:
             reasons.append(f"El evento {ev.event_code} abre en menos de {hours} h.")
     reasons += [f"Un formulario del evento {o['event_id']} abre en {o['opens_in_minutes']} min." for o in _next_form_openings(db, hours)]
     return {"allowed": not reasons, "hours": hours, "reasons": reasons}
@@ -232,9 +267,9 @@ def deploy_allowed(db: Session, hours: Optional[int] = None) -> dict:
 def check_payments(db: Session) -> dict:
     last = db.query(func.max(SystemEvent.at)).filter(SystemEvent.kind == "wompi_webhook").scalar()
     stale = db.query(func.count(FormPayment.id)).filter(FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
-                                                         FormPayment.created_at < datetime.utcnow() - timedelta(minutes=15)).scalar() or 0
+                                                         FormPayment.created_at < utcnow() - timedelta(minutes=15)).scalar() or 0
     level = "red" if stale >= 5 else "yellow" if stale else "green"
-    when = f"hace {int((datetime.utcnow() - last).total_seconds() // 60)} min" if last else "ninguno registrado"
+    when = f"hace {int((utcnow() - last).total_seconds() // 60)} min" if last else "ninguno registrado"
     return item("payments", "Pagos (Wompi)", level, f"último webhook: {when} · {stale} pago(s) sin conciliar",
                 "" if level == "green" else "Hay pagos pendientes de hace más de 15 minutos: el webhook pudo perderse.",
                 "" if level == "green" else "Corre scripts/reconcile_payments.py (consulta a Wompi por referencia) y verifica la URL del webhook en el panel de Wompi.",
@@ -242,16 +277,36 @@ def check_payments(db: Session) -> dict:
 
 
 def check_errors(db: Session) -> dict:
-    n = db.query(func.count(SystemEvent.id)).filter(SystemEvent.kind == "error_5xx", SystemEvent.at > datetime.utcnow() - timedelta(minutes=15)).scalar() or 0
+    n = db.query(func.count(SystemEvent.id)).filter(SystemEvent.kind == "error_5xx", SystemEvent.at > utcnow() - timedelta(minutes=15)).scalar() or 0
     level = "red" if n >= 10 else "yellow" if n else "green"
     return item("errors", "Errores (últimos 15 min)", level, f"{n} error(es) del servidor", "" if level == "green" else "El servidor devolvió errores 5xx recientemente.",
                 "" if level == "green" else "Busca en los logs por severity=ERROR; el id de cada error aparece en la pantalla del usuario y en el log.", count=n)
 
 
+def check_client_ip() -> dict:
+    """IP del visitante detrás de Firebase/Cloud Run: avisa si la lista de rangos de Google está vieja o si la cadena X-Forwarded-For no se interpreta como se espera
+    (docs/15, D2.2 opción D). Solo cuenta con XFF_STRIP_GOOGLE=1 (Cloud Run); en la VM no aplica."""
+    from app import security
+    h = security.ip_health()
+    if not h["strip"]:
+        return item("client_ip", "IP del visitante", "green", "sin proxies de Google (VM)", **h)
+    fix = "Refresca los rangos: python scripts/refresh_google_cidrs.py, commit y despliegue (docs/15, «IP real del cliente»)."
+    if h["google_ip_hits"]:
+        return item("client_ip", "IP del visitante", "red", f"{h['google_ip_hits']} visitas con IP de Google",
+                    "Toda la cadena X-Forwarded-For fue de Google: los límites por IP se saltaron para esas visitas (quedan los límites por usuario). O la lista de rangos está vieja, o el tráfico entra por un camino nuevo.", fix, **h)
+    if h["concentrated"]:
+        return item("client_ip", "IP del visitante", "yellow", f"{int(h['top_share'] * 100)} % desde una IP ({h['distinct_clients']} navegadores)",
+                    "Muchos navegadores distintos salen por una misma IP: puede ser el wifi de un evento (normal; sube PUBLIC_LIMIT_FACTOR) o una lista de rangos de Google vieja que deja pasar un proxy nuevo.", fix, **h)
+    if h["list_age_days"] is None or h["list_age_days"] > 45:
+        return item("client_ip", "IP del visitante", "yellow", "rangos de Google sin fecha" if h["list_age_days"] is None else f"rangos de hace {h['list_age_days']} días",
+                    "La lista de rangos de Google no se refresca hace más de 45 días (mensual y antes de un evento grande).", fix, **h)
+    return item("client_ip", "IP del visitante", "green", f"rangos de hace {h['list_age_days']} días", **h)
+
+
 # ------------------------------------------------------------------ estado completo / readiness
 def system_status(db: Session) -> dict:
-    checks: List[Callable[[], dict]] = [check_version, check_database, lambda: check_connections(db), lambda: check_queue(db), check_backup,
-                                        lambda: check_bulk_jobs(db), lambda: check_events(db), lambda: check_emails(db), lambda: check_payments(db),
+    checks: List[Callable[[], dict]] = [check_version, check_database, lambda: check_connections(db), lambda: check_queue(db), check_backup, check_client_ip,
+                                        lambda: check_bulk_jobs(db), lambda: check_events(db), lambda: check_unfinished_events(db), lambda: check_emails(db), lambda: check_payments(db),
                                         lambda: check_errors(db)]
     results = []
     for fn in checks:
@@ -260,7 +315,7 @@ def system_status(db: Session) -> dict:
         except Exception as exc:  # noqa: BLE001 — un chequeo roto no debe tumbar la pantalla: se muestra como rojo con el motivo
             log.error("falló un chequeo de estado", exc_info=True)
             results.append(item("check", "Chequeo", "red", "error", f"El chequeo falló: {type(exc).__name__}.", "Revisa los logs del servidor."))
-    return {"level": _worst([r["level"] for r in results]), "checked_at": datetime.utcnow().isoformat() + "Z", "items": results}
+    return {"level": _worst([r["level"] for r in results]), "checked_at": utcnow().isoformat() + "Z", "items": results}
 
 
 def model_ready() -> None:

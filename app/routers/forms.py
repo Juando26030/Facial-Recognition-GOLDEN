@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 from datetime import datetime
+from app.timeutil import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -15,7 +16,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, heavy, wompi
+from app import bulk_jobs, formlib, formsvc, heavy, ops, publicurl, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -38,7 +39,7 @@ def _get_form(db: Session, event: Event, form_id: int) -> WebForm:
 
 
 def _base_url(request: Request) -> str:
-    return (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    return publicurl.base(str(request.base_url))
 
 
 def _urls(request: Request, form: WebForm) -> dict:
@@ -222,6 +223,7 @@ def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Se
     """Estado manual, calendario por fechas y cupo (editable en caliente: no se pierde ninguna inscripción)."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
+    was_active = form.manual_status == "activo"
     if "manual_status" in data:
         if data["manual_status"] not in formlib.STATUSES:
             raise HTTPException(status_code=400, detail=f"Estado inválido (uno de: {', '.join(formlib.STATUSES)})")
@@ -250,6 +252,11 @@ def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Se
     db.commit()
     formsvc.invalidate_public_cache()
     _maybe_feed_on_close(db, form)
+    opened = form.manual_status == "activo" and not was_active and not form.use_schedule
+    if opened:
+        ops.record_system_event("form_opened", str(form.id))        # el precalentamiento mantiene «publico» caliente la hora siguiente
+    if opened or "schedule" in data or "use_schedule" in data:
+        warmup.kick()
     return _detail(db, form, request)
 
 
@@ -539,6 +546,7 @@ def delete_submission(event_id: int, form_id: int, submission_id: int, db: Sessi
             get_storage().delete(form_file_key(event.tenant_id, form.id, v["stored"]))
     db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
+    formsvc.invalidate_held()
     db.commit()
     return {"message": "Inscripción eliminada (si tenía un pago, ese registro financiero se conserva)"}
 
@@ -628,7 +636,7 @@ def _auto_partial_possible(p: FormPayment) -> bool:
 
 
 def _pay_label(p: FormPayment) -> str:
-    if p.status == "pending" and p.created_at < datetime.utcnow() - formsvc.PENDING_HOLD:
+    if p.status == "pending" and p.created_at < utcnow() - formsvc.PENDING_HOLD:
         return "abandoned"      # pendiente y ya pasó el tiempo de espera: la persona no terminó de pagar
     return p.status
 
@@ -742,7 +750,7 @@ def send_invites(event_id: int, form_id: int, data: dict, request: Request, db: 
             res = send_mail(p["email"], f"Tu inscripción — {ev_name}",
                             f"Hola {p.get('first_name') or ''}, te invitamos a completar tu inscripción a {ev_name} ({name}).\n\nAbre tu enlace personal (ya trae tus datos):\n{link}\n\nEs personal: no lo compartas.")
             if res.get("sent"):
-                inv.sent_at = datetime.utcnow()
+                inv.sent_at = utcnow()
                 job_db.commit()
                 sent += 1
             else:

@@ -1,0 +1,35 @@
+# Variables NO secretas comunes a todos los servicios y Jobs de Cloud Run (--env-vars-file). Las calculadas —buckets, cola, URLs— las
+# agrega deploy.sh; los secretos vienen de Secret Manager. Datos públicos del negocio: los de la política de privacidad publicada.
+ENVIRONMENT: "production"
+APP_TIMEZONE: "America/Bogota"
+LEGAL_ADDRESS: "Carrera 14a # 71a - 59, Bogotá"
+LEGAL_PHONE: "+57 317 427 6073"
+LEGAL_EMAIL: "info@goldenlogisticas.com"
+# PRIVACY_EMAIL es el ÚNICO correo de privacidad (política, pantallas, correos y formularios; se revisa a diario). LEGAL_PRIVACY_EMAIL queda como alias OBSOLETO: el código solo lo lee si falta PRIVACY_EMAIL.
+LEGAL_PRIVACY_EMAIL: "soporteit@goldenlogisticas.com"
+PRIVACY_EMAIL: "soporteit@goldenlogisticas.com"
+COMPANY_NAME: "Golden Eventos y Logística S.A.S."
+COMPANY_NIT: "901542833-2"      # con dígito de verificación; en pantalla 901.542.833-2
+DOMAIN: "golden-eventos.com"      # la app vive en app.golden-eventos.com (PUBLIC_BASE_URL)
+# Política de privacidad vigente: la 1.1 ratificada por la auditora el 6-oct-2026 (docs/legal/RATIFICACION_v1.1.md). Igual en staging y producción: la constancia de la autorización y la contingencia sin conexión
+# (sección 8) se apoyan en que esta versión esté PUBLICADA. La 1.0 queda como histórica en /privacidad/v1.0.
+POLICY_VERSION: "1.1"
+# Retención biométrica: 7 días después de que TODOS los eventos de la persona estén finalizados; tope de 180 días desde la captura.
+BIOMETRIC_RETENTION_DAYS_AFTER_EVENT: "7"
+BIOMETRIC_MAX_DAYS: "180"
+# Fotos biométricas bajo un prefijo común: la regla de ciclo de vida borra en 1 día sus versiones viejas (docs/15, R4).
+BIOMETRIC_KEY_PREFIX: "biometric"
+RECOGNITION_JITTERS: "2"
+# Caso dudoso del reconocimiento: 0,10 atrapó el único falso positivo del conjunto abierto a costa de 2,1 % de escaneos por verificar (docs/14 §6.3).
+MATCH_MARGIN: "0.10"
+# Detrás de Firebase Hosting solo pasa la cookie «__session», y CF-Connecting-IP no es confiable (Cloudflare solo como DNS).
+SESSION_COOKIE: "__session"
+TRUST_CF_CONNECTING_IP: "0"
+# IP real del visitante (docs/15, D2.2 opción D): se quitan del FINAL de X-Forwarded-For las IPs de infraestructura de Google (app/google_infra_cidrs.txt, se refresca con
+# scripts/refresh_google_cidrs.py cada mes y antes de un evento grande) y se toma la última que queda. Sirve igual por Firebase ([IP real, IP de Google]) y por run.app
+# ([lo que escriba el cliente, IP real]); XFF_CLIENT_INDEX solo cuenta si XFF_STRIP_GOOGLE se apaga.
+XFF_STRIP_GOOGLE: "1"
+XFF_CLIENT_INDEX: "0"
+DEPLOY_FREEZE_HOURS: "3"
+# Cloud Run y Firebase ponen X-Forwarded-Proto=https: se confía en ellos para que la app sepa que la petición llegó por https (redirecciones).
+FORWARDED_ALLOW_IPS: "*"

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ from urllib.parse import urlsplit
 
 import anyio.to_thread
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -15,10 +16,10 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import appmode, bulk_jobs, faces, jobs, obs, ops
+from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
@@ -50,12 +51,14 @@ async def lifespan(_app: FastAPI):
     # sobrantes solo esperarían una conexión libre (y acabarían en 503 tras DB_POOL_TIMEOUT); con menos, la base quedaría subutilizada.
     default_threads = int(os.getenv("DB_POOL_SIZE", "10")) + int(os.getenv("DB_MAX_OVERFLOW", "10")) + faces.FACE_CONCURRENCY
     anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.getenv("THREADPOOL_SIZE", default_threads))
+    crypto.assert_ready()                         # producción sin FACE_ENCRYPTION_KEY: no arranca (falla cerrado)
     worker = None
-    if os.getenv("JOBS_WORKER", "on") != "off":
+    if os.getenv("JOBS_WORKER", "on") != "off" and not jobs.uses_cloud_tasks():
         worker = jobs.Worker()
         worker.start()
     if appmode.loads_model():
         await asyncio.get_running_loop().run_in_executor(None, ops.model_ready)        # precalienta dlib (en los procesos hijo): el primer escaneo no paga la carga del modelo
+    publicurl.check_at_startup()          # avisa en el log si en producción falta PUBLIC_BASE_URL o apunta al host de Cloud Run
     log.info("aplicación lista (modo %s)", appmode.MODE)
     yield
     log.info("apagando: deteniendo trabajos en segundo plano")
@@ -69,7 +72,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="Golden Biometrics SaaS",
+    title="GoldenWeb 2.0",
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
@@ -120,11 +123,16 @@ async def no_cache_html(request, call_next):
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY or "dev-only-insecure-key-do-not-use-in-production",
+    session_cookie=os.getenv("SESSION_COOKIE", "session"),   # detrás de Firebase Hosting debe ser «__session»: es la única cookie que deja pasar
     same_site="lax",
     https_only=IS_PRODUCTION,
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)          # el directorio de miles de personas baja de ~2 MB a ~150 KB
+if timing.active():                                  # diagnóstico de esperas (SERVER_TIMING / LOG_SLOW_WAITS_MS): apagado por defecto, sin costo si está apagado
+    from app.database import engine as _engine
+    timing.install_db(_engine)
+    app.add_middleware(timing.TimingMiddleware)
 app.add_middleware(obs.RequestLogMiddleware, on_5xx=ops.record_5xx)     # el más externo: mide y registra TODA petición (incluidos los errores)
 
 app.mount("/static", StaticFilesNoCacheInDev(directory="static"), name="static")
@@ -136,7 +144,17 @@ from app import staticver  # noqa: E402
 staticver.install(templates)
 templates.env.filters["fromjson"] = json.loads
 
-DEFAULT_LOGO_URL = os.getenv("DEFAULT_LOGO_URL", "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png")
+REMOTE_LOGO_URL = "https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png"
+LOCAL_LOGO_FILE = os.path.join("static", "img", "logo-golden.png")          # copia PROPIA del logo: se sirve desde /static y el service worker del quiosco la guarda, así el logo se ve sin red
+LOCAL_LOGO_URL = "/static/img/logo-golden.png"
+
+
+def default_logo_url() -> str:
+    """Logo por defecto del header: `DEFAULT_LOGO_URL` si se define; si no, la copia propia `static/img/logo-golden.png` cuando existe (se ve sin red), y si todavía no está, la URL de Golden."""
+    return os.getenv("DEFAULT_LOGO_URL") or (LOCAL_LOGO_URL if os.path.exists(LOCAL_LOGO_FILE) else REMOTE_LOGO_URL)
+
+
+DEFAULT_LOGO_URL = default_logo_url()          # (compatibilidad: el valor al arrancar)
 
 
 def event_logo_url(event):
@@ -147,7 +165,7 @@ def event_logo_url(event):
         return ""
     if mode == "custom" and event.logo_path:
         return f"/api/events/{event.id}/logo"
-    return DEFAULT_LOGO_URL
+    return default_logo_url()
 
 
 def event_logo_attrs(event):
@@ -162,7 +180,9 @@ def event_logo_attrs(event):
     return Markup(f'style="height:{height}px;"')
 
 
+templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
 templates.env.globals["event_logo_url"] = event_logo_url
+templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
 
 
@@ -177,6 +197,7 @@ def _include(router, prefix: str = "") -> None:
 _include(auth_router.router)
 _include(api.router, prefix="/api")
 _include(events.router, prefix="/api")
+_include(event_states.router, prefix="/api")
 _include(staff.router, prefix="/api")
 _include(tenants.router, prefix="/api")
 _include(badges.router, prefix="/api")
@@ -184,9 +205,14 @@ _include(cedula.router, prefix="/api")
 _include(stats.router, prefix="/api")
 _include(parametros.router, prefix="/api")
 _include(privacy_router.router, prefix="/api")
+_include(consents_router.router, prefix="/api")
+_include(door_router.router, prefix="/api")
+_include(privacy_requests_router.router, prefix="/api")
+_include(aceptar_router.router)      # /aceptar/<evento> y /api/aceptar/ (públicas)
 _include(legal_public.router)      # /privacidad, /terminos, /reembolsos (públicas)
 _include(event_report.router, prefix="/api")
 _include(event_docs.router, prefix="/api")
+_include(uploads_router.router, prefix="/api")   # subida directa al almacenamiento (archivos grandes)
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
 _include(analytics.router, prefix="/api")
@@ -352,6 +378,34 @@ def configuracion_page(request: Request):
     })
 
 
+@app.get("/impresion-usb")
+def impresion_usb_page(request: Request):
+    """Prueba y ajuste de la impresión directa de escarapelas en la Brother QL por USB (WebUSB desde Chrome de Android o de escritorio; ver static/js/ql-usb.js). Digitador o más."""
+    redirect = _require_page_role(request, "digitador")
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="impresion_usb.html", context={})
+
+
+def contingency_enabled() -> bool:
+    """Modo contingencia del quiosco (copia local de la lista + service worker `/kiosk/sw.js`). APAGADO por defecto; lo prende `CONTINGENCY_ENABLED=1` (staging, desde deploy/gcp/config.sh).
+    Encenderlo en producción exige constancia legal escrita, pruebas en dispositivos reales y decisión de Juan David (docs/15, D2.5d)."""
+    return os.getenv("CONTINGENCY_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+@app.get("/kiosk/sw.js", include_in_schema=False)
+def kiosk_service_worker():
+    """Service worker del quiosco (static/js/kiosk-sw.js): solo guarda el caparazón de `/kiosk/<id>/registro` y `/static/*` para recargar la página sin red; nunca la API ni el roster. Va en
+    `/kiosk/` (su alcance por defecto es esa carpeta: solo controla las páginas del quiosco) y ANTES de `/kiosk/{event_id}`. `__BUILD__` = revisión de Cloud Run + huella del archivo:
+    cada despliegue cambia el contenido, el navegador instala el worker nuevo y éste borra los cachés viejos. Sin caché HTTP, para que el navegador vea siempre la última versión."""
+    if not contingency_enabled():       # apagado: un worker que se desregistra y borra sus cachés (quien lo tenía de antes queda limpio en su próxima visita)
+        source = open(os.path.join("static", "js", "kiosk-sw-off.js"), encoding="utf8").read()
+        return Response(source, media_type="application/javascript", headers={"Cache-Control": "no-cache, max-age=0"})
+    source = open(os.path.join("static", "js", "kiosk-sw.js"), encoding="utf8").read()
+    build = f"{os.getenv('K_REVISION', 'local')}-{hashlib.sha1(source.encode()).hexdigest()[:10]}"
+    return Response(source.replace("__BUILD__", build), media_type="application/javascript", headers={"Cache-Control": "no-cache, max-age=0"})
+
+
 @app.get("/kiosk/{event_id}")
 def kiosk_entry(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Punto de entrada al evento. 'cliente' no registra nada (solo ve estadísticas/directorio),
@@ -437,6 +491,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "field_configs_json": field_configs_json,
         "field_labels": {cfg["key"]: cfg["label"] for cfg in field_configs},
         "sidebar_active": "eventos",
+        "contingency_enabled": contingency_enabled(),
     }
     if extra_context:
         context.update(extra_context)
@@ -454,6 +509,13 @@ def kiosk_registro(event_id: int, request: Request, db: Session = Depends(get_db
     return _resolve_kiosk_page(event_id, request, db, "kiosk_registro.html")
 
 
+@app.get("/kiosk/{event_id}/rostro")
+def kiosk_rostro(event_id: int, request: Request, db: Session = Depends(get_db)):
+    """B1: pantalla de autoservicio «Entrar con mi rostro» (la persona pulsa; el equipo está abierto con una cuenta del personal). Ver app/routers/door.py."""
+    from app.routers.api import NOT_FOUND_FACE
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_rostro.html", extra_context={"not_found": NOT_FOUND_FACE})
+
+
 @app.get("/kiosk/{event_id}/facial")
 @app.get("/kiosk/{event_id}/cedula")
 def kiosk_registro_legacy_redirect(event_id: int):
@@ -468,7 +530,11 @@ def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db))
     # ENCIMA de 'coordinador' en STAFF_ROLES (hereda su acceso operativo por diseño, Fase 0), pero
     # explícitamente NO debe ver "Adjuntar Base de Datos" — un min_role jerárquico no alcanza para
     # excluir un rol que está por encima del mínimo.
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"])
+    from app import event_rules
+    from app.routers.api import OVERWRITE_BIRTH_LABEL
+    event_obj = db.get(Event, event_id)
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"],
+                               extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL})
 
 
 @app.get("/kiosk/{event_id}/usuarios")

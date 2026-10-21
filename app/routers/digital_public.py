@@ -43,7 +43,7 @@ def digital_badge_data(token: str, db: Session = Depends(get_db)):
     att, event, user = _resolve(db, token)
     category = template_category_for_user(event, db, user.id)
     template = _serialize_template(_get_or_create_template(event, db, category))
-    has_photo = get_storage().exists(photo_key(event.tenant_id, user.id))
+    has_photo = bool(event.badge_bio_photo_allowed) and get_storage().exists(photo_key(event.tenant_id, user.id))      # interruptor de seguridad (A1)
     return {
         "event": {"name": event.name, "code": event.event_code},
         "template": template,
@@ -69,7 +69,7 @@ def digital_badge_asset(token: str, tenant_id: str, filename: str, db: Session =
 def digital_badge_photo(token: str, db: Session = Depends(get_db)):
     _, event, user = _resolve(db, token)
     key = photo_key(event.tenant_id, user.id)
-    if not get_storage().exists(key):
+    if not event.badge_bio_photo_allowed or not get_storage().exists(key):
         raise HTTPException(status_code=404, detail="Sin foto")
     content = crypto.read_bytes(key)                       # la foto puede estar cifrada en reposo
     if content is None:

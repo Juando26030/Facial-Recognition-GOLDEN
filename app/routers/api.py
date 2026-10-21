@@ -1,5 +1,6 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from app.timeutil import utcnow
 import re
 import json
 from typing import List, Optional
@@ -8,6 +9,9 @@ import tempfile
 import csv
 import io
 import hashlib
+import hmac
+import time
+import logging
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from PIL import Image
@@ -18,16 +22,19 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Event, User, AccessLog, EventAttendee, PrintLog, StaffUser, BulkJob
+from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import bulk_jobs, crypto, digital_badge, faces, heavy
+from app import biometric_setup, bulk_jobs, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
 from app.routers.super_events import sibling_attendance
 from app.routers.events import _typo_match, _words
+
+log = logging.getLogger("golden.api")
 
 
 def _missing_required_fields(field_configs: list, values: dict) -> list:
@@ -69,6 +76,17 @@ def _invalid_email_fields(field_configs: list, values: dict) -> list:
     return problems
 
 
+def _cell_text(cell) -> str:
+    """Texto de una celda de Excel. Las fechas (datetime/date) se pasan a AAAA-MM-DD —con hora solo si la trae—, así «fecha de nacimiento» (y cualquier otra columna de fechas) llega legible."""
+    if cell is None:
+        return ""
+    if isinstance(cell, datetime):
+        return cell.strftime("%Y-%m-%d") if (cell.hour, cell.minute, cell.second) == (0, 0, 0) else cell.isoformat(sep=" ")
+    if hasattr(cell, "isoformat") and not isinstance(cell, str):
+        return cell.isoformat()
+    return str(cell).strip()
+
+
 def _read_roster_rows(filename: str, content: bytes):
     """Lee un roster en .csv o .xlsx y devuelve (header_columns, rows): filas normalizadas
     (claves en minúscula, sin espacios) sin importar el formato de origen, y un mapeo
@@ -86,7 +104,7 @@ def _read_roster_rows(filename: str, content: bytes):
             if row is None or all(cell is None for cell in row):
                 continue
             rows.append({
-                headers[i]: (str(cell).strip() if cell is not None else "")
+                headers[i]: _cell_text(cell)
                 for i, cell in enumerate(row) if i < len(headers) and headers[i]
             })
         return header_columns, rows
@@ -332,7 +350,7 @@ def _directory_etag(db: Session, event_id: int, tenant_id: str, extra: str = "")
     return hashlib.md5(f"{tuple(att)}|{tuple(logs)}|{usr}|{extra}".encode()).hexdigest()[:20]
 
 
-def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None) -> list:
+def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None, only_ids: Optional[list] = None) -> list:
     """Filas del directorio (roster precargado + quien se presento). Un asistente no reconocido como registrado queda «No registrado»; «Actualizado» es una
     edicion de perfil, no una acreditacion (ver update_user). Sin `face_encoding` (columna diferida): no se descifra nada."""
     event_id = event.id
@@ -344,12 +362,14 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
         touched = db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id, AccessLog.id > since_log).union(
             db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event_id, EventAttendee.id > since_att))
         query = query.filter(User.id.in_(touched))
+    if only_ids is not None:               # p. ej. el registro de un candidato del reconocimiento facial
+        query = query.filter(User.id.in_(only_ids))
     if limit is not None:
         query = query.order_by(User.id).offset(offset).limit(limit)
     users = query.all()
     if not users:
         return []
-    ids = [u.id for u in users] if (limit is not None or changed_since is not None) else None
+    ids = [u.id for u in users] if (limit is not None or changed_since is not None or only_ids is not None) else None
     att_q = db.query(EventAttendee).filter(EventAttendee.event_id == event_id)
     log_q = db.query(AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"),
                      func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo")).filter(AccessLog.event_id == event_id)
@@ -367,6 +387,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "entity": u.entity, "phone": u.phone,
             "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
+            "birth_date": u.birth_date.isoformat() if (u.birth_date and event.facial_enabled) else "",
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta persona.
             "extra_fields": u.get_extras(),
             "categories": att.get_categories() if att else [],
@@ -453,10 +474,43 @@ def email_check(
     return {"exists": bool(matches), "matches": matches}
 
 
+def _mask_id(uid: str) -> str:
+    """Cédula parcial para las listas de candidatos: solo las últimas 4 cifras."""
+    return "***" + uid[-4:] if len(uid) > 4 else "***"
+
+
+def _candidate_views(db: Session, event: Event, ranked: list, start: int = 0, masked: bool = True) -> list:
+    """Vista legible de los candidatos `ranked[start:]` del MISMO cálculo del reconocimiento (sin tocar el rostro ni la foto): nombre, cédula (parcial si `masked`),
+    categoría, estado de registro, distancia y confianza en palabras. `index` es la posición en el token: con ella se pide la foto o el registro (nunca se expone
+    una cédula completa que el cliente pueda usar para pedir fotos de cualquiera)."""
+    picked = list(enumerate(ranked))[start:]
+    if not picked:
+        return []
+    ids = [uid for _, (uid, _d) in picked]
+    users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(ids))}
+    cats = {a.user_id: a.get_categories() for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(ids))}
+    registered = {r[0] for r in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.user_id.in_(ids), AccessLog.record_type != "Actualizado").distinct()}
+    views = []
+    for i, (uid, dist) in picked:
+        u = users.get(uid)
+        if u is None:
+            continue
+        views.append({
+            "index": i, "id": _mask_id(uid) if masked else uid, "name": f"{u.first_name or ''} {u.last_name or ''}".strip(),
+            "categories": cats.get(uid, []), "registered": uid in registered,
+            "distance": round(dist, 2), "confidence": faces.confidence(dist), "within_tolerance": dist < faces.FACE_TOLERANCE,
+        })
+    return views
+
+
+def _private_json(payload: dict) -> JSONResponse:
+    return JSONResponse(payload, headers={"Cache-Control": "private, no-store"})       # nombres y fotos de personas: nunca a la caché
+
+
 @router.post("/recognize")
 def recognize(
     event_id: int = Form(...), file: Optional[UploadFile] = File(None), match_token: str = Form(""), force: bool = Form(False),
-    confirm: bool = Form(False),
+    confirm: bool = Form(False), click_token: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Sprint 2.2 Fase B (2026-09-16): un match facial YA NO acredita solo por defecto — antes
@@ -466,20 +520,26 @@ def recognize(
     `result: "MATCH_PENDING"` con los datos de la persona SIN crear ningun log todavia.
     El flujo DUPLICADO/force sigue exactamente igual, se evalua ANTES de este chequeo nuevo.
 
-    Fase 0 de escalabilidad: cada persona se reconoce UNA vez. La respuesta MATCH_PENDING/DUPLICADO trae un `match_token` (firmado, vale ~2 minutos, solo
-    para este evento y este operador); para confirmar o forzar se manda ese token en vez de reenviar la foto y repetir el calculo facial."""
+    Fase 0 de escalabilidad: cada persona se reconoce UNA vez. La respuesta MATCH_PENDING/DUPLICADO trae un `match_token` (firmado, vale ~5 minutos, solo
+    para este evento y este operador); para confirmar o forzar se manda ese token en vez de reenviar la foto y repetir el calculo facial.
+
+    Verificacion del operador (docs/14 §6.3): el token lleva tambien los 6 candidatos mas cercanos del MISMO calculo (`/recognize/candidates|photo|person`).
+    **DUDOSO**: si el mejor y el segundo candidato distan menos de MATCH_MARGIN (0,06 por defecto) el resultado es `result: "DUDOSO"` con los candidatos y NUNCA
+    se registra solo, ni con autoregistro ni con `confirm`: el operador elige a la persona (el registro se confirma desde su ficha)."""
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
     if match_token:
-        uid = faces.read_match_token(match_token, event.id, staff.id)
-        user = db.get(User, (uid, event.tenant_id)) if uid else None
+        payload = faces.read_match_payload(match_token, event.id, staff.id)
+        user = db.get(User, (payload["u"], event.tenant_id)) if payload else None
         if not user:
             raise HTTPException(status_code=400, detail="La coincidencia venció. Escanea de nuevo.")
+        ranked, doubtful = [(uid, dist) for uid, dist in payload["c"]], bool(payload["d"])
     else:
         if file is None:
             raise HTTPException(status_code=422, detail="Falta la foto")
+        click = faces.read_click_token(click_token, event.id, staff.id) if (click_token and event.precalculo_autorizado) else None      # camino 2: UN clic válido de este quiosco
         try:
-            status, uid = faces.identify(db, event, file.file.read())
+            status, ranked = faces.recognize(db, event, file.file.read(), ungated=bool(click))
         except faces.Busy:
             raise HTTPException(status_code=503, detail="Hay muchos escaneos en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
         except UnidentifiedImageError:
@@ -487,21 +547,32 @@ def recognize(
         if status == "NO_FACE":
             return {"result": "NO", "details": "Rostro no detectado"}
         if status == "NO_MATCH":
-            return {"result": "NO", "details": "Denegado"}
-        user = db.get(User, (uid, event.tenant_id))
+            return {"result": "NO", "details": NOT_FOUND_FACE}
+        user = db.get(User, (ranked[0][0], event.tenant_id))
         if not user:
-            return {"result": "NO", "details": "Denegado"}
+            return {"result": "NO", "details": NOT_FOUND_FACE}
+        doubtful = faces.is_doubtful(ranked)
+        if click and not doubtful and not consent_mod.has_acceptance(db, event.tenant_id, user.id, event.id):
+            # Coincidencia con un clic válido: AHORA sí consta la aceptación de la persona identificada (hora del clic, hash del texto exhibido). Sin coincidencia no se atribuye nada a nadie.
+            consent_mod.record(db, tenant_id=event.tenant_id, user_id=user.id, event_id=event.id, version=click["v"], legal_text_hash=click["h"], accepted=True, adult=True, reason="consent",
+                               device=f"staff:{staff.id}", at=datetime.fromisoformat(click["t"]))
+            db.commit()
 
-    token = faces.make_match_token(event.id, staff.id, user.id)
+    token = faces.make_match_token(event.id, staff.id, user.id, ranked, doubtful)
+    if doubtful:
+        return _private_json({"result": "DUDOSO", "details": "Coincidencia dudosa: hay varias personas casi igual de parecidas. Verifica cuál es.", "match_token": token,
+                              "candidates": _candidate_views(db, event, ranked)})
+    principal = _candidate_views(db, event, ranked[:1], masked=False)
+    extra = {"match_token": token, "match": principal[0] if principal else None, "has_candidates": len(ranked) > 1}
     if not force and _already_checked_in(db, event.id, user.id):
-        return {**_duplicate_warning(db, event.id, user), "match_token": token}
+        return _private_json({**_duplicate_warning(db, event.id, user), **extra})
     data = {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
         "role": user.role, "entity": user.entity, "phone": user.phone,
         "email": user.email, "opt_1": user.opt_1, "opt_2": user.opt_2
     }
     if not event.auto_register and not confirm:
-        return {"result": "MATCH_PENDING", "data": data, "match_token": token}
+        return _private_json({"result": "MATCH_PENDING", "data": data, **extra})
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,
@@ -510,7 +581,50 @@ def recognize(
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)
     db.commit()
-    return {"result": "SÍ", "data": data}
+    return _private_json({"result": "SÍ", "data": data, **extra})
+
+
+def _recognition_from_token(db: Session, event_id: int, match_token: str, staff: StaffUser):
+    event = get_event_for_staff(event_id, db, staff)
+    require_event_in_progress(event)
+    payload = faces.read_match_payload(match_token, event.id, staff.id)
+    if not payload:
+        raise HTTPException(status_code=400, detail="La coincidencia venció. Escanea de nuevo.")
+    return event, [(uid, dist) for uid, dist in payload["c"]]
+
+
+@router.post("/recognize/candidates")
+def recognize_candidates(event_id: int = Form(...), match_token: str = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """«Ver 5 más cercanos»: los candidatos siguientes del MISMO reconocimiento (los guarda el token: no se recalcula el rostro ni se reenvía la foto).
+    Cédula parcial; los que quedan fuera de la tolerancia van marcados. Las fotos se piden aparte, una a una, solo cuando el operador abre la lista."""
+    event, ranked = _recognition_from_token(db, event_id, match_token, staff)
+    return _private_json({"candidates": _candidate_views(db, event, ranked, start=1)})
+
+
+@router.post("/recognize/photo")
+def recognize_photo(event_id: int = Form(...), match_token: str = Form(...), index: int = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Foto de registro de un candidato del reconocimiento (`index` 0 = la persona principal). Solo las personas que están en el token de ESTE operador y ESTE
+    evento (no sirve para pedir la foto de cualquiera), `Cache-Control: private, no-store`, y la ruta no lleva cédulas (POST con token en el cuerpo)."""
+    event, ranked = _recognition_from_token(db, event_id, match_token, staff)
+    if not 0 <= index < len(ranked):
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    key = photo_key(event.tenant_id, ranked[index][0])
+    content = crypto.read_bytes(key) if get_storage().exists(key) else None       # la foto puede estar cifrada en reposo
+    if content is None:
+        raise HTTPException(status_code=404, detail="Esta persona no tiene foto registrada")
+    return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/recognize/person")
+def recognize_person(event_id: int = Form(...), match_token: str = Form(...), index: int = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """El registro (fila del directorio) del candidato elegido, para abrir el modal «Editar»: desde ahí se corrigen datos o se confirma el ingreso de ESA persona."""
+    event, ranked = _recognition_from_token(db, event_id, match_token, staff)
+    if not 0 <= index < len(ranked):
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    rows = _directory_rows(db, event, only_ids=[ranked[index][0]])
+    if not rows:
+        raise HTTPException(status_code=404, detail="Candidato no encontrado")
+    return _private_json(rows[0])
 
 
 def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
@@ -623,6 +737,32 @@ def checkin_cedula(
     return {"result": "SÍ", "data": data}
 
 
+ACCREDIT_UNDO_WINDOW = timedelta(seconds=15)          # «Deshacer» una acreditación: solo quien la hizo y hace menos de 15 s (la pantalla ofrece ~8 s; aquí se verifica en el SERVIDOR)
+
+
+@router.post("/events/{event_id}/accreditations/undo")
+def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Deshace una acreditación recién hecha con el botón «✅ Acreditar» de la fila (docs/16, 7a). Reglas (decididas por J, 2026-10-05): SOLO quien acreditó (`registered_by_staff_id`), hasta
+    `ACCREDIT_UNDO_WINDOW` (15 s) después y con el evento todavía abierto para registrar; se identifica por el `client_id` que generó la pantalla. Borra solo ESE ingreso (la persona vuelve a «No
+    registrado» si era el único). Quien necesite deshacer más tarde o lo de otro usa Editar → Estado de registro (administrador o más), como siempre."""
+    event = get_event_for_staff(event_id, db, staff)
+    require_event_in_progress(event)
+    client_id = str((body or {}).get("client_id") or "").strip()[:64]
+    if not client_id:
+        raise HTTPException(status_code=400, detail="Falta el identificador de la acreditación")
+    log = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id, AccessLog.record_type != "Actualizado").first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Esa acreditación no existe (o ya se deshizo)")
+    if log.registered_by_staff_id != staff.id:
+        raise HTTPException(status_code=403, detail="Solo quien acreditó puede deshacerlo. Pide a un administrador cambiar el estado de registro.")
+    if utcnow() - log.timestamp > ACCREDIT_UNDO_WINDOW:
+        raise HTTPException(status_code=409, detail="Pasaron más de 15 segundos: ya no se puede deshacer desde aquí. Un administrador puede cambiar el estado en Editar.")
+    user_id = log.user_id
+    db.delete(log)
+    db.commit()
+    return {"undone": True, "user_id": user_id}
+
+
 def _person_data(user: User) -> dict:
     return {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
@@ -642,7 +782,52 @@ def _replayed_checkin(db: Session, event: Event, client_id: str) -> Optional[dic
 
 
 SYNC_MAX_RECORDS = 500
-SYNC_MAX_AGE = 7 * 24 * 3600
+SYNC_MAX_AGE = 30 * 24 * 3600                 # marcas de tiempo aceptadas: hasta 30 días atrás (el quiosco descarta lo que lleve más de 30 días sin sincronizar); más viejas = hora del servidor
+SYNC_AFTER_FINISH = timedelta(days=7)         # un digitador puede sincronizar hasta 7 días después de finalizado el evento (coordinador+ siempre puede)
+SYNC_HASH_RE = re.compile(r"^[0-9a-f]{16}$")
+# método del quiosco -> registration_method (el mismo vocabulario de siempre: «tradicional» = cédula/persona confirmada a mano). `manual` = acreditado desde Editar/la fila sin red.
+SYNC_METHODS = {"qr": "qr", "cedula": "tradicional", "manual": "tradicional"}
+_ROSTER_MAPS: dict = {}                       # event_id -> (momento, {huella: cédula}); caché por proceso (misma sal que el roster local)
+ROSTER_MAP_TTL, ROSTER_MAP_MIN_REBUILD, ROSTER_MAP_MAX_EVENTS = 60.0, 5.0, 20
+
+
+def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
+    """Como `get_event_for_staff`, pero un digitador autorizado también puede sincronizar un evento FINALIZADO hasta 7 días después (los ingresos guardados sin red no se pierden por
+    haber terminado el evento mientras el quiosco estaba desconectado)."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    if staff.role in ("digitador", "cliente"):
+        if not db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff.id).first():
+            raise HTTPException(status_code=403, detail="No estás autorizado para este evento")
+        recent = event.status == "finalizado" and event.finalized_at is not None and utcnow() - event.finalized_at <= SYNC_AFTER_FINISH
+        if event.status != "en_proceso" and not recent:
+            raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
+    return event
+
+
+def _roster_map(db: Session, event: Event, force: bool = False) -> dict:
+    """{huella: cédula} de las personas del evento (las mismas del roster local), cacheado por proceso 60 s. `force` reconstruye (alguien se agregó después), pero no antes de 5 s
+    desde la última construcción: una huella inventada no puede obligar a recorrer miles de personas en cada registro."""
+    now = time.monotonic()
+    hit = _ROSTER_MAPS.get(event.id)
+    if hit and (now - hit[0] < (ROSTER_MAP_MIN_REBUILD if force else ROSTER_MAP_TTL)):
+        return hit[1]
+    salt = roster_salt(event)
+    attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
+    log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
+    ids = [uid for (uid,) in db.query(User.id).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids)))]
+    mapping = {roster_fingerprint(salt, uid): uid for uid in ids}
+    if len(_ROSTER_MAPS) >= ROSTER_MAP_MAX_EVENTS and event.id not in _ROSTER_MAPS:
+        _ROSTER_MAPS.pop(min(_ROSTER_MAPS, key=lambda k: _ROSTER_MAPS[k][0]), None)
+    _ROSTER_MAPS[event.id] = (now, mapping)
+    return mapping
+
+
+@router.get("/ping-auth")
+def ping_auth(staff: StaffUser = Depends(get_current_staff)):
+    """Sonda LIVIANA autenticada (la usa el quiosco para salir del modo contingencia): 200 = servidor alcanzable y sesión vigente; 401 = sesión vencida. Una sola lectura indexada."""
+    return JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
 
 
 @router.post("/events/{event_id}/access-logs/sync")
@@ -651,31 +836,49 @@ def sync_access_logs(
 ):
     """Sincronizacion por LOTES de ingresos que un kiosco guardo mientras no tenia conexion (base del modo contingencia, docs/13 §9). Cada registro trae el
     `client_id` que el kiosco genero: repetir el envio (o enviar el mismo lote dos veces) nunca duplica nada. Cuerpo:
-    `{"records": [{"client_id", "cedula", "timestamp" (ISO UTC, opcional), "method" ("qr"|"cedula", opcional)}]}` (maximo 500).
-    Cada resultado dice `created` (nuevo), `replayed` (ya estaba), `unknown` (la cedula no existe en este cliente) o `invalid`; `review: true` marca a quien ya
+    `{"records": [{"client_id", "h" (huella de la cedula, la del roster local) o "cedula" (compatibilidad), "timestamp" (ISO UTC, opcional), "method" ("qr"|"cedula"|"manual", opcional; otro valor = cedula)}]}`
+    (maximo 500). Con `h` el servidor resuelve la persona con el mapa de huellas del evento (misma sal que `local-roster`): el quiosco nunca guarda la cedula en claro.
+    Cada resultado dice `created` (nuevo), `replayed` (ya estaba), `unknown` (la cedula/huella no existe en ESTE evento) o `invalid`; `review: true` marca a quien ya
     tenia una acreditacion con OTRO client_id (la misma persona entro por dos kioscos durante la desconexion): se registra igual y queda para revision."""
-    event = get_event_for_staff(event_id, db, staff)
+    event = _event_for_sync(db, event_id, staff)
     records = body.get("records")
     if not isinstance(records, list) or not records:
         raise HTTPException(status_code=400, detail="Falta la lista de registros")
     if len(records) > SYNC_MAX_RECORDS:
         raise HTTPException(status_code=400, detail=f"Maximo {SYNC_MAX_RECORDS} registros por lote")
-    now = datetime.utcnow()
-    results = []
+    now = utcnow()
+    clean = []
     for rec in records:
-        client_id = str((rec or {}).get("client_id") or "").strip()[:64]
-        cedula = str((rec or {}).get("cedula") or "").strip()
-        if not client_id or not cedula:
+        rec = rec if isinstance(rec, dict) else {}
+        client_id = str(rec.get("client_id") or "").strip()[:64]
+        cedula = str(rec.get("cedula") or "").strip()
+        h = str(rec.get("h") or "").strip().lower()
+        clean.append((rec, client_id, cedula, h if SYNC_HASH_RE.match(h) else ""))
+    # Un solo recorrido por tabla para todo el lote (500 registros no son 2.500 consultas): ids ya registrados, personas, quién ya tenía acreditación y quién ya está en la lista del evento.
+    known_ids = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([c[1] for c in clean if c[1]]))}
+    rmap = _roster_map(db, event) if any(c[3] and not c[2] for c in clean) else {}
+    rebuilt = False
+    resolved = []
+    for rec, client_id, cedula, h in clean:
+        if client_id and client_id not in known_ids and not cedula and h and h not in rmap and not rebuilt:
+            rmap, rebuilt = _roster_map(db, event, force=True), True              # una huella desconocida: puede ser alguien agregado después de armar el mapa
+        resolved.append(cedula or rmap.get(h, ""))
+    users = {u.id: u for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_({c for c in resolved if c}))}
+    checked = {uid for (uid,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id.in_(list(users)))}
+    attendees = {uid for (uid,) in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(list(users)))}
+    results = []
+    for (rec, client_id, cedula, h), person_id in zip(clean, resolved):
+        if not client_id or not (cedula or h):
             results.append({"client_id": client_id, "result": "invalid"})
             continue
-        if db.query(AccessLog.id).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id).first():
+        if client_id in known_ids:
             results.append({"client_id": client_id, "result": "replayed"})
             continue
-        user = db.query(User).filter(User.id == cedula, User.tenant_id == event.tenant_id).first()
+        user = users.get(person_id) if person_id else None
         if not user:
             results.append({"client_id": client_id, "result": "unknown"})
             continue
-        review = _already_checked_in(db, event.id, user.id)
+        review = user.id in checked
         when = now
         try:
             parsed = datetime.fromisoformat(str(rec.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
@@ -686,15 +889,199 @@ def sync_access_logs(
         try:
             with db.begin_nested():
                 db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
-                                 registration_method="qr" if rec.get("method") == "qr" else "tradicional", client_id=client_id, timestamp=when))
-                _upsert_attendee(db, event.id, user.id, event.tenant_id)
+                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when))
+                if user.id not in attendees:
+                    db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id))
                 db.flush()
         except IntegrityError:
             results.append({"client_id": client_id, "result": "replayed"})
             continue
+        known_ids.add(client_id)
+        checked.add(user.id)
+        attendees.add(user.id)
         results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {})})
     db.commit()
     return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results)}
+
+
+# ----------------------------------------------------------------------------------------------------------------------- bandeja de salida (B8, rebanada R1)
+OUTBOX_MAX_OPS = 50
+OUTBOX_PERSON_KEYS = ("role", "entity", "phone", "email", "opt_1")
+
+
+def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list) -> dict:
+    """Una operación `create_person` de la bandeja de salida de un quiosco que estaba sin red (docs/16, B8 R1): crea a la persona como «alta manual» (mismas reglas que `POST /register`, SIN foto).
+    Resultados: `ok` (persona nueva creada y registrada), `existente` (la cédula YA existía: NO se pisan sus datos; solo se registra para este evento y el cliente muestra qué había), `duplicado`
+    (ya estaba registrada en este evento: no se hace nada) o `error` (con el motivo, para corregirlo en el dispositivo). Idempotente por `op_id` (= `AccessLog.client_id`)."""
+    person_id = str(f.get("id") or "").strip()
+    first, last = str(f.get("first_name") or "").strip(), str(f.get("last_name") or "").strip()
+    if not person_id or not first or not last:
+        return {"op_id": op_id, "result": "error", "detail": "Faltan la cédula, los nombres o los apellidos"}
+    if event.status != "en_proceso":                                            # mismo criterio que `require_event_in_progress` (registrar solo con el evento en proceso)
+        return {"op_id": op_id, "result": "error", "detail": "El evento ya no está abierto para registrar personas nuevas"}
+    extras = f.get("extra_fields") if isinstance(f.get("extra_fields"), dict) else {}
+    extras = {str(k): str(v) for k, v in extras.items() if re.fullmatch(r"opcional_\d+", str(k)) and str(v).strip()}
+    labels = f.get("field_labels") if isinstance(f.get("field_labels"), dict) else None
+    missing_labels = set(extras) - set(event.get_optional_labels())
+    if missing_labels and not labels:
+        return {"op_id": op_id, "result": "error", "detail": "Hay campos opcionales sin nombre para este evento"}
+    try:
+        categories = _clean_categories(event, f.get("categories") if isinstance(f.get("categories"), list) else []) if f.get("categories") else []
+        contact = digital_badge.normalize_contact(f.get("digital_contact")) if f.get("digital_contact") else None
+    except ValueError as e:
+        return {"op_id": op_id, "result": "error", "detail": str(e)}
+    values = {k: str(f.get(k) or "") for k in OUTBOX_PERSON_KEYS}
+    values.update({"certificate": str(f.get("certificate") or ""), "digital_contact": contact or "", **extras})
+    if privacy.is_suppressed(db, event.tenant_id, person_id):
+        return {"op_id": op_id, "result": "error", "detail": SUPPRESSED_MSG}          # L4: quien pidió la supresión no se vuelve a crear (tampoco desde la bandeja sin red)
+    existing = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
+    if existing:
+        if _already_checked_in(db, event.id, existing.id):
+            return {"op_id": op_id, "result": "duplicado", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
+        kind = "Existente"
+    else:
+        missing = _missing_required_fields(field_configs, values)
+        if missing:
+            return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
+        bad = _invalid_email_fields(field_configs, values)
+        if bad:
+            return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
+        kind = "Nuevo"
+    try:
+        with db.begin_nested():
+            if labels and missing_labels:
+                _apply_optional_labels(event, set(extras), json.dumps(labels))
+            if kind == "Nuevo":
+                user = User(id=person_id, tenant_id=event.tenant_id, first_name=first, last_name=last, role=values["role"], entity=values["entity"], phone=values["phone"], email=values["email"], opt_1=values["opt_1"])
+                user.set_extras(extras)
+                db.add(user)
+                db.flush()
+            db.add(AccessLog(tenant_id=event.tenant_id, user_id=person_id, record_type=kind, event_id=event.id, registered_by_staff_id=staff.id, registration_method="tradicional",
+                             client_id=op_id, timestamp=when))
+            _upsert_attendee(db, event.id, person_id, event.tenant_id, categories if f.get("categories") else None,
+                             certificate=_truthy(f.get("certificate")) if f.get("certificate") else None, digital_contact=contact)
+            db.flush()
+    except IntegrityError:
+        return {"op_id": op_id, "result": "replayed"}
+    if kind == "Existente":
+        return {"op_id": op_id, "result": "existente", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
+    return {"op_id": op_id, "result": "ok"}
+
+
+@router.post("/events/{event_id}/outbox/sync")
+def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """Sincroniza la BANDEJA DE SALIDA de un quiosco (docs/16, B8): operaciones hechas sin red, hasta `OUTBOX_MAX_OPS` por lote. Hoy solo `create_person` (R1: alta sin foto). Cuerpo:
+    `{"ops": [{"op_id", "type": "create_person", "timestamp" (ISO UTC, opcional), "fields": {id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, ...}}]}`.
+    Devuelve `{"results": [{op_id, result, detail?, existing_name?}]}` con `ok | replayed | existente | duplicado | error`: un resultado por operación; repetir un lote nunca duplica (`replayed`)."""
+    event = _event_for_sync(db, event_id, staff)
+    ops = body.get("ops")
+    if not isinstance(ops, list) or not ops:
+        raise HTTPException(status_code=400, detail="Falta la lista de operaciones")
+    if len(ops) > OUTBOX_MAX_OPS:
+        raise HTTPException(status_code=400, detail=f"Máximo {OUTBOX_MAX_OPS} operaciones por lote")
+    now = utcnow()
+    field_configs = parametros.field_configs_for_event(db, event)
+    known = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([str((o or {}).get("op_id") or "")[:64] for o in ops if isinstance(o, dict)]))}
+    results = []
+    for op in ops:
+        op = op if isinstance(op, dict) else {}
+        op_id = str(op.get("op_id") or "").strip()[:64]
+        if not op_id or op.get("type") != "create_person" or not isinstance(op.get("fields"), dict):
+            results.append({"op_id": op_id, "result": "error", "detail": "Operación no válida"})
+            continue
+        if op_id in known:
+            results.append({"op_id": op_id, "result": "replayed"})
+            continue
+        when = now
+        try:
+            parsed = datetime.fromisoformat(str(op.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
+            if now.timestamp() - SYNC_MAX_AGE <= parsed.timestamp() <= now.timestamp() + 300:
+                when = parsed
+        except (TypeError, ValueError):
+            pass
+        res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs)
+        if res["result"] in ("ok", "existente", "replayed"):
+            known.add(op_id)
+        results.append(res)
+    db.commit()
+    return {"results": results, "ok": sum(r["result"] in ("ok", "replayed") for r in results)}
+
+
+# ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
+NOT_FOUND_FACE = "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."      # texto de la auditora (6 oct): sin coincidencia no se guarda nada (ni el vector temporal ni la foto en vivo)
+SUPPRESSED_MSG = "Esta persona solicitó la supresión de sus datos: no se puede registrar de nuevo sin su autorización."
+OVERWRITE_BIRTH_LABEL = "Reemplazar las fechas de nacimiento que ya están guardadas"      # UN solo texto: la casilla de la carga y el aviso del resumen dicen lo mismo (kiosk_roster.html lo recibe del servidor)
+_BIRTH_KEYS = ('fecha de nacimiento', 'fecha_nacimiento', 'fecha nacimiento', 'nacimiento', 'birth_date')      # columna opcional del Excel (L3)
+ROSTER_MAX_AGE_S = 24 * 3600          # el cliente lo borra a más tardar 24 h después de este refresco (y antes si el evento finaliza o se cierra la sesión)
+ROSTER_LIMIT, ROSTER_WINDOW = 12, timedelta(minutes=10)      # descargas por usuario y evento: un quiosco refresca cada pocos minutos; más que esto es un abuso o un bucle
+
+
+def roster_normalize(value: str) -> str:
+    """Misma normalización que el cliente (static/js/contingency.js): sin espacios ni puntos."""
+    return re.sub(r"[\s.]", "", str(value or ""))
+
+
+def roster_salt(event: Event) -> str:
+    """Sal POR EVENTO derivada de SECRET_KEY (sin columna nueva, estable entre procesos). Viaja con el roster: la huella es MINIMIZACIÓN (no se descarga la cédula en claro ni se
+    puede leer a simple vista), NO protección fuerte: quien tenga el roster puede probar cédulas por fuerza bruta (el espacio de cédulas es pequeño). Ver docs/15."""
+    key = (os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production").encode()
+    return hmac.new(key, f"roster-local:{event.tenant_id}:{event.id}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def roster_fingerprint(salt: str, cedula: str) -> str:
+    """Huella de la cédula: los primeros 16 hex (64 bits) de SHA-256(sal + ":" + cédula normalizada). El QR propio de la escarapela trae la cédula, así que UNA huella cubre cédula y QR."""
+    return hashlib.sha256(f"{salt}:{roster_normalize(cedula)}".encode()).hexdigest()[:16]
+
+
+def consent_block(event: Event):
+    """Texto de autorización biométrica del evento (con su huella) para que el quiosco lo muestre y registre SIN conexión; None si el evento no usa rostro."""
+    if not event.facial_enabled:
+        return None
+    t = legal_texts.render(event)
+    return {**{k: t[k] for k in ("version", "variant", "hash", "title", "body", "buttons", "adult_checkbox", "blocked")}, "mode": event.consent_prompt_mode, "click_mode": bool(event.precalculo_autorizado), "every_scan": legal_texts.every_scan_prompt()}
+
+
+@router.get("/events/{event_id}/local-roster")
+def local_roster(
+    event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
+):
+    """Roster mínimo del evento para el modo contingencia del quiosco (Fase 3): por persona SOLO huella de la cédula (`h`), nombre para mostrar (`n`), categorías (`c`) y estado (`s`:
+    «No registrado» / «Registrado» / «Nuevo»). Sin fotos, encodings, teléfono ni correo. Mismos permisos que acreditar (digitador+ con acceso al evento; el cliente no), no se
+    entrega de un evento finalizado, límite de `ROSTER_LIMIT` descargas por usuario y evento cada 10 min, `ETag` (304 si nada cambió) y gzip. `max_age_s`: vida máxima de la copia. `event.auto_register`: el «Modo autoregistro» del evento (el quiosco sin red solo acredita al escanear si está encendido)."""
+    event = get_event_for_staff(event_id, db, staff)
+    if event.status == "finalizado":
+        raise HTTPException(status_code=409, detail="El evento ya finalizó: no hay roster local")
+    key = f"{staff.id}:{event.id}"
+    if security.minutes_locked(db, "roster_local", key, None, ROSTER_LIMIT, ROSTER_LIMIT, ROSTER_WINDOW):
+        raise HTTPException(status_code=429, detail="Demasiadas descargas del roster local — espera unos minutos.")
+    security.record_event(db, "roster_local", key, None)
+    if event.facial_enabled:
+        accepted = consent_mod.accepted_user_ids(db, event.tenant_id, event.id)
+        web_pending = {r[0] for r in db.execute(text("SELECT user_id FROM web_acceptances WHERE tenant_id = :t AND event_id = :e AND verified_at IS NULL"), {"t": event.tenant_id, "e": event.id})}
+        n_consents = db.execute(text("SELECT count(*) FROM audit_consent_logs WHERE tenant_id = :t AND event_id = :e"), {"t": event.tenant_id, "e": event.id}).scalar()
+    else:          # sin rostro no hay aceptaciones que llevar al quiosco: ni consultas ni banderas
+        accepted, web_pending, n_consents = set(), set(), 0
+    version = _directory_etag(db, event.id, event.tenant_id, f"roster-local|{int(bool(event.auto_register))}|{n_consents}|{len(web_pending)}|{event.controller_mode}|{event.consent_prompt_mode}|{int(bool(event.facial_enabled))}|{int(bool(event.precalculo_autorizado))}")      # el modo autoregistro y la autorización biométrica viajan en la copia: si cambian, cambia la versión
+    headers = {"Cache-Control": "private, no-cache", "ETag": f'"{version}"'}
+    if request.headers.get("if-none-match") == headers["ETag"]:
+        return Response(status_code=304, headers=headers)
+    salt = roster_salt(event)
+    attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
+    log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
+    people = db.query(User.id, User.first_name, User.last_name, EventAttendee.categories, User.birth_date).outerjoin(
+        EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id) & (EventAttendee.event_id == event.id),
+    ).filter(User.tenant_id == event.tenant_id, or_(User.id.in_(attendee_ids), User.id.in_(log_ids))).order_by(User.id).all()
+    counts = {uid: (real, new) for uid, real, new in db.query(
+        AccessLog.user_id, func.count(AccessLog.id).filter(AccessLog.record_type != "Actualizado"), func.count(AccessLog.id).filter(AccessLog.record_type == "Nuevo"),
+    ).filter(AccessLog.event_id == event.id).group_by(AccessLog.user_id)}
+    rows = []
+    for uid, first, last, categories, birth in people:
+        real, new = counts.get(uid, (0, 0))
+        rows.append({"h": roster_fingerprint(salt, uid), "n": f"{first or ''} {last or ''}".strip(), "c": json.loads(categories) if categories else [],
+                     "s": "No registrado" if not real else ("Nuevo" if new else "Registrado"), "a": 1 if uid in accepted and not minors.is_minor(birth) else 0, "b": 1 if (event.facial_enabled and minors.is_minor(birth)) else 0, "v": 1 if uid in web_pending else 0})      # `v`: aceptó desde el celular y falta verificar su identidad en puerta      # `a`: ya aceptó el reconocimiento facial en este evento (solo un 1/0, sin datos biométricos)
+    return JSONResponse({"v": version, "generated_at": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), "max_age_s": ROSTER_MAX_AGE_S, "event": {"id": event.id, "status": event.status, "auto_register": bool(event.auto_register)},
+                         "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
+
 
 @router.patch("/users/{user_id}")
 def update_user(
@@ -704,6 +1091,16 @@ def update_user(
     event = get_event_for_staff(event_id, db, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if user:
+        # Fecha de nacimiento (base del control de menores): se valida ANTES de tocar nada. Vacía = borrarla.
+        birth_change = False
+        if "birth_date" in data and not event.facial_enabled:
+            data.pop("birth_date")          # sin rostro la fecha de nacimiento no se usa: no se toca
+        if "birth_date" in data:
+            raw_birth = str(data.pop("birth_date") or "").strip()
+            new_birth = minors.parse_birth(raw_birth) if raw_birth else None
+            if raw_birth and new_birth is None:
+                raise HTTPException(status_code=400, detail="La fecha de nacimiento no es válida (usa AAAA-MM-DD o DD/MM/AAAA, y no puede ser futura).")
+            birth_change = new_birth != user.birth_date
         # extra_fields llega como un dict {opcional_N: valor} desde el modal de "Editar" del
         # Directorio (2026-09-16) — no puede pasar por el setattr genérico de abajo: la columna
         # real (`User.extra_fields`) es un Text con JSON serializado a mano (`get_extras()`/
@@ -740,6 +1137,20 @@ def update_user(
         for key, value in data.items():
             if hasattr(user, key):
                 setattr(user, key, value)
+        if birth_change:
+            was_minor = minors.is_minor(user.birth_date)
+            db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id, kind="birth_date",
+                                old_value=user.birth_date.isoformat() if user.birth_date else "", new_value=new_birth.isoformat() if new_birth else ""))
+            user.birth_date = new_birth
+            if minors.is_minor(new_birth):            # pasó a ser menor: se retira lo biométrico (vector y foto) y solo entra por cédula/QR
+                get_storage().delete_all_versions(photo_key(event.tenant_id, user.id))
+                user.face_encoding = None
+                user.biometric_consent_at = None
+                user.biometric_consent_source = None
+                user.is_biometric_enabled = False
+                faces_version.bump(db, tenant_id=event.tenant_id)
+            elif was_minor and new_birth is not None:
+                user.is_biometric_enabled = True       # corrigieron un error de fecha: ya es mayor; podrá aceptar el reconocimiento facial como cualquiera
 
         field_configs = parametros.field_configs_for_event(db, event)
         final_values = {
@@ -922,18 +1333,24 @@ def update_registration_status(
     if new_status == "no_registrado" and max(ROLE_HIERARCHY[r] for r in effective_roles(staff)) < ROLE_HIERARCHY["coordinador"]:
         raise HTTPException(status_code=403, detail="No tienes permiso para esta acción")
 
+    was_registered = _already_checked_in(db, event_id, user_id)
+    deleted_logs = 0
     if new_status == "registrado":
         if not _already_checked_in(db, event_id, user_id):
             log = AccessLog(
                 tenant_id=event.tenant_id, user_id=user_id, record_type="Existente",
                 event_id=event_id, registered_by_staff_id=staff.id,
-                registration_method="tradicional",  # Fase 16: cambio manual de estado desde el Directorio
+                registration_method="biometrico" if data.get("method") == "biometrico" else "tradicional",  # Fase 16: cambio manual de estado desde el Directorio; «biometrico» lo manda la verificación del operador tras un escaneo facial
             )
             db.add(log)
             _upsert_attendee(db, event_id, user_id, event.tenant_id)
     else:
-        db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+        deleted_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
 
+    if was_registered != (new_status == "registrado"):          # rastro: quién, cuándo (at), estado anterior y nuevo; al deshacer queda cuántos accesos se borraron
+        db.add(PersonChange(tenant_id=event.tenant_id, event_id=event_id, user_id=user_id, staff_user_id=staff.id, kind="registration_status",
+                            old_value="Registrado" if was_registered else "No registrado", new_value="Registrado" if new_status == "registrado" else "No registrado",
+                            detail=f"accesos borrados: {deleted_logs}" if new_status == "no_registrado" else None))
     db.commit()
     return {"message": "Estado de registro actualizado", "status": new_status}
 
@@ -943,7 +1360,7 @@ def manual_register(
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
-    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None),
+    field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None), birth_date: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -980,8 +1397,26 @@ def manual_register(
         _apply_optional_labels(event, used_optional_keys, field_labels)
         db.commit()
 
+    if file is not None and file.filename and not _truthy(biometric_consent):      # Ley 1581: sin autorización expresa no se guarda el rostro (se evalúa primero)
+        raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
+    birth = minors.parse_birth(birth_date)
+    if str(birth_date or "").strip() and birth is None:
+        raise HTTPException(status_code=400, detail="La fecha de nacimiento no es válida")
+    minor = minors.is_minor(birth)
+    has_photo = file is not None and bool(file.filename)
+    if has_photo and event.biometrics_locked:
+        raise HTTPException(status_code=400, detail="Este evento no usa biometría: no se guardan fotos de las personas. Regístrala sin foto.")
+    if has_photo and not minor and birth is None:
+        raise HTTPException(status_code=400, detail="Para guardar el rostro hace falta la fecha de nacimiento: solo se capta el rostro de mayores de 18 años")
+    if privacy.is_suppressed(db, event.tenant_id, id):
+        raise HTTPException(status_code=409, detail=SUPPRESSED_MSG)
     existing = db.query(User).filter(User.id == id, User.tenant_id == event.tenant_id).first()
     if existing:
+        if birth is not None:
+            existing.birth_date = birth
+            if minor:
+                existing.is_biometric_enabled = False
+                privacy.purge_person(db, event.tenant_id, existing.id)      # menor de 18: sin vector ni foto
         if not force and _already_checked_in(db, event.id, existing.id):
             return _duplicate_warning(db, event.id, existing)
         log = AccessLog(
@@ -1012,22 +1447,25 @@ def manual_register(
     # que `file is not None` es cierto incluso sin archivo real — hay que revisar `file.filename`
     # también, si no, `file.read()` da bytes vacíos y `Image.open()` truena (500) en vez de
     # tratarlo como "no se adjuntó foto" (CEDULA-08, bug real encontrado en testing 2026-09-21).
-    if file is not None and file.filename:
+    if has_photo and not minor:
         if not _truthy(biometric_consent):      # Ley 1581 (dato sensible): sin autorización expresa de la persona NO se guarda su rostro; puede registrarse por cédula
             raise HTTPException(status_code=400, detail=BIOMETRIC_CONSENT_REQUIRED)
         img_array = BiometricEngine.process_image_stream(file.file.read())
-        try:
-            encodings = faces.extract(img_array, is_registration=True)
-        except faces.Busy:
-            raise HTTPException(status_code=503, detail="Hay muchos procesos faciales en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
-        if not encodings:
-            return {"error": "No se detectó un rostro en la fotografía."}
-        face_enc_json = json.dumps(encodings)
+        if consent_mod.has_acceptance(db, event.tenant_id, id, event.id):      # REGLA A: el vector solo se calcula si la PERSONA ya aceptó (la casilla del digitador no cuenta)
+            try:
+                encodings = faces.extract(img_array, is_registration=True)
+            except faces.Busy:
+                raise HTTPException(status_code=503, detail="Hay muchos procesos faciales en cola. Intenta de nuevo en unos segundos.", headers={"Retry-After": "3"})
+            if not encodings:
+                return {"error": "No se detectó un rostro en la fotografía."}
+            face_enc_json = json.dumps(encodings)
 
     user = User(
         id=id, tenant_id=event.tenant_id, first_name=first_name.strip(), last_name=last_name.strip(),
         role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, face_encoding=face_enc_json,
-        biometric_consent_at=datetime.utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
+        biometric_consent_at=utcnow() if face_enc_json else None, biometric_consent_source="kiosko" if face_enc_json else None,
+        birth_date=birth, is_biometric_enabled=not minor,
+        face_captured_at=utcnow() if (img_array is not None and not face_enc_json) else None,          # foto sin vector: el reloj de retención corre igual
     )
     user.set_extras(extras)
     db.add(user)
@@ -1054,6 +1492,10 @@ def manual_register(
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
     reply = {"message": "Usuario registrado exitosamente como Nuevo."}
+    if img_array is not None and not face_enc_json:
+        reply["face_pending"] = "La foto quedó guardada; el reconocimiento facial se activa cuando la persona acepte en la pantalla de autorización."
+    if minor:
+        reply["minor"] = "Es menor de 18 años: se registró SIN rostro (no se capta ni se guarda). Ingresa por cédula o QR."
     if contact_clean and event.digital_badge_enabled:
         reply["digital"] = _send_digital(db, event, user, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
     return reply
@@ -1097,21 +1539,42 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
     field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
+    roster_upload: str = Form(None), zip_upload: str = Form(None), overwrite_birth: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
     (lo que usa la pantalla "Adjuntar Base de Datos", Sprint 5) responde de inmediato con `{job_id}` y el trabajo
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
-    get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
-    content = roster_file.file.read() if (roster_file is not None and roster_file.filename) else None
-    zip_bytes = zip_file.file.read() if (zip_file is not None and zip_file.filename) else None
-    if zip_bytes is not None and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
+    event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    has_zip = bool(zip_upload) or (zip_file is not None and bool(zip_file.filename))
+    zip_ignored = bool(event.biometrics_locked and has_zip)
+    if zip_ignored:          # candado «sin biometría»: las fotos NO se leen, no se guardan y no encienden el rostro (el aviso sale en el resultado)
+        zip_file, zip_upload, has_zip = None, None, False
+    if has_zip and not (event.facial_enabled and event.client_photos_before):
+        # Fuente de verdad única (Fase 0): el uso del rostro y el origen de la foto se eligen SOLO en Parámetros (paso guiado). Las fotos del cliente (zip) solo caben en el origen A.
+        raise HTTPException(status_code=400, detail="Las fotos (zip) solo se cargan si el evento usa reconocimiento facial con fotos entregadas por el cliente (origen A). Cámbialo en Parámetros → Reconocimiento facial: paso guiado.")
+    if has_zip and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
-    args = dict(event_id=event_id, roster_filename=roster_file.filename if content is not None else None,
-                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id)
+    if background and bulk_jobs.uses_cloud_run():
+        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored, _truthy(overwrite_birth))
+    # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
+    roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
+    zip_up = uploads.fetch(zip_upload, "bulk_zip", {"e": event_id})
+    content = roster_up.content if roster_up else (roster_file.file.read() if (roster_file is not None and roster_file.filename) else None)
+    roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
+    zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
+    args = dict(event_id=event_id, roster_filename=roster_filename,
+                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth))
+
+    def cleanup(result):
+        # NEEDS_LABELS: el navegador reenvía la MISMA carga con los nombres de las columnas; los archivos temporales tienen que seguir ahí.
+        if not (isinstance(result, dict) and result.get("result") == "NEEDS_LABELS"):
+            uploads.discard(roster_up, zip_up)
+        return result
+
     if not background:
-        return _bulk_register_impl(db, staff, **args)
+        return cleanup(_bulk_register_impl(db, staff, **args))
 
     if bulk_jobs.active_job(db, event_id):
         raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
@@ -1120,10 +1583,52 @@ def bulk_register(
 
     def work(job_db, reporter):
         worker_staff = job_db.query(StaffUser).filter(StaffUser.id == staff_id).first()
-        return _bulk_register_impl(job_db, worker_staff, progress=reporter, **args)
+        return cleanup(_bulk_register_impl(job_db, worker_staff, progress=reporter, **args))
 
     bulk_jobs.start(job_id, work)
     return {"background": True, "job_id": job_id}
+
+
+def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored=False, overwrite_birth=False) -> dict:
+    """BULK_BACKEND=cloudrun: la carga la ejecuta un Cloud Run Job. Aquí NO se descargan los archivos (un ZIP de 2 GB no cabe en el
+    servicio web): solo se guardan sus tokens; los que vinieron en la petición se dejan antes en el almacenamiento (`uploads.stash`)."""
+    scope = {"e": event.id}
+
+    def token(upload_token, file, purpose):
+        if upload_token:
+            uploads.read_token(upload_token)                 # firma y vigencia de una vez; propósito y alcance los revisa el Job
+            return upload_token
+        if file is not None and file.filename:
+            return uploads.stash(purpose, scope, event.tenant_id, file.filename, file.file.read(), file.content_type or "application/octet-stream")
+        return None
+
+    spec = {"roster": token(roster_upload, roster_file, "bulk_roster"), "zip": token(zip_upload, zip_file, "bulk_zip"),
+            "field_labels": field_labels, "source_event_id": source_event_id, "zip_ignored": zip_ignored, "overwrite_birth": overwrite_birth}
+    if bulk_jobs.active_job(db, event.id):
+        raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
+    job_id = bulk_jobs.create_job(db, event.id, staff.id, spec)
+    try:
+        bulk_jobs.launch_cloud_run(job_id)
+    except Exception:  # noqa: BLE001 — la tarea queda marcada con el error y el navegador lo muestra
+        log.error("no se pudo lanzar el Job de la carga %s", job_id, exc_info=True)
+        bulk_jobs._finish(job_id, error_status=503, error_detail="No se pudo iniciar el procesamiento de la carga. Intenta de nuevo en unos minutos.")
+        raise HTTPException(status_code=503, detail="No se pudo iniciar el procesamiento de la carga. Intenta de nuevo en unos minutos.")
+    return {"background": True, "job_id": job_id}
+
+
+def run_bulk_spec(db: Session, job, progress) -> dict:
+    """Lo que ejecuta el Cloud Run Job (`app/bulk_runner.py`) con lo que dejó `_launch_bulk_cloud_run`."""
+    spec, event_id = json.loads(job.spec_json), job.event_id
+    staff = db.query(StaffUser).filter(StaffUser.id == job.staff_user_id).first()
+    roster_up = uploads.fetch(spec.get("roster"), "bulk_roster", {"e": event_id})
+    zip_up = uploads.fetch(spec.get("zip"), "bulk_zip", {"e": event_id})
+    result = _bulk_register_impl(
+        db, staff, event_id=event_id, roster_filename=roster_up.filename if roster_up else None, content=roster_up.content if roster_up else None,
+        zip_bytes=zip_up.content if zip_up else None, field_labels=spec.get("field_labels"), source_event_id=spec.get("source_event_id"), progress=progress,
+        zip_ignored=bool(spec.get("zip_ignored")), overwrite_birth=bool(spec.get("overwrite_birth")))
+    if not (isinstance(result, dict) and result.get("result") == "NEEDS_LABELS"):     # NEEDS_LABELS: la misma carga vuelve con los nombres
+        uploads.discard(roster_up, zip_up)
+    return result
 
 
 @router.get("/bulk_jobs/{job_id}")
@@ -1140,7 +1645,7 @@ def bulk_job_status(
 
 
 def _bulk_register_impl(
-    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None,
+    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -1161,22 +1666,11 @@ def _bulk_register_impl(
     field_labels (JSON, ej. {"opcional_1": "Talla de camisa"}) para que se guarden y se continúe
     con la carga."""
     event = get_event_for_staff(event_id, db, staff)
-    if event.status == "finalizado":
-        raise HTTPException(status_code=400, detail="No se puede cargar la base de un evento finalizado")
-    # Bloqueo real (no solo el aviso que ya hace el frontend antes de mandar la petición, ver
-    # kiosk_roster.html) — un evento en_proceso que YA tuvo una carga exitosa antes no puede
-    # recibir otra: es casi siempre alguien resubiendo por error, y pisaría/duplicaría registros
-    # de gente que ya se acreditó en vivo. Si de verdad necesitan cargar otra base, la salida es
-    # crear un evento nuevo, no reintentar sobre este (2026-09-22, pedido explícito del usuario).
-    if event.status == "en_proceso" and event.roster_uploaded:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Este evento ya tiene una base cargada y está EN PROCESO. Para evitar conflictos "
-                "con los registros que ya se hicieron en vivo, no se puede volver a cargar otra "
-                "base sobre este evento — si necesitas cargar una base distinta, crea un evento nuevo."
-            ),
-        )
+    # Una sola regla (app/event_rules.py `roster_block_reason`), la misma que usa la pantalla para avisar ANTES: finalizado nunca; en proceso solo si todavía no tuvo una carga exitosa
+    # (volver a cargar pisaría o duplicaría registros hechos en vivo, 2026-09-22).
+    blocked = event_rules.roster_block_reason(event)
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
 
     # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
     # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
@@ -1194,6 +1688,14 @@ def _bulk_register_impl(
         }
 
     header_columns, rows = _read_roster_rows(roster_filename, content)
+    # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
+    header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
+    # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
+    birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
+    birth_ignored_rows = 0
+    if not birth_used:
+        birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
+        roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
 
     # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
     # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
@@ -1220,7 +1722,7 @@ def _bulk_register_impl(
             if norm and (value or "").strip():
                 used_optional_keys.add(norm)
 
-    missing = used_optional_keys - set(event.get_optional_labels().keys())
+    missing = used_optional_keys - set(event.get_optional_labels().keys()) - set(auto_labels)          # los de título propio ya traen su nombre: no se pregunta
     if missing and not field_labels:
         # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
         # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
@@ -1232,8 +1734,16 @@ def _bulk_register_impl(
             "examples": examples,
         }
 
+    labels_to_apply = {}
     if field_labels:
-        _apply_optional_labels(event, used_optional_keys, field_labels)
+        try:
+            labels_to_apply = dict(json.loads(field_labels) or {})
+        except (json.JSONDecodeError, TypeError, ValueError):
+            labels_to_apply = {}
+    for slot, title in auto_labels.items():
+        labels_to_apply.setdefault(slot, title)
+    if labels_to_apply:
+        _apply_optional_labels(event, used_optional_keys, json.dumps(labels_to_apply))
         db.commit()
 
     source_name = ""
@@ -1244,11 +1754,17 @@ def _bulk_register_impl(
     # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
     # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
     errors = []
+    if zip_ignored:
+        errors.append("⚠️ Este evento no usa biometría (bloqueado): el zip de fotos se ignoró, no se guardó ninguna foto y el reconocimiento facial no se activó.")
     # identificador -> encoding ya calculada al leer el zip (2026-09-22): antes se calculaba acá
     # Y OTRA VEZ más abajo (al releer la misma foto del disco) — el costo real de una carga masiva
     # es el encoding facial (num_jitters=25, ver CLAUDE.md), así que calcularlo dos veces por foto
     # duplicaba sin necesidad el tiempo de procesamiento de cada lote.
     zip_encodings = {}
+    zip_photos = set()
+    # REGLA A (2026-10-06): NINGÚN flujo calcula el vector de alguien que aún no aceptó. Solo se pre-calcula en un evento de un tercero con el pre-cálculo autorizado (anexo firmado, solo super_admin);
+    # en todo lo demás las fotos se guardan cifradas y el vector se calcula DESPUÉS de que la persona acepte (app/enroll.py).
+    precalc = event.controller_mode == "tercero" and bool(event.precalculo_autorizado)
 
     progress = progress or (lambda *a, **k: None)
     photo_entries = []
@@ -1279,19 +1795,19 @@ def _bulk_register_impl(
                     # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
                     # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
                     # persona quedó sin reconocimiento facial funcional).
-                    encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
-                    if not encodings:
-                        errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
-                        continue
-                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, basename))
-                    zip_encodings[os.path.splitext(basename)[0]] = encodings
+                    if precalc:
+                        encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
+                        if not encodings:
+                            errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
+                            continue
+                        zip_encodings[os.path.splitext(basename)[0]] = encodings
+                    zip_photos.add(os.path.splitext(basename)[0])
+                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
 
-        # Se enciende sola (nunca se apaga sola) — subir un roster sin zip más adelante no debe
-        # quitarle a un evento la capacidad de reconocimiento facial que ya tenía. Decide si
-        # /kiosk/{event_id}/registro muestra el escáner de cámara (2026-09-21, ver CLAUDE.md).
-        if not event.facial_enabled:
-            event.facial_enabled = True
-            db.commit()
+        if photo_entries and not precalc:
+            errors.append("ℹ️ Las fotos se guardaron cifradas, pero su vector facial NO se calcula todavía: se calcula cuando cada persona acepta el reconocimiento facial (en la puerta o desde el celular).")
+
+        # (Fase 0, 2026-10-17) La carga ya NO enciende el reconocimiento facial: llegar aquí con fotos exige que el paso guiado ya diga «usa rostro» con origen A.
 
     # --- Pre-escaneo: identificar cédulas (con corrección del "Excel las volvió número"),
     # detectar cédulas repetidas dentro del mismo archivo, ANTES de tocar la base de datos.
@@ -1319,6 +1835,7 @@ def _bulk_register_impl(
             )
 
     count = 0
+    birth_bad_rows, birth_kept_rows, birth_completed, birth_replaced = [], [], 0, 0
     for row_i, info in enumerate(row_infos, start=1):
         done_units += bulk_jobs.ROW_WEIGHT
         progress(f"Guardando personas ({row_i} de {len(row_infos)})", done_units, total_units)
@@ -1328,6 +1845,10 @@ def _bulk_register_impl(
         if not identificador:
             where = info["id_cell"] or f"fila {row_num}"
             errors.append(f"❌ Fila {row_num} ({where}): sin ID/cédula, se omitió esta fila.")
+            continue
+
+        if privacy.is_suppressed(db, event.tenant_id, identificador):
+            errors.append(f"⚠️ Fila {row_num}: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).")
             continue
 
         if identificador in carried_ids:
@@ -1355,13 +1876,39 @@ def _bulk_register_impl(
             face_enc_json = None
             if str(identificador) in zip_encodings:
                 face_enc_json = json.dumps(zip_encodings[str(identificador)])
-            else:
+            elif precalc:
                 img_key = photo_key(event.tenant_id, f"{identificador}")
                 if get_storage().exists(img_key):
                     stored = crypto.read_array(img_key)          # la foto guardada puede estar cifrada
                     enc = faces.extract(stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
                     if enc:
                         face_enc_json = json.dumps(enc)
+            # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
+            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "") if birth_used else ""
+            birth = minors.parse_birth(birth_raw)
+            if birth_raw and birth is None:
+                errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD, DD/MM/AAAA o una fecha de Excel).")
+                birth_bad_rows.append(row_num)
+            # Una persona que ya tenía una fecha válida distinta NO la pierde por una recarga (salvo que el coordinador marque «reemplazar»): manda la guardada. Quien no tenía fecha, la completa.
+            stored_birth = db.query(User.birth_date).filter(User.id == identificador, User.tenant_id == event.tenant_id).scalar()
+            birth_action = ""
+            if birth is not None and stored_birth is not None and stored_birth != birth:
+                if overwrite_birth:
+                    birth_action = "replaced"
+                else:
+                    birth_action = "kept"
+                    birth_kept_rows.append(row_num)
+                    errors.append(f"⚠️ Fila {row_num}: ya tenía una fecha de nacimiento guardada distinta a la del archivo; no se cambió (marca «{OVERWRITE_BIRTH_LABEL}» si quieres cambiarla).")
+                    birth = stored_birth
+            elif birth is not None and stored_birth is None:
+                birth_action = "completed"
+            row_minor = minors.is_minor(birth)
+            has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
+            if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
+                face_enc_json = None
+                has_photo = False
+                get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
+                errors.append(f"⚠️ Fila {row_num}: " + ("es menor de 18 años: no se guardó su rostro (solo cédula o QR)." if row_minor else "tiene foto pero no fecha de nacimiento: no se guardó su rostro (solo se capta el rostro de mayores de 18 años)."))
 
             # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
             # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
@@ -1384,6 +1931,19 @@ def _bulk_register_impl(
                 user.phone = telefono
                 user.email = correo
                 user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
+                if birth is not None and birth_action != "kept":
+                    if birth_action == "replaced":
+                        db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id if staff else None, kind="birth_date",
+                                            old_value=stored_birth.isoformat(), new_value=birth.isoformat(), detail="reemplazada por una recarga de la base"))
+                        birth_replaced += 1
+                    elif birth_action == "completed":
+                        birth_completed += 1
+                    user.birth_date = birth
+                    user.is_biometric_enabled = not row_minor
+                    if row_minor:
+                        user.face_encoding = None
+                if has_photo and not face_enc_json and user.face_captured_at is None:
+                    user.face_captured_at = utcnow()          # foto guardada sin vector: el reloj de retención (7 días / tope de 180) corre igual
 
                 extras = {}
                 for raw_key, value in clean_row.items():
@@ -1395,7 +1955,7 @@ def _bulk_register_impl(
 
                 if face_enc_json:
                     user.face_encoding = face_enc_json
-                    user.biometric_consent_at, user.biometric_consent_source = datetime.utcnow(), "carga_masiva"
+                    user.biometric_consent_at, user.biometric_consent_source = utcnow(), "carga_masiva"
 
                 db.flush()
                 # Categorías (ítem 14): columna "categoria"/"categorias" (con o sin tilde), varias
@@ -1417,13 +1977,21 @@ def _bulk_register_impl(
     if (count > 0 or carried_ids) and not event.roster_uploaded:
         event.roster_uploaded = True
 
+    # Resumen de las fechas de nacimiento (avisa lo que no se pudo guardar y por qué)
+    if birth_ignored_rows:
+        errors.insert(0, f"⚠️ {birth_ignored_rows} fila(s) traían fecha de nacimiento y NO se guardaron porque este evento no tiene el reconocimiento facial activo. Actívalo y vuelve a cargar el mismo archivo: se completarán las fechas.")
+    if birth_bad_rows:
+        shown = ", ".join(str(n) for n in birth_bad_rows[:30]) + ("…" if len(birth_bad_rows) > 30 else "")
+        errors.insert(0, f"⚠️ {len(birth_bad_rows)} fila(s) con fecha de nacimiento que no se pudo entender: fila(s) {shown}. Usa DD/MM/AAAA, AAAA-MM-DD o una fecha de Excel.")
+    birth_summary = {"completed": birth_completed, "replaced": birth_replaced, "kept_rows": birth_kept_rows, "unreadable_rows": birth_bad_rows, "ignored_rows": birth_ignored_rows}
     db.commit()
     message = f"Carga completa: {count} perfiles cargados."
     if carried_ids:
         message += f" Además, {len(carried_ids)} personas traídas de: {source_name}."
     if errors:
         message += f" {len(errors)} observación(es) — revisa el detalle."
-    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels()}
+    message += " " + roster_columns.summary(columns_report)
+    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels(), "columns": columns_report, "birth": birth_summary}
 
 @router.get("/report")
 def download_report(

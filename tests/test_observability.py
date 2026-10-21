@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import date, datetime, timedelta
+from app.timeutil import utcnow
 
 import pytest
 
@@ -102,11 +103,11 @@ def test_database_down_answers_503_with_retry_after(client):
 
 def test_5xx_are_recorded_for_the_status_screen_with_a_throttle(db):
     ops._last_5xx_write = 0.0
-    ops.record_5xx("rid-1", "GET", "/api/x", 500)
-    ops.record_5xx("rid-2", "GET", "/api/x", 500)                              # dentro del mismo segundo: se suma, no se escribe
+    ops.record_5xx("rid-1", "GET", "/api/x", 500).result(10)                    # la escritura va en un hilo: se espera a su Future
+    assert ops.record_5xx("rid-2", "GET", "/api/x", 500) is None               # dentro del mismo segundo: se suma, no se escribe
     assert db.query(SystemEvent).filter_by(kind="error_5xx").count() == 1
     ops._last_5xx_write = 0.0
-    ops.record_5xx("rid-3", "GET", "/api/x", 502)
+    ops.record_5xx("rid-3", "GET", "/api/x", 502).result(10)
     rows = db.query(SystemEvent).filter_by(kind="error_5xx").order_by(SystemEvent.id).all()
     assert len(rows) == 2 and "+1 más" in rows[1].detail
 
@@ -174,7 +175,7 @@ def test_status_endpoint_is_admin_only_and_structured(client, factory):
     assert r.status_code == 200
     body = r.json()
     ids = [i["id"] for i in body["items"]]
-    assert ids == ["version", "database", "connections", "queue", "backup", "bulk_jobs", "events", "emails", "payments", "errors"]
+    assert ids == ["version", "database", "connections", "queue", "backup", "client_ip", "bulk_jobs", "events", "unfinished_events", "emails", "payments", "errors"]
     assert body["level"] in ("green", "yellow", "red") and all(i["level"] in ("green", "yellow", "red") and "reason" in i and "action" in i for i in body["items"])
     page = client.get("/sistema")
     assert page.status_code == 200 and "Estado del sistema" in page.text
@@ -185,15 +186,15 @@ def test_status_turns_red_with_the_reason_and_what_to_do(client, factory, db, mo
     ev = factory.event("en_proceso")
     login(client, "root")
     for _ in range(12):
-        db.add(Job(kind="email", payload_json="{}", status="failed", run_at=datetime.utcnow(), created_at=datetime.utcnow()))       # 12 fallidos
-    db.add(Job(kind="x", payload_json="{}", status="queued", run_at=datetime.utcnow() - timedelta(minutes=20), created_at=datetime.utcnow()))   # esperando hace 20 min
+        db.add(Job(kind="email", payload_json="{}", status="failed", run_at=utcnow(), created_at=utcnow()))       # 12 fallidos
+    db.add(Job(kind="x", payload_json="{}", status="queued", run_at=utcnow() - timedelta(minutes=20), created_at=utcnow()))   # esperando hace 20 min
     for _ in range(11):
-        db.add(SystemEvent(kind="error_5xx", ref="r", at=datetime.utcnow()))
+        db.add(SystemEvent(kind="error_5xx", ref="r", at=utcnow()))
     form = WebForm(event_id=ev.id, name="F", slug="f", manual_status="activo", design_json="{}", test_key="k")
     db.add(form)
     db.commit()
     for i in range(6):                                                                                   # pagos sin conciliar hace más de 15 min
-        db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=1, reference=f"R{i}", status="pending", is_test=False, created_at=datetime.utcnow() - timedelta(hours=1)))
+        db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=1, reference=f"R{i}", status="pending", is_test=False, created_at=utcnow() - timedelta(hours=1)))
     db.commit()
     body = client.get("/api/ops/status").json()
     by = {i["id"]: i for i in body["items"]}
@@ -241,7 +242,7 @@ def test_deploy_is_not_allowed_with_an_event_running_or_about_to_open(client, fa
     db.query(Event).delete()
     db.commit()
 
-    soon = datetime.utcnow() + timedelta(hours=1)                                                        # abre en ~1 h (hora local = UTC-5)
+    soon = utcnow() + timedelta(hours=1)                                                        # abre en ~1 h (hora local = UTC-5)
     local = soon - timedelta(hours=5)
     factory.event("creado", start_date=local.date(), event_time_start=local.strftime("%H:%M"))
     r = client.get("/api/ops/deploy-allowed").json()
@@ -261,3 +262,22 @@ def test_deploy_allowed_accepts_the_ops_token_without_a_session(client, factory,
     assert client.get("/api/ops/deploy-allowed", headers={"X-Ops-Token": "malo"}).status_code == 401
     r = client.get("/api/ops/deploy-allowed", headers={"X-Ops-Token": "token-de-operaciones"})
     assert r.status_code == 200 and r.json()["allowed"] is False
+
+
+def test_cloud_run_health_routes_do_not_end_in_z(client):
+    """Cloud Run reserva rutas que terminan en «z» (/healthz da 404 del propio Google): las sondas usan /health y /ready, iguales a las viejas."""
+    from app import appmode
+    assert client.get("/health").json() == client.get("/healthz").json() == {"status": "ok"}
+    ready, readyz = client.get("/ready"), client.get("/readyz")
+    assert ready.status_code == readyz.status_code and ready.json()["status"] == readyz.json()["status"]
+    for mode in ("publico", "web", "biometria"):
+        assert appmode.route_allowed("/health", mode=mode) and appmode.route_allowed("/ready", mode=mode)
+
+
+def test_static_urls_are_paths_not_absolute_urls(client):
+    """Detrás de Firebase la app ve «http» y el host interno de Cloud Run: una URL absoluta quedaba http://…run.app/static/… y el navegador
+    la bloqueaba en la página https (sin estilos). Deben salir como ruta, con su ?v=."""
+    import re
+    html = client.get("/login", headers={"host": "golden-web-staging-abc-ue.a.run.app"}).text
+    assets = re.findall(r'(?:href|src)="([^"]*/static/[^"]*)"', html)
+    assert assets and all(a.startswith("/static/") and "?v=" in a for a in assets), assets

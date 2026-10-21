@@ -1,9 +1,10 @@
-"""Aplica la política de retención de datos biométricos: borra el rostro (encoding + foto) de las personas de eventos FINALIZADOS hace más de
-`BIOMETRIC_RETENTION_DAYS` días (180 = 6 meses por defecto; `0` apaga el borrado automático). Debe coincidir con la Política de Privacidad publicada.
+"""Aplica la retención biométrica (app/privacy.py): borra foto y vector del rostro de quien tiene TODOS sus eventos finalizados hace más de
+`BIOMETRIC_RETENTION_DAYS_AFTER_EVENT` días (7) o lleva más de `BIOMETRIC_MAX_DAYS` (180) desde la captura. En la nube lo corre solo el Job de
+operaciones (paso `purge`, cada hora); este script es para la VM o para correrlo a mano. Solo imprime conteos.
 
     0 4 * * * cd /home/juando02603/Facial-Recognition && venv/bin/python scripts/purge_biometrics.py >> ~/backups/purge.log 2>&1
 
-`--dry-run` solo cuenta lo que se borraría. Las personas que siguen en otro evento NO finalizado del mismo cliente se conservan.
+`--dry-run` solo cuenta lo que se borraría (sin tocar nada).
 """
 import os
 import sys
@@ -16,23 +17,16 @@ load_dotenv()
 
 from app import privacy  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
-from app.models import Event  # noqa: E402
 
 
 def main() -> int:
-    days = privacy.retention_days()
-    if not days:
-        print("BIOMETRIC_RETENTION_DAYS=0: el borrado automático está apagado, no se borra nada.")
-        return 0
     db = SessionLocal()
     try:
         if "--dry-run" in sys.argv:
-            from datetime import date, timedelta
-            limit = date.today() - timedelta(days=days)
-            events = db.query(Event).filter(Event.status == "finalizado", Event.end_date < limit, Event.biometrics_purged_at.is_(None)).all()
-            print(f"Se purgarían {len(events)} evento(s): " + ", ".join(f"{e.event_code}" for e in events))
+            r = privacy.purge_expired(db, dry_run=True)
+            print(f"Se borrarían {r['people']} persona(s) y {r['objects']} foto(s) (por tope de días: {r['by_cap']}).")
             return 0
-        print(privacy.purge_expired(db, days))
+        print(privacy.purge_expired(db))
         return 0
     finally:
         db.close()

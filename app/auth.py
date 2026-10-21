@@ -2,6 +2,7 @@ import bcrypt
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app import event_rules
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
 
@@ -102,6 +103,14 @@ def require_super_admin(staff: StaffUser = Depends(get_current_staff)) -> StaffU
     return staff
 
 
+def _closed_detail(event: Event, prefix: str) -> str:
+    """Mensaje de «el evento no está disponible»: con el nombre del estado configurado cuando lo hay (si no, el de siempre: no ha comenzado / ya finalizó)."""
+    if event.state is not None and event.state.name not in ("Creado", "En proceso", "Finalizado"):
+        return f"{prefix} está en el estado «{event.state.name}», que no lo permite"
+    label = "todavía no ha comenzado" if event.status == "creado" else "ya está finalizado"
+    return f"{prefix} {label}"
+
+
 def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     """Resuelve el evento y valida acceso. coordinador+ tiene alcance de tenant (acceso a
     cualquier evento); digitador/cliente necesitan una EventStaffAuthorization para ESE evento
@@ -116,9 +125,9 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
         ).first()
         if not authorized:
             raise HTTPException(status_code=403, detail="No estás autorizado para este evento")
-        if event.status != "en_proceso":
-            label = "todavía no ha comenzado" if event.status == "creado" else "ya está finalizado"
-            raise HTTPException(status_code=403, detail=f"Este evento {label}")
+        rule = "client_access" if staff.role == "cliente" else "temp_digitadores_enter"
+        if not event_rules.allowed(event, rule):
+            raise HTTPException(status_code=403, detail=_closed_detail(event, "Este evento"))
 
     return event
 
@@ -128,6 +137,5 @@ def require_event_in_progress(event: Event) -> None:
     (recognize/register/bulk_register) — a diferencia del acceso general al evento, esto aplica a
     TODOS los roles por igual, incluido admin/super_admin: si el evento no está 'en_proceso', nadie
     registra, solo se puede ver/editar el evento y gestionar sus usuarios."""
-    if event.status != "en_proceso":
-        label = "todavía no ha comenzado" if event.status == "creado" else "ya está finalizado"
-        raise HTTPException(status_code=403, detail=f"No se puede registrar: este evento {label}")
+    if not event_rules.allowed(event, "registration"):
+        raise HTTPException(status_code=403, detail=_closed_detail(event, "No se puede registrar: este evento"))

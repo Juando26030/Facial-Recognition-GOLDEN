@@ -24,6 +24,7 @@ assert "test" in TEST_DB_NAME, f"Por seguridad las pruebas solo corren contra un
 os.environ["DATABASE_URL"] = TEST_URL
 os.environ.pop("DIRECT_DATABASE_URL", None)   # las migraciones de las pruebas van siempre a la base de pruebas
 os.environ["FORM_PUBLIC_CACHE_SECONDS"] = "0"   # sin cache del estado publico de formularios: cada prueba ve el estado real (una prueba propia la activa)
+os.environ["FORM_MAX_LOCK_WAITERS"] = "0"     # sin tope de esperas del bloqueo del formulario: las pruebas con envíos simultáneos en hilos verifican la INTEGRIDAD del cupo y no deben depender de los tiempos (el tope se prueba a propósito en tests/test_form_backpressure.py)
 os.environ["FACE_PROCESSES"] = "0"             # el motor facial (doble) corre en el mismo proceso: las pruebas lo reemplazan con monkeypatch
 os.environ["JOBS_WORKER"] = "off"              # sin hilo de trabajos en segundo plano: cada prueba los ejecuta a la vista (ver _jobs_inline)
 os.environ.pop("ENVIRONMENT", None)          # las pruebas corren como desarrollo
@@ -94,7 +95,9 @@ def _clean_tables(_database):
             t.join(timeout=60)
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE audit_consent_logs DISABLE TRIGGER USER"))      # solo aquí (base de pruebas): en la real esa tabla no se vacía jamás
         conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+        conn.execute(text("ALTER TABLE audit_consent_logs ENABLE TRIGGER USER"))
     _wipe_test_files()
     from app import faces, formsvc
     faces.clear_cache()
@@ -106,11 +109,39 @@ def _clean_tables(_database):
 
 
 @pytest.fixture(autouse=True)
+def _no_wompi_status_network(monkeypatch):
+    """`GET quote` del formulario público consulta la página de estado PÚBLICA de Wompi (`wompi.service_problem`, https://wompi.statuspage.io): una prueba que depende de un servicio externo falla
+    cuando Wompi reporta una incidencia («service» en la respuesta) o tarda en responder (timeout de 4 s). Aquí la caché de ese estado queda fija en «opera normal» y no hay red; las pruebas
+    de `service_status` ponen su propio `urlopen` y vacían `data` (ver tests/test_form_payments.py)."""
+    import time
+
+    from app import wompi
+    monkeypatch.setitem(wompi._status, "at", time.time() + 10 ** 9)
+    monkeypatch.setitem(wompi._status, "data", {"indicator": "none", "description": ""})
+
+
+@pytest.fixture(autouse=True)
+def _fresh_public_limiter(monkeypatch):
+    """El límite por IP de las páginas públicas de aceptación vive en memoria del proceso: cada prueba parte de cero (si no, las pruebas de una sola IP se estorban entre sí)."""
+    from app.routers import aceptar
+    from app.ttlcache import SlidingLimiter
+    monkeypatch.setattr(aceptar, "_limiter", SlidingLimiter())
+
+
+@pytest.fixture(autouse=True)
 def _jobs_inline(monkeypatch):
     """En produccion los trabajos en segundo plano los ejecuta un worker; en las pruebas «despertar al worker» los ejecuta en el acto (asi el
     comportamiento visible es el de siempre). Las pruebas de la cola usan `jobs.enqueue`/`run_once` directamente."""
     from app import jobs
-    monkeypatch.setattr(jobs, "kick", lambda: jobs.drain())
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: jobs.drain())
+
+
+@pytest.fixture(autouse=True)
+def _good_face_analysis(monkeypatch):
+    """B2d y la prueba de movimiento miden la cara con dlib (`faces.analyze`). Las imágenes de prueba son cuadros grises: por defecto se simula una selfie buena, de frente;
+    las pruebas de calidad y de movimiento lo cambian."""
+    from app import faces
+    monkeypatch.setattr(faces, "analyze", lambda image, **kw: {"faces": 1, "face_h": 0.5, "yaw": 0.0, "sharp": 100.0, "luma": 120.0, "encoding": [0.0] * 128})
 
 
 @pytest.fixture()
@@ -127,14 +158,17 @@ def outbox(monkeypatch):
     """Correos que la app intentó enviar (no sale nada al exterior)."""
     sent = []
 
-    def fake_send_mail(to, subject, body, attachments=None, html=None):
-        sent.append({"to": to, "subject": subject, "body": body, "html": html})
+    def fake_send_mail(to, subject, body, attachments=None, html=None, reply_to=None):
+        sent.append({"to": to, "subject": subject, "body": body, "html": html, "reply_to": reply_to})
         return {"sent": True, "detail": "prueba"}
 
     monkeypatch.setattr("app.routers.auth.send_mail", fake_send_mail)
     monkeypatch.setattr("app.routers.event_report.send_mail", fake_send_mail)
     monkeypatch.setattr("app.digital_badge.send_mail", fake_send_mail)
     monkeypatch.setattr("app.routers.forms.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.acceptlink.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.acceptmail.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.consent_receipt.send_mail", fake_send_mail)
     return sent
 
 
@@ -212,3 +246,10 @@ def factory(db):
 
 def login(client, username, password=PASSWORD):
     return client.post("/login", data={"username": username, "password": password})
+
+
+def accept(db, ev, uid, adult=True):
+    """La PERSONA aceptó el reconocimiento facial en ese evento (registro en audit_consent_logs): sin esto el reconocimiento no la usa (L1)."""
+    from app import consent
+    consent.record(db, tenant_id=ev.tenant_id, user_id=uid, event_id=ev.id, version="v1.1_test", legal_text_hash="b" * 64, accepted=True, adult=adult, reason="consent")
+    db.commit()

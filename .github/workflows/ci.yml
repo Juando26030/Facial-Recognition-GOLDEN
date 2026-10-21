@@ -31,8 +31,8 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/golden_db
       SECRET_KEY: ci-only-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -40,19 +40,39 @@ jobs:
       - name: "Instalar dependencias (sin dlib/face-recognition; las pruebas usan un doble del motor biométrico)"
         run: |
           grep -viE '^(face[-_]recognition|dlib)' requirements.txt > /tmp/requirements-ci.txt
-          pip install -r /tmp/requirements-ci.txt pytest httpx
+          pip install -r /tmp/requirements-ci.txt pytest httpx pyyaml      # pyyaml: solo lo usa tests/test_cutover_workflows.py (lee los flujos de GitHub); no es dependencia de la app
       - name: Pruebas
         run: python -m pytest -q
+      - name: Pruebas de JS (DOM falso, sin navegador)
+        run: for f in tests/js/*_check.js; do node "$f" || exit 1; done
+
+  image:
+    # Construye la imagen de Cloud Run SIN subirla, en las ramas de trabajo y de la migración: así un error del Dockerfile (p. ej. un comentario al final de una instrucción, que Docker toma como argumentos)
+    # salta aquí y no en pleno despliegue de staging. La compilación de dlib queda en caché de GitHub Actions: después de la primera vez tarda pocos minutos.
+    if: startsWith(github.ref_name, 'integracion/') || startsWith(github.ref_name, 'migra/') || startsWith(github.ref_name, 'producto/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - name: Revisión rápida del Dockerfile (sintaxis y buenas prácticas)
+        run: docker buildx build --check .
+      - name: Construir la imagen (sin subirla)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   lint:
     # Ruff con reglas básicas (ruff.toml) SOLO sobre los archivos .py nuevos o modificados respecto a la base: no se reformatea ni se
     # arregla todo el repo de golpe, pero nada nuevo entra con imports rotos, nombres sin definir o `except:` desnudos.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: pip install ruff

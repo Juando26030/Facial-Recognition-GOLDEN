@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ event.name }} — {{ 'Certificado' if template_kind == 'certificate' else 'Escarapela' }} | Golden Logísticas</title>
+    <title>{{ event.name }} — {{ 'Certificado' if template_kind == 'certificate' else 'Escarapela' }} | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -114,7 +114,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 <main class="golden-main">
   <div class="golden-container" style="max-width: 1400px; padding: 1.5rem;">
     <div class="golden-section-title" style="margin-bottom:1rem;">
-      <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+      <span>{{ company_name|upper }}</span>
       <h2>Diseñador de <span class="gradient-text">{{ 'Certificado' if template_kind == 'certificate' else 'Escarapela' }}</span></h2>
     </div>
 
@@ -260,7 +260,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const extras = {};
     (window.OPTIONAL_VARIABLES || []).forEach(([k]) => { extras[k] = 'Ejemplo'; });
     return {
-      id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'Golden Logísticas',
+      id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'GoldenWeb 2.0',
       role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP',
       extra_fields: extras, has_photo: false,
     };

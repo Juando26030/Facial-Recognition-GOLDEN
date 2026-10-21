@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Reconocimiento facial voluntario</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap">
+<style>
+  /* Mismo estándar visual de las páginas públicas (form_public.html): Montserrat, fondo claro, tarjeta blanca y botones dorados. */
+  :root { --ink:#1b1d2a; --bg:#F4F5F9; --card:#FFFFFF; --muted:#555; --line:#c9ccd6; --gold:#D4AF37; --dark:#0a0e2e; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:'Montserrat', sans-serif; line-height:1.55; padding:24px 14px 50px; box-sizing:border-box; }
+  main { max-width:640px; margin:0 auto; background:var(--card); border-radius:18px; box-shadow:0 6px 24px rgba(10,14,46,.08); padding:22px 20px 28px; }
+  .brand { text-align:center; margin-bottom:6px; }
+  .brand img { max-height:64px; max-width:70%; object-fit:contain; }
+  h1 { font-size:1.3rem; text-align:center; margin:6px 0 14px; color:var(--dark); }
+  label { display:block; font-weight:600; margin:12px 0 4px; }
+  input[type=text], input[type=date] { width:100%; box-sizing:border-box; padding:12px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); font:inherit; font-size:1.05rem; }
+  button { padding:12px 26px; border-radius:26px; border:2px solid var(--gold); font:inherit; font-weight:700; font-size:1rem; cursor:pointer; margin:6px 8px 0 0; }
+  button.primary { background:var(--gold); color:#111; }
+  button.secondary { background:transparent; color:var(--ink); }
+  button[disabled] { opacity:.5; cursor:not-allowed; }
+  .msg { margin-top:16px; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fafbfd; }
+  p.legal { white-space:pre-line; }
+  .check { display:flex; gap:10px; align-items:flex-start; font-weight:600; margin:14px 0; }
+  .check input { width:20px; height:20px; margin-top:2px; }
+  .voluntary { font-weight:700; font-size:1.02rem; background:#fff8e1; border:1px solid #f0d27a; border-radius:10px; padding:10px 12px; margin:14px 0 4px; }
+  .operator { font-size:.8rem; color:var(--muted); margin:10px 0 0; }
+  [hidden] { display:none !important; }          /* sin esto, `.check { display:flex }` mostraba la casilla de mayoría de edad vacía en los eventos propios */
+  .minor h2 { font-size:1.15rem; margin:0 0 8px; color:var(--dark); }
+  .minor .solution { font-weight:700; background:#fff8e1; border:2px solid var(--gold); border-radius:12px; padding:12px 14px; margin:12px 0; }
+  .minor .error { font-size:.9rem; color:var(--muted); margin-top:16px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">{% if logo_url %}<img src="{{ logo_url }}" alt="Logo">{% endif %}</div>
+  <h1>{{ event_name }}</h1>
+  <section id="step1"{% if already %} hidden{% endif %}>
+    <p>Si quieres entrar al evento con reconocimiento facial, completa esto antes de llegar. Es <b>totalmente voluntario</b>: sin hacerlo entras con tu cédula o QR sin ninguna restricción.</p>
+    <label for="cedula">Número de documento</label>
+    <input type="text" id="cedula" inputmode="numeric" autocomplete="off">
+    <div id="birthRow"{% if token %} hidden{% endif %}>
+      <label for="birth">Fecha de nacimiento</label>
+      <input type="date" id="birth">
+    </div>
+    <button type="button" class="primary" id="go">Continuar</button>
+  </section>
+  <section id="step2" hidden>
+    <h2 id="title" style="font-size:1.15rem;"></h2>
+    <div id="body"></div>
+    <label class="check" id="adultRow" hidden><input type="checkbox" id="adult"><span id="adultText"></span></label>
+    <p class="voluntary">Este proceso es 100% voluntario. Si no deseas usar tu rostro, puedes ingresar con tu cédula o QR</p>
+    <button type="button" class="primary" id="yes"></button>
+    <button type="button" class="secondary" id="no"></button>
+    <p class="operator">Tecnología biométrica y tratamiento de datos operados por Golden Eventos y Logística S.A.S.</p>
+  </section>
+  <section id="step3" hidden>
+    <div id="selfieRow">
+      <label>Tu selfie</label>
+      <div id="selfieBox"></div>
+    </div>
+    <button type="button" class="primary" id="send" disabled>Enviar mi selfie</button>
+  </section>
+  <div id="out" class="msg" role="status" aria-live="polite" hidden></div>
+  <section id="minorBox" class="minor" role="status" aria-live="polite" hidden>
+    <h2 id="minorTitle"></h2>
+    <p id="minorReason"></p>
+    <p id="minorSolution" class="solution"></p>
+    <p id="minorError" class="error"></p>
+  </section>
+</main>
+<script src="{{ url_for('static', path='js/photo-capture.js') }}"></script>
+<script>
+(function () {
+  const code = {{ code|tojson }};
+  const token = {{ token|tojson }};
+  const channel = {{ channel|tojson }};
+  const needSelfie = {{ 'true' if need_selfie else 'false' }};
+  const already = {{ already|tojson }};
+  const $ = (id) => document.getElementById(id);
+  let block = null, selfieBlob = null;
+  const showMinor = (m) => {                     // texto de la auditora, en bloques separados
+    ['step1', 'step2', 'step3'].forEach((id) => { $(id).hidden = true; }); $('out').hidden = true;
+    $('minorTitle').textContent = m.title; $('minorReason').textContent = m.reason; $('minorSolution').textContent = m.solution; $('minorError').textContent = m.error;
+    $('minorBox').hidden = false; window.scrollTo(0, 0);
+  };
+  const cap = window.PhotoCapture.mount($('selfieBox'), { onChange: (b) => { selfieBlob = b; $('send').disabled = !b; } });
+  const say = (t, bad) => { const o = $('out'); o.hidden = false; o.textContent = t; o.style.borderColor = bad ? '#c0392b' : ''; };
+  const identity = () => { const fd = new FormData(); if (token) fd.append('token', token); fd.append('cedula', $('cedula').value.trim()); fd.append('birth_date', $('birth').value); return fd; };
+  async function load() {
+    const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/text`, { cache: 'no-store' });
+    if (!r.ok) { say((await r.json().catch(() => ({}))).detail || 'No disponible', true); return null; }
+    return r.json();
+  }
+  if (already) { $('step1').hidden = true; say(already); }          // ya aceptó: solo el estado (el servidor no manda ningún dato personal)
+  // Primero la fecha de nacimiento (menores): antes de ver el texto y, sobre todo, antes de que se abra la cámara.
+  $('go').addEventListener('click', async () => {
+    const needBirth = !$('birthRow').hidden;          // enlace personal: solo la cédula, salvo que la base no tenga la fecha de nacimiento de esa persona
+    if (!$('cedula').value.trim() || (needBirth && !$('birth').value)) return say(needBirth ? 'Escribe tu documento y tu fecha de nacimiento.' : 'Escribe tu número de documento.', true);
+    $('go').disabled = true;
+    try {
+      const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}/check`, { method: 'POST', body: identity() });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return say(j.detail || 'No se pudo comprobar. Intenta de nuevo o ingresa con tu cédula o QR.', true);
+      if (j.status === 'need_birth') { $('birthRow').hidden = false; $('cedula').readOnly = true; return say('Escribe también tu fecha de nacimiento y pulsa «Continuar».'); }
+      if (j.status === 'minor' && j.minor) return showMinor(j.minor);
+      if (j.status === 'minor' || j.status === 'already') { $('step1').hidden = true; return say(j.message); }
+      block = await load(); if (!block) return;
+      $('title').textContent = block.title;
+      const body = $('body'); body.replaceChildren();
+      block.body.forEach((p) => { const e = document.createElement('p'); e.className = 'legal'; e.textContent = p; body.appendChild(e); });
+      $('yes').textContent = block.buttons[0]; $('no').textContent = block.buttons[1];
+      if (block.adult_checkbox) { $('adultRow').hidden = false; $('adultText').textContent = block.adult_checkbox; }
+      $('step1').hidden = true; $('step2').hidden = false; $('out').hidden = true; window.scrollTo(0, 0);
+    } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); }
+    finally { $('go').disabled = false; }
+  });
+  async function send(decision) {
+    const fd = identity();
+    fd.append('channel', channel); fd.append('decision', decision);
+    fd.append('text_hash', block.hash); fd.append('adult', $('adult').checked ? 'true' : 'false');
+    let f = null;
+    if (decision === 'accept' && needSelfie) {
+      f = selfieBlob;
+      if (!f) return say('Falta tu selfie: tómala o súbela y pulsa «Usar esta foto».', true);
+      fd.append('file', f, 'selfie.jpg');
+    }
+    $('yes').disabled = $('no').disabled = $('send').disabled = true;
+    try {
+      const r = await fetch(`/api/aceptar/${encodeURIComponent(code)}`, { method: 'POST', body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.status === 'minor' && j.minor) { cap.reset(); selfieBlob = null; fd.delete('file'); return showMinor(j.minor); }
+      if (r.ok) { $('step2').hidden = true; $('step3').hidden = true; say(j.message || 'Listo.'); cap.reset(); selfieBlob = null; f = null; fd.delete('file'); }          // la foto no queda colgada en la pestaña
+      else { say(j.detail || 'No se pudo completar. Intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }
+    } catch (e) { say('Sin conexión: intenta de nuevo o ingresa con tu cédula o QR.', true); $('yes').disabled = $('no').disabled = $('send').disabled = false; }
+  }
+  // Aceptar primero; la cámara (la selfie) aparece solo después de aceptar.
+  $('yes').addEventListener('click', () => {
+    if (block.adult_checkbox && !$('adult').checked) return say('Marca la declaración de mayoría de edad para continuar.', true);
+    if (needSelfie) { $('step2').hidden = true; $('step3').hidden = false; $('out').hidden = true; window.scrollTo(0, 0); } else send('accept');
+  });
+  $('send').addEventListener('click', () => send('accept'));
+  $('no').addEventListener('click', () => send('reject'));
+})();
+</script>
+</body>
+</html>

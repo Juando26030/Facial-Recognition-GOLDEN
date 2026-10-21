@@ -16,12 +16,12 @@ if MODE not in MODES:
 
 # Rutas de biometría (dlib): viven en routers compartidos, así que se separan por ruta.
 BIOMETRIC_PATHS = {
-    "/api/recognize", "/api/register", "/api/bulk_register", "/api/bulk_jobs/{job_id}",
-    "/api/events/{event_id}/areas/{area_id}/movement-face",
+    "/api/recognize", "/api/door-face", "/api/aceptar/{code}", "/api/register", "/api/bulk_register", "/api/bulk_jobs/{job_id}",
+    "/api/events/{event_id}/areas/{area_id}/movement-face", "/internal/faces/run",      # cola de cálculos faciales (Cloud Tasks → biometría)
 }
 # Rutas públicas (sin sesión): lo que miles de personas abren desde su teléfono.
-PUBLIC_PREFIXES = ("/f/", "/b/", "/c/", "/r/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/api/email-assets/")
-ALWAYS = ("/healthz", "/readyz", "/api/ops/")
+PUBLIC_PREFIXES = ("/f/", "/b/", "/c/", "/r/", "/aceptar/", "/api/aceptar/", "/webhooks/", "/privacidad", "/terminos", "/reembolsos", "/api/email-assets/")
+ALWAYS = ("/health", "/ready", "/api/ops/")          # «/health» y «/ready» cubren también /healthz y /readyz
 
 
 def loads_model() -> bool:

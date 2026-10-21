@@ -10,7 +10,7 @@
 
    QrScanner.open({ title, onCode, cooldownMs })
      Abre la cámara del dispositivo (celular, tablet o computador) y lee QR en vivo. Usa BarcodeDetector si el
-     navegador lo tiene (Chrome/Edge/Android) y, si no, jsQR (se carga bajo demanda). Se queda abierto para
+     navegador lo tiene (Chrome/Edge/Android) y, si no, jsQR (copia propia en /static/vendor/jsqr, se carga bajo demanda). Se queda abierto para
      escanear varias personas seguidas; ignora el mismo código durante `cooldownMs` (3 s por defecto). */
 (function () {
   const NUMERIC_ID = /^\d[\d.\s-]{2,}\d$/;
@@ -30,13 +30,15 @@
     return { cedula, nombres, apellidos, isQr: true };
   }
 
+  // Copia PROPIA de jsQR (static/vendor/jsqr, Apache-2.0): sin CDN, así el escáner de QR por cámara también funciona sin red (el service worker del quiosco la guarda en la primera visita).
+  const JSQR_URL = '/static/vendor/jsqr/jsQR.js?v=1.4.0';
   let jsQrPromise = null;
   function loadJsQr() {
     if (window.jsQR) return Promise.resolve(window.jsQR);
     if (!jsQrPromise) {
       jsQrPromise = new Promise((resolve, reject) => {
         const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+        s.src = JSQR_URL;
         s.onload = () => resolve(window.jsQR);
         s.onerror = () => reject(new Error('No se pudo cargar el lector de QR'));
         document.head.appendChild(s);
@@ -127,6 +129,6 @@
     return { close };
   }
 
-  if (typeof window !== 'undefined') { window.QrCode = { parse }; window.QrScanner = { open }; }
+  if (typeof window !== 'undefined') { window.QrCode = { parse }; window.QrScanner = { open, loadJsQr, JSQR_URL }; }
   if (typeof module !== 'undefined') module.exports = { parse };  // para las pruebas en Node
 })();

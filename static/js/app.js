@@ -46,31 +46,64 @@ document.addEventListener("DOMContentLoaded", () => {
             .then(stream => { video.srcObject = stream; })
             .catch(err => console.error("Sin acceso a cámara", err));
     }
+    function stopCamera() {
+        const stream = video && video.srcObject;
+        if (stream && stream.getTracks) stream.getTracks().forEach((t) => t.stop());
+        if (video) video.srcObject = null;
+    }
+    // Autorización biométrica (L1): la cámara solo se enciende con una aceptación de la PERSONA registrada (static/js/consent-gate.js). Camino 1: cédula/QR primero; camino 2 (eventos con
+    // pre-cálculo autorizado): la pantalla se muestra a quien se acerca y un clic da un token válido para UNA comparación. Tras cada intento la cámara vuelve a apagarse.
+    let clickToken = '';
+    let enrollCedula = '';                                   // camino A: la persona acaba de aceptar y aún no tiene vector: se capta su rostro y el vector se calcula aparte
+    let afterEnroll = () => {};
+    let resetGate = () => {};
     if (video) {
-        const gate = document.getElementById('bioGate');
-        const ackKey = 'bio_ack_' + EVENT_ID;
-        const goCedula = (e) => { if (e) e.preventDefault(); const tab = document.querySelector('.tab[data-tab="directorio"]'); if (tab) tab.click(); };
+        const gate = window.GoldenConsent ? window.GoldenConsent.create({ eventId: EVENT_ID }) : null;
+        const ident = document.getElementById('bioIdent'), identInput = document.getElementById('bioCedula'), identBtn = document.getElementById('bioIdentBtn'), identMsg = document.getElementById('bioIdentMsg');
+        const cameraBox = document.getElementById('cameraBox'), scanBtn = document.getElementById('escanearBtn'), eventOpen = !(scanBtn && scanBtn.disabled);
+        const goCedula = (e, cedula) => {
+            if (e) e.preventDefault();
+            const tab = document.querySelector('.tab[data-tab="directorio"]'); if (tab) tab.click();
+            if (cedula && window.directorySearch && window.directorySearch.submitScannedCedula) window.directorySearch.submitScannedCedula(cedula);
+        };
         const altLink = document.getElementById('bioAltLink');
         if (altLink) altLink.addEventListener('click', goCedula);
-        let acked = false;
-        try { acked = sessionStorage.getItem(ackKey) === '1'; } catch (err) { /* sin almacenamiento: se vuelve a pedir */ }
-        if (acked || !gate) startCamera();
-        else {
-            gate.style.display = 'block';
-            const scanBtn = document.getElementById('escanearBtn'), wasDisabled = !!(scanBtn && scanBtn.disabled);
-            if (scanBtn) scanBtn.disabled = true;
-            document.getElementById('bioGateAccept').addEventListener('click', () => {
-                try { sessionStorage.setItem(ackKey, '1'); } catch (err) { /* opcional */ }
-                gate.style.display = 'none';
-                if (scanBtn) scanBtn.disabled = wasDisabled;      // vuelve a como estaba (deshabilitado si el evento no está en proceso)
-                startCamera();
-            });
-            document.getElementById('bioGateDecline').addEventListener('click', goCedula);
+        const cameraOn = () => { cameraBox.style.display = 'block'; if (scanBtn) scanBtn.disabled = !eventOpen; ident.style.display = 'none'; startCamera(); };
+        const cameraOff = () => { stopCamera(); cameraBox.style.display = 'none'; if (scanBtn) scanBtn.disabled = true; ident.style.display = 'block'; identInput.value = ''; clickToken = ''; };
+        afterEnroll = (cedula) => { cameraOff(); enrollCedula = ''; goCedula(null, cedula); };
+        resetGate = () => { cameraOff(); setTimeout(startClickScreen, 0); };
+        async function startClickScreen() {                      // camino 2: solo si el evento lo tiene autorizado (el servidor lo confirma al pedir el token)
+            if (!gate || !eventOpen) return;
+            const block = await gate.loadBlock();
+            if (!block || !block.click_mode) return;
+            identMsg.textContent = '';
+            const token = await gate.clickFlow();
+            if (token) { clickToken = token; cameraOn(); } else { identMsg.textContent = 'Sin reconocimiento facial: ingresa por cédula o QR.'; }
         }
+        async function identify() {                              // camino 1
+            const cedula = (identInput.value || '').trim();
+            if (!cedula) { identMsg.textContent = 'Escribe o escanea la cédula.'; return; }
+            if (!gate) { goCedula(null, cedula); return; }
+            identBtn.disabled = true; identMsg.textContent = 'Consultando…';
+            try {
+                let next = await gate.ensure(cedula);
+                if (next === 'verify') {                           // camino B: aceptó desde el celular; confirmar identidad en puerta
+                    const okId = await showConfirm('Esta persona aceptó el reconocimiento facial desde su celular. Confirma su identidad con el documento físico o el QR: ¿coincide con quien está en la puerta?');
+                    next = okId && await gate.verify(cedula) ? await gate.ensure(cedula) : 'cedula';
+                }
+                if (next === 'camera') { identMsg.textContent = ''; cameraOn(); }
+                else if (next === 'enroll') { enrollCedula = cedula; identMsg.textContent = ''; cameraOn(); resTexto.innerText = 'Capta el rostro de la persona: hoy ingresa por cédula; desde la próxima entrada, por rostro.'; resTexto.style.color = '#D4AF37'; }
+                else if (next === 'pending') { identMsg.textContent = 'Tu reconocimiento facial se está preparando: hoy ingresa por cédula o QR.'; goCedula(null, cedula); }
+                else { identMsg.textContent = ''; identInput.value = ''; goCedula(null, cedula); }
+            } finally { identBtn.disabled = false; }
+        }
+        if (identBtn) identBtn.addEventListener('click', identify);
+        if (identInput) identInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); identify(); } });
+        cameraOff();
+        startClickScreen();
     }
 
     const escanearBtn = document.getElementById('escanearBtn');
-    const profileCard = document.getElementById('profileCard');
     const resTexto = document.getElementById('resultadoTexto');
     const printScanBtn = document.getElementById('printScanBtn');
 
@@ -86,32 +119,153 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.BadgePrint) BadgePrint.maybeAutoPrint(userId);
     }
 
-    function fillProfileCard(data) {
-        document.getElementById('edit_id').value = data.id || "";
-        document.getElementById('edit_first_name').value = data.first_name || "";
-        document.getElementById('edit_last_name').value = data.last_name || "";
-        document.getElementById('edit_role').value = data.role || "";
-        document.getElementById('edit_entity').value = data.entity || "";
-        document.getElementById('edit_phone').value = data.phone || "";
-        document.getElementById('edit_email').value = data.email || "";
-        document.getElementById('edit_opt_1').value = data.opt_1 || "";
+    // Verificación del operador (docs/14 §6.3). Cada persona se reconoce UNA vez: la respuesta trae un `match_token` firmado y de corta vida con la persona
+    // principal y sus 5 candidatos más cercanos del MISMO cálculo. Con él se piden la foto de registro, la lista «Ver 5 más cercanos» y el registro de quien el
+    // operador elija (modal Editar existente: ahí se corrigen datos o se confirma el ingreso de ESA persona, no la del mejor match). Nada de esto se guarda en el
+    // navegador: las fotos son blobs temporales que se sueltan al cerrar el resultado.
+    const scanResult = document.getElementById('scanResult');
+    const scanEls = scanResult ? {
+        title: document.getElementById('scanTitle'), main: document.getElementById('scanMain'), live: document.getElementById('scanLive'),
+        reg: document.getElementById('scanReg'), regCap: document.getElementById('scanRegCap'), info: document.getElementById('scanInfo'),
+        open: document.getElementById('scanOpenBtn'), more: document.getElementById('scanMoreBtn'), cands: document.getElementById('scanCands'),
+    } : null;
+    let scanToken = null, captureUrl = null, photoUrls = [];
+
+    function hideScanResult() {
+        if (scanResult) scanResult.style.display = 'none';
+        photoUrls.forEach((u) => URL.revokeObjectURL(u));
+        if (captureUrl) URL.revokeObjectURL(captureUrl);
+        photoUrls = []; captureUrl = null; scanToken = null;
+        if (scanEls) { scanEls.cands.replaceChildren(); scanEls.reg.removeAttribute('src'); scanEls.live.removeAttribute('src'); }
     }
 
-    // Sprint 2.2 Fase B (2026-09-16): un match facial ya NO acredita solo — salvo que el evento
-    // tenga "Modo autoregistro" activado, /api/recognize devuelve result:"MATCH_PENDING" (sin
-    // crear ningún log todavía) y hay que guardar el MISMO FormData (con la foto) para poder
-    // reenviarlo con confirm=true cuando el digitador de verdad confirme en "Guardar y Autorizar
-    // Acceso" — reconocer de nuevo desde cero exigiría volver a tomar la foto.
-    let pendingRecognizeFormData = null;
-
-    // Fase 0 de escalabilidad: cada persona se reconoce UNA vez. La respuesta MATCH_PENDING/DUPLICADO trae un `match_token`; para confirmar o forzar se
-    // reenvía ese token EN VEZ de la foto (el servidor no repite el cálculo facial). Sin token (servidor viejo) se reenvía la foto como antes.
-    function useMatchToken(formData, token) {
-        if (!token) return;
-        formData.set('match_token', token);
-        formData.delete('file');
+    function scanForm(extra) {
+        const fd = new FormData();
+        fd.set('event_id', EVENT_ID);
+        fd.set('match_token', scanToken);
+        Object.keys(extra || {}).forEach((k) => fd.set(k, extra[k]));
+        return fd;
     }
 
+    async function loadPhoto(index, img, caption) {
+        try {
+            const res = await fetch('/api/recognize/photo', { method: 'POST', body: scanForm({ index }) });
+            if (!res.ok) { if (caption) caption.textContent = 'Sin foto de registro'; return; }
+            const url = URL.createObjectURL(await res.blob());
+            photoUrls.push(url);
+            img.src = url;
+        } catch (e) { if (caption) caption.textContent = 'No se pudo cargar la foto'; }
+    }
+
+    function confBadge(view) {
+        const b = document.createElement('span');
+        b.className = 'scan-conf scan-conf-' + view.confidence.level;
+        b.textContent = `${view.confidence.label} (${view.distance.toFixed(2)})`;
+        return b;
+    }
+
+    function infoRow(dl, label, value) {
+        const dt = document.createElement('dt'), dd = document.createElement('dd');
+        dt.textContent = label;
+        value instanceof Node ? dd.appendChild(value) : (dd.textContent = value);
+        dl.append(dt, dd);
+    }
+
+    function renderCandidates(list) {
+        scanEls.cands.replaceChildren();
+        if (!list.length) { const p = document.createElement('p'); p.textContent = 'No hay más candidatos en este evento.'; scanEls.cands.appendChild(p); return; }
+        list.forEach((c) => {
+            const row = document.createElement('div');
+            row.className = 'scan-cand' + (c.within_tolerance ? '' : ' out');
+            const img = document.createElement('img'); img.alt = 'Foto de registro del candidato';
+            const who = document.createElement('div'); who.className = 'who';
+            const name = document.createElement('strong'); name.textContent = c.name || '(sin nombre)';
+            const detail = document.createElement('div');
+            detail.textContent = `${c.id}${c.categories.length ? ' · ' + c.categories.join(', ') : ''} · ${c.registered ? 'Ya registrado' : 'No registrado'}`;
+            const conf = document.createElement('div'); conf.appendChild(confBadge(c));
+            if (!c.within_tolerance) { const t = document.createElement('small'); t.textContent = ' Fuera de la tolerancia'; conf.appendChild(t); }
+            who.append(name, detail, conf);
+            const btn = document.createElement('button');
+            btn.type = 'button'; btn.className = 'golden-btn scan-pick'; btn.dataset.index = c.index; btn.style.cssText = 'width:auto; padding:6px 12px;';
+            btn.textContent = 'Abrir registro';
+            row.append(img, who, btn);
+            scanEls.cands.appendChild(row);
+            loadPhoto(c.index, img, null);            // las fotos de los candidatos se piden solo ahora, al mostrar la lista
+        });
+    }
+
+    async function showCandidates(btn) {
+        if (btn) btn.disabled = true;
+        try {
+            const res = await fetch('/api/recognize/candidates', { method: 'POST', body: scanForm() });
+            const data = await res.json();
+            if (!res.ok) { showToast(data.detail || 'No se pudieron cargar los candidatos', 'error'); return; }
+            renderCandidates(data.candidates);
+        } catch (e) { showToast('Error de red', 'error'); }
+        if (btn) btn.disabled = false;
+    }
+
+    // Abre el modal Editar de la persona elegida (posición `index` del token); guardar ahí registra el ingreso de ESA persona.
+    async function openPerson(index) {
+        try {
+            const res = await fetch('/api/recognize/person', { method: 'POST', body: scanForm({ index }) });
+            const row = await res.json();
+            if (!res.ok) { showToast(row.detail || 'No se pudo abrir el registro', 'error'); return; }
+            GoldenDirectory.openEdit(row, { method: 'biometrico', onSaved: (id) => {
+                hideScanResult();
+                resTexto.innerText = "✅ ACCESO AUTORIZADO Y GUARDADO";
+                resTexto.style.color = "#28a745";
+                showPrint(id);
+            } });
+        } catch (e) { showToast('Error de red', 'error'); }
+    }
+
+    // «Imprimir» ahí mismo tras guardar. El modal ya dispara la auto-impresión si el evento la tiene (badge-render.js), así que aquí solo se ofrece el botón.
+    function showPrint(userId) {
+        if (!printScanBtn || window.STAFF_ROLE === 'comercial') return;
+        printScanBtn.style.display = 'block';
+        printScanBtn.onclick = () => BadgePrint.openPrintWindow(userId);
+    }
+
+    function showScanResult(data) {
+        if (!scanResult) return;
+        const doubtful = data.result === 'DUDOSO';
+        scanEls.title.textContent = doubtful ? '⚠️ Coincidencia dudosa — elige a la persona'
+            : data.result === 'SÍ' ? '✅ Ingreso registrado automáticamente' : '🟡 Verifica y confirma el ingreso';
+        scanEls.main.style.display = doubtful ? 'none' : 'block';
+        scanEls.cands.replaceChildren();
+        scanEls.more.style.display = data.has_candidates ? 'inline-block' : 'none';
+        scanEls.open.style.display = data.result === 'SÍ' ? 'none' : 'inline-block';
+        if (doubtful) {
+            renderCandidates(data.candidates);
+            const p = document.createElement('p');
+            p.textContent = 'Hay varias personas casi igual de parecidas: no se registra nada solo. Compara las fotos y abre el registro de la correcta.';
+            scanEls.cands.prepend(p);
+        } else {
+            const m = data.match || {};
+            if (captureUrl) scanEls.live.src = captureUrl;
+            scanEls.reg.removeAttribute('src'); scanEls.regCap.textContent = 'Foto de registro';
+            loadPhoto(0, scanEls.reg, scanEls.regCap);
+            scanEls.info.replaceChildren();
+            infoRow(scanEls.info, 'Nombre', `${data.data.first_name || ''} ${data.data.last_name || ''}`.trim());
+            infoRow(scanEls.info, 'Cédula', data.data.id);
+            infoRow(scanEls.info, 'Categoría', (m.categories || []).join(', ') || '—');
+            infoRow(scanEls.info, 'Estado', m.registered || data.result === 'SÍ' ? 'Registrado' : 'No registrado');
+            if (m.confidence) infoRow(scanEls.info, 'Confianza', confBadge(m));
+        }
+        scanResult.style.display = 'flex';
+    }
+
+    if (scanResult) {
+        scanEls.open.addEventListener('click', () => openPerson(0));
+        scanEls.more.addEventListener('click', (e) => showCandidates(e.currentTarget));
+        scanEls.cands.addEventListener('click', (e) => {
+            const btn = e.target.closest('.scan-pick');
+            if (btn) openPerson(Number(btn.dataset.index));
+        });
+    }
+
+    // Fase 0 de escalabilidad: cada persona se reconoce UNA vez; para forzar un duplicado se reenvía el `match_token` EN VEZ de la foto.
     async function submitRecognize(formData) {
         try {
             const res = await fetch('/api/recognize', { method: 'POST', body: formData });
@@ -122,6 +276,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 resTexto.style.color = "#dc3545";
                 return;
             }
+            if (data.match_token) scanToken = data.match_token;
 
             if (data.result === 'DUPLICADO') {
                 resTexto.innerText = "⚠️ Ya registrado(a) en este evento";
@@ -129,30 +284,30 @@ document.addEventListener("DOMContentLoaded", () => {
                 const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
                 if (confirmado) {
                     formData.set('force', 'true');
-                    useMatchToken(formData, data.match_token);
+                    if (data.match_token) { formData.set('match_token', data.match_token); formData.delete('file'); }
                     await submitRecognize(formData);
                 }
                 return;
             }
 
-            if (data.result === 'MATCH_PENDING') {
-                resTexto.innerText = "🟡 Coincidencia encontrada — confirma para autorizar el acceso";
+            if (data.result === 'DUDOSO') {
+                resTexto.innerText = "⚠️ Coincidencia dudosa — verifica quién es";
                 resTexto.style.color = "#f0ad4e";
-                useMatchToken(formData, data.match_token);
-                pendingRecognizeFormData = formData;
-                fillProfileCard(data.data);
-                if (profileCard) profileCard.style.display = 'flex';
+                showScanResult(data);
                 return;
             }
 
-            if(data.result === 'SÍ') {
+            if (data.result === 'MATCH_PENDING') {
+                resTexto.innerText = "🟡 Coincidencia encontrada — compara las fotos y confirma";
+                resTexto.style.color = "#f0ad4e";
+                showScanResult(data);
+                return;
+            }
+
+            if (data.result === 'SÍ') {
                 resTexto.innerText = "✅ IDENTIDAD VALIDADA Y ACCESO AUTORIZADO";
                 resTexto.style.color = "#28a745";
-                pendingRecognizeFormData = null;
-
-                fillProfileCard(data.data);
-
-                if(profileCard) profileCard.style.display = 'flex';
+                showScanResult(data);
                 offerPrint(printScanBtn, data.data.id);
                 if (window.directorySearch) window.directorySearch.reload();
             } else {
@@ -170,9 +325,8 @@ document.addEventListener("DOMContentLoaded", () => {
         escanearBtn.addEventListener('click', () => {
             resTexto.innerText = "Analizando geometría facial...";
             resTexto.style.color = "#D4AF37";
-            if(profileCard) profileCard.style.display = 'none';
+            hideScanResult();
             if(printScanBtn) printScanBtn.style.display = 'none';
-            pendingRecognizeFormData = null;
 
             // Se reduce la foto en el navegador (lado mayor ~640 px, JPEG): pesa ~40 KB en vez de varios MB y el servidor no tiene que reducirla él.
             const MAX_SIDE = 640;
@@ -182,64 +336,20 @@ document.addEventListener("DOMContentLoaded", () => {
             canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
             canvas.toBlob((blob) => {
+                captureUrl = URL.createObjectURL(blob);          // la captura solo vive en memoria, para mostrarla junto a la foto de registro
                 const formData = new FormData();
                 formData.append('file', blob, 'webcam.jpg');
+                if (enrollCedula) {                              // camino A: guardar la captura y encolar el vector; la persona entra YA por cédula (nunca se bloquea la puerta)
+                    const fd = new FormData(); fd.append('user_id', enrollCedula); fd.append('file', blob, 'webcam.jpg');
+                    const who = enrollCedula;
+                    fetch(`/api/events/${EVENT_ID}/enroll-face`, { method: 'POST', body: fd }).then((r) => { resTexto.innerText = r.ok ? '✅ Listo. Hoy ingresa por cédula o QR; tu rostro quedará listo en unos momentos.' : '⚠️ No se pudo guardar el rostro: ingresa por cédula o QR.'; resTexto.style.color = r.ok ? '#28a745' : '#f0ad4e'; }).catch(() => { resTexto.innerText = '⚠️ Sin conexión: ingresa por cédula o QR.'; }).finally(() => afterEnroll(who));
+                    return;
+                }
                 formData.append('event_id', EVENT_ID);
-                submitRecognize(formData);
+                if (clickToken) formData.append('click_token', clickToken);
+                submitRecognize(formData).finally(() => { if (video) resetGate(); });
             }, 'image/jpeg', 0.85);
         });
-    }
-
-    const liveEditForm = document.getElementById('liveEditForm');
-    if(liveEditForm) {
-        liveEditForm.onsubmit = async (e) => {
-            e.preventDefault();
-
-            // El aviso de "sobrescribir datos" solo tiene sentido cuando la persona YA estaba
-            // acreditada de antes (modo autoregistro, o un "SÍ" directo) — si el match está
-            // pendiente, el propio clic en "Guardar y Autorizar Acceso" ES la confirmación.
-            if (!pendingRecognizeFormData) {
-                const autorizacion = await showConfirm("⚠️ ATENCIÓN: Esta persona ya se encuentra registrada en el sistema.<br><br>¿Estás completamente seguro de que deseas sobrescribir sus datos?");
-                if (!autorizacion) return;
-            }
-
-            const btn = e.target.querySelector('button');
-            setButtonLoading(btn, true, "Guardando...");
-
-            try {
-                if (pendingRecognizeFormData) {
-                    pendingRecognizeFormData.set('confirm', 'true');
-                    const confirmRes = await fetch('/api/recognize', { method: 'POST', body: pendingRecognizeFormData });
-                    const confirmData = await confirmRes.json();
-                    if (!confirmRes.ok || confirmData.result !== 'SÍ') {
-                        showToast(confirmData.detail || confirmData.details || "No se pudo autorizar el acceso", "error");
-                        setButtonLoading(btn, false);
-                        return;
-                    }
-                    pendingRecognizeFormData = null;
-                    offerPrint(printScanBtn, confirmData.data.id);
-                }
-
-                const payload = Object.fromEntries(new FormData(e.target).entries());
-                const res = await fetch(withEvent(`/api/users/${payload.id}`), {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if(res.ok) {
-                    showToast("Perfil actualizado y acceso autorizado", "success");
-                    profileCard.style.display = 'none';
-                    resTexto.innerText = "✅ ACCESO AUTORIZADO Y GUARDADO";
-                    resTexto.style.color = "#28a745";
-                    if (window.directorySearch) window.directorySearch.reload();
-                } else {
-                    const errorData = await res.json();
-                    showToast(errorData.error || "No se pudo actualizar", "error");
-                }
-            } catch (err) { showToast("Error de red", "error"); }
-            setButtonLoading(btn, false);
-        };
     }
 
     const regForm = document.getElementById('regForm');
@@ -262,7 +372,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const id = idInput.value.trim();
             siblingBanner.style.display = 'none';
             if (!id) return;
-            const res = await fetch(`/api/users/${encodeURIComponent(id)}/sibling-check?event_id=${EVENT_ID}`);
+            let res;
+            try { res = await fetch(`/api/users/${encodeURIComponent(id)}/sibling-check?event_id=${EVENT_ID}`); } catch (e) { return; }       // sin red: no hay aviso de hermanos
             if (!res.ok) return;
             const data = await res.json();
             if (!data.siblings.length || !data.user) return;
@@ -322,6 +433,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (window.directorySearch) window.directorySearch.reload();
                     if (window.closeRegisterModal) window.closeRegisterModal();
                     if (window.BadgePrint) BadgePrint.maybeAutoPrint(registeredId);
+                    const photoSent = formData.get('file');
+                    if (photoSent && photoSent.size) showPrint(registeredId);      // registro facial nuevo: «Imprimir» ahí mismo (la auto-impresión ya se disparó arriba si el evento la tiene)
                 }
             } catch(err) { showToast("Error de red", "error"); }
         }
@@ -368,8 +481,30 @@ document.addEventListener("DOMContentLoaded", () => {
             const pending = window.getPendingOptionalLabels ? window.getPendingOptionalLabels() : {};
             if (Object.keys(pending).length) formData.append('field_labels', JSON.stringify(pending));
 
+            // SIN RED (modo contingencia + bandeja de salida, B8 R1): la persona se guarda cifrada en este dispositivo, SIN foto, y se envía sola al volver la red.
+            const GCo = window.GoldenContingency && window.GoldenContingency.instance, box = window.GoldenOutbox && window.GoldenOutbox.instance;
+            if (GCo && GCo.active && GCo.active() && box && box.supported) {
+                await queueOffline(formData, box);
+                setButtonLoading(btn, false);
+                return;
+            }
             await submitManualRegister(formData, btn);
             setButtonLoading(btn, false);
         };
+
+        async function queueOffline(formData, box) {
+            const needsSignature = (window.FIELD_CONFIGS || []).filter((c) => c.required && (c.field_type === 'signature' || c.field_type === 'consent'));
+            if (needsSignature.length) { showToast(`Este evento exige ${needsSignature.map((c) => c.label || c.key).join(', ')}: no se puede registrar sin conexión. Espera a que vuelva la red.`, 'error'); return; }
+            const f = {};
+            for (const key of ['id', 'first_name', 'last_name', 'role', 'entity', 'phone', 'email', 'opt_1', 'certificate', 'digital_contact']) { const v = formData.get(key); if (v != null && String(v).trim() !== '') f[key] = String(v).trim(); }
+            for (const key of ['extra_fields', 'categories', 'field_labels']) { const v = formData.get(key); if (v) { try { f[key] = JSON.parse(v); } catch (e) { /* se ignora un JSON roto */ } } }
+            if (!f.id || !f.first_name || !f.last_name) { showToast('Escribe la cédula, los nombres y los apellidos.', 'error'); return; }
+            const photo = formData.get('file');
+            try { await box.enqueue(f, `${f.first_name} ${f.last_name}`); } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); return; }
+            showToast(`Guardado en este dispositivo${photo && photo.size ? ' (la foto no se guarda sin conexión: agrégala después)' : ''}. Se enviará solo al volver la red.`, 'success');
+            regForm.reset();
+            if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
+            if (window.closeRegisterModal) window.closeRegisterModal();
+        }
     }
 });

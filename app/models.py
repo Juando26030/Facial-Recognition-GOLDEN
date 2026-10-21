@@ -1,8 +1,10 @@
 import json
-from sqlalchemy import Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import event as sa_event
+from sqlalchemy import CheckConstraint, Column, Integer, String, DateTime, Date, Boolean, Float, Numeric, ForeignKey, Text, ForeignKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import declarative_base, deferred, relationship
 from app.crypto import EncryptedText
 from datetime import datetime
+from app.timeutil import utcnow
 
 Base = declarative_base()
 
@@ -50,7 +52,10 @@ class User(Base):
     opt_2 = Column(String)  # deprecado (2026-09-20, era "cantidad de empl") — ya no se escribe, reemplazado por extra_fields. Se deja la columna para no perder datos históricos.
     extra_fields = Column(Text)  # JSON {"opcional_1": "valor", ...} — hasta 30 campos dinámicos definidos por el cliente, ver bulk_register en routers/api.py y CLAUDE.md
     face_encoding = deferred(Column(EncryptedText))      # deferred: no se descifra/carga al leer la persona (directorio, cédula...), solo cuando de verdad se pide; cifrado en reposo si hay FACE_ENCRYPTION_KEY (app/crypto.py); el código lo usa en claro
+    birth_date = Column(Date, nullable=True)     # L3: la da la persona (formulario web, alta en el quiosco o columna `fecha_nacimiento` de la carga masiva); decide si puede tener captura biométrica
+    is_biometric_enabled = Column(Boolean, default=True, server_default='true', nullable=False)   # False = menor de 18 años: sin cámara, sin pantalla de autorización, sin vector
     biometric_consent_at = Column(DateTime, nullable=True)      # cuándo se autorizó guardar el rostro (Ley 1581: dato sensible, autorización previa y expresa)
+    face_captured_at = Column(DateTime, nullable=True, index=True)   # cuándo se guardó el rostro (lo estampa el listener de abajo); el tope de BIOMETRIC_MAX_DAYS cuenta desde aquí
     biometric_consent_source = Column(String, nullable=True)    # 'kiosko' (la persona autorizó ante el digitador) | 'carga_masiva' (declaración del organizador) | 'copiado' (heredado de otro evento)
 
     tenant = relationship("Tenant", back_populates="users", overlaps="tenant,users,logs")
@@ -80,7 +85,10 @@ class EventAttendee(Base):
     digital_contact = Column(String, nullable=True)  # ítem 17: correo o teléfono al que se envía la escarapela digital
     digital_token = Column(String, unique=True, nullable=True)  # ítem 17: enlace secreto /b/<token>
     digital_sent_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    accept_token = Column(String, unique=True, nullable=True)       # enlace personal de autorización /aceptar/<código>/<token> (0064): uno por persona y evento, revocable (se vuelve a generar)
+    accept_trusted = Column(Boolean, default=False, server_default='false', nullable=False)   # el enlace salió del listado que cargó el organizador (correo propio): abrirlo verifica la aceptación; si salió de un formulario abierto, no
+    accept_sent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
 
     __table_args__ = (
         ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),
@@ -101,7 +109,7 @@ class AccessLog(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(String, ForeignKey('tenants.id'))
     user_id = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=utcnow)
     record_type = Column(String)
     event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
     registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -132,7 +140,7 @@ class PrintLog(Base):
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
     user_id = Column(String, nullable=False)
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
-    printed_at = Column(DateTime, default=datetime.utcnow)
+    printed_at = Column(DateTime, default=utcnow)
     printed_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     __table_args__ = (
@@ -163,7 +171,7 @@ class CalendarNote(Base):
     text = Column(String, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
     target_staff_ids = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     created_by = relationship("StaffUser")
 
@@ -189,7 +197,7 @@ class StaffUser(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     must_change_password = Column(Boolean, default=False, server_default='false', nullable=False)  # Sprint 4: tras un restablecimiento por un admin/coordinador, en el próximo ingreso debe elegir su propia contraseña
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", remote_side=[id])
@@ -219,9 +227,12 @@ class Event(Base):
     bandana_color = Column(String, nullable=True)  # "Color de pañoleta" (Sprint 2.4 Fase 12, 2026-09-17, pedido explícito) — hex (#rrggbb) elegido con <input type="color"> (gotero incluido); identifica el evento en el Calendario en vez del color por estado
     bandana_color_name = Column(String, nullable=True)  # nombre libre que el cliente/equipo le da a ese color (ej. "Rojo Golden") — el hex por sí solo no dice nada si el equipo usa sus propios nombres
     created_by_id = Column(Integer, ForeignKey('staff_users.id'))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     optional_field_labels = Column(Text)  # JSON {"opcional_1": "Talla de camisa", ...} — nombres que el cliente le dio a las columnas "opcional_N" de SU roster (2026-09-20, ver bulk_register)
     facial_enabled = Column(Boolean, default=False, nullable=False)  # se enciende sola la primera vez que se sube un roster con zip de fotos (ver bulk_register); desde 2026-09-27 coordinador+ también puede prenderla/apagarla a mano en cualquier momento desde Parámetros del Evento (set_facial_enabled) — apagarla no borra ningún rostro ya guardado. Decide si /kiosk/{id}/registro muestra el escáner de cámara o se comporta como cédula tradicional.
+    accept_link_email = Column(Boolean, default=False, server_default='false', nullable=False)   # al inscribirse por formulario se envía el enlace personal de autorización por correo (0064)
+    accept_mail_run = Column(String, nullable=True)     # envío masivo de enlaces personales (0065, app/acceptmail.py): id de la tanda en curso; vacío = detenido o terminado
+    biometrics_locked = Column(Boolean, default=False, server_default='false', nullable=False)   # candado «sin biometría» (0063): el servidor no deja activar el rostro, guardar fotos ni encolar vectores en este evento
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
@@ -230,6 +241,7 @@ class Event(Base):
     digital_badge_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 17: escarapela digital activada desde Parámetros
     areas_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9a: Control de Áreas activado desde Parámetros
     inventory_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 9b: Control de Inventario activado desde Parámetros
+    finalized_at = Column(DateTime, nullable=True)     # cuándo pasó a «finalizado» (lo estampa el listener de abajo; NULL si no lo está): desde aquí corren los BIOMETRIC_RETENTION_DAYS_AFTER_EVENT días
     biometrics_purged_at = Column(DateTime, nullable=True)     # última vez que se borraron los datos biométricos de este evento (privacidad)
     digital_email_subject = Column(String, nullable=True)  # plantilla propia del correo de la escarapela virtual (NULL = la de siempre)
     digital_email_body = Column(Text, nullable=True)       # HTML ya saneado (app/email_template.py)
@@ -242,13 +254,30 @@ class Event(Base):
     badge_per_category = Column(Boolean, default=False, server_default='false', nullable=False)  # False = una plantilla para todas las categorías, True = una por categoría
     logo_path = Column(String, nullable=True)  # archivo del logo propio (solo si logo_mode='custom'), en data/<tenant>/event_logos/
     faces_version = Column(Integer, default=0, server_default='0', nullable=False)  # sube en cada cambio de rostros del evento (app/faces_version.py); el reconocimiento recarga su matriz en memoria cuando cambia
+    state_id = Column(Integer, ForeignKey('event_states.id'), nullable=True)  # estado configurable (docs/18): sus reglas mandan; `status` sigue siendo el estado BASE con el que se comporta (creado | en_proceso | finalizado)
+    directory_page_size = Column(Integer, default=50, server_default='50', nullable=False)  # filas por página de la tabla del directorio (en vivo y lista local); 10, 20, 50, 100 o 200 (Parámetros del evento)
+    controller_mode = Column(String, default='golden', server_default='golden', nullable=False)   # L1: 'golden' (evento propio, Golden = Responsable único) | 'tercero' (Golden = Encargado); decide la variante del texto de autorización
+    organizer_name = Column(String, nullable=True)            # razón social del organizador (obligatoria si controller_mode='tercero')
+    organizer_nit = Column(String, nullable=True)
+    organizer_privacy_email = Column(String, nullable=True)   # correo del organizador para consultas y revocación
+    consent_prompt_mode = Column(String, default='once', server_default='once', nullable=False)   # 'once' (una vez por persona y evento) | 'every_scan' (botones cortos antes de cada uso)
+    aceptar_enabled = Column(Boolean, default=False, server_default='false', nullable=False)   # camino B: página pública /aceptar/<código del evento> para aceptar y dar la selfie desde el celular
+    client_photos_before = Column(Boolean, default=False, server_default='false', nullable=False)   # el cliente entregará fotos de los asistentes ANTES del evento (paso guiado de biometría)
+    precalculo_garantia = Column(Boolean, default=False, server_default='false', nullable=False)   # casilla de garantía del cliente (declaraciones, garantías e indemnidad), exigida para el pre-cálculo
+    precalculo_autorizado = Column(Boolean, default=False, server_default='false', nullable=False)   # regla A: solo super_admin, solo evento de tercero, con la referencia y fecha del anexo firmado
+    precalculo_anexo_ref = Column(String, nullable=True)
+    precalculo_anexo_fecha = Column(Date, nullable=True)
     auto_register = Column(Boolean, default=False, nullable=False)  # 2026-09-16 (Sprint 2.2, Fase B): mismo criterio que auto_print_badge, pero para el registro en sí. Apagado por default: un match (facial o cédula, cualquier método) NO acredita solo — solo deja el match "pendiente" (result=MATCH_PENDING) hasta que el digitador confirme con "Guardar y autorizar acceso". Prendido, un match acredita de una, como se comportaba todo antes de este cambio.
+    face_door_enabled = Column(Boolean, default=False, server_default='false', nullable=False)
+    face_door_liveness = Column(Boolean, default=True, server_default='true', nullable=False)   # 0068: prueba de movimiento en la entrada con rostro (app/liveness.py); encendida por defecto
+    badge_bio_photo_allowed = Column(Boolean, default=False, server_default='false', nullable=False)   # A1 (0067): imprimir la foto BIOMÉTRICA en la escarapela; apagado = no se imprime (recuadro gris). Solo super_admin   # B1 (0066): pantalla de autoservicio «Entrar con mi rostro» (app/routers/door.py); apagada por defecto
 
     tenant = relationship("Tenant")
     created_by = relationship("StaffUser", foreign_keys=[created_by_id])
     coordinator = relationship("StaffUser", foreign_keys=[coordinator_staff_id])
     commercial = relationship("StaffUser", foreign_keys=[commercial_staff_id])
     super_event = relationship("SuperEvent", back_populates="events")
+    state = relationship("EventState")
 
     def get_optional_labels(self) -> dict:
         return json.loads(self.optional_field_labels) if self.optional_field_labels else {}
@@ -263,6 +292,24 @@ class Event(Base):
         self.categories = json.dumps(data) if data else None
 
 
+class EventState(Base):
+    """Estado de evento CONFIGURABLE (docs/18 §4): el administrador crea los que quiera y a cada uno le adjunta reglas (qué se habilita mientras un evento está en él). `base_status` es el
+    estado clásico con el que el sistema sigue decidiendo lo demás (retención biométrica, «registrar solo en proceso»…): creado | en_proceso | finalizado. `rules_json` = {regla: bool}
+    (ver app/event_rules.py); una regla ausente toma el valor por defecto de su estado base."""
+    __tablename__ = 'event_states'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    base_status = Column(String, nullable=False)
+    color = Column(String, nullable=True)
+    position = Column(Integer, nullable=False, default=0, server_default='0')
+    is_active = Column(Boolean, nullable=False, default=True, server_default='true')
+    rules_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    def get_rules(self) -> dict:
+        return json.loads(self.rules_json) if self.rules_json else {}
+
+
 class EventStaffAuthorization(Base):
     """Qué staff_user puede operar en qué evento. Obligatorio para digitadores (acceso temporal);
     para coordinador/admin/super_admin no se exige (tienen alcance de tenant/global)."""
@@ -271,7 +318,7 @@ class EventStaffAuthorization(Base):
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     staff_user_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False)
     authorized_by_id = Column(Integer, ForeignKey('staff_users.id'))
-    authorized_at = Column(DateTime, default=datetime.utcnow)
+    authorized_at = Column(DateTime, default=utcnow)
 
     __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_event_staff'),)
 
@@ -300,8 +347,8 @@ class BadgeTemplate(Base):
     background_value = Column(String)  # color hex (#RRGGBB), o el path que devuelve /api/badge-assets al subir una imagen
     elements_json = Column(Text)  # JSON: lista ordenada (por z_index) de elementos — ver CLAUDE.md para el shape de cada tipo
     imported_from_saved_template_id = Column(Integer, ForeignKey('saved_badge_templates.id'), nullable=True)  # solo trazabilidad ("de dónde vino"), no un vínculo vivo
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (UniqueConstraint('event_id', 'category', 'kind', name='uq_badge_template_event_category_kind'),)
 
@@ -344,8 +391,8 @@ class EventFieldConfig(Base):
     label = Column(String, nullable=True)  # nombre a mostrar SOLO en este evento (NULL = el de por defecto) — reunión 2026-09-21, ítem 3a
     sort_order = Column(Integer, nullable=True)  # posición en Registrar/Editar (NULL = orden por defecto) — ítem 4
     help_text = Column(Text, nullable=True)  # texto de política/consentimiento (solo consent/signature) — ítems 16 y 10
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (UniqueConstraint('event_id', 'field_key', name='uq_event_field_config'),)
 
@@ -373,8 +420,8 @@ class SavedBadgeTemplate(Base):
     background_type = Column(String, nullable=False, default='color')
     background_value = Column(String)
     elements_json = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     tenant = relationship("Tenant")
 
@@ -400,9 +447,10 @@ class BulkJob(Base):
     result_json = Column(Text, nullable=True)
     error_status = Column(Integer, nullable=True)
     error_detail = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
     finished_at = Column(DateTime, nullable=True)
+    spec_json = Column(Text, nullable=True)       # carga ejecutada por un Cloud Run Job: qué procesar (ver app/bulk_runner.py)
 
 
 class WebForm(Base):
@@ -424,8 +472,8 @@ class WebForm(Base):
     test_key = Column(String, nullable=False)     # clave del enlace de pruebas (?k=...)
     fed_at = Column(DateTime, nullable=True)      # cuándo se cargaron a la base las inscripciones (modo "al cerrar")
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (UniqueConstraint('event_id', 'slug', name='uq_web_form_event_slug'),)
 
@@ -450,7 +498,7 @@ class FormSubmission(Base):
     status = Column(String, nullable=False, default='confirmed', server_default='confirmed')
     quota_keys = Column(Text, nullable=True)   # `|firma|firma|` de los cupos por variables que esta inscripción cumple (se cuentan en SQL, sin leer el JSON de todas)
     discount_code_id = Column(Integer, ForeignKey('form_discount_codes.id'), nullable=True)   # código de descuento con el que se inscribió (cuenta como un uso)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class FormDiscountCode(Base):
@@ -463,7 +511,7 @@ class FormDiscountCode(Base):
     discount_id = Column(String, nullable=False)
     code = Column(String, nullable=False)          # siempre en MAYÚSCULAS y sin espacios
     max_uses = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class FormPayment(Base):
@@ -485,8 +533,8 @@ class FormPayment(Base):
     breakdown_json = Column(Text, nullable=True)                 # monto base, reglas y descuentos aplicados
     person_id = Column(String, nullable=True)
     payer_email = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     confirmed_at = Column(DateTime, nullable=True)
     refunded_cents = Column(Integer, nullable=False, default=0, server_default='0')   # suma de reembolsos HECHOS (done)
 
@@ -507,7 +555,7 @@ class FormRefund(Base):
     cancel_registration = Column(Boolean, nullable=False, default=True)   # al completarse, la inscripción queda cancelada (libera el cupo)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)   # NULL = lo registró el webhook (anulada desde el panel de Wompi)
     wompi_response = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     done_at = Column(DateTime, nullable=True)
 
 
@@ -520,7 +568,7 @@ class FormEvent(Base):
     kind = Column(String, nullable=False)
     source = Column(String, nullable=True)
     is_test = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class FormInvite(Base):
@@ -533,7 +581,7 @@ class FormInvite(Base):
     email = Column(String, nullable=True)
     sent_at = Column(DateTime, nullable=True)
     used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     __table_args__ = (UniqueConstraint('form_id', 'person_id', name='uq_form_invite_person'),)
 
@@ -556,7 +604,7 @@ class SavedFormTemplate(Base):
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
     name = Column(String, nullable=False)
     design_json = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class RouletteConfig(Base):
@@ -569,7 +617,7 @@ class RouletteConfig(Base):
     style_json = Column(Text, nullable=True)
     display_token = Column(String, unique=True, nullable=True)
     authorized_json = Column(Text, nullable=True)   # {"label", "by", "at"}: el operador AUTORIZÓ un giro; el botón de la pantalla pública lo consume
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class RouletteDraw(Base):
@@ -584,7 +632,7 @@ class RouletteDraw(Base):
     filter_json = Column(Text, nullable=True)
     winners_json = Column(Text, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class RateLimitEvent(Base):
@@ -596,7 +644,7 @@ class RateLimitEvent(Base):
     kind = Column(String, nullable=False)
     key = Column(String, nullable=False)
     ip = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 class PasswordResetToken(Base):
@@ -608,7 +656,7 @@ class PasswordResetToken(Base):
     token_hash = Column(String, nullable=False, unique=True)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class SavedColor(Base):
@@ -620,7 +668,7 @@ class SavedColor(Base):
     name = Column(String, nullable=False, unique=True)
     hex = Column(String, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class EventDocument(Base):
@@ -636,7 +684,7 @@ class EventDocument(Base):
     mime_type = Column(String, nullable=True)
     size_bytes = Column(Integer, nullable=True)
     uploaded_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class EventExpense(Base):
@@ -653,7 +701,7 @@ class EventExpense(Base):
     evidence_path = Column(String, nullable=True)
     evidence_name = Column(String, nullable=True)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class SuperEvent(Base):
@@ -664,7 +712,7 @@ class SuperEvent(Base):
     tenant_id = Column(String, ForeignKey('tenants.id'), nullable=False)
     name = Column(String, nullable=False)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     events = relationship("Event", back_populates="super_event")
 
@@ -677,7 +725,7 @@ class EventArea(Base):
     event_id = Column(Integer, ForeignKey('events.id'), nullable=False)
     name = Column(String, nullable=False)
     allow_reentry = Column(Boolean, default=True, server_default='true', nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class AreaMovement(Base):
@@ -690,7 +738,7 @@ class AreaMovement(Base):
     tenant_id = Column(String, nullable=False)
     direction = Column(String, nullable=False)  # 'in' | 'out'
     method = Column(String, nullable=True)  # 'cedula' | 'qr' | 'facial' | 'manual'
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=utcnow)
     registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)
@@ -704,7 +752,7 @@ class InventoryItem(Base):
     name = Column(String, nullable=False)
     initial_qty = Column(Integer, nullable=False, default=0)
     allow_multiple = Column(Boolean, default=False, server_default='false', nullable=False)  # ¿se pueden entregar varias unidades de una vez?
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class InventoryDelivery(Base):
@@ -717,7 +765,7 @@ class InventoryDelivery(Base):
     user_id = Column(String, nullable=False)
     tenant_id = Column(String, nullable=False)
     qty = Column(Integer, nullable=False, default=1)
-    delivered_at = Column(DateTime, default=datetime.utcnow)
+    delivered_at = Column(DateTime, default=utcnow)
     delivered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
 
     __table_args__ = (ForeignKeyConstraint(['user_id', 'tenant_id'], ['users.id', 'users.tenant_id']),)
@@ -733,10 +781,10 @@ class Job(Base):
     status = Column(String, nullable=False, default='queued', server_default='queued')   # queued | running | done | failed
     attempts = Column(Integer, nullable=False, default=0, server_default='0')
     max_attempts = Column(Integer, nullable=False, default=5, server_default='5')
-    run_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    run_at = Column(DateTime, nullable=False, default=utcnow)
     locked_until = Column(DateTime, nullable=True)
     last_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
     finished_at = Column(DateTime, nullable=True)
 
 
@@ -747,4 +795,123 @@ class SystemEvent(Base):
     kind = Column(String, nullable=False)
     ref = Column(String, nullable=True)
     detail = Column(Text, nullable=True)
-    at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class PrivacyRequestCounter(Base):
+    """Último consecutivo de radicado por año (app/privacy_requests.py: next_radicado)."""
+    __tablename__ = 'privacy_request_counters'
+    year = Column(Integer, primary_key=True)
+    last = Column(Integer, nullable=False, default=0, server_default='0')
+
+
+class PrivacyRequest(Base):
+    """Solicitud de privacidad (consulta o reclamo de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles, estado y bandera «reclamo en trámite» (migración 0061). Sin llaves foráneas."""
+    __tablename__ = 'privacy_requests'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    radicado = Column(String(16), nullable=False, unique=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    channel = Column(String(20), nullable=False)
+    holder_name = Column(String, nullable=False)
+    cedula = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, nullable=True)
+    event_id = Column(Integer, nullable=True)
+    request_type = Column(String(24), nullable=False)
+    due_date = Column(Date, nullable=False)
+    status = Column(String(16), nullable=False, default='recibida', server_default='recibida')
+    claim_flag = Column(Boolean, nullable=False, default=False, server_default='false')
+    claim_flag_due = Column(Date, nullable=True)
+    history_json = Column(Text, nullable=True)
+    created_by_staff_id = Column(Integer, nullable=True)
+
+
+class SuppressedPerson(Base):
+    """Huella de la cédula de quien pidió la supresión total (L4): evita volver a crearla por error. Sin datos personales."""
+    __tablename__ = 'suppressed_people'
+    tenant_id = Column(String, primary_key=True)
+    cedula_hash = Column(String(64), primary_key=True)
+    suppressed_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class WebAcceptance(Base):
+    """Aceptación hecha desde /aceptar (celular): vale para el reconocimiento facial solo cuando el personal confirma la identidad en puerta (`verified_at`)."""
+    __tablename__ = 'web_acceptances'
+    tenant_id = Column(String, primary_key=True)
+    user_id = Column(String, primary_key=True)
+    event_id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    verified_at = Column(DateTime, nullable=True)
+    verified_by_staff_id = Column(Integer, nullable=True)
+    verified_via = Column(String(12), nullable=True)      # 'staff' (en la puerta) | 'link' (abrió su enlace personal: dueño del correo)
+
+
+class AuditConsentLog(Base):
+    """Prueba inmutable de la autorización biométrica (migración 0054): solo INSERT (disparador + REVOKE al rol de la app), SIN llaves foráneas, 3 años mínimo, ninguna purga la toca.
+    Nada en el código la modifica ni la borra; la lectura es solo para super_admin y fuera de la interfaz (ver app/consent.py y scripts/export_consent_logs.py)."""
+    __tablename__ = 'audit_consent_logs'
+    id = Column(String(36), primary_key=True)       # lo genera el dispositivo: un reintento sin conexión no duplica
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    cedula_hash = Column(String(64), nullable=False)
+    event_id = Column(Integer, nullable=False)
+    consent_timestamp_utc = Column(DateTime(timezone=True), nullable=False)
+    consent_version = Column(String(40), nullable=False)
+    legal_text_hash = Column(String(64), nullable=False)
+    accepted_biometric = Column(Boolean, nullable=False)
+    confirmed_adult = Column(Boolean, nullable=False)
+    ip_or_device_id = Column(String, nullable=True)
+    reason = Column(String(20), nullable=False)
+    __table_args__ = (CheckConstraint("reason IN ('consent', 'rejection', 'revocation')", name="ck_audit_consent_reason"),)
+
+
+class PersonChange(Base):
+    """Cambios manuales sobre una persona en un evento, con quién y cuándo (migración 0062): `kind='registration_status'` (valores «Registrado» / «No registrado»; `detail` = cuántos accesos se
+    borraron al deshacer) y `kind='birth_date'` (fechas). Sin llaves foráneas. Al suprimir a la persona, los de estado se anonimizan (`user_id` NULL) y los de fecha de nacimiento se borran."""
+    __tablename__ = 'person_changes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, nullable=False, default=utcnow)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, nullable=False)
+    user_id = Column(String, nullable=True)
+    staff_user_id = Column(Integer, nullable=True)
+    kind = Column(String(24), nullable=False)
+    old_value = Column(String, nullable=True)
+    new_value = Column(String, nullable=True)
+    detail = Column(String, nullable=True)
+
+
+class AcceptMailLog(Base):
+    """Registro de cada envío del enlace personal de autorización (migración 0065, app/acceptmail.py): quién (cédula), cuándo y con qué resultado. SIN IP ni User-Agent (decisión de la auditora).
+    `kind`: bulk (envío masivo) | test (envío de prueba, sin persona) | export (descarga de enlaces) | control (inicio/parada/fin de una tanda). `result`: reserving (reservado, aún sin respuesta)
+    | sent | failed | unknown (se reservó y el proceso se cayó: NO se reenvía solo) | start | stop | done. Sin llaves foráneas; al suprimir a la persona `user_id` queda en NULL."""
+    __tablename__ = 'accept_mail_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, nullable=False, default=utcnow)
+    tenant_id = Column(String, nullable=False)
+    event_id = Column(Integer, nullable=False)
+    user_id = Column(String, nullable=True)
+    staff_user_id = Column(Integer, nullable=True)
+    kind = Column(String(8), nullable=False)
+    result = Column(String(10), nullable=False)
+    run_id = Column(String, nullable=True)
+    detail = Column(String, nullable=True)
+
+
+# ------------------------------------------------------------------ relojes de la retención biométrica (app/privacy.py)
+@sa_event.listens_for(Event.status, "set", active_history=True)     # active_history: carga el valor anterior aunque la instancia esté expirada
+def _stamp_finalized(target, value, oldvalue, initiator):
+    """`finalized_at` se estampa al pasar a «finalizado» y se limpia al reabrir (el reloj de los 7 días se reinicia)."""
+    if value == oldvalue:
+        return
+    if value == "finalizado":
+        target.finalized_at = utcnow()
+    elif oldvalue == "finalizado":
+        target.finalized_at = None
+
+
+@sa_event.listens_for(User.face_encoding, "set")
+def _stamp_face_captured(target, value, oldvalue, initiator):
+    """`face_captured_at` = cuándo se guardó el rostro (un rostro repetido idéntico no reinicia el reloj del tope)."""
+    if value and value == oldvalue:
+        return
+    target.face_captured_at = utcnow() if value else None

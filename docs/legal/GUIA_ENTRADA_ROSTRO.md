@@ -1,0 +1,88 @@
+# Guía no técnica: «Entrar con mi rostro» (B1, autoservicio en la puerta)
+
+**Qué es.** Una pantalla en la puerta con un botón grande **«Entrar con mi rostro»** y, debajo, **«Ingresar con cédula o QR»**. La **persona** pulsa el botón, mira a la cámara 3 segundos y:
+- si el sistema la reconoce **con claridad**, su ingreso queda registrado **solo** («¡Listo! Tu ingreso quedó registrado.»);
+- si no, ve «No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR.» (texto de la auditora) y entra por cédula o QR.
+
+**Quién se reconoce.** Solo quien **aceptó** el reconocimiento facial en ese evento (y, si aceptó desde el celular, ya quedó **verificada**). Los menores y quienes no aceptaron **nunca** se comparan.
+
+**Qué se guarda.** Solo el registro de ingreso normal (con «Rostro (autoservicio)» como forma de registro). La foto de la cámara **no se guarda**: vive solo mientras se compara. El contador guarda **solo números** (intentos, coincidencias, sin coincidencia, distancia y margen), nunca la cédula, el nombre ni la imagen.
+
+**«Coincidencia clara»** = distancia **≤ 0,50** al más parecido **y** al menos **0,06** de diferencia con el segundo más parecido. El 0,50 se calibra con la prueba de la sección 4.
+
+---
+
+## 1. Activarla en un evento
+1. Evento → **Parámetros** → paso guiado de biometría: reconocimiento facial activo, sin candado.
+2. Marca **«Entrada con rostro en autoservicio»** → **Guardar y revisar**. *Debes ver:* «Guardado».
+3. En el equipo de la puerta (tablet o portátil con cámara), entra con una cuenta del personal (digitador o superior) y abre `/kiosk/<número del evento>/rostro` (el enlace sale junto a la casilla). *Debes ver:* el nombre del evento, el botón «Entrar con mi rostro» y, debajo, «Ingresar con cédula o QR».
+4. El evento debe estar **en proceso**; si no, la pantalla responde que no se puede registrar.
+
+## 2. Supervisión (sin hacer clic)
+En la pantalla de **Registro** del evento aparece la franja **«Entradas con rostro (autoservicio)»** con las últimas 5 entradas: **foto de registro**, nombre y hora, y un contador (intentos, coincidencias, sin coincidencia, revertidas). Se actualiza sola cada 3 segundos.
+- Si una entrada **no cuadra** (la foto no es la persona que entró): **Revisar** → confirmar. *Debes ver:* «Entrada revertida»; la persona queda como no registrada y debe entrar con cédula o QR. Queda en el rastro de cambios (quién y cuándo).
+
+## 3. Reglas que el sistema cumple solo
+- **Sin conexión** (o con el modo contingencia del quiosco activo) el botón «Entrar con mi rostro» **desaparece**; «Ingresar con cédula o QR» queda **siempre**.
+- **Límite por persona, no por equipo:** si alguien no es reconocido **2 veces seguidas**, la pantalla muestra «No te encontramos… dirígete a la acreditación con tu cédula o QR» y **se reinicia sola** a los pocos segundos para la siguiente persona. Solo hay un tope alto por equipo contra abuso (30 intentos por minuto). No se guarda IP.
+- Si alguien **ya había entrado**, no se duplica: la pantalla dice «Ya habías ingresado» (sin nombre) y en la franja del personal esa línea aparece marcada **«ya había entrado»** (con su foto de registro, sin botón de revertir).
+- **Aviso en Parámetros:** mientras no exista la prueba de vida (prueba de movimiento), con la entrada con rostro encendida aparece «⚠️ Sin prueba de vida: requiere supervisión constante». Una foto o una pantalla frente a la cámara **puede pasar**: el personal debe mirar la franja todo el tiempo.
+- La pantalla pública **no muestra el nombre** de nadie.
+- Nada de esto funciona si el evento tiene el candado biométrico o el rostro apagado.
+
+## 4. Prueba guiada de calibración (en STAGING, con voluntarios)
+**Objetivo:** confirmar que con **0,50** entran solas las personas correctas y **nunca** una persona equivocada. **No deja fotos guardadas**: solo números.
+
+**Preparar (30 min).**
+- Un evento de prueba propio de Golden, en proceso, con rostro activo y «Entrada con rostro» marcada.
+- **12 voluntarios inscritos** que **aceptan** con selfie desde su enlace (idealmente: 2 con gafas, 2 parecidos entre sí o familiares, distintas edades y tonos de piel).
+- **5 voluntarios NO inscritos** (o inscritos que **no** aceptan): son los «impostores».
+- La tablet o el portátil **en el sitio y con la luz reales** de la puerta (o lo más parecido).
+
+**Correr (45 min).**
+1. Cada uno de los 12 inscritos hace **5 intentos** (de frente; uno con gafas o gorra si las usa; uno algo de lado; uno a contraluz si la puerta lo tiene). Entre intentos de la misma persona, el personal pulsa **Revisar** en la franja para dejarla otra vez como no registrada.
+2. Cada uno de los 5 impostores hace **3 intentos**.
+3. Pareja de parecidos: cada uno intenta 3 veces y se anota si alguna vez entró **el otro**.
+
+**Anotar (planilla en papel, sin fotos):** por intento → persona (código V01…V17, no el nombre), si quedó **dentro** o **no encontrado**, y si la franja mostró **a la persona correcta**.
+
+**Leer el resultado.** Al final, `GET /api/events/<número>/door-face/stats` (o el contador de la franja) da intentos, coincidencias y las **distancias** de cada intento (solo números). Envíame la planilla y esos números.
+- **Debe ser cero:** impostores que entraron y entradas de la persona equivocada. Si hay **uno solo**, bajamos el umbral (p. ej. 0,45) y repetimos.
+- **Deseable:** que al menos 4 de cada 5 intentos de inscritos entren solos. Si muchos quedan «no encontrado» con distancias entre 0,50 y 0,55, se puede subir un poco el umbral, pero **solo** si los impostores siguen en cero.
+- El umbral se cambia sin programar, con la variable `DOOR_AUTO_MAX_DIST` (la ajusto yo en la configuración y se despliega con tu orden).
+
+**Al terminar:** borra el evento de prueba y las personas (sección 9 de la guía de staging) y pide a los voluntarios que, si quieren, revoquen su autorización.
+
+## 5. Sin prueba de vida: regla del día del evento
+**Decisión del dueño del producto (16 de octubre de 2026):** la puerta de autoservicio **no** tiene prueba de movimiento. La validación la hace **la persona del equipo que supervisa**.
+
+> **REGLA DEL DÍA DEL EVENTO: SIEMPRE UNA PERSONA FRENTE A LA PANTALLA DE LA PUERTA.**
+> Mientras la entrada con rostro esté encendida, alguien del equipo mira la **franja de supervisión** (foto de registro, nombre y hora de cada entrada) y pulsa **«Revisar»** si la foto no es quien acaba de entrar. Una **foto o una pantalla frente a la cámara puede pasar**.
+
+En Parámetros, con la entrada con rostro encendida, queda el aviso «⚠️ Sin prueba de vida: requiere supervisión constante». (La migración 0068 y su columna quedan sin uso; ya no hay ninguna casilla de prueba de movimiento.)
+
+## 6. Cambios tras la prueba del 16 de octubre
+- **Sin conexión, con la pantalla abierta:** la pantalla consulta al servidor cada 4 segundos. Si no responde (o falla cualquier petición), el botón «Entrar con mi rostro» **desaparece** y queda «Ingresar con cédula o QR»; vuelve solo cuando el servidor responde otra vez. *Prueba:* abre la pantalla, apaga el wifi y espera unos 5 segundos → el botón desaparece; enciéndelo → vuelve.
+- **Después de «Revisar»:** revertir anula **solo esa entrada**. Si la persona sigue aceptada, puede volver a entrar por rostro; esa nueva entrada sale en la franja marcada en rojo **«entrada tras reversión»** para que la mires. (En el código no había nada que la bloqueara; si en tu prueba no la reconoció, lo más probable es que su distancia quedara por encima de 0,50 en ese intento: mira las distancias del contador.)
+- **Autoimpresión:** si el evento tiene la autoimpresión activada, al entrar por rostro se abre la escarapela para imprimir, igual que con cédula. En el equipo de la puerta **permite las ventanas emergentes** del sitio (el navegador lo pregunta la primera vez). La foto biométrica de la escarapela sigue en blanco mientras su interruptor esté apagado.
+- **Desde Registro:** en la pestaña «Escáner de Acceso» hay un interruptor «Pantalla de autoservicio «Entrar con mi rostro»» (solo si el evento tiene la entrada con rostro activada) que abre esta pantalla.
+- **Diseño:** fondo blanco con detalles azules y dorados, botones grandes, legible a distancia.
+
+## 7. Recargar la pantalla de la puerta SIN red (modo contingencia)
+**Qué hace.** Con el **modo contingencia encendido en el servidor**, el equipo guarda la pantalla de la puerta y la de **Registro** (con sus archivos). Si la pantalla se recarga sin red, **abre igual** (sin pantalla en blanco) y, al ver que no hay conexión, oculta «Entrar con mi rostro» y deja el botón **«Ingresar con cédula o QR (sin conexión)»**, que lleva a **Registro**, donde se acredita por cédula o QR con la **lista guardada en el equipo** (sin red).
+
+**Importante:** esto **solo funciona si el modo contingencia está encendido** (en staging sí; en producción sigue **apagado** hasta tu orden escrita). Con la contingencia apagada, esta pantalla **no** se guarda y sin red no abre.
+
+**Preparar el equipo (una vez, CON conexión):**
+1. Entra con el usuario del personal y abre **`/kiosk/<evento>/registro`** y espera a que cargue la lista (el sistema guarda la copia local de la lista de personas).
+2. Abre **`/kiosk/<evento>/rostro`** y déjala unos segundos: guarda esta pantalla y los archivos de Registro.
+3. (iPad/tablet) Instálala como app («Agregar a pantalla de inicio») si así la vas a usar.
+
+**Qué probar (del 21 al 23, en cada equipo real: portátil, iPad instalado, Android):**
+1. Con la pantalla de la puerta abierta, apaga el wifi. *Debes ver:* en unos 5 segundos el botón de rostro desaparece, aparece el aviso «Sin conexión…» y el botón «Ingresar con cédula o QR (sin conexión)».
+2. **Recarga** la página sin red (F5 o cierra y abre). *Debes ver:* la pantalla **abre** (no queda en blanco ni da error).
+3. Pulsa «Ingresar con cédula o QR (sin conexión)». *Debes ver:* Registro abierto; busca una cédula y acredítala con la lista local. Verifica que aparezca la franja o marca de modo contingencia.
+4. Enciende el wifi y recarga. *Debes ver:* vuelve «Entrar con mi rostro» y, en Registro, la cola de acreditaciones sin red se envía sola.
+5. Anota cualquier equipo donde el paso 2 dé pantalla en blanco (marca, modelo y navegador): en Safari puede variar.
+
+**Qué NO cubre:** el escáner de QR con cámara en iPad usa una pieza que se descarga la primera vez que se abre Registro con conexión; si no se abrió así, sin red solo funciona escribir la cédula.

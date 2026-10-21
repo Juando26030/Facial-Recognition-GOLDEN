@@ -10,6 +10,7 @@ disponible se descuenta solo (disponible = inicial - entregado)."""
 import io
 import uuid
 from datetime import datetime
+from app.timeutil import utcnow
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -99,7 +100,7 @@ def create_area(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         raise HTTPException(status_code=400, detail="La zona necesita un nombre")
     if db.query(EventArea).filter(EventArea.event_id == event.id, func.lower(EventArea.name) == name.lower()).first():
         raise HTTPException(status_code=400, detail="Ya existe una zona con ese nombre en este evento")
-    area = EventArea(event_id=event.id, name=name, allow_reentry=bool(data.get("allow_reentry", True)), created_at=datetime.utcnow())
+    area = EventArea(event_id=event.id, name=name, allow_reentry=bool(data.get("allow_reentry", True)), created_at=utcnow())
     db.add(area)
     db.commit()
     return _area_json(db, area)
@@ -151,7 +152,7 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
     if not event.auto_register and not confirm:
         return {"result": "FOUND_PENDING", "direction": direction, "area": area.name, "data": data}
 
-    now = datetime.utcnow()
+    now = utcnow()
     db.add(AreaMovement(
         event_id=event.id, area_id=area.id, user_id=user.id, tenant_id=event.tenant_id, direction=direction,
         method=method, timestamp=now, registered_by_staff_id=staff.id,
@@ -294,7 +295,7 @@ def create_item(event_id: int, data: dict, db: Session = Depends(get_db), staff:
         raise HTTPException(status_code=400, detail="El ítem necesita un nombre")
     if db.query(InventoryItem).filter(InventoryItem.event_id == event.id, func.lower(InventoryItem.name) == name.lower()).first():
         raise HTTPException(status_code=400, detail="Ya existe un ítem con ese nombre en este evento")
-    item = InventoryItem(event_id=event.id, name=name, initial_qty=_qty(data.get("initial_qty", 0)), allow_multiple=bool(data.get("allow_multiple")), created_at=datetime.utcnow())
+    item = InventoryItem(event_id=event.id, name=name, initial_qty=_qty(data.get("initial_qty", 0)), allow_multiple=bool(data.get("allow_multiple")), created_at=utcnow())
     db.add(item)
     db.commit()
     return _item_json(item, 0)
@@ -358,7 +359,7 @@ def deliver(event_id: int, data: dict, db: Session = Depends(get_db), staff: Sta
         if qty > available:
             raise HTTPException(status_code=400, detail=f"No alcanza «{item.name}»: quedan {available} y se pidieron {qty}")
 
-    batch, now = uuid.uuid4().hex, datetime.utcnow()
+    batch, now = uuid.uuid4().hex, utcnow()
     for item_id, qty in wanted.items():
         db.add(InventoryDelivery(
             event_id=event.id, item_id=item_id, batch_id=batch, user_id=user.id, tenant_id=event.tenant_id,

@@ -5,29 +5,37 @@ contraseña de acceso, condiciones, tipos, archivos) sin fiarse de lo que mande 
 Flujo (el navegador pregunta `GET .../state` y sigue la etapa que indique): `gate` (palabra/código de acceso) →
 `identify` (cédula, para pre-llenar o para autorizar) → `form` → `thanks`. Cada etapa superada se recuerda en un token
 firmado y con vencimiento (`t`), que el envío exige."""
+import asyncio
 import json
 import os
+import random
 import secrets
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from PIL import Image
-from sqlalchemy import or_
+from sqlalchemy import or_, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, jobs, security, wompi
-from app.database import get_db
+from app import formlib, formsvc, jobs, security, timing, uploads, wompi
+from app.database import SessionLocal, get_db
 from app.email_check import check_email
 from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
 from app.routers.badges import ALLOWED_IMAGE_EXT
 from app.storage import badge_asset_key, form_file_key, get_storage
 from app.ttlcache import SlidingLimiter
 import io
+import logging
 
+log = logging.getLogger("golden.forms")
 router = APIRouter()
 TOKEN_MAX_AGE = 6 * 3600
 _LIMIT = timedelta(minutes=10)
@@ -62,11 +70,11 @@ def _load(db: Session, event_id: int, slug: str) -> WebForm:
     return form
 
 
-def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = True) -> str:
+def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = True, held: Optional[int] = None) -> str:
     """Estado con el que se atiende esta visita: `activo`, `pruebas` (solo con la clave del enlace de pruebas),
     `cerrado` o `cupo_lleno`. `finalizado` y `pruebas` sin clave = como si la página no existiera (404).
     `check_full=False` salta el conteo de cupo (el envío lo comprueba después, ya con el formulario bloqueado)."""
-    state = formsvc.public_state(db, form) if check_full else formsvc.status_of(form)
+    state = formsvc.public_state(db, form, held) if check_full else formsvc.status_of(form)
     if state == "finalizado":
         raise HTTPException(status_code=404, detail="Formulario no disponible")
     if state == "pruebas" and not (k and secrets.compare_digest(str(k), form.test_key)):
@@ -76,7 +84,10 @@ def _access(db: Session, form: WebForm, k: Optional[str], check_full: bool = Tru
 
 def _limit(db: Optional[Session], request: Request, kind: str, form: WebForm, max_hits: int) -> None:
     """Limite por IP en memoria (`db` se ignora: se conserva la firma que usan los demas modulos). Con varios procesos cada uno lleva su cuenta."""
-    if not _limiter.hit((kind, form.id, security.client_ip(request)), max(1, int(max_hits * LIMIT_FACTOR)), _LIMIT.total_seconds()):
+    ip = security.limit_ip(request)
+    if ip is None:                     # IP de infraestructura de Google (no confiable): sin límite por IP para no bloquear a todos a la vez; se cuenta en «Estado del sistema»
+        return
+    if not _limiter.hit((kind, form.id, ip), max(1, int(max_hits * LIMIT_FACTOR)), _LIMIT.total_seconds()):
         raise HTTPException(status_code=429, detail="Demasiadas consultas seguidas — espera unos minutos e intenta de nuevo.")
 
 
@@ -89,7 +100,7 @@ def _needs(settings: dict):
     return needs_code, needs_identify, mode
 
 
-def _payload_form(db: Session, form: WebForm, claims: dict) -> dict:
+def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] = None) -> dict:
     """Todo lo que el navegador necesita para dibujar el formulario (+ los datos ya conocidos de la persona)."""
     design = formsvc.get_design(form)
     prefill, readonly = {}, []
@@ -100,50 +111,130 @@ def _payload_form(db: Session, form: WebForm, claims: dict) -> dict:
             readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
     quota = formsvc.quota_public(db, form)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
-    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - formsvc.held_count(db, form))}
+    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
 
 
 # ------------------------------------------------------------------ páginas y estado
-@router.get("/f/{event_id}/{slug}", response_class=HTMLResponse)
-def page(event_id: int, slug: str, request: Request, k: Optional[str] = None, db: Session = Depends(get_db)):
-    """El cascaron HTML es el mismo para todos: el formulario y su estado llegan por `/state`. Sin clave de pruebas se puede guardar en la cache del
-    navegador/Cloudflare unos segundos (`s-maxage`); con `?k=` (pruebas) nunca."""
-    from app.main import templates  # import tardio: main.py importa este modulo
-    cached = None if k else formsvc.public_cache.get(("page", event_id, slug))
-    if cached is None:
+# ------------------------------------------------------------------ caché de estado/página: NUNCA bloquea a nadie
+# Stale-while-revalidate: un valor vigente se sirve al instante; uno VENCIDO (hasta FORM_PUBLIC_STALE_SECONDS después) también, y UN solo hilo propio (no del pool de la
+# app) lo refresca en segundo plano; solo cuando no hay ningún valor utilizable se espera, y esa espera es un `await` (no ocupa ningún hilo del pool). Antes los que
+# esperaban la recarga se quedaban bloqueados en un candado DENTRO del pool de hilos y, si la recarga tardaba, no dejaban arrancar a los envíos.
+PUBLIC_STALE_SECONDS = float(os.getenv("FORM_PUBLIC_STALE_SECONDS", "5"))
+_refreshing: set = set()
+_refreshing_lock = threading.Lock()
+_inflight: Dict[tuple, "asyncio.Task"] = {}          # solo se toca desde el bucle de eventos de ESTE proceso (sin candado)
+
+
+def _spawn_refresh(cache, key, factory) -> None:
+    """Refresca `key` en un hilo propio, uno solo a la vez por clave. Si falla, el valor viejo se sigue sirviendo hasta que caduque su margen."""
+    with _refreshing_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def work():
         try:
-            form = _load(db, event_id, slug)
-            _access(db, form, k)
-            cached = {"title": form.name}
-        except HTTPException:
-            return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Este formulario no está disponible</h3>", status_code=404)
-        if not k:
-            formsvc.public_cache.set(("page", event_id, slug), cached)
+            cache.set(key, factory())
+        except Exception:  # noqa: BLE001
+            log.warning("no se pudo refrescar la caché %s en segundo plano", key[0], exc_info=True)
+        finally:
+            with _refreshing_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=work, name="form-cache-refresh", daemon=True).start()
+
+
+async def _cached_async(cache, key, factory):
+    """Valor de la caché sin bloquear: vigente → ya; vencido pero utilizable → ya (y refresco en segundo plano); nada → UNA sola recarga (un hilo) y los demás esperan
+    con `await` a esa misma tarea (`shield`: si un cliente se desconecta no cancela la recarga de los demás)."""
+    value, st = cache.peek(key, PUBLIC_STALE_SECONDS)
+    if st == "fresh":
+        return value
+    if st == "stale":
+        _spawn_refresh(cache, key, factory)
+        return value
+    loop_key = (id(asyncio.get_running_loop()), key)
+    task = _inflight.get(loop_key)
+    if task is None:
+        async def load():
+            result = await timing.run(factory)
+            cache.set(key, result)
+            return result
+
+        task = asyncio.ensure_future(load())
+        _inflight[loop_key] = task
+        task.add_done_callback(lambda _t: _inflight.pop(loop_key, None))
+    return await asyncio.shield(task)
+
+
+def _page_title(event_id: int, slug: str, k: Optional[str]) -> dict:
+    """Fallo de caché de la página: lo único que hace falta de la base es el título (y que el formulario exista y sea visible)."""
+    db = SessionLocal()
+    try:
+        form = _load(db, event_id, slug)
+        _access(db, form, k)
+        return {"title": form.name}
+    finally:
+        db.close()
+
+
+@router.get("/f/{event_id}/{slug}", response_class=HTMLResponse)
+async def page(event_id: int, slug: str, request: Request, k: Optional[str] = None):
+    """El cascaron HTML es el mismo para todos: el formulario y su estado llegan por `/state`. Sin clave de pruebas se puede guardar en la cache del
+    navegador/Cloudflare unos segundos (`s-maxage`); con `?k=` (pruebas) nunca.
+    `async` a propósito: la caché se sirve en el bucle de eventos, sin pasar por el pool de hilos (ver `_cached_async`)."""
+    from app.main import templates  # import tardio: main.py importa este modulo
+    key = ("page", event_id, slug)
+    try:
+        if k:
+            cached = await timing.run(_page_title, event_id, slug, k)
+        else:
+            cached = await _cached_async(formsvc.public_cache, key, lambda: _page_title(event_id, slug, k))
+    except HTTPException:
+        return HTMLResponse("<h3 style='font-family:sans-serif;text-align:center;margin-top:20vh'>Este formulario no está disponible</h3>", status_code=404)
     response = templates.TemplateResponse(request=request, name="form_public.html", context={"event_id": event_id, "slug": slug, "form_title": cached["title"]})
     if not k:
         response.headers["Cache-Control"] = "public, max-age=30, s-maxage=60"
     return response
 
 
+def _state_compute(event_id: int, slug: str, k: Optional[str], i: Optional[str], t: Optional[str]) -> dict:
+    db = SessionLocal()                  # la sesión (y su conexión) solo existe en el fallo de caché
+    try:
+        return _state(db, event_id, slug, k, i, t)
+    finally:
+        db.close()
+
+
+def _cdn_seconds() -> int:
+    """FORM_STATE_CDN_SECONDS (apagado = 0): segundos de `s-maxage` para el estado ANÓNIMO. Se limita a 1-10 s."""
+    try:
+        return max(0, min(10, int(os.getenv("FORM_STATE_CDN_SECONDS", "0"))))
+    except ValueError:
+        return 0
+
+
 @router.get("/f/{event_id}/{slug}/state")
-def state(event_id: int, slug: str, k: Optional[str] = None, i: Optional[str] = None, t: Optional[str] = None, db: Session = Depends(get_db)):
+async def state(event_id: int, slug: str, request: Request, k: Optional[str] = None, i: Optional[str] = None, t: Optional[str] = None):
     """Lo que el navegador necesita para dibujar el formulario. Para quien llega «en frio» (sin clave de pruebas, enlace personal ni token) el resultado
-    es identico para todos: se calcula una vez cada pocos segundos y se sirve de la memoria (con 10.000 aperturas, eran 10.000 conteos de cupo)."""
-    anonymous = not (k or i or t)
-    key = ("state", event_id, slug)
-    if anonymous:
-        hit = formsvc.public_cache.get(key)
-        if hit is not None:
-            return hit
-    result = _state(db, event_id, slug, k, i, t)
-    if anonymous:
-        formsvc.public_cache.set(key, result)
-    return result
+    es identico para todos: se calcula una vez cada pocos segundos y se sirve de la memoria (con 10.000 aperturas, eran 10.000 conteos de cupo).
+    `async` y sin bloqueos: ver `_cached_async`. Con FORM_STATE_CDN_SECONDS > 0 la respuesta ANÓNIMA (sin parámetros, sin cookie, sin Set-Cookie) lleva
+    `Cache-Control: public, max-age=0, s-maxage=N` para que la CDN de Firebase la sirva sin llegar a Cloud Run; cualquier otra petición (clave de pruebas, enlace personal,
+    token, cookie o sesión) NUNCA se cachea ahí."""
+    if not (k or i or t):
+        key = ("state", event_id, slug)
+        result = await _cached_async(formsvc.public_cache, key, lambda: _state_compute(event_id, slug, k, i, t))
+        seconds = _cdn_seconds()
+        if seconds and not request.query_params and not request.headers.get("cookie") and not request.headers.get("authorization"):
+            return JSONResponse(jsonable_encoder(result), headers={"Cache-Control": f"public, max-age=0, s-maxage={seconds}"})
+        return result
+    return await timing.run(_state_compute, event_id, slug, k, i, t)
 
 
 def _state(db: Session, event_id: int, slug: str, k: Optional[str], i: Optional[str], t: Optional[str]) -> dict:
     form = _load(db, event_id, slug)
-    access = _access(db, form, k)
+    held = formsvc.held_count(db, form) if form.capacity is not None else None      # UN solo conteo por fallo de caché (estado + «quedan N cupos»)
+    access = _access(db, form, k, held=held)
     settings = formsvc.get_settings(form)
     design = formsvc.get_design(form)
     theme = design["theme"]
@@ -166,7 +257,7 @@ def _state(db: Session, event_id: int, slug: str, k: Optional[str], i: Optional[
     if needs_identify and not claims.get("id_ok"):
         return {**base, "stage": "identify", "required": bool(settings["security"]["enabled"] and settings["security"]["type"] == "cedula"), "token": _issue(form, **claims)}
     claims = {**claims, "g": True}
-    return {**base, "stage": "form", "token": _issue(form, **claims), "thanks": settings["thanks"], **_payload_form(db, form, claims)}
+    return {**base, "stage": "form", "token": _issue(form, **claims), "thanks": settings["thanks"], **_payload_form(db, form, claims, held)}
 
 
 @router.post("/f/{event_id}/{slug}/gate")
@@ -237,9 +328,44 @@ def asset(event_id: int, slug: str, tenant_id: str, filename: str, k: Optional[s
 
 
 # ------------------------------------------------------------------ envío
+def _limit_mb(f: dict, settings: dict) -> int:
+    return min(f.get("max_mb", 10), settings.get("max_mb", 10)) if settings.get("max_mb") else f.get("max_mb", 10)
+
+
+def _check_stage(settings: dict, claims: dict) -> None:
+    """Las mismas etapas que exige el envío (enlace personal, código, identificación): sin ellas tampoco se firma una subida."""
+    needs_code, needs_identify, mode = _needs(settings)
+    if mode == "invite" and not claims.get("inv"):
+        raise HTTPException(status_code=403, detail="Usa tu enlace personal para inscribirte")
+    if needs_code and not claims.get("g"):
+        raise HTTPException(status_code=403, detail="Falta el código de acceso")
+    if needs_identify and mode != "invite" and not claims.get("id_ok"):
+        raise HTTPException(status_code=403, detail="Primero identifícate con tu número de documento")
+
+
+@router.post("/f/{event_id}/{slug}/upload")
+def sign_file(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+    """Firma la subida directa de un archivo del formulario (ver app/uploads.py): `{fid, filename, size, content_type, k, t}`. El
+    archivo va del navegador al almacenamiento; el envío manda solo el token (así varios archivos de 20 MB no chocan con los 32 MiB)."""
+    form = _load(db, event_id, slug)
+    if _access(db, form, data.get("k"), check_full=False) in ("cerrado", "cupo_lleno"):
+        return JSONResponse({"detail": "Este formulario ya no recibe inscripciones", "stage": "closed"}, status_code=409)
+    _limit(db, request, "form_upload", form, 60)
+    settings = formsvc.get_settings(form)
+    _check_stage(settings, _read(data.get("t"), form))
+    fid = str(data.get("fid") or "")
+    f = formsvc.get_design(form)["fields"].get(fid)
+    if not f or f["type"] != "file":
+        raise HTTPException(status_code=400, detail="Ese campo no recibe archivos")
+    event = db.query(Event).filter(Event.id == form.event_id).first()
+    return uploads.create("form_file", {"f": form.id, "fid": fid}, event.tenant_id, str(data.get("filename") or ""), data.get("size"),
+                          str(data.get("content_type") or ""), max_bytes=_limit_mb(f, settings) * 1024 * 1024,
+                          extensions={"." + e for e in f.get("accept", formlib.FILE_EXTENSIONS)})
+
+
 def _check_upload(f: dict, name: str, content: bytes, settings: dict) -> Optional[str]:
     ext = os.path.splitext(name)[1].lower().lstrip(".")
-    limit_mb = min(f.get("max_mb", 10), settings.get("max_mb", 10)) if settings.get("max_mb") else f.get("max_mb", 10)
+    limit_mb = _limit_mb(f, settings)
     if ext not in f.get("accept", formlib.FILE_EXTENSIONS):
         return f"«{f['label']}»: formato no permitido (.{ext}). Se aceptan: {', '.join(f.get('accept', []))}"
     if len(content) > limit_mb * 1024 * 1024:
@@ -269,7 +395,7 @@ def _safe_name(name: str) -> str:
 
 
 @router.post("/f/{event_id}/{slug}/submit")
-async def submit(event_id: int, slug: str, request: Request, db: Session = Depends(get_db)):
+async def submit(event_id: int, slug: str, request: Request):
     """Lee el cuerpo (lo unico asincrono) y pasa el resto —consultas, cupo, insercion— a un hilo: el bucle de eventos nunca espera a la base de datos."""
     ctype = request.headers.get("content-type", "")
     files: Dict[str, Tuple[str, bytes]] = {}
@@ -286,23 +412,93 @@ async def submit(event_id: int, slug: str, request: Request, db: Session = Depen
         raise HTTPException(status_code=400, detail="La solicitud no se pudo leer")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="La solicitud no se pudo leer")
-    return await run_in_threadpool(_submit, db, event_id, slug, request, payload, files)
+    return await timing.run(_submit_sync, event_id, slug, request, payload, files)
 
 
-def _is_retry(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], clean: dict, is_test: bool) -> bool:
-    """¿Es el reintento de una inscripcion que YA se confirmo con esta misma clave de envio (`sid`)? El navegador reintenta solo si la red o la base
-    fallan a mitad; no debe duplicar ni dar el error de «ya existe»."""
-    if not sid:
-        return False
-    prev = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.sid == sid, FormSubmission.is_test == is_test,
-                                           FormSubmission.status == "confirmed").first()
-    if not prev:
-        return False
-    return prev.person_id == person_id if person_id else json.loads(prev.data_json) == clean
+EVENT_LOCK_TIMEOUT_MS = int(os.getenv("FORM_EVENT_LOCK_TIMEOUT_MS", "2000"))
+_lock_waiters = 0                                        # envíos de ESTE proceso entre «pasó las comprobaciones previas» y «terminó su transacción de cupo» (esperando o teniendo el bloqueo)
+_lock_waiters_lock = threading.Lock()
+
+
+def _max_lock_waiters() -> int:
+    """FORM_MAX_LOCK_WAITERS (0 = sin límite): tope POR PROCESO de envíos en la zona del bloqueo del formulario. La fila se sirve a ~35-50 reservas/s por formulario, así que con
+    N procesos hay N×tope esperando y cada uno espera ~N×tope/45 s: 3 por proceso con 20 procesos (10 instancias × 2) son ~60 esperando ≈ 1,3 s. Por encima se responde 503 al
+    instante en vez de retener el turno de Cloud Run y una conexión hasta el `lock_timeout` (el navegador reintenta con la misma `sid`)."""
+    try:
+        return max(0, int(os.getenv("FORM_MAX_LOCK_WAITERS", "3")))
+    except ValueError:
+        return 3
+
+
+def _enter_lock_zone() -> bool:
+    global _lock_waiters
+    limit = _max_lock_waiters()
+    with _lock_waiters_lock:
+        if limit and _lock_waiters >= limit:
+            return False
+        _lock_waiters += 1
+        return True
+
+
+def _leave_lock_zone() -> None:
+    global _lock_waiters
+    with _lock_waiters_lock:
+        _lock_waiters = max(0, _lock_waiters - 1)
+
+
+def _busy_response() -> JSONResponse:
+    """503 «ocupado» con `Retry-After` variable (1-3 s: el jitter evita que todos vuelvan a la vez). La inscripción NO se hizo; el navegador reintenta con la misma `sid`."""
+    return JSONResponse({"detail": "Estamos recibiendo muchísimas inscripciones a la vez. Tu envío se reintentará solo en unos segundos.", "busy": True}, status_code=503,
+                        headers={"Retry-After": str(random.choice((1, 2, 3))), "X-Golden-Busy": "1"})
+
+
+def _run_after(callbacks: list) -> None:
+    for fn in callbacks:
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 — ya se respondió: lo que falle aquí solo se registra
+            log.warning("tarea posterior al envío falló", exc_info=True)
+
+
+def _respond(content: dict, after: list):
+    """La marca de analítica y el aviso al worker se hacen DESPUÉS de enviar la respuesta (tarea en segundo plano): ya no retienen turno, hilo ni conexión mientras el usuario espera.
+    SUBMIT_AFTER_RESPONSE=0 los vuelve a poner antes de responder. Nota Cloud Run: fuera de una petición la CPU puede estar reducida; con tráfico (cuando importa) hay CPU, y el
+    trabajo encolado nunca se pierde (está en la tabla; lo recoge el siguiente aviso o el barrido programado)."""
+    if os.getenv("SUBMIT_AFTER_RESPONSE", "1") == "0":
+        _run_after(after)
+        return content
+    return JSONResponse(content, background=BackgroundTask(_run_after, after))
+
+
+def _record_submit_event(form_id: int, sid: str, source: Optional[str], is_test: bool) -> None:
+    """La marca «submit» de la analítica, en su propia transacción CORTA y DESPUÉS del commit: ya no ocupa una ida y vuelta con el cupo bloqueado. Si fallara solo
+    se pierde ese punto de la analítica (la inscripción ya está confirmada)."""
+    db = SessionLocal()
+    try:
+        # El INSERT de `form_events` tiene FK a `web_forms`: pide `FOR KEY SHARE` sobre la fila que los reservadores tienen con `FOR UPDATE`, así que haría fila detrás de ellos
+        # (y sin `lock_timeout`, porque el de los reservadores es local a SU transacción). Va DESPUÉS de responder, con espera máxima propia; si vence solo se pierde la marca.
+        db.execute(text("SELECT set_config('lock_timeout', :v, true)"), {"v": f"{EVENT_LOCK_TIMEOUT_MS}ms"})
+        db.add(FormEvent(form_id=form_id, sid=sid, kind="submit", source=source, is_test=is_test))
+        db.commit()
+    except Exception:  # noqa: BLE001
+        log.warning("no se pudo registrar el evento de envío del formulario %s", form_id, exc_info=True)
+    finally:
+        db.close()
+
+
+def _submit_sync(event_id: int, slug: str, request: Request, payload: dict, files: Dict[str, Tuple[str, bytes]]):
+    """La sesión se abre AQUÍ, dentro del hilo del envío (antes `Depends(get_db)` pedía un turno de hilo solo para crearla: dos esperas en la misma cola por envío)."""
+    db = SessionLocal()
+    try:
+        return _submit(db, event_id, slug, request, payload, files)
+    finally:
+        db.close()
 
 
 def _submit(db: Session, event_id: int, slug: str, request: Request, payload: dict, files: Dict[str, Tuple[str, bytes]]):
     form = _load(db, event_id, slug)
+    db.expunge(form)          # el formulario sigue usable (sus columnas ya están cargadas)…
+    db.rollback()             # …y la conexión vuelve al pool ANTES de validar (DNS del correo, archivos, CPU): no se retiene mientras no se necesita
     access = _access(db, form, payload.get("k"), check_full=False)      # el cupo se comprueba abajo, con el formulario bloqueado
     if access in ("cerrado", "cupo_lleno"):
         return JSONResponse({"detail": "Este formulario ya no recibe inscripciones", "stage": "closed"}, status_code=409)
@@ -311,24 +507,31 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     settings = formsvc.get_settings(form)
     design = formsvc.get_design(form)
     claims = _read(payload.get("t"), form)
-    needs_code, needs_identify, mode = _needs(settings)
-    if mode == "invite" and not claims.get("inv"):
-        raise HTTPException(status_code=403, detail="Usa tu enlace personal para inscribirte")
-    if needs_code and not claims.get("g"):
-        raise HTTPException(status_code=403, detail="Falta el código de acceso")
-    if needs_identify and mode != "invite" and not claims.get("id_ok"):
-        raise HTTPException(status_code=403, detail="Primero identifícate con tu número de documento")
+    _check_stage(settings, claims)
+    # Archivos ya subidos directo al almacenamiento (`uploads`: {campo: token}); los viejos multipart siguen llegando en `files`.
+    staged, token_errors = [], {}
+    for fid, tok in (payload.get("uploads") or {}).items() if isinstance(payload.get("uploads"), dict) else []:
+        try:
+            up = uploads.fetch(str(tok), "form_file", {"f": form.id, "fid": str(fid)})
+        except HTTPException as exc:
+            token_errors[str(fid)] = exc.detail
+            continue
+        if up:
+            files[str(fid)] = (up.filename, up.content)
+            staged.append(up)
 
     values = dict(payload.get("values") or {})
     fields = design["fields"]
     # Campos «solo lectura cuando ya se conocen»: el valor sale de la base, nunca de lo que mande el navegador.
     person = formsvc.find_person(db, form, claims["p"]) if claims.get("p") else None
+    if claims.get("p"):
+        db.rollback()          # `find_person` devuelve un dict (no un objeto de la sesión): la conexión se suelta otra vez antes de validar
     if person:
         for fid, val in formsvc.prefill_values(design, person).items():
             if fields[fid].get("readonly_when_prefilled"):
                 values[fid] = val
     # Archivos
-    uploaded, file_errors, pending = {}, {}, {}
+    uploaded, file_errors, pending = {}, dict(token_errors), {}
     visible = formlib.visible_ids(design, values)
     for fid, (filename, content) in files.items():
         f = fields.get(fid)
@@ -353,6 +556,32 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     is_test = access == "pruebas"
     sid = str(payload.get("sid") or "")[:40] or None
 
+    # PRECOMPROBACIÓN SIN BLOQUEO (reintento, cupo lleno, duplicado), en el mismo orden que `form_reserve_slot`: lo que ya se sabe no hace fila detrás del `FOR UPDATE` (antes un
+    # «replayed», un duplicado o un sobrante esperaban su turno del bloqueo, hasta 3 s reteniendo turno de Cloud Run, hilo y conexión, para que la base dijera lo mismo). Es solo
+    # un adelanto: la reserva bajo bloqueo repite TODAS estas comprobaciones y sigue siendo la autoridad; esto puede rechazar de MÁS unos segundos (el conteo del «lleno» va con
+    # caché de ~2 s y un cupo pudo liberarse), nunca dejar pasar de más.
+    retry, duplicate = formsvc.precheck(db, form, sid, person_id, is_test)
+    full = form.capacity is not None and not is_test and not retry and formsvc.held_count_cached(db, form) >= form.capacity
+    db.rollback()             # lecturas hechas: la conexión vuelve al pool antes de seguir
+    if retry:
+        return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
+    if full:
+        return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+    if duplicate:
+        return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
+
+    # ZONA DEL BLOQUEO: tope por proceso de envíos que esperan (o tienen) el `FOR UPDATE`. Rechazo al instante, sin tocar la base; el contador se libera SIEMPRE (finally).
+    if not _enter_lock_zone():
+        return _busy_response()
+    try:
+        return _reserve_and_store(db, form, payload, settings, design, claims, values, clean, uploaded, pending, staged, person_id, is_test, sid)
+    finally:
+        _leave_lock_zone()
+
+
+def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict, design: dict, claims: dict, values: dict, clean: dict, uploaded: dict, pending: dict, staged: list,
+                       person_id: Optional[str], is_test: bool, sid: Optional[str]):
+    """Desde el precio (si hay pago) hasta el commit: la parte que compite por el bloqueo del formulario."""
     # Campo «Pago»: si esta visible y el monto (segun reglas y descuentos) es mayor que 0, la inscripcion NO se confirma
     # aqui: queda «esperando pago» hasta que Wompi confirme (ver app/routers/form_payments.py).
     quote = charge = cfg = code_row = None
@@ -377,14 +606,9 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     started = db.query(FormEvent).filter_by(form_id=form.id, sid=sid, kind="start").first() if sid else None
     rules = formsvc.quota_rules(form)
     try:
-        # Cupo y duplicados, con la fila del formulario BLOQUEADA: dos personas enviando el ultimo cupo a la vez no lo llenan dos veces.
-        # Aqui dentro solo se verifica, se inserta y se confirma; todo lo demas (correo, base del evento) va a la cola.
-        locked = db.query(WebForm).filter(WebForm.id == form.id).with_for_update().first()
-        if _is_retry(db, form, sid, person_id, clean, is_test):
-            db.rollback()
-            return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
-        formsvc.purge_stale_pending(db, form)
-        if charge and (person_id or sid):      # reintento de pago: el intento anterior de esta persona/sesion se descarta
+        # Reintento, cupos y duplicado en UNA ida y vuelta, que deja la fila del formulario BLOQUEADA hasta el commit: dos personas enviando el
+        # ultimo cupo a la vez no lo llenan dos veces. Despues solo se inserta y se confirma; correo y base del evento van a la cola.
+        if charge and (person_id or sid):      # reintento de pago: el intento anterior de esta persona/sesion se descarta (antes del bloqueo)
             prior = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == formsvc.PENDING)
             cond = [FormSubmission.sid == sid] if sid else []
             if person_id:
@@ -392,21 +616,24 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
             for old in prior.filter(or_(*cond)).all():
                 formsvc.discard_submission(db, form, old)
             db.flush()
+        res = formsvc.reserve_slot(db, form, person_id, sid, is_test, rules, clean)
+        if not res["ok"]:
+            db.rollback()
+            reason = res["reason"]
+            if reason == "capacity":
+                formsvc.mark_full(form)                # los siguientes se rechazan por la vía rápida, sin pedir el bloqueo
+            if reason == "retry":
+                return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
+            if reason == "quota":
+                return JSONResponse({"detail": f"El cupo «{res['label']}» ya se completó. Cambia tu elección o escribe a los organizadores.", "stage": "quota"}, status_code=409)
+            if reason == "duplicate":
+                return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
+            return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+        if pay_field:                          # solo los formularios con pago tienen inscripciones en espera que purgar
+            formsvc.purge_stale_pending(db, form)
         if code_row and formsvc.code_uses(db, code_row) >= code_row.max_uses:        # otra persona se llevo el ultimo uso mientras esta escribia
             db.rollback()
             return JSONResponse({"detail": formsvc.CODE_MESSAGES["exhausted"], "code_error": True}, status_code=422)
-        full_rule = None if is_test else formsvc.quota_full_rule(db, form, clean, rules)
-        if full_rule:
-            db.rollback()
-            return JSONResponse({"detail": f"El cupo «{full_rule['label']}» ya se completó. Cambia tu elección o escribe a los organizadores.", "stage": "quota"}, status_code=409)
-        if formsvc.is_full(db, locked) and not is_test:
-            db.rollback()
-            return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
-        if person_id and not is_test:
-            dup = formsvc.real_submissions(db, form).filter(FormSubmission.person_id == person_id).first()
-            if dup:
-                db.rollback()
-                return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
 
         sub = FormSubmission(
             form_id=form.id, event_id=form.event_id, data_json=json.dumps(clean), is_test=is_test, person_id=person_id, invite_id=claims.get("inv"),
@@ -416,8 +643,8 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
         )
         db.add(sub)
         db.flush()
-        event = db.query(Event).filter(Event.id == form.event_id).first()
         if pending:
+            event = db.query(Event).filter(Event.id == form.event_id).first()      # solo hace falta con archivos (antes era una consulta MÁS con el bloqueo tomado en todos los envíos)
             for fid, content in pending.items():
                 stored = f"{sub.id}_{fid}_{clean[fid]['filename']}"
                 get_storage().put(form_file_key(event.tenant_id, form.id, stored), content)
@@ -429,14 +656,24 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
                               breakdown_json=json.dumps({"base": quote["base"], "applied": quote["applied"], "amount": charge}))
             db.add(pay)
             db.commit()
+            formsvc.bump_held(form)
+            uploads.discard(*staged)
             return {"ok": True, "payment_required": True, "pay_token": _issue(form, pay=pay.id), "payment": _widget_params(pay, cfg, design, clean, quote)}
-        formsvc.confirm_submission(db, form, sub)
+        enqueued = formsvc.confirm_submission(db, form, sub, record_event=False)
+        submit_event = (form.id, sub.sid or os.urandom(4).hex(), sub.source, sub.is_test)      # se leen ANTES del commit (después los objetos quedan expirados)
         db.commit()
+    except OperationalError as exc:
+        db.rollback()
+        if getattr(exc.orig, "pgcode", None) == "55P03":     # lock_not_available: la espera del bloqueo del cupo pasó de FORM_LOCK_TIMEOUT_MS
+            return _busy_response()           # el navegador reintenta con la MISMA `sid` (nunca duplica): ver templates/form_public.html
+        raise
     except Exception:
         db.rollback()                 # nunca dejar la fila del formulario bloqueada
         raise
-    jobs.kick()
-    return {"ok": True, "thanks": settings["thanks"], "is_test": is_test}
+    formsvc.bump_held(form)
+    uploads.discard(*staged)
+    after = [lambda: _record_submit_event(*submit_event)] + ([jobs.kick] if enqueued else [])      # kick() solo si de verdad se encoló algo
+    return _respond({"ok": True, "thanks": settings["thanks"], "is_test": is_test}, after)
 
 
 def _widget_params(pay: FormPayment, cfg: dict, design: dict, clean: dict, quote: dict) -> dict:

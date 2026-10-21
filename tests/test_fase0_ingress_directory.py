@@ -103,3 +103,16 @@ def test_big_directory_is_sent_compressed(client, factory):
     ev = _setup(client, factory, people=tuple(f"20{i:03d}" for i in range(60)))
     r = client.get(f"/api/users?event_id={ev.id}", headers={"Accept-Encoding": "gzip"})
     assert r.status_code == 200 and r.headers.get("content-encoding") == "gzip" and len(r.json()) == 60
+
+
+def test_retry_after_a_lost_response_replays_instead_of_warning_or_duplicating(client, factory, db):
+    """Respuesta perdida DESPUÉS de guardar (el caso de la campaña D2.3: 2-5 ingresos de más por corrida): la estación reintenta sola con la MISMA `client_id` y SIN `force`.
+    Debe recibir el mismo «SÍ» (`replayed`), no el aviso DUPLICADO ni un segundo registro; un escaneo NUEVO de la misma persona (otra `client_id`) sí avisa DUPLICADO."""
+    ev = _setup(client, factory, auto_register=True)
+    data = {"event_id": ev.id, "cedula": "1001", "client_id": "estacion-3-0001"}
+    assert client.post("/api/checkin-cedula", data=data).json()["result"] == "SÍ"            # se guardó; supongamos que la respuesta no llegó
+    again = client.post("/api/checkin-cedula", data=data).json()                              # reintento automático
+    assert again["result"] == "SÍ" and again["replayed"] is True
+    assert db.query(AccessLog).filter_by(event_id=ev.id, user_id="1001").count() == 1
+    rescan = client.post("/api/checkin-cedula", data={**data, "client_id": "estacion-3-0002"}).json()
+    assert rescan["result"] == "DUPLICADO" and db.query(AccessLog).filter_by(event_id=ev.id, user_id="1001").count() == 1

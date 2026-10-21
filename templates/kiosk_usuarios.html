@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Usuarios del Evento | Golden Logísticas</title>
+    <title>Usuarios del Evento | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -45,7 +45,7 @@
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
     <div class="golden-container">
       <div class="golden-section-title">
-        <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+        <span>{{ company_name|upper }}</span>
         <h2>Usuarios del <span class="gradient-text">Evento</span></h2>
       </div>
 

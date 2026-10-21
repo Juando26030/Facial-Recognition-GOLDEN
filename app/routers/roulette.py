@@ -25,6 +25,7 @@ import re
 import secrets
 import unicodedata
 from datetime import datetime, timedelta, timezone
+from app.timeutil import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -33,7 +34,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from sqlalchemy.orm import Session
 
-from app import heavy, security
+from app import heavy, publicurl, security
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import AccessLog, Event, EventAttendee, RouletteConfig, RouletteDraw, StaffUser, User
@@ -337,7 +338,7 @@ def display_link(event_id: int, request: Request, regenerate: bool = False, db: 
     if regenerate or not cfg.display_token:
         cfg.display_token = secrets.token_urlsafe(18)
         db.commit()
-    base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    base = publicurl.base(str(request.base_url))
     return {"url": f"{base}/r/{cfg.display_token}"}
 
 
@@ -345,7 +346,7 @@ def display_link(event_id: int, request: Request, regenerate: bool = False, db: 
 def get_display_link(event_id: int, request: Request, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))):
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
-    base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    base = publicurl.base(str(request.base_url))
     return {"url": f"{base}/r/{cfg.display_token}" if cfg.display_token else None}
 
 
@@ -416,7 +417,7 @@ def _authorization(cfg: RouletteConfig) -> Optional[dict]:
     if not cfg.authorized_json:
         return None
     auth = json.loads(cfg.authorized_json)
-    if datetime.utcnow() - datetime.fromisoformat(auth["at"]) > AUTH_MAX_AGE:
+    if utcnow() - datetime.fromisoformat(auth["at"]) > AUTH_MAX_AGE:
         return None
     return auth
 
@@ -431,7 +432,7 @@ def authorize_spin(event_id: int, data: dict, db: Session = Depends(get_db), sta
         raise HTTPException(status_code=400, detail="Primero genera el enlace de la pantalla de visualización: el botón de girar vive allá")
     _run_draw(db, event, cfg, "", staff.id, dry_run=True)
     label = str(data.get("label") or "").strip()[:120]
-    cfg.authorized_json = json.dumps({"label": label, "by": staff.id, "at": datetime.utcnow().isoformat()})
+    cfg.authorized_json = json.dumps({"label": label, "by": staff.id, "at": utcnow().isoformat()})
     db.commit()
     return {"authorized": True, "label": label}
 
@@ -459,7 +460,7 @@ def reset_round(event_id: int, db: Session = Depends(get_db), staff: StaffUser =
     event = get_event_for_staff(event_id, db, staff)
     cfg = _get_config(db, event)
     b = _behavior(cfg)
-    b["all_reset_at"] = datetime.utcnow().isoformat()
+    b["all_reset_at"] = utcnow().isoformat()
     cfg.behavior_json = json.dumps(b)
     db.commit()
     return {"message": "Ronda reiniciada"}

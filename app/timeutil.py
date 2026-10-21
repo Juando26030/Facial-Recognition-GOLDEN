@@ -19,3 +19,8 @@ def to_local(dt: datetime) -> datetime:
 def local_to_utc(dt: datetime) -> datetime:
     """`dt` naive en hora LOCAL (la que escribe la gente: fecha y hora de un evento) -> naive en UTC (como se guarda todo internamente)."""
     return dt.replace(tzinfo=_TZ).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def utcnow() -> datetime:
+    """Ahora en UTC como `datetime` naive (la convención del proyecto). Reemplaza a `datetime.utcnow()`, obsoleto desde Python 3.12."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)

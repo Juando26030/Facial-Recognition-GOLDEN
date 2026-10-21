@@ -1,10 +1,12 @@
 """Piezas de plataforma de la Fase 0 pensadas para Cloud Run: cola de trabajos, almacenamiento de archivos, modos de arranque, reportes con tope,
 conciliación de pagos e idempotencia de migraciones/pool."""
+import os
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 import pytest
 
@@ -50,9 +52,9 @@ def test_failed_jobs_back_off_then_end_as_failed_and_can_be_seen(db, monkeypatch
     assert jobs.run_once() == 1
     db.expire_all()
     job = db.query(Job).one()
-    assert job.status == "queued" and job.attempts == 1 and job.run_at > datetime.utcnow()             # espera antes de reintentar
+    assert job.status == "queued" and job.attempts == 1 and job.run_at > utcnow()             # espera antes de reintentar
     assert jobs.run_once() == 0                                                                        # todavía no le toca
-    job.run_at = datetime.utcnow() - timedelta(seconds=1)
+    job.run_at = utcnow() - timedelta(seconds=1)
     db.commit()
     assert jobs.run_once() == 1
     db.expire_all()
@@ -74,7 +76,7 @@ def test_a_job_whose_process_died_is_reclaimed_after_the_lease(db, handlers):
     jobs.enqueue(db, "eco", {"n": 3})
     db.commit()
     job = db.query(Job).one()
-    job.status, job.locked_until, job.attempts = "running", datetime.utcnow() - timedelta(seconds=5), 1     # quedó «en curso» y el proceso murió
+    job.status, job.locked_until, job.attempts = "running", utcnow() - timedelta(seconds=5), 1     # quedó «en curso» y el proceso murió
     db.commit()
     assert jobs.run_once() == 1 and handlers == [{"n": 3}]
 
@@ -129,13 +131,61 @@ def test_storage_response_serves_the_file_or_404(tmp_path):
     assert exc.value.status_code == 404
 
 
-def test_cloud_storage_backend_is_a_clear_todo(monkeypatch):
+def test_cloud_storage_backend_needs_a_bucket_and_unknown_backends_fail(monkeypatch):
     storage.reset_storage()
     monkeypatch.setenv("STORAGE_BACKEND", "gcs")
-    with pytest.raises(RuntimeError, match="Fase 1"):
+    monkeypatch.delenv("GCS_BUCKET", raising=False)
+    with pytest.raises(RuntimeError, match="GCS_BUCKET"):
         storage.get_storage()
+    monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    with pytest.raises(RuntimeError, match="no existe"):
+        storage.get_storage()
+    monkeypatch.setenv("STORAGE_BACKEND", "")                   # vacío en el .env (como deja la plantilla de staging) = local
+    storage.reset_storage()
+    assert isinstance(storage.get_storage(), storage.LocalStorage)
     monkeypatch.delenv("STORAGE_BACKEND")
     storage.reset_storage()
+
+
+@pytest.mark.skipif(not os.getenv("STORAGE_EMULATOR_HOST"), reason="necesita el emulador de Cloud Storage (docker run fsouza/fake-gcs-server; ver docs/15)")
+def test_gcs_storage_behaves_like_local_storage():
+    from fastapi import FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+    from google.auth.credentials import AnonymousCredentials
+    from google.cloud import storage as gcs
+
+    client = gcs.Client(project="test", credentials=AnonymousCredentials())
+    name = f"golden-test-{os.urandom(4).hex()}"
+    client.create_bucket(name)
+    store = storage.GcsStorage(name, "app", client=client)
+    assert store.put("acme/known_people/1.jpg", b"abc") == "acme/known_people/1.jpg"
+    assert client.bucket(name).blob("app/acme/known_people/1.jpg").exists()          # el prefijo es una carpeta dentro del bucket
+    assert store.get("data/acme/known_people/1.jpg") == b"abc"
+    assert store.exists("acme/known_people/1.jpg") and not store.exists("acme/otra.jpg")
+    with pytest.raises(FileNotFoundError):
+        store.get("acme/otra.jpg")
+    store.put("acme/known_people/2.jpg", b"x")
+    store.put("acme2/f.pdf", b"pdf")
+    assert store.list("acme") == ["acme/known_people/1.jpg", "acme/known_people/2.jpg"]
+    store.move("acme/known_people/1.jpg", "acme/known_people/9.jpg")
+    assert not store.exists("acme/known_people/1.jpg") and store.get("acme/known_people/9.jpg") == b"abc"
+    store.delete("acme/known_people/9.jpg")
+    store.delete("acme/known_people/9.jpg")
+    store.delete_prefix("acme")
+    assert store.list("") == ["acme2/f.pdf"]                                            # acme2 no se toca al borrar acme
+    with pytest.raises(ValueError):
+        store.put("../secreto", b"x")
+    store.ping()
+
+    app = FastAPI()
+    app.get("/f/{key:path}")(lambda key: store.response(key, filename="informe final.pdf", headers={"cache-control": "private, no-store"}))
+    with TestClient(app) as c:
+        r = c.get("/f/acme2/f.pdf")
+        assert r.status_code == 200 and r.content == b"pdf" and r.headers["cache-control"] == "private, no-store"
+        assert r.headers["content-disposition"] == "attachment; filename*=utf-8''informe%20final.pdf"
+        assert c.get("/f/acme2/no.pdf").status_code == 404
+    with pytest.raises(HTTPException):
+        store.response("acme2/no.pdf")
 
 
 # ------------------------------- modos de arranque -------------------------------
@@ -211,7 +261,7 @@ def test_reconcile_confirms_a_payment_whose_webhook_was_lost(client, factory, db
     db.add(sub)
     db.commit()
     pay = FormPayment(form_id=form.id, event_id=ev.id, submission_id=sub.id, amount_cents=500000, reference="GW-1-1-1-abc", status="pending", is_test=True,
-                      created_at=datetime.utcnow() - timedelta(minutes=10))
+                      created_at=utcnow() - timedelta(minutes=10))
     fresh = FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-1-1-2-def", status="pending", is_test=True)   # recién creado: aún no se concilia
     db.add_all([pay, fresh])
     db.commit()
@@ -237,8 +287,8 @@ def test_reconcile_ignores_amount_mismatches_and_unknown_references(db, factory,
     form = WebForm(event_id=ev.id, name="F", slug="f", manual_status="activo", design_json="{}", test_key="k")
     db.add(form)
     db.commit()
-    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-A", status="pending", is_test=True, created_at=datetime.utcnow() - timedelta(minutes=10)))
-    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-B", status="pending", is_test=True, created_at=datetime.utcnow() - timedelta(minutes=10)))
+    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-A", status="pending", is_test=True, created_at=utcnow() - timedelta(minutes=10)))
+    db.add(FormPayment(form_id=form.id, event_id=ev.id, amount_cents=500000, reference="GW-B", status="pending", is_test=True, created_at=utcnow() - timedelta(minutes=10)))
     db.commit()
     monkeypatch.setattr(wompi, "config", lambda is_test: {"api": "x", "private_key": "k", "test": True})
     monkeypatch.setattr(wompi, "fetch_by_reference", lambda cfg, ref: {"status": "APPROVED", "id": "t", "amount_in_cents": 1, "currency": "COP"} if ref == "GW-A" else None)

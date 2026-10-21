@@ -1,4 +1,5 @@
 """Privacidad y cumplimiento (Ley 1581 de 2012): consentimiento para el dato biométrico, borrado, páginas legales y accesibilidad básica."""
+from app.timeutil import utcnow
 import io
 import zipfile
 
@@ -32,6 +33,8 @@ def _register(client, ev, uid="1001", consent=None, photo=True):
     data = {"event_id": ev.id, "id": uid, "first_name": "Ana", "last_name": "Mora"}
     if consent is not None:
         data["biometric_consent"] = consent
+    if photo:
+        data["birth_date"] = "1990-01-01"             # L3: con foto hace falta la fecha de nacimiento (solo mayores de 18)
     files = {"file": ("f.jpg", _photo(), "image/jpeg")} if photo else None
     return client.post("/api/register", data=data, files=files)
 
@@ -47,6 +50,11 @@ def test_a_face_is_never_saved_without_the_persons_explicit_authorization(client
     ok = _register(client, ev, consent="true")
     assert ok.status_code == 200, ok.text
     u = db.query(User).filter_by(id="1001").first()
+    assert u.face_encoding is None and u.face_captured_at and "face_pending" in ok.json()           # REGLA A: la casilla del digitador NO basta para calcular el vector
+    from tests.conftest import accept
+    accept(db, ev, "2002")                                                                           # la PERSONA aceptó (audit_consent_logs): ahora sí se calcula
+    assert _register(client, ev, uid="2002", consent="true").status_code == 200
+    u = db.query(User).filter_by(id="2002").first()
     assert u.face_encoding and u.biometric_consent_at and u.biometric_consent_source == "kiosko"     # queda constancia de cuándo y cómo
 
 
@@ -59,20 +67,38 @@ def test_registering_by_cedula_without_photo_needs_no_biometric_consent(client, 
     assert u.face_encoding is None and u.biometric_consent_at is None
 
 
+def _zip_of(name):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr(name, _photo())
+    return buf.getvalue()
+
+
 def test_photo_zip_needs_the_organizers_declaration_and_records_it(client, factory, faces, db):
     from app.models import User
     ev = _kiosk(client, factory, role="coordinador")
+    ev.client_photos_before = True                                                                           # fotos del cliente (origen A), elegido en Parámetros
+    db.commit()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("3003.jpg", _photo())
-    files = {"roster_file": ("b.csv", b"id,nombres,apellidos\n3003,Luis,Paz\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
+    files = {"roster_file": ("b.csv", b"id,nombres,apellidos,fecha de nacimiento\n3003,Luis,Paz,1990-04-02\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id)}, files=files)
     assert r.status_code == 400 and "autorización" in r.json()["detail"]
-    files = {"roster_file": ("b.csv", b"id,nombres,apellidos\n3003,Luis,Paz\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
+    files = {"roster_file": ("b.csv", b"id,nombres,apellidos,fecha de nacimiento\n3003,Luis,Paz,1990-04-02\n", "text/csv"), "zip_file": ("f.zip", buf.getvalue(), "application/zip")}
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "photos_authorized": "true"}, files=files)
     assert r.status_code == 200, r.text
     db.expire_all()
-    assert db.query(User).filter_by(id="3003").first().biometric_consent_source == "carga_masiva"
+    from app.storage import get_storage, photo_key
+    u = db.query(User).filter_by(id="3003").first()
+    assert u.face_encoding is None and u.biometric_consent_source is None and u.face_captured_at           # REGLA A: la foto se guarda, el vector NO se calcula antes de que la persona acepte
+    assert get_storage().exists(photo_key(ev.tenant_id, "3003"))
+    ev = factory.event("en_proceso", controller_mode="tercero", organizer_name="O", organizer_nit="1", organizer_privacy_email="o@o.test", precalculo_autorizado=True, facial_enabled=True, client_photos_before=True)      # excepción: tercero con anexo firmado
+    csv = "\n".join(["id,nombres,apellidos,fecha de nacimiento", "4004,Eva,Paz,1990-04-02", ""]).encode()
+    files = {"roster_file": ("b.csv", csv, "text/csv"), "zip_file": ("f.zip", _zip_of("4004.jpg"), "application/zip")}
+    assert client.post("/api/bulk_register", data={"event_id": str(ev.id), "photos_authorized": "true"}, files=files).status_code == 200
+    db.expire_all()
+    assert db.query(User).filter_by(id="4004").first().biometric_consent_source == "carga_masiva"      # con pre-cálculo autorizado sí se calcula al cargar
 
 
 # ------------------------------- borrado / retención -------------------------------
@@ -82,7 +108,7 @@ def _with_face(db, ev, uid, other_event=None):
     from app.models import EventAttendee, User
     u = db.query(User).filter_by(id=uid, tenant_id=ev.tenant_id).first() or User(id=uid, tenant_id=ev.tenant_id, first_name="N", last_name="A")
     u.face_encoding = "[[0.1]]"
-    u.biometric_consent_at, u.biometric_consent_source = datetime.utcnow(), "kiosko"
+    u.biometric_consent_at, u.biometric_consent_source = utcnow(), "kiosko"
     db.add(u)
     db.flush()
     for e in (ev, other_event):
@@ -96,18 +122,23 @@ def _with_face(db, ev, uid, other_event=None):
 
 def test_purge_event_erases_faces_but_keeps_people_who_are_in_another_active_event(client, factory, db):
     import os
-    from app.models import User
+    from app.models import SystemEvent, User
     factory.staff("admin", "adm1")
     ev = factory.event("finalizado")
-    other = factory.event("en_proceso")
+    other = factory.event("en_proceso", facial_enabled=True)
     _with_face(db, ev, "1001")
     _with_face(db, ev, "1002", other_event=other)
+    from tests.conftest import accept
+    accept(db, other, "1002")                                                                                                  # (regla 2026-10-06) solo cuenta si aceptó en ese otro evento
     login(client, "adm1")
     assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={}).status_code == 400                                 # sin confirmación no borra
+    assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True, "confirm_name": "otro nombre"}).status_code == 400
     st = client.get(f"/api/events/{ev.id}/privacy").json()
     assert (st["with_biometrics"], st["with_consent"]) == (2, 2)
-    r = client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True}).json()
-    assert r == {"deleted": 1, "kept_in_other_events": 1}
+    r = client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm_name": f"  {ev.name.upper()} "}).json()            # el nombre confirma (sin importar mayúsculas)
+    assert (r["deleted"], r["kept_in_other_events"]) == (1, 1) and other.event_code in r["kept_reason"]
+    audit = db.query(SystemEvent).filter_by(kind="biometrics_purge").one()                                                    # auditoría: quién, evento y cuántas (nada personal)
+    assert audit.ref == f"event:{ev.id}" and "adm1" in audit.detail and "1 borradas" in audit.detail and "Mora" not in audit.detail
     db.expire_all()
     u1, u2 = db.query(User).filter_by(id="1001").first(), db.query(User).filter_by(id="1002").first()
     assert u1.face_encoding is None and u1.biometric_consent_at is None and not os.path.isfile(f"data/{ev.tenant_id}/known_people/1001.jpg")
@@ -120,7 +151,7 @@ def test_a_coordinator_can_erase_one_persons_face_but_only_admins_purge_the_even
     ev = factory.event("en_proceso")
     _with_face(db, ev, "1001")
     login(client, "coord1")
-    assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm": True}).status_code == 403
+    assert client.post(f"/api/events/{ev.id}/biometrics/purge", json={"confirm_name": ev.name}).status_code == 403
     assert client.delete(f"/api/events/{ev.id}/users/9999/biometrics").status_code == 404
     assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").json()["deleted"] is True
     db.expire_all()
@@ -128,50 +159,33 @@ def test_a_coordinator_can_erase_one_persons_face_but_only_admins_purge_the_even
     assert client.delete(f"/api/events/{ev.id}/users/1001/biometrics").json()["deleted"] is False                         # ya no había nada
 
 
-def test_automatic_retention_only_runs_when_configured_and_only_on_old_finalized_events(client, factory, db, monkeypatch):
-    from datetime import date, timedelta
-    from app import privacy
-    ev_old = factory.event("finalizado", end_date=date.today() - timedelta(days=200))
-    ev_recent = factory.event("finalizado", end_date=date.today() - timedelta(days=10))
-    ev_live = factory.event("en_proceso", end_date=date.today() - timedelta(days=300))
-    _with_face(db, ev_old, "1001")
-    _with_face(db, ev_recent, "2002")
-    _with_face(db, ev_live, "3003")
-    monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS", raising=False)
-    assert privacy.retention_days() == 180                                                                       # decisión de Golden: 6 meses por defecto
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "0")
-    assert privacy.retention_days() is None                                                                      # 0 apaga el borrado automático
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "180")
-    r = privacy.purge_expired(db, 180)
-    assert r == {"events": 1, "deleted": 1, "kept_in_other_events": 0}                                           # solo el evento finalizado hace más de 180 días
-    assert privacy.purge_expired(db, 180)["events"] == 0                                                          # ya purgado: no se repite
-
-
 # ------------------------------- páginas legales públicas -------------------------------
-def test_legal_pages_are_public_marked_as_drafts_and_show_the_business_data(client):
+def test_legal_pages_are_public_privacy_has_its_reviewed_version_and_the_rest_stay_drafts(client):
     for path, title in (("/privacidad", "Política de Privacidad"), ("/terminos", "Términos y Condiciones"), ("/reembolsos", "Política de Reembolsos")):
         r = client.get(path)                                                                          # sin sesión
         assert r.status_code == 200 and title in r.text
-        assert "PENDIENTE DE REVISIÓN LEGAL" in r.text                                                # borrador hasta que un abogado lo revise
-        assert "901542833" in r.text and "GOLDEN EVENTOS Y LOGISTICA SAS" in r.text                   # identificación del vendedor/responsable
+        if path == "/privacidad":                                                                     # con constancia escrita de la auditora (2026-10-05): versión 1.0
+            assert "Versión 1.0" in r.text and "5 de octubre de 2026" in r.text and "BORRADOR" not in r.text and "[PENDIENTE DE REVISIÓN LEGAL" not in r.text
+        else:
+            assert "PENDIENTE DE REVISIÓN LEGAL" in r.text                                            # borrador hasta que un abogado lo revise (términos y reembolsos no están cubiertos)
+        assert "901.542.833-2" in r.text and "GOLDEN EVENTOS Y LOGISTICA SAS" in r.text                   # identificación del vendedor/responsable
     p = client.get("/privacidad").text
     for needle in ("Wompi", "Microsoft", "Google Cloud", "biométric", "cédula", "10 días hábiles"):
         assert needle in p
 
 
 def test_business_data_and_retention_come_from_the_environment(client, monkeypatch):
-    monkeypatch.delenv("BIOMETRIC_RETENTION_DAYS", raising=False)
+    for k in ("BIOMETRIC_RETENTION_DAYS_AFTER_EVENT", "BIOMETRIC_MAX_DAYS"):
+        monkeypatch.delenv(k, raising=False)
     home = client.get("/terminos").text
     assert "Carrera 14a # 71a - 59, Bogotá" in home and "+57 317 427 6073" in home and "info@goldenlogisticas.com" in home      # los datos reales de Golden
-    assert "6 meses (180 días) después de la fecha de finalización" in client.get("/privacidad").text                         # retención por defecto: 6 meses
+    assert "7 días después de que finalice el evento" in client.get("/privacidad").text and "180 días desde que se captura" in client.get("/privacidad").text
     monkeypatch.setenv("LEGAL_ADDRESS", "Calle 1 # 2-3")
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "90")
+    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS_AFTER_EVENT", "10")
     monkeypatch.setenv("REFUND_REQUEST_DAYS", "15")
     assert "Calle 1 # 2-3" in client.get("/terminos").text
-    assert "3 meses (90 días)" in client.get("/privacidad").text
+    assert "10 días después de que finalice el evento" in client.get("/privacidad").text
     assert "15 días calendario" in client.get("/reembolsos").text
-    monkeypatch.setenv("BIOMETRIC_RETENTION_DAYS", "0")
-    assert "hasta que solicites su supresión" in client.get("/privacidad").text                                                 # apagada explícitamente
 
 
 def test_jurisdiction_is_bogota_and_international_events_are_covered(client):
@@ -184,9 +198,9 @@ def test_public_pages_carry_the_legal_footer_and_the_cookie_notice(client, facto
     from tests.test_form_extras import _disc_form
     ev, form, _ = _disc_form(client, factory, [])
     html = client.get(f"/f/{ev.id}/{form['slug']}").text
-    assert "/privacidad" in html and "NIT 901542833" in html and "js/cookie-notice.js" in html
+    assert "/privacidad" in html and "NIT 901.542.833-2" in html and "js/cookie-notice.js" in html
     login_html = client.get("/login").text
-    assert "/terminos" in login_html and "NIT 901542833" in login_html
+    assert "/terminos" in login_html and "NIT 901.542.833-2" in login_html
     js = client.get("/static/js/form-render.js").text
     assert "/reembolsos" in js                                                                            # el cuadro de pago enlaza los términos y los reembolsos
 
@@ -269,6 +283,9 @@ def test_photos_are_encrypted_on_disk_and_served_decrypted(client, factory, face
     from app import crypto
     raw = crypto.read_bytes(path)
     assert raw[:2] == b"\xff\xd8"                                                                           # al leerla con la llave vuelve a ser JPEG
+    assert client.get(f"/api/users/1001/photo?event_id={ev.id}").status_code == 404                        # interruptor de la foto biométrica en la escarapela: apagado por defecto (A1)
+    ev.badge_bio_photo_allowed = True
+    db.commit()
     r = client.get(f"/api/users/1001/photo?event_id={ev.id}")
     assert r.status_code == 200 and r.content[:2] == b"\xff\xd8" and r.headers["content-type"] == "image/jpeg"
 
@@ -313,3 +330,31 @@ def test_refund_terms_are_configured_per_form_and_shown_on_the_refund_page(clien
     assert "Condiciones de este formulario" in page and "hasta <b>10 días</b>" in page and "La comisión de Wompi no se devuelve." in page
     assert "Condiciones de este formulario" not in client.get("/reembolsos").text                                          # la página general no las muestra
     assert client.get(f"{'/f/%d/%s' % (ev.id, form['slug'])}/state").json()["refund"]["days"] == 10                       # y el formulario público las recibe
+
+
+def test_privacy_texts_state_7_day_retention_cap_backups_and_processors(client, factory):
+    p = client.get("/privacidad").text
+    for needle in ("7 días después de que finalice el evento", "180 días desde que se captura", "30 días", "Neon", "Google Cloud", "Firebase Hosting", "Wompi", "Microsoft", "5-bis"):
+        assert needle in p
+    ev = factory.event("en_proceso", facial_enabled=True)
+    factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    # El aviso del quiosco ahora es la pantalla de autorización de la auditora (L1): trae el plazo de borrado, la excepción de otro evento y el tope de 180 días.
+    shown = " ".join(client.get(f"/api/events/{ev.id}/consent-text").json()["body"])
+    assert "siete (7) días siguientes a la finalización del evento" in shown and "180 días" in shown and "30 días" in shown
+
+
+def test_privacy_policy_goes_back_to_pending_by_itself_when_its_text_changes(client, monkeypatch):
+    """Todo cambio posterior a un texto con constancia vuelve a marcarlo como pendiente (docs/19; auditoría 2026-10-05): la huella del texto deja de coincidir."""
+    from app import legal
+    assert legal.review_status("privacidad")["reviewed"] is True, "la plantilla cambió sin subir la versión: pide nueva constancia y actualiza la huella en app/legal.py"
+    monkeypatch.setitem(legal.REVIEWED["privacidad"], "sha256", "0" * 64)                 # como si el texto hubiera cambiado
+    r = client.get("/privacidad")
+    assert "BORRADOR" in r.text and "Cambios posteriores a la versión 1.0" in r.text and "Texto con constancia" not in r.text
+
+
+def test_fingerprint_ignores_pending_markers_but_not_words():
+    from app import legal
+    base = "<p>Uno dos. <span class=\"pending\">[pendiente de revisión legal]</span></p>"
+    assert legal.text_fingerprint(base) == legal.text_fingerprint("<p>Uno dos.</p>")
+    assert legal.text_fingerprint(base) != legal.text_fingerprint("<p>Uno tres.</p>")

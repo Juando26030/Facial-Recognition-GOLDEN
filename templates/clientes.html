@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clientes - Cuentas | Golden Logísticas</title>
+    <title>Clientes - Cuentas | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -37,7 +37,7 @@
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
-      <img src="https://www.goldenlogisticas.com/wp-content/uploads/2025/07/logo-golden-con-letras-1.png" alt="Golden Logísticas Logo">
+      <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
     <nav style="display:flex; gap:14px; align-items:center;">
       <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
@@ -188,7 +188,7 @@ tenantsListEl.addEventListener("change", async (e) => {
   if (!select) return;
   const newStatus = select.value;
   const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
-  const confirmed = await showConfirm(`¿Cambiar el estado del evento a "${STATUS_LABELS[newStatus]}"?`);
+  const confirmed = await confirmStatusChange(newStatus, STATUS_LABELS[newStatus]);
   if (!confirmed) { select.value = previousStatus; return; }
   await setEventStatus(select.dataset.eventId, newStatus, select);
 });

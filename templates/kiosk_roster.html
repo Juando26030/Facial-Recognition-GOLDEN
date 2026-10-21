@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ event.name }} — Base de Datos | Golden Logísticas</title>
+    <title>{{ event.name }} — Base de Datos | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <!-- Carga automática en lotes para bases grandes (10.000+ personas con foto) — ver el bloque de
          abajo. XLSX (SheetJS) para partir el Excel/CSV en trozos válidos; JSZip para armar, por
@@ -42,23 +43,34 @@
 <main class="golden-main">
   <div class="golden-container" style="max-width: 640px;">
     <div class="golden-section-title">
-      <span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span>
+      <span>{{ company_name|upper }}</span>
       <h2>Adjuntar <span class="gradient-text">Base de Datos</span></h2>
     </div>
 
-    {% if event.status == "finalizado" %}
-    <div style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.85rem; text-align:center; margin-bottom:1.5rem;">
-      ⚠️ Este evento está <strong>Finalizado</strong> — no se puede cargar la base.
+    {% if roster_blocked %}
+    <div id="rosterBlocked" role="alert" style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.95rem; line-height:1.5; text-align:left; margin-bottom:1.5rem;">
+      ⚠️ {{ roster_blocked }}
     </div>
     {% endif %}
 
     <form id="rosterForm" class="golden-badge-builder">
-      <fieldset {% if event.status == "finalizado" %}disabled{% endif %} style="border:none; padding:0; margin:0;">
+      <fieldset {% if roster_blocked %}disabled{% endif %} style="border:none; padding:0; margin:0;">
         <div class="badge-form-title">Cargar asistentes esperados</div>
         <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1.5rem;">
           Sube el Excel (.xlsx) o CSV con los datos de las personas. Sirve para cualquier método de registro —
           cédula, facial o QR. No es necesario volver a subir un archivo distinto por cada método.
         </p>
+
+        <!-- Fase 0: el uso del rostro y el origen de la foto se eligen SOLO en Parámetros; aquí solo se muestran. -->
+        <div id="facialState" role="note" style="margin:0 0 1rem; padding:12px 14px; border-radius:12px; font-size:0.95rem; line-height:1.5; background:{{ '#eef6ee' if event.facial_enabled else '#fff4e5' }}; border:1px solid {{ '#b7d8b7' if event.facial_enabled else '#f0c36d' }};">
+          {% if event.facial_enabled %}
+          <b>Este evento usa reconocimiento facial</b> — {{ 'fotos entregadas por el cliente (origen A): adjunta el zip abajo.' if event.client_photos_before else 'cada persona se toma una selfie (origen B): no hace falta zip.' }}
+          La fecha de nacimiento del archivo se guarda.
+          {% else %}
+          <b>Este evento NO usa reconocimiento facial.</b> La columna «fecha de nacimiento» del archivo <b>no se guardará</b>.
+          {% endif %}
+          <a href="/kiosk/{{ event.id }}/parametros" style="font-weight:600;">Cambiar en Parámetros</a>
+        </div>
 
         <!-- Ítem 18 (reunión 2026-09-21): traer a todas las personas de otro evento DEL MISMO CLIENTE. -->
         <div class="badge-input-group" style="display:flex; align-items:center; gap:10px;">
@@ -80,12 +92,13 @@
           <p style="font-size:0.78rem; color:#666; margin-top:0.4rem;">Para bases grandes (miles de personas con foto), no hace falta partir el archivo a mano: si el Excel + el zip juntos pesan mucho, el sistema los divide solo en varios envíos seguidos, sin que muevas nada.</p>
         </div>
 
-        <div class="badge-input-group" style="display:flex; align-items:center; gap:10px; margin-top:1.2rem;">
-          <input type="checkbox" id="enableFacial" style="width:auto;">
-          <label for="enableFacial" style="margin:0;">¿Desea activar el reconocimiento facial?</label>
-        </div>
+        <label for="overwriteBirth" style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; margin-top:0.6rem;">
+          <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" aria-labelledby="overwriteBirthText" style="width:20px; height:20px; margin-top:3px;">
+          <span id="overwriteBirthText">{{ overwrite_birth_label }} (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
+        </label>
 
-        <div id="facialZipGroup" class="badge-input-group" style="display:none; margin-top:0.8rem;">
+        {% if event.facial_enabled and event.client_photos_before %}
+        <div id="facialZipGroup" class="badge-input-group" style="margin-top:0.8rem;">
           <label>Fotos de las personas (.zip, cada foto nombrada como la cédula, ej. 123456.jpg)</label>
           <input type="file" name="zip_file" accept=".zip">
           <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; line-height:1.4; margin-top:10px; background:#fff8e1; padding:10px 12px; border-radius:10px;">
@@ -93,8 +106,9 @@
             <span><b>Declaro que cuento con la autorización previa, expresa e informada de cada persona</b> para tratar su fotografía y su rostro (dato biométrico sensible, Ley 1581 de 2012) para identificarla en este evento, y que las personas que no la dieron no están en el zip (se registran por cédula). <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
           </label>
         </div>
+        {% endif %}
 
-        <button type="submit" class="golden-btn golden-btn-primary" style="margin-top: 1.5rem;">Cargar Base de Datos</button>
+        <button type="submit" id="rosterSubmit" class="golden-btn golden-btn-primary" style="margin-top: 1.5rem;"{% if roster_blocked %} disabled aria-disabled="true"{% endif %}>Cargar Base de Datos</button>
       </fieldset>
     </form>
 
@@ -103,11 +117,8 @@
 </main>
 
 <script>
-const enableFacial = document.getElementById("enableFacial");
+const ZIP_ALLOWED = {{ 'true' if (event.facial_enabled and event.client_photos_before) else 'false' }};      // origen A (Parámetros): solo así hay zip
 const facialZipGroup = document.getElementById("facialZipGroup");
-enableFacial.addEventListener("change", () => {
-    facialZipGroup.style.display = enableFacial.checked ? "block" : "none";
-});
 
 const useSourceEvent = document.getElementById("useSourceEvent");
 const sourceEventGroup = document.getElementById("sourceEventGroup");
@@ -130,13 +141,39 @@ useSourceEvent.addEventListener("change", async () => {
 const rosterForm = document.getElementById("rosterForm");
 const rosterResult = document.getElementById("rosterResult");
 const EVENT_STATUS = "{{ event.status }}";
+const ROSTER_BLOCKED = {{ 'true' if roster_blocked else 'false' }};      // el servidor decide (app/event_rules.py roster_block_reason); aquí solo se muestra
 
 /* El backend prefija cada mensaje con ❌ (fila omitida por completo), ⚠️ (se guardó igual, pero
    revisa el dato) o ℹ️ (corrección automática, ej. Excel volvió número una cédula) — los
    separamos en cajas de color distinto para que de un vistazo se sepa la gravedad de cada uno. */
+function columnsBoxHtml(columns) {
+    if (!columns) return "";
+    const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const list = (items, fmt) => items.length ? `<ul style="margin:0.3rem 0 0; padding-left:1.2rem;">${items.map(i => `<li>${fmt(i)}</li>`).join("")}</ul>` : "";
+    return `<div style="background:#eef6ee; border:1px solid #b7dcb7; color:#1e5a1e; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
+        <strong>Columnas del archivo</strong>
+        <div style="margin-top:0.4rem;"><b>Campos reconocidos (${columns.recognized.length}):</b>${list(columns.recognized, c => `«${esc(c.title)}» → ${esc(c.field)}`) || " ninguno"}</div>
+        <div style="margin-top:0.4rem;"><b>Campos nuevos creados (${columns.created.length}):</b>${list(columns.created, c => `«${esc(c.title)}» → campo opcional «${esc(c.field)}» (ya está en Parámetros del evento)`) || " ninguno"}</div>
+        <div style="margin-top:0.4rem;"><b>Columnas no usadas (${columns.unused.length}):</b>${list(columns.unused, c => `«${esc(c.title)}»: ${esc(c.reason)}`) || " ninguna"}</div>
+    </div>`;
+}
+
+// Une los informes de columnas de varios lotes (una columna es «nueva» si en algún lote se creó; «no usada» solo si en ningún lote se usó).
+function mergeColumns(list) {
+    const out = { recognized: [], created: [], unused: [] }, seen = new Map();
+    list.filter(Boolean).forEach(c => {
+        c.created.forEach(i => seen.set(i.title, ["created", i]));
+        c.recognized.forEach(i => { if (!seen.has(i.title)) seen.set(i.title, ["recognized", i]); });
+    });
+    seen.forEach(([kind, item]) => out[kind].push(item));
+    list.filter(Boolean).forEach(c => c.unused.forEach(i => { if (!seen.has(i.title) && !out.unused.some(u => u.title === i.title)) out.unused.push(i); }));
+    return out;
+}
+
 function renderRosterResult(data) {
     rosterResult.innerHTML = "";
-    if (!data.errors || !data.errors.length) return;
+    const columnsHtml = columnsBoxHtml(data.columns);
+    if (!data.errors || !data.errors.length) { rosterResult.innerHTML = columnsHtml; return; }
 
     const groups = [
         { prefix: "❌", bg: "#fbe9ea", border: "#dc3545", text: "#a12631", title: "Filas omitidas" },
@@ -144,7 +181,7 @@ function renderRosterResult(data) {
         { prefix: "ℹ️", bg: "#e7f1ff", border: "#b6d4fe", text: "#084298", title: "Correcciones automáticas" },
     ];
 
-    let html = "";
+    let html = columnsHtml;
     groups.forEach(g => {
         const items = data.errors.filter(e => e.startsWith(g.prefix));
         if (!items.length) return;
@@ -180,6 +217,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
    lote pesa 15 % subida + 85 % proceso dentro de su parte de la barra total (ver makeUi). */
 async function postBulkRegister(formData, ui) {
     formData.set("background", "true");
+    // Los archivos suben DIRECTO al almacenamiento (Cloud Run no acepta peticiones de más de 32 MiB); a la app solo va el token.
+    // En un reintento por NEEDS_LABELS el FormData ya trae los tokens y no se vuelve a subir nada.
+    try {
+        await DirectUpload.replaceFiles(formData, { roster_file: ["roster_upload", "bulk_roster"], zip_file: ["zip_upload", "bulk_zip"] }, {
+            body: { event_id: formData.get("event_id") },
+            onProgress: (loaded, total) => ui && ui("upload", loaded / total, `Subiendo archivos… ${(loaded / 1048576).toFixed(1)} de ${(total / 1048576).toFixed(1)} MB`),
+        });
+    } catch (e) {
+        showToast(e.message, "error");
+        return null;
+    }
     let res;
     try {
         res = await xhrPost("/api/bulk_register", formData, (loaded, total) => {
@@ -270,7 +318,6 @@ async function submitRoster(formData) {
 
 function resetRosterForm() {
     rosterForm.reset();
-    facialZipGroup.style.display = "none";
     sourceEventGroup.style.display = "none";
     rosterFileInput.required = true;
 }
@@ -329,7 +376,7 @@ async function readRosterRows(file) {
     }
     const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "", dateNF: "yyyy-mm-dd" });      // las fechas salen como AAAA-MM-DD (sin esto saldrían como «3/10/11», ambiguo)
     return { kind: "xlsx", header: (aoa[0] || []).map(String), rows: aoa.slice(1) };
 }
 
@@ -402,12 +449,13 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
     if (!rows.length) { bar.remove(); showToast("El archivo no tiene filas de datos", "error"); return null; }
     const { groups, zip } = await buildBatchPlan(header, rows, zipFile);
 
-    let totalCount = 0, allErrors = [];
+    let totalCount = 0, allErrors = [], allColumns = [];
     for (let i = 0; i < groups.length; i++) {
         bar.update(i / groups.length, `Lote ${i + 1} de ${groups.length} — ${totalCount} de ${rows.length} personas procesadas hasta ahora.`);
         const group = groups[i];
         const fd = new FormData();
         fd.append("event_id", window.EVENT_ID);
+        if (document.getElementById("overwriteBirth") && document.getElementById("overwriteBirth").checked) fd.append("overwrite_birth", "true");
         if (i === 0) (sourceEventIds || []).forEach(id => fd.append("source_event_id", id));  // los eventos anteriores entran una sola vez, con el primer lote
         fd.append("roster_file", buildRosterBlob(kind, header, group.rows), `lote_${i + 1}.${kind}`);
         const zipBlob = await buildBatchZip(zip, group.ids);
@@ -415,10 +463,11 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
         const data = await submitChunkWithLabels(fd, makeUi(bar, i, groups.length, `Lote ${i + 1} de ${groups.length} — `));
         if (!data) { bar.fail("La carga se detuvo en el lote " + (i + 1) + " de " + groups.length); return null; }
         totalCount += data.count || 0;
+        allColumns.push(data.columns);
         if (data.errors && data.errors.length) allErrors.push(...data.errors.map(e => `[Lote ${i + 1}/${groups.length}] ${e}`));
     }
     bar.finish(`Carga completa: ${totalCount} de ${rows.length} personas`);
-    return { message: `Carga en ${groups.length} lote(s) completa: ${totalCount} de ${rows.length} perfiles cargados.`, count: totalCount, errors: allErrors };
+    return { message: `Carga en ${groups.length} lote(s) completa: ${totalCount} de ${rows.length} perfiles cargados.`, count: totalCount, errors: allErrors, columns: mergeColumns(allColumns) };
 }
 
 rosterForm.addEventListener("submit", async (e) => {
@@ -428,12 +477,11 @@ rosterForm.addEventListener("submit", async (e) => {
     // ya se hicieron en vivo. Avisamos SIEMPRE antes de intentarlo; si de verdad es un re-upload
     // (el evento ya tuvo una carga exitosa antes), el backend lo rechaza de plano sin importar
     // esta confirmación (ver bulk_register, "no te deje" — pedido explícito del usuario 2026-09-22).
-    if (EVENT_STATUS === "en_proceso") {
+    if (ROSTER_BLOCKED) return;      // no se ofrece «cargar de todas formas»: el botón está deshabilitado y el servidor lo rechazaría igual
+    if (EVENT_STATUS === "en_proceso") {      // primera carga de un evento que ya arrancó (permitida): solo se avisa del riesgo de pisar registros hechos en vivo
         const seguro = await showConfirm(
-            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>¿Estás seguro de que quieres cargar la base de datos? " +
-            "Si el evento ya tenía una base cargada, esto puede significar que la estás subiendo por error — revisa antes de continuar. " +
-            "Si necesitas otra base para el mismo evento, mejor crea un evento nuevo en vez de recargar este.",
-            { variant: "warning", confirmLabel: "Sí, cargar de todas formas" }
+            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después no podrás volver a cargar otra base sobre este evento. ¿Continuar?",
+            { variant: "warning", confirmLabel: "Sí, cargar la base" }
         );
         if (!seguro) return;
     }
@@ -444,7 +492,7 @@ rosterForm.addEventListener("submit", async (e) => {
 
     const formData = new FormData(e.target);
     formData.append("event_id", window.EVENT_ID);
-    if (!enableFacial.checked) formData.delete("zip_file");
+    if (!ZIP_ALLOWED) formData.delete("zip_file");
     if (!useSourceEvent.checked) formData.delete("source_event_id");
 
     const rosterFile = formData.get("roster_file");

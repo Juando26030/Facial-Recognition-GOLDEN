@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from app.timeutil import utcnow
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
@@ -7,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import staticver
+from app import publicurl, staticver
 from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
@@ -33,7 +34,7 @@ def login_submit(
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    ip = security.client_ip(request)
+    ip = security.limit_ip(request)                 # None = IP de Google: solo cuenta el límite por usuario
     username = username.strip()
     # Bloqueo temporal tras varios fallos (por usuario y por IP). Se aplica igual exista o no la cuenta,
     # y el mensaje no dice cuál de las dos cosas falló.
@@ -84,7 +85,7 @@ def forgot_submit(request: Request, username: str = Form(...), db: Session = Dep
     """Manda un enlace de un solo uso al correo de la cuenta. La respuesta es SIEMPRE la misma (exista la
     cuenta, tenga o no correo) para no revelar qué usuarios existen; las cuentas sin correo (ej. los
     digitadores temporales) las restablece un admin/coordinador."""
-    ip = security.client_ip(request)
+    ip = security.limit_ip(request)
     username = username.strip()
     generic = "Si la cuenta existe y tiene un correo registrado, te enviamos un enlace para elegir una contraseña nueva (vale 60 minutos)."
     if security.minutes_locked(db, "reset_request", username, ip, security.RESET_MAX_REQUESTS, security.RESET_MAX_REQUESTS * 4, security.RESET_WINDOW):
@@ -93,9 +94,9 @@ def forgot_submit(request: Request, username: str = Form(...), db: Session = Dep
     staff = db.query(StaffUser).filter(func.lower(StaffUser.username) == username.lower(), StaffUser.is_active == True).first()
     if staff and staff.email:
         token = security.create_reset_token(db, staff.id)
-        base = (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+        base = publicurl.base(str(request.base_url))
         send_mail(
-            staff.email, "Restablecer tu contraseña — Golden Biometrics",
+            staff.email, "Restablecer tu contraseña — GoldenWeb 2.0",
             f"Hola {staff.full_name or staff.username}, recibimos una solicitud para elegir una contraseña nueva.\n\n"
             f"Abre este enlace (vale 60 minutos y solo se puede usar una vez):\n{base}/restablecer/{token}\n\n"
             "Si no fuiste tú, ignora este correo: tu contraseña actual sigue igual.",
@@ -123,7 +124,7 @@ def reset_submit(
     staff = db.query(StaffUser).filter(StaffUser.id == row.staff_user_id).first()
     staff.password_hash = hash_password(password)
     staff.must_change_password = False
-    row.used_at = datetime.utcnow()
+    row.used_at = utcnow()
     db.commit()
     security.clear_events(db, "login_fail", staff.username)
     return _page(request, "done", message="Listo, tu contraseña quedó cambiada. Ya puedes ingresar.")

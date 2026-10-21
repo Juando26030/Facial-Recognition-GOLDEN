@@ -15,7 +15,7 @@ import shutil
 
 import numpy as np
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Auto-detección del binario en Windows (Sprint 2.4, 2026-09-16, ronda 3 del mismo pedido) — en
 # la VM de producción (Linux) ya se instala solo vía deploy.yml, pero en Windows local no hay
@@ -40,18 +40,50 @@ _MRZ_CHAR_WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 _TESSERACT_CONFIG = f"--psm 6 -c tessedit_char_whitelist={_MRZ_CHAR_WHITELIST}"
 
 
-def _preprocess(image_array: np.ndarray) -> Image.Image:
+# Variantes de preparación de la imagen, de la más simple a las que ayudan con fotos difíciles (reflejos, fondo con tramas de seguridad, mucha resolución): (modo, ancho).
+# `extract_mrz_lines(imagen, variante)` usa una; el llamador (routers/cedula.py) prueba la siguiente solo si la lectura anterior detectó 3 líneas pero no validó.
+VARIANTS = (("fijo", None), ("otsu", 1200), ("contraste", 1200))
+
+
+def _otsu_threshold(gray: np.ndarray) -> int:
+    hist = np.bincount(gray.ravel(), minlength=256).astype(float)
+    total, sum_all = gray.size, float((np.arange(256) * hist).sum())
+    w0 = s0 = best = 0.0
+    threshold = 128
+    for t in range(256):
+        w0 += hist[t]
+        if w0 == 0:
+            continue
+        w1 = total - w0
+        if w1 == 0:
+            break
+        s0 += t * hist[t]
+        var = w0 * w1 * (s0 / w0 - (sum_all - s0) / w1) ** 2
+        if var > best:
+            best, threshold = var, t
+    return threshold
+
+
+def _preprocess(image_array: np.ndarray, variant: int = 0) -> Image.Image:
+    mode, width = VARIANTS[variant]
     image = Image.fromarray(image_array).convert("L")  # escala de grises
+    if width and image.width != width:
+        image = image.resize((width, max(1, round(image.height * width / image.width))), Image.LANCZOS)
+    if mode == "otsu":                                  # umbral calculado de la propia foto (luz y contraste distintos en cada una)
+        threshold = _otsu_threshold(np.asarray(image))
+        return image.point(lambda p, t=threshold: 255 if p > t else 0)
+    if mode == "contraste":                             # sin binarizar: Tesseract hace la suya sobre una imagen con el contraste estirado
+        return ImageOps.autocontrast(image)
     # Umbral fijo simple: el MRZ es texto negro impreso sobre fondo claro, no hace falta un
     # umbral adaptativo más sofisticado para este caso de uso.
     return image.point(lambda p: 255 if p > 140 else 0)
 
 
-def extract_mrz_lines(image_array: np.ndarray) -> list:
+def extract_mrz_lines(image_array: np.ndarray, variant: int = 0) -> list:
     """Devuelve las líneas de texto no vacías que Tesseract detectó, en el orden en que
     aparecen. El reverso de la cédula trae más texto impreso además de la zona MRZ, así que se
     espera que las ÚLTIMAS 3 líneas no vacías sean la MRZ (siempre son las 3 líneas finales del
     documento, por definición del estándar) — el llamador se queda con esas 3."""
-    processed = _preprocess(image_array)
+    processed = _preprocess(image_array, variant)
     raw_text = pytesseract.image_to_string(processed, config=_TESSERACT_CONFIG)
     return [line.strip() for line in raw_text.splitlines() if line.strip()]

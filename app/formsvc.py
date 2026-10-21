@@ -6,12 +6,13 @@ import logging
 import os
 import re
 from datetime import datetime, timedelta
-from typing import Optional
+from app.timeutil import utcnow
+from typing import Optional, Tuple
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
-from app import formlib, jobs
+from app import formlib, jobs, minors, privacy
 from app.models import AccessLog, Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormSubmission, User, WebForm
 from app.storage import form_file_key, get_storage
 from app.timeutil import to_local
@@ -27,6 +28,7 @@ public_cache = TTLCache(PUBLIC_CACHE_SECONDS)
 
 def invalidate_public_cache() -> None:
     public_cache.clear()
+    _held_cache.clear()
 
 # columnas de un Excel de pre-llenado (en minúscula) -> clave del campo del evento
 COLUMN_TO_KEY = {
@@ -50,7 +52,7 @@ def get_schedule(form: WebForm) -> list:
 
 
 def now_local() -> datetime:
-    return to_local(datetime.utcnow()).replace(tzinfo=None)
+    return to_local(utcnow()).replace(tzinfo=None)
 
 
 def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
@@ -78,7 +80,7 @@ def code_uses(db: Session, code: FormDiscountCode) -> int:
     """Usos de un código: inscripciones reales confirmadas + las que están pagando ahora (mismo criterio que el cupo)."""
     return db.query(FormSubmission).filter(
         FormSubmission.discount_code_id == code.id, FormSubmission.is_test == False,  # noqa: E712
-        or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > datetime.utcnow() - PENDING_HOLD))).count()
+        or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > utcnow() - PENDING_HOLD))).count()
 
 
 def price_context(db: Session, form: WebForm, pay: dict, link, code):
@@ -146,7 +148,7 @@ def quota_counts(db: Session, form: WebForm, rules: list) -> dict:
         return {}
     if db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None).first():  # noqa: E711
         rebuild_quota_keys(db, form, rules)
-    hold = datetime.utcnow() - PENDING_HOLD
+    hold = utcnow() - PENDING_HOLD
     cols = [func.count(FormSubmission.id).filter(func.strpos(FormSubmission.quota_keys, f"|{rule_sig(r)}|") > 0) for r in rules]
     row = db.query(*cols).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
                                  or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold))).one()
@@ -157,13 +159,6 @@ def quota_status(db: Session, form: WebForm) -> list:
     rules = quota_rules(form)
     counts = quota_counts(db, form, rules)
     return [{"id": r["id"], "used": counts[r["id"]], "left": max(0, r["limit"] - counts[r["id"]])} for r in rules]
-
-
-def quota_full_rule(db: Session, form: WebForm, values: dict, rules: Optional[list] = None):
-    """La primera regla YA llena que esta inscripción también cumpliría (o None)."""
-    rules = quota_rules(form) if rules is None else rules
-    counts = quota_counts(db, form, rules)
-    return next((r for r in rules if counts[r["id"]] >= r["limit"] and quota_match(r, values)), None)
 
 
 def quota_public(db: Session, form: WebForm) -> dict:
@@ -186,14 +181,101 @@ def quota_public(db: Session, form: WebForm) -> dict:
 
 
 def held_count(db: Session, form: WebForm) -> int:
-    """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min)."""
-    holding = db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
-                                           FormPayment.submission_id != None, FormPayment.created_at > datetime.utcnow() - PENDING_HOLD).count()  # noqa: E711
-    return real_submissions(db, form).count() + holding
+    """Cupo ocupado: inscripciones reales confirmadas + las que están pagando ahora (esperan a Wompi hasta 30 min). UNA sola consulta (antes eran dos)."""
+    from sqlalchemy import select
+    confirmed = select(func.count()).select_from(FormSubmission).where(
+        FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == "confirmed").scalar_subquery()  # noqa: E712
+    holding = select(func.count()).select_from(FormPayment).where(
+        FormPayment.form_id == form.id, FormPayment.status == "pending", FormPayment.is_test == False,  # noqa: E712
+        FormPayment.submission_id != None, FormPayment.created_at > utcnow() - PENDING_HOLD).scalar_subquery()  # noqa: E711
+    return int(db.execute(select(confirmed + holding)).scalar() or 0)
 
 
-def is_full(db: Session, form: WebForm) -> bool:
-    return form.capacity is not None and held_count(db, form) >= form.capacity
+_held_cache = TTLCache(float(os.getenv("FORM_HELD_CACHE_SECONDS", "2")))
+
+
+def invalidate_held() -> None:
+    """Se libera (o cambia) un cupo: la caché del «lleno» de ESTE proceso se olvida al instante (otros procesos, hasta ~2 s)."""
+    _held_cache.clear()
+
+
+def bump_held(form: WebForm) -> None:
+    """Este proceso acaba de apartar un cupo (confirmado o esperando pago): si la caché del conteo existe, sube en 1, así la vía rápida ve el «lleno» sin esperar
+    a que venza (en otros procesos, hasta ~2 s; el bloqueo de la base siempre manda)."""
+    cur = _held_cache.get(form.id)
+    if form.capacity is not None and cur is not None:
+        _held_cache.set(form.id, cur + 1)
+
+
+def held_count_cached(db: Session, form: WebForm) -> int:
+    """`held_count` con caché de unos segundos y una sola recarga a la vez. SOLO para la vía rápida de «cupo lleno» (rechazar sin pedir el bloqueo): un dato viejo puede
+    rechazar unos segundos de más si se liberó un cupo, pero NUNCA deja pasar de más: quien pasa se vuelve a comprobar con el bloqueo dentro de `form_reserve_slot`."""
+    return _held_cache.get_or_compute(form.id, lambda: held_count(db, form))
+
+
+def mark_full(form: WebForm) -> None:
+    """La base acaba de decir «lleno» bajo bloqueo: los siguientes envíos se rechazan sin pedir el bloqueo durante unos segundos."""
+    if form.capacity is not None:
+        _held_cache.set(form.id, form.capacity)
+
+
+def has_confirmed_sid(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str]) -> bool:
+    """¿Ya hay una inscripción confirmada con esta clave de envío (y esta persona)? Misma condición que el reintento de `form_reserve_slot`, sin bloqueo:
+    un reintento con la MISMA `sid` debe responder «replayed» aunque el formulario ya esté lleno."""
+    if not sid:
+        return False
+    q = db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.sid == sid, FormSubmission.is_test == False,  # noqa: E712
+                                           FormSubmission.status == "confirmed")
+    if person_id is not None:
+        q = q.filter(FormSubmission.person_id == person_id)
+    return q.first() is not None
+
+
+def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool) -> Tuple[bool, bool]:
+    """(reintento, duplicado) con UNA lectura SIN bloqueo, ANTES de pedir el `FOR UPDATE` del formulario. Mismas condiciones que `form_reserve_slot` (migración 0049): reintento =
+    ya hay una inscripción confirmada con esta `sid` (y esta persona, si viene); duplicado = ya hay una confirmada real con esta cédula (las pruebas nunca cuentan). Es solo un
+    adelanto para no hacer fila por algo que ya se sabe: la reserva bajo bloqueo sigue siendo la autoridad y repite todas sus comprobaciones."""
+    from sqlalchemy import false, select
+    fs = FormSubmission
+    retry_q = false()
+    if sid:
+        conds = [fs.form_id == form.id, fs.sid == sid, fs.is_test == is_test, fs.status == "confirmed"]
+        if person_id is not None:
+            conds.append(fs.person_id == person_id)
+        retry_q = select(fs.id).where(*conds).exists()
+    dup_q = false()
+    if person_id is not None and not is_test:
+        dup_q = select(fs.id).where(fs.form_id == form.id, fs.is_test == False, fs.status == "confirmed", fs.person_id == person_id).exists()  # noqa: E712
+    if not sid and (person_id is None or is_test):
+        return False, False
+    row = db.execute(select(retry_q, dup_q)).one()
+    return bool(row[0]), bool(row[1])
+
+
+def is_full(db: Session, form: WebForm, held: Optional[int] = None) -> bool:
+    if form.capacity is None:
+        return False
+    return (held if held is not None else held_count(db, form)) >= form.capacity
+
+
+# `set_config(..., true)` = SET LOCAL (solo esta transacción; vale con el pooler de Neon en modo transacción). Contrapresión: si el bloqueo de la fila del formulario no se
+# consigue en FORM_LOCK_TIMEOUT_MS (3 s) la base lanza `lock_not_available` (55P03) y el envío responde 503 + Retry-After en vez de retener hilo y conexión hasta que Firebase
+# corte a los 60 s. Las dos sentencias viajan en UNA ida y vuelta.
+FORM_LOCK_TIMEOUT_MS = int(os.getenv("FORM_LOCK_TIMEOUT_MS", "3000"))
+_RESERVE_SQL = text("SELECT set_config('lock_timeout', :lock_timeout, true); SELECT form_reserve_slot(:form_id, :person_id, :sid, :is_test, :hold_from, CAST(:matched AS jsonb))")
+
+
+def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Optional[str], is_test: bool, rules: list, values: dict) -> dict:
+    """Reintento, cupos por variable, cupo total y duplicado en UNA ida y vuelta (función `form_reserve_slot`, migración 0049). Deja la fila del
+    formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
+    Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
+    params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
+              "matched": json.dumps([{"sig": rule_sig(r), "limit": r["limit"], "label": r["label"]} for r in rules if quota_match(r, values)])}
+    res = db.execute(_RESERVE_SQL, params).scalar()
+    if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
+        rebuild_quota_keys(db, form, rules)
+        res = db.execute(_RESERVE_SQL, params).scalar()
+    return res
 
 
 def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
@@ -205,28 +287,34 @@ def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
             get_storage().delete(form_file_key(event.tenant_id, form.id, v["stored"]))
     db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
+    invalidate_held()
 
 
 def purge_stale_pending(db: Session, form: WebForm) -> None:
     """Quita las inscripciones en espera de pago de más de 24 h (abandonadas). Se llama de forma perezosa al enviar."""
     for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == PENDING,
-                                               FormSubmission.created_at < datetime.utcnow() - PENDING_PURGE):
+                                               FormSubmission.created_at < utcnow() - PENDING_PURGE):
         discard_submission(db, form, sub)
 
 
-def confirm_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
+def confirm_submission(db: Session, form: WebForm, sub: FormSubmission, record_event: bool = True) -> bool:
     """La parte BARATA de confirmar una inscripción (sin confirmar la transacción: la confirma quien llama, junto con lo demás): estado, marca de envío
     para la analítica, invitación usada y —si el formulario carga en tiempo real— el trabajo en segundo plano que la pasa a la base del evento y envía
-    la escarapela (correo, base de datos, etc.: nada de eso ocurre dentro de la petición ni dentro del bloqueo del cupo)."""
+    la escarapela (correo, base de datos, etc.: nada de eso ocurre dentro de la petición ni dentro del bloqueo del cupo).
+    Devuelve True si encoló un trabajo (quien llama solo necesita despertar al worker en ese caso)."""
+    enqueued = False
     sub.status = "confirmed"
-    db.add(FormEvent(form_id=form.id, sid=sub.sid or os.urandom(4).hex(), kind="submit", source=sub.source, is_test=sub.is_test))
+    if record_event:          # el envío del formulario público lo registra después del commit (`forms_public._record_submit_event`), fuera del bloqueo del cupo
+        db.add(FormEvent(form_id=form.id, sid=sub.sid or os.urandom(4).hex(), kind="submit", source=sub.source, is_test=sub.is_test))
     if sub.invite_id:
         inv = db.query(FormInvite).filter_by(id=sub.invite_id).first()
         if inv:
-            inv.used_at = datetime.utcnow()
+            inv.used_at = utcnow()
     if get_settings(form)["feed"] == "realtime" and not sub.is_test:
         db.flush()
         jobs.enqueue(db, "form_feed", {"submission_id": sub.id}, dedupe_key=str(sub.id))
+        enqueued = True
+    return enqueued
 
 
 def finalize_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
@@ -255,11 +343,11 @@ def run_feed_job(submission_id: int) -> None:
         db.close()
 
 
-def public_state(db: Session, form: WebForm) -> str:
+def public_state(db: Session, form: WebForm, held: Optional[int] = None) -> str:
     """Lo que ve el público: activo | pruebas | cerrado | cupo_lleno | finalizado. `cupo_lleno` se ve igual que
     `cerrado` (misma plantilla) pero se distingue para los reportes."""
     st = status_of(form)
-    if st == "activo" and is_full(db, form):
+    if st == "activo" and is_full(db, form, held):
         return "cupo_lleno"
     return st
 
@@ -377,6 +465,21 @@ def _send_digital_badge(db: Session, form: WebForm, event: Event, sub: FormSubmi
         log.error("no se pudo enviar la escarapela virtual de la inscripción %s", sub.id, exc_info=True)
 
 
+def _send_accept_link(db: Session, event: Event, sub: FormSubmission, person_id: str) -> None:
+    """Enlace personal de autorización por correo (B2a) al confirmar la inscripción. El correo lo escribió quien se inscribió: el enlace NO es confiable (la aceptación queda «por verificar»).
+    Una sola vez por persona y evento; nunca lanza (la inscripción ya quedó cargada)."""
+    from app import acceptlink
+    try:
+        user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
+        att = db.query(EventAttendee).filter_by(event_id=event.id, user_id=person_id).first()
+        to = (user.email or "").strip() if user else ""
+        if not (user and att and re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$", to)) or att.accept_sent_at or minors.is_minor(user.birth_date):
+            return
+        acceptlink.send_link(db, event, user, att, to, trusted=False)
+    except Exception:       # noqa: BLE001 — ver docstring
+        log.error("no se pudo enviar el enlace de autorización de la inscripción %s", sub.id, exc_info=True)
+
+
 def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_attendee) -> Optional[str]:
     """Carga UNA inscripción a la base del evento como «No registrado» (Usuario + asistente del evento). Devuelve un
     mensaje de error si no se pudo (p. ej. no trae cédula) o None. No toca AccessLog: no queda registrado."""
@@ -386,6 +489,8 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     person_id = str(kv.get("id") or "").strip()
     if not person_id:
         return "La inscripción no trae cédula, no se pudo cargar a la base"
+    if privacy.is_suppressed(db, event.tenant_id, person_id):
+        return "Esta persona solicitó la supresión de sus datos: no se cargó a la base del evento"
     user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first()
     if not user:
         user = User(id=person_id, tenant_id=event.tenant_id)
@@ -394,6 +499,10 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
                       ("phone", "phone"), ("email", "email"), ("opt_1", "opt_1")):
         if kv.get(key):
             setattr(user, attr, str(kv[key]))
+    birth = minors.parse_birth(kv.get("birth_date"))
+    if birth is not None:                                  # menores (L3): menos de 18 años = sin biometría (la inscripción web nunca calcula vectores, pero la bandera y la fecha se guardan)
+        user.birth_date = birth
+        user.is_biometric_enabled = not minors.is_minor(birth)
     extras = user.get_extras()
     extras.update({k: str(v) for k, v in kv.items() if k.startswith("opcional_")})
     user.set_extras(extras)
@@ -403,6 +512,8 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     sub.fed = True
     if not sub.is_test and wants_digital_badge(db, form):
         _send_digital_badge(db, form, event, sub, person_id, upsert_attendee)
+    if not sub.is_test and event.aceptar_enabled and event.accept_link_email and event.facial_enabled and not event.biometrics_locked:
+        _send_accept_link(db, event, sub, person_id)
     return None
 
 
@@ -415,7 +526,7 @@ def feed_pending(db: Session, form: WebForm, upsert_attendee) -> dict:
             problems.append(f"Inscripción {sub.id}: {err}")
         else:
             done += 1
-    form.fed_at = datetime.utcnow()
+    form.fed_at = utcnow()
     db.commit()
     return {"fed": done, "problems": problems}
 

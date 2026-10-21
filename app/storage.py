@@ -6,15 +6,21 @@ agregando la clase `GcsStorage` con los mismos métodos — el resto del código
 Una CLAVE es una ruta relativa con «/» (por ejemplo `acme/known_people/1001.jpg`). Los valores viejos guardados en la base como
 `data/acme/...` se aceptan igual (se les quita el prefijo `data/`), así que no hace falta migrar nada.
 
-`response()` devuelve la respuesta HTTP que sirve el archivo: en local lo lee del disco; con Cloud Storage sería una redirección
-a una URL firmada de corta vida, sin que las rutas que la usan lo noten."""
+`response()` devuelve la respuesta HTTP que sirve el archivo: en local lo lee del disco; con Cloud Storage lo transmite por la app en
+trozos (sin URLs firmadas: no piden el permiso de firmar a la cuenta de servicio, y fotos/firmas se sirven descifradas por la app de
+todos modos). Las rutas que lo usan no notan la diferencia.
+
+Cloud Storage: `STORAGE_BACKEND=gcs`, `GCS_BUCKET` y, opcional, `GCS_PREFIX` (carpeta dentro del bucket). Credenciales: las de la
+cuenta de servicio del servicio de Cloud Run (nunca una llave en archivo)."""
 import mimetypes
+from datetime import timedelta
 import os
 import shutil
 from typing import Iterable, List, Optional, Protocol
+from urllib.parse import quote
 
 from fastapi import HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 
 class Storage(Protocol):
@@ -22,6 +28,7 @@ class Storage(Protocol):
     def get(self, key: str) -> bytes: ...
     def exists(self, key: str) -> bool: ...
     def delete(self, key: str) -> None: ...
+    def delete_all_versions(self, key: str) -> int: ...      # borra también las versiones NO vigentes (bucket con versionado); devuelve cuántas quedaron sin poder borrarse
     def move(self, src: str, dst: str) -> None: ...
     def delete_prefix(self, prefix: str) -> None: ...
     def list(self, prefix: str) -> List[str]: ...
@@ -80,6 +87,10 @@ class LocalStorage:
         except FileNotFoundError:
             pass
 
+    def delete_all_versions(self, key: str) -> int:      # disco local: no hay versiones
+        self.delete(key)
+        return 0
+
     def move(self, src: str, dst: str) -> None:
         target = self._path(dst)
         os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -111,16 +122,149 @@ class LocalStorage:
         os.remove(probe)
 
 
+class GcsStorage:
+    """Mismos métodos que LocalStorage sobre un bucket de Cloud Storage (`google-cloud-storage`, importado solo si se usa)."""
+
+    def __init__(self, bucket: str, prefix: str = "", client=None):
+        from google.cloud import storage as gcs
+        from google.cloud.exceptions import NotFound
+        self._missing = NotFound
+        self.client = client or gcs.Client()
+        self.bucket = self.client.bucket(bucket)
+        self.prefix = normalize_key(prefix)
+
+    def _name(self, key: str) -> str:
+        k = normalize_key(key)
+        return f"{self.prefix}/{k}" if self.prefix and k else (self.prefix or k)
+
+    def _folder(self, prefix: str) -> str:
+        name = self._name(prefix)
+        return f"{name}/" if name else ""        # «acme/» y no «acme»: borrar/listar acme nunca toca acme2
+
+    def put(self, key: str, data: bytes) -> str:
+        self.bucket.blob(self._name(key)).upload_from_string(data, content_type=mimetypes.guess_type(key)[0] or "application/octet-stream")
+        return normalize_key(key)                # una subida a Cloud Storage es atómica: nunca queda a medias
+
+    def get(self, key: str) -> bytes:
+        try:
+            return self.bucket.blob(self._name(key)).download_as_bytes()
+        except self._missing:
+            raise FileNotFoundError(key)
+
+    def exists(self, key: str) -> bool:
+        try:
+            return self.bucket.blob(self._name(key)).exists()
+        except ValueError:
+            return False
+
+    def delete(self, key: str) -> None:
+        try:
+            self.bucket.blob(self._name(key)).delete()
+        except self._missing:
+            pass
+
+    def delete_all_versions(self, key: str) -> int:
+        """Borra la versión vigente y todas las no vigentes de ESE objeto. Devuelve cuántas versiones NO se pudieron borrar (p. ej. por permisos): la supresión lo informa, no lo oculta."""
+        name, failed = self._name(key), 0
+        for blob in self.client.list_blobs(self.bucket, prefix=name, versions=True):
+            if blob.name != name:
+                continue
+            try:
+                blob.delete(generation=blob.generation)
+            except self._missing:
+                pass
+            except Exception:  # noqa: BLE001 — se informa en la respuesta
+                failed += 1
+        return failed
+
+    def move(self, src: str, dst: str) -> None:
+        try:
+            self.bucket.rename_blob(self.bucket.blob(self._name(src)), self._name(dst))
+        except self._missing:
+            raise FileNotFoundError(src)
+
+    def delete_prefix(self, prefix: str) -> None:
+        for blob in self.client.list_blobs(self.bucket, prefix=self._folder(prefix)):
+            try:
+                blob.delete()
+            except self._missing:
+                pass
+
+    def list(self, prefix: str) -> List[str]:
+        cut = len(self.prefix) + 1 if self.prefix else 0
+        return sorted(b.name[cut:] for b in self.client.list_blobs(self.bucket, prefix=self._folder(prefix)))
+
+    def response(self, key: str, filename: Optional[str] = None, media_type: Optional[str] = None, headers: Optional[dict] = None) -> Response:
+        blob = self.bucket.blob(self._name(key))
+        try:
+            blob.reload()
+        except self._missing:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        out = {"content-length": str(blob.size), **(headers or {})}
+        if filename:                              # mismo encabezado que arma FileResponse
+            quoted = quote(filename)
+            out["content-disposition"] = f"attachment; filename*=utf-8''{quoted}" if quoted != filename else f'attachment; filename="{filename}"'
+
+        def chunks():
+            with blob.open("rb") as fh:
+                while chunk := fh.read(1 << 20):
+                    yield chunk
+        return StreamingResponse(chunks(), media_type=media_type or blob.content_type or mimetypes.guess_type(key)[0], headers=out)
+
+    _SIGN_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+
+    def _signing_kwargs(self) -> dict:
+        """Cómo firmar una URL. Con una llave de archivo (desarrollo) las credenciales ya saben firmar: no hace falta nada más. En Cloud Run no hay llave: se firma con la API IAM (signBlob), y esa llamada
+        exige un token con el alcance `cloud-platform`; las credenciales del cliente de Storage solo traen alcances de Storage (error real en staging, 2026-10-07: «insufficient authentication
+        scopes»). Por eso se piden credenciales APARTE con `cloud-platform`, se refrescan y se pasan `service_account_email` y `access_token` a `generate_signed_url`."""
+        from google.auth.credentials import Signing
+        creds = getattr(self, "_sign_creds", None)
+        if creds is None:
+            import google.auth
+            creds, _ = google.auth.default(scopes=self._SIGN_SCOPES)
+            self._sign_creds = creds
+        if isinstance(creds, Signing):
+            return {}
+        if not creds.valid:
+            from google.auth.transport.requests import Request as AuthRequest
+            creds.refresh(AuthRequest())
+        email = getattr(creds, "service_account_email", None)
+        if not email or email == "default" or not creds.token:
+            raise RuntimeError("No se pudo firmar la URL de subida: las credenciales no son de una cuenta de servicio (falta serviceAccountTokenCreator sobre sí misma o la API iamcredentials)")
+        return {"service_account_email": email, "access_token": creds.token}
+
+    def signed_put_url(self, key: str, content_type: str, max_bytes: int, expires_seconds: int) -> tuple:
+        """URL firmada v4 para que el NAVEGADOR suba directo al bucket (app/uploads.py). Devuelve (url, encabezados que el navegador
+        debe mandar tal cual: van firmados). En Cloud Run la cuenta de servicio no tiene llave privada: se firma con la API IAM
+        (signBlob), que exige `roles/iam.serviceAccountTokenCreator` de la cuenta sobre sí misma. El bucket necesita CORS para PUT
+        desde el dominio de la app (deploy/gcs-app-cors.json)."""
+        headers = {"Content-Type": content_type, "x-goog-content-length-range": f"0,{max_bytes}"}
+        kwargs = self._signing_kwargs()
+        url = self.bucket.blob(self._name(key)).generate_signed_url(
+            version="v4", method="PUT", expiration=timedelta(seconds=expires_seconds), headers=dict(headers), **kwargs)   # copia: la biblioteca le agrega «Host» a lo que recibe y eso no debe viajar al navegador
+        return url, headers
+
+    def ping(self) -> None:
+        """Lectura mínima del bucket (para /readyz; /readyz solo lo usa el arranque, nunca los chequeos frecuentes)."""
+        next(iter(self.client.list_blobs(self.bucket, max_results=1)), None)
+
+
 _storage: Optional[Storage] = None
 
 
 def get_storage() -> Storage:
     global _storage
     if _storage is None:
-        backend = os.getenv("STORAGE_BACKEND", "local")
-        if backend != "local":
-            raise RuntimeError(f"STORAGE_BACKEND={backend!r} todavía no está implementado (Fase 1: Cloud Storage)")
-        _storage = LocalStorage(os.getenv("STORAGE_LOCAL_DIR", "data"))
+        backend = os.getenv("STORAGE_BACKEND") or "local"      # vacío = local (así lo documentan .env.example y .env.staging.example)
+        if backend == "gcs":
+            bucket = os.getenv("GCS_BUCKET")
+            if not bucket:
+                raise RuntimeError("STORAGE_BACKEND=gcs necesita GCS_BUCKET")
+            _storage = GcsStorage(bucket, os.getenv("GCS_PREFIX", ""))
+        elif backend == "local":
+            _storage = LocalStorage(os.getenv("STORAGE_LOCAL_DIR", "data"))
+        else:
+            raise RuntimeError(f"STORAGE_BACKEND={backend!r} no existe (use local o gcs)")
     return _storage
 
 
@@ -138,7 +282,9 @@ def delete_many(keys: Iterable[str]) -> None:
 
 # ------------------------------------------------------------------ claves de los archivos de la aplicación (un solo lugar, para no repetir rutas por todo el código)
 def photo_key(tenant_id: str, user_id: str) -> str:
-    return key_of(tenant_id, "known_people", f"{user_id}.jpg")
+    """Foto biométrica. BIOMETRIC_KEY_PREFIX (en la nube «biometric», en la VM vacío) las junta bajo UN prefijo común, para que la regla de
+    ciclo de vida borre en 1 día las versiones viejas que dejan la purga y las correcciones (deploy/gcs-app-lifecycle.json)."""
+    return key_of(os.getenv("BIOMETRIC_KEY_PREFIX", ""), tenant_id, "known_people", f"{user_id}.jpg")
 
 
 def badge_asset_key(tenant_id: str, filename: str) -> str:

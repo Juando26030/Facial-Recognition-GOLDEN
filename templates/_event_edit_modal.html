@@ -214,6 +214,7 @@
     form.coordinator_label.value = ev.coordinator_staff_id ? (coordinatorsById[ev.coordinator_staff_id] || '') : '';
     if (form.commercial_label) form.commercial_label.value = ev.commercial_staff_id ? (commercialsById[ev.commercial_staff_id] || '') : '';
     form.status.value = ev.status || 'creado';
+    form.status.dataset.initial = form.status.value;          // para pedir confirmación solo si pasa a «Finalizado»
     form.bandana_color.value = ev.bandana_color || '#D4AF37';
     form.bandana_color_name.value = ev.bandana_color_name || '';
     document.getElementById('eeReportFile').value = '';
@@ -265,6 +266,8 @@
       delete payload.commercial_label;
     }
 
+    const statusSel = document.getElementById('modalStatusSelect');
+    if (payload.status === 'finalizado' && statusSel && statusSel.dataset.initial !== 'finalizado' && !(await showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: 'Sí, finalizar' }))) return;
     const btn = form.querySelector('button[type="submit"]');
     setButtonLoading(btn, true, 'Guardando...');
     const res = await fetch(`/api/events/${eventId}`, {

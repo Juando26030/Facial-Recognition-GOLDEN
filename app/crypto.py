@@ -36,8 +36,24 @@ def enabled() -> bool:
     return _fernet() is not None
 
 
+class KeyMissing(RuntimeError):
+    """En producción no se guarda nada biométrico sin FACE_ENCRYPTION_KEY (falla cerrado)."""
+
+
+def production() -> bool:
+    return os.getenv("ENVIRONMENT", "development") == "production"
+
+
+def assert_ready() -> None:
+    """Verificación de arranque: en producción la llave es OBLIGATORIA (la aplicación no arranca sin ella y no se escribe ningún vector ni foto en claro)."""
+    if production() and _fernet() is None:
+        raise KeyMissing("Falta FACE_ENCRYPTION_KEY: en producción es obligatoria (no se guardan vectores ni fotos sin cifrar)")
+
+
 def encrypt_text(value: str) -> str:
     f = _fernet()
+    if f is None and value and production():
+        raise KeyMissing("Falta FACE_ENCRYPTION_KEY")
     if f is None or value is None or value.startswith(TEXT_PREFIX):
         return value
     return TEXT_PREFIX + f.encrypt(value.encode()).decode()
@@ -58,6 +74,8 @@ def decrypt_text(value: str) -> Optional[str]:
 
 def encrypt_bytes(data: bytes) -> bytes:
     f = _fernet()
+    if f is None and production():
+        raise KeyMissing("Falta FACE_ENCRYPTION_KEY")
     return data if f is None or data.startswith(FILE_MAGIC) else FILE_MAGIC + f.encrypt(data)
 
 

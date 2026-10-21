@@ -62,5 +62,10 @@ def extract(image_array, kwargs: dict) -> Optional[list]:
     return BiometricEngine.extract_encoding(image_array, **kwargs)
 
 
+def analyze(image_array, kwargs: dict) -> dict:
+    from app.biometrics import BiometricEngine
+    return BiometricEngine.analyze_face(image_array, **kwargs)
+
+
 def ping() -> bool:
     return True

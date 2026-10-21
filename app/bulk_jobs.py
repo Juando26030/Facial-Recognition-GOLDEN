@@ -6,19 +6,29 @@ consulta `GET /api/bulk_jobs/{id}` y dibuja la barra con el porcentaje y el tiem
 avance, un proceso de horas ya no depende de que la conexión HTTP aguante, y la app no queda congelada para los
 demás usuarios mientras se codifican fotos.
 
-El estado vive en Postgres (no en memoria); el hilo vive en el proceso que lo creó. Si ese proceso se reinicia
-a mitad de camino, la tarea queda sin latidos y se marca como interrumpida al consultarla.
+El estado vive en Postgres (no en memoria). Dónde corre el trabajo lo decide `BULK_BACKEND`:
+  * `thread` (por defecto; VM y desarrollo): un hilo en el proceso que recibió la petición. Si ese proceso se reinicia a mitad de
+    camino, la tarea queda sin latidos y se marca como interrumpida al consultarla.
+  * `cloudrun` (Cloud Run): en Cloud Run un hilo se queda sin CPU apenas se responde, y una carga de miles de fotos tarda horas.
+    La petición guarda en la fila qué procesar (`spec_json`: tokens de los archivos YA subidos al bucket, no su contenido — el servicio
+    web ni siquiera los descarga) y lanza una ejecución del Cloud Run Job `BULK_JOB_NAME` con el id como argumento; el Job
+    (`python -m app.bulk_runner <id>`, misma imagen) corre el mismo código y reporta el avance en la misma fila. La barra no cambia.
 """
 import json
+import logging
+import os
 import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import BulkJob
+
+log = logging.getLogger("golden.bulk")
 
 _active = set()      # ids de las cargas que ESTE proceso está ejecutando (para marcarlas si se apaga a mitad)
 
@@ -27,8 +37,13 @@ ROW_WEIGHT = 1
 STALE_AFTER = timedelta(minutes=10)
 
 
-def create_job(db: Session, event_id: int, staff_id: int) -> str:
-    job = BulkJob(id=uuid.uuid4().hex, event_id=event_id, staff_user_id=staff_id, status="queued", stage="En cola")
+def uses_cloud_run() -> bool:
+    return os.getenv("BULK_BACKEND", "thread") == "cloudrun"
+
+
+def create_job(db: Session, event_id: int, staff_id: int, spec: dict = None) -> str:
+    job = BulkJob(id=uuid.uuid4().hex, event_id=event_id, staff_user_id=staff_id, status="queued", stage="En cola",
+                  spec_json=json.dumps(spec) if spec is not None else None)
     db.add(job)
     db.commit()
     return job.id
@@ -36,7 +51,7 @@ def create_job(db: Session, event_id: int, staff_id: int) -> str:
 
 def active_job(db: Session, event_id: int):
     """Tarea en curso de este evento (y con latido reciente), para no procesar dos cargas a la vez."""
-    since = datetime.utcnow() - STALE_AFTER
+    since = utcnow() - STALE_AFTER
     return db.query(BulkJob).filter(
         BulkJob.event_id == event_id, BulkJob.status.in_(("queued", "running")), BulkJob.updated_at > since,
     ).first()
@@ -57,7 +72,7 @@ class Reporter:
             return
         self.last = now
         self.db.query(BulkJob).filter(BulkJob.id == self.job_id).update(
-            {"status": "running", "stage": stage, "done": done, "total": total, "updated_at": datetime.utcnow()}
+            {"status": "running", "stage": stage, "done": done, "total": total, "updated_at": utcnow()}
         )
         self.db.commit()
 
@@ -68,7 +83,7 @@ class Reporter:
 def _finish(job_id: str, result=None, error_status=None, error_detail=None):
     db = SessionLocal()
     try:
-        values = {"finished_at": datetime.utcnow(), "updated_at": datetime.utcnow()}
+        values = {"finished_at": utcnow(), "updated_at": utcnow()}
         if error_status is not None:
             values.update(status="error", error_status=error_status, error_detail=str(error_detail), stage="Error")
         else:
@@ -82,30 +97,39 @@ def _finish(job_id: str, result=None, error_status=None, error_detail=None):
         db.close()
 
 
-def start(job_id: str, work):
-    """Ejecuta `work(db, reporter)` en un hilo aparte. `work` devuelve el resultado (dict) o lanza HTTPException /
+def run(job_id: str, work) -> None:
+    """Ejecuta `work(db, reporter)` y deja el resultado en la tarea. `work` devuelve el resultado (dict) o lanza HTTPException /
     cualquier error — que quedan guardados en la tarea para que el navegador los muestre como antes."""
     from fastapi import HTTPException
 
-    def runner():
-        db = SessionLocal()
-        reporter = Reporter(job_id)
-        _active.add(job_id)
-        try:
-            reporter("Preparando", 0, 0, force=True)
-            _finish(job_id, result=work(db, reporter))
-        except HTTPException as e:
-            db.rollback()
-            _finish(job_id, error_status=e.status_code, error_detail=e.detail)
-        except Exception as e:  # noqa: BLE001 — cualquier fallo se le muestra al usuario, no se pierde en el hilo
-            db.rollback()
-            _finish(job_id, error_status=500, error_detail=f"Error inesperado: {e}")
-        finally:
-            _active.discard(job_id)
-            reporter.close()
-            db.close()
+    db = SessionLocal()
+    reporter = Reporter(job_id)
+    _active.add(job_id)
+    try:
+        reporter("Preparando", 0, 0, force=True)
+        _finish(job_id, result=work(db, reporter))
+    except HTTPException as e:
+        db.rollback()
+        _finish(job_id, error_status=e.status_code, error_detail=e.detail)
+    except Exception as e:  # noqa: BLE001 — cualquier fallo se le muestra al usuario, no se pierde en el hilo
+        log.error("la carga %s falló", job_id, exc_info=True)
+        db.rollback()
+        _finish(job_id, error_status=500, error_detail=f"Error inesperado: {e}")
+    finally:
+        _active.discard(job_id)
+        reporter.close()
+        db.close()
 
-    threading.Thread(target=runner, daemon=True, name=f"bulk-{job_id[:8]}").start()
+
+def start(job_id: str, work) -> None:
+    """Modo `thread`: `run` en un hilo aparte."""
+    threading.Thread(target=run, args=(job_id, work), daemon=True, name=f"bulk-{job_id[:8]}").start()
+
+
+def launch_cloud_run(job_id: str) -> None:
+    """Modo `cloudrun`: una ejecución del Job `BULK_JOB_NAME` (projects/<p>/locations/<r>/jobs/<nombre>) con el id como argumento."""
+    from app import cloudrun
+    cloudrun.run_job(os.environ["BULK_JOB_NAME"], ["-m", "app.bulk_runner", job_id])
 
 
 def mark_interrupted() -> int:
@@ -119,13 +143,13 @@ def mark_interrupted() -> int:
 
 def serialize(job: BulkJob, db: Session) -> dict:
     """Estado para el navegador. Una tarea 'running' sin latidos hace más de 10 min se da por interrumpida."""
-    if job.status in ("queued", "running") and job.updated_at < datetime.utcnow() - STALE_AFTER:
+    if job.status in ("queued", "running") and job.updated_at < utcnow() - STALE_AFTER:
         job.status, job.error_status, job.stage = "error", 500, "Interrumpida"
         job.error_detail = "La carga se interrumpió (el servidor se reinició). Vuelve a intentarlo."
-        job.finished_at = datetime.utcnow()
+        job.finished_at = utcnow()
         db.commit()
     out = {"id": job.id, "status": job.status, "stage": job.stage, "done": job.done, "total": job.total,
-           "elapsed": ((job.finished_at or datetime.utcnow()) - job.created_at).total_seconds()}
+           "elapsed": ((job.finished_at or utcnow()) - job.created_at).total_seconds()}
     if job.status == "done":
         out["result"] = json.loads(job.result_json)
     if job.status == "error":

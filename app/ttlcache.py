@@ -17,6 +17,7 @@ class TTLCache:
         self.ttl, self.maxsize = ttl, maxsize
         self._data: Dict[Any, Tuple[float, Any]] = {}
         self._lock = threading.Lock()
+        self._key_locks: Dict[Any, threading.Lock] = {}
 
     def get(self, key, default=None):
         with self._lock:
@@ -26,6 +27,23 @@ class TTLCache:
             if hit:
                 del self._data[key]
         return default
+
+    def peek(self, key, max_stale: float = 0.0):
+        """(valor, estado): «fresh» si vigente, «stale» si venció hace ≤ `max_stale` s (se puede servir mientras otro lo refresca), (None, None) si no hay nada utilizable.
+        Con TTL 0 (caché apagada) nunca hay «stale»."""
+        if self.ttl <= 0:
+            max_stale = 0.0
+        with self._lock:
+            hit = self._data.get(key)
+            if not hit:
+                return None, None
+            now = time.monotonic()
+            if hit[0] > now:
+                return hit[1], "fresh"
+            if now - hit[0] <= max_stale:
+                return hit[1], "stale"
+            del self._data[key]
+        return None, None
 
     def set(self, key, value) -> None:
         with self._lock:
@@ -42,6 +60,23 @@ class TTLCache:
             value = factory()
             self.set(key, value)
         return value
+
+    def get_or_compute(self, key, factory: Callable[[], Any]):
+        """Como `get_or_set`, pero con UNA sola recarga a la vez por clave: al vencer la entrada, un hilo recalcula y los demás esperan ese resultado en vez de
+        repetir la consulta todos a la vez (efecto manada). Si `factory` falla no se guarda nada y el siguiente en la fila lo intenta."""
+        value = self.get(key, _MISSING)
+        if value is not _MISSING:
+            return value
+        with self._lock:
+            if len(self._key_locks) > self.maxsize:
+                self._key_locks.clear()
+            gate = self._key_locks.setdefault(key, threading.Lock())
+        with gate:
+            value = self.get(key, _MISSING)          # otro hilo pudo recargarla mientras esperábamos el turno
+            if value is _MISSING:
+                value = factory()
+                self.set(key, value)
+            return value
 
     def clear(self) -> None:
         with self._lock:

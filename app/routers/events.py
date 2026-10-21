@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
 
+from app import warmup
 from app.database import get_db
-from app.models import AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
+from app import event_rules
+from app.models import AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app.routers.areas_inventory import delete_event_modules
@@ -90,6 +92,7 @@ class EventUpdate(BaseModel):
     bandana_color_name: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    state_id: Optional[int] = None          # estado configurable (docs/18); al elegirlo, `status` pasa a su estado base
     auto_print_badge: Optional[bool] = None
     auto_register: Optional[bool] = None
     super_event_id: Optional[int] = None  # ítem 19; null explícito = sacarlo de su superevento
@@ -100,6 +103,7 @@ def _serialize(e: Event) -> dict:
         "id": e.id, "tenant_id": e.tenant_id, "tenant_name": e.tenant.name if e.tenant else None,
         "event_code": e.event_code, "name": e.name, "location": e.location, "address": e.address,
         "country": e.country, "city": e.city, "status": e.status,
+        "state_id": e.state_id, "state_name": e.state.name if e.state else None, "state_color": e.state.color if e.state else None,
         "start_date": e.start_date.isoformat() if e.start_date else None,
         "end_date": e.end_date.isoformat() if e.end_date else None,
         "setup_date": e.setup_date.isoformat() if e.setup_date else None,
@@ -336,6 +340,9 @@ def create_event(
 
     event_data = data.dict()
     event_data["commercial_staff_id"] = commercial_id
+    initial = event_rules.default_state(db, event_data.get("status") or "creado")
+    if initial is not None:
+        event_data["state_id"] = initial.id
     event = Event(**event_data, created_by_id=staff.id)
     db.add(event)
     db.commit()
@@ -351,8 +358,17 @@ def update_event(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    new_state = None
+    if data.state_id is not None:            # estado configurable (docs/18): el evento pasa al estado base de ese estado
+        new_state = db.get(EventState, data.state_id)
+        if not new_state or not new_state.is_active:
+            raise HTTPException(status_code=400, detail="El estado elegido no existe o está desactivado")
+        data.status = new_state.base_status
     if data.status is not None and data.status not in EVENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"Estado inválido (debe ser uno de: {', '.join(EVENT_STATUSES)})")
+    if new_state is None and data.status is not None and data.status != event.status:
+        new_state = event_rules.default_state(db, data.status)          # cambió solo el estado base: se usa el primer estado activo de ese tipo
+    status_changed = data.status is not None and data.status != event.status
     # 2026-09-16, pedido explícito: si el evento ya tiene gente cargada (roster y/o registros en
     # vivo), no se puede "devolver" a 'creado' — 'creado' es preparación previa al evento, y
     # volver a ese estado con datos reales adentro presta a confusión (¿el evento no ha empezado,
@@ -393,7 +409,11 @@ def update_event(
 
     for field, value in data.dict(exclude_unset=True).items():
         setattr(event, field, value)
+    if new_state is not None:
+        event.state_id = new_state.id
     db.commit()
+    if status_changed:
+        warmup.kick()                  # entra o sale de «en proceso»: precalentar / soltar instancias YA, sin esperar la hora
     return _serialize(event)
 
 

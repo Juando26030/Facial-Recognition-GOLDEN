@@ -1,4 +1,5 @@
 """Carga masiva de la base: modo síncrono de siempre y modo en segundo plano con progreso (Sprint 5)."""
+from app.timeutil import utcnow
 import io
 import time
 import zipfile
@@ -40,9 +41,9 @@ def _wait(client, job_id, timeout=30):
     raise AssertionError("la carga no terminó a tiempo")
 
 
-def _admin(client, factory, status="creado"):
+def _admin(client, factory, status="creado", **extra):
     factory.staff("admin", "root")
-    ev = factory.event(status)
+    ev = factory.event(status, **extra)
     login(client, "root")
     return ev
 
@@ -73,7 +74,7 @@ def test_background_mode_returns_a_job_and_finishes_with_the_same_result(client,
 
 def test_progress_is_weighted_so_photos_dominate(client, factory, monkeypatch):
     _fake_faces(monkeypatch)
-    ev = _admin(client, factory)
+    ev = _admin(client, factory, facial_enabled=True, client_photos_before=True)      # fotos del cliente (origen A), elegido en Parámetros
     job = _wait(client, _post(client, ev, zip_bytes=_photo_zip(["1001", "1002", "1003"])).json()["job_id"])
     assert job["status"] == "done"
     from app import bulk_jobs
@@ -84,7 +85,7 @@ def test_progress_is_weighted_so_photos_dominate(client, factory, monkeypatch):
 def test_errors_reach_the_browser_as_before(client, factory):
     ev = _admin(client, factory, status="finalizado")
     job = _wait(client, _post(client, ev).json()["job_id"])
-    assert job["status"] == "error" and job["error"]["status"] == 400 and "finalizado" in job["error"]["detail"]
+    assert job["status"] == "error" and job["error"]["status"] == 400 and "finalizado" in job["error"]["detail"].lower()
 
 
 def test_needs_labels_comes_back_as_the_job_result(client, factory):
@@ -114,7 +115,7 @@ def test_job_without_heartbeat_is_marked_interrupted(client, factory, db):
     from app.models import BulkJob
 
     ev = _admin(client, factory)
-    db.add(BulkJob(id="y" * 32, event_id=ev.id, status="running", stage="Procesando", updated_at=datetime.utcnow() - timedelta(minutes=30)))
+    db.add(BulkJob(id="y" * 32, event_id=ev.id, status="running", stage="Procesando", updated_at=utcnow() - timedelta(minutes=30)))
     db.commit()
     job = client.get(f"/api/bulk_jobs/{'y' * 32}").json()
     assert job["status"] == "error" and "interrumpió" in job["error"]["detail"]
@@ -124,12 +125,12 @@ def test_job_without_heartbeat_is_marked_interrupted(client, factory, db):
 def test_job_status_needs_access_to_that_event(client, factory, db):
     from app.models import BulkJob
 
-    ev = _admin(client, factory)
+    _admin(client, factory)
     other = factory.event("creado", tenant_id="otro")
     db.add(BulkJob(id="z" * 32, event_id=other.id, status="done", stage="Listo", result_json="{}"))
     db.commit()
     client.post("/logout")
-    dig = factory.staff("digitador", "9990001")
+    factory.staff("digitador", "9990001")
     login(client, "9990001")
     assert client.get(f"/api/bulk_jobs/{'z' * 32}").status_code == 403       # un digitador no consulta cargas
     assert client.get("/api/bulk_jobs/no-existe").status_code in (403, 404)

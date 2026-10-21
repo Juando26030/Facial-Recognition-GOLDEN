@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ruleta — Apariencia | Golden Logísticas</title>
+    <title>Ruleta — Apariencia | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
@@ -33,7 +33,7 @@
 <script>window.EVENT_ID = {{ event.id }}; window.TENANT_ID = "{{ event.tenant_id }}";</script>
 <main class="golden-main">
   <section class="golden-section"><div class="golden-container">
-    <div class="golden-section-title"><span>GOLDEN EVENTOS Y LOGÍSTICA S.A.S.</span><h2>Apariencia de la <span class="gradient-text">Ruleta</span></h2></div>
+    <div class="golden-section-title"><span>{{ company_name|upper }}</span><h2>Apariencia de la <span class="gradient-text">Ruleta</span></h2></div>
     <div class="app-container">
       <div class="tabs-r"><a href="/kiosk/{{ event.id }}/ruleta">1. Comportamiento y sorteo</a><a class="active" href="/kiosk/{{ event.id }}/ruleta/visual">2. Apariencia (visual)</a></div>
       <p style="font-size:0.85rem; color:#777;">Esto solo cambia cómo se VE la pantalla del sorteo; es independiente de cómo se elige al ganador.</p>

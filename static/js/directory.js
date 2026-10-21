@@ -54,9 +54,13 @@
   /* Cada palabra escrita debe corresponder a alguna palabra distinta de lo guardado, en cualquier
      orden: "David Juzga" encuentra "Juan David Ramirez Juzga". */
   function matchesWordPrefix(haystack, query) {
-    const queryWords = wordsOf(query);
+    return matchesWords(wordsOf(haystack), wordsOf(query));
+  }
+
+  /* Igual que matchesWordPrefix pero con las palabras ya normalizadas (el buscador del Directorio las precalcula una vez por persona). */
+  function matchesWords(haystackWords, queryWords) {
     if (!queryWords.length) return false;
-    const available = wordsOf(haystack);
+    const available = haystackWords.slice();
     return queryWords.every(qw => {
       const idx = available.findIndex(hw => wordMatches(qw, hw));
       if (idx === -1) return false;
@@ -105,6 +109,60 @@
   const isAdmin = ADMIN_ROLES.includes(window.STAFF_ROLE);
   const canManageStatus = STATUS_ROLES.includes(window.STAFF_ROLE);
 
+  /* Acreditar SIN red (modo contingencia, static/js/contingency.js). `target`: {cedula} (lo escrito/escaneado, o la fila cargada con red) o {h} (fila de la lista local, que no tiene la
+     cédula). Busca en la copia local; quien no está NO se admite; si ya consta como registrado o está en la cola pide la confirmación de DUPLICADO; si no, encola (client_id, marca de
+     tiempo, huella; método `cedula` | `qr` | `manual`) y avisa. Devuelve lo encontrado o null. Las listas abiertas se actualizan por `accreditHooks`. */
+  const accreditHooks = [];
+  let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
+  async function offlineAccredit(GC, target, method, cid) {
+    const found = target.h ? await GC.findByHash(target.h) : await GC.scanLocal(target.cedula);
+    if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return null; }
+    if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return null; }
+    if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) return null;
+    await GC.enqueue(found, method, cid);
+    lastAccredit = { cid, name: found.person.n, offline: true, at: Date.now() };
+    showToast(`Acreditado: ${found.person.n}`, 'success');
+    accreditHooks.forEach((f) => f(found));
+    return found;
+  }
+
+  /* Editar SIN red (contingencia): modal limitado. Solo el nombre (lectura) y el «Estado de registro»; el resto de campos no se ofrece y se avisa. «Registrado» se encola igual que un escaneo
+     (client_id, huella de la copia local, método `manual`), con el aviso de DUPLICADO si ya consta o está en la cola. Guardar nunca dice «Error de red» genérico. Devuelve los controles
+     (para las pruebas). */
+  const OFFLINE_EDIT_NOTICE = 'Sin conexión: solo se puede cambiar el estado de registro; para editar datos espera a que vuelva la red';
+  function buildOfflineEditModal(user, GC) {
+    const mk = (tag, text, css) => { const el = document.createElement(tag); if (text) el.textContent = text; if (css) el.style.cssText = css; return el; };
+    const overlay = mk('div', '', 'position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9997; display:flex; align-items:center; justify-content:center; overflow:auto; padding:2rem 1rem;');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', 'Editar persona sin conexión');
+    const box = mk('div', '', 'background:white; border-radius:16px; padding:1.8rem; max-width:520px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);');
+    const notice = mk('p', OFFLINE_EDIT_NOTICE, 'background:#fff8e1; color:#7a5b00; border-left:4px solid #f0ad4e; padding:8px 12px; border-radius:8px; font-size:0.85rem; font-weight:600;');
+    notice.setAttribute('role', 'status');
+    const name = mk('input', '', 'width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:8px 10px; font-size:0.95rem; background:#f5f5f5; color:#555; margin-bottom:0.8rem;');
+    name.value = `${user.first_name || ''} ${user.last_name || ''}`.trim(); name.readOnly = true; name.disabled = true; name.setAttribute('aria-label', 'Nombre (solo lectura)');
+    const statusLabel = mk('label', 'Estado de registro', 'display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;');
+    const select = mk('select', '', 'width:100%; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;');
+    [['no_registrado', 'No registrado'], ['registrado', 'Registrado']].forEach(([v, t]) => { const o = mk('option', t); o.value = v; select.appendChild(o); });
+    select.value = 'registrado';                                              // igual que en línea: «Registrado» preseleccionado
+    const actions = mk('div', '', 'display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;');
+    const cancel = mk('button', 'Cancelar', 'border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;'); cancel.type = 'button';
+    const save = mk('button', 'Guardar cambios', 'border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;'); save.type = 'button';
+    [cancel, save].forEach((b) => actions.appendChild(b));
+    [mk('h4', 'Editar persona', 'margin-top:0; color:var(--golden-dark);'), notice, name, statusLabel, select, actions].forEach((el) => box.appendChild(el));
+    overlay.appendChild(box); document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    cancel.addEventListener('click', close);
+    save.addEventListener('click', async () => {
+      if (!GC.active()) { close(); showToast('Volvió la conexión: abre Editar de nuevo para ver todos los campos', 'success'); return; }
+      if (select.value !== 'registrado') { showToast('Sin conexión: solo se puede registrar; para quitar un registro espera a que vuelva la red', 'error'); return; }
+      save.disabled = true;
+      try {
+        const found = await offlineAccredit(GC, user.__h ? { h: user.__h } : { cedula: user.id }, 'manual');
+        if (found) close();
+      } finally { save.disabled = false; }
+    });
+    return { overlay, box, notice, name, select, save, cancel, close };
+  }
+
   /* Modal flotante de edición (2026-09-16, reemplaza la edición inline contentEditable de antes —
      con 10 columnas en pantalla no cabía nada sin scroll horizontal). Mismos campos que el alta
      manual (incluidos los opcionales dinámicos de este evento, vía window.OPTIONAL_VARIABLES,
@@ -113,7 +171,10 @@
      exigía el backend en DELETE /users/{id}/logs. Cada una de las dos dispara su propia
      confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
-  function buildEditModal(user) {
+  function buildEditModal(user, opts) {
+    const GCm = window.GoldenContingency && window.GoldenContingency.instance;
+    if (GCm && GCm.active()) return buildOfflineEditModal(user, GCm);          // sin red: modal limitado (solo estado de registro)
+    opts = opts || {};       // { method: 'biometrico' (el ingreso viene de una verificación facial), onSaved(id) }
     // Parámetros del Evento (2026-09-16): las 5 variables fijas + cada opcional_N ya rotulado,
     // con el tipo de control/obligatoriedad/opciones que se haya definido en
     // /kiosk/{event_id}/parametros — mismo FIELD_CONFIGS que usa el alta manual (ver
@@ -156,6 +217,11 @@
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
       if (cfg.field_type === 'digital_contact') return configuredFieldRow({ ...cfg, __sentAt: user.digital_sent_at }, user.digital_contact || '');
+      if (cfg.field_type === 'date') return `<div style="margin-bottom:0.8rem;">
+        <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(cfg.label)}</label>
+        <input type="date" name="${cfg.key}" value="${esc(user.birth_date || '')}" max="${new Date().toISOString().slice(0, 10)}" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-size:0.95rem;">
+        <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Define si es menor de 18 años: un menor no usa el reconocimiento facial. Si la cambias a una fecha de menor, se borran su rostro y su foto.</p>
+      </div>`;
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
     }).join('');
@@ -205,6 +271,8 @@
     box.querySelector('#editModalCancel').addEventListener('click', close);
 
     box.querySelector('#editModalSave').addEventListener('click', async () => {
+      const GCs = window.GoldenContingency && window.GoldenContingency.instance;
+      if (GCs && GCs.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto: aviso claro, no «Error de red»
       const form = box.querySelector('#editModalForm');
       if (!form.reportValidity()) return;
 
@@ -264,7 +332,7 @@
           saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
           try {
             const statusRes = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
-              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus, method: opts.method }),
             });
             if (!statusRes.ok) {
               const data = await statusRes.json().catch(() => ({}));
@@ -292,6 +360,7 @@
         else newExtras[cfg.key] = val(cfg.key);
       });
       payload.extra_fields = newExtras;
+      if (fieldConfigs.some((cfg) => cfg.key === 'birth_date')) payload.birth_date = val('birth_date');
       if (fieldConfigs.some((cfg) => cfg.field_type === 'digital_contact')) {
         payload.digital_contact = val('digital_contact');
         payload.send_digital_now = !!form.querySelector('input[name="send_digital_now"]:checked');  // casilla «Enviar ahora»
@@ -320,7 +389,7 @@
           if (!canManageStatus && !isRegistered) {
             try {
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado' }),
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado', method: opts.method }),
               });
               if (st.ok) { if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId); }
               else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
@@ -329,6 +398,7 @@
           showToast('Cambios guardados', 'success');
           close();
           if (window.directorySearch) window.directorySearch.reload();
+          if (opts.onSaved) opts.onSaved(currentId);
         } else {
           const data = await res.json().catch(() => ({}));
           showToast(data.detail || 'Error al guardar cambios', 'error');
@@ -342,6 +412,8 @@
 
     if (canManageStatus) {
       box.querySelector('#editModalDelete').addEventListener('click', async () => {
+        const GCd = window.GoldenContingency && window.GoldenContingency.instance;
+        if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
         const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
         const ok = await showConfirm(`⚠️ Esto elimina COMPLETAMENTE a ${fullName || 'esta persona'} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
         if (!ok) return;
@@ -360,10 +432,12 @@
     }
   }
 
+  let rowAccredit = null;          // lo fija mountSearch cuando quien mira puede acreditar (digitador o más): botón «✅ Acreditar» en TODAS las filas
   function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
     tr.dataset.userId = user.id;
+    if (user.__h) tr.dataset.h = user.__h;          // fila de la lista local (sin cédula)
 
     /* La columna de Acción va PRIMERO (2026-09-16, pedido explícito: antes al final, obligaba a
        desplazarse hasta el final de la fila para editar/imprimir). El resto de columnas
@@ -371,13 +445,23 @@
     const actionTd = document.createElement('td');
     actionTd.className = 'action-cell';
 
+    /* «✅ Acreditar» en CADA fila (docs/16, 7a): un clic acredita, con «Deshacer» ~8 s (el servidor lo permite solo a quien acreditó y hasta 15 s). La fila ya acreditada muestra «Acreditado» sin acción. */
+    if (rowAccredit) {
+      const done = user.status === 'Registrado' || user.status === 'Nuevo';
+      const acc = document.createElement('button');
+      acc.type = 'button'; acc.className = 'golden-btn btn-table-action btn-accredit-row'; acc.disabled = done;
+      acc.innerText = done ? '✔ Acreditado' : '✅ Acreditar';
+      if (!done) acc.addEventListener('click', () => rowAccredit(user, acc));
+      actionTd.appendChild(acc);
+    }
+
     /* Botón de impresión persistente por fila (Historia 2.2) — vive siempre en la fila para
        poder reimprimir a cualquiera en cualquier momento, no solo recién registrado. cliente es
        de solo lectura; 'comercial' excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito:
        "la comercial no debe poder imprimir en directorio en vivo") — el backend ya lo bloquea
        (require_role_excluding en badges.py), esto evita mostrarle un botón que le va a fallar. */
     const PRINT_HIDDEN_ROLES = ['cliente', 'comercial'];
-    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE)) {
+    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local) {          // la lista local no tiene la cédula (y sin red no se imprime)
       const printBtn = document.createElement('button');
       printBtn.type = 'button';
       printBtn.innerText = '🖨️';
@@ -497,31 +581,240 @@
       if (totalCounterEl) totalCounterEl.innerText = `✅ ${registered} registrados de ${total}`;
     }
 
+    /* Buscador rápido (antes, cada tecla re-normalizaba a TODAS las personas y redibujaba TODAS las filas: 180-230 ms por tecla con
+       3.000 personas, con el campo de texto congelado mientras tanto):
+       - lo que se compara (cédula en minúsculas, palabras del nombre y de la entidad sin tildes) se calcula UNA vez por persona;
+       - las filas ya construidas se reutilizan (una por persona; si el servidor manda una versión nueva, es otro objeto y se reconstruye);
+       - se dibuja UNA página de `pageSize()` filas (parámetro del evento: 10, 20, 50, 100 o 200), con «Anterior / Siguiente» e «Ir a la página» para llegar a cualquier fila;
+       - al escribir se espera SEARCH_DELAY_MS después de la última tecla antes de filtrar (la letra aparece al instante). */
+    const PAGE_SIZES = [10, 20, 50, 100, 200];
+    const pageSize = () => { const v = Number(opts.pageSize || window.DIRECTORY_PAGE_SIZE); return PAGE_SIZES.includes(v) ? v : 200; };        // sin parámetro (páginas viejas): 200, como antes
+    const SEARCH_DELAY_MS = 250;
+    const searchKeys = new WeakMap();
+    const rowCache = new WeakMap();
+    let pageIdx = 0;
+    let lastFiltered = [];
+    let searchTimer = null;
+
+    function keysOf(u) {
+      let k = searchKeys.get(u);
+      if (!k) {
+        k = { id: String(u.id || '').toLowerCase(), name: wordsOf(`${u.first_name || ''} ${u.last_name || ''}`), entity: wordsOf(u.entity || '') };
+        searchKeys.set(u, k);
+      }
+      return k;
+    }
+
+    function rowOf(u) {
+      let tr = rowCache.get(u);
+      if (!tr) { tr = buildRow(u); rowCache.set(u, tr); }
+      return tr;
+    }
+
+    function drawRows() {
+      const tbody = document.getElementById(opts.tbodyId);
+      // El «✅ Acreditar» puntual (FOUND_PENDING) vive en una fila reutilizada: como antes, se va al volver a dibujar.
+      tbody.querySelectorAll('.btn-accredit-pending').forEach(b => b.remove());
+      if (!lastFiltered.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+        if (localMode) tbody.insertBefore(localNoteRow(), tbody.children[0] || null);
+        return;
+      }
+      const size = pageSize(), total = lastFiltered.length, pages = Math.max(1, Math.ceil(total / size));
+      if (pageIdx > pages - 1) pageIdx = pages - 1;                    // un filtro o un refresco dejó la página fuera de rango
+      const rows = lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).map(rowOf);
+      if (localMode) rows.unshift(localNoteRow());
+      if (total > size) rows.push(pagerRow(total, size, pages));
+      tbody.replaceChildren(...rows);
+    }
+
+    function goToPage(i, pages) { pageIdx = Math.max(0, Math.min(i, pages - 1)); drawRows(); }
+    function pagerRow(total, size, pages) {
+      const tr = document.createElement('tr');
+      tr.className = 'directory-more';
+      const td = document.createElement('td');
+      td.colSpan = 6;
+      td.style.cssText = 'text-align:center; padding:0.8rem; color:#555;';
+      td.innerText = `Mostrando ${pageIdx * size + 1}-${Math.min(total, (pageIdx + 1) * size)} de ${total} · Página ${pageIdx + 1} de ${pages}. `;
+      const btn = (label, onClick, disabled) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'golden-btn btn-table-action'; b.innerText = label; b.disabled = !!disabled;
+        b.addEventListener('click', onClick); td.appendChild(b); return b;
+      };
+      btn('‹ Anterior', () => goToPage(pageIdx - 1, pages), pageIdx === 0);
+      btn('Siguiente ›', () => goToPage(pageIdx + 1, pages), pageIdx >= pages - 1);
+      const input = document.createElement('input');
+      input.type = 'number'; input.min = '1'; input.max = String(pages); input.placeholder = 'Ir a la página'; input.setAttribute('aria-label', 'Ir a la página');
+      input.style.cssText = 'width:7.5rem; margin:0 6px; padding:5px 8px; border:1px solid #ccc; border-radius:8px;';
+      td.appendChild(input);
+      btn('Ir', () => { const n = parseInt(input.value, 10); if (n >= 1) goToPage(n - 1, pages); }, false);
+      tr.appendChild(td);
+      return tr;
+    }
+
     function applyFilters() {
+      clearTimeout(searchTimer);
       const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
-      const nombre = (nombreInput && nombreInput.value || '').trim();
-      const entidad = (entidadInput && entidadInput.value || '').trim();
-      const filtered = allUsers.filter(u => {
-        if (onlyNotRegistered && u.status !== 'No registrado') return false;
-        if (cedula && !String(u.id || '').toLowerCase().includes(cedula)) return false;
-        if (nombre) {
-          const fullName = `${u.first_name || ''} ${u.last_name || ''}`;
-          if (!matchesWordPrefix(fullName, nombre)) return false;
+      const nombre = wordsOf((nombreInput && nombreInput.value || '').trim());
+      const entidad = wordsOf((entidadInput && entidadInput.value || '').trim());
+      let wantH = '';
+      if (localMode && cedula) {                          // lista local: la cédula se compara por huella (exacta); se calcula una vez y se vuelve a filtrar
+        wantH = localHashes.get(cedula);
+        if (wantH === undefined) {
+          wantH = ''; const GC = GCref();
+          if (GC) { const job = GC.hashFor(cedula).then((h) => { localHashes.set(cedula, h); applyFilters(); }).finally(() => inflightHashes.delete(job)); inflightHashes.add(job); }       // el cálculo de la huella es asíncrono: al terminar se vuelve a filtrar
         }
-        if (entidad && !matchesWordPrefix(String(u.entity || ''), entidad)) return false;
+      }
+      lastFiltered = allUsers.filter(u => {
+        if (onlyNotRegistered && u.status !== 'No registrado') return false;
+        if (!cedula && !nombre.length && !entidad.length) return true;
+        const k = keysOf(u);
+        if (cedula && !(u.__local ? (wantH && u.__h === wantH) : k.id.includes(cedula))) return false;
+        if (nombre.length && !matchesWords(k.name, nombre)) return false;
+        if (entidad.length && !matchesWords(k.entity, entidad)) return false;
         return true;
       });
       updateCounterLabel();
-      renderRows(opts.tbodyId, filtered);
+      drawRows();
     }
 
-    async function reload() {
-      allUsers = await loadRows(opts.tbodyId);
+    function onSearchInput() {
+      clearTimeout(searchTimer);
+      pageIdx = 0;
+      searchTimer = setTimeout(applyFilters, SEARCH_DELAY_MS);
+    }
+
+    /* Carga por páginas + incremental (Fase 1-2). La lista completa llega en páginas de PAGE (la primera se ve enseguida) y después cada
+       POLL_MS se piden solo los cambios (/api/users/changes). Lo que el incremental no ve (bajas, estados revertidos) se detecta porque
+       el total no cuadra, y ahí se recarga todo. reload() —lo llaman las acciones locales— siempre recarga completo. */
+    const PAGE = 1000;
+    const POLL_MS = 15000;
+    const NOW_CURSOR = '9007199254740991:9007199254740991';   // cursor «en el futuro»: no trae filas, solo el cursor y el total de ahora
+    let cursor = null;
+    let loading = null;
+
+    /* LISTA LOCAL (modo contingencia): sin red —o ya en contingencia— la tabla sale de la copia local del roster (static/js/contingency.js): nombre, categorías y estado (contando también lo
+       encolado sin red) y los contadores de siempre. La copia NO trae cédula ni entidad: se busca por nombre y por cédula EXACTA (huella); el filtro de entidad se desactiva con un aviso. */
+    let localMode = false;
+    const localHashes = new Map();                       // cédula escrita -> huella (se calcula una vez)
+    const inflightHashes = new Set();                    // huellas que se están calculando (crypto.subtle usa hilos reales): `hashesSettled()` espera a que terminen, sin depender del tiempo
+    const GCref = () => window.GoldenContingency && window.GoldenContingency.instance;
+    const entidadPlaceholder = entidadInput ? entidadInput.placeholder : '';
+    function setLocalMode(on) {
+      localMode = on;
+      if (entidadInput) { entidadInput.disabled = on; entidadInput.placeholder = on ? 'No disponible sin conexión' : entidadPlaceholder; if (on) entidadInput.value = ''; }
+    }
+    async function loadFromLocalCopy() {
+      const GC = GCref();
+      if (!GC) return false;
+      await GC.ready;
+      if (!GC.supported || !(await GC.rosterUsable())) return false;
+      const people = await GC.localPeople();
+      const st = GC.serverTotal ? await GC.serverTotal() : null, meta = GC.rosterMeta ? await GC.rosterMeta() : null;
+      localStats = { n: people.length, total: st ? st.n : null, at: st ? st.at : null, generated: meta && meta.generated_at ? Date.parse(meta.generated_at) : null };
+      setLocalMode(true);
+      allUsers = people.map((p) => ({ id: '', first_name: p.n, last_name: '', entity: '', opt_1: (p.c || []).join(', '), status: p.s, categories: p.c || [], __h: p.h, __local: true }));
+      applyFilters();
+      return true;
+    }
+    /* «LISTA LOCAL: N de N»: N = personas de la copia local; el segundo número es el total que el servidor informó la última vez que la lista en vivo se cargó en este dispositivo (se guarda en la copia).
+       Si no coinciden, o el servidor nunca informó, se avisa con claridad (nunca se muestra una lista recortada o vieja como si fuera la completa). */
+    let localStats = null;
+    const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    function localCounterText() {
+      const s = localStats;
+      if (!s) return 'LISTA LOCAL';
+      const ago = s.generated ? ` · copia de hace ${Math.max(0, Math.round((Date.now() - s.generated) / 60000))} min` : '';
+      if (s.total == null) return `LISTA LOCAL: ${s.n} de ? — el servidor aún no informó su total en este dispositivo${ago}`;
+      if (s.total === s.n) return `LISTA LOCAL: ${s.n} de ${s.total}${ago}`;
+      const diff = s.total > s.n ? `faltan ${s.total - s.n}` : `sobran ${s.n - s.total}`;
+      return `LISTA LOCAL: ${s.n} de ${s.total} — NO COINCIDE (el servidor tenía ${s.total} a las ${hhmm(s.at)}; ${diff} en esta copia). Actualiza con conexión antes de confiar en ella${ago}`;
+    }
+    function localNoteRow() {
+      const tr = document.createElement('tr'); tr.className = 'directory-local-note';
+      const td = document.createElement('td'); td.colSpan = 6;
+      const s = localStats, bad = !s || s.total == null || s.total !== s.n;
+      const colors = !s || s.total == null ? ['#fff8e1', '#7a5b00'] : (bad ? ['#ffebee', '#b71c1c'] : ['#e8f5e9', '#1b5e20']);
+      td.style.cssText = `text-align:center; padding:0.6rem; background:${colors[0]}; color:${colors[1]}; font-weight:600;`;
+      td.innerText = `${localCounterText()}. Sin conexión: se muestra la copia local (nombre, categorías y estado). La cédula, la entidad y demás datos no están en esta copia: busca por nombre o escribe la cédula exacta.`;
+      tr.appendChild(td);
+      return tr;
+    }
+
+    const T = (n, x) => { if (window.GoldenTrace) window.GoldenTrace.mark(n, x); };          // marcas de arranque (static/js/boot-trace.js)
+    async function fullLoad() {
+      T('directory:fullLoad:begin');
+      const tbody = document.getElementById(opts.tbodyId);
+      const GC0 = GCref();
+      if (GC0) { await GC0.ready; if (GC0.active() && await loadFromLocalCopy()) return; }          // ya en contingencia: ni se intenta la red
+      if (localMode) { setLocalMode(false); allUsers = []; }
+      if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
+      T('directory:loading-row-shown');
+      try {
+        // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
+        const head = await fetch(withEvent('/api/users/changes?cursor=' + NOW_CURSOR));
+        if (!head.ok) throw new Error(head.status);
+        const nextCursor = (await head.json()).cursor;
+        const byId = new Map();
+        for (let offset = 0, total = 1; offset < total; offset += PAGE) {
+          const res = await fetch(withEvent(`/api/users?limit=${PAGE}&offset=${offset}`));
+          if (!res.ok) throw new Error(res.status);
+          total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
+          const page = await res.json();
+          page.forEach(u => byId.set(u.id, u));
+          if (!page.length) break;
+          if (offset + PAGE < total) { allUsers = [...byId.values()]; applyFilters(); }   // se ve lo que ya llegó mientras bajan las demás
+        }
+        allUsers = [...byId.values()];
+        cursor = nextCursor;
+        { const GCt = GCref(); if (GCt && GCt.noteServerTotal) GCt.noteServerTotal(allUsers.length); }          // total del servidor: lo usa el contador «LISTA LOCAL: N de N»
+      } catch (err) {
+        T('directory:fetch-failed', { error: String((err && err.name) || err) });
+        if (await loadFromLocalCopy()) { T('directory:local-list-shown'); return; }           // sin red: la lista local en vez de «Error conectando al servidor»
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+        return;
+      }
       applyFilters();
     }
 
+    async function refresh() {
+      if (!cursor || loading || localMode) return;
+      try {
+        const res = await fetch(withEvent('/api/users/changes?cursor=' + encodeURIComponent(cursor)));
+        if (!res.ok) return;
+        const delta = await res.json();
+        cursor = delta.cursor;
+        { const GCt = GCref(); if (GCt && GCt.noteServerTotal && Number.isInteger(delta.total)) GCt.noteServerTotal(delta.total); }
+        if (delta.users.length) {
+          const byId = new Map(allUsers.map(u => [u.id, u]));
+          delta.users.forEach(u => byId.set(u.id, u));
+          allUsers = [...byId.values()];
+        }
+        if (allUsers.length !== delta.total) return reload();
+        if (delta.users.length) applyFilters();
+      } catch (err) { /* sin red: se reintenta en el siguiente ciclo */ }
+    }
+
+    function reload() {
+      if (loading) T('directory:reload-joined-in-flight');          // ya hay una carga en curso: esta llamada espera a ESA (si está colgada en una petición, espera con ella)
+      if (!loading) loading = fullLoad().finally(() => { loading = null; });
+      return loading;
+    }
+
+    {
+      const GC = GCref();
+      if (GC && GC.onSynced) GC.onSynced(() => { if (!localMode) reload(); });          // la cola ya está en el servidor: la lista y los contadores al día
+      if (GC && GC.onChange) GC.onChange((st) => { if (st === 'normal' && localMode) reload(); else if (st === 'contingency' && !allUsers.length) reload(); });      // vuelve la red: la lista del servidor
+    }
+
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && tbodyEl && tbodyEl.offsetParent !== null) refresh();
+    }, POLL_MS);
+    // Con la pestaña oculta no se consulta (no gasta la base); al volver a ella se ponen al día los cambios de inmediato.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
+
     [cedulaInput, nombreInput, entidadInput].forEach(input => {
-      if (input) input.addEventListener('input', applyFilters);
+      if (input) input.addEventListener('input', onSearchInput);
     });
 
     /* nameInfo (Sprint 2 Parte 2, 2.1): {nombres, apellidos} cuando el escaneo trajo un nombre
@@ -534,20 +827,105 @@
     /* Cada intento de acreditar lleva un `client_id` propio (Fase 0 de escalabilidad): si la red falla y se reintenta —o el navegador reenvía— el
        servidor devuelve el mismo resultado en vez de registrar dos veces. Los reintentos automáticos (red caída, 502/503/504) reusan el MISMO id. */
     const newClientId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `c${Date.now()}${Math.random().toString(16).slice(2)}`;
-    async function postWithRetry(url, formData, attempts = 3) {
-      for (let i = 1; ; i++) {
-        try {
-          const res = await fetch(url, { method: 'POST', body: formData });
-          if (![502, 503, 504].includes(res.status) || i >= attempts) return res;
-        } catch (e) {
-          if (i >= attempts) throw e;
-        }
-        await new Promise(r => setTimeout(r, 400 * i));
+    /* Misma regla que la estación emulada por el generador de carga (tests/load/locustfile.py::CedulaScanner): cada intento espera 10 s como máximo y, ante 502/503/504, un
+       error de red o el tiempo agotado, se reintenta SOLO (hasta 2 reintentos, con espera creciente corta) y con el MISMO `client_id` (el servidor no duplica el ingreso, ver
+       /api/checkin-cedula: `replayed`). Mientras reintenta se muestra un aviso discreto y el operador no tiene que hacer nada. */
+    const CHECKIN_TIMEOUT_MS = 10000;
+    const UNDO_MS = 8000;           // cuánto se ofrece «Deshacer» en pantalla (el servidor lo permite hasta 15 s)
+    /* Botón «✅ Acreditar» de una fila: acredita como el botón puntual (confirmando) y ofrece «Deshacer». Sin red usa la lista local (la fila local no tiene la cédula: se acredita por huella). */
+    async function acreditarFila(user, btn) {
+      const cid = newClientId(), GC = window.GoldenContingency && window.GoldenContingency.instance;
+      btn.disabled = true; btn.innerText = 'Acreditando...';
+      lastAccredit = null;
+      try {
+        if (GC && (user.__local || GC.active())) await offlineAccredit(GC, user.__h ? { h: user.__h } : { cedula: user.id }, 'manual', cid);         // lista local o sin red: se encola y se envía al volver la red
+        else await fastCheckin(user.id, false, null, true, undefined, cid);
+      } finally {
+        if (lastAccredit && lastAccredit.cid === cid) offerUndo(lastAccredit);
+        else { btn.disabled = false; btn.innerText = '✅ Acreditar'; }
       }
+    }
+    function offerUndo(acc) {
+      showToast(`${acc.name} acreditado(a)`, 'success', { action: { label: 'Deshacer', onClick: () => undoAccredit(acc) }, duration: UNDO_MS });
+    }
+    async function undoAccredit(acc) {
+      const GC = window.GoldenContingency && window.GoldenContingency.instance;
+      try {
+        if (acc.offline) {
+          if (!(GC && (await GC.unqueue(acc.cid)))) { showToast('Ya se envió al servidor: no se puede deshacer desde aquí', 'error'); return; }
+          await loadFromLocalCopy();
+        } else {
+          const res = await fetch(`/api/events/${window.EVENT_ID}/accreditations/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: acc.cid }) });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { showToast(data.detail || 'No se pudo deshacer', 'error'); return; }
+          await reload();
+        }
+        showToast(`Acreditación de ${acc.name} deshecha`, 'success');
+      } catch (e) { showToast('No se pudo deshacer: sin conexión con el servidor', 'error'); }
+    }
+    rowAccredit = opts.fastCheckin ? acreditarFila : null;
+    let retryNote = null;
+    function showRetryNote(on) {
+      if (!on) { if (retryNote) { retryNote.remove(); retryNote = null; } return; }
+      if (retryNote) return;
+      retryNote = document.createElement('div');
+      retryNote.setAttribute('role', 'status'); retryNote.setAttribute('aria-live', 'polite');
+      retryNote.style.cssText = 'position:fixed; bottom:12px; right:12px; z-index:9998; background:#fff8e1; color:#7a5b00; border-left:4px solid #f0ad4e; padding:6px 12px; border-radius:8px; font-size:.8rem; opacity:.95;';
+      retryNote.textContent = 'Conexión lenta: reintentando, no hace falta volver a escanear…';
+      document.body.appendChild(retryNote);
+    }
+    async function postWithRetry(url, formData, attempts = 3) {
+      try {
+        for (let i = 1; ; i++) {
+          const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+          const timer = ctl ? setTimeout(() => ctl.abort(), CHECKIN_TIMEOUT_MS) : null;
+          try {
+            const res = await fetch(url, { method: 'POST', body: formData, signal: ctl ? ctl.signal : undefined });
+            if (![502, 503, 504].includes(res.status) || i >= attempts) return res;
+          } catch (e) {
+            if (i >= attempts) throw e;
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+          showRetryNote(true);
+          await new Promise(r => setTimeout(r, 400 * i));
+        }
+      } finally {
+        showRetryNote(false);
+      }
+    }
+
+    /* Modo contingencia (static/js/contingency.js, Fase 3): sin red NO se espera al servidor. Igual que en línea, escanear/escribir una cédula exacta SOLO acredita de inmediato si el «Modo
+       autoregistro» está encendido (el valor viaja con la copia local y se guarda en IndexedDB: vale tras recargar sin red); con el modo apagado SOLO busca y resalta a la persona, con un
+       botón «Acreditar» en su fila (como FOUND_PENDING). */
+    accreditHooks.push((found) => {
+      const u = allUsers.find((x) => (found.cedula && x.id === found.cedula) || (x.__h && x.__h === found.person.h));
+      if (u) { u.status = 'Registrado'; rowCache.delete(u); }
+      if (cedulaInput && found.cedula) { cedulaInput.value = found.cedula; localHashes.set(found.cedula.toLowerCase(), found.person.h); }
+      applyFilters();
+    });
+    async function offlineCheckin(GC, cedula, method, cid) {
+      if (await GC.autoRegister()) { await offlineAccredit(GC, { cedula }, method, cid); return; }
+      const found = await GC.scanLocal(cedula);
+      if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return; }
+      if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return; }
+      if (cedulaInput) { cedulaInput.value = found.cedula; localHashes.set(found.cedula.toLowerCase(), found.person.h); applyFilters(); }          // la huella ya se conoce: el filtro de la lista local es inmediato
+      const tbody = document.getElementById(opts.tbodyId);
+      const row = tbody && (tbody.querySelector(`tr[data-user-id="${CSS.escape(found.cedula)}"]`) || tbody.querySelector(`tr[data-h="${found.person.h}"]`));
+      const actionTd = row ? row.querySelector('.action-cell') : null;
+      if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.innerText = '✅ Acreditar'; btn.className = 'golden-btn btn-table-action btn-accredit-pending';
+        btn.addEventListener('click', async () => { btn.disabled = true; btn.innerText = 'Acreditando...'; await offlineAccredit(GC, { cedula: found.cedula }, method, newClientId()); });
+        actionTd.appendChild(btn);
+      }
+      showToast(`${found.person.n} encontrado(a) — el modo autoregistro está apagado: confirma con "Acreditar" en la fila`, 'success');
     }
 
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
       const cid = clientId || newClientId();
+      const GC = window.GoldenContingency && window.GoldenContingency.instance;
+      if (GC && GC.active()) return offlineCheckin(GC, cedula, method, cid);
       const formData = new FormData();
       formData.append('event_id', window.EVENT_ID);
       formData.append('client_id', cid);
@@ -560,7 +938,15 @@
         if (nameInfo.apellidos) formData.append('last_name', nameInfo.apellidos);
       }
       try {
-        const res = await postWithRetry('/api/checkin-cedula', formData);
+        let res = null;
+        try { res = await postWithRetry('/api/checkin-cedula', formData); } catch (e) { if (!GC) throw e; }
+        if (GC) {
+          if (!res || [502, 503, 504].includes(res.status)) {          // agotó sus reintentos: 2 seguidos activan la contingencia y ESTE escaneo ya se atiende sin red
+            GC.noteScanExhausted();
+            if (GC.active()) return offlineCheckin(GC, cedula, method, cid);
+            if (!res) { showToast('Error de red', 'error'); return; }
+          } else if (res.status < 500 && res.status !== 401 && res.status !== 403) GC.noteAuthGood();
+        }
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {
@@ -573,6 +959,7 @@
           // explícito) — la "confirmación" es ver la fila aparecer filtrada en el Directorio,
           // como si se hubiera buscado por cédula a mano.
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          lastAccredit = { cid, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
           if (data.data.sibling_events && data.data.sibling_events.length) {
             showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
           }
@@ -665,6 +1052,7 @@
       /* Punto de entrada compartido para cualquier OTRO método que resuelva una cédula+nombre
          fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
+      hashesSettled: async () => { while (inflightHashes.size) await Promise.all([...inflightHashes]); },      // para pruebas y para quien necesite saber que la búsqueda por cédula ya se completó
       submitScannedCedula: (cedula, nameInfo, method) => fastCheckin(cedula, false, nameInfo || null, undefined, method),
       /* "Limpiar filtros" (2026-09-16, pedido explícito) — vacía los 3 campos de búsqueda + el
          filtro de "sin registrar" y vuelve a mostrar el Directorio completo. */
@@ -673,11 +1061,12 @@
         if (nombreInput) nombreInput.value = '';
         if (entidadInput) entidadInput.value = '';
         onlyNotRegistered = false;
+        pageIdx = 0;
         if (counterBtn) { counterBtn.style.background = '#fbe9ea'; counterBtn.style.color = '#a12631'; }
         applyFilters();
       },
     };
   }
 
-  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode, matchesWordPrefix };
+  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode, matchesWordPrefix, openEdit: buildEditModal };
 })();

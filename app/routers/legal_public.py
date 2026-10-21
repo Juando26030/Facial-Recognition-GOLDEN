@@ -7,12 +7,29 @@ router = APIRouter()
 
 def _page(request: Request, template: str, title: str):
     from app.main import templates  # import tardío: main.py importa este módulo
-    return templates.TemplateResponse(request=request, name=template, context={"page_title": title})
+    from app import legal
+    name = template.replace("legal_", "").replace(".html", "")
+    return templates.TemplateResponse(request=request, name=template, context={"page_title": title, "review": legal.review_status(name)})
 
 
 @router.get("/privacidad")
 def privacidad(request: Request):
+    """La versión VIGENTE (POLICY_VERSION): la 1.1 ratificada si está activada y el archivo es exactamente el ratificado; si no, la 1.0."""
+    from app import policy_v11
+    if policy_v11.active_version() == "1.1":
+        text = policy_v11.load_verified()
+        if text is not None:
+            from app.main import templates
+            return templates.TemplateResponse(request=request, name="legal_privacidad_v11.html", context={"page_title": "Política de Privacidad", "ratified": policy_v11.legend(), "body": policy_v11.to_html(text)})
     return _page(request, "legal_privacidad.html", "Política de Privacidad")
+
+
+@router.get("/privacidad/v1.0")
+def privacidad_v10(request: Request):
+    """La versión 1.0 (con constancia de revisión del 5 de octubre de 2026), histórica."""
+    from app import legal
+    from app.main import templates
+    return templates.TemplateResponse(request=request, name="legal_privacidad.html", context={"page_title": "Política de Privacidad (versión 1.0, histórica)", "review": legal.review_status("privacidad"), "historic": True})
 
 
 @router.get("/terminos")

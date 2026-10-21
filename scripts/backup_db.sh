@@ -10,7 +10,7 @@
 #   DB_NAME          base a respaldar (golden_db).
 #   BACKUP_DIR       carpeta local (~/backups).
 #   LOCAL_KEEP_DAYS  días que se conserva la copia local (7). La retención en el bucket la define su regla de
-#                    ciclo de vida (deploy/gcs-lifecycle.json, 60 días), no este script.
+#                    ciclo de vida (deploy/gcs-lifecycle.json, 30 días), no este script.
 #   DB_ONLY          si no está vacío, solo respalda la base (sin data/ ni .env): para correr CADA HORA. La corrida completa es la de las 3 a.m.
 #   TAG              etiqueta que se agrega al nombre del volcado (ej. pre_deploy).
 #   PG_DUMP          comando de pg_dump (por defecto "pg_dump -U golden_app -h localhost", el mismo que ya usaba el

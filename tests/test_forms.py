@@ -2,6 +2,7 @@
 import io
 import json
 from datetime import datetime, timedelta
+from app.timeutil import utcnow
 
 import pytest
 
@@ -191,7 +192,7 @@ def test_four_states_and_their_public_behaviour(client, factory):
 def test_schedule_drives_the_state_and_outside_ranges_it_is_closed(client, factory):
     ev = _event(client, factory)
     f = _create(client, ev)
-    now = datetime.utcnow() - timedelta(hours=5)                                            # hora local (UTC-5)
+    now = utcnow() - timedelta(hours=5)                                            # hora local (UTC-5)
     fmt = lambda d: d.strftime("%Y-%m-%dT%H:%M")
     sched = [{"status": "activo", "from": fmt(now - timedelta(hours=1)), "to": fmt(now + timedelta(hours=1))}]
     assert _status(client, ev, f, schedule=sched, use_schedule=True).json()["status"] == "activo"

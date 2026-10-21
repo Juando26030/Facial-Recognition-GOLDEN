@@ -5,3 +5,11 @@ data/
 static/.env
 tests/load/.load_env.json
 .build_info
+.env.staging
+.env.ensayo
+.env.*.local
+build/
+ensayo_*.log
+restore_test_*.log
+.env.restore
+.env.live

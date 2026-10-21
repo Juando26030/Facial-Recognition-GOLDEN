@@ -16,13 +16,29 @@ import io
 import json
 import os
 import random
+import time
+import uuid
 
-from locust import HttpUser, between, constant_pacing, events, task
+from locust import HttpUser, between, constant, constant_pacing, events, task
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CFG = json.load(open(os.path.join(HERE, ".load_env.json"), encoding="utf8"))
+
+
+def _cfg() -> dict:
+    """Local: `.load_env.json` (lo escribe setup_load_db.py). En Cloud Run Jobs contra staging: variables LOAD_EVENT_ID, LOAD_FORM_SLUG, LOAD_PEOPLE y OPS_TOKEN
+    (la clave de la cuenta de carga se deriva de él, scripts/load_cfg.py; nunca viaja en claro)."""
+    path = os.path.join(HERE, ".load_env.json")
+    if os.path.exists(path):
+        return json.load(open(path, encoding="utf8"))
+    from scripts.load_cfg import USERNAME, derived_password
+    return {"event_id": int(os.environ["LOAD_EVENT_ID"]), "form_slug": os.environ["LOAD_FORM_SLUG"], "password": derived_password(),
+            "people": int(os.getenv("LOAD_PEOPLE", "5000")), "digitador": USERNAME}
+
+
+CFG = _cfg()
 EVENT_ID, SLUG, PASSWORD = CFG["event_id"], CFG["form_slug"], CFG["password"]
 N_PEOPLE = CFG["people"]
+STAFF_USER = CFG.get("digitador", "carga_dig")
 _photo_cache: list = []
 
 
@@ -89,23 +105,169 @@ class FormUser(HttpUser):
                 r.failure(f"submit {r.status_code}: {r.text[:120]}")
 
 
+DONE = {"users": 0}          # usuarios de FormBurst que ya terminaron su recorrido (run_task.py espera a que lleguen al total)
+
+
+try:
+    from scripts.load_cfg import PAY_FORM_SLUG, quotes_per_user, submit_ratio
+    QUOTES = quotes_per_user()                               # LOAD_QUOTES: cotizaciones por usuario al formulario con pago (0 = ninguna)
+    SUBMIT_RATIO = submit_ratio()                            # LOAD_SUBMIT_RATIO: proporción de los que abren que además envían (0,5 por defecto; 1 = todos)
+except ImportError:                                          # ejecución local sin el repo en el path
+    PAY_FORM_SLUG, QUOTES = "carga-pago", int(os.getenv("LOAD_QUOTES", "0"))
+    SUBMIT_RATIO = float(os.getenv("LOAD_SUBMIT_RATIO", "0.5"))
+RETRY_DEADLINE = float(os.getenv("LOAD_RETRY_DEADLINE", "150"))          # s: lo mismo que el navegador real (templates/form_public.html)
+CEDULA_TIMEOUT = float(os.getenv("LOAD_CEDULA_TIMEOUT", "10"))          # s por petición: lo mismo que la estación real (static/js/directory.js)
+CEDULA_RETRY_WAIT = float(os.getenv("LOAD_CEDULA_RETRY_WAIT_MS", "400")) / 1000
+RETRY_BASE = float(os.getenv("LOAD_RETRY_BASE_MS", "1500")) / 1000
+
+
+def _is_busy(r) -> bool:
+    """Misma regla que `isBusy` de templates/form_public.html: 502/503/504 y el 429 que NO es de la app (el «Rate exceeded.» de Cloud Run es texto plano; los de la app traen JSON)."""
+    return r.status_code in (502, 503, 504) or (r.status_code == 429 and "json" not in (r.headers.get("content-type") or ""))
+
+
+def _retry_delay(r, attempt: int) -> float:
+    """Misma espera que `retryDelay` del navegador: lo que diga `Retry-After` como mínimo, espera creciente (x1, x2, x4, x8) y un poco al azar."""
+    try:
+        after = float(r.headers.get("Retry-After", ""))
+    except ValueError:
+        after = 0.0
+    return max(after, RETRY_BASE * 2 ** min(attempt, 3)) + random.uniform(0, RETRY_BASE)
+
+
+def _busy_name(name: str, r) -> str:
+    """Nombre de un intento «ocupado» o sin respuesta: «… (contrapresión 503)» = 503 «busy» de la app (esperado); «503 app» = JSON de la app SIN marca busy (falla el criterio);
+    «502/503/504 infra» = cuerpo que no es el JSON de la app (HTML de Google: infraestructura); «429» de texto plano; «tiempo agotado» / «error de red» = sin respuesta (status 0)."""
+    code = r.status_code
+    if code == 0:
+        import requests
+        return f"{name} (contrapresión {'tiempo agotado' if isinstance(getattr(r, 'error', None), requests.exceptions.Timeout) else 'error de red'})"
+    if code == 429:
+        return f"{name} (contrapresión 429)"
+    if code == 503 and '"busy"' in r.text:
+        return f"{name} (contrapresión 503)"
+    return f"{name} (contrapresión {code}{' app' if 'json' in (r.headers.get('content-type') or '') else ' infra'})"
+
+
+def _attempt(client, method: str, url: str, name: str, ok_codes=(200,), **kw):
+    """Un intento HTTP. Un intento «ocupado» (contrapresión) NO es un fallo: se cuenta aparte, con otro nombre (ver `_busy_name`)."""
+    with client.request(method, url, name=name, catch_response=True, **kw) as r:
+        if _is_busy(r):
+            try:
+                r.request_meta["name"] = _busy_name(name, r)
+            except Exception:  # noqa: BLE001
+                pass
+            r.success()
+        elif r.status_code in ok_codes:
+            r.success()
+        else:
+            r.failure(f"{name} {r.status_code}: {r.text[:120]}")
+        return r
+
+
+def _user_result(label: str, started: float, failed: bool = False) -> None:
+    """El resultado FINAL de un usuario que envía («[usuario] inscrito / cupo lleno / se rindió / error»), con el tiempo total desde su primer intento: es lo que vive una persona."""
+    events.request.fire(request_type="USER", name=f"[usuario] {label}", response_time=(time.time() - started) * 1000, response_length=0,
+                        exception=Exception(label) if failed else None, context={})
+
+
+class FormBurst(HttpUser):
+    """Fase 4 (docs/15): cada usuario virtual abre el formulario UNA vez y, con probabilidad LOAD_SUBMIT_RATIO (0,5 → 10.000 aperturas y ~5.000 envíos), lo envía tras
+    unos segundos (lo que tarda en escribir). Reintenta como el navegador real (mismas reglas y esperas: 502/503/504 y 429 de infraestructura, con la misma `sid`, hasta
+    LOAD_RETRY_DEADLINE s); esos intentos «ocupado» son CONTRAPRESIÓN, no fallos. Un 10 % de los envíos ya inscritos se repite con la MISMA `sid` (debe salir «replayed»).
+    Con el formulario lleno el 409 «cupo completo» es la respuesta CORRECTA. Al final se registra el resultado del usuario: inscrito / cupo lleno / se rindió tras N reintentos."""
+    wait_time = constant(0)
+
+    def on_start(self):
+        self.client.headers["X-Forwarded-For"] = _fake_ip()
+        self.client.headers.update(_timing_headers())
+
+    @task
+    def once(self):
+        import gevent
+        with self.client.get(f"/f/{EVENT_ID}/{SLUG}", name="GET pagina del formulario", catch_response=True) as r:
+            r.success() if r.status_code == 200 else r.failure(f"{r.status_code}")
+        started, attempt = time.time(), 0
+        while True:                                   # el navegador también reintenta la apertura si el servicio está saturado (hasta ~40 s)
+            r = _attempt(self.client, "GET", f"/f/{EVENT_ID}/{SLUG}/state", "GET state")
+            if not _is_busy(r) or time.time() - started + _retry_delay(r, attempt) > 40:
+                break
+            gevent.sleep(_retry_delay(r, attempt))
+            attempt += 1
+        for i in range(QUOTES):                       # el formulario con pago cotiza al dibujarse y tras cada cambio (con 250 ms de espera en el navegador)
+            if i:
+                gevent.sleep(random.uniform(0.25, 1.5))
+            _attempt(self.client, "POST", f"/f/{EVENT_ID}/{PAY_FORM_SLUG}/quote", "POST quote", json={"values": {}})
+        if random.random() < SUBMIT_RATIO:
+            gevent.sleep(random.uniform(1, float(os.getenv("LOAD_THINK_MAX", "30"))))
+            n = random.randint(10**9, 10**10 - 1)
+            payload = {"values": {"cedula": str(n), "nombres": "Prueba", "apellidos": "Carga", "correo": f"carga{n}@example.com", "tel": "3001234567"}, "sid": f"sid{n}"}
+            url, started, attempt, label = f"/f/{EVENT_ID}/{SLUG}/submit", time.time(), 0, None
+            while label is None:
+                r = _attempt(self.client, "POST", url, "POST envio" if attempt == 0 else "POST envio (reintento por contrapresión)", ok_codes=(200, 409), json=payload)
+                if r.status_code == 200:
+                    label = "inscrito"
+                elif r.status_code == 409:
+                    label = "cupo lleno" if "closed" in r.text else "duplicado"          # cupo completo (o duplicado): respuesta correcta, no error
+                elif _is_busy(r):
+                    wait = _retry_delay(r, attempt)
+                    if time.time() - started + wait > RETRY_DEADLINE:
+                        label = f"se rindió tras {attempt} reintentos"
+                    else:
+                        gevent.sleep(wait)
+                        attempt += 1
+                else:
+                    label = "error"
+            _user_result(label, started, failed=label.startswith("se rindió") or label == "error")
+            if label == "inscrito" and random.random() < 0.10:
+                _attempt(self.client, "POST", url, "POST envio (reintento, misma sid)", ok_codes=(200, 409), json=payload)
+        # NO `self.stop()`: Locust REPONE a los usuarios detenidos para mantener constante el total pedido, y cada reposición abría el formulario otra vez
+        # (3.ª corrida: ~17.700 aperturas para 10.000 usuarios). El usuario terminado se queda dormido hasta que el generador termine.
+        DONE["users"] += 1
+        gevent.sleep(10 ** 6)
+
+
 class _Staff(HttpUser):
     abstract = True
 
     def on_start(self):
         self.client.headers["X-Forwarded-For"] = _fake_ip()
-        _login(self.client, "carga_dig")
+        _login(self.client, STAFF_USER)
 
 
 class CedulaScanner(_Staff):
-    """(b) Una estación que escanea cédulas: una cada ~3,5 s en promedio (ver constant_pacing en el comando para forzar ritmo)."""
+    """(b) Una estación que escanea cédulas: una cada ~3,5 s en promedio (ver constant_pacing en el comando para forzar ritmo). Emula la estación real (static/js/directory.js):
+    tiempo de espera de 10 s por petición y UN reintento (misma `client_id`) ante 502/503/504, error de red o tiempo agotado. Los intentos que rebotan se reportan aparte
+    («… (contrapresión …)»), los reintentos como «POST checkin-cedula (reintento)» y cada escaneo deja su resultado final: «escaneo ok», «… ok tras reintento» o «… sin resultado»."""
     wait_time = between(2.5, 4.5)
 
     @task
     def scan(self):
+        import gevent
         cedula = f"9{random.randint(0, N_PEOPLE - 1):09d}"
-        with self.client.post("/api/checkin-cedula", data={"event_id": EVENT_ID, "cedula": cedula, "confirm": "true", "force": "true"}, name="POST checkin-cedula", catch_response=True) as r:
-            r.success() if r.status_code == 200 and r.json().get("result") in ("SÍ", "DUPLICADO") else r.failure(f"{r.status_code} {r.text[:100]}")
+        data = {"event_id": EVENT_ID, "cedula": cedula, "confirm": "true", "force": "true", "client_id": uuid.uuid4().hex}
+        started, label = time.time(), "escaneo sin resultado"
+        for attempt in range(2):
+            name = "POST checkin-cedula" if attempt == 0 else "POST checkin-cedula (reintento)"
+            with self.client.post("/api/checkin-cedula", data=data, name=name, timeout=CEDULA_TIMEOUT, catch_response=True) as r:
+                if r.status_code in (0, 502, 503, 504):
+                    try:
+                        r.request_meta["name"] = _busy_name(name, r)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    r.success()
+                    retry = True
+                elif r.status_code == 200 and r.json().get("result") in ("SÍ", "DUPLICADO"):
+                    r.success()
+                    label, retry = ("escaneo ok" if attempt == 0 else "escaneo ok tras reintento"), False
+                else:
+                    r.failure(f"{r.status_code} {r.text[:100]}")
+                    retry = False
+            if not retry:
+                break
+            if attempt == 0:
+                gevent.sleep(CEDULA_RETRY_WAIT)
+        _user_result(label, started, failed=label.endswith("sin resultado"))
 
 
 class FaceScanner(_Staff):
@@ -148,6 +310,39 @@ class Mixed(_Staff):
     def face(self):
         name, data = random.choice(_photos())
         self.client.post("/api/recognize", data={"event_id": EVENT_ID, "confirm": "true", "force": "true"}, files={"file": ("scan.jpg", data, "image/jpeg")}, name="POST recognize")
+
+
+def _timing_headers() -> dict:
+    """Con SERVER_TIMING=1 en el servicio, `X-Timing-Token` (derivado de OPS_TOKEN) hace que responda `Server-Timing`; sin OPS_TOKEN no se pide nada."""
+    try:
+        from scripts.load_cfg import timing_token
+        token = timing_token()
+    except Exception:  # noqa: BLE001
+        token = ""
+    return {"X-Timing-Token": token} if token else {}
+
+
+def _server_app_ms(header: str):
+    """`app;dur=12.3, thread;dur=…` → 12.3 (ms que la app dice haber tardado); None si no viene."""
+    for part in (header or "").split(","):
+        name, _, rest = part.strip().partition(";")
+        if name == "app" and rest.startswith("dur="):
+            try:
+                return float(rest[4:])
+            except ValueError:
+                return None
+    return None
+
+
+@events.request.add_listener
+def _outside_the_app(request_type, name, response_time, response=None, **_):
+    """Latencia que queda FUERA de la app (Cloud Run: cola de concurrencia, red, Firebase, el propio generador) = total medido por el cliente − `app;dur` del servidor.
+    Se registra como una petición aparte «[fuera de la app] …» (mismo reporte y percentiles); solo cuando el servicio devolvió `Server-Timing`. Sin datos de personas."""
+    if name.startswith("[fuera de la app]") or response is None:
+        return
+    app_ms = _server_app_ms(response.headers.get("Server-Timing", ""))
+    if app_ms is not None:
+        events.request.fire(request_type="APP", name=f"[fuera de la app] {name}", response_time=max(0.0, response_time - app_ms), response_length=0, exception=None, context={})
 
 
 @events.quitting.add_listener

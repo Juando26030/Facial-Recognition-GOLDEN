@@ -1,0 +1,53 @@
+// IndexedDB falso (lo mínimo que usa static/js/contingency.js: open/onupgradeneeded, object stores con keyPath, get/getAll/put/delete/clear y transacciones con oncomplete).
+// Solo para las pruebas Node; NO es una prueba de un IndexedDB real (ver el reporte: lo que no se probó en un navegador).
+// structuredClone como el IndexedDB real; si un objeto no se puede clonar en esta versión de Node (p. ej. una CryptoKey en Node antiguo) se guarda por referencia.
+const clone = (v) => { try { return structuredClone(v); } catch (e) { return v; } };
+function fakeIndexedDB() {
+  const dbs = new Map();
+  return {
+    dbs,
+    databases: async () => [...dbs.keys()].map((name) => ({ name })),
+    open(name, version = 1) {
+      const r = {};
+      setImmediate(() => {
+        let d = dbs.get(name);
+        const isNew = !d;
+        if (isNew) { d = { stores: new Map(), version: 0 }; dbs.set(name, d); }
+        const upgrade = version > d.version;
+        d.version = Math.max(d.version, version);
+        r.result = {
+          objectStoreNames: { contains: (n) => d.stores.has(n) },
+          createObjectStore(n, { keyPath }) { d.stores.set(n, { keyPath, data: new Map() }); return {}; },
+          transaction(names) {
+            const tx = { pending: 0, oncomplete: null };
+            const finish = () => { if (tx.pending === 0) setImmediate(() => tx.oncomplete && tx.oncomplete()); };
+            const op = (fn) => {
+              const rq = {}; tx.pending++;
+              const result = fn();
+              setImmediate(() => { rq.result = result; if (rq.onsuccess) rq.onsuccess(); tx.pending--; finish(); });
+              return rq;
+            };
+            tx.objectStore = (n) => {
+              if (!names.includes(n)) throw new Error(`store ${n} fuera de la transacción`);
+              const st = d.stores.get(n);
+              return {
+                get: (k) => op(() => { const v = st.data.get(k); return v === undefined ? undefined : clone(v); }),
+                getAll: () => op(() => [...st.data.values()].map((v) => clone(v))),
+                put: (v) => op(() => { st.data.set(v[st.keyPath], clone(v)); return v[st.keyPath]; }),
+                delete: (k) => op(() => { st.data.delete(k); }),
+                clear: () => op(() => { st.data.clear(); }),
+                count: () => op(() => st.data.size),
+              };
+            };
+            return tx;
+          },
+          close() {},
+        };
+        if (upgrade && r.onupgradeneeded) r.onupgradeneeded();
+        if (r.onsuccess) r.onsuccess();
+      });
+      return r;
+    },
+  };
+}
+module.exports = { fakeIndexedDB };

@@ -1,3 +1,9 @@
 # Los scripts de shell y los workflows deben quedar con LF aunque se editen en Windows (si no, bash en la VM falla con "").
 *.sh text eol=lf
 *.yml text eol=lf
+
+# Archivos de terceros: bytes exactos (sin conversión de saltos de línea), para que el hash de la prueba valga en cualquier sistema
+static/vendor/** -text
+
+docs/legal/*.md text eol=lf
+docs/legal/*.sha256 text eol=lf

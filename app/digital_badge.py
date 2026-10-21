@@ -12,11 +12,12 @@ import os
 import re
 import secrets
 from datetime import datetime
+from app.timeutil import utcnow
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app import email_template
+from app import email_template, publicurl
 from app.mailer import send_mail
 from app.models import EventAttendee
 
@@ -47,12 +48,12 @@ def send_digital_badge(db: Session, event, attendee: EventAttendee, person_name:
     contact = attendee.digital_contact
     if not contact:
         return {"sent": False, "detail": "Sin correo para enviar"}
-    base = (os.getenv("PUBLIC_BASE_URL") or base_url or "").rstrip("/")
+    base = publicurl.base(base_url)
     if not base:       # un enlace relativo («/b/…») no sirve en un correo: sin dominio público conocido no se envía nada
         return {"sent": False, "detail": "Falta PUBLIC_BASE_URL: no se puede armar el enlace de la escarapela"}
     link = f"{base}/b/{ensure_token(db, attendee)}"
     subject, html_body, text_body = email_template.render(event, person_name, last_name, link)
     result = send_mail(contact, subject, text_body, html=html_body)
-    attendee.digital_sent_at = datetime.utcnow()
+    attendee.digital_sent_at = utcnow()
     db.flush()
     return result

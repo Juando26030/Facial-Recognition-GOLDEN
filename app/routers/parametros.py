@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app import biometric_setup, publicurl
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
@@ -38,7 +39,7 @@ IDENTITY_FIELDS = [
 IDENTITY_KEYS = {k for k, _ in IDENTITY_FIELDS}
 # Campos de los que solo se cambia nombre y posición: identidad + "Categoría" (ítem 14: sus opciones
 # salen de las categorías del evento, no de una lista propia, y se guarda por evento).
-LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact"}
+LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact", "birth_date"}      # birth_date: base del control de menores; solo etiqueta y posición
 
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
 # Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
@@ -48,13 +49,14 @@ CONFIGURABLE_FIXED_FIELDS = [
     ("phone", "Teléfono"),
     ("email", "Correo Electrónico"),
     ("opt_1", "Tipo de Asistente"),
+    ("birth_date", "Fecha de nacimiento"),
 ]
 
 
 def _configurable_fields(event: Event):
     """(key, label por defecto) de todo lo configurable para este evento, en el orden POR DEFECTO
     (la identidad primero, igual que el formulario de siempre)."""
-    fields = list(IDENTITY_FIELDS) + list(CONFIGURABLE_FIXED_FIELDS)
+    fields = list(IDENTITY_FIELDS) + [f for f in CONFIGURABLE_FIXED_FIELDS if f[0] != "birth_date" or event.facial_enabled]      # la fecha de nacimiento solo existe con rostro (control de menores)
     if event.get_categories():
         fields.append(("categories", "Categoría"))
     if event.certificates_enabled:
@@ -77,7 +79,7 @@ def _serialize(key: str, default_label: str, row: Optional[EventFieldConfig], ca
             "key": key, "label": label, "default_label": default_label, "locked": locked,
             "label_fixed": key == "certificate",
             "required": bool(row.required) if (row and key in ("certificate", "digital_contact")) else False,
-            "field_type": {"categories": "categories", "certificate": "certificate", "digital_contact": "digital_contact"}.get(key, "text_short"),
+            "field_type": {"categories": "categories", "certificate": "certificate", "digital_contact": "digital_contact", "birth_date": "date"}.get(key, "text_short"),
             "options": categories or [], "help_text": "",
             "default_stat_enabled": False, "default_chart_type": None,
         }
@@ -194,6 +196,29 @@ def set_digital_badge_enabled(
     return {"digital_badge_enabled": event.digital_badge_enabled}
 
 
+DIRECTORY_PAGE_SIZES = (10, 20, 50, 100, 200)
+
+
+@router.put("/events/{event_id}/directory-page-size")
+def set_directory_page_size(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Filas por página de la tabla del directorio de ESTE evento (en vivo y lista local sin red): 10, 20, 50, 100 o 200. Más filas = más nodos en pantalla (en un celular o un iPad 200 filas pesan);
+    la búsqueda y los contadores siempre cubren a TODAS las personas, y la paginación llega a cualquier fila."""
+    event = get_event_for_staff(event_id, db, staff)
+    raw = data.get("value")
+    try:
+        value = 0 if isinstance(raw, bool) or (isinstance(raw, float) and not raw.is_integer()) else int(raw)         # 20.5 o true no son un tamaño
+    except (TypeError, ValueError):
+        value = 0
+    if value not in DIRECTORY_PAGE_SIZES:
+        raise HTTPException(status_code=400, detail=f"Filas por página: elige una de {', '.join(str(v) for v in DIRECTORY_PAGE_SIZES)}")
+    event.directory_page_size = value
+    db.commit()
+    return {"directory_page_size": event.directory_page_size}
+
+
 @router.put("/events/{event_id}/facial-enabled")
 def set_facial_enabled(
     event_id: int, data: dict, db: Session = Depends(get_db),
@@ -207,6 +232,12 @@ def set_facial_enabled(
     rostro/encoding ya guardado (si se vuelve a prender, la gente que ya tenía foto se sigue reconociendo);
     solo decide si `/kiosk/{id}/registro` muestra el escáner de cámara o se comporta como cédula tradicional."""
     event = get_event_for_staff(event_id, db, staff)
+    if data.get("enabled") and event.biometrics_locked:
+        raise HTTPException(status_code=409, detail="Este evento está bloqueado SIN biometría: quita el bloqueo en el paso guiado para activar el rostro")
+    if data.get("enabled"):
+        blockers = biometric_setup.facial_blockers(event)
+        if blockers:
+            raise HTTPException(status_code=400, detail="Para activar el reconocimiento facial en un evento de un tercero falta: " + ", ".join(blockers))
     event.facial_enabled = bool(data.get("enabled"))
     db.commit()
     return {"facial_enabled": event.facial_enabled}
@@ -357,7 +388,7 @@ _DIGITAL_MAIL = require_role_excluding("coordinador", ("comercial",))
 
 
 def _public_base(request: Request) -> str:
-    return (os.getenv("PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    return publicurl.base(str(request.base_url))
 
 
 @router.get("/events/{event_id}/digital-email")

@@ -34,8 +34,10 @@ def test_retry_with_the_same_send_key_is_idempotent_but_another_visit_is_a_dupli
     assert other.status_code == 409 and other.json()["duplicate"] is True
 
 
-def test_simultaneous_submissions_never_oversell_the_capacity(factory, db):
+def test_simultaneous_submissions_never_oversell_the_capacity(factory, db, monkeypatch):
     from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("FORM_MAX_LOCK_WAITERS", "0")          # aquí se verifica la integridad del cupo bajo el bloqueo, no el rechazo temprano (test_form_backpressure.py)
 
     from app.main import app
     from tests.test_forms import _status as status
@@ -56,6 +58,7 @@ def test_simultaneous_submissions_never_oversell_the_capacity(factory, db):
     [t.join() for t in threads]
     assert sorted(results).count(200) == 4 and all(code in (200, 409) for code in results)         # exactamente el cupo, nadie más
     assert db.query(FormSubmission).filter_by(form_id=f["id"]).count() == 4
+    assert db.query(FormSubmission).filter_by(form_id=f["id"], status="confirmed").count() == 4      # exactamente el cupo, confirmadas
 
 
 def test_quota_counts_use_stored_keys_and_rebuild_them_when_missing_or_when_rules_change(client, factory, db):
@@ -132,7 +135,7 @@ def test_realtime_feed_goes_through_the_queue_and_survives_a_failure(client, fac
     f = _create(client, ev)
     _put(client, ev, f, settings={"feed": "realtime"})
     _open(client, ev, f)
-    monkeypatch.setattr(jobs, "kick", lambda: None)                                                    # el worker todavía no corrió
+    monkeypatch.setattr(jobs, "kick", lambda *a, **k: None)                                                    # el worker todavía no corrió
     assert _submit(client, ev, f, _person_values()).status_code == 200
     assert db.query(User).filter_by(id="1001").first() is None                                          # la petición NO cargó a la base: eso va a la cola
     job = db.query(Job).filter_by(kind="form_feed").one()
