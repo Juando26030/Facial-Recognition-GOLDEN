@@ -9,12 +9,13 @@ propio de cada persona): abrirlo verifica (`verified_via='link'`)."""
 import hashlib
 import re
 import uuid
+from typing import Optional
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from PIL import Image
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app import company, consent, consent_receipt, crypto, enroll, faces, jobs, legal_texts, liveness, minors, privacy, security
@@ -29,6 +30,11 @@ _limiter = SlidingLimiter()
 MAX_SELFIE_BYTES = 8 * 1024 * 1024
 GENERIC_NOT_FOUND = "No encontramos tu inscripción con ese documento y esa fecha. Acércate a la acreditación con tu cédula o QR."
 LINK_NOT_FOUND = "Este enlace no es válido o ya no está vigente. Acércate a la acreditación con tu cédula o QR."
+# Página amable (orden del 21-oct-2026) para un enlace o una página /aceptar que ya no aplica: el mismo texto para TODOS los casos (evento cerrado o sin la página,
+# enlace inexistente, usado o de otro evento), así no revela quién está inscrito, quién aceptó ni cuándo. Las rutas /api/aceptar/* siguen respondiendo JSON.
+UNAVAILABLE_TITLE = "Este enlace ya fue usado o no está disponible."
+UNAVAILABLE_TEXT = "Si ya diste tu autorización, no necesitas hacer nada más: entrarás por rostro o con tu cédula."
+UNAVAILABLE_CONTACT = "soporteit@goldenlogisticas.com"
 # Mensaje para menores: texto APROBADO por la auditora, en bloques separados y sin cambiar palabras. Si la fecha la escribió la propia persona (no venía en la base), se omite
 # solo la palabra «registrada» (decisión del dueño del producto: el resto es literal).
 MINOR_TITLE = "Acceso facial restringido por edad"
@@ -92,8 +98,28 @@ def _verify(db: Session, event: Event, cedula: str, token: str, birth_raw: str):
     return user, att, by_link, _check_birth(user, birth_raw)
 
 
-def _event(db: Session, code: str) -> Event:
+def _find_event(db: Session, code: str) -> Optional[Event]:
+    """El evento del código de la dirección: primero la coincidencia EXACTA; si no hay, la que no distingue mayúsculas ni espacios al borde, pero SOLO si es
+    única (nunca se elige entre dos). Así «/aceptar/feria-2026» sigue llevando a «FERIA-2026» y ningún enlace ya emitido cambia de destino."""
     event = db.query(Event).filter(Event.event_code == code).first()
+    if event is not None:
+        return event
+    wanted = (code or "").strip().lower()
+    if not wanted:
+        return None
+    found = db.query(Event).filter(func.lower(func.btrim(Event.event_code)) == wanted).limit(2).all()
+    return found[0] if len(found) == 1 else None
+
+
+def _unavailable(request: Request) -> HTMLResponse:
+    """Página amable (404) con el logo de Golden y la tipografía propia, sin ningún dato del evento ni de la persona."""
+    from app.main import default_logo_url, templates
+    return templates.TemplateResponse(request=request, name="aceptar_no_disponible.html", status_code=404,
+                                      context={"logo_url": default_logo_url(), "title": UNAVAILABLE_TITLE, "text": UNAVAILABLE_TEXT, "contact": UNAVAILABLE_CONTACT})
+
+
+def _event(db: Session, code: str) -> Event:
+    event = _find_event(db, code)
     if not event or not event.aceptar_enabled or not event.facial_enabled or event.biometrics_locked or event.status == "finalizado":
         raise HTTPException(status_code=404, detail="Esta página no está disponible")
     return event
@@ -173,21 +199,31 @@ def public_logo(code: str, db: Session = Depends(get_db)):
 
 @router.get("/aceptar/{code}", response_class=HTMLResponse)
 def page(code: str, request: Request, c: str = "", db: Session = Depends(get_db)):
-    event = _event(db, code)
+    try:
+        event = _event(db, code)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return _unavailable(request)
+        raise
     return _page(request, event, code, "", "qr" if c == "qr" else "web")
 
 
 @router.get("/aceptar/{code}/{token}", response_class=HTMLResponse)
 def personal_page(code: str, token: str, request: Request, db: Session = Depends(get_db)):
     _limit(request, "aceptar_link", 60)
-    event = _event(db, code)
+    try:
+        event = _event(db, code)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return _unavailable(request)
+        raise
     user, _att = _by_token(db, event, token)
     if user is not None:                                       # quien ya aceptó ve de inmediato su estado: sin pedir cédula ni fecha y sin ningún dato personal
         done = _already(db, event, user.id)
         if done:
             return _page(request, event, code, token, "link", already=done["message"])
     if user is None:
-        return HTMLResponse("<meta name='viewport' content='width=device-width, initial-scale=1'><h3 style='font-family:system-ui,sans-serif;text-align:center;margin:20vh 1rem 0'>" + LINK_NOT_FOUND + "</h3>", status_code=404)
+        return _unavailable(request)
     return _page(request, event, code, token, "link")
 
 
