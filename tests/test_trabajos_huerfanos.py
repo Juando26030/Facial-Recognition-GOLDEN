@@ -96,3 +96,47 @@ def test_system_status_counts_consent_receipts_and_link_mailings_as_emails(db):
     db.commit()
     card = ops.check_emails(db)
     assert card["data"]["pending"] == 1 and card["data"]["failed"] == 1 and card["level"] == "yellow" and "1 pendientes · 1 fallidos" in card["value"]
+
+
+# ---------------------------------------------------------------------------------------------------------------- cada servicio, al arrancar
+_PROBE = """
+import importlib, json, sys
+mod = importlib.import_module('app.entrypoints.' + sys.argv[1])
+from app import appmode, jobs
+jobs.assert_handlers(appmode.MODE)
+print(json.dumps({'mode': appmode.MODE, 'handlers': sorted(jobs._handlers),
+                  'jobs_run': appmode.route_allowed('/internal/jobs/run'), 'faces_run': appmode.route_allowed('/internal/faces/run')}))
+"""
+
+
+@pytest.mark.parametrize("mode, serves_jobs, serves_faces", [("web", True, False), ("publico", False, False), ("biometria", False, True)])
+def test_each_cloud_run_service_has_at_startup_the_handlers_of_the_queue_it_serves(mode, serves_jobs, serves_faces):
+    """El servicio web atiende /internal/jobs/run (CLOUD_TASKS_URL = <web>/internal/jobs/run, deploy/gcp/deploy.sh) y el de biometría /internal/faces/run;
+    el público no atiende ninguna. Se importa el punto de entrada REAL de cada servicio en un proceso aparte, como en Cloud Run."""
+    import json
+    out = subprocess.run([sys.executable, "-c", _PROBE, mode], capture_output=True, text=True, env=dict(os.environ), timeout=180)
+    assert out.returncode == 0, out.stderr[-3000:]
+    info = json.loads(out.stdout.strip().splitlines()[-1])
+    assert info["mode"] == mode and info["jobs_run"] is serves_jobs and info["faces_run"] is serves_faces
+    if serves_jobs:
+        assert set(jobs.GENERAL_KINDS) <= set(info["handlers"])
+    if serves_faces:
+        assert set(jobs.FACE_KINDS) <= set(info["handlers"])
+    assert set(jobs.GENERAL_KINDS | jobs.FACE_KINDS) <= set(info["handlers"])                 # de hecho, todos: se registran al arrancar en cualquier modo
+
+
+def test_the_declared_kinds_and_the_registry_of_modules_match():
+    assert _declared_kinds() == set(jobs.GENERAL_KINDS | jobs.FACE_KINDS) == set(jobs.HANDLER_MODULES)      # un tipo nuevo obliga a declararlo aquí
+
+
+@pytest.mark.parametrize("mode, kind", [("web", "consent_receipt"), ("web", "payments_reconcile"), ("biometria", "face_enroll"), ("all", "accept_mail")])
+def test_a_service_missing_a_handler_refuses_to_start_instead_of_leaving_jobs_queued_silently(monkeypatch, mode, kind):
+    monkeypatch.delitem(jobs._handlers, kind)
+    with pytest.raises(RuntimeError, match=rf"faltan manejadores de trabajos en el modo «{mode}»: .*{kind}"):
+        jobs.assert_handlers(mode)
+
+
+def test_the_public_service_needs_no_queue_handler_to_start(monkeypatch):
+    for kind in list(jobs._handlers):
+        monkeypatch.delitem(jobs._handlers, kind)
+    jobs.assert_handlers("publico")                                                             # no atiende /internal: no exige nada

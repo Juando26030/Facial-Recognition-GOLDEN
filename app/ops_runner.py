@@ -134,9 +134,10 @@ def _alert(key: str, subject: str, body: str) -> None:
 
 # ------------------------------------------------------------------ otros pasos
 def _load_handlers() -> None:
-    """Registra en este proceso TODOS los manejadores de trabajos que no son de rostro (cada módulo los registra al importarse). `enroll` (cálculo facial) NO:
-    carga el modelo y esos trabajos van por su propia cola, en el servicio de biometría. Lo comprueba tests/test_trabajos_huerfanos.py."""
-    from app import acceptmail, consent_receipt, formsvc, reconcile  # noqa: F401 — registran accept_mail, consent_receipt, form_feed y payments_reconcile
+    """Registra en este proceso TODOS los manejadores de la cola general (cada módulo los registra al importarse). Los de rostro NO: esos trabajos van por su
+    propia cola, en el servicio de biometría (2 CPU), y el barrido los excluye. Lo comprueba tests/test_trabajos_huerfanos.py."""
+    from app import jobs
+    jobs.load_handlers(jobs.GENERAL_KINDS)
 
 
 def purge() -> str:

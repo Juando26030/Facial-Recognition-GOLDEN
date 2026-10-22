@@ -40,6 +40,10 @@ BACKOFF_SECONDS = (15, 60, 300, 900, 3600)
 
 _handlers: Dict[str, Callable[[dict], None]] = {}
 FACE_KINDS = frozenset({"face_enroll"})                  # cálculos faciales: van por su propia cola, en el servicio de biometría (CLOUD_TASKS_FACES_*)
+GENERAL_KINDS = frozenset({"accept_mail", "consent_receipt", "form_feed", "payments_reconcile"})      # la cola general (Cloud Tasks → /internal/jobs/run del servicio web)
+# Módulos que REGISTRAN los manejadores al importarse (un manejador existe solo si su módulo se importó en ESE proceso: Hallazgo 4, 21-oct-2026).
+HANDLER_MODULES = {"accept_mail": "app.acceptmail", "consent_receipt": "app.consent_receipt", "form_feed": "app.formsvc",
+                   "payments_reconcile": "app.reconcile", "face_enroll": "app.enroll"}
 _wake = threading.Event()
 
 
@@ -148,6 +152,26 @@ def _finish(job_id: int, error: Optional[str], attempts: int, max_attempts: int)
         db.close()
     if retry_at and uses_cloud_tasks():           # con el hilo local no hace falta: el sondeo lo encuentra solo
         kick(retry_at, pool)
+
+
+def load_handlers(kinds) -> None:
+    """Importa los módulos que registran los manejadores de esos tipos (idempotente)."""
+    import importlib
+    for kind in kinds:
+        importlib.import_module(HANDLER_MODULES[kind])
+
+
+def required_kinds(mode: str) -> frozenset:
+    """Tipos que el servicio de ese modo DEBE poder ejecutar: el web atiende /internal/jobs/run (cola general), el de biometría /internal/faces/run."""
+    return {"all": GENERAL_KINDS | FACE_KINDS, "web": GENERAL_KINDS, "biometria": FACE_KINDS}.get(mode, frozenset())
+
+
+def assert_handlers(mode: str) -> None:
+    """Al arrancar: si a este servicio le falta el manejador de un tipo que Cloud Tasks le va a mandar, NO arranca (falla cerrado, como sin la llave de
+    cifrado). Con un manejador faltante el trabajo se quedaría en cola sin ejecutarse (run_once no lo reclama): así eso no puede pasar en silencio."""
+    missing = sorted(set(required_kinds(mode)) - set(_handlers))
+    if missing:
+        raise RuntimeError(f"faltan manejadores de trabajos en el modo «{mode}»: {', '.join(missing)} (esos trabajos se quedarían en cola)")
 
 
 def runnable_kinds(kinds=None, exclude=None) -> set:

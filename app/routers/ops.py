@@ -81,7 +81,7 @@ def run_jobs(_=Depends(google_invoker)) -> dict:
     """Ejecuta la cola dentro de ESTA petición (en Cloud Run con facturación por petición la CPU se reduce apenas se responde):
     hasta vaciarla o hasta JOBS_RUN_BUDGET_SECONDS (45 por defecto, por debajo del timeout de 60 de Gunicorn); lo que quede lo toma
     otra tarea de Cloud Tasks."""
-    from app import jobs, reconcile  # noqa: F401 — registra `payments_reconcile` (form_feed ya lo registra formsvc)
+    from app import jobs                          # los manejadores ya están registrados desde el arranque (app/main.py; jobs.assert_handlers lo exige)
     return {"ran": jobs.drain(max_rounds=100_000, budget_seconds=float(os.getenv("JOBS_RUN_BUDGET_SECONDS", "45")), exclude=jobs.general_excludes())}
 
 

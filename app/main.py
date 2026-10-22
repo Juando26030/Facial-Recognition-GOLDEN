@@ -22,6 +22,8 @@ from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
+jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
+
 obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
 log = logging.getLogger("golden.app")
 
@@ -52,6 +54,7 @@ async def lifespan(_app: FastAPI):
     default_threads = int(os.getenv("DB_POOL_SIZE", "10")) + int(os.getenv("DB_MAX_OVERFLOW", "10")) + faces.FACE_CONCURRENCY
     anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.getenv("THREADPOOL_SIZE", default_threads))
     crypto.assert_ready()                         # producción sin FACE_ENCRYPTION_KEY: no arranca (falla cerrado)
+    jobs.assert_handlers(appmode.MODE)            # sin el manejador de un trabajo que Cloud Tasks le manda a ESTE servicio: no arranca (falla cerrado)
     worker = None
     if os.getenv("JOBS_WORKER", "on") != "off" and not jobs.uses_cloud_tasks():
         worker = jobs.Worker()
