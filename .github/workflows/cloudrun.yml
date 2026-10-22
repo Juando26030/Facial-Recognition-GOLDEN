@@ -1,17 +1,22 @@
 name: Cloud Run (staging y producción)
 
-# Staging se despliega solo en cada push a la rama de la migración (`migra/fase1-2`; el renombre a `staging` es un paso aparte posterior al corte). Producción se despliega en cada
-# push/merge a `main` y espera la aprobación del revisor del Environment `production` (docs/15 D2.5, docs/19). La VM ya NO se despliega desde `main` (deploy.yml quedó solo manual).
+# Staging se despliega solo en cada push a la rama de la migración (`migra/fase1-2`; el renombre a `staging` es un paso aparte posterior al corte). PRODUCCIÓN NO SE DESPLIEGA NUNCA POR UN PUSH NI
+# UN MERGE: solo se lanza a mano (Actions → «Cloud Run» → Run workflow → rama `main` → escribir DESPLEGAR en «confirm»), porque este repositorio no ofrece revisores obligatorios en el Environment.
+# Un push a `main` solo corre las pruebas (`ci.yml` tiene su propio disparo). La VM ya NO se despliega desde `main` (deploy.yml quedó solo manual). Ver docs/legal/DESPLIEGUE_PRODUCCION_MANUAL.md.
 
 on:
   push:
-    branches: [migra/fase1-2, main]
+    branches: [migra/fase1-2]
   workflow_dispatch:
     inputs:
       force:
         description: "Producción: desplegar aunque haya un evento en curso o por abrir (solo emergencias)"
         type: boolean
         default: false
+      confirm:
+        description: "Producción: escribe DESPLEGAR (en mayúsculas) para confirmar el despliegue"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -34,7 +39,7 @@ jobs:
 
   production:
     needs: test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.confirm == 'DESPLEGAR'
     uses: ./.github/workflows/cloudrun-deploy.yml
     with:
       env: production
