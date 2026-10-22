@@ -47,6 +47,14 @@ def _serialize_staff(s: StaffUser) -> dict:
     return {"id": s.id, "username": s.username, "full_name": s.full_name, "role": s.role, "is_active": s.is_active}
 
 
+# Código del evento (orden del 21-oct-2026). Va en direcciones públicas: /aceptar/<código>, el QR del cartel y los enlaces personales ya enviados por correo.
+EVENT_CODE_RE = re.compile(r"[A-Za-z0-9._-]+")          # solo para eventos NUEVOS; los códigos solo numéricos siguen permitidos
+EVENT_CODE_HELP = ("El código del evento solo puede tener letras sin tilde, números, punto (.), guion (-) y guion bajo (_), sin espacios. "
+                   "Ejemplo: FERIA-2026.")
+EVENT_CODE_LOCKED = ("El código del evento no se puede cambiar una vez creado: los QR y los enlaces de aceptación ya emitidos dependen de él. "
+                     "Si necesitas otro código, crea un evento nuevo.")
+
+
 class EventIn(BaseModel):
     """Todos los campos operativos son obligatorios al crear un evento — 'notes' es la única
     excepción real (es explícitamente un campo de observaciones, opcional por naturaleza)."""
@@ -312,6 +320,11 @@ def create_event(
         raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
     if db.query(Event).filter(Event.event_code == data.event_code).first():
         raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
+    # Solo eventos NUEVOS (orden del 21-oct-2026): el código va en direcciones públicas (/aceptar/<código>, QR y enlaces personales). Los existentes no se tocan.
+    if not EVENT_CODE_RE.fullmatch(data.event_code or ""):
+        raise HTTPException(status_code=400, detail=EVENT_CODE_HELP)
+    if db.query(Event.id).filter(func.lower(func.btrim(Event.event_code)) == data.event_code.lower()).first():
+        raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código «{data.event_code}» escrito con otras mayúsculas o minúsculas: elige otro código.")
     _validate_event_dates(data.start_date, data.end_date, data.setup_date)
 
     # Sprint 2.4 Fase 5 (2026-09-16, pedido explícito): "por defecto se asigne una comercial que
@@ -380,9 +393,8 @@ def update_event(
                 status_code=400,
                 detail="Este evento ya tiene personas cargadas/registradas — no se puede devolver a 'Creado'. Si necesitas pausarlo, usa 'Finalizado', o crea un evento nuevo si de verdad necesitas empezar de cero.",
             )
-    if data.event_code is not None and data.event_code != event.event_code:
-        if db.query(Event).filter(Event.event_code == data.event_code, Event.id != event_id).first():
-            raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
+    if data.event_code is not None and data.event_code != event.event_code:          # el código es fijo una vez creado (orden del 21-oct-2026)
+        raise HTTPException(status_code=400, detail=EVENT_CODE_LOCKED)
     if data.commercial_staff_id is not None:
         # Reasignar la comercial es decisión de comercial+ — un coordinador "puro" puede editar el
         # resto del evento (fechas, estado, etc.) pero no a quién pertenece comercialmente. Un

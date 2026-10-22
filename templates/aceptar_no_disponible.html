@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Enlace no disponible</title>
+<link rel="stylesheet" href="{{ url_for('static', path='css/agrandir.css') }}">
+<style>
+  /* Misma tarjeta que /aceptar (aceptar.html). Página amable para un enlace que ya no aplica: no muestra ningún dato del evento ni de la persona. */
+  :root { --ink:#1b1d2a; --bg:#F4F5F9; --card:#FFFFFF; --muted:#4a4d5c; --dark:#0a0e2e; --gold:#D4AF37; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:'Agrandir', sans-serif; line-height:1.55; padding:24px 14px 50px; box-sizing:border-box; }
+  main { max-width:560px; margin:8vh auto 0; background:var(--card); border-radius:18px; box-shadow:0 6px 24px rgba(10,14,46,.08); padding:28px 22px 30px; text-align:center; }
+  .brand img { max-height:64px; max-width:70%; object-fit:contain; }
+  h1 { font-size:1.25rem; font-weight:700; color:var(--dark); margin:14px 0 10px; }
+  p { font-size:1.05rem; font-weight:600; margin:0 0 12px; }
+  a { color:#0b4fa8; font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">{% if logo_url %}<img src="{{ logo_url }}" alt="Golden Eventos y Logística">{% endif %}</div>
+  <h1>{{ title }}</h1>
+  <p>{{ text }}</p>
+  <p>Si tienes dudas, escríbenos a <a href="mailto:{{ contact }}">{{ contact }}</a>.</p>
+</main>
+</body>
+</html>
