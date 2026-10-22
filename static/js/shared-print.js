@@ -67,8 +67,8 @@
   document.head.appendChild(style);
 
   function mount() {
-    const anchor = document.querySelector('.directory-search-bar') || document.querySelector('main') || document.body;
-    anchor.parentNode.insertBefore(bar, anchor);
+    const anchor = document.querySelector('.golden-container .tabs');        // encima de las pestañas: se ve en todas (Registro, Escáner, Directorio)
+    if (anchor) anchor.parentNode.insertBefore(bar, anchor); else (document.querySelector('main') || document.body).prepend(bar);
   }
 
   function render() {
