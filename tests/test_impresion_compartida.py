@@ -24,6 +24,11 @@ def setup(client, factory, db):
         factory.authorize(ev, users[name])
     factory.person(ev, "1001")
     factory.person(ev, "1002", first_name="Beto")
+    factory.person(ev, "1003", first_name="Cata", last_name="Pendiente")                         # inscrita pero SIN registrar
+    from app.models import AccessLog
+    for uid in ("1001", "1002"):                                                                  # 1001 y 1002 ya se acreditaron
+        db.add(AccessLog(tenant_id=ev.tenant_id, user_id=uid, event_id=ev.id, record_type="Existente", registration_method="tradicional"))
+    db.commit()
     return ev, users
 
 
@@ -276,10 +281,50 @@ def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_a
     # /impresion-usb guarda «ql_» + mirror|invert|cut como "1"/"0" (cortar: sí por defecto); el Registro lee esas mismas claves con los mismos valores por defecto y el mismo umbral
     assert 'localStorage.getItem("ql_" + key)' in page and 'localStorage.setItem("ql_" + key, val ? "1" : "0")' in page
     assert 'pref("mirror", false)' in page and 'pref("invert", false)' in page and 'pref("cut", true)' in page
-    assert "store.get('ql_mirror', '0') === '1'" in sp and "store.get('ql_invert', '0') === '1'" in sp and "store.get('ql_cut', '1') !== '0'" in sp
-    assert re.search(r"bitmapFromRGBA\(rgba, DOTS, height, 140, invert\)", sp) and re.search(r"bitmapFromRGBA\(rgba, DOTS, t\.height, 140,", page)
-    assert "mirror, autoCut: cut" in sp and 'mirror: $("optMirror").checked, autoCut: $("optCut").checked' in page
+    assert "QLUsb.readPrefs(ls)" in sp and 'QLUsb.readPrefs(storage()).feedMm' in page                  # el Registro y la página leen las preferencias con la MISMA función (ql-usb.js)
+    assert 'get("ql_cut") !== "0"' in ql and 'get("ql_mirror") === "1"' in ql and 'get("ql_invert") === "1"' in ql and 'get("ql_feed_mm")' in ql
+    assert re.search(r"bitmapFromRGBA\(rgba, DOTS, height, 140, p\.invert\)", sp) and re.search(r"bitmapFromRGBA\(rgba, DOTS, t\.height, 140,", page)
+    assert "mirror: p.mirror, autoCut: p.cut" in sp and "feedDots: QLUsb.mmToDots(p.feedMm)" in sp and 'mirror: $("optMirror").checked, autoCut: $("optCut").checked' in page
     # la página de prueba suelta la impresora al terminar y al ocultarse o cerrarse; el cierre hace releaseInterface y suelta el candado entre pestañas
     assert "finally { await QLUsb.close(); }" in page and '"visibilitychange"' in page and '"pagehide"' in page
     assert "releaseInterface" in ql and "navigator.locks.request(LOCK_NAME, { ifAvailable: true }" in ql
     assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy ? null : usb.ok" in sp
+
+
+# ---------------------------------------------------------------------------------------------------- solo se imprime a quien está Registrado
+def test_a_person_who_is_not_registered_gets_no_shared_job_and_the_screen_is_told_why(client, setup, db):
+    ev, u = setup
+    _as(client, "y1")
+    _beat(client, ev, printer=True)
+    assert _route(client, ev, u["x1"], u["y1"]).status_code == 200
+    _as(client, "x1")
+    r = _job(client, ev, "1003")
+    assert r.status_code == 409 and r.json()["detail"] == "No se puede imprimir: Cata Pendiente aún no está registrado. Acredítalo o guarda su registro primero."
+    assert db.query(PrintJob).count() == 0                                                         # ni trabajo ni cola
+    chk = client.get(f"/api/events/{ev.id}/print-check/1003").json()
+    assert chk["registered"] is False and "Cata Pendiente" in chk["detail"]
+    assert client.get(f"/api/events/{ev.id}/print-check/1001").json() == {"registered": True}
+    assert client.get(f"/api/events/{ev.id}/print-check/9999").status_code == 404                # fuera del evento
+    from app.models import AccessLog                                                               # una EDICIÓN de perfil no es un registro
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1003", event_id=ev.id, record_type="Actualizado"))
+    db.commit()
+    assert _job(client, ev, "1003").status_code == 409
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1003", event_id=ev.id, record_type="Existente", registration_method="tradicional"))   # ahora sí se acreditó
+    db.commit()
+    assert _job(client, ev, "1003").status_code == 200 and client.get(f"/api/events/{ev.id}/print-check/1003").json() == {"registered": True}
+
+
+def test_the_check_is_also_used_by_a_device_that_prints_on_its_own_printer(client, setup):
+    ev, u = setup
+    _as(client, "y1")                                                                             # Y imprime en su propio equipo: la pantalla también consulta
+    _beat(client, ev, printer=True)
+    assert client.get(f"/api/events/{ev.id}/print-check/1003").json()["registered"] is False
+    assert client.get(f"/api/events/{ev.id}/print-check/1002").json()["registered"] is True
+
+
+def test_the_print_check_is_closed_when_the_switch_is_off(client, factory, db):
+    factory.staff("digitador", "dig0")
+    ev = factory.event("en_proceso")
+    factory.authorize(ev, db.query(__import__("app.models", fromlist=["StaffUser"]).StaffUser).filter_by(username="dig0").one())
+    login(client, "dig0")
+    assert client.get(f"/api/events/{ev.id}/print-check/1001").status_code == 409
