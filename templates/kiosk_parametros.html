@@ -142,6 +142,13 @@
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
           <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
         </div>
+        <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
+        <div id="sharedPrintCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Impresión compartida</h4>
+          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="sharedPrintEnabled" {% if event.shared_print_enabled %}checked{% endif %} style="width:22px; height:22px;"> Activar la impresión compartida y por USB (Brother QL-800 conectada a un Android con Chrome)</label>
+          <p style="color:#555; font-size:0.85rem; margin:0.5rem 0 0;">Apagada, todo imprime como siempre. Encendida, cada equipo que abre el Registro de este evento reporta si tiene la impresora conectada; aquí eliges, para cada usuario, si imprime en su propio equipo o en el equipo de otro usuario que tenga impresora (sin límite; con más de 6 en una misma impresora puede haber espera). La escarapela llega sola a ese equipo y se imprime sin que nadie acepte nada. Lo que no se imprime en 5 minutos queda en la «Cola» de quien registró, para reimprimir.</p>
+          <div id="sharedPrintTable" style="margin-top:0.8rem;"{% if not event.shared_print_enabled %} hidden{% endif %}></div>
+        </div>
         <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
@@ -777,6 +784,65 @@
         }
         setButtonLoading(btn, false);
     });
+})();
+</script>
+<script>
+/* Impresión compartida (22-oct-2026): interruptor, equipos que reportan y a qué equipo imprime cada usuario. Se actualiza cada 5 s mientras está abierta. */
+(function () {
+  const chk = document.getElementById('sharedPrintEnabled');
+  const box = document.getElementById('sharedPrintTable');
+  if (!chk || !box) return;
+  const api = `/api/events/${window.EVENT_ID}/shared-print`;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let timer = null;
+  function deviceText(d) {
+    if (!d) return '<span style="color:#666;">sin señal todavía (abra el Registro en ese equipo)</span>';
+    const ago = d.seconds_ago < 60 ? `${d.seconds_ago} s` : `${Math.round(d.seconds_ago / 60)} min`;
+    const state = d.online ? '<b style="color:#1e7e34;">conectado</b>' : '<b style="color:#a12631;">desconectado</b>';
+    const printer = d.printer_connected ? `🖨️ ${esc(d.printer_name || 'impresora')}` : 'sin impresora';
+    return `${esc(d.platform || '?')} · ${esc(d.browser || '?')} · ${printer} · ${state} (última señal hace ${ago})`;
+  }
+  async function load() {
+    clearTimeout(timer);
+    if (!chk.checked) { box.hidden = true; return; }
+    box.hidden = false;
+    let data;
+    try { const r = await fetch(api, { cache: 'no-store' }); data = r.ok ? await r.json() : null; } catch (e) { data = null; }
+    if (!data) { box.textContent = 'No se pudo leer el estado de los equipos.'; return; }
+    const printers = data.users.filter((u) => u.eligible_printer && !u.printer_staff_id);
+    const rows = data.users.map((u) => {
+      const opts = [`<option value="">En su propio equipo</option>`].concat(printers.filter((p) => p.staff_id !== u.staff_id).map((p) =>
+        `<option value="${p.staff_id}" ${u.printer_staff_id === p.staff_id ? 'selected' : ''} >En el equipo de ${esc(p.name)} (${p.serving} usuario${p.serving === 1 ? '' : 's'}${p.serving > data.warn_per_printer ? ' · ⚠️ puede haber espera' : ''})</option>`));
+      if (u.printer_staff_id && !printers.some((p) => p.staff_id === u.printer_staff_id)) {
+        const cur = data.users.find((x) => x.staff_id === u.printer_staff_id);
+        opts.push(`<option value="${u.printer_staff_id}" selected>En el equipo de ${esc(cur ? cur.name : '?')} (⚠️ sin impresora ahora)</option>`);
+      }
+      const serving = u.serving ? `<br><small>Imprime para ${u.serving} usuario(s)</small>` + (u.serving > data.warn_per_printer ? `<br><small data-sp-wait style="color:#b26a00; font-weight:600;">⚠️ Más de ${data.warn_per_printer} equipos en esta impresora: puede haber espera de impresión.</small>` : '') : '';
+      return `<tr><td style="padding:6px; border-bottom:1px solid #eee;"><b>${esc(u.name)}</b><br><small>${esc(u.username)} · ${esc(u.role)}</small>${serving}</td>
+        <td style="padding:6px; border-bottom:1px solid #eee; font-size:0.85rem;">${deviceText(u.device)}</td>
+        <td style="padding:6px; border-bottom:1px solid #eee;"><select data-route="${u.staff_id}" style="min-height:44px; max-width:100%;" ${u.serving ? 'disabled title="Atiende a otros usuarios"' : ''}>${opts.join('')}</select></td></tr>`;
+    }).join('');
+    box.innerHTML = data.users.length ? `<table style="width:100%; border-collapse:collapse;"><tr><th style="text-align:left; padding:6px;">Usuario</th><th style="text-align:left; padding:6px;">Equipo</th><th style="text-align:left; padding:6px;">Imprime</th></tr>${rows}</table>`
+      : '<p>Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
+    timer = setTimeout(load, 5000);
+  }
+  box.addEventListener('change', async (e) => {
+    const sel = e.target.closest('select[data-route]');
+    if (!sel) return;
+    clearTimeout(timer);
+    const res = await fetch(`${api}/route`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staff_user_id: Number(sel.dataset.route), printer_staff_id: sel.value ? Number(sel.value) : null }) });
+    const out = await res.json().catch(() => ({}));
+    showToast(res.ok ? (out.warning ? 'Guardado. ⚠️ ' + out.warning : 'Guardado') : (out.detail || 'No se pudo guardar'), res.ok ? (out.warning ? 'warning' : 'success') : 'error');
+    load();
+  });
+  chk.addEventListener('change', async () => {
+    const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: chk.checked }) });
+    if (!res.ok) { chk.checked = !chk.checked; showToast('No se pudo cambiar la impresión compartida', 'error'); return; }
+    showToast(chk.checked ? 'Impresión compartida ACTIVADA: abre (o recarga) el Registro en cada equipo.' : 'Impresión compartida apagada: todo imprime como siempre.', 'success');
+    load();
+  });
+  load();
 })();
 </script>
 </body>
