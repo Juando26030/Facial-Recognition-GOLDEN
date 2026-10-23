@@ -5,6 +5,8 @@
  *      impresión, corte, márgenes, líneas de 90 bytes, imprimir). Se prueba en tests/js/ql_usb_check.js.
  *   2) `QLUsb.connect()` / `sendJob()` / `readStatus()`: la parte de WebUSB (Chrome de Android y de escritorio, solo HTTPS). Pide permiso UNA vez (requestDevice, con un gesto del
  *      usuario); después `getDevices()` reconoce la impresora sin volver a preguntar.
+ *   3) Una sola pestaña por equipo es la DUEÑA de la impresora (WebUSB no deja que dos pestañas la tomen: «Unable to claim interface»): un Web Lock con nombre fijo. Si otra pestaña la
+ *      tiene, `connect()` lanza un error con `busy = true` y un mensaje amable; quien la usa la suelta con `close()` (releaseInterface + close + suelta el candado).
  *
  * Datos de la QL-800 (300 dpi): cinta continua de 62 mm = 696 puntos imprimibles en una línea de 720 (12 de margen a cada lado). 1 mm ≈ 11,81 puntos.
  * NO verificado con una impresora real todavía (primera prueba pendiente): por eso la página tiene «espejo» e «invertir» y una etiqueta de prueba asimétrica.
@@ -119,16 +121,47 @@
   }
 
   var state = { device: null, ep: null };
+  var BUSY_MSG = "La impresora está en uso en otra pestaña de este equipo: ciérrala.";
+  var LOCK_NAME = "golden-ql-usb";
+  var owner = { held: false, release: null };
+
+  function busyError() { var e = new Error(BUSY_MSG); e.busy = true; return e; }
+
+  /* Candado entre pestañas del mismo equipo (Web Locks). Sin Web Locks en el navegador se decide solo por claimInterface. */
+  function own() {
+    if (owner.held || typeof navigator === "undefined" || !navigator.locks) return Promise.resolve(true);
+    return new Promise(function (resolve) {
+      navigator.locks.request(LOCK_NAME, { ifAvailable: true }, function (lock) {
+        if (!lock) { resolve(false); return null; }
+        owner.held = true;
+        resolve(true);
+        return new Promise(function (r) { owner.release = r; });             // se mantiene hasta disown() o hasta que se cierre la pestaña
+      }).catch(function () { resolve(true); });
+    });
+  }
+  function disown() {
+    if (owner.release) owner.release();
+    owner.held = false;
+    owner.release = null;
+  }
 
   async function open(device) {
-    await device.open();
-    if (device.configuration === null) await device.selectConfiguration(1);
-    var ep = findEndpoints(device);
-    if (ep.iface === null || ep.out === null) throw new Error("La impresora no expone la interfaz de impresión (¿modo «Editor Lite» encendido? Apáguelo con el botón de la impresora hasta que se apague la luz verde).");
-    await device.claimInterface(ep.iface);
-    state.device = device;
-    state.ep = ep;
-    return device;
+    if (!(await own())) throw busyError();
+    try {
+      await device.open();
+      if (device.configuration === null) await device.selectConfiguration(1);
+      var ep = findEndpoints(device);
+      if (ep.iface === null || ep.out === null) throw new Error("La impresora no expone la interfaz de impresión (¿modo «Editor Lite» encendido? Apáguelo con el botón de la impresora hasta que se apague la luz verde).");
+      try { await device.claimInterface(ep.iface); }
+      catch (e) { throw busyError(); }                                          // «Unable to claim interface»: otra pestaña (o página) la tiene tomada
+      state.device = device;
+      state.ep = ep;
+      return device;
+    } catch (e) {
+      try { if (device.opened) await device.close(); } catch (e2) { /* ya cerrada */ }
+      disown();
+      throw e;
+    }
   }
 
   async function connect(askPermission) {
@@ -157,12 +190,18 @@
     return res.data ? parseStatus(new Uint8Array(res.data.buffer)) : null;
   }
 
-  async function close() {
-    if (state.device) { try { await state.device.close(); } catch (e) { /* ya cerrada */ } }
+  async function close() {                                                     // suelta la impresora para otra pestaña: releaseInterface + close + candado
+    if (state.device) {
+      try { if (state.ep && state.ep.iface !== null) await state.device.releaseInterface(state.ep.iface); } catch (e) { /* ya suelta o desconectada */ }
+      try { await state.device.close(); } catch (e) { /* ya cerrada */ }
+    }
     state.device = null;
+    state.ep = null;
+    disown();
   }
 
   var api = { buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
-              supported: supported, connect: connect, sendJob: sendJob, readStatus: readStatus, close: close, info: function () { return state.device; } };
+              supported: supported, connect: connect, sendJob: sendJob, readStatus: readStatus, close: close, info: function () { return state.device; },
+              BUSY_MSG: BUSY_MSG, LOCK_NAME: LOCK_NAME, isOwner: function () { return owner.held; } };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.QLUsb = api;
 })(typeof window !== "undefined" ? window : this);

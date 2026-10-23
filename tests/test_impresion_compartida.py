@@ -1,5 +1,5 @@
 """Impresión compartida (orden del 22-oct-2026): interruptor APAGADO por defecto; con él apagado todo es igual que hoy. Encendido: equipos que reportan su
-impresora, a qué equipo imprime cada usuario (hasta 3 por impresora), cola atómica sin duplicados, caducidad de 5 minutos y permisos del mismo evento."""
+impresora, a qué equipo imprime cada usuario (sin tope; aviso con más de 6 por impresora), cola atómica sin duplicados, caducidad de 5 minutos y permisos del mismo evento."""
 import uuid
 from datetime import timedelta
 
@@ -96,19 +96,29 @@ def test_devices_report_and_appear_with_last_signal_and_printer(client, setup):
     assert users["x1"]["eligible_printer"] is False and users["x2"]["device"] is None                # sin señal todavía
 
 
-def test_a_printer_must_be_connected_reporting_and_serves_at_most_three(client, setup, db):
+def test_a_printer_must_be_connected_reporting_and_has_no_hard_limit_only_a_soft_warning_over_six(client, factory, setup, db):
     ev, u = setup
     assert _route(client, ev, u["x1"], u["y1"]).status_code == 409                               # Y1 no ha reportado: no es elegible
     _as(client, "y1")
     _beat(client, ev, printer=True)
-    for x in ("x1", "x2", "x3"):
-        assert _route(client, ev, u[x], u["y1"]).status_code == 200, x
-    r = _route(client, ev, u["x4"], u["y1"])
-    assert r.status_code == 409 and "3 usuarios" in r.json()["detail"]
+    xs = ["x1", "x2", "x3", "x4"]
+    for i in range(5, 9):                                                                         # 8 usuarios en la misma impresora: sin tope duro (orden del 22-oct-2026)
+        users = u.setdefault(f"x{i}", factory.staff("digitador", f"x{i}"))
+        factory.authorize(ev, users)
+        xs.append(f"x{i}")
+    for n, x in enumerate(xs, start=1):
+        r = _route(client, ev, u[x], u["y1"])
+        assert r.status_code == 200, (x, r.text)
+        assert r.json()["serving"] == n
+        assert ("warning" in r.json()) == (n > shared_print.WARN_PER_PRINTER), n                 # aviso suave solo con más de 6
+    assert "puede haber espera" in r.json()["warning"]
+    cfg = client.get(f"/api/events/{ev.id}/shared-print").json()
+    assert cfg["warn_per_printer"] == 6 and "max_per_printer" not in cfg
+    assert {x["username"]: x["serving"] for x in cfg["users"]}["y1"] == 8
     assert _route(client, ev, u["x1"], u["x1"]).status_code == 400                               # a sí mismo: «en su propio equipo»
     _as(client, "y1")
     beat = _beat(client, ev, printer=True).json()
-    assert beat["serving"] == 3 and beat["poll"] is True
+    assert beat["serving"] == 8 and beat["poll"] is True
     _as(client, "x1")
     beat = _beat(client, ev, printer=False).json()
     assert beat["mode"] == "shared" and beat["printer_name"] and beat["printer_ready"] is True
@@ -237,3 +247,39 @@ def test_the_logs_never_carry_the_person(client, setup, caplog):
         client.post(f"/api/events/{ev.id}/print-jobs/{got['id']}/result", json={"ok": True})
     text = " ".join(r.getMessage() for r in caplog.records if r.name == "golden.shared_print")
     assert f"trabajo {job['id']}" in text and "1001" not in text and "Ana" not in text
+
+
+# ---------------------------------------------------------------------------------------------------- una sola pestaña dueña de la impresora
+def test_a_tab_that_does_not_own_the_printer_reports_null_and_does_not_overwrite_the_owner(client, setup, db):
+    """Dos pestañas del Registro en el mismo equipo: la que NO tiene la impresora (otra pestaña la tomó) manda printer_connected=null y no apaga a la dueña."""
+    ev, u = setup
+    _as(client, "y1")
+    _beat(client, ev, printer=True)
+    r = client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json={"device_id": "dev", "platform": "Android", "browser": "Chrome", "printer_connected": None})
+    assert r.status_code == 200
+    _as(client, "adm")
+    y1 = {x["username"]: x for x in client.get(f"/api/events/{ev.id}/shared-print").json()["users"]}["y1"]
+    assert y1["eligible_printer"] is True and y1["device"]["printer_connected"] is True and y1["device"]["printer_name"] == "QL-800"
+    _as(client, "x1")                                                                              # un equipo nuevo que llega con null queda «sin impresora»
+    client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json={"device_id": "x", "printer_connected": None})
+    _as(client, "adm")
+    x1 = {x["username"]: x for x in client.get(f"/api/events/{ev.id}/shared-print").json()["users"]}["x1"]
+    assert x1["device"]["printer_connected"] is False and x1["eligible_printer"] is False
+
+
+def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_and_the_test_page_lets_the_printer_go():
+    import pathlib
+    import re
+    page = pathlib.Path("templates/impresion_usb.html").read_text(encoding="utf-8")
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    ql = pathlib.Path("static/js/ql-usb.js").read_text(encoding="utf-8")
+    # /impresion-usb guarda «ql_» + mirror|invert|cut como "1"/"0" (cortar: sí por defecto); el Registro lee esas mismas claves con los mismos valores por defecto y el mismo umbral
+    assert 'localStorage.getItem("ql_" + key)' in page and 'localStorage.setItem("ql_" + key, val ? "1" : "0")' in page
+    assert 'pref("mirror", false)' in page and 'pref("invert", false)' in page and 'pref("cut", true)' in page
+    assert "store.get('ql_mirror', '0') === '1'" in sp and "store.get('ql_invert', '0') === '1'" in sp and "store.get('ql_cut', '1') !== '0'" in sp
+    assert re.search(r"bitmapFromRGBA\(rgba, DOTS, height, 140, invert\)", sp) and re.search(r"bitmapFromRGBA\(rgba, DOTS, t\.height, 140,", page)
+    assert "mirror, autoCut: cut" in sp and 'mirror: $("optMirror").checked, autoCut: $("optCut").checked' in page
+    # la página de prueba suelta la impresora al terminar y al ocultarse o cerrarse; el cierre hace releaseInterface y suelta el candado entre pestañas
+    assert "finally { await QLUsb.close(); }" in page and '"visibilitychange"' in page and '"pagehide"' in page
+    assert "releaseInterface" in ql and "navigator.locks.request(LOCK_NAME, { ifAvailable: true }" in ql
+    assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy ? null : usb.ok" in sp

@@ -17,6 +17,7 @@
   const HEARTBEAT_MS = 10000;
   const POLL_MS = 1500;
   const FOLLOW_MS = 1000;
+  const BUSY_RETRY_MS = 4000;            // impresora tomada por otra pestaña de este equipo: se reintenta sola cada 4 s
   const FOLLOW_MAX = 20;                 // segundos que X sigue el estado de su trabajo antes de dejarlo en la cola visible
   const original = window.BadgePrint || {};
   const toast = (msg, kind) => (window.showToast ? window.showToast(msg, kind || 'info') : null);
@@ -33,7 +34,7 @@
   const browser = /EdgA?\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Otro';
 
   let route = { mode: 'self', printer_name: '', printer_ready: false, serving: 0, poll: false };
-  let usb = { ok: false, name: '', lastError: '' };
+  let usb = { ok: false, name: '', lastError: '', busy: false };
   let online = true;
   let pending = 0;                       // trabajos de este equipo pendientes de confirmar
 
@@ -79,6 +80,9 @@
     else if (route.mode === 'shared') {
       msg = route.printer_ready ? `Imprime en el equipo de ${route.printer_name}.` : `Imprime en el equipo de ${route.printer_name}, que NO está conectado con su impresora: las escarapelas quedan en cola.`;
       if (!route.printer_ready) kind = 'warn';
+    } else if (usb.busy) {
+      kind = 'warn';
+      msg = `${QLUsb.BUSY_MSG} Se vuelve a intentar sola cada pocos segundos.`;
     } else if (usb.ok) {
       msg = `Impresora conectada (${usb.name}).` + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
     } else {
@@ -89,19 +93,23 @@
     if (pending) msg += ` · ${pending} por confirmar`;
     text.textContent = msg;
     bar.className = kind;
-    bar.querySelector('#spConnect').hidden = usb.ok || route.mode === 'shared' || !(window.QLUsb && QLUsb.supported());
+    bar.querySelector('#spConnect').hidden = usb.ok || usb.busy || route.mode === 'shared' || !(window.QLUsb && QLUsb.supported());
   }
 
   /* ------------------------------------------------------------------ impresora USB */
+  let busyTimer = null;
   async function connectUsb(ask) {
+    clearTimeout(busyTimer);
     if (!ask && usb.ok && window.QLUsb && QLUsb.info()) { render(); heartbeat(); return; }      // ya conectada: no se vuelve a abrir
-    if (!(window.QLUsb && QLUsb.supported())) { usb = { ok: false, name: '', lastError: 'USB no disponible en este navegador' }; render(); return; }
+    if (!(window.QLUsb && QLUsb.supported())) { usb = { ok: false, name: '', lastError: 'USB no disponible en este navegador', busy: false }; render(); return; }
     try {
       const d = await QLUsb.connect(ask);
-      usb = { ok: !!d, name: d ? (d.productName || 'Brother') : '', lastError: '' };
+      usb = { ok: !!d, name: d ? (d.productName || 'Brother') : '', lastError: '', busy: false };
     } catch (e) {
-      usb = { ok: false, name: '', lastError: e && e.message ? e.message : String(e) };
-      if (ask) toast('No se pudo conectar la impresora: ' + usb.lastError, 'error');
+      const busy = !!(e && e.busy);                    // otra pestaña de este equipo tiene la impresora: aviso amable y reintento solo, sin desconectar el cable
+      usb = { ok: false, name: '', lastError: e && e.message ? e.message : String(e), busy };
+      if (busy) busyTimer = setTimeout(() => connectUsb(false), BUSY_RETRY_MS);
+      else if (ask) toast('No se pudo conectar la impresora: ' + usb.lastError, 'error');
     }
     render();
     heartbeat();
@@ -110,7 +118,7 @@
     navigator.usb.addEventListener('connect', () => connectUsb(false));
     navigator.usb.addEventListener('disconnect', async () => {
       await QLUsb.close();
-      usb = { ok: false, name: '', lastError: 'desconectada' };
+      usb = { ok: false, name: '', lastError: 'desconectada', busy: false };
       render();
       toast('⚠️ Se desconectó la impresora USB.', 'warning');
       heartbeat();
@@ -130,7 +138,7 @@
     clearTimeout(hbTimer);
     try {
       const res = await fetch(`/api/events/${EID}/print-devices/heartbeat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.ok, printer_name: usb.name || null }) });
+        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy ? null : usb.ok, printer_name: usb.name || null }) });      // null: otra pestaña es la dueña, no se pisa su estado
       online = true;
       if (res.ok) { route = await res.json(); startPolling(); }
     } catch (e) { online = false; }
