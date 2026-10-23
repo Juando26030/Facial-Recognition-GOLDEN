@@ -22,6 +22,7 @@ from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
 from app.routers import shared_print
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
+from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 
 obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
 log = logging.getLogger("golden.app")
@@ -229,6 +230,7 @@ _include(certificates_public.staff_router, prefix="/api")
 _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
+_include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema
 
