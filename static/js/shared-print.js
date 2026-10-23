@@ -46,6 +46,7 @@
   bar.innerHTML = '<span class="sp-dot" aria-hidden="true"></span><span class="sp-text">Impresión: comprobando…</span>' +
     '<button type="button" class="sp-btn" id="spConnect">🔌 Conectar impresora</button>' +
     '<button type="button" class="sp-btn" id="spQueue">🧾 Cola</button>' +
+    '<button type="button" class="sp-btn" id="spPrefs">⚙️ Impresión</button>' +
     '<button type="button" class="sp-btn" id="spTouch" aria-pressed="false">📱 Registro touch</button>' +
     '<button type="button" class="sp-btn" id="spKeyboard" hidden>⌨️ Teclado</button>';
   const style = document.createElement('style');
@@ -57,6 +58,8 @@
     '#sharedPrintBar .sp-text{flex:1 1 220px;font-weight:600}',
     '#sharedPrintBar .sp-btn{min-height:44px;padding:6px 14px;border-radius:10px;border:2px solid #0a0e2e;background:#fff;color:#0a0e2e;font-weight:700;cursor:pointer}',
     '#spQueuePanel{position:fixed;inset:auto 12px 12px 12px;max-height:60vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.25)}',
+    '#spPrefsPanel{position:fixed;inset:auto 12px 12px 12px;max-height:80vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:1rem}',
+    '#spPrefsPanel label{display:flex;gap:10px;align-items:center;min-height:44px}#spPrefsPanel input[type=checkbox],#spPrefsPanel input[type=radio]{width:24px;height:24px}#spPrefsPanel input[type=number]{width:90px;min-height:40px;font-size:1rem}',
     '#spQueuePanel table{width:100%;border-collapse:collapse;font-size:0.95rem}#spQueuePanel td,#spQueuePanel th{padding:6px;border-bottom:1px solid #eee;text-align:left}',
     /* Registro touch: lo esencial, grande y a un dedo */
     'body.touch-mode{font-size:18px}',
@@ -169,20 +172,27 @@
       const DOTS = QLUsb.MEDIA[62].printable;
       const scale = DOTS / holder.offsetWidth;
       const shot = await html2canvas(holder, { scale, useCORS: true, backgroundColor: '#ffffff', logging: false });
-      const height = Math.max(1, Math.round(shot.height * DOTS / shot.width));
-      const canvas = document.createElement('canvas');
-      canvas.width = DOTS; canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, DOTS, height);
-      ctx.drawImage(shot, 0, 0, DOTS, height);
-      const rgba = ctx.getImageData(0, 0, DOTS, height).data;
-      const invert = store.get('ql_invert', '0') === '1';
-      const mirror = store.get('ql_mirror', '0') === '1';
-      const cut = store.get('ql_cut', '1') !== '0';
-      return QLUsb.buildJob({ bitmap: QLUsb.bitmapFromRGBA(rgba, DOTS, height, 140, invert), height, mediaWidthMm: 62, mirror, autoCut: cut });
+      const p = prefs();
+      const drawn = Math.max(1, Math.round(shot.height * DOTS / shot.width));          // alto de la PLANTILLA (a escala del ancho imprimible de 62 mm)
+      const height = p.lengthMm ? QLUsb.mmToDots(p.lengthMm) : drawn;                  // o el alto fijo que se eligió en «⚙️ Impresión»
+      return jobFromCanvas((ctx) => ctx.drawImage(shot, 0, 0, DOTS, drawn), height, p);
     } finally {
       holder.remove();
     }
+  }
+
+  /* Preferencias de impresión de ESTE equipo (las mismas que /impresion-usb): corte automático, margen de avance, alto de etiqueta, espejo e invertir. */
+  function prefs() { let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ } return QLUsb.readPrefs(ls); }
+  function jobFromCanvas(draw, height, p) {
+    const DOTS = QLUsb.MEDIA[62].printable;
+    const canvas = document.createElement('canvas');
+    canvas.width = DOTS; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, DOTS, height);
+    draw(ctx);
+    const rgba = ctx.getImageData(0, 0, DOTS, height).data;
+    return QLUsb.buildJob({ bitmap: QLUsb.bitmapFromRGBA(rgba, DOTS, height, 140, p.invert), height, mediaWidthMm: 62, mirror: p.mirror, autoCut: p.cut,
+      feedDots: QLUsb.mmToDots(p.feedMm) });
   }
 
   let usbBusy = Promise.resolve();
@@ -298,7 +308,24 @@
   }
 
   /* ------------------------------------------------------------------ el punto único de impresión */
+  /* Orden del 22-oct-2026: SOLO se imprime a quien está «Registrado» en este evento (botón, autoimpresión, Cola; local o compartida). El servidor también lo
+     valida al crear el trabajo compartido. Si no se puede comprobar, NO se imprime. */
+  async function registeredOrSay(userId) {
+    for (let i = 0; i < 2; i++) {
+      try {
+        const r = await fetch(`/api/events/${EID}/print-check/${encodeURIComponent(userId)}`, { cache: 'no-store' });
+        const c = await r.json().catch(() => ({}));
+        if (r.ok && c.registered) return true;
+        toast(c.detail || 'No se pudo comprobar si la persona está registrada: no se imprime.', 'error');
+        return false;
+      } catch (e) { await sleep(600); }
+    }
+    toast('⚠️ Sin conexión: no se pudo comprobar si la persona está registrada. No se imprime; reintenta.', 'error');
+    return false;
+  }
+
   async function printFor(userId, auto, confirmed) {
+    if (!(await registeredOrSay(userId))) return;
     if (route.mode === 'shared') {
       if (!auto && !confirmed) {                    // el botón manual conserva el aviso de reimpresión de siempre
         try {
@@ -369,15 +396,121 @@
   });
 
   /* ------------------------------------------------------------------ arranque */
+  /* ------------------------------------------------------------------ Enter del teclado en pantalla = buscar (como el lector USB) */
+  /* En Android, la tecla de acción del teclado en pantalla pasaba al campo siguiente («Siguiente») en vez de buscar. Con enterkeyhint="search" Chrome manda Enter;
+     y si el teclado no lo manda como tecla (keyCode 229, Samsung, etc.) se toma el salto de línea (beforeinput) o el Enter al soltar (keyup) y se manda un Enter.
+     El lector USB ya manda Enter normal: no cambia (y no se repite: un Enter en el último segundo cuenta una sola vez). */
+  const SEARCH_IDS = ['searchCedula', 'searchNombre', 'searchEntidad', 'regScanCedulaInput'];
+  const ENTER_ONCE_MS = 1000;
+  function wireEnter() {
+    SEARCH_IDS.forEach((id) => document.querySelectorAll(`#${id}`).forEach((el) => {
+      if (el.dataset.spEnter) return;
+      el.dataset.spEnter = '1';
+      el.setAttribute('enterkeyhint', 'search');
+      let lastEnter = 0;
+      const fire = () => { lastEnter = Date.now(); el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true })); };
+      el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        lastEnter = Date.now();
+        if (id === 'searchNombre' || id === 'searchEntidad') { e.preventDefault(); el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); }      // busca ya y baja el teclado para ver el resultado
+      });
+      el.addEventListener('beforeinput', (e) => {
+        if (e.inputType !== 'insertLineBreak' && e.inputType !== 'insertParagraph') return;
+        e.preventDefault();
+        if (Date.now() - lastEnter > ENTER_ONCE_MS) fire();
+      });
+      el.addEventListener('keyup', (e) => { if ((e.key === 'Enter' || e.keyCode === 13) && Date.now() - lastEnter > ENTER_ONCE_MS) fire(); });
+    }));
+  }
+
+  /* ------------------------------------------------------------------ pegar en cédula (limpia espacios y puntos) */
+  const CEDULA_IDS = ['searchCedula', 'regScanCedulaInput', 'manualIdField'];
+  const cleanCedula = (t) => String(t || '').replace(/[\s.]/g, '');
+  document.addEventListener('keydown', (e) => {          // el blindaje contra atajos del lector bloqueaba también Ctrl+V/C/X/A: esos sí se dejan pasar
+    const t = e.target;
+    if (!t || !CEDULA_IDS.includes(t.id) || e.altKey || !(e.ctrlKey || e.metaKey)) return;
+    if (['v', 'c', 'x', 'a', 'z'].includes(String(e.key || '').toLowerCase())) e.stopImmediatePropagation();
+  }, true);
+  document.addEventListener('paste', (e) => {
+    const t = e.target;
+    if (!t || !CEDULA_IDS.includes(t.id) || !e.clipboardData) return;
+    const raw = e.clipboardData.getData('text') || '';
+    const clean = cleanCedula(raw);
+    if (clean === raw) return;
+    e.preventDefault();
+    const s = t.selectionStart == null ? t.value.length : t.selectionStart, en = t.selectionEnd == null ? s : t.selectionEnd;
+    t.value = t.value.slice(0, s) + clean + t.value.slice(en);
+    try { t.setSelectionRange(s + clean.length, s + clean.length); } catch (err) { /* campo sin selección */ }
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+  }, true);
+
+  /* ------------------------------------------------------------------ «⚙️ Impresión»: preferencias de este equipo */
+  function showPrefs() {
+    const old = document.getElementById('spPrefsPanel');
+    if (old) { old.remove(); return; }
+    const p = prefs();
+    const panel = document.createElement('div');
+    panel.id = 'spPrefsPanel';
+    panel.setAttribute('role', 'dialog');
+    panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>Preferencias de impresión de este equipo</strong><button type="button" class="sp-btn" data-close>Cerrar</button></div>' +
+      '<label><input type="checkbox" data-p="cut"> Cortar la cinta al final de cada etiqueta</label>' +
+      '<label>Margen de avance <input type="number" data-p="feed" min="0" max="10" step="0.5"> mm</label>' +
+      '<label><input type="radio" name="spLen" value="auto"> Alto de etiqueta: el de la plantilla</label>' +
+      '<label><input type="radio" name="spLen" value="manual"> Alto fijo <input type="number" data-p="len" min="10" max="300" step="1"> mm</label>' +
+      '<label><input type="checkbox" data-p="mirror"> Espejo</label>' +
+      '<label><input type="checkbox" data-p="invert"> Invertir (negativo)</label>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="sp-btn" data-save>Guardar</button><button type="button" class="sp-btn" data-test>🖨️ Imprimir prueba</button></div>' +
+      '<p style="font-size:0.85rem;color:#555;margin:8px 0 0">Se guardan en este equipo y valen para el Registro, la impresión compartida y /impresion-usb.</p>';
+    const q = (sel) => panel.querySelector(sel);
+    q('[data-p=cut]').checked = p.cut; q('[data-p=feed]').value = String(p.feedMm); q('[data-p=mirror]').checked = p.mirror; q('[data-p=invert]').checked = p.invert;
+    q('[data-p=len]').value = p.lengthMm ? String(p.lengthMm) : '';
+    q(`input[name=spLen][value=${p.lengthMm ? 'manual' : 'auto'}]`).checked = true;
+    const read = () => {
+      const manual = q('input[name=spLen][value=manual]').checked;
+      const len = parseFloat(q('[data-p=len]').value), feed = parseFloat(q('[data-p=feed]').value);
+      return { cut: q('[data-p=cut]').checked, feedMm: isFinite(feed) && feed >= 0 ? feed : QLUsb.PREF_DEFAULTS.feedMm, lengthMm: manual && isFinite(len) && len >= 10 ? len : null,
+        mirror: q('[data-p=mirror]').checked, invert: q('[data-p=invert]').checked };
+    };
+    const save = () => { let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ } QLUsb.savePrefs(ls, read()); };
+    panel.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-close]')) { panel.remove(); return; }
+      if (e.target.closest('[data-save]')) { save(); toast('Preferencias de impresión guardadas en este equipo.', 'success'); panel.remove(); return; }
+      if (e.target.closest('[data-test]')) { save(); await printTest(); }
+    });
+    document.body.appendChild(panel);
+  }
+  function testJob() {
+    const p = prefs();
+    const DOTS = QLUsb.MEDIA[62].printable;
+    const height = QLUsb.mmToDots(p.lengthMm || 40);
+    return jobFromCanvas((ctx) => {
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 30, height);                                     // barra a la izquierda: se ve si sale en espejo
+      ctx.lineWidth = 4; ctx.strokeRect(36, 4, DOTS - 40, height - 8);
+      ctx.font = 'bold 56px sans-serif'; ctx.textBaseline = 'top'; ctx.fillText('PRUEBA →', 60, 20);
+      ctx.font = '34px sans-serif'; ctx.fillText(`corte ${p.cut ? 'sí' : 'no'} · margen ${p.feedMm} mm · ${p.lengthMm ? p.lengthMm + ' mm' : 'alto 40 mm'}`, 60, 100);
+    }, height, p);
+  }
+  function printTest() {
+    const run = usbBusy.then(async () => {
+      if (!usb.ok || !QLUsb.info()) await connectUsb(false);
+      if (!usb.ok) throw new Error(usb.busy ? QLUsb.BUSY_MSG : 'La impresora no está conectada a este equipo.');
+      await QLUsb.sendJob(testJob());
+    });
+    usbBusy = run.catch(() => {});
+    return run.then(() => toast('🖨️ Etiqueta de prueba enviada.', 'success'), (e) => toast('⚠️ ' + (e && e.message ? e.message : e), 'error'));
+  }
+
   bar.querySelector('#spConnect').addEventListener('click', () => connectUsb(true));
+  bar.querySelector('#spPrefs').addEventListener('click', showPrefs);
   bar.querySelector('#spQueue').addEventListener('click', showQueue);
   function start() {
     mount();
+    wireEnter();
     applyTouch();
     render();
     keepAwake();
     connectUsb(false);                                    // reconoce la impresora ya autorizada (sin pedir permiso) y manda la primera señal
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
-  window.GoldenSharedPrint = { printFor, state: () => ({ route, usb, online, pending, deviceId, touch }) };
+  window.GoldenSharedPrint = { printFor, testJob, cleanCedula, state: () => ({ route, usb, online, pending, deviceId, touch }) };
 })();

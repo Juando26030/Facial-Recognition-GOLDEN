@@ -53,7 +53,9 @@
             <label><input type="checkbox" id="optMirror"> Espejo</label>
             <label><input type="checkbox" id="optInvert"> Invertir (blanco/negro)</label>
             <label><input type="checkbox" id="optCut" checked> Cortar al final</label>
+            <label>Margen de avance <input type="number" id="optFeed" min="0" max="10" step="0.5" value="1.5"> mm</label>
         </div>
+        <p class="usb-help" style="margin:0;">Espejo, invertir, cortar y margen se guardan en este equipo: el Registro (y la impresión compartida) los usa igual. El alto de la escarapela se elige en el Registro, «⚙️ Impresión».</p>
         <div id="previewBox"><canvas id="preview"></canvas></div>
         <div class="usb-row">
             <button id="btnPrint" class="btn" disabled>Imprimir etiqueta de prueba</button>
@@ -79,6 +81,9 @@
   ["Mirror", "Invert", "Cut"].forEach(function (name) {
     $("opt" + name).addEventListener("change", function () { savePref(name.toLowerCase(), this.checked); });
   });
+  function storage() { try { return window.localStorage; } catch (e) { return null; } }
+  $("optFeed").value = String(QLUsb.readPrefs(storage()).feedMm);                    // las mismas preferencias del equipo que usa el Registro (QLUsb.readPrefs)
+  $("optFeed").addEventListener("change", function () { var v = parseFloat(this.value); if (isFinite(v) && v >= 0) QLUsb.savePrefs(storage(), { feedMm: v }); });
 
   function drawTest() {
     var heightDots = QLUsb.mmToDots(Math.max(20, Math.min(300, parseInt($("lenMm").value, 10) || 60)));
@@ -138,7 +143,8 @@
       await withPrinter(true, async function () {                                  // sin permiso previo, imprimir lo pide en ese mismo toque
         var rgba = t.ctx.getImageData(0, 0, DOTS, t.height).data;
         var bitmap = QLUsb.bitmapFromRGBA(rgba, DOTS, t.height, 140, $("optInvert").checked);
-        var job = QLUsb.buildJob({ bitmap: bitmap, height: t.height, mediaWidthMm: 62, mirror: $("optMirror").checked, autoCut: $("optCut").checked });
+        var job = QLUsb.buildJob({ bitmap: bitmap, height: t.height, mediaWidthMm: 62, mirror: $("optMirror").checked, autoCut: $("optCut").checked,
+                                   feedDots: QLUsb.mmToDots(QLUsb.readPrefs(storage()).feedMm) });
         setStatus($("printStatus"), "Enviando " + Math.round(job.length / 1024) + " KB a la impresora…");
         await QLUsb.sendJob(job);
         await new Promise(function (r) { setTimeout(r, 500); });                 // margen antes de soltarla (la cinta ya recibió todo el trabajo)

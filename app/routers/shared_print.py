@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role_excluding
 from app.database import get_db
-from app.models import Event, EventAttendee, EventStaffAuthorization, PrintDevice, PrintJob, PrintLog, PrintRoute, StaffUser
+from app.models import AccessLog, Event, EventAttendee, EventStaffAuthorization, PrintDevice, PrintJob, PrintLog, PrintRoute, StaffUser, User
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.shared_print")
@@ -93,6 +93,17 @@ def _route(db: Session, event_id: int, staff_id: int) -> Optional[int]:
     return row.printer_staff_id if row else None
 
 
+def _registered(db: Session, event_id: int, user_id: str) -> bool:
+    """«Registrado» en ESTE evento = tiene al menos una acreditación real (misma regla que api._already_checked_in y que el estado del Directorio: «Actualizado» no cuenta)."""
+    return db.query(AccessLog.id).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id, AccessLog.record_type != "Actualizado").first() is not None
+
+
+def _not_registered_msg(db: Session, tenant_id: str, user_id: str) -> str:
+    u = db.query(User.first_name, User.last_name).filter(User.id == user_id, User.tenant_id == tenant_id).first()
+    name = f"{u.first_name or ''} {u.last_name or ''}".strip() if u else ""
+    return f"No se puede imprimir: {name or 'esta persona'} aún no está registrado. Acredítalo o guarda su registro primero."
+
+
 def _job_out(db: Session, job: PrintJob) -> dict:
     printer = db.get(StaffUser, job.printer_staff_id) if job.printer_staff_id else None
     return {"id": job.id, "status": job.status, "printer_name": _name(printer), "error": job.error,
@@ -141,6 +152,8 @@ def create_job(event_id: int, data: JobIn, db: Session = Depends(get_db), staff:
     attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=str(data.user_id).strip()).first()
     if attendee is None:
         raise HTTPException(status_code=404, detail="La persona no está inscrita en este evento.")
+    if not _registered(db, event.id, attendee.user_id):              # orden del 22-oct-2026: solo se imprime a quien ya está Registrado (también la reimpresión de la Cola)
+        raise HTTPException(status_code=409, detail=_not_registered_msg(db, event.tenant_id, attendee.user_id))
     job = PrintJob(event_id=event.id, attendee_id=attendee.id, requested_by_staff_id=staff.id, printer_staff_id=printer_id, request_id=request_id,
                    status="queued", created_at=utcnow())
     db.add(job)
@@ -153,6 +166,18 @@ def create_job(event_id: int, data: JobIn, db: Session = Depends(get_db), staff:
         out["warning"] = (f"El equipo de {out['printer_name']} no está conectado o no tiene la impresora: la escarapela quedó en cola "
                           f"({int(PRINT_JOB_TTL.total_seconds() // 60)} min) y podrás reimprimirla.")
     return out
+
+
+@router.get("/events/{event_id}/print-check/{user_id}")
+def print_check(event_id: int, user_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+    """Antes de imprimir (local o compartida, manual, automática o desde la Cola): ¿la persona está Registrada en este evento? La pantalla no imprime si no."""
+    event = _enabled_event(event_id, db, staff)
+    uid = str(user_id).strip()
+    if db.query(EventAttendee.id).filter_by(event_id=event.id, user_id=uid).first() is None and not _registered(db, event.id, uid):
+        raise HTTPException(status_code=404, detail="La persona no está inscrita en este evento.")
+    if _registered(db, event.id, uid):
+        return {"registered": True}
+    return {"registered": False, "detail": _not_registered_msg(db, event.tenant_id, uid)}
 
 
 @router.get("/events/{event_id}/print-jobs/{job_id}")

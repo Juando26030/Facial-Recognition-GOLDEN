@@ -24,6 +24,30 @@
 
   function mmToDots(mm) { return Math.round(mm * DOTS_PER_MM); }
 
+  /* Preferencias de impresión DEL EQUIPO (localStorage, las mismas para el Registro, la impresión compartida y /impresion-usb):
+     ql_cut (corte automático, sí por defecto), ql_feed_mm (margen de avance, 1,5 mm por defecto), ql_length_mm (alto de etiqueta en mm; vacío = el de la plantilla),
+     ql_mirror y ql_invert (no por defecto). */
+  var PREF_DEFAULTS = { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false };
+  function readPrefs(storage) {
+    function get(k) { try { return storage ? storage.getItem(k) : null; } catch (e) { return null; } }
+    var feed = parseFloat(get("ql_feed_mm")), len = parseFloat(get("ql_length_mm"));
+    return {
+      cut: get("ql_cut") !== "0",
+      feedMm: isFinite(feed) && feed >= 0 && feed <= 50 ? feed : PREF_DEFAULTS.feedMm,
+      lengthMm: isFinite(len) && len >= 10 && len <= 1000 ? len : null,
+      mirror: get("ql_mirror") === "1",
+      invert: get("ql_invert") === "1",
+    };
+  }
+  function savePrefs(storage, p) {
+    function set(k, v) { try { if (v === null || v === "") storage.removeItem(k); else storage.setItem(k, String(v)); } catch (e) { /* sin almacenamiento: vale para esta sesión */ } }
+    if ("cut" in p) set("ql_cut", p.cut ? "1" : "0");
+    if ("feedMm" in p) set("ql_feed_mm", p.feedMm);
+    if ("lengthMm" in p) set("ql_length_mm", p.lengthMm || "");
+    if ("mirror" in p) set("ql_mirror", p.mirror ? "1" : "0");
+    if ("invert" in p) set("ql_invert", p.invert ? "1" : "0");
+  }
+
   /* bitmap: Uint8Array (alto × ancho) con 1 = negro; ancho = puntos imprimibles de la cinta. Devuelve la fila de 90 bytes (MSB = primer punto). */
   function packRow(bitmap, width, y, margin, mirror) {
     var row = new Uint8Array(LINE_BYTES);
@@ -59,9 +83,10 @@
       lines & 0xff, (lines >> 8) & 0xff, (lines >> 16) & 0xff, (lines >> 24) & 0xff,
       0x00, 0x00]);
     push([0x1b, 0x69, 0x4d, opts.autoCut === false ? 0x00 : 0x40]);        // modo: corte automático
+    if (opts.autoCut !== false) push([0x1b, 0x69, 0x41, 0x01]);            // cortar cada 1 etiqueta (22-oct-2026: sin esto la cinta podía salir sin cortar)
     push([0x1b, 0x69, 0x4b, opts.autoCut === false ? 0x00 : 0x08]);        // ampliado: cortar al final
     var margin = continuous ? (opts.feedDots == null ? 35 : opts.feedDots) : 0;
-    push([0x1b, 0x69, 0x64, margin & 0xff, (margin >> 8) & 0xff]);         // margen de avance (35 puntos = ~3 mm)
+    push([0x1b, 0x69, 0x64, margin & 0xff, (margin >> 8) & 0xff]);         // margen de avance (35 puntos = ~3 mm; quien llama pasa feedDots de las preferencias del equipo)
     push([0x4d, 0x00]);                                                    // sin compresión
     for (var y = 0; y < height; y++) {
       var row = packRow(bitmap, width, y, media.margin, !!opts.mirror);
@@ -200,7 +225,7 @@
     disown();
   }
 
-  var api = { buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
+  var api = { readPrefs: readPrefs, savePrefs: savePrefs, PREF_DEFAULTS: PREF_DEFAULTS, buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
               supported: supported, connect: connect, sendJob: sendJob, readStatus: readStatus, close: close, info: function () { return state.device; },
               BUSY_MSG: BUSY_MSG, LOCK_NAME: LOCK_NAME, isOwner: function () { return owner.held; } };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.QLUsb = api;
