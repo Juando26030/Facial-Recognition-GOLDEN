@@ -300,17 +300,17 @@ def test_text_ddmmyyyy_and_an_excel_date_cell_are_both_read_and_the_personal_lin
     assert chk == {"status": "ok", "selfie": True}                                                          # toma la fecha de la base: no la pregunta
 
 
-def test_a_load_without_facial_on_keeps_the_date_and_a_reload_after_enabling_does_not_duplicate_it(client, factory, db):
+def test_a_load_without_facial_on_does_not_keep_the_date_and_says_so_and_a_reload_after_enabling_completes_it(client, factory, db):
     ev = _coord(client, factory, facial_enabled=False)
     first = _upload(client, ev, _one("26/03/2005"), name="p.xlsx").json()
     db.expire_all()
-    assert db.query(User).filter_by(id="9990000028").one().birth_date == date(2005, 3, 26)                  # orden 22-oct-2026: sin rostro también se guarda
-    assert first["birth"]["ignored_rows"] == 0 and first["birth"]["completed"] == 1 and not any("NO se guardaron" in e for e in first["errors"])
+    assert db.query(User).filter_by(id="9990000028").one().birth_date is None                              # causa reproducida: la columna se ignoró
+    assert first["birth"]["ignored_rows"] == 1 and "NO se guardaron" in first["errors"][0] and "reconocimiento facial activo" in first["errors"][0]
     ev.facial_enabled = True
     db.commit()
     second = _upload(client, ev, _one("26/03/2005"), name="p.xlsx").json()
     db.expire_all()
-    assert db.query(User).filter_by(id="9990000028").one().birth_date == date(2005, 3, 26) and second["birth"]["completed"] == 0     # ya la tenía: nada que completar
+    assert db.query(User).filter_by(id="9990000028").one().birth_date == date(2005, 3, 26) and second["birth"]["completed"] == 1     # la recarga completa a quien existía sin fecha
 
 
 def test_a_reload_does_not_overwrite_a_valid_date_unless_asked(client, factory, db):

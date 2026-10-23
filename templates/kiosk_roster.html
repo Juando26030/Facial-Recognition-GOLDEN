@@ -67,7 +67,7 @@
           <b>Este evento usa reconocimiento facial</b> — {{ 'fotos entregadas por el cliente (origen A): adjunta el zip abajo.' if event.client_photos_before else 'cada persona se toma una selfie (origen B): no hace falta zip.' }}
           La fecha de nacimiento del archivo se guarda.
           {% else %}
-          <b>Este evento NO usa reconocimiento facial.</b> La fecha de nacimiento del archivo se guarda igual (solo como dato; no se usa para el rostro).
+          <b>Este evento NO usa reconocimiento facial.</b> La columna «fecha de nacimiento» del archivo <b>no se guardará</b>.
           {% endif %}
           <a href="/kiosk/{{ event.id }}/parametros" style="font-weight:600;">Cambiar en Parámetros</a>
         </div>
