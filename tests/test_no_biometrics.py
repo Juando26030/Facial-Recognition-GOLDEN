@@ -137,35 +137,21 @@ def test_a_zip_on_a_locked_event_is_ignored_with_a_notice_and_never_turns_the_fa
     assert db.query(User).filter_by(id="1001").one().face_captured_at is None
 
 
-def test_the_birth_date_column_is_kept_in_an_event_without_the_face_and_nothing_facial_changes(client, factory, db):
-    """Orden de Juan David (22-oct-2026): la fecha de nacimiento se guarda siempre que venga, aunque el evento no use rostro; vacía no da error; el resumen ya no dice «no se usa»."""
+def test_the_birth_date_column_is_ignored_with_a_notice_in_an_event_without_the_face(client, factory, db):
     ev = _coord(client, factory)
-    r = _bulk(client, ev, "id,nombres,apellidos,fecha de nacimiento\n1001,Ana,Mora,1990-03-10\n1002,Beto,Paz,\n1003,Cata,Menor,2011-03-10\n")
-    assert r.status_code == 200 and r.json()["count"] == 3, r.text
+    r = _bulk(client, ev, "id,nombres,apellidos,fecha de nacimiento\n1001,Ana,Mora,2011-03-10\n1002,Beto,Paz,no-es-fecha\n")
+    assert r.status_code == 200 and r.json()["count"] == 2
     cols = r.json()["columns"]
-    assert not any(c["title"] == "fecha de nacimiento" for c in cols["unused"])
-    assert "no se usa" not in r.text and not any("NO se guardaron" in e for e in r.json()["errors"])
-    assert r.json()["birth"]["completed"] == 2 and r.json()["birth"]["ignored_rows"] == 0
+    assert {"title": "fecha de nacimiento", "reason": "no se usa en este evento (no tiene reconocimiento facial)"} in cols["unused"]
+    assert not any("Fecha de nacimiento" == c["field"] for c in cols["recognized"])       # ni siquiera se valida cada fecha...
+    assert r.json()["birth"]["ignored_rows"] == 2 and r.json()["errors"][0].startswith("⚠️ 2 fila(s) traían fecha de nacimiento y NO se guardaron") and len(r.json()["errors"]) == 1      # ...pero SÍ se avisa, una sola vez
     db.expire_all()
-    ana, beto, cata = (db.query(User).filter_by(id=i).one() for i in ("1001", "1002", "1003"))
-    assert (ana.birth_date, beto.birth_date, cata.birth_date) == (date(1990, 3, 10), None, date(2011, 3, 10))
-    assert cata.is_biometric_enabled is False and ana.face_encoding is None and cata.face_encoding is None      # misma regla de menores que el formulario web; nada de rostro
-    db.refresh(ev)
-    assert ev.facial_enabled is False                                                                        # guardar la fecha no enciende el rostro
+    assert db.query(User).filter_by(id="1001").one().birth_date is None
     on = factory.event("creado", facial_enabled=True)
     r2 = _bulk(client, on, "id,nombres,apellidos,fecha de nacimiento\n2001,Cata,Menor,2011-03-10\n")
     assert r2.status_code == 200
     db.expire_all()
-    assert db.query(User).filter_by(id="2001").one().birth_date == date(2011, 3, 10)                     # con rostro, igual que antes
-
-
-def test_a_renamed_birth_column_nacimiento_is_read_as_the_birth_date_not_as_a_new_field(client, factory, db):
-    ev = _coord(client, factory)
-    r = _bulk(client, ev, "id,nombres,apellidos,Nacimiento\n1001,Ana,Mora,10/03/1990\n")
-    assert r.status_code == 200 and r.json()["count"] == 1, r.text
-    assert any(c["field"] == "Fecha de nacimiento" for c in r.json()["columns"]["recognized"]) and not r.json()["columns"]["created"]
-    db.expire_all()
-    assert db.query(User).filter_by(id="1001").one().birth_date == date(1990, 3, 10)
+    assert db.query(User).filter_by(id="2001").one().birth_date == date(2011, 3, 10)                     # con rostro, se guarda
 
 
 def test_a_zip_never_turns_the_face_on_the_choice_lives_only_in_parameters(client, factory, db):

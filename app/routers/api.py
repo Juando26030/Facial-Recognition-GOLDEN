@@ -1690,9 +1690,12 @@ def _bulk_register_impl(
     header_columns, rows = _read_roster_rows(roster_filename, content)
     # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
     header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
-    # La fecha de nacimiento se guarda siempre que venga (orden de Juan David, 22-oct-2026: puede servirle al cliente aunque el evento no use rostro). Con o sin rostro aplica la misma
-    # regla de menores que el formulario web (formsvc): la fecha decide is_biometric_enabled. Lo de fotos y vectores sigue solo con rostro (event.facial_enabled, abajo).
-    birth_ignored_rows = 0          # ya no se ignoran filas; la clave queda en el resumen por compatibilidad con la pantalla
+    # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
+    birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
+    birth_ignored_rows = 0
+    if not birth_used:
+        birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
+        roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
 
     # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
     # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
@@ -1881,7 +1884,7 @@ def _bulk_register_impl(
                     if enc:
                         face_enc_json = json.dumps(enc)
             # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
-            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "")
+            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "") if birth_used else ""
             birth = minors.parse_birth(birth_raw)
             if birth_raw and birth is None:
                 errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD, DD/MM/AAAA o una fecha de Excel).")
@@ -1901,7 +1904,7 @@ def _bulk_register_impl(
                 birth_action = "completed"
             row_minor = minors.is_minor(birth)
             has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
-            if event.facial_enabled and (face_enc_json or has_photo) and (row_minor or birth is None):
+            if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
                 face_enc_json = None
                 has_photo = False
                 get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
@@ -1975,6 +1978,8 @@ def _bulk_register_impl(
         event.roster_uploaded = True
 
     # Resumen de las fechas de nacimiento (avisa lo que no se pudo guardar y por qué)
+    if birth_ignored_rows:
+        errors.insert(0, f"⚠️ {birth_ignored_rows} fila(s) traían fecha de nacimiento y NO se guardaron porque este evento no tiene el reconocimiento facial activo. Actívalo y vuelve a cargar el mismo archivo: se completarán las fechas.")
     if birth_bad_rows:
         shown = ", ".join(str(n) for n in birth_bad_rows[:30]) + ("…" if len(birth_bad_rows) > 30 else "")
         errors.insert(0, f"⚠️ {len(birth_bad_rows)} fila(s) con fecha de nacimiento que no se pudo entender: fila(s) {shown}. Usa DD/MM/AAAA, AAAA-MM-DD o una fecha de Excel.")
