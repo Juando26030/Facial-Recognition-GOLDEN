@@ -55,10 +55,10 @@ def test_the_roster_page_has_no_face_checkbox_and_shows_the_events_state(client,
     assert 'id="facialZipGroup"' in page and 'name="photos_authorized"' in page and "origen A" in page                # fotos del cliente: zip + declaración
 
 
-def test_without_the_face_the_notice_that_the_date_is_still_saved_is_on_top(client, factory, db):
+def test_without_the_face_the_warning_that_the_date_wont_be_saved_is_on_top(client, factory, db):
     ev = _coord(client, factory)
     page = client.get(f"/kiosk/{ev.id}/roster").text
-    assert "Este evento NO usa reconocimiento facial" in page and "se guarda igual" in page and "no se guardará" not in page      # orden 22-oct-2026
+    assert "Este evento NO usa reconocimiento facial" in page and "no se guardará" in page
     assert page.index('id="facialState"') < page.index('name="roster_file"')                                        # arriba, antes de elegir el archivo
 
 
