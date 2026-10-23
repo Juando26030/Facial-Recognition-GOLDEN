@@ -19,7 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, form_transfer, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 
 obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
@@ -217,6 +217,7 @@ _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
 _include(analytics.router, prefix="/api")
 _include(forms.router, prefix="/api")
+_include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
 _include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
 _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
