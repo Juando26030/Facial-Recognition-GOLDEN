@@ -2,7 +2,7 @@
 
 Equipos Android con Chrome. Algunos (los «Y») tienen una Brother QL-800 por USB; otros (los «X») registran y su escarapela sale en la impresora de un Y.
   - Cada equipo que abre el Registro reporta cada pocos segundos su plataforma, navegador y si tiene la impresora conectada (`heartbeat`). Sin IP ni datos de personas.
-  - En Parámetros se elige, para cada usuario X, «en su propio equipo» o «en el equipo de Y» (un Y atiende hasta MAX_PER_PRINTER usuarios).
+  - En Parámetros se elige, para cada usuario X, «en su propio equipo» o «en el equipo de Y» (sin tope: con más de WARN_PER_PRINTER usuarios en una impresora, Parámetros avisa que puede haber espera).
   - Cuando X registra con impresión automática, su equipo pide un trabajo (`POST print-jobs`, con un `request_id` propio: un reintento no duplica).
   - El equipo Y pregunta cada 1-2 s por su siguiente trabajo (`GET print-jobs/next`): el servidor lo RESERVA de forma atómica (queued → sent, FOR UPDATE SKIP
     LOCKED), Y imprime por USB y confirma (`result`: printed | failed). Un trabajo reservado no se vuelve a entregar: nunca se imprime dos veces solo.
@@ -26,7 +26,7 @@ router = APIRouter()
 
 PRINT_JOB_TTL = timedelta(minutes=5)
 ONLINE_WINDOW = timedelta(seconds=30)          # sin señal en 30 s = desconectado
-MAX_PER_PRINTER = 3                            # un equipo con impresora atiende hasta 3 usuarios además de sí mismo
+WARN_PER_PRINTER = 6                           # orden del 22-oct-2026: sin tope duro; con más de 6 usuarios en una impresora, aviso suave en Parámetros
 OPERATOR = require_role_excluding("digitador", ("comercial",))       # quien registra (mismo mínimo que imprimir hoy)
 CONFIG = require_role_excluding("coordinador", ("comercial",))       # quien configura Parámetros
 
@@ -35,7 +35,7 @@ class HeartbeatIn(BaseModel):
     device_id: str
     platform: Optional[str] = None
     browser: Optional[str] = None
-    printer_connected: bool = False
+    printer_connected: Optional[bool] = None    # None = esta pestaña no es la dueña de la impresora (otra pestaña del mismo equipo la tiene): no cambia lo que hay
     printer_name: Optional[str] = None
 
 
@@ -111,7 +111,8 @@ def heartbeat(event_id: int, data: HeartbeatIn, db: Session = Depends(get_db), s
         db.add(dev)
     dev.device_id = _clip(data.device_id, 64) or dev.device_id
     dev.platform, dev.browser = _clip(data.platform, 40), _clip(data.browser, 40)
-    dev.printer_connected, dev.printer_name = bool(data.printer_connected), _clip(data.printer_name, 80)
+    if data.printer_connected is not None or dev.printer_connected is None:
+        dev.printer_connected, dev.printer_name = bool(data.printer_connected), _clip(data.printer_name, 80)
     dev.last_seen_at = now
     db.commit()
     printer_id = _route(db, event.id, staff.id)
@@ -242,7 +243,7 @@ def config(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depe
                                                       "printer_name": d.printer_name, "online": _online(d, now),
                                                       "seconds_ago": int((now - d.last_seen_at).total_seconds())},
                     "printer_staff_id": routes.get(u.id), "eligible_printer": _printer_ready(d, now), "serving": serving.get(u.id, 0)})
-    return {"enabled": bool(event.shared_print_enabled), "max_per_printer": MAX_PER_PRINTER, "users": out}
+    return {"enabled": bool(event.shared_print_enabled), "warn_per_printer": WARN_PER_PRINTER, "users": out}
 
 
 @router.put("/events/{event_id}/shared-print")
@@ -276,9 +277,6 @@ def set_route(event_id: int, data: RouteIn, db: Session = Depends(get_db), staff
         raise HTTPException(status_code=409, detail="Ese equipo no está conectado con la impresora en este momento: no se puede elegir.")
     if _route(db, event.id, y.id):
         raise HTTPException(status_code=409, detail="Ese usuario imprime en otro equipo: no puede atender a otros.")
-    taken = db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == y.id, PrintRoute.staff_user_id != x.id).count()
-    if taken >= MAX_PER_PRINTER:
-        raise HTTPException(status_code=409, detail=f"Ese equipo ya atiende a {MAX_PER_PRINTER} usuarios.")
     if db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == x.id).first():
         raise HTTPException(status_code=409, detail="Este usuario ya atiende a otros: primero cámbiales el equipo.")
     if row is None:
@@ -286,5 +284,9 @@ def set_route(event_id: int, data: RouteIn, db: Session = Depends(get_db), staff
         db.add(row)
     row.printer_staff_id = y.id
     db.commit()
-    return {"staff_user_id": x.id, "printer_staff_id": y.id}
+    serving = db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == y.id).count()
+    out = {"staff_user_id": x.id, "printer_staff_id": y.id, "serving": serving}
+    if serving > WARN_PER_PRINTER:
+        out["warning"] = f"El equipo de {_name(y)} imprime para {serving} usuarios: puede haber espera de impresión."
+    return out
 
