@@ -60,12 +60,15 @@ def prepare(db, ev):
 def dump(db, ev, response):
     db.expire_all()
     users = []
-    for u in db.query(User).filter(User.tenant_id == ev.tenant_id).order_by(User.id):
+    for u in db.query(User).filter(User.tenant_id == ev.tenant_id):
         users.append({"id": u.id, "first_name": u.first_name, "last_name": u.last_name, "role": u.role, "entity": u.entity, "phone": u.phone, "email": u.email, "opt_1": u.opt_1,
                       "extras": u.get_extras(), "birth_date": u.birth_date.isoformat() if u.birth_date else None, "bio": u.is_biometric_enabled})
-    atts = [{"user_id": a.user_id, "categories": a.get_categories(), "certificate": bool(a.certificate)}
-            for a in db.query(EventAttendee).filter_by(event_id=ev.id).order_by(EventAttendee.user_id)]
-    changes = [{"user_id": c.user_id, "kind": c.kind, "old": c.old_value, "new": c.new_value} for c in db.query(PersonChange).filter_by(event_id=ev.id).order_by(PersonChange.id)]
+    atts = [{"user_id": a.user_id, "categories": a.get_categories(), "certificate": bool(a.certificate)} for a in db.query(EventAttendee).filter_by(event_id=ev.id)]
+    # Orden DETERMINISTA, en Python y por el texto de la cédula: un ORDER BY de la base depende de su colación (en una base con colación de idioma, como la de CI, «1.006» queda entre
+    # «1005» y «1007»; en una con colación «C» o ICU por defecto queda primero) y la prueba comparaba el orden en vez de los datos.
+    users.sort(key=lambda r: r["id"])
+    atts.sort(key=lambda r: r["user_id"])
+    changes = [{"user_id": c.user_id, "kind": c.kind, "old": c.old_value, "new": c.new_value} for c in db.query(PersonChange).filter_by(event_id=ev.id).order_by(PersonChange.id)]       # por número: no depende de la colación
     db.refresh(ev)
     return {"response": {k: response[k] for k in ("message", "count", "errors", "columns", "birth", "optional_labels")}, "users": users, "attendees": atts, "changes": changes,
             "event_categories": ev.get_categories(), "optional_labels": ev.get_optional_labels(), "roster_uploaded": ev.roster_uploaded,

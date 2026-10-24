@@ -161,7 +161,9 @@ def test_the_background_report_is_the_same_excel_as_the_direct_one_and_downloads
     assert dl.status_code == 200 and dl.headers["content-type"].startswith("application/vnd.openxmlformats")
     assert "Golden_Reporte_Eventos.xlsx" in dl.headers["content-disposition"] and dl.headers["cache-control"] == "no-store"
     a, b = _cells(direct.content), _cells(dl.content)
-    assert len(a) == len(b) == 300 + 5 and a == b                                    # mismas columnas, mismos datos, mismo orden (título + encabezado + 300 filas)
+    assert len(a) == len(b) == 300 + 5 and a[:5] == b[:5]                            # título + encabezado + 300 filas, mismas columnas
+    by_id = lambda row: str(row[0])                                                  # noqa: E731 — el orden de las filas lo decide la base (colación): se compara por cédula, en Python
+    assert sorted(a[5:], key=by_id) == sorted(b[5:], key=by_id)                      # mismos datos, fila por fila
     assert a[4][0] == "Cédula" and sum(1 for row in a[5:] if row[-3] != "No registrado") == 250
 
 
