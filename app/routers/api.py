@@ -27,7 +27,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import biometric_setup, bulk_jobs, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -285,6 +285,30 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, c
 
 
 ROSTER_MAX_ROWS = int(os.getenv("ROSTER_MAX_ROWS", "20000"))      # filas por archivo de la carga masiva
+class _Phases:
+    """Tiempos por fase de una carga (sin datos personales): milisegundos de reloj y de CPU por fase y por cada lote de filas; se anota UNA línea JSON al terminar (orden del 24-oct-2026)."""
+
+    def __init__(self):
+        self.t = time.perf_counter()
+        self.cpu = time.process_time()
+        self.ms, self.cpu_ms, self.chunks = {}, {}, []
+
+    def mark(self, name: str) -> None:
+        now, cpu = time.perf_counter(), time.process_time()
+        self.ms[name] = round(self.ms.get(name, 0) + (now - self.t) * 1000)
+        self.cpu_ms[name] = round(self.cpu_ms.get(name, 0) + (cpu - self.cpu) * 1000)
+        self.t, self.cpu = now, cpu
+
+    def lap(self) -> None:
+        now = time.perf_counter()
+        self.chunks.append(round((now - self.t) * 1000))
+        self.mark("filas")
+
+    def emit(self, rows: int, queries: Optional[int] = None) -> None:
+        log.info("carga masiva: fases " + json.dumps({"filas": rows, "ms": self.ms, "cpu_ms": self.cpu_ms, "ms_por_lote": self.chunks}))
+
+
+_PHOTO_LISTING_AFTER = 8      # tras tantas consultas de «¿tiene foto?» una por una, se lista la carpeta de fotos del cliente UNA vez (en la nube cada consulta es una petición a Cloud Storage)
 _BULK_CHUNK = 500             # filas por lote al guardar la carga masiva
 _LOOKUP_CHUNK = 2000          # cédulas por consulta al traer lo que ya existe
 
@@ -1601,6 +1625,9 @@ def bulk_register(
     if not background:
         return cleanup(_bulk_register_impl(db, staff, **args))
 
+    if bulk_steps.eligible(event, zip_bytes, content):          # sin fotos: carga POR PASOS, cada paso dentro de su petición (en Cloud Run un hilo casi no recibe CPU; ver app/bulk_steps.py)
+        return {"background": True, **bulk_steps.start(db, event, staff, args, cleanup)}
+
     if bulk_jobs.active_job(db, event_id):
         raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
     job_id = bulk_jobs.create_job(db, event_id, staff.id)
@@ -1656,6 +1683,23 @@ def run_bulk_spec(db: Session, job, progress) -> dict:
     return result
 
 
+@router.get("/bulk_jobs/active")
+def bulk_job_active(
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """La carga por pasos de esta persona que quedó a medias en este evento (para retomarla tras cerrar la página)."""
+    get_event_for_staff(event_id, db, staff)
+    return {"job": bulk_steps.active_for(db, event_id, staff)}
+
+
+@router.post("/bulk_jobs/{job_id}/step")
+def bulk_job_step(
+    job_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Procesa el siguiente grupo de filas de una carga por pasos (idempotente; ver app/bulk_steps.py) y devuelve el estado."""
+    return bulk_steps.run_step(db, job_id, staff)
+
+
 @router.get("/bulk_jobs/{job_id}")
 def bulk_job_status(
     job_id: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
@@ -1666,11 +1710,13 @@ def bulk_job_status(
     if not job:
         raise HTTPException(status_code=404, detail="Carga no encontrada")
     get_event_for_staff(job.event_id, db, staff)
+    if bulk_steps._is_steps(job):
+        return bulk_steps.serialize_job(job)
     return bulk_jobs.serialize(job, db)
 
 
 def _bulk_register_impl(
-    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False,
+    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False, step: Optional[dict] = None,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -1690,179 +1736,216 @@ def _bulk_register_impl(
     preguntarle al operador a qué corresponde cada una y reenviar la misma petición con
     field_labels (JSON, ej. {"opcional_1": "Talla de camisa"}) para que se guarden y se continúe
     con la carga."""
+    # Carga POR PASOS (24-oct-2026, app/bulk_steps.py): `step={"phase": "prepare"}` hace todo lo previo a las filas y devuelve lo preparado; `step={"phase": "rows", ...}` procesa SOLO el siguiente grupo
+    # de filas (cada paso dentro de su propia petición, reanudable e idempotente). Sin `step`, una carga completa como siempre.
+    resume = bool(step and step.get("phase") == "rows")
+    phases = _Phases()
     event = get_event_for_staff(event_id, db, staff)
     # Una sola regla (app/event_rules.py `roster_block_reason`), la misma que usa la pantalla para avisar ANTES: finalizado nunca; en proceso solo si todavía no tuvo una carga exitosa
-    # (volver a cargar pisaría o duplicaría registros hechos en vivo, 2026-09-22).
-    blocked = event_rules.roster_block_reason(event)
+    # (volver a cargar pisaría o duplicaría registros hechos en vivo, 2026-09-22). En los pasos siguientes al primero no se repite: el primero ya la aplicó.
+    blocked = None if resume else event_rules.roster_block_reason(event)
     if blocked:
         raise HTTPException(status_code=400, detail=blocked)
 
-    # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
-    # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
-    has_excel = content is not None
-    if not has_excel and not source_event_id:
-        raise HTTPException(status_code=400, detail="Sube un archivo de base o elige un evento anterior del que traer a las personas")
-    carried_ids = set()
-    if not has_excel:
-        carried_ids, source_name = _carry_source_events(db, event, source_event_id, staff)
-        event.roster_uploaded = True
-        db.commit()
-        return {
-            "message": f"Se agregaron {len(carried_ids)} personas de: {source_name} (quedan como No registrado).",
-            "count": 0, "carried": len(carried_ids), "errors": [], "optional_labels": event.get_optional_labels(),
-        }
+    if not resume:
+        # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
+        # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
+        has_excel = content is not None
+        if not has_excel and not source_event_id:
+            raise HTTPException(status_code=400, detail="Sube un archivo de base o elige un evento anterior del que traer a las personas")
+        carried_ids = set()
+        if not has_excel:
+            carried_ids, source_name = _carry_source_events(db, event, source_event_id, staff)
+            event.roster_uploaded = True
+            db.commit()
+            return {
+                "message": f"Se agregaron {len(carried_ids)} personas de: {source_name} (quedan como No registrado).",
+                "count": 0, "carried": len(carried_ids), "errors": [], "optional_labels": event.get_optional_labels(),
+            }
 
-    header_columns, rows = _read_roster_rows(roster_filename, content)
-    if len(rows) > ROSTER_MAX_ROWS:
-        raise HTTPException(status_code=400, detail=f"El archivo tiene {len(rows):,} filas y el máximo es {ROSTER_MAX_ROWS:,} por carga. Divídelo en varios archivos y cárgalos uno tras otro.".replace(",", "."))
-    # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
-    header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
-    # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
-    birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
-    birth_ignored_rows = 0
-    if not birth_used:
-        birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
-        roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
+        header_columns, rows = _read_roster_rows(roster_filename, content)
+        phases.mark("leer_archivo")
+        if len(rows) > ROSTER_MAX_ROWS:
+            raise HTTPException(status_code=400, detail=f"El archivo tiene {len(rows):,} filas y el máximo es {ROSTER_MAX_ROWS:,} por carga. Divídelo en varios archivos y cárgalos uno tras otro.".replace(",", "."))
+        # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
+        header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
+        phases.mark("columnas")
+        # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
+        birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
+        birth_ignored_rows = 0
+        if not birth_used:
+            birth_ignored_rows = sum(1 for r in rows if str(r.get("fecha de nacimiento") or "").strip())      # filas que traían fecha y no se guardarán: se avisa en el resumen
+            roster_columns.drop_column(header_columns, rows, columns_report, "fecha de nacimiento", "no se usa en este evento (no tiene reconocimiento facial)")
 
-    # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
-    # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
-    # ninguna columna reconocida traía nada), pero la carga "completaba" con 0 perfiles sin dejar
-    # claro que el problema real era el FORMATO del archivo, no los datos. Ahora se valida de una
-    # que las columnas mínimas de la plantilla estén presentes antes de procesar ninguna fila.
-    has_id_col = any(k in header_columns for k in _ID_KEYS)
-    has_nombres_col = any(k in header_columns for k in ('nombres', 'nombre'))
-    has_apellidos_col = any(k in header_columns for k in ('apellidos', 'apellido'))
-    if not rows or not (has_id_col and has_nombres_col and has_apellidos_col):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Este archivo no tiene el formato esperado — deben venir al menos las columnas "
-                "'id' (o 'cédula'), 'nombres' y 'apellidos'. Descarga y usa la plantilla oficial "
-                "de carga de asistentes en vez de un archivo con otras columnas."
-            ),
-        )
-
-    used_optional_keys = set()
-    for row in rows:
-        for raw_key, value in row.items():
-            norm = _normalize_optional_key(raw_key)
-            if norm and (value or "").strip():
-                used_optional_keys.add(norm)
-
-    missing = used_optional_keys - set(event.get_optional_labels().keys()) - set(auto_labels)          # los de título propio ya traen su nombre: no se pregunta
-    if missing and not field_labels:
-        # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
-        # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
-        # Excel — ej. si "opcional_1" trae "Talla M"/"Talla L", eso mismo se muestra al preguntar.
-        examples = _optional_field_examples(rows, missing)
-        return {
-            "result": "NEEDS_LABELS",
-            "fields": sorted(missing, key=lambda k: int(k.split("_")[1])),
-            "examples": examples,
-        }
-
-    labels_to_apply = {}
-    if field_labels:
-        try:
-            labels_to_apply = dict(json.loads(field_labels) or {})
-        except (json.JSONDecodeError, TypeError, ValueError):
-            labels_to_apply = {}
-    for slot, title in auto_labels.items():
-        labels_to_apply.setdefault(slot, title)
-    if labels_to_apply:
-        _apply_optional_labels(event, used_optional_keys, json.dumps(labels_to_apply))
-        db.commit()
-
-    source_name = ""
-    if source_event_id:
-        carried_ids, source_name = _carry_source_events(db, event, source_event_id, staff)
-
-    # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
-    # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
-    # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
-    errors = []
-    if zip_ignored:
-        errors.append("⚠️ Este evento no usa biometría (bloqueado): el zip de fotos se ignoró, no se guardó ninguna foto y el reconocimiento facial no se activó.")
-    # identificador -> encoding ya calculada al leer el zip (2026-09-22): antes se calculaba acá
-    # Y OTRA VEZ más abajo (al releer la misma foto del disco) — el costo real de una carga masiva
-    # es el encoding facial (num_jitters=25, ver CLAUDE.md), así que calcularlo dos veces por foto
-    # duplicaba sin necesidad el tiempo de procesamiento de cada lote.
-    zip_encodings = {}
-    zip_photos = set()
-    # REGLA A (2026-10-06): NINGÚN flujo calcula el vector de alguien que aún no aceptó. Solo se pre-calcula en un evento de un tercero con el pre-cálculo autorizado (anexo firmado, solo super_admin);
-    # en todo lo demás las fotos se guardan cifradas y el vector se calcula DESPUÉS de que la persona acepte (app/enroll.py).
-    precalc = event.controller_mode == "tercero" and bool(event.precalculo_autorizado)
-
-    progress = progress or (lambda *a, **k: None)
-    photo_entries = []
-    if zip_bytes:
-        with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as counting_zip:
-            photo_entries = [
-                n for n in counting_zip.namelist()
-                if not (n.startswith('__MACOSX') or n.startswith('.') or n.endswith('/')) and os.path.basename(n)
-            ]
-    total_units = len(photo_entries) * bulk_jobs.PHOTO_WEIGHT + len(rows) * bulk_jobs.ROW_WEIGHT
-    done_units = 0
-    progress("Leyendo el archivo", 0, total_units, force=True)
-
-    if zip_bytes:
-        with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zip_ref:
-            for photo_i, filename in enumerate(photo_entries, start=1):
-                progress(f"Procesando fotos ({photo_i} de {len(photo_entries)})", done_units, total_units)
-                done_units += bulk_jobs.PHOTO_WEIGHT
-                basename = os.path.basename(filename)
-                with zip_ref.open(filename) as source:
-                    try:
-                        img_array = BiometricEngine.process_image_stream(source.read())
-                    except Exception:
-                        errors.append(f"⚠️ La foto '{basename}' del zip no se pudo leer (formato no soportado o archivo dañado) — no quedó asociada a nadie.")
-                        continue
-                    # Misma validación que ya hace /api/register (manual_register) para altas
-                    # individuales: una foto sin rostro detectable no debe quedar guardada como si
-                    # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
-                    # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
-                    # persona quedó sin reconocimiento facial funcional).
-                    if precalc:
-                        encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
-                        if not encodings:
-                            errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
-                            continue
-                        zip_encodings[os.path.splitext(basename)[0]] = encodings
-                    zip_photos.add(os.path.splitext(basename)[0])
-                    crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
-
-        if photo_entries and not precalc:
-            errors.append("ℹ️ Las fotos se guardaron cifradas, pero su vector facial NO se calcula todavía: se calcula cuando cada persona acepta el reconocimiento facial (en la puerta o desde el celular).")
-
-        # (Fase 0, 2026-10-17) La carga ya NO enciende el reconocimiento facial: llegar aquí con fotos exige que el paso guiado ya diga «usa rostro» con origen A.
-
-    # --- Pre-escaneo: identificar cédulas (con corrección del "Excel las volvió número"),
-    # detectar cédulas repetidas dentro del mismo archivo, ANTES de tocar la base de datos.
-    # Esto es lo que le permite al operador ver de una vez, con celda exacta, qué está mal en su
-    # archivo en vez de enterarse fila por fila o con un error genérico. ---
-    row_infos = []
-    seen_rows_by_id = {}
-    for row_num, clean_row in enumerate(rows, start=2):  # fila 1 es el encabezado
-        identificador, id_cell, id_note = _extract_identificador(clean_row, header_columns, row_num)
-        notes = [id_note] if id_note else []
-        row_infos.append({
-            "row_num": row_num, "clean_row": clean_row,
-            "identificador": identificador, "id_cell": id_cell, "notes": notes,
-        })
-        if identificador:
-            seen_rows_by_id.setdefault(identificador, []).append(row_num)
-
-    id_col = next((header_columns[k] for k in _ID_KEYS if k in header_columns), None)
-    for id_val, row_nums in seen_rows_by_id.items():
-        if len(row_nums) > 1:
-            cells = ", ".join(f"{id_col}{n}" if id_col else f"fila {n}" for n in row_nums)
-            errors.append(
-                f"⚠️ La cédula '{id_val}' aparece repetida en {len(row_nums)} filas ({cells}) — "
-                f"se combinaron los datos y quedó lo de la última fila."
+        # 2026-09-16, pedido explícito: antes, un archivo con columnas completamente distintas a la
+        # plantilla se procesaba igual — cada fila terminaba reportada como "❌ sin ID/cédula" (porque
+        # ninguna columna reconocida traía nada), pero la carga "completaba" con 0 perfiles sin dejar
+        # claro que el problema real era el FORMATO del archivo, no los datos. Ahora se valida de una
+        # que las columnas mínimas de la plantilla estén presentes antes de procesar ninguna fila.
+        has_id_col = any(k in header_columns for k in _ID_KEYS)
+        has_nombres_col = any(k in header_columns for k in ('nombres', 'nombre'))
+        has_apellidos_col = any(k in header_columns for k in ('apellidos', 'apellido'))
+        if not rows or not (has_id_col and has_nombres_col and has_apellidos_col):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Este archivo no tiene el formato esperado — deben venir al menos las columnas "
+                    "'id' (o 'cédula'), 'nombres' y 'apellidos'. Descarga y usa la plantilla oficial "
+                    "de carga de asistentes en vez de un archivo con otras columnas."
+                ),
             )
 
-    count = 0
-    birth_bad_rows, birth_kept_rows, birth_completed, birth_replaced = [], [], 0, 0
+        used_optional_keys = set()
+        for row in rows:
+            for raw_key, value in row.items():
+                norm = _normalize_optional_key(raw_key)
+                if norm and (value or "").strip():
+                    used_optional_keys.add(norm)
+
+        missing = used_optional_keys - set(event.get_optional_labels().keys()) - set(auto_labels)          # los de título propio ya traen su nombre: no se pregunta
+        if missing and not field_labels:
+            # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
+            # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
+            # Excel — ej. si "opcional_1" trae "Talla M"/"Talla L", eso mismo se muestra al preguntar.
+            examples = _optional_field_examples(rows, missing)
+            return {
+                "result": "NEEDS_LABELS",
+                "fields": sorted(missing, key=lambda k: int(k.split("_")[1])),
+                "examples": examples,
+            }
+
+        labels_to_apply = {}
+        if field_labels:
+            try:
+                labels_to_apply = dict(json.loads(field_labels) or {})
+            except (json.JSONDecodeError, TypeError, ValueError):
+                labels_to_apply = {}
+        for slot, title in auto_labels.items():
+            labels_to_apply.setdefault(slot, title)
+        if labels_to_apply:
+            _apply_optional_labels(event, used_optional_keys, json.dumps(labels_to_apply))
+            db.commit()
+
+        source_name = ""
+        if source_event_id:
+            carried_ids, source_name = _carry_source_events(db, event, source_event_id, staff)
+
+        # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
+        # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
+        # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
+        errors = []
+        if zip_ignored:
+            errors.append("⚠️ Este evento no usa biometría (bloqueado): el zip de fotos se ignoró, no se guardó ninguna foto y el reconocimiento facial no se activó.")
+        # identificador -> encoding ya calculada al leer el zip (2026-09-22): antes se calculaba acá
+        # Y OTRA VEZ más abajo (al releer la misma foto del disco) — el costo real de una carga masiva
+        # es el encoding facial (num_jitters=25, ver CLAUDE.md), así que calcularlo dos veces por foto
+        # duplicaba sin necesidad el tiempo de procesamiento de cada lote.
+        zip_encodings = {}
+        zip_photos = set()
+        # REGLA A (2026-10-06): NINGÚN flujo calcula el vector de alguien que aún no aceptó. Solo se pre-calcula en un evento de un tercero con el pre-cálculo autorizado (anexo firmado, solo super_admin);
+        # en todo lo demás las fotos se guardan cifradas y el vector se calcula DESPUÉS de que la persona acepte (app/enroll.py).
+        precalc = event.controller_mode == "tercero" and bool(event.precalculo_autorizado)
+
+        progress = progress or (lambda *a, **k: None)
+        photo_entries = []
+        if zip_bytes:
+            with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as counting_zip:
+                photo_entries = [
+                    n for n in counting_zip.namelist()
+                    if not (n.startswith('__MACOSX') or n.startswith('.') or n.endswith('/')) and os.path.basename(n)
+                ]
+        total_units = len(photo_entries) * bulk_jobs.PHOTO_WEIGHT + len(rows) * bulk_jobs.ROW_WEIGHT
+        done_units = 0
+        progress("Leyendo el archivo", 0, total_units, force=True)
+
+        if zip_bytes:
+            with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as zip_ref:
+                for photo_i, filename in enumerate(photo_entries, start=1):
+                    progress(f"Procesando fotos ({photo_i} de {len(photo_entries)})", done_units, total_units)
+                    done_units += bulk_jobs.PHOTO_WEIGHT
+                    basename = os.path.basename(filename)
+                    with zip_ref.open(filename) as source:
+                        try:
+                            img_array = BiometricEngine.process_image_stream(source.read())
+                        except Exception:
+                            errors.append(f"⚠️ La foto '{basename}' del zip no se pudo leer (formato no soportado o archivo dañado) — no quedó asociada a nadie.")
+                            continue
+                        # Misma validación que ya hace /api/register (manual_register) para altas
+                        # individuales: una foto sin rostro detectable no debe quedar guardada como si
+                        # fuera una foto biométrica válida — antes se guardaba igual en silencio (bug
+                        # real, QA local 2026-09-15: el coordinador nunca se enteraba de que esa
+                        # persona quedó sin reconocimiento facial funcional).
+                        if precalc:
+                            encodings = faces.extract(img_array, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE)
+                            if not encodings:
+                                errors.append(f"⚠️ La foto '{basename}' del zip no tiene un rostro detectable — no se asoció como foto biométrica de esa persona.")
+                                continue
+                            zip_encodings[os.path.splitext(basename)[0]] = encodings
+                        zip_photos.add(os.path.splitext(basename)[0])
+                        crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, os.path.splitext(basename)[0]))      # la clave lleva la cédula SIN extensión (antes quedaba «<cédula>.jpg.jpg»: la foto no se encontraba ni la borraba la purga)
+
+            if photo_entries and not precalc:
+                errors.append("ℹ️ Las fotos se guardaron cifradas, pero su vector facial NO se calcula todavía: se calcula cuando cada persona acepta el reconocimiento facial (en la puerta o desde el celular).")
+
+            # (Fase 0, 2026-10-17) La carga ya NO enciende el reconocimiento facial: llegar aquí con fotos exige que el paso guiado ya diga «usa rostro» con origen A.
+
+        # --- Pre-escaneo: identificar cédulas (con corrección del "Excel las volvió número"),
+        # detectar cédulas repetidas dentro del mismo archivo, ANTES de tocar la base de datos.
+        # Esto es lo que le permite al operador ver de una vez, con celda exacta, qué está mal en su
+        # archivo en vez de enterarse fila por fila o con un error genérico. ---
+        row_infos = []
+        seen_rows_by_id = {}
+        for row_num, clean_row in enumerate(rows, start=2):  # fila 1 es el encabezado
+            identificador, id_cell, id_note = _extract_identificador(clean_row, header_columns, row_num)
+            notes = [id_note] if id_note else []
+            row_infos.append({
+                "row_num": row_num, "clean_row": clean_row,
+                "identificador": identificador, "id_cell": id_cell, "notes": notes,
+            })
+            if identificador:
+                seen_rows_by_id.setdefault(identificador, []).append(row_num)
+
+        id_col = next((header_columns[k] for k in _ID_KEYS if k in header_columns), None)
+        for id_val, row_nums in seen_rows_by_id.items():
+            if len(row_nums) > 1:
+                cells = ", ".join(f"{id_col}{n}" if id_col else f"fila {n}" for n in row_nums)
+                errors.append(
+                    f"⚠️ La cédula '{id_val}' aparece repetida en {len(row_nums)} filas ({cells}) — "
+                    f"se combinaron los datos y quedó lo de la última fila."
+                )
+
+
+        if step and step.get("phase") == "prepare":      # solo la preparación: se devuelve lo que los pasos necesitan (la persistencia la hace app/bulk_steps.py)
+            phases.mark("prescan")
+            phases.emit(len(rows))
+            return {"prepared": {"header_columns": header_columns, "rows": rows, "columns_report": columns_report, "birth_used": birth_used, "birth_ignored_rows": birth_ignored_rows},
+                    "state": {"pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
+                              "carried_ids": sorted(carried_ids), "source_name": source_name, "overwrite_birth": bool(overwrite_birth)}}
+    else:
+        # Reanudación: lo preparado y el avance vienen del paso anterior (guardados cifrados); aquí solo se arman las filas de ESTE paso.
+        prepared, state = step["prepared"], step["state"]
+        header_columns, rows, columns_report = prepared["header_columns"], prepared["rows"], prepared["columns_report"]
+        birth_used, birth_ignored_rows = prepared["birth_used"], prepared["birth_ignored_rows"]
+        errors, carried_ids, source_name = state["errors"], set(state["carried_ids"]), state["source_name"]
+        zip_encodings, zip_photos, precalc = {}, set(), False        # los pasos solo atienden cargas SIN fotos ni pre-cálculo (el resto va por el camino de siempre)
+        progress = progress or (lambda *a, **k: None)
+        total_units, done_units = len(rows), state["pos"]
+        step_pos = state["pos"]
+        step_end = min(len(rows), step_pos + int(step.get("limit") or len(rows)))
+        row_infos = []
+        for row_num, clean_row in enumerate(rows[step_pos:step_end], start=step_pos + 2):
+            identificador, id_cell, id_note = _extract_identificador(clean_row, header_columns, row_num)
+            row_infos.append({"row_num": row_num, "clean_row": clean_row, "identificador": identificador, "id_cell": id_cell, "notes": [id_note] if id_note else []})
+        phases.mark("armar_filas")
+    if not resume:
+        count = 0
+        birth_bad_rows, birth_kept_rows, birth_completed, birth_replaced = [], [], 0, 0
+    else:
+        count, birth_bad_rows, birth_kept_rows = state["count"], list(state["birth_bad_rows"]), list(state["birth_kept_rows"])
+        birth_completed, birth_replaced = state["birth_completed"], state["birth_replaced"]
+        overwrite_birth = bool(state.get("overwrite_birth"))
+    row_total = len(rows)
+    row_offset = step_pos if resume else 0
 
     # --- Rendimiento (23-oct-2026): antes cada persona costaba 9 viajes a la base (≈120 ms con Neon a 12 ms por viaje). Ahora se consulta TODO lo que ya existe de una vez (supresiones,
     # personas, inscripciones del evento: una consulta por cada 2.000 cédulas) y las filas nuevas se escriben por lotes (un INSERT múltiple por tabla y lote). Las reglas por fila no cambian. ---
@@ -1884,8 +1967,25 @@ def _bulk_register_impl(
                 attendees_by_user[att.user_id] = att
     new_users, new_attendees = [], []
 
+    phases.mark("consultas_en_bloque")
+    photo_state = {"calls": 0, "keys": None}
+
+    def photo_exists(ident, known_user) -> bool:
+        """¿Hay una foto guardada de esta persona? Solo importa para quien YA existe en la base (una persona nueva no tiene foto) y solo cuando cambia algo: en un evento con rostro (se borra la foto
+        de un menor o sin fecha) o si todavía no tiene `face_captured_at` (arranca el reloj de retención). Las primeras consultas van una por una; si son muchas, se lista la carpeta de fotos del
+        cliente UNA vez (en la nube cada `exists` era una petición a Cloud Storage por persona: 8.000 personas = minutos)."""
+        if known_user is None or not (event.facial_enabled or known_user.face_captured_at is None):
+            return False
+        key = photo_key(event.tenant_id, f"{ident}")
+        photo_state["calls"] += 1
+        if photo_state["keys"] is None and photo_state["calls"] > _PHOTO_LISTING_AFTER:
+            photo_state["keys"] = set(get_storage().list(photo_key(event.tenant_id, "x").rsplit("/", 1)[0]))
+        if photo_state["keys"] is not None:
+            return key in photo_state["keys"]
+        return get_storage().exists(key)
+
     for chunk_start in range(0, len(row_infos), _BULK_CHUNK):
-        chunk = list(enumerate(row_infos[chunk_start:chunk_start + _BULK_CHUNK], start=chunk_start + 1))
+        chunk = list(enumerate(row_infos[chunk_start:chunk_start + _BULK_CHUNK], start=row_offset + chunk_start + 1))
         for isolate in (False, True):
             # Primero se intenta el lote entero en UNA transacción interna; si la base rechaza algo, se deshace SOLO ese lote y se repite fila por fila con un SAVEPOINT cada una
             # (como siempre): una fila mala se reporta y no arrastra a las demás.
@@ -1896,7 +1996,8 @@ def _bulk_register_impl(
                 with (contextlib.nullcontext() if isolate else db.begin_nested()):
                     for row_i, info in chunk:
                         done_units += bulk_jobs.ROW_WEIGHT
-                        progress(f"Guardando personas ({row_i} de {len(row_infos)})", done_units, total_units)
+                        if row_i % 50 == 0 or row_i == row_total:          # el avance se informa cada 50 filas (y el que lo escribe, como mucho una vez por segundo): nunca por fila
+                            progress(f"Guardando personas ({row_i} de {row_total})", done_units, total_units)
                         row_num, clean_row, identificador = info["row_num"], info["clean_row"], info["identificador"]
                         errors.extend(info["notes"])
 
@@ -1962,7 +2063,7 @@ def _bulk_register_impl(
                             elif birth is not None and stored_birth is None:
                                 birth_action = "completed"
                             row_minor = minors.is_minor(birth)
-                            has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
+                            has_photo = str(identificador) in zip_photos or photo_exists(identificador, known_user)
                             if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
                                 face_enc_json = None
                                 has_photo = False
@@ -2052,6 +2153,13 @@ def _bulk_register_impl(
                 del birth_kept_rows[snap[3]:]
                 count, birth_completed, birth_replaced, done_units = snap[1], snap[4], snap[5], snap[6]
                 log.warning("carga masiva: un lote fue rechazado por la base; se repite fila por fila")
+        phases.lap()
+
+    if resume and step_end < row_total:             # paso intermedio: se devuelve el avance; la persistencia y el commit los hace app/bulk_steps.py
+        phases.emit(len(row_infos))
+        return {"done": False, "state": {"pos": step_end, "errors": errors, "count": count, "birth_bad_rows": birth_bad_rows, "birth_kept_rows": birth_kept_rows,
+                                          "birth_completed": birth_completed, "birth_replaced": birth_replaced, "carried_ids": sorted(carried_ids), "source_name": source_name,
+                                          "overwrite_birth": bool(overwrite_birth)}}
 
     if (count > 0 or carried_ids) and not event.roster_uploaded:
         event.roster_uploaded = True
@@ -2070,6 +2178,8 @@ def _bulk_register_impl(
     if errors:
         message += f" {len(errors)} observación(es) — revisa el detalle."
     message += " " + roster_columns.summary(columns_report)
+    phases.mark("resumen")
+    phases.emit(row_total)
     return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels(), "columns": columns_report, "birth": birth_summary}
 
 @router.get("/report")

@@ -259,6 +259,7 @@ async function postBulkRegister(formData, ui) {
         return null;
     }
     if (!data.job_id) return data;   // respuesta directa (sin tarea en segundo plano)
+    if (data.mode === "steps") return runSteps(data, ui);   // carga POR PASOS: cada paso se procesa dentro de su propia petición (ver app/bulk_steps.py)
 
     // La carga corre en el servidor: se consulta su avance cada segundo hasta que termine.
     let failures = 0;
@@ -277,6 +278,27 @@ async function postBulkRegister(formData, ui) {
         if (st.status === "error") { showToast(st.error.detail || "No se pudo cargar la base", "error"); return null; }
         if (st.status === "done") { ui && ui("process", 1, "Terminando…"); return st.result; }
         if (ui) ui("process", st.total ? st.done / st.total : 0, st.stage);
+    }
+}
+
+/* Carga por pasos: el servidor ya leyó y validó el archivo; aquí se pide un paso tras otro (cada uno guarda un grupo de filas) hasta que termina. Un paso que falla por la red se reintenta
+   solo (es idempotente: repetirlo no duplica nada). Si se cierra la página a la mitad, al volver se retoma donde quedó (resumeSteps). */
+async function runSteps(first, ui) {
+    let st = first, failures = 0;
+    while (true) {
+        if (st.status === "error") { showToast((st.error && st.error.detail) || "No se pudo cargar la base", "error"); return null; }
+        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); return st.result; }
+        if (ui) ui("process", st.total ? st.done / st.total : 0, st.stage);
+        try {
+            const r = await fetch(`/api/bulk_jobs/${first.job_id || first.id}/step`, { method: "POST" });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.detail || "paso");
+            st = d;
+            failures = 0;
+        } catch (e) {
+            if (++failures >= 5) { showToast("Se perdió la conexión con el servidor. La carga queda a medias y se retoma al volver a esta página.", "error"); return null; }
+            await sleep(1000 * failures);
+        }
     }
 }
 
@@ -315,6 +337,26 @@ async function submitRoster(formData) {
     rosterResult.prepend(keep);
     resetRosterForm();
 }
+
+// Retoma una carga por pasos que quedó a medias (se cerró la página o se reinició el servicio)
+async function resumeSteps() {
+    try {
+        const r = await fetch(`/api/bulk_jobs/active?event_id=${window.EVENT_ID}`, { cache: "no-store" });
+        if (!r.ok) return;
+        const job = (await r.json()).job;
+        if (!job) return;
+        rosterResult.innerHTML = "";
+        const bar = ProgressBar.create(rosterResult, { title: "Retomando la carga de la base", stage: "Continuando…" });
+        const data = await runSteps(job, makeUi(bar, 0, 1));
+        if (!data) { bar.fail("No se pudo completar la carga"); return; }
+        bar.finish(data.message || "Base cargada");
+        showToast(data.message || "Base cargada", "success");
+        const keep = bar.element;
+        renderRosterResult(data);
+        rosterResult.prepend(keep);
+    } catch (e) { /* sin red: no se retoma ahora */ }
+}
+document.addEventListener("DOMContentLoaded", resumeSteps);
 
 function resetRosterForm() {
     rosterForm.reset();
