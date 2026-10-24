@@ -72,7 +72,9 @@ def _has_value(value) -> bool:
 
 class ReportManager:
     @staticmethod
-    def generate_excel_report(db: Session, event_id: int, tenant_id: str, output_path: str):
+    def generate_excel_report(db: Session, event_id: int, tenant_id: str, output_path: str, progress=None):
+        progress = progress or (lambda *a, **k: None)
+        progress("Leyendo las personas del evento", 5, 100, force=True)
         event = db.query(Event).filter(Event.id == event_id).first()
         optional_labels = sorted(event.get_optional_labels().items(), key=lambda kv: int(kv[0].split("_")[1])) if event else []
         # Etiquetas propias de este evento (Parámetros, ítem 3a) — solo cambian el encabezado.
@@ -118,10 +120,13 @@ class ReportManager:
             (key, custom.get(key, label)) for key, label in BASE_FIELDS
             if key in ALWAYS_INCLUDED_BASE_KEYS or any(_has_value(row[key]) for row in raw_rows)
         ]
+        # Firmas (ítem 10): un archivo PNG por evento/persona/campo, ver routers/signatures.py. Se listan UNA vez (una sola petición al almacenamiento) en vez de
+        # preguntar por cada persona: con miles de personas, un `exists()` por fila en Cloud Storage eran decenas de segundos (medido 23-oct-2026).
+        signature_present = set(get_storage().list(key_of(tenant_id, "signatures", event_id))) if any(field_types.get(k) == "signature" for k, _ in optional_labels) else set()
+
         def _signature_file(user_id, key):
-            # Firmas (ítem 10): un archivo PNG por evento/persona/campo, ver routers/signatures.py.
             sig_key = key_of(tenant_id, "signatures", event_id, f"{user_id}__{key}.png")
-            return sig_key if get_storage().exists(sig_key) else None
+            return sig_key if sig_key in signature_present else None
 
         def _column_used(key):
             if field_types.get(key) == "signature":
@@ -133,6 +138,7 @@ class ReportManager:
         all_headers = [label for _, label in base_columns] + [label for _, label in optional_columns] + \
             ["Tipo de Registro", "Fecha de Registro", "Hora de Registro"]
 
+        progress("Armando las filas", 35, 100, force=True)
         data = []
         for row in raw_rows:
             out = {}
@@ -162,6 +168,7 @@ class ReportManager:
                 out["Hora de Registro"] = ""
             data.append(out)
 
+        progress("Armando el Excel", 60, 100, force=True)
         df = pd.DataFrame(data, columns=all_headers)
         headers = list(df.columns)
         n_cols = len(headers)
@@ -222,4 +229,5 @@ class ReportManager:
             ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{last_data_row}"
             ws.freeze_panes = f"A{header_row + 1}"
 
+        progress("Excel listo", 95, 100, force=True)
         return output_path

@@ -16,6 +16,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from app import report_jobs
 from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
@@ -221,6 +222,7 @@ _include(uploads_router.router, prefix="/api")   # subida directa al almacenamie
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
 _include(analytics.router, prefix="/api")
+_include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
 _include(forms.router, prefix="/api")
 _include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
 _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito

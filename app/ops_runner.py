@@ -200,6 +200,14 @@ def warmup() -> str:
     return f"{'; '.join(changes) or 'sin cambios'} · {json.dumps(p['why'])}"
 
 
+def purge_reports() -> str:
+    """Borra los reportes Excel de Estadísticas que ya vencieron (duran una hora; ver app/report_jobs.py)."""
+    from app.database import SessionLocal
+    from app.report_jobs import purge_expired
+    with SessionLocal() as db:
+        return f"{purge_expired(db)} reporte(s) vencido(s) borrado(s)"
+
+
 def hourly(now=None) -> dict:
     now = now or _local_now()
     steps = [("backup", lambda: backup_db("hourly", now=now))]
@@ -207,7 +215,7 @@ def hourly(now=None) -> dict:
         steps.append(("backup-daily", lambda: backup_db("daily", now=now)))
     if now.hour == int(os.getenv("OPS_PURGE_HOUR", "4")):
         steps.append(("purge", purge))
-    steps += [("check-backups", check_backups), ("sweep", sweep), ("warmup", warmup)]
+    steps += [("check-backups", check_backups), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
         try:
