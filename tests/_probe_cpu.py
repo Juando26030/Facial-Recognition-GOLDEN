@@ -15,7 +15,6 @@ N = int(os.getenv("PROBE_N", "8000"))
 
 def test_probe_cpu(client, factory, db):
     factory.staff("coordinador", "coord1")
-    ev = factory.event("creado")
     login(client, "coord1")
     data = xlsx_bytes(_rows(N))
     for label, profile in (("sin perfilador", False), ("con perfilador", True)):
@@ -46,6 +45,7 @@ def test_probe_steps(client, factory, db):
         sa_event.listen(engine, "before_cursor_execute", lambda *a, **k: time.sleep(rtt))
     factory.staff("coordinador", "coord1")
     login(client, "coord1")
+    ev = None
     for label, reload in (("carga nueva", False), ("misma carga otra vez (personas ya existentes)", True)):
         ev = factory.event("creado") if not reload else ev
         data = xlsx_bytes(_rows(N))
