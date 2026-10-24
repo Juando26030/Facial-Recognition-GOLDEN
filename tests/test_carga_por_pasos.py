@@ -146,30 +146,33 @@ def test_a_load_cut_in_the_middle_is_resumed_where_it_stopped(client, factory, c
     assert c2.get(f"/api/bulk_jobs/active?event_id={coord.id}").json()["job"] is None             # ya no hay nada pendiente
 
 
-def test_a_step_cut_between_the_commit_and_saving_the_progress_is_repeated_without_duplicates(client, coord, db, small_steps, monkeypatch):
+def test_a_step_that_fails_in_the_middle_leaves_nothing_and_is_repeated_without_duplicates(client, coord, db, small_steps, monkeypatch):
+    """Las filas y el avance se confirman JUNTOS: si el paso se corta (red, reinicio), no queda nada a medias y el reintento procesa el mismo grupo."""
+    import app.routers.api as api
     first = _post(client, coord, G.xlsx_bytes(_rows(7))).json()
-    real_save = bulk_steps._save
+    real = api._upsert_attendee_cached
     boom = {"on": True}
 
-    def flaky(tenant, job_id, name, obj):
-        if name == "state" and boom["on"] and obj["pos"] == 6:              # justo después de confirmar las filas 4–6 y antes de guardar el avance
+    def flaky(db_, event_id, user_id, *a, **k):
+        if boom["on"] and user_id == "9900000005":                       # a mitad del segundo paso (filas 4–6)
             boom["on"] = False
             raise RuntimeError("se cortó el servicio")
-        return real_save(tenant, job_id, name, obj)
-    monkeypatch.setattr(bulk_steps, "_save", flaky)
-    st = first
-    failures = 0
+        return real(db_, event_id, user_id, *a, **k)
+    monkeypatch.setattr(api, "_upsert_attendee_cached", flaky)
+    seen, st, failures = [], first, 0
     for _ in range(20):
         r = client.post(f"/api/bulk_jobs/{first['job_id']}/step")
         if r.status_code != 200:
             failures += 1
             continue
         st = r.json()
+        seen.append(st["done"])
         if st["status"] in ("done", "error"):
             break
-    assert failures == 1 and st["status"] == "done" and st["result"]["count"] == 7             # el paso se repite y la cuenta final es exacta
+    assert failures == 0 and st["status"] == "done" and st["result"]["count"] == 7                  # el lote se repite fila por fila y, al no fallar la segunda vez, quedan las 7
+    assert seen == sorted(seen)                                                                        # el avance nunca retrocede
     db.expire_all()
-    assert db.query(User).filter_by(tenant_id=coord.tenant_id).count() == 7 and db.query(EventAttendee).filter_by(event_id=coord.id).count() == 7
+    assert db.query(User).filter_by(tenant_id=coord.tenant_id).count() == 7 == db.query(EventAttendee).filter_by(event_id=coord.id).count()      # sin personas sueltas ni duplicadas
 
 
 # ---------------------------------------------------------------------------------------------------- (e) dos cargas a la vez
@@ -229,7 +232,7 @@ def test_the_temporary_files_are_encrypted_have_no_personal_name_and_are_deleted
         first = _post(client, coord, data).json()
         st = get_storage()
         keys = st.list(f"{coord.tenant_id}/bulk_steps/{first['job_id']}")
-        assert sorted(k.rsplit("/", 1)[-1] for k in keys) == ["prepared", "state"]
+        assert sorted(k.rsplit("/", 1)[-1] for k in keys) == ["prepared"]
         assert not any(c in k for k in keys for c in ("9900000001", "Nombre0", "Apellido0"))        # el nombre no lleva datos personales
         for k in keys:
             raw = st.get(k)
@@ -282,3 +285,45 @@ def test_the_labels_question_still_works_with_steps(client, coord, db, small_ste
     final, _ = _drive(client, ok)
     assert final["status"] == "done" and final["result"]["count"] == 5
     time.sleep(0)
+
+
+# ---------------------------------------------------------------------------------------------------- llave de cifrado y Cloud Run Job
+def test_without_the_encryption_key_the_steps_are_not_used_and_nothing_is_stored_in_clear(client, coord, db, monkeypatch):
+    monkeypatch.delenv("BULK_STEPS_ALLOW_CLEAR", raising=False)
+    monkeypatch.delenv("FACE_ENCRYPTION_KEY", raising=False)
+    crypto._cache.clear()
+    assert not bulk_steps.key_ready()
+    r = _post(client, coord, G.xlsx_bytes(_rows(40)))
+    assert r.status_code == 200 and r.json().get("mode") != "steps"                        # camino de siempre (sin archivo temporal propio)
+    assert get_storage().list(f"{coord.tenant_id}/bulk_steps") == []
+    job = db.get(BulkJob, r.json()["job_id"])
+    assert job.spec_json != bulk_steps.KIND
+    for _ in range(100):                                                                    # y la carga igual termina
+        st = client.get(f"/api/bulk_jobs/{job.id}").json()
+        if st["status"] in ("done", "error"):
+            break
+        time.sleep(0.1)
+    assert st["status"] == "done" and st["result"]["count"] == 40
+
+
+def test_in_production_without_the_key_the_app_refuses_to_store_the_temporary_file(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("FACE_ENCRYPTION_KEY", raising=False)
+    crypto._cache.clear()
+    with pytest.raises(crypto.KeyMissing):
+        bulk_steps._save("acme", "x" * 32, "prepared", {"rows": [["1001"]]})
+    assert get_storage().list("acme/bulk_steps/" + "x" * 32) == []                           # no se escribió nada
+
+
+def test_with_the_cloud_run_job_backend_the_base_alone_still_goes_by_steps_and_photos_go_to_the_job(client, factory, db, monkeypatch):
+    from tests.test_bulk_jobs import _admin, _fake_faces, _photo_zip
+    monkeypatch.setenv("BULK_BACKEND", "cloudrun")
+    launched = []
+    monkeypatch.setattr(bulk_jobs, "launch_cloud_run", launched.append)
+    _fake_faces(monkeypatch)
+    ev = _admin(client, factory, facial_enabled=True, client_photos_before=True)
+    solo = _post(client, ev, G.xlsx_bytes(_rows(30))).json()
+    assert solo["mode"] == "steps" and solo["status"] == "done" and solo["result"]["count"] == 30 and launched == []          # sin Job: sin arranque en frío
+    r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "background": "true", "photos_authorized": "true"},
+                    files={"roster_file": ("b.csv", b"id,nombres,apellidos\n7001,A,B\n", "text/csv"), "zip_file": ("f.zip", _photo_zip(["7001"]), "application/zip")})
+    assert r.status_code == 200 and launched == [r.json()["job_id"]]                                                           # con fotos: el Job de siempre

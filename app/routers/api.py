@@ -285,6 +285,10 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, c
 
 
 ROSTER_MAX_ROWS = int(os.getenv("ROSTER_MAX_ROWS", "20000"))      # filas por archivo de la carga masiva
+class _RetryRowByRow(SQLAlchemyError):
+    """Una fila falló dentro de un lote (sin SAVEPOINT propio): el lote se deshace y se repite fila por fila."""
+
+
 class _Phases:
     """Tiempos por fase de una carga (sin datos personales): milisegundos de reloj y de CPU por fase y por cada lote de filas; se anota UNA línea JSON al terminar (orden del 24-oct-2026)."""
 
@@ -1605,7 +1609,8 @@ def bulk_register(
         raise HTTPException(status_code=400, detail="Las fotos (zip) solo se cargan si el evento usa reconocimiento facial con fotos entregadas por el cliente (origen A). Cámbialo en Parámetros → Reconocimiento facial: paso guiado.")
     if has_zip and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
-    if background and bulk_jobs.uses_cloud_run():
+    has_roster = bool(roster_upload) or (roster_file is not None and bool(roster_file.filename))
+    if background and bulk_jobs.uses_cloud_run() and not bulk_steps.wants(event, has_zip, has_roster):      # el Job de Cloud Run: cargas con fotos; la base sola va por pasos (app/bulk_steps.py)
         return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored, _truthy(overwrite_birth))
     # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
@@ -2135,6 +2140,8 @@ def _bulk_register_impl(
 
                             count += 1
                         except Exception as e:
+                            if not isolate:                 # sin SAVEPOINT por fila no se puede deshacer SOLO esta fila: se deshace el lote y se repite fila por fila
+                                raise _RetryRowByRow() from e
                             where = info["id_cell"] or f"fila {row_num}"
                             errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {e}")
 

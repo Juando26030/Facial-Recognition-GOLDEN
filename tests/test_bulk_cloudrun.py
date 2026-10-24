@@ -56,8 +56,8 @@ def test_photos_still_need_the_authorization_before_launching(client, factory, c
 def test_if_the_job_cannot_start_the_upload_is_marked_failed(client, factory, db, monkeypatch):
     monkeypatch.setenv("BULK_BACKEND", "cloudrun")
     monkeypatch.setattr(bulk_jobs, "launch_cloud_run", lambda job_id: (_ for _ in ()).throw(RuntimeError("403 de la API de Cloud Run")))
-    ev = _admin(client, factory)
-    assert _post(client, ev).status_code == 503
+    ev = _admin(client, factory, facial_enabled=True, client_photos_before=True)      # el Job queda para las cargas con fotos; la base sola va por pasos
+    assert _post(client, ev, zip_bytes=_photo_zip(["1001"])).status_code == 503
     job = db.query(BulkJob).filter_by(event_id=ev.id).one()
     assert job.status == "error" and job.error_status == 503
-    assert _post(client, ev).status_code == 503                                                          # una falla no deja el evento bloqueado (409)
+    assert _post(client, ev, zip_bytes=_photo_zip(["1002"])).status_code == 503                         # una falla no deja el evento bloqueado (409)

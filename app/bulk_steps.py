@@ -4,10 +4,11 @@ Por qué: en Cloud Run (CPU «solo durante las peticiones») un hilo en segundo 
 en milisegundos. Aquí NADA corre fuera de una petición: el navegador pide cada paso y el servidor procesa un grupo de filas DENTRO de esa petición, con toda la CPU.
 
 Flujo (el navegador repite el paso hasta que termina; ver kiosk_roster.html):
-  1. `POST /api/bulk_register` (background=true): lee y valida el archivo UNA vez (`_bulk_register_impl(step={"phase": "prepare"})`), guarda lo preparado y el avance CIFRADOS en el almacenamiento, y
+  1. `POST /api/bulk_register` (background=true): lee y valida el archivo UNA vez (`_bulk_register_impl(step={"phase": "prepare"})`), guarda lo preparado CIFRADO en el almacenamiento, y
      responde con `job_id` y `mode: "steps"`. Con hasta `BULK_SYNC_ROWS` (500) filas todo ocurre en esa misma petición.
-  2. `POST /api/bulk_jobs/{id}/step`: procesa las siguientes `BULK_STEP_ROWS` (1.500) filas, confirma en la base y guarda el avance. Cada paso es idempotente: repetir uno (red cortada, otra pestaña, un
-     reinicio) no duplica nada, porque las filas se escriben como «crear o actualizar» y el avance (`pos`) solo se guarda DESPUÉS de confirmar. Dos pasos a la vez se serializan (la tarea se bloquea).
+  2. `POST /api/bulk_jobs/{id}/step`: procesa las siguientes `BULK_STEP_ROWS` (1.500) filas y confirma en la base. El avance (posición, cuenta y observaciones) vive en la MISMA fila de la tarea
+     (`result_json`) y se confirma en la MISMA transacción que las filas: o quedan las dos cosas o ninguna. Repetir un paso (red cortada, otra pestaña, un reinicio) no duplica nada, porque las
+     filas se escriben como «crear o actualizar». Dos pasos a la vez se serializan (la fila de la tarea se bloquea hasta confirmar).
   3. `GET /api/bulk_jobs/{id}` solo lee el estado; `GET /api/bulk_jobs/active?event_id=` permite retomar una carga que quedó a medias (cerraste la página, se reinició el servicio).
 Privacidad: lo preparado lleva datos personales: se guarda cifrado (`crypto.encrypt_bytes`), con un nombre sin datos (`<cliente>/bulk_steps/<id al azar>/…`), solo lo ve quien lo pidió, y se borra al
 terminar, al fallar y, si se abandona, a la hora (`BULK_STEPS_TTL_MINUTES`), también desde la tarea horaria de operaciones. Nada de datos personales en logs.
@@ -34,12 +35,22 @@ SYNC_ROWS = int(os.getenv("BULK_SYNC_ROWS", "500"))
 TTL = timedelta(minutes=int(os.getenv("BULK_STEPS_TTL_MINUTES", "60")))
 
 
-def eligible(event: Event, zip_bytes, content) -> bool:
-    if os.getenv("BULK_STEPS", "1") == "0" or bulk_jobs.uses_cloud_run():
-        return False
-    if zip_bytes or content is None:                                   # fotos o «solo traer personas de otro evento»: camino de siempre
+def key_ready() -> bool:
+    """Lo temporal lleva datos personales: SOLO se guarda cifrado. Sin `FACE_ENCRYPTION_KEY` (variable que Cloud Run monta desde el secreto `golden-face-encryption-key[-staging]`) esta carga NO usa pasos y
+    sigue por el camino de siempre (sin archivo temporal propio). `BULK_STEPS_ALLOW_CLEAR=1` solo existe para desarrollo y pruebas locales."""
+    return crypto.enabled() or os.getenv("BULK_STEPS_ALLOW_CLEAR") == "1"
+
+
+def wants(event: Event, has_zip: bool, has_roster: bool) -> bool:
+    """¿Esta carga se hace por pasos? Sí si solo trae el archivo de la base (sin fotos/zip ni pre-cálculo facial) y hay llave de cifrado. También con `BULK_BACKEND=cloudrun`: el Job de Cloud Run
+    queda para las cargas con fotos (su arranque en frío tarda más que la carga de la base)."""
+    if os.getenv("BULK_STEPS", "1") == "0" or has_zip or not has_roster or not key_ready():
         return False
     return not (event.controller_mode == "tercero" and bool(event.precalculo_autorizado))
+
+
+def eligible(event: Event, zip_bytes, content) -> bool:
+    return wants(event, bool(zip_bytes), content is not None)
 
 
 def _key(tenant_id: str, job_id: str, name: str = "") -> str:
@@ -122,7 +133,7 @@ def start(db: Session, event: Event, staff: StaffUser, args: dict, cleanup) -> d
         return serialize_job(job)
     total = len(res["prepared"]["rows"])
     _save(event.tenant_id, job_id, "prepared", res["prepared"])
-    _save(event.tenant_id, job_id, "state", res["state"])
+    job.result_json = json.dumps({"state": res["state"]})              # el avance vive en la fila de la tarea (atómico con las filas de cada paso)
     job.total, job.done, job.stage, job.updated_at = total, 0, "Listo para guardar", utcnow()
     db.commit()
     if total <= SYNC_ROWS:                          # una base chica: todo en esta misma petición
@@ -141,7 +152,11 @@ def run_step(db: Session, job_id: str, staff: StaffUser, limit: Optional[int] = 
         raise HTTPException(status_code=404, detail="Carga no encontrada")
     if job.status in ("done", "error"):
         return serialize_job(job)
-    prepared, state = _load(event.tenant_id, job.id, "prepared"), _load(event.tenant_id, job.id, "state")
+    prepared = _load(event.tenant_id, job.id, "prepared")
+    try:
+        state = json.loads(job.result_json)["state"]
+    except (TypeError, ValueError, KeyError):
+        state = None
     if prepared is None or state is None:
         _fail(job, 410, "Esta carga venció o se perdió lo temporal. Súbela de nuevo.")
         db.commit()
@@ -152,7 +167,8 @@ def run_step(db: Session, job_id: str, staff: StaffUser, limit: Optional[int] = 
         if res.get("done") is False:
             job.done, job.updated_at = res["state"]["pos"], utcnow()
             job.stage = f"Guardando personas ({job.done} de {job.total})"
-        db.commit()                                 # primero las filas; el avance solo se guarda DESPUÉS (si se corta entre una cosa y otra, el paso se repite y no duplica nada)
+            job.result_json = json.dumps({"state": res["state"]})
+        db.commit()                                 # las filas y el avance, JUNTOS: o se guardan las dos cosas o ninguna
     except HTTPException as e:
         db.rollback()
         job = db.query(BulkJob).filter(BulkJob.id == job_id).first()
@@ -166,11 +182,6 @@ def run_step(db: Session, job_id: str, staff: StaffUser, limit: Optional[int] = 
         raise HTTPException(status_code=503, detail="No se pudo guardar este grupo de personas. Se reintenta solo.")
     job = db.query(BulkJob).filter(BulkJob.id == job_id).first()
     if res.get("done") is False:
-        try:
-            _save(event.tenant_id, job.id, "state", res["state"])
-        except Exception:  # noqa: BLE001 — las filas ya están confirmadas; sin el avance guardado el paso se REPITE (idempotente) en el siguiente intento
-            log.error("no se pudo guardar el avance de la carga %s", job_id, exc_info=True)
-            raise HTTPException(status_code=503, detail="No se pudo guardar el avance. Se reintenta solo.")
         return serialize_job(job)
     job.status, job.stage, job.result_json = "done", "Listo", json.dumps(res)
     job.done = job.total
