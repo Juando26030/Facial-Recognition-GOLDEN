@@ -152,6 +152,11 @@
      conteo sea correcto. SOLO para el botón manual — ver maybeAutoPrint abajo para la
      autoimpresión, que nunca debe pasar por este confirm. */
   async function openPrintWindow(userId) {
+    if (!beginManual(userId)) return;
+    return openNow(userId);
+  }
+
+  async function openNow(userId) {            // lo mismo sin el guardián de doble toque (lo usa el despachador de la impresión compartida, que ya lo aplicó)
     try {
       const countRes = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${window.EVENT_ID}`);
       if (countRes.ok) {
@@ -184,12 +189,42 @@
         "Registrado" desde el modal de Editar — debe imprimir sola apenas eso pasa. Los 5 puntos
         donde el estado puede pasar a "Registrado" ya llaman a esta función (ver app.js y
         directory.js); el fix real estaba acá, no en cuántos sitios la llaman. */
-  function maybeAutoPrint(userId) {
-    if (!window.EVENT_AUTO_PRINT) return;
-    logPrint(userId).then(() => {
+  /* Una impresión automática por persona (23-oct-2026, «doble impresión» del evento): varios caminos de registro pueden llamar a maybeAutoPrint para la MISMA persona casi a la vez (un doble
+     clic en «Acreditar», una lectura repetida del lector, dos pestañas del mismo equipo, un refresco). `claim` deja pasar solo la primera en una ventana de 30 s: en memoria (esta pestaña) y con un
+     candado del navegador (Web Locks) entre pestañas del mismo equipo. Una reimpresión del botón o de la Cola NO pasa por aquí: es explícita. En el servidor, la impresión compartida tiene su propia
+     ventana (print-jobs). */
+  const CLAIM_MS = 30000;
+  const claims = new Map();
+  function claim(userId) {
+    const key = `${window.EVENT_ID}:${userId}`;
+    const now = Date.now();
+    if ((claims.get(key) || 0) > now) return Promise.resolve(false);
+    claims.set(key, now + CLAIM_MS);
+    if (!(window.navigator && navigator.locks)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      navigator.locks.request(`gw-print-${key}`, { ifAvailable: true }, (lock) => {
+        if (!lock) { resolve(false); return null; }
+        resolve(true);
+        return new Promise((release) => setTimeout(release, CLAIM_MS));          // el candado dura la ventana y se suelta solo
+      }).catch(() => resolve(true));
+    });
+  }
+  const manualBusy = new Set();
+  function beginManual(userId) {                  // el botón «Imprimir»: un toque a la vez por persona (3 s)
+    if (manualBusy.has(userId)) return false;
+    manualBusy.add(userId);
+    setTimeout(() => manualBusy.delete(userId), 3000);
+    return true;
+  }
+  function printNow(userId) {
+    return logPrint(userId).then(() => {
       window.open(printWindowUrl(userId), '_blank', 'width=480,height=720,noopener');
     });
   }
+  function maybeAutoPrint(userId) {
+    if (!window.EVENT_AUTO_PRINT) return;
+    claim(userId).then((ok) => { if (ok) printNow(userId); });
+  }
 
-  window.BadgePrint = { printWindowUrl, openPrintWindow, maybeAutoPrint };
+  window.BadgePrint = { printWindowUrl, openPrintWindow, openNow, maybeAutoPrint, claim, beginManual, printNow };
 })();

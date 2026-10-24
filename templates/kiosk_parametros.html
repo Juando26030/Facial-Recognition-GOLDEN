@@ -149,6 +149,26 @@
           <p style="color:#555; font-size:0.85rem; margin:0.5rem 0 0;">Apagada, todo imprime como siempre. Encendida, cada equipo que abre el Registro de este evento reporta si tiene la impresora conectada; aquí eliges, para cada usuario, si imprime en su propio equipo o en el equipo de otro usuario que tenga impresora (sin límite; con más de 6 en una misma impresora puede haber espera). La escarapela llega sola a ese equipo y se imprime sin que nadie acepte nada. Lo que no se imprime en 5 minutos queda en la «Cola» de quien registró, para reimprimir.</p>
           <div id="sharedPrintTable" style="margin-top:0.8rem;"{% if not event.shared_print_enabled %} hidden{% endif %}></div>
         </div>
+        <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel «⚙️ Impresión» del Registro. app/routers/print_settings.py -->
+        <div id="printSettingsCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Impresión de escarapelas en la QL-800 (valores del evento)</h4>
+          <p style="color:#555; font-size:0.85rem; margin:0 0 0.8rem;">Cinta puesta, giro, recorte y corte para todos los equipos de este evento. La cinta de siempre es la <b>continua de 62 mm (DK-22205)</b>. Cada equipo puede cambiarlos solo para sí en el botón «⚙️ Impresión» del Registro, y «Restablecer» lo devuelve a estos valores.</p>
+          <div id="psForm" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px 18px; align-items:end;">
+            <label>Ancho de la cinta<br><select id="ps_tapeWidth" style="min-height:40px; width:100%;"></select></label>
+            <label>Tipo de cinta<br><select id="ps_tapeType" style="min-height:40px; width:100%;"><option value="continuous">Continua</option><option value="diecut">Troquelada (largo fijo)</option></select></label>
+            <label id="ps_lengthRow">Largo de la etiqueta (mm)<br><input type="number" id="ps_lengthMm" min="10" max="1000" step="1" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label>Giro<br><select id="ps_rotation" style="min-height:40px; width:100%;"><option value="auto">Automático (el lado largo a lo largo de la cinta)</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
+            <label id="ps_cropRow"><input type="checkbox" id="ps_crop"> Recortar al contenido, con margen (mm)<br><input type="number" id="ps_cropMarginMm" min="0" max="30" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label>Margen de avance (mm)<br><input type="number" id="ps_feedMm" min="0" max="10" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label><input type="checkbox" id="ps_cut"> Cortar al final de cada etiqueta</label>
+            <label><input type="checkbox" id="ps_mirror"> Espejo</label>
+            <label><input type="checkbox" id="ps_invert"> Invertir (negativo)</label>
+          </div>
+          <div style="margin-top:0.9rem; display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="golden-btn golden-btn-primary" id="psSave" style="width:auto; padding:0.5rem 1.4rem;">Guardar valores del evento</button>
+            <button type="button" class="golden-btn" id="psReset" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">↺ Volver a los de fábrica</button>
+          </div>
+        </div>
         <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
@@ -841,6 +861,62 @@
     if (!res.ok) { chk.checked = !chk.checked; showToast('No se pudo cambiar la impresión compartida', 'error'); return; }
     showToast(chk.checked ? 'Impresión compartida ACTIVADA: abre (o recarga) el Registro en cada equipo.' : 'Impresión compartida apagada: todo imprime como siempre.', 'success');
     load();
+  });
+  load();
+})();
+</script>
+
+<script>
+(function () {
+  /* Valores de impresión del evento (cinta, giro, recorte, corte). Se guardan en el servidor (print_settings.py); los equipos pueden sobrescribirlos. */
+  const api = `/api/events/${window.EVENT_ID}/print-settings`;
+  const $ = (id) => document.getElementById(id);
+  const FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm'];
+  let defaults = {};
+  function fill(values) {
+    const v = Object.assign({}, defaults, values || {});
+    FIELDS.forEach((f) => { const el = $('ps_' + f); if (el.type === 'checkbox') el.checked = !!v[f]; else el.value = v[f] === null || v[f] === undefined ? '' : String(v[f]); });
+    toggle();
+  }
+  function toggle() {
+    const die = $('ps_tapeType').value === 'diecut';
+    $('ps_lengthRow').style.display = die ? '' : 'none';
+    $('ps_cropRow').style.display = die ? 'none' : '';
+  }
+  function read() {
+    const out = {};
+    FIELDS.forEach((f) => {
+      const el = $('ps_' + f);
+      if (el.type === 'checkbox') out[f] = el.checked;
+      else if (f === 'rotation') out[f] = el.value === 'auto' ? 'auto' : Number(el.value);
+      else if (f === 'tapeWidth') out[f] = Number(el.value);
+      else if (f === 'tapeType') out[f] = el.value;
+      else out[f] = el.value === '' ? null : Number(el.value);
+    });
+    if (out.tapeType !== 'diecut') out.lengthMm = null;
+    return out;
+  }
+  async function load() {
+    const r = await fetch(api, { cache: 'no-store' });
+    if (!r.ok) { $('printSettingsCard').hidden = true; return; }
+    const d = await r.json();
+    defaults = d.defaults;
+    $('ps_tapeWidth').innerHTML = d.supported_tapes.map((t) => `<option value="${t}">${t} mm</option>`).join('');
+    fill(d.settings);
+  }
+  $('ps_tapeType').addEventListener('change', toggle);
+  $('psSave').addEventListener('click', async () => {
+    const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: read() }) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(out.detail || 'No se pudo guardar', 'error'); return; }
+    fill(out.settings);
+    showToast('Valores de impresión del evento guardados. Los equipos los toman al recargar el Registro.', 'success');
+  });
+  $('psReset').addEventListener('click', async () => {
+    const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: {} }) });
+    if (!res.ok) { showToast('No se pudo restablecer', 'error'); return; }
+    fill({});
+    showToast('Valores de fábrica restablecidos.', 'success');
   });
   load();
 })();

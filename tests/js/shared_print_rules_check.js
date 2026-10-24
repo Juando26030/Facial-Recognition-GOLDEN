@@ -167,7 +167,7 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   QLUsb.savePrefs(mem, { cut: false, feedMm: 3 });
   job = GoldenSharedPrint.testJob();
   assert.ok(has(job, [0x1b, 0x69, 0x4d, 0x00]) && !has(job, [0x1b, 0x69, 0x41, 0x01]) && has(job, [0x1b, 0x69, 0x64, 35, 0]), 'sin corte y margen de 3 mm');
-  QLUsb.savePrefs(mem, { cut: true, feedMm: 1.5, lengthMm: 50 });
+  QLUsb.savePrefs(mem, { cut: true, feedMm: 1.5, lengthMm: 50, crop: false });          // alto fijo manual: sin recorte al contenido
   job = GoldenSharedPrint.testJob();
   const lines = QLUsb.mmToDots(50);
   assert.ok(has(job, [0x1b, 0x69, 0x7a, 0x86, 0x0a, 62, 0, lines & 255, lines >> 8]), 'alto fijo de 50 mm');

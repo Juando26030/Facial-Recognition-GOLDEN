@@ -65,14 +65,91 @@ assert.ok(!nocut.join(",").includes([0x1b, 0x69, 0x41, 0x01].join(",")), "sin co
 
 // ---- preferencias del equipo: por defecto corte sí, margen 1,5 mm, alto = el de la plantilla; se guardan y se leen con las mismas claves
 const mem = { d: {}, getItem(k) { return k in this.d ? this.d[k] : null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
-assert.deepStrictEqual(QL.readPrefs(mem), { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false });
+assert.deepStrictEqual(QL.readPrefs(mem), { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 });
 QL.savePrefs(mem, { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true });
 assert.deepStrictEqual(mem.d, { ql_cut: "0", ql_feed_mm: "2", ql_length_mm: "90", ql_mirror: "1", ql_invert: "1" });
-assert.deepStrictEqual(QL.readPrefs(mem), { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true });
+assert.deepStrictEqual(QL.readPrefs(mem), { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 });
 QL.savePrefs(mem, { lengthMm: null, feedMm: "abc" });
 assert.strictEqual(QL.readPrefs(mem).lengthMm, null);
 assert.strictEqual(QL.readPrefs(mem).feedMm, 1.5);                                               // valor ilegible: el de por defecto
 assert.deepStrictEqual(QL.readPrefs(null), QL.readPrefs({ getItem() { throw new Error("bloqueado"); } }));
+
+
+// ---- valores por EVENTO con sobrescritura por EQUIPO: lo del equipo > lo del evento > de fábrica; «Restablecer» deja solo lo del evento
+{
+  const dev = { d: {}, getItem(k) { return k in this.d ? this.d[k] : null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
+  const evt = { cropMarginMm: 5, rotation: 270, feedMm: 2, cut: false, tapeType: "diecut", lengthMm: 80, tapeWidth: 50, crop: false };   // 50 mm NO existe en MEDIA: se ignora
+  let r = QL.resolvePrefs(dev, evt);
+  assert.deepStrictEqual(r.prefs, { cut: false, feedMm: 2, lengthMm: 80, mirror: false, invert: false, tapeWidth: 62, tapeType: "diecut", rotation: 270, crop: false, cropMarginMm: 5 });
+  assert.strictEqual(r.source.tapeWidth, "defecto"); assert.strictEqual(r.source.cropMarginMm, "evento"); assert.strictEqual(r.source.mirror, "defecto");
+  QL.savePrefs(dev, { cropMarginMm: 1, cut: true });
+  r = QL.resolvePrefs(dev, evt);
+  assert.strictEqual(r.prefs.cropMarginMm, 1); assert.strictEqual(r.source.cropMarginMm, "equipo"); assert.strictEqual(r.prefs.cut, true); assert.strictEqual(r.prefs.rotation, 270);
+  assert.ok(/según equipo y evento/.test(QL.describePrefs(r.prefs, r.source)));
+  QL.clearPrefs(dev);
+  assert.deepStrictEqual(dev.d, {});
+  r = QL.resolvePrefs(dev, evt);
+  assert.strictEqual(r.prefs.cropMarginMm, 5); assert.strictEqual(r.source.cropMarginMm, "evento");
+  const bad = QL.resolvePrefs({ getItem: () => "xx", setItem() {}, removeItem() {} }, { rotation: 45, feedMm: -3, tapeType: "raro" });
+  assert.deepStrictEqual(bad.prefs, QL.PREF_DEFAULTS);                                                   // valores ilegibles: de fábrica
+  assert.ok(/continua/.test(QL.describePrefs(QL.PREF_DEFAULTS, {}, { rotation: 90 })) && /62 mm/.test(QL.describePrefs(QL.PREF_DEFAULTS, {})));
+}
+
+// ---- cinta de 62 mm: 696 puntos = 58,92 mm imprimibles. Giro automático: el lado largo corre a lo largo de la cinta; más ancha que la cinta = AVISO (no encoger en silencio)
+{
+  const P = QL.PREF_DEFAULTS;
+  assert.ok(Math.abs(QL.printableMm(62) - 58.9) < 0.1);
+  let l = QL.layout(P, 62, 100);                                  // vertical 62×100: no gira
+  assert.deepStrictEqual([l.rotation, l.acrossMm, l.alongMm, l.tooWide, l.scale], [0, 62, 100, true, QL.printableMm(62) / 62]);   // 62 mm de plantilla > 58,9 imprimibles: avisa y encoge
+  l = QL.layout(P, 100, 55);                                      // horizontal 100×55: gira 90° → 55 a lo ancho, 100 a lo largo
+  assert.deepStrictEqual([l.rotation, l.acrossMm, l.alongMm, l.tooWide, l.scale], [90, 55, 100, false, 1]);
+  l = QL.layout(P, 120, 100);                                     // ancha en las dos orientaciones
+  assert.strictEqual(l.tooWide, true); assert.ok(l.scale < 1);
+  l = QL.layout(Object.assign({}, P, { rotation: 180 }), 100, 55);
+  assert.deepStrictEqual([l.rotation, l.acrossMm], [180, 100]);   // forzado: se respeta aunque no quepa
+  l = QL.layout(Object.assign({}, P, { rotation: 270 }), 55, 100);
+  assert.deepStrictEqual([l.rotation, l.acrossMm, l.alongMm], [270, 100, 55]);
+}
+
+// ---- rotación del mapa de bits: 4 giros vuelven al original; cada punto cae donde debe
+{
+  const w = 4, h = 2;
+  const bm = Uint8Array.from([1, 0, 0, 0, 0, 0, 0, 1]);          // (0,0) y (3,1)
+  const at = (r, x, y) => r.bitmap[y * r.w + x];
+  let r = QL.rotateBitmap(bm, w, h, 90);                          // 2×4: (0,0)→(1,0); (3,1)→(0,3)
+  assert.deepStrictEqual([r.w, r.h, at(r, 1, 0), at(r, 0, 3)], [2, 4, 1, 1]);
+  r = QL.rotateBitmap(bm, w, h, 270);                             // (0,0)→(0,3); (3,1)→(1,0)
+  assert.deepStrictEqual([r.w, r.h, at(r, 0, 3), at(r, 1, 0)], [2, 4, 1, 1]);
+  r = QL.rotateBitmap(bm, w, h, 180);
+  assert.deepStrictEqual([r.w, r.h, at(r, 3, 1), at(r, 0, 0)], [4, 2, 1, 1]);
+  let t = { bitmap: bm, w, h };
+  for (let i = 0; i < 4; i++) t = QL.rotateBitmap(t.bitmap, t.w, t.h, 90);
+  assert.deepStrictEqual([t.w, t.h, Array.from(t.bitmap)], [w, h, Array.from(bm)]);
+  assert.deepStrictEqual(QL.rotateBitmap(bm, w, h, 0).bitmap, bm);
+}
+
+// ---- recortar al contenido: última fila con tinta + margen (3 mm = 35 puntos); sin tinta no recorta; nunca crece
+{
+  const W = QL.MEDIA[62].printable, H = 400, bm = new Uint8Array(W * H);
+  bm[100 * W + 5] = 1;                                            // la última tinta está en la fila 100
+  let c = QL.cropToContent(bm, W, H, QL.mmToDots(3));
+  assert.strictEqual(c.h, 101 + 35); assert.strictEqual(c.bitmap.length, W * c.h);
+  c = QL.cropToContent(bm, W, H, 0); assert.strictEqual(c.h, 101);
+  c = QL.cropToContent(new Uint8Array(W * H), W, H, 35); assert.strictEqual(c.h, H);                    // vacía: se deja
+  bm[399 * W] = 1; c = QL.cropToContent(bm, W, H, 35); assert.strictEqual(c.h, H);                       // tinta al final: no crece
+  // pipeline completo: plantilla 100×55 mm horizontal → gira 90° (55 a lo ancho, 100 a lo largo), centrada y recortada
+  const pw = Math.round(100 * 300 / 25.4), ph = Math.round(55 * 300 / 25.4), tpl = new Uint8Array(pw * ph);
+  for (let x = 0; x < pw; x++) tpl[(ph - 1) * pw + x] = 1;       // una raya en el borde inferior de la plantilla
+  const lay = QL.layout(QL.PREF_DEFAULTS, 100, 55);
+  const job = QL.prepareBitmap(tpl, pw, ph, QL.PREF_DEFAULTS, lay);
+  assert.strictEqual(job.rotation, 90); assert.strictEqual(job.bitmap.length, W * job.height);
+  assert.ok(job.height <= pw && job.height >= pw - 40, "el largo es el lado largo de la plantilla (100 mm ≈ " + pw + " puntos), no un largo fijo: " + job.height);
+  assert.strictEqual(QL.prepareBitmap(tpl, pw, ph, Object.assign({}, QL.PREF_DEFAULTS, { crop: false }), lay).height, pw);   // sin recorte: el largo completo
+  const diecut = QL.prepareBitmap(tpl, pw, ph, Object.assign({}, QL.PREF_DEFAULTS, { tapeType: "diecut", lengthMm: 80 }), lay);
+  assert.strictEqual(diecut.height, QL.mmToDots(80));                                                   // troquelada: largo fijo
+  const inv = QL.prepareBitmap(tpl, pw, ph, Object.assign({}, QL.PREF_DEFAULTS, { invert: true, crop: false }), lay);
+  assert.strictEqual(inv.bitmap[0], 1);                                                                 // lo blanco queda negro al invertir
+}
 
 // ---- errores
 assert.throws(() => QL.buildJob({ bitmap: new Uint8Array(10), height: 1 }), /mapa de puntos/);

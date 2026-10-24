@@ -9,6 +9,7 @@ Equipos Android con Chrome. Algunos (los «Y») tienen una Brother QL-800 por US
   - Lo que no se imprimió en PRINT_JOB_TTL queda «expired» (visible para reimprimir a mano); nunca se imprime después por su cuenta.
 Carga: solo pregunta el equipo que de verdad atiende a alguien (≤ 1 consulta indexada cada 1,5 s por impresora) y el resto reporta cada 10 s."""
 import logging
+import os
 from datetime import timedelta
 from typing import Optional
 
@@ -25,6 +26,7 @@ log = logging.getLogger("golden.shared_print")
 router = APIRouter()
 
 PRINT_JOB_TTL = timedelta(minutes=5)
+DEDUPE_WINDOW = timedelta(seconds=int(os.getenv("PRINT_DEDUPE_SECONDS", "30")))      # una persona = una impresión por ventana (salvo reimpresión explícita)
 ONLINE_WINDOW = timedelta(seconds=30)          # sin señal en 30 s = desconectado
 WARN_PER_PRINTER = 6                           # orden del 22-oct-2026: sin tope duro; con más de 6 usuarios en una impresora, aviso suave en Parámetros
 OPERATOR = require_role_excluding("digitador", ("comercial",))       # quien registra (mismo mínimo que imprimir hoy)
@@ -42,6 +44,7 @@ class HeartbeatIn(BaseModel):
 class JobIn(BaseModel):
     user_id: str
     request_id: str
+    reprint: bool = False          # reimpresión EXPLÍCITA (Cola o confirmada): la única forma de pedir otra escarapela de la misma persona dentro de la ventana
 
 
 class ResultIn(BaseModel):
@@ -154,6 +157,18 @@ def create_job(event_id: int, data: JobIn, db: Session = Depends(get_db), staff:
         raise HTTPException(status_code=404, detail="La persona no está inscrita en este evento.")
     if not _registered(db, event.id, attendee.user_id):              # orden del 22-oct-2026: solo se imprime a quien ya está Registrado (también la reimpresión de la Cola)
         raise HTTPException(status_code=409, detail=_not_registered_msg(db, event.tenant_id, attendee.user_id))
+    # UNA impresión por persona (clave: evento + persona; la plantilla la decide la persona/categoría): con la fila de la inscripción BLOQUEADA, dos pedidos simultáneos (doble clic, dos pestañas,
+    # dos equipos, un refresco) se serializan y el segundo recibe el trabajo que ya existe. Solo una REIMPRESIÓN explícita (`reprint`, desde la Cola o tras confirmar) crea otro, y queda en la bitácora.
+    db.query(EventAttendee.id).filter(EventAttendee.id == attendee.id).with_for_update().first()
+    if not data.reprint:
+        recent = (db.query(PrintJob).filter(PrintJob.event_id == event.id, PrintJob.attendee_id == attendee.id, PrintJob.status.in_(("queued", "sent", "printed")),
+                                            PrintJob.created_at >= utcnow() - DEDUPE_WINDOW).order_by(PrintJob.id.desc()).first())
+        if recent is not None:
+            log.info("impresión compartida: pedido repetido (trabajo %s, evento %s): no se crea otro", recent.id, event.id)
+            dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=recent.printer_staff_id).first()
+            return {**_job_out(db, recent), "duplicate": True, "printer_ready": _printer_ready(dev)}
+    else:
+        log.info("impresión compartida: REIMPRESIÓN explícita (evento %s, usuario %s)", event.id, staff.id)
     job = PrintJob(event_id=event.id, attendee_id=attendee.id, requested_by_staff_id=staff.id, printer_staff_id=printer_id, request_id=request_id,
                    status="queued", created_at=utcnow())
     db.add(job)
