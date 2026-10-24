@@ -9,7 +9,7 @@ Flujo (el navegador repite el paso hasta que termina; ver kiosk_roster.html):
   2. `POST /api/bulk_jobs/{id}/step`: procesa las siguientes `BULK_STEP_ROWS` (1.500) filas y confirma en la base. El avance (posición, cuenta y observaciones) vive en la MISMA fila de la tarea
      (`result_json`) y se confirma en la MISMA transacción que las filas: o quedan las dos cosas o ninguna. Repetir un paso (red cortada, otra pestaña, un reinicio) no duplica nada, porque las
      filas se escriben como «crear o actualizar». Dos pasos a la vez se serializan (la fila de la tarea se bloquea hasta confirmar).
-  3. `GET /api/bulk_jobs/{id}` solo lee el estado; `GET /api/bulk_jobs/active?event_id=` permite retomar una carga que quedó a medias (cerraste la página, se reinició el servicio).
+  3. `GET /api/bulk_jobs/{id}` solo lee el estado; `GET /api/bulk_steps/active?event_id=` permite retomar una carga que quedó a medias (cerraste la página, se reinició el servicio).
 Privacidad: lo preparado lleva datos personales: se guarda cifrado (`crypto.encrypt_bytes`), con un nombre sin datos (`<cliente>/bulk_steps/<id al azar>/…`), solo lo ve quien lo pidió, y se borra al
 terminar, al fallar y, si se abandona, a la hora (`BULK_STEPS_TTL_MINUTES`), también desde la tarea horaria de operaciones. Nada de datos personales en logs.
 Solo para cargas SIN fotos (zip) ni pre-cálculo facial y con Cloud Run Job apagado: lo demás sigue por el camino de siempre."""
@@ -41,12 +41,24 @@ def key_ready() -> bool:
     return crypto.enabled() or os.getenv("BULK_STEPS_ALLOW_CLEAR") == "1"
 
 
+def decide(event: Event, has_zip: bool, has_roster: bool) -> tuple:
+    """(¿por pasos?, motivo). Una carga que solo trae el archivo de la base (Excel/CSV, sin fotos/zip) va SIEMPRE por pasos, sea cual sea `BULK_BACKEND`: el Job de Cloud Run queda para las cargas con
+    fotos o con pre-cálculo facial (su arranque en frío tarda más que la carga de la base). Las ÚNICAS razones para no usar pasos están en el motivo (y se anotan en el log de cada carga)."""
+    if os.getenv("BULK_STEPS", "1") == "0":
+        return False, "pasos_desactivados"
+    if has_zip:
+        return False, "con_fotos"
+    if not has_roster:
+        return False, "sin_archivo_solo_traer_personas"
+    if not key_ready():
+        return False, "sin_llave_de_cifrado"
+    if event.controller_mode == "tercero" and bool(event.precalculo_autorizado):
+        return False, "evento_de_tercero_con_precalculo_facial"
+    return True, "solo_excel"
+
+
 def wants(event: Event, has_zip: bool, has_roster: bool) -> bool:
-    """¿Esta carga se hace por pasos? Sí si solo trae el archivo de la base (sin fotos/zip ni pre-cálculo facial) y hay llave de cifrado. También con `BULK_BACKEND=cloudrun`: el Job de Cloud Run
-    queda para las cargas con fotos (su arranque en frío tarda más que la carga de la base)."""
-    if os.getenv("BULK_STEPS", "1") == "0" or has_zip or not has_roster or not key_ready():
-        return False
-    return not (event.controller_mode == "tercero" and bool(event.precalculo_autorizado))
+    return decide(event, has_zip, has_roster)[0]
 
 
 def eligible(event: Event, zip_bytes, content) -> bool:
@@ -136,9 +148,8 @@ def start(db: Session, event: Event, staff: StaffUser, args: dict, cleanup) -> d
     job.result_json = json.dumps({"state": res["state"]})              # el avance vive en la fila de la tarea (atómico con las filas de cada paso)
     job.total, job.done, job.stage, job.updated_at = total, 0, "Listo para guardar", utcnow()
     db.commit()
-    if total <= SYNC_ROWS:                          # una base chica: todo en esta misma petición
-        return run_step(db, job_id, staff, limit=total)
-    return serialize_job(job)
+    # El PRIMER paso corre en esta misma petición (sin esperar otro viaje del navegador): con hasta 500 filas la carga termina aquí; con más, la primera respuesta ya trae el avance.
+    return run_step(db, job_id, staff, limit=total if total <= SYNC_ROWS else STEP_ROWS)
 
 
 def run_step(db: Session, job_id: str, staff: StaffUser, limit: Optional[int] = None) -> dict:

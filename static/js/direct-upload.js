@@ -18,18 +18,24 @@
     });
   }
 
+  const timing = { sign_ms: 0, put_ms: 0, bytes: 0 };           // tiempos de la última subida (firma de la URL y envío al almacenamiento); los lee la pantalla de carga para su bitácora
+
   async function upload(file, { signUrl = '/api/uploads', body = {}, onProgress } = {}) {
+    const t0 = performance.now();
     const res = await fetch(signUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...body, filename: file.name, size: file.size, content_type: file.type || 'application/octet-stream' }),
     });
     const sig = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(sig.detail || 'No se pudo preparar la subida del archivo');
+    const t1 = performance.now();
     await put(sig, file, onProgress);
+    timing.sign_ms += t1 - t0; timing.put_ms += performance.now() - t1; timing.bytes += file.size;
     return sig.token;
   }
 
   async function replaceFiles(fd, map, { signUrl, body = {}, onProgress } = {}) {
+    timing.sign_ms = timing.put_ms = timing.bytes = 0;
     const items = Object.entries(map).map(([name, [tokenName, purpose]]) => ({ name, tokenName, purpose, file: fd.get(name) }));
     const todo = items.filter((it) => it.file instanceof Blob && it.file.size);
     const total = todo.reduce((sum, it) => sum + it.file.size, 0);
@@ -43,5 +49,5 @@
     return fd;
   }
 
-  window.DirectUpload = { upload, replaceFiles, _forbidden: FORBIDDEN };
+  window.DirectUpload = { upload, replaceFiles, timing, _forbidden: FORBIDDEN };
 })();

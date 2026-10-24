@@ -116,7 +116,7 @@ def test_the_background_load_reports_progress_and_finishes_with_the_same_result(
     assert st["status"] == "done", st
     assert st["result"]["count"] == 3200
     assert client.get(f"/api/bulk_jobs/{job_id}").json()["status"] == "done"
-    assert seen and seen[0][1] == 0 and seen[-1][1] > 0                 # el avance sube de 0 hacia el total
+    assert seen and seen[0][1] > 0 and seen[-1][1] >= seen[0][1]        # el avance sube; la primera respuesta ya trae avance (el primer paso corre dentro del POST)
 
 
 # ---------------------------------------------------------------------------------------------------- REPORTE

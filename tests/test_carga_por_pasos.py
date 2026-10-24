@@ -55,9 +55,9 @@ def test_steps_give_exactly_the_result_of_the_previous_code(client, factory, db,
     login(client, "coord1")
     G.prepare(db, ev)
     first = _post(client, ev, G.xlsx_bytes(), field_labels=json.dumps({"opcional_1": "Talla"})).json()
-    assert first["mode"] == "steps" and first["status"] == "running" and first["total"] == 10
+    assert first["mode"] == "steps" and first["status"] == "running" and first["total"] == 10 and first["done"] == 3      # el PRIMER paso ya corrió dentro del POST: la respuesta trae avance
     final, calls = _drive(client, first)
-    assert final["status"] == "done" and calls == 4                                   # 10 filas de a 3 = 4 pasos
+    assert final["status"] == "done" and calls == 3                                   # 10 filas de a 3: 1 dentro del POST + 3 pasos
     got = G.dump(db, ev, final["result"])
     again = _drive(client, _post(client, ev, G.xlsx_bytes()).json())[0]               # el mismo archivo otra vez (reintento)
     got["retry"] = G.dump(db, ev, again["result"])
@@ -81,7 +81,7 @@ def test_every_request_of_a_load_stays_under_a_fixed_number_of_queries_whatever_
             worst = max(worst, q.n)
             calls += 1
         assert st["status"] == "done" and st["result"]["count"] == rows
-        assert calls == -(-rows // bulk_steps.STEP_ROWS) if rows > bulk_steps.SYNC_ROWS else True
+        assert calls == (-(-rows // bulk_steps.STEP_ROWS) - 1 if rows > bulk_steps.SYNC_ROWS else 0)         # el primer paso va dentro del POST
     assert worst <= MAX_QUERIES_PER_REQUEST, worst
     db.expire_all()
     assert db.query(User).filter_by(tenant_id=coord.tenant_id).count() == rows and db.query(EventAttendee).filter_by(event_id=coord.id).count() == rows     # repetir no duplica
@@ -130,20 +130,20 @@ def test_the_progress_callback_is_called_every_fifty_rows_not_every_row(client, 
 # ---------------------------------------------------------------------------------------------------- (d) corte a la mitad y reanudar
 def test_a_load_cut_in_the_middle_is_resumed_where_it_stopped(client, factory, coord, db, small_steps):
     first = _post(client, coord, G.xlsx_bytes(_rows(10))).json()
-    client.post(f"/api/bulk_jobs/{first['job_id']}/step")
+    assert first["done"] == 3
     mid = client.post(f"/api/bulk_jobs/{first['job_id']}/step").json()
     assert mid["status"] == "running" and mid["done"] == 6
     # «se cerró la página»: otra sesión del mismo usuario retoma la tarea que quedó a medias
     from app.main import app
     c2 = TestClient(app)
     assert c2.post("/login", data={"username": "coord1", "password": PASSWORD}, follow_redirects=False).status_code in (200, 302, 303)
-    active = c2.get(f"/api/bulk_jobs/active?event_id={coord.id}").json()["job"]
+    active = c2.get(f"/api/bulk_steps/active?event_id={coord.id}").json()["job"]
     assert active and active["job_id"] == first["job_id"] and active["done"] == 6
     final, _ = _drive(c2, active)
     assert final["status"] == "done" and final["result"]["count"] == 10
     db.expire_all()
     assert db.query(User).filter_by(tenant_id=coord.tenant_id).count() == 10
-    assert c2.get(f"/api/bulk_jobs/active?event_id={coord.id}").json()["job"] is None             # ya no hay nada pendiente
+    assert c2.get(f"/api/bulk_steps/active?event_id={coord.id}").json()["job"] is None             # ya no hay nada pendiente
 
 
 def test_a_step_that_fails_in_the_middle_leaves_nothing_and_is_repeated_without_duplicates(client, coord, db, small_steps, monkeypatch):
@@ -327,3 +327,89 @@ def test_with_the_cloud_run_job_backend_the_base_alone_still_goes_by_steps_and_p
     r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "background": "true", "photos_authorized": "true"},
                     files={"roster_file": ("b.csv", b"id,nombres,apellidos\n7001,A,B\n", "text/csv"), "zip_file": ("f.zip", _photo_zip(["7001"]), "application/zip")})
     assert r.status_code == 200 and launched == [r.json()["job_id"]]                                                           # con fotos: el Job de siempre
+
+
+# ---------------------------------------------------------------------------------------------------- avance inmediato y camino elegido (24-oct-2026)
+def test_a_one_row_excel_with_the_job_backend_finishes_inside_the_post_without_the_job_or_polling(client, factory, db, monkeypatch):
+    monkeypatch.setenv("BULK_BACKEND", "cloudrun")
+    launched = []
+    monkeypatch.setattr(bulk_jobs, "launch_cloud_run", launched.append)
+    factory.staff("coordinador", "coord1")
+    ev = factory.event("creado")
+    login(client, "coord1")
+    for rows in (1, 499):
+        data = G.xlsx_bytes(_rows(rows), head=G.HEAD) if rows > 1 else G.xlsx_bytes(_rows(1))
+        r = client.post("/api/bulk_roster", data={"event_id": str(ev.id), "background": "true"}, files={"roster_file": ("p.xlsx", data, "application/octet-stream")}).json()
+        assert r["mode"] == "steps" and r["status"] == "done" and r["result"]["count"] == rows       # «terminado» en la misma respuesta: no hay nada que consultar
+        ev2 = factory.event("creado")
+        ev = ev2
+    assert launched == []
+
+
+def test_a_big_excel_returns_progress_in_the_first_response_and_never_launches_the_job(client, factory, db, monkeypatch):
+    monkeypatch.setenv("BULK_BACKEND", "cloudrun")
+    launched = []
+    monkeypatch.setattr(bulk_jobs, "launch_cloud_run", launched.append)
+    factory.staff("coordinador", "coord1")
+    ev = factory.event("creado")
+    login(client, "coord1")
+    first = _post(client, ev, G.xlsx_bytes(_rows(3500))).json()
+    assert first["mode"] == "steps" and first["status"] == "running" and first["done"] == bulk_steps.STEP_ROWS and first["total"] == 3500      # el primer paso ya corrió dentro del POST
+    final, calls = _drive(client, first)
+    assert final["status"] == "done" and final["result"]["count"] == 3500 and calls == 2 and launched == []
+
+
+@pytest.mark.parametrize("backend", ["cloudrun", "thread"])
+def test_every_load_logs_which_path_it_takes_and_why(client, factory, db, monkeypatch, caplog, backend):
+    from tests.test_bulk_jobs import _admin, _fake_faces, _photo_zip
+    monkeypatch.setenv("BULK_BACKEND", backend)
+    monkeypatch.setattr(bulk_jobs, "launch_cloud_run", lambda job_id: None)
+    _fake_faces(monkeypatch)
+    ev = _admin(client, factory, facial_enabled=True, client_photos_before=True)
+    with caplog.at_level("INFO", logger="golden.api"):
+        _post(client, ev, G.xlsx_bytes(_rows(5)))
+        client.post("/api/bulk_register", data={"event_id": str(ev.id), "background": "true", "photos_authorized": "true"},
+                    files={"roster_file": ("b.csv", b"id,nombres,apellidos\n8001,A,B\n", "text/csv"), "zip_file": ("f.zip", _photo_zip(["8001"]), "application/zip")})
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("carga masiva: camino=")]
+    assert f"carga masiva: camino=pasos motivo=solo_excel backend={backend} evento={ev.id}" in lines
+    assert f"carga masiva: camino={'job' if backend == 'cloudrun' else 'hilo'} motivo=con_fotos backend={backend} evento={ev.id}" in lines
+
+
+def test_the_only_reasons_an_excel_does_not_go_by_steps_are_named(factory, monkeypatch):
+    ev = factory.event("creado")
+    assert bulk_steps.decide(ev, False, True) == (True, "solo_excel")
+    assert bulk_steps.decide(ev, True, True) == (False, "con_fotos")
+    assert bulk_steps.decide(ev, False, False) == (False, "sin_archivo_solo_traer_personas")
+    ev.controller_mode, ev.precalculo_autorizado = "tercero", True
+    assert bulk_steps.decide(ev, False, True) == (False, "evento_de_tercero_con_precalculo_facial")
+    ev.controller_mode, ev.precalculo_autorizado = "golden", False
+    monkeypatch.setenv("BULK_STEPS", "0")
+    assert bulk_steps.decide(ev, False, True) == (False, "pasos_desactivados")
+    monkeypatch.delenv("BULK_STEPS")
+    monkeypatch.delenv("BULK_STEPS_ALLOW_CLEAR")
+    monkeypatch.delenv("FACE_ENCRYPTION_KEY", raising=False)
+    crypto._cache.clear()
+    assert bulk_steps.decide(ev, False, True) == (False, "sin_llave_de_cifrado")
+
+
+def test_the_browser_timings_go_to_the_log_as_numbers_only(client, coord, caplog):
+    body = {"mode": "steps", "job_id": "abcdef0123456789abcdef0123456789", "rows": 8000, "prep_client_ms": 12.4, "sign_ms": 90, "put_ms": 140, "post_ms": 1210, "first_step_ms": 480,
+            "steps_ms": 2700, "steps": 5, "total_ms": 5400, "bytes": 281000, "cedula": "1020304050", "nombre": "Ana Mora", "post_ms_text": "x"}
+    with caplog.at_level("INFO", logger="golden.api"):
+        assert client.post("/api/bulk_timing", json=body).json() == {"ok": True}
+    line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("carga masiva: tiempos del navegador"))
+    logged = json.loads(line.split("navegador ", 1)[1])
+    assert logged["post_ms"] == 1210 and logged["total_ms"] == 5400 and logged["mode"] == "steps" and logged["job"] == "abcdef01"
+    assert "1020304050" not in line and "Ana" not in line and "cedula" not in line                      # nada que no sea un número o el tipo de camino
+    client.cookies.clear()
+    assert client.post("/api/bulk_timing", json=body).status_code in (401, 403)                         # solo quien carga
+
+
+def test_the_roster_page_measures_each_phase_and_polls_every_half_second():
+    import pathlib
+    page = pathlib.Path("templates/kiosk_roster.html").read_text(encoding="utf-8")
+    assert 'console.info("[carga]"' in page and "/api/bulk_timing" in page and "prep_client_ms" in page and "first_step_ms" in page
+    assert "await sleep(500)" in page and "await sleep(1000);\n        let st;" not in page          # el Job/hilo se consulta cada 500 ms y la primera consulta sale de inmediato
+    assert "DirectUpload.timing" in page
+    js = pathlib.Path("static/js/direct-upload.js").read_text(encoding="utf-8")
+    assert "timing.sign_ms" in js and "timing.put_ms" in js
