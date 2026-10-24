@@ -12,6 +12,7 @@
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
     <style>
         .badge-toolbar {
             background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06);
@@ -65,6 +66,67 @@
         .prop-row { display:flex; gap:8px; }
         .prop-row .prop-field { flex:1; }
 
+
+        /* ---------- Diseñador a pantalla completa (orden B, 23-oct-2026): tres zonas, sin scroll de página en 1366×768, 1280×720 y 1920×1080 ---------- */
+        .editor-mobile-tabs, .editor-nudge-bar, #mobileTopBar { display:none; }
+        .badge-canvas-zone { display:flex; flex-direction:column; min-width:0; min-height:0; }
+        .zoom-bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0 0 6px; font-size:0.78rem; color:#555; }
+        .zoom-bar button { border:1px solid #ccc; background:#fff; border-radius:8px; min-width:34px; height:30px; font-weight:700; cursor:pointer; color:var(--golden-dark); }
+        .zoom-bar button.on { background:var(--golden-dark); color:#fff; border-color:var(--golden-dark); }
+        #zoomLabel { min-width:96px; text-align:center; font-weight:700; }
+        #editorWarn { display:none; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; border-radius:10px; padding:6px 12px; font-size:0.82rem; margin:0 0 6px; line-height:1.4; }
+        #editorWarn.bad { background:#fdeeee; border-color:#e8b4b8; color:#a12631; }
+        #printInfo { font-size:0.76rem; color:#555; margin:0 0 6px; }
+        .badge-element, .resize-handle { touch-action:none; }
+        .badge-element.oob { outline:2px solid #c0392b !important; }
+        @media (min-width: 821px) {
+            body.editor-page { overflow:hidden; }
+            body.editor-page .golden-section-title { display:none; }
+            body.editor-page .golden-container { max-width:none !important; padding:0.3rem 0.8rem !important; }
+            body.editor-page .golden-event-strip { padding:0.3rem 1.2rem; font-size:0.82rem; }
+            body.editor-page .golden-main { padding:0; }
+            .badge-toolbar { padding:0.45rem 0.7rem; margin-bottom:0.4rem; gap:0.4rem 0.8rem; border-radius:12px; }
+            .toolbar-group { gap:2px; }
+            .toolbar-group label { font-size:0.62rem; }
+            .toolbar-group input, .toolbar-group select { padding:3px 7px; font-size:0.8rem; min-width:70px; }
+            .tb-btn { padding:6px 12px; font-size:0.76rem; }
+            .badge-editor-body { display:grid; grid-template-columns:150px minmax(0,1fr) 300px; gap:0.6rem; height:var(--editor-h, 520px); align-items:stretch; flex-wrap:nowrap; }
+            .add-elements-row { flex-direction:column; align-items:stretch; margin:0; overflow-y:auto; align-content:flex-start; flex-wrap:nowrap; }
+            .add-el-btn { padding:7px 10px; font-size:0.78rem; }
+            .badge-canvas-wrapper { flex:1 1 auto; min-height:0; max-height:none; padding:10px; align-items:center; justify-content:center; }
+            .badge-props-panel { width:auto; max-height:none; height:100%; overflow-y:auto; box-sizing:border-box; }
+            #kbHint { display:none; }
+        }
+        @media (max-width: 820px) {
+            body.editor-page { padding-bottom:128px; }
+            .badge-toolbar { padding:0.6rem; gap:0.5rem; }
+            .badge-toolbar .toolbar-actions { margin-left:0; width:100%; }
+            .editor-mobile-tabs { display:flex; gap:6px; margin:0 0 8px; }
+            .editor-mobile-tabs button { flex:1; min-height:44px; border:2px solid var(--golden-dark); background:#fff; color:var(--golden-dark); border-radius:12px; font-weight:700; font-size:0.95rem; }
+            .editor-mobile-tabs button.active { background:var(--golden-dark); color:#fff; }
+            #propsDot { color:#D4AF37; }
+            .badge-editor-body { display:block; }
+            .badge-editor-body[data-tab="canvas"] .badge-props-panel { display:none; }
+            .badge-editor-body[data-tab="props"] .badge-canvas-zone { display:none; }
+            .badge-editor-body[data-tab="props"] .add-elements-row { display:none; }
+            .badge-props-panel { width:auto; max-height:none; }
+            .badge-canvas-wrapper { max-height:none; padding:8px; border-radius:12px; overflow:auto; }
+            .add-elements-row { position:fixed; left:0; right:0; bottom:0; z-index:900; background:#fff; padding:6px 8px; margin:0; overflow-x:auto; flex-wrap:nowrap; box-shadow:0 -4px 16px rgba(0,0,0,0.14); gap:6px; }
+            .add-el-btn { white-space:nowrap; min-height:44px; flex:0 0 auto; }
+            .editor-nudge-bar.on { display:flex; position:fixed; left:0; right:0; bottom:62px; z-index:901; background:#0A0E2E; padding:6px 8px; gap:6px; justify-content:center; align-items:center; color:#fff; font-size:0.8rem; }
+            .editor-nudge-bar button { min-width:48px; min-height:44px; border:none; border-radius:10px; font-size:1.2rem; font-weight:700; background:#D4AF37; color:#1a1200; }
+            #kbHint { display:none; }
+            body.editor-page .golden-section-title { display:none; }
+            body.editor-page .golden-container { padding:0.5rem !important; }
+            body.editor-page .golden-event-strip { padding:0.25rem 0.6rem; font-size:0.72rem; }
+            body.editor-page .golden-event-strip-inner { display:flex; flex-wrap:wrap; gap:2px 12px; }
+            body.editor-page .badge-toolbar { display:none; }
+            body.editor-page.toolbar-open .badge-toolbar { display:flex; }
+            #mobileTopBar { display:flex; gap:6px; margin:0 0 6px; }
+            #mobileTopBar button { flex:1; min-height:44px; border:none; border-radius:12px; font-weight:700; font-size:0.85rem; background:#f0f0f0; color:var(--golden-dark); }
+            #mobileTopBar button.primary { background:var(--golden-primary); color:#1a1200; }
+        }
+
         .badge-modal-overlay {
             position:fixed; inset:0; background:rgba(10,14,46,0.5); z-index:9998; display:flex;
             align-items:center; justify-content:center; padding:1rem;
@@ -79,7 +141,7 @@
         }
     </style>
 </head>
-<body class="has-sidebar">
+<body class="has-sidebar editor-page">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
@@ -189,22 +251,48 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       </div>
     </div>
 
-    <div class="add-elements-row">
-      <button type="button" class="add-el-btn" data-add="text_static">🔤 Texto fijo</button>
+    <div id="mobileTopBar">
+      <button type="button" id="mtToolbar" aria-expanded="false">⚙️ Plantilla</button>
+      <button type="button" id="mtPreview">👁 Muestra</button>
+      <button type="button" id="mtSave" class="primary">Guardar</button>
+    </div>
+    <div id="editorWarn" role="status"></div>
+    <div id="printInfo"></div>
+    <div class="editor-mobile-tabs" id="editorTabs">
+      <button type="button" class="active" data-tab="canvas">Lienzo</button>
+      <button type="button" data-tab="props">Propiedades <span id="propsDot" hidden>●</span></button>
+    </div>
+
+    <div class="badge-editor-body" id="editorBody" data-tab="canvas">
+      <div class="add-elements-row" id="toolsCol">
+<button type="button" class="add-el-btn" data-add="text_static">🔤 Texto fijo</button>
       <button type="button" class="add-el-btn" data-add="text_variable">🏷️ Texto variable</button>
       <button type="button" class="add-el-btn" data-add="image_static">🖼️ Imagen / logo</button>
       <button type="button" class="add-el-btn" data-add="image_variable">🙂 Foto del asistente</button>
       <button type="button" class="add-el-btn" data-add="qr">▦ Código QR</button>
       <button type="button" class="add-el-btn" data-add="barcode">|||  Código de barras</button>
-    </div>
-
-    <div class="badge-editor-body">
-      <div class="badge-canvas-wrapper">
-        <div id="badgeCanvas" class="badge-canvas"></div>
+          </div>
+      <div class="badge-canvas-zone">
+        <div class="zoom-bar" id="zoomBar">
+          <button type="button" id="zoomOut" aria-label="Alejar">−</button>
+          <span id="zoomLabel" aria-live="polite">Ajustar</span>
+          <button type="button" id="zoomIn" aria-label="Acercar">+</button>
+          <button type="button" id="zoomFit" class="on">Ajustar a pantalla</button>
+          <button type="button" id="zoomReal">Tamaño real</button>
+          <span id="sizeInfo"></span>
+        </div>
+        <div class="badge-canvas-wrapper">
+          <div id="badgeCanvas" class="badge-canvas"></div>
+        </div>
       </div>
       <div class="badge-props-panel" id="propsPanel">
-        <p class="props-empty">Selecciona un elemento del lienzo para editar sus propiedades, o agrega uno nuevo arriba.</p>
+        <p class="props-empty">Selecciona un elemento del lienzo para editar sus propiedades, o agrega uno nuevo.</p>
       </div>
+    </div>
+    <div class="editor-nudge-bar" id="nudgeBar" aria-label="Ajuste fino del elemento">
+      <button type="button" data-nudge="-1,0" aria-label="Izquierda">←</button><button type="button" data-nudge="0,-1" aria-label="Arriba">↑</button>
+      <button type="button" data-nudge="0,1" aria-label="Abajo">↓</button><button type="button" data-nudge="1,0" aria-label="Derecha">→</button>
+      <span>1 mm</span>
     </div>
   </div>
 </main>
@@ -224,11 +312,14 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 (function () {
   // Ítem 5: el mismo editor sirve para el certificado (A4 horizontal, PDF) — lienzo más chico para que quepa.
   const KIND = window.TEMPLATE_KIND || 'badge';
-  const EDITOR_SCALE = KIND === 'certificate' ? 1.1 : 3; // factor visual — el lienzo se dibuja "más grande" en pantalla, los mm reales no cambian.
+  const PX_PER_MM = 96 / 25.4;                       // 1 mm CSS = 3,78 px: con escala 1 el lienzo se ve a TAMAÑO REAL
+  let editorScale = KIND === 'certificate' ? 1.1 : 3;   // factor visual (zoom): «Ajustar a pantalla» lo calcula solo; el arrastre usa getBoundingClientRect, no depende de este número
+  let zoomMode = 'fit';                              // 'fit' | 'manual'
+  const MIN_ZOOM = 0.25, MAX_ZOOM = 4;
   // Bajado de 5 a 3 (2026-09-16, pedido explícito: con 5 el lienzo no cabía en pantalla sin
   // hacer scroll). El arrastre/redimensión no dependen de este número — derivan el ratio px/mm
   // de canvasEl.getBoundingClientRect() en cada momento (ver startDrag/startResize más abajo),
-  // así que cualquier valor de EDITOR_SCALE sigue funcionando igual de bien.
+  // así que cualquier valor de editorScale sigue funcionando igual de bien.
   const FONT_FAMILIES = GoldenFonts.choices;          // las 6 tipografías alojadas (static/js/fonts-propias.js)
   const FIXED_VARIABLES = [
     ['first_name', 'Nombres'], ['last_name', 'Apellidos'], ['entity', 'Entidad'],
@@ -260,12 +351,12 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   function scaledForEditor(tpl) {
     return Object.assign({}, tpl, {
-      width_mm: tpl.width_mm * EDITOR_SCALE,
-      height_mm: tpl.height_mm * EDITOR_SCALE,
+      width_mm: tpl.width_mm * editorScale,
+      height_mm: tpl.height_mm * editorScale,
       elements: (tpl.elements || []).map(el => Object.assign({}, el, {
-        x: el.x * EDITOR_SCALE, y: el.y * EDITOR_SCALE,
-        width: el.width * EDITOR_SCALE, height: el.height * EDITOR_SCALE,
-        font_size: (el.font_size || 12) * EDITOR_SCALE,
+        x: el.x * editorScale, y: el.y * editorScale,
+        width: el.width * editorScale, height: el.height * editorScale,
+        font_size: (el.font_size || 12) * editorScale,
       })),
     });
   }
@@ -311,6 +402,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     syncToolbarFromTemplate();
     renderCanvas();
     renderPropsPanel();
+    updateWarnings(false);
   }
 
   function syncToolbarFromTemplate() {
@@ -354,6 +446,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       if (!res.ok) { showToast('No se pudo guardar la escarapela', 'error'); return; }
       template = await res.json();
       renderCanvas();
+      updateWarnings(false);
       showToast(KIND === 'certificate' ? 'Certificado guardado' : 'Escarapela guardada', 'success');
     } catch (e) { showToast('Error de red', 'error'); }
     finally { setButtonLoading(saveBtn, false); }
@@ -443,6 +536,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   // ---------- Render del lienzo ----------
 
   function renderCanvas() {
+    applyScale();
     const scaledTpl = scaledForEditor(template);
     BadgeRender.renderBadge(canvasEl, scaledTpl, previewMode ? sampleData() : null, { eventId: window.EVENT_ID });
     canvasEl.style.cursor = 'default';
@@ -451,7 +545,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       const el = template.elements.find(e => e.id === elId);
       if (!el) return;
       div.style.outline = (elId === selectedId) ? '2px dashed #D4AF37' : '1px dashed rgba(0,0,0,0.08)';
-      div.addEventListener('mousedown', (e) => { if (e.target.classList.contains('resize-handle')) return; startDrag(e, el); });
+      if (isOutside(el)) div.classList.add('oob');
+      div.addEventListener('pointerdown', (e) => { if (e.target.classList.contains('resize-handle')) return; startDrag(e, el); });
       div.addEventListener('click', (e) => { e.stopPropagation(); selectElement(elId); });
       // Alternativa por TECLADO al arrastrar (WCAG 2.1.1): Tab elige, Enter selecciona, flechas mueven (Mayús = 5 mm), Supr borra, Esc suelta.
       div.tabIndex = 0;
@@ -469,14 +564,118 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       if (elId === selectedId) {
         const handle = document.createElement('div');
         handle.className = 'resize-handle';
-        handle.addEventListener('mousedown', (e) => { e.stopPropagation(); startResize(e, el); });
+        handle.addEventListener('pointerdown', (e) => { e.stopPropagation(); startResize(e, el); });
         div.appendChild(handle);
       }
     });
   }
 
+  /* ---------- Zoom, ajuste a pantalla y avisos (orden B) ---------- */
+  const wrapperEl = document.querySelector('.badge-canvas-wrapper');
+  const bodyEl = document.getElementById('editorBody');
+  const isMobile = () => window.matchMedia('(max-width: 820px)').matches;
+
+  function setEditorHeight() {                       // el cuerpo del diseñador ocupa lo que queda de la ventana: sin scroll de página en escritorio
+    if (isMobile()) { bodyEl.style.removeProperty('--editor-h'); return; }
+    const top = bodyEl.getBoundingClientRect().top + window.scrollY;
+    bodyEl.style.setProperty('--editor-h', Math.max(300, window.innerHeight - top - 10) + 'px');
+  }
+  function fitScale() {
+    const cs = getComputedStyle(wrapperEl);
+    const aw = wrapperEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 6;
+    const ah = wrapperEl.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 6;
+    if (aw <= 0 || ah <= 0 || !template) return editorScale;
+    const byW = aw / (template.width_mm * PX_PER_MM);
+    // en móvil el alto no limita (el lienzo se escala al ANCHO y se puede bajar); en escritorio cabe entero
+    const s = isMobile() ? byW : Math.min(byW, ah / (template.height_mm * PX_PER_MM));
+    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, s));
+  }
+  function applyScale() {
+    if (!template) return;
+    if (zoomMode === 'fit') { setEditorHeight(); editorScale = fitScale(); }
+    const pct = Math.round(editorScale * 100);
+    document.getElementById('zoomLabel').textContent = (zoomMode === 'fit' ? 'Ajustado · ' : '') + pct + ' %';
+    document.getElementById('sizeInfo').textContent = `${template.width_mm} × ${template.height_mm} mm`;
+    document.getElementById('zoomFit').classList.toggle('on', zoomMode === 'fit');
+    document.getElementById('zoomReal').classList.toggle('on', zoomMode === 'manual' && Math.abs(editorScale - 1) < 0.001);
+  }
+  function setZoom(mode, scale) {
+    zoomMode = mode;
+    if (scale) editorScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, scale));
+    renderCanvas();
+  }
+  document.getElementById('zoomFit').addEventListener('click', () => setZoom('fit'));
+  document.getElementById('zoomReal').addEventListener('click', () => setZoom('manual', 1));
+  document.getElementById('zoomIn').addEventListener('click', () => setZoom('manual', editorScale * 1.25));
+  document.getElementById('zoomOut').addEventListener('click', () => setZoom('manual', editorScale / 1.25));
+  let resizeTimer = null;
+  const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (template) renderCanvas(); }, 80); };
+  window.addEventListener('resize', onResize);
+  if (window.ResizeObserver) new ResizeObserver(onResize).observe(wrapperEl);
+
+  // Elementos que quedan fuera de la etiqueta (por ejemplo, al cambiar el tamaño o la orientación): se marcan en rojo en el lienzo y se avisa
+  function isOutside(el) {
+    return el.x < -0.01 || el.y < -0.01 || el.x + el.width > template.width_mm + 0.01 || el.y + el.height > template.height_mm + 0.01;
+  }
+  let tapeSettings = {};
+  function updateWarnings(toastOutside) {
+    const warn = document.getElementById('editorWarn'), info = document.getElementById('printInfo');
+    const outside = template.elements.filter(isOutside).length;
+    const parts = [];
+    let severe = outside > 0;
+    if (outside) parts.push(`⚠️ ${outside} elemento(s) quedaron fuera de la etiqueta (marcados en rojo): muévelos o cámbialos de tamaño.`);
+    if (KIND === 'badge' && window.QLUsb) {
+      let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ }
+      const prefs = QLUsb.resolvePrefs(ls, tapeSettings).prefs;
+      const lay = QLUsb.layout(prefs, template.width_mm, template.height_mm);
+      info.textContent = `Impresión QL-800: cinta ${prefs.tapeWidth} mm ${prefs.tapeType === 'diecut' ? 'troquelada' : 'continua'} (${lay.availMm.toFixed(1)} mm imprimibles) · ${prefs.rotation === 'auto' ? 'giro automático' : 'giro'} ${lay.rotation}° · la plantilla ocupa ${lay.acrossMm.toFixed(1)} mm a lo ancho de la cinta × ${lay.alongMm.toFixed(1)} mm a lo largo${prefs.tapeType === 'continuous' && prefs.crop ? ' (se recorta al contenido)' : ''}.`;
+      if (lay.tooWide) {
+        parts.push(`⚠️ La plantilla (${lay.acrossMm.toFixed(1)} mm a lo ancho de la cinta) es más ancha que la cinta (${lay.availMm.toFixed(1)} mm imprimibles): al imprimir se encoge al ${Math.round(lay.scale * 100)} %. ` + (lay.scale < 0.9 ? 'Reduce el ancho, cambia la orientación o ajusta la cinta en Parámetros.' : 'Es un ajuste pequeño (los 62 mm de la cinta incluyen sus márgenes); para que salga exacta, usa hasta ' + lay.availMm.toFixed(1) + ' mm de ancho.'));
+        if (lay.scale < 0.9) severe = true;
+      }
+    }
+    warn.style.display = parts.length ? 'block' : 'none';
+    warn.classList.toggle('bad', severe);
+    warn.innerHTML = parts.join('<br>');
+    if (toastOutside && outside) showToast(`${outside} elemento(s) quedaron fuera de la nueva medida`, 'warning');
+  }
+  fetch(`/api/events/${window.EVENT_ID}/print-settings`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { tapeSettings = d.settings || {}; if (template) updateWarnings(false); } }).catch(() => { /* sin red: sin aviso de cinta */ });
+
+  // Barra superior del móvil: la plantilla (medidas, orientación, fondo) se abre a demanda y Guardar siempre está a la mano
+  document.getElementById('mtToolbar').addEventListener('click', (e) => {
+    const open = document.body.classList.toggle('toolbar-open');
+    e.currentTarget.setAttribute('aria-expanded', open ? 'true' : 'false');
+    setTimeout(() => { if (template) renderCanvas(); }, 50);
+  });
+  document.getElementById('mtPreview').addEventListener('click', () => document.getElementById('previewToggleBtn').click());
+  document.getElementById('mtSave').addEventListener('click', () => document.getElementById('saveBtn').click());
+
+  // Pestañas del móvil y ajuste fino
+  document.getElementById('editorTabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-tab]');
+    if (!b) return;
+    bodyEl.dataset.tab = b.dataset.tab;
+    document.querySelectorAll('#editorTabs button').forEach((x) => x.classList.toggle('active', x === b));
+    document.getElementById('propsDot').hidden = true;
+    if (b.dataset.tab === 'canvas') renderCanvas();
+    updateNudge();
+  });
+  function updateNudge() {
+    const on = isMobile() && !!selectedId && bodyEl.dataset.tab === 'canvas';
+    document.getElementById('nudgeBar').classList.toggle('on', on);
+    if (isMobile() && selectedId && bodyEl.dataset.tab === 'canvas') document.getElementById('propsDot').hidden = false;
+  }
+  document.getElementById('nudgeBar').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-nudge]');
+    const el = selectedElement();
+    if (!b || !el) return;
+    const [dx, dy] = b.dataset.nudge.split(',').map(Number);
+    el.x = Math.max(0, +(el.x + dx).toFixed(1)); el.y = Math.max(0, +(el.y + dy).toFixed(1));
+    renderCanvas(); renderPropsPanel();
+  });
+
   function refocus(elId) { const d = canvasEl.querySelector('.badge-element[data-el-id="' + elId + '"]'); if (d) d.focus(); }
-  canvasEl.insertAdjacentHTML('beforebegin', '<p id="kbHint" style="font-size:0.78rem; color:#555; margin:0 0 6px;">⌨️ Con el teclado: <b>Tab</b> para recorrer los elementos, <b>Enter</b> para seleccionar, <b>flechas</b> para moverlo (con <b>Mayús</b>, de 5 en 5 mm), <b>Supr</b> para borrarlo. También puedes escribir la posición exacta en el panel de propiedades.</p>');
+  wrapperEl.insertAdjacentHTML('beforebegin', '<p id="kbHint" style="font-size:0.78rem; color:#555; margin:0 0 6px;">⌨️ Con el teclado: <b>Tab</b> para recorrer los elementos, <b>Enter</b> para seleccionar, <b>flechas</b> para moverlo (con <b>Mayús</b>, de 5 en 5 mm), <b>Supr</b> para borrarlo. También puedes escribir la posición exacta en el panel de propiedades.</p>');
   canvasEl.addEventListener('click', () => { selectedId = null; renderCanvas(); renderPropsPanel(); });
 
   function startDrag(e, el) {
@@ -496,11 +695,13 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       renderCanvas();
     }
     function onUp() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
     }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
   }
 
   function startResize(e, el) {
@@ -518,18 +719,21 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       renderCanvas();
     }
     function onUp() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
       renderPropsPanel();
     }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
   }
 
   function selectElement(id) {
     selectedId = id;
     renderCanvas();
     renderPropsPanel();
+    updateNudge();
   }
 
   // ---------- Agregar / borrar elementos ----------
@@ -732,11 +936,29 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     btn.addEventListener('click', () => addElement(btn.dataset.add));
   });
 
+  /* Orientación y medidas (orden B): antes cambiar la orientación solo intercambiaba los números y el lienzo seguía igual hasta guardar. Ahora la plantilla se actualiza y se redibuja al instante. */
+  function readSizeInputs() {
+    const w = parseFloat(document.getElementById('tplWidth').value), h = parseFloat(document.getElementById('tplHeight').value);
+    return { w: w >= 10 && w <= 300 ? w : null, h: h >= 10 && h <= 300 ? h : null };
+  }
   document.getElementById('tplOrientation').addEventListener('change', (e) => {
     const wEl = document.getElementById('tplWidth'), hEl = document.getElementById('tplHeight');
     const w = parseFloat(wEl.value), h = parseFloat(hEl.value);
-    wEl.value = h; hEl.value = w;
+    const wantsHorizontal = e.target.value === 'horizontal';
+    if ((wantsHorizontal && h > w) || (!wantsHorizontal && w > h)) { wEl.value = h; hEl.value = w; }      // intercambia solo si hace falta (no se doble-intercambia)
+    const s = readSizeInputs();
+    if (s.w && s.h) { template.width_mm = s.w; template.height_mm = s.h; }
+    template.orientation = e.target.value;
+    renderCanvas();
+    updateWarnings(true);
   });
+  ['tplWidth', 'tplHeight'].forEach((id) => document.getElementById(id).addEventListener('input', () => {
+    const s = readSizeInputs();
+    if (!s.w || !s.h) return;
+    template.width_mm = s.w; template.height_mm = s.h;
+    renderCanvas();
+    updateWarnings(false);
+  }));
 
   /* Bug real (2026-09-16, pedido explícito): elegir "Color sólido" en el desplegable no hacía
      NADA hasta guardar (solo `toggleBgInputs()` cambiaba qué input se ve, nunca actualizaba

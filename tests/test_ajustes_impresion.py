@@ -223,3 +223,30 @@ def test_parameters_page_has_the_event_print_values_card_with_the_62mm_continuou
     login(client, "coord")
     page = client.get(f"/kiosk/{ev.id}/parametros").text
     assert 'id="printSettingsCard"' in page and "continua de 62 mm (DK-22205)" in page and 'id="ps_tapeWidth"' in page and 'id="psReset"' in page
+
+
+# ---------------------------------------------------------------------------------------------------- diseñador de escarapelas
+def test_the_editor_page_has_the_three_zones_zoom_controls_and_the_mobile_tabs(client, factory, db):
+    factory.staff("coordinador", "coord")
+    ev = factory.event("creado")
+    login(client, "coord")
+    page = client.get(f"/kiosk/{ev.id}/escarapela").text
+    for marker in ('id="toolsCol"', 'id="badgeCanvas"', 'id="propsPanel"',                           # herramientas · lienzo · propiedades
+                   'id="zoomFit"', 'id="zoomReal"', 'id="zoomIn"', 'id="zoomOut"', 'id="zoomLabel"',  # ajustar a pantalla, tamaño real, zoom manual
+                   'id="editorTabs"', 'id="mobileTopBar"', 'id="nudgeBar"',                            # móvil: pestañas Lienzo/Propiedades, barra superior y ajuste fino
+                   'id="editorWarn"', 'id="printInfo"', "js/ql-usb.js"):                               # avisos de medida y de cinta
+        assert marker in page, marker
+    assert "let editorScale" in page and "EDITOR_SCALE" not in page                                      # el zoom ya no es una constante
+    assert "MIN_ZOOM = 0.25" in page                                                                     # mínimo 25 %
+    assert "pointerdown" in page and "mousedown" not in page                                             # arrastre con mouse Y con el dedo
+    assert "addEventListener('input'" in page and "tplOrientation" in page and "updateWarnings(true)" in page   # la orientación redibuja y avisa de lo que queda fuera
+    assert "--editor-h" in page and "window.innerHeight" in page                                         # el cuerpo ocupa lo que queda de la ventana
+    assert "body.editor-page { overflow:hidden; }" in page                                               # sin scroll de página en escritorio
+
+
+def test_the_certificate_editor_shares_the_layout_without_the_tape_warning(client, factory, db):
+    factory.staff("coordinador", "coord")
+    ev = factory.event("creado")
+    login(client, "coord")
+    page = client.get(f"/kiosk/{ev.id}/certificado").text
+    assert 'id="zoomFit"' in page and "KIND === 'badge' && window.QLUsb" in page                          # la advertencia de la cinta solo aplica a escarapelas
