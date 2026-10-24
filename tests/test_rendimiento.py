@@ -104,19 +104,19 @@ def test_the_background_load_reports_progress_and_finishes_with_the_same_result(
     factory.staff("coordinador", "coord1")
     ev = factory.event("creado")
     login(client, "coord1")
-    r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "background": "true"}, files={"roster_file": ("p.xlsx", G.xlsx_bytes(_rows(1500)), "application/octet-stream")})
+    r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "background": "true"}, files={"roster_file": ("p.xlsx", G.xlsx_bytes(_rows(3200)), "application/octet-stream")})
     assert r.status_code == 200 and r.json()["background"] is True
     job_id = r.json()["job_id"]
-    seen = []
-    for _ in range(120):
-        st = client.get(f"/api/bulk_jobs/{job_id}").json()
-        seen.append((st["status"], st.get("stage")))
+    st, seen = r.json(), []
+    for _ in range(40):                                  # por pasos: el navegador pide cada paso hasta que termina
         if st["status"] in ("done", "error"):
             break
-        time.sleep(0.25)
+        seen.append((st["status"], st["done"]))
+        st = client.post(f"/api/bulk_jobs/{job_id}/step").json()
     assert st["status"] == "done", st
-    assert st["result"]["count"] == 1500
-    assert any("Guardando personas" in (s or "") for _, s in seen) or st["status"] == "done"
+    assert st["result"]["count"] == 3200
+    assert client.get(f"/api/bulk_jobs/{job_id}").json()["status"] == "done"
+    assert seen and seen[0][1] == 0 and seen[-1][1] > 0                 # el avance sube de 0 hacia el total
 
 
 # ---------------------------------------------------------------------------------------------------- REPORTE
