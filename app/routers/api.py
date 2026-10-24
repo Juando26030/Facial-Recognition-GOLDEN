@@ -1588,6 +1588,18 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
     return ids, source.name
 
 
+@router.post("/bulk_roster")
+def bulk_roster(
+    event_id: int = Form(...), roster_file: UploadFile = File(None), field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(True),
+    roster_upload: str = Form(None), overwrite_birth: str = Form(None),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Carga de SOLO la base (Excel/CSV, sin fotos). Es la misma carga que `bulk_register`, pero esta ruta la sirve el servicio WEB (sin dlib): `bulk_register` vive en el servicio de BIOMETRÍA (ver
+    app/appmode.py), que se apaga cuando no se usa y al arrancar carga el modelo facial: ese arranque en frío (~15 s) lo pagaba hasta una carga de una sola persona."""
+    return bulk_register(event_id=event_id, roster_file=roster_file, zip_file=None, field_labels=field_labels, source_event_id=source_event_id, background=background, photos_authorized=None,
+                         roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, db=db, staff=staff)
+
+
 @router.post("/bulk_register")
 def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
@@ -1610,7 +1622,11 @@ def bulk_register(
     if has_zip and not _truthy(photos_authorized):      # el organizador declara que tiene la autorización de cada titular
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     has_roster = bool(roster_upload) or (roster_file is not None and bool(roster_file.filename))
-    if background and bulk_jobs.uses_cloud_run() and not bulk_steps.wants(event, has_zip, has_roster):      # el Job de Cloud Run: cargas con fotos; la base sola va por pasos (app/bulk_steps.py)
+    use_steps, why = bulk_steps.decide(event, has_zip, has_roster)
+    if background:      # por qué camino va CADA carga (sin datos personales): así se ve en el log si una carga solo de Excel cae al Job y por qué
+        log.info("carga masiva: camino=%s motivo=%s backend=%s evento=%s", "pasos" if use_steps else ("job" if bulk_jobs.uses_cloud_run() else "hilo"), why,
+                 os.getenv("BULK_BACKEND", "thread"), event.id)
+    if background and bulk_jobs.uses_cloud_run() and not use_steps:      # el Job de Cloud Run: cargas con fotos; la base sola va por pasos (app/bulk_steps.py)
         return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored, _truthy(overwrite_birth))
     # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
@@ -1643,7 +1659,7 @@ def bulk_register(
         return cleanup(_bulk_register_impl(job_db, worker_staff, progress=reporter, **args))
 
     bulk_jobs.start(job_id, work)
-    return {"background": True, "job_id": job_id}
+    return {"background": True, "job_id": job_id, "mode": "thread", "reason": why}
 
 
 def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored=False, overwrite_birth=False) -> dict:
@@ -1670,7 +1686,7 @@ def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_uploa
         log.error("no se pudo lanzar el Job de la carga %s", job_id, exc_info=True)
         bulk_jobs._finish(job_id, error_status=503, error_detail="No se pudo iniciar el procesamiento de la carga. Intenta de nuevo en unos minutos.")
         raise HTTPException(status_code=503, detail="No se pudo iniciar el procesamiento de la carga. Intenta de nuevo en unos minutos.")
-    return {"background": True, "job_id": job_id}
+    return {"background": True, "job_id": job_id, "mode": "job"}
 
 
 def run_bulk_spec(db: Session, job, progress) -> dict:
@@ -1688,7 +1704,21 @@ def run_bulk_spec(db: Session, job, progress) -> dict:
     return result
 
 
-@router.get("/bulk_jobs/active")
+_TIMING_KEYS = ("prep_client_ms", "sign_ms", "put_ms", "post_ms", "first_step_ms", "steps_ms", "total_ms", "rows", "steps", "bytes")
+
+
+@router.post("/bulk_timing")
+def bulk_timing(data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Tiempos de una carga medidos EN EL NAVEGADOR (preparación, firma de la subida, subida, POST, primer paso, pasos, total): solo números y el tipo de camino, a la bitácora, para ver en qué fase se va el
+    tiempo junto con las líneas «carga masiva: fases» del servidor. Sin datos personales."""
+    out = {k: round(float(data[k]), 1) for k in _TIMING_KEYS if isinstance(data.get(k), (int, float)) and not isinstance(data.get(k), bool)}
+    out["mode"] = str(data.get("mode") or "")[:12]
+    out["job"] = str(data.get("job_id") or "")[:8]
+    log.info("carga masiva: tiempos del navegador " + json.dumps(out))
+    return {"ok": True}
+
+
+@router.get("/bulk_steps/active")       # OJO: NO bajo /api/bulk_jobs/*: Firebase manda esa ruta (un segmento) al servicio de biometría, que no la sirve (ver app/appmode.py)
 def bulk_job_active(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
