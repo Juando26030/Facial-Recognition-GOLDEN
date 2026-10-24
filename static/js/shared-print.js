@@ -155,6 +155,44 @@
   stage.style.cssText = 'position:fixed; left:-10000px; top:0; background:#fff;';
   document.body.appendChild(stage);
 
+  /* Valores de impresión: los del EVENTO (meta gw-print-settings, se editan en Parámetros) y, encima, lo que ESTE equipo sobrescribió en «⚙️ Impresión». */
+  const eventPrefs = (() => { try { const m = document.querySelector('meta[name="gw-print-settings"]'); const v = m ? JSON.parse(m.getAttribute('content') || '{}') : {}; return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } })();
+  function storage() { try { return window.localStorage; } catch (e) { return null; } }
+  function resolved() { return QLUsb.resolvePrefs(storage(), eventPrefs); }
+  function prefs() { return resolved().prefs; }
+  let lastPrint = null;                       // con qué valores se imprimió lo último (indicador del panel y de la barra)
+  const DPM = 300 / 25.4;                     // puntos por mm de la QL-800
+
+  /* De la plantilla ya dibujada (canvas a 300 dpi) al trabajo para la cinta: tamaño REAL (sin estirar al ancho de la cinta), giro, centrado, recorte e invertir. */
+  function composeJob(shot, tplW, tplH, p) {
+    const lay = QLUsb.layout(p, tplW, tplH);
+    const w = Math.max(1, Math.round(tplW * DPM * lay.scale)), h = Math.max(1, Math.round(tplH * DPM * lay.scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(shot, 0, 0, w, h);
+    const bm = QLUsb.bitmapFromRGBA(ctx.getImageData(0, 0, w, h).data, w, h, 140, false);
+    const prep = QLUsb.prepareBitmap(bm, w, h, p, lay);
+    const tapeDots = QLUsb.MEDIA[p.tapeWidth].printable;
+    const job = QLUsb.buildJob({ bitmap: prep.bitmap, height: prep.height, mediaWidthMm: p.tapeWidth, mirror: p.mirror, autoCut: p.cut, feedDots: QLUsb.mmToDots(p.feedMm),
+      lengthMm: p.tapeType === 'diecut' ? p.lengthMm : undefined });
+    return { job, bitmap: prep.bitmap, tapeDots, height: prep.height, layout: lay, cropped: prep.cropped, widthMm: tplW, heightMm: tplH };
+  }
+
+  async function renderTemplate(template, data, holderScale) {
+    const holder = document.createElement('div');
+    stage.appendChild(holder);
+    try {
+      BadgeRender.renderBadge(holder, template, data, { eventId: EID });
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      await Promise.all(Array.from(holder.querySelectorAll('img')).map((img) => (img.decode ? img.decode().catch(() => {}) : null)));
+      return await html2canvas(holder, { scale: (template.width_mm * DPM) / holder.offsetWidth * (holderScale || 1), useCORS: true, backgroundColor: '#ffffff', logging: false });
+    } finally {
+      holder.remove();
+    }
+  }
+
   async function badgeBitmap(userId) {
     const dataRes = await fetch(`/api/users/${encodeURIComponent(userId)}/badge-print-data?event_id=${EID}`, { cache: 'no-store' });
     if (!dataRes.ok) throw new Error('No se encontró la persona en este evento.');
@@ -163,36 +201,13 @@
     const tplRes = await fetch(`/api/events/${EID}/badge-template${qs}`, { cache: 'no-store' });
     if (!tplRes.ok) throw new Error('El evento no tiene plantilla de escarapela.');
     const template = await tplRes.json();
-    const holder = document.createElement('div');
-    stage.appendChild(holder);
-    try {
-      BadgeRender.renderBadge(holder, template, data, { eventId: EID });
-      if (document.fonts && document.fonts.ready) await document.fonts.ready;
-      await Promise.all(Array.from(holder.querySelectorAll('img')).map((img) => (img.decode ? img.decode().catch(() => {}) : null)));
-      const DOTS = QLUsb.MEDIA[62].printable;
-      const scale = DOTS / holder.offsetWidth;
-      const shot = await html2canvas(holder, { scale, useCORS: true, backgroundColor: '#ffffff', logging: false });
-      const p = prefs();
-      const drawn = Math.max(1, Math.round(shot.height * DOTS / shot.width));          // alto de la PLANTILLA (a escala del ancho imprimible de 62 mm)
-      const height = p.lengthMm ? QLUsb.mmToDots(p.lengthMm) : drawn;                  // o el alto fijo que se eligió en «⚙️ Impresión»
-      return jobFromCanvas((ctx) => ctx.drawImage(shot, 0, 0, DOTS, drawn), height, p);
-    } finally {
-      holder.remove();
-    }
-  }
-
-  /* Preferencias de impresión de ESTE equipo (las mismas que /impresion-usb): corte automático, margen de avance, alto de etiqueta, espejo e invertir. */
-  function prefs() { let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ } return QLUsb.readPrefs(ls); }
-  function jobFromCanvas(draw, height, p) {
-    const DOTS = QLUsb.MEDIA[62].printable;
-    const canvas = document.createElement('canvas');
-    canvas.width = DOTS; canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, DOTS, height);
-    draw(ctx);
-    const rgba = ctx.getImageData(0, 0, DOTS, height).data;
-    return QLUsb.buildJob({ bitmap: QLUsb.bitmapFromRGBA(rgba, DOTS, height, 140, p.invert), height, mediaWidthMm: 62, mirror: p.mirror, autoCut: p.cut,
-      feedDots: QLUsb.mmToDots(p.feedMm) });
+    const r = resolved();
+    const shot = await renderTemplate(template, data);
+    const out = composeJob(shot, template.width_mm, template.height_mm, r.prefs);
+    lastPrint = { text: QLUsb.describePrefs(r.prefs, r.source, out.layout), warn: out.layout.tooWide ? `La plantilla (${out.layout.acrossMm} mm) es más ancha que la cinta (${out.layout.availMm.toFixed(1)} mm imprimibles): se encogió.` : '', at: Date.now() };
+    if (out.layout.tooWide) toast('⚠️ ' + lastPrint.warn, 'warning');
+    bar.title = 'Última impresión: ' + lastPrint.text;
+    return out.job;
   }
 
   let usbBusy = Promise.resolve();
@@ -240,18 +255,19 @@
   }
 
   /* ------------------------------------------------------------------ X: mandar a otro equipo y seguir el estado */
-  async function sendToPrinter(userId) {
+  async function sendToPrinter(userId, reprint) {
     const requestId = uuid();
     let job = null;
     for (let i = 0; i < 2 && !job; i++) {           // el mismo request_id: si la primera respuesta se perdió, el servidor no duplica
       try {
-        const res = await fetch(`/api/events/${EID}/print-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, request_id: requestId }) });
+        const res = await fetch(`/api/events/${EID}/print-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, request_id: requestId, reprint: !!reprint }) });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { toast(`⚠️ No se pudo enviar la escarapela a imprimir: ${body.detail || res.status}`, 'error'); return; }
         job = body;
       } catch (e) { await sleep(800); }
     }
     if (!job) { toast('⚠️ Sin conexión: la escarapela NO se envió a imprimir. Reintente con «Imprimir escarapela».', 'error'); return; }
+    if (job.duplicate) { toast('ℹ️ Esta escarapela ya se mandó a imprimir hace un momento: no se repite.', 'info'); }
     if (job.warning) toast('⚠️ ' + job.warning, 'warning');
     pending += 1; render();
     try {
@@ -325,17 +341,21 @@
   }
 
   async function printFor(userId, auto, confirmed) {
+    if (auto && original.claim && !(await original.claim(userId))) return;          // una impresión automática por persona (entre pestañas del mismo equipo, 30 s)
+    if (!auto && original.beginManual && !original.beginManual(userId)) return;       // doble clic / doble toque en «Imprimir»: una sola
     if (!(await registeredOrSay(userId))) return;
+    let explicit = !!confirmed;                    // reimpresión EXPLÍCITA: desde la Cola o tras confirmar «¿imprimir de nuevo?»
     if (route.mode === 'shared') {
       if (!auto && !confirmed) {                    // el botón manual conserva el aviso de reimpresión de siempre
         try {
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`);
           const c = r.ok ? await r.json() : { times_printed: 0 };
+          if (c.times_printed > 0) explicit = true;
           if (c.times_printed > 0 && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
             { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return;
         } catch (e) { /* si falla la consulta, no bloquea */ }
       }
-      return sendToPrinter(userId);
+      return sendToPrinter(userId, !auto && explicit);
     }
     if (usb.ok) {
       try {
@@ -347,13 +367,13 @@
         }
         await printUsb(userId);
         await logPrint(userId);
-        toast('🖨️ Escarapela impresa.', 'success');
+        toast('🖨️ Escarapela impresa' + (lastPrint ? ` (${lastPrint.text})` : '.'), 'success');
         return;
       } catch (e) {
         toast(`⚠️ No se pudo imprimir por USB (${e && e.message ? e.message : e}). Se abre la impresión normal.`, 'warning');
       }
     }
-    return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);
+    return auto ? (original.printNow ? original.printNow(userId) : original.maybeAutoPrint(userId)) : (original.openNow || original.openPrintWindow)(userId);
   }
 
   window.BadgePrint = Object.assign({}, original, {
@@ -444,51 +464,137 @@
     t.dispatchEvent(new Event('input', { bubbles: true }));
   }, true);
 
-  /* ------------------------------------------------------------------ «⚙️ Impresión»: preferencias de este equipo */
+  /* ------------------------------------------------------------------ «⚙️ Impresión»: valores del evento + lo que este equipo sobrescribe */
+  const TAPE_FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm'];
+  let previewTemplate = null;
+  async function loadPreviewTemplate() {
+    if (previewTemplate) return previewTemplate;
+    try { const r = await fetch(`/api/events/${EID}/badge-template`, { cache: 'no-store' }); if (r.ok) previewTemplate = await r.json(); } catch (e) { /* sin red: vista previa de prueba */ }
+    return previewTemplate;
+  }
+  const SAMPLE = { id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'GoldenWeb 2.0', role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', extra_fields: {}, has_photo: false };
+
   function showPrefs() {
     const old = document.getElementById('spPrefsPanel');
     if (old) { old.remove(); return; }
-    const p = prefs();
+    const r = resolved();
+    const tapes = Object.keys(QLUsb.MEDIA).map(Number).sort((a, b) => a - b);
     const panel = document.createElement('div');
     panel.id = 'spPrefsPanel';
     panel.setAttribute('role', 'dialog');
-    panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>Preferencias de impresión de este equipo</strong><button type="button" class="sp-btn" data-close>Cerrar</button></div>' +
+    panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>Impresión de escarapelas</strong><button type="button" class="sp-btn" data-close>Cerrar</button></div>' +
+      '<p data-last style="font-size:0.85rem;margin:6px 0;color:#444"></p>' +
+      `<label>Cinta <select data-p="tapeWidth">${tapes.map((t) => `<option value="${t}">${t} mm</option>`).join('')}</select> <select data-p="tapeType"><option value="continuous">continua</option><option value="diecut">troquelada (largo fijo)</option></select></label>` +
+      '<label data-row="length">Largo de la etiqueta <input type="number" data-p="lengthMm" min="10" max="1000" step="1"> mm</label>' +
+      '<label>Giro <select data-p="rotation"><option value="auto">Automático</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>' +
+      '<label data-row="crop"><input type="checkbox" data-p="crop"> Recortar al contenido, con margen <input type="number" data-p="cropMarginMm" min="0" max="30" step="0.5"> mm</label>' +
       '<label><input type="checkbox" data-p="cut"> Cortar la cinta al final de cada etiqueta</label>' +
-      '<label>Margen de avance <input type="number" data-p="feed" min="0" max="10" step="0.5"> mm</label>' +
-      '<label><input type="radio" name="spLen" value="auto"> Alto de etiqueta: el de la plantilla</label>' +
-      '<label><input type="radio" name="spLen" value="manual"> Alto fijo <input type="number" data-p="len" min="10" max="300" step="1"> mm</label>' +
+      '<label>Margen de avance <input type="number" data-p="feedMm" min="0" max="10" step="0.5"> mm</label>' +
       '<label><input type="checkbox" data-p="mirror"> Espejo</label>' +
       '<label><input type="checkbox" data-p="invert"> Invertir (negativo)</label>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="sp-btn" data-save>Guardar</button><button type="button" class="sp-btn" data-test>🖨️ Imprimir prueba</button></div>' +
-      '<p style="font-size:0.85rem;color:#555;margin:8px 0 0">Se guardan en este equipo y valen para el Registro, la impresión compartida y /impresion-usb.</p>';
+      '<div data-src style="font-size:0.78rem;color:#555"></div>' +
+      '<div style="margin:8px 0"><canvas data-preview style="max-width:100%;border:1px solid #ccc;background:#fff"></canvas><div data-prevtext style="font-size:0.82rem;margin-top:4px"></div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sp-btn" data-save>Guardar en este equipo</button><button type="button" class="sp-btn" data-test>🖨️ Imprimir prueba</button><button type="button" class="sp-btn" data-reset>↺ Restablecer</button></div>' +
+      '<p style="font-size:0.8rem;color:#555;margin:8px 0 0">Los valores del evento los fija el coordinador en Parámetros. Lo que cambies aquí vale solo para este equipo y se aplica a toda la impresión (Registro, compartida y /impresion-usb).</p>';
     const q = (sel) => panel.querySelector(sel);
-    q('[data-p=cut]').checked = p.cut; q('[data-p=feed]').value = String(p.feedMm); q('[data-p=mirror]').checked = p.mirror; q('[data-p=invert]').checked = p.invert;
-    q('[data-p=len]').value = p.lengthMm ? String(p.lengthMm) : '';
-    q(`input[name=spLen][value=${p.lengthMm ? 'manual' : 'auto'}]`).checked = true;
-    const read = () => {
-      const manual = q('input[name=spLen][value=manual]').checked;
-      const len = parseFloat(q('[data-p=len]').value), feed = parseFloat(q('[data-p=feed]').value);
-      return { cut: q('[data-p=cut]').checked, feedMm: isFinite(feed) && feed >= 0 ? feed : QLUsb.PREF_DEFAULTS.feedMm, lengthMm: manual && isFinite(len) && len >= 10 ? len : null,
-        mirror: q('[data-p=mirror]').checked, invert: q('[data-p=invert]').checked };
+    const setForm = (prefs) => {
+      TAPE_FIELDS.forEach((f) => {
+        const el = q(`[data-p=${f}]`);
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = !!prefs[f]; else el.value = prefs[f] === null || prefs[f] === undefined ? '' : String(prefs[f]);
+      });
     };
-    const save = () => { let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ } QLUsb.savePrefs(ls, read()); };
+    const readForm = () => {
+      const v = {};
+      TAPE_FIELDS.forEach((f) => {
+        const el = q(`[data-p=${f}]`);
+        if (!el) return;
+        if (el.type === 'checkbox') v[f] = el.checked;
+        else if (f === 'rotation') v[f] = el.value === 'auto' ? 'auto' : Number(el.value);
+        else if (f === 'tapeWidth') v[f] = Number(el.value);
+        else if (f === 'tapeType') v[f] = el.value;
+        else v[f] = el.value === '' ? null : Number(el.value);
+      });
+      return v;
+    };
+    const sync = () => {
+      const v = readForm();
+      q('[data-row=length]').style.display = v.tapeType === 'diecut' ? '' : 'none';
+      q('[data-row=crop]').style.display = v.tapeType === 'diecut' ? 'none' : '';
+    };
+    const fromStorage = () => resolved();
+    const paintSources = () => {
+      const cur = fromStorage();
+      const names = { equipo: 'este equipo', evento: 'el evento', defecto: 'valores de fábrica' };
+      const counts = {};
+      TAPE_FIELDS.forEach((f) => { counts[cur.source[f]] = (counts[cur.source[f]] || 0) + 1; });
+      q('[data-src]').textContent = 'Valores tomados de: ' + Object.keys(counts).map((k) => `${names[k]} (${counts[k]})`).join(' · ');
+      q('[data-last]').textContent = lastPrint ? `Última impresión: ${lastPrint.text}.` + (lastPrint.warn ? ' ⚠️ ' + lastPrint.warn : '') : 'Aún no se ha impreso nada en este equipo.';
+    };
+    let timer = null;
+    const paintPreview = async () => {
+      const v = readForm();
+      const p = Object.assign({}, QLUsb.PREF_DEFAULTS, v);
+      const tpl = await loadPreviewTemplate();
+      const cv = q('[data-preview]'), txt = q('[data-prevtext]');
+      if (!tpl) { txt.textContent = 'No se pudo cargar la plantilla para la vista previa.'; return; }
+      try {
+        const shot = await renderTemplate(tpl, SAMPLE);
+        const out = composeJob(shot, tpl.width_mm, tpl.height_mm, p);
+        const w = out.tapeDots, h = out.height;
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d'), img = ctx.createImageData(w, h);
+        for (let i = 0; i < out.bitmap.length; i++) { const k = out.bitmap[i] ? 0 : 255; img.data[i * 4] = k; img.data[i * 4 + 1] = k; img.data[i * 4 + 2] = k; img.data[i * 4 + 3] = 255; }
+        ctx.putImageData(img, 0, 0);
+        cv.style.width = Math.min(300, w / 2.2) + 'px';
+        txt.innerHTML = `Saldrá de ${(w / DPM).toFixed(1)} × ${(h / DPM).toFixed(1)} mm, girada ${out.layout.rotation}°` + (out.cropped ? ' y recortada al contenido' : '') + '.' +
+          (out.layout.tooWide ? ` <b style="color:#a12631">⚠️ La plantilla (${out.layout.acrossMm.toFixed(1)} mm) es más ancha que la cinta (${out.layout.availMm.toFixed(1)} mm imprimibles): se encoge a ${Math.round(out.layout.scale * 100)} %. Ajusta el diseño o el giro.</b>` : '');
+      } catch (e) { txt.textContent = 'No se pudo dibujar la vista previa.'; }
+    };
+    const refresh = () => { sync(); clearTimeout(timer); timer = setTimeout(paintPreview, 250); };
+    setForm(r.prefs); sync(); paintSources(); paintPreview();
+    panel.addEventListener('input', refresh);
+    panel.addEventListener('change', refresh);
+    const saveOverrides = () => {                       // solo lo que DIFIERE de lo del evento queda como sobrescritura de este equipo
+      const ls = storage();
+      if (!ls) { toast('Este navegador no permite guardar preferencias.', 'error'); return false; }
+      const base = QLUsb.resolvePrefs(null, eventPrefs).prefs, v = readForm();
+      TAPE_FIELDS.forEach((f) => {
+        const same = (v[f] === null && (base[f] === null || base[f] === undefined)) || v[f] === base[f];
+        if (same) { try { ls.removeItem(QLUsb.PREF_KEYS[f]); } catch (e) { /* nada */ } } else QLUsb.savePrefs(ls, { [f]: v[f] });
+      });
+      return true;
+    };
     panel.addEventListener('click', async (e) => {
       if (e.target.closest('[data-close]')) { panel.remove(); return; }
-      if (e.target.closest('[data-save]')) { save(); toast('Preferencias de impresión guardadas en este equipo.', 'success'); panel.remove(); return; }
-      if (e.target.closest('[data-test]')) { save(); await printTest(); }
+      if (e.target.closest('[data-save]')) { if (saveOverrides()) { toast('Guardado en este equipo.', 'success'); paintSources(); } return; }
+      if (e.target.closest('[data-reset]')) {
+        const ls = storage();
+        if (ls) QLUsb.clearPrefs(ls);
+        setForm(QLUsb.resolvePrefs(null, eventPrefs).prefs); sync(); paintSources(); paintPreview();
+        toast('Este equipo vuelve a usar los valores del evento.', 'success');
+        return;
+      }
+      if (e.target.closest('[data-test]')) { if (saveOverrides()) { paintSources(); await printTest(); paintSources(); } }
     });
     document.body.appendChild(panel);
   }
+
+  /* Etiqueta de prueba: horizontal (80×50 mm), asimétrica a propósito: la barra negra a la izquierda y la flecha muestran el giro, el espejo y el recorte. */
   function testJob() {
-    const p = prefs();
-    const DOTS = QLUsb.MEDIA[62].printable;
-    const height = QLUsb.mmToDots(p.lengthMm || 40);
-    return jobFromCanvas((ctx) => {
-      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 30, height);                                     // barra a la izquierda: se ve si sale en espejo
-      ctx.lineWidth = 4; ctx.strokeRect(36, 4, DOTS - 40, height - 8);
-      ctx.font = 'bold 56px sans-serif'; ctx.textBaseline = 'top'; ctx.fillText('PRUEBA →', 60, 20);
-      ctx.font = '34px sans-serif'; ctx.fillText(`corte ${p.cut ? 'sí' : 'no'} · margen ${p.feedMm} mm · ${p.lengthMm ? p.lengthMm + ' mm' : 'alto 40 mm'}`, 60, 100);
-    }, height, p);
+    const r = resolved(), p = r.prefs;
+    const W = 80, H = 50;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(W * DPM); canvas.height = Math.round(H * DPM);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 30, canvas.height);
+    ctx.lineWidth = 4; ctx.strokeRect(36, 4, canvas.width - 40, canvas.height - 8);
+    ctx.font = 'bold 56px sans-serif'; ctx.textBaseline = 'top'; ctx.fillText('PRUEBA →', 60, 24);
+    ctx.font = '30px sans-serif'; ctx.fillText(`cinta ${p.tapeWidth} mm · corte ${p.cut ? 'sí' : 'no'}`, 60, 110); ctx.fillText(`margen ${p.feedMm} mm · giro ${p.rotation}`, 60, 150);
+    const out = composeJob(canvas, W, H, p);
+    lastPrint = { text: QLUsb.describePrefs(p, r.source, out.layout), warn: out.layout.tooWide ? `La plantilla es más ancha que la cinta: se encogió.` : '', at: Date.now() };
+    return out.job;
   }
   function printTest() {
     const run = usbBusy.then(async () => {
