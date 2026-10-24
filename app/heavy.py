@@ -7,7 +7,9 @@ sin dejar temporales en disco.
 
 `workbook_response` / `excel_response` devuelven la respuesta HTTP lista."""
 import os
+import re
 import tempfile
+import unicodedata
 import threading
 from contextlib import contextmanager
 from io import BytesIO
@@ -32,8 +34,29 @@ def heavy_slot():
         _slots.release()
 
 
+_INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+FILENAME_MAX = 100          # largo máximo del nombre del evento dentro del archivo (el código y el tipo de reporte siempre van completos)
+
+
+def _clean(text) -> str:
+    return re.sub(r"\s+", " ", _INVALID_FILENAME_CHARS.sub(" ", str(text or ""))).strip(" .")
+
+
+def event_report_filename(event, kind: str, ext: str = ".xlsx") -> str:
+    """«<nombre del evento> - <código> - <tipo de reporte>.xlsx», sin caracteres que los sistemas de archivos no admiten. Sin código no quedan guiones sueltos; el nombre se recorta a ~100."""
+    code, tail = _clean(getattr(event, "event_code", "")), _clean(kind)
+    name = _clean(getattr(event, "name", ""))[:FILENAME_MAX].strip(" .")
+    return " - ".join(p for p in (name, code, tail) if p) + ext
+
+
+def content_disposition(filename: str) -> str:
+    """Cabecera con nombre ASCII de respaldo (navegadores viejos) y `filename*` UTF-8 (RFC 5987/6266) para que tildes y ñ lleguen bien."""
+    ascii_name = unicodedata.normalize("NFKD", filename).encode("ascii", "ignore").decode().replace("%", "").replace(";", ",") or "reporte"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
+
+
 def _attachment(data: bytes, filename: str, media_type: str = XLSX) -> Response:
-    return Response(data, media_type=media_type, headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+    return Response(data, media_type=media_type, headers={"Content-Disposition": content_disposition(filename)})
 
 
 def workbook_response(wb, filename: str) -> Response:

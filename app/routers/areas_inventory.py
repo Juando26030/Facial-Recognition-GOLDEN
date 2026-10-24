@@ -20,7 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_event_in_progress, require_role_excluding
-from app import faces
+from app import faces, heavy
 from app.database import get_db
 from app.timeutil import to_local
 from app.models import (
@@ -226,7 +226,7 @@ def _xlsx_response(sheets: dict, filename: str, widths: dict = None) -> Streamin
     out.seek(0)
     return StreamingResponse(
         out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": heavy.content_disposition(filename)},
     )
 
 
@@ -246,7 +246,7 @@ def areas_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
             m.method or "", staff_names.get(m.registered_by_staff_id, ""),
         ])
     df = pd.DataFrame(rows, columns=["Fecha", "Hora", "Zona", "Cédula", "Persona", "Movimiento", "Método", "Registrado por"])
-    return _xlsx_response({"Movimientos por zona": df}, f"Areas_{event.event_code}.xlsx")
+    return _xlsx_response({"Movimientos por zona": df}, heavy.event_report_filename(event, "Reporte de áreas"))
 
 
 # ------------------------------------------------------------------------------------ Inventario
@@ -407,4 +407,4 @@ def inventory_report(event_id: int, db: Session = Depends(get_db), staff: StaffU
     return _xlsx_response({
         "Entregas": pd.DataFrame(deliveries, columns=["Fecha", "Hora", "Cédula", "Persona", "Ítem", "Cantidad", "Entregado por"]),
         "Inventario": pd.DataFrame(stock, columns=["Ítem", "Cantidad inicial", "Entregado", "Disponible"]),
-    }, f"Inventario_{event.event_code}.xlsx")
+    }, heavy.event_report_filename(event, "Reporte de inventario"))

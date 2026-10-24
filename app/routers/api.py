@@ -2228,4 +2228,4 @@ def download_report(
     # acción operativa, sin la excepción de cliente.
 ):
     event = get_event_for_staff(event_id, db, staff)
-    return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), "Golden_Reporte_Eventos.xlsx")
+    return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), heavy.event_report_filename(event, "Reporte final"))

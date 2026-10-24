@@ -5,7 +5,7 @@ Flujo (todo cabe holgado en los 60 s por petición, con miles de personas):
      `REPORT_START_WAIT` s a que termine (lo normal con unos miles de personas) y responde SIEMPRE con el estado de la tarea (`running` o `done`).
   2. `GET /api/report/status/{id}`: etapa, porcentaje y, al terminar, `ready`.
   3. `GET /api/report/download/{id}`: entrega el archivo YA guardado en el almacenamiento (no genera nada: pesa lo que el Excel y dura segundos).
-El archivo (lleva datos personales) solo lo ve quien lo pidió, se llama siempre «Golden_Reporte_Eventos.xlsx» (nombre sin datos), vence a la hora (`REPORT_TTL_MINUTES`) y se borra: al
+El archivo (lleva datos personales) solo lo ve quien lo pidió, se llama «<evento> - <código> - Reporte final.xlsx» (el nombre del evento, no datos de personas), vence a la hora (`REPORT_TTL_MINUTES`) y se borra: al
 vencer, en cada nuevo reporte y en la tarea horaria de operaciones. Cada descarga queda en la bitácora (log `golden.report`: tarea, evento y usuario; sin datos personales). No incluye biometría.
 
 Un reporte tarda unos segundos: corre en un hilo del propio servicio (no en un Cloud Run Job, cuyo arranque en frío costaría más que el reporte). Mientras alguien consulta el avance, la
@@ -34,7 +34,7 @@ router = APIRouter()
 ROLE = require_role("coordinador")            # misma regla que el reporte de siempre (cliente no exporta la base)
 TTL = timedelta(minutes=int(os.getenv("REPORT_TTL_MINUTES", "60")))
 START_WAIT = float(os.getenv("REPORT_START_WAIT", "8"))
-FILENAME = "Golden_Reporte_Eventos.xlsx"
+REPORT_KIND = "Reporte final"
 KIND = json.dumps({"kind": "report"})
 
 
@@ -136,4 +136,5 @@ def report_download(job_id: str, db: Session = Depends(get_db), staff: StaffUser
     if not get_storage().exists(key):
         raise HTTPException(status_code=410, detail="Este reporte ya no está disponible. Genera uno nuevo.")
     log.info("reporte descargado: tarea %s, evento %s, usuario %s", job.id, job.event_id, staff.id)
-    return get_storage().response(key, filename=FILENAME, media_type=heavy.XLSX, headers={"Cache-Control": "no-store"})
+    event = get_event_for_staff(job.event_id, db, staff)
+    return get_storage().response(key, media_type=heavy.XLSX, headers={"Cache-Control": "no-store", "Content-Disposition": heavy.content_disposition(heavy.event_report_filename(event, REPORT_KIND))})
