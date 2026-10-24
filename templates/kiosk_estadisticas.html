@@ -114,9 +114,46 @@ AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `/api/eve
 })();
 
 (function() {
+    /* Exportar la base: el Excel se arma en segundo plano y se descarga YA armado (nunca una petición larga que Firebase corte a los 60 s). */
     const exportBtn = document.getElementById('exportBtn');
-    if (exportBtn) exportBtn.addEventListener('click', () => {
-        window.location.href = `/api/report?event_id=${window.EVENT_ID}`;
+    if (exportBtn) exportBtn.addEventListener('click', async () => {
+        const label = exportBtn.textContent;
+        let box = document.getElementById('exportProgress');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'exportProgress';
+            box.setAttribute('role', 'status');
+            box.setAttribute('aria-live', 'polite');
+            box.style.cssText = 'margin-top:10px; font-size:0.9rem; color:#333;';
+            box.innerHTML = '<div data-msg style="margin-bottom:4px;"></div><div style="background:#e6e6ee; border-radius:8px; height:12px; overflow:hidden; max-width:420px;"><div data-bar style="background:#D4AF37; height:100%; width:0%; transition:width .3s;"></div></div>';
+            exportBtn.parentNode.insertBefore(box, exportBtn.nextSibling);
+        }
+        const msg = box.querySelector('[data-msg]'), bar = box.querySelector('[data-bar]');
+        const show = (text, pct, bad) => { box.hidden = false; msg.textContent = text; msg.style.color = bad ? '#a12631' : '#333'; bar.style.width = `${pct}%`; };
+        exportBtn.disabled = true;
+        try {
+            show('Preparando el reporte…', 3);
+            let st = await (await fetch('/api/report/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: window.EVENT_ID }) })).json().then((d) => d, () => ({}));
+            for (let i = 0; i < 300 && st.job_id && (st.status === 'queued' || st.status === 'running'); i++) {      // hasta 5 min mirando el avance cada segundo
+                show(`${st.stage || 'Preparando el reporte'}… ${st.percent || 0}%`, st.percent || 3);
+                await new Promise((r) => setTimeout(r, 1000));
+                const r = await fetch(`/api/report/status/${st.job_id}`, { cache: 'no-store' });
+                st = r.ok ? await r.json() : { status: 'error', error: 'No se pudo consultar el avance del reporte.' };
+            }
+            if (st.ready) {
+                show('Listo. Descargando el Excel…', 100);
+                window.location.href = `/api/report/download/${st.job_id}`;
+                setTimeout(() => { box.hidden = true; }, 6000);
+            } else {
+                show(st.error || st.detail || 'No se pudo generar el reporte. Intenta de nuevo en un momento.', 0, true);
+                showToast(st.error || st.detail || 'No se pudo generar el reporte. Intenta de nuevo.', 'error');
+            }
+        } catch (e) {
+            show('No se pudo generar el reporte (sin conexión). Intenta de nuevo.', 0, true);
+        } finally {
+            exportBtn.disabled = false;
+            exportBtn.textContent = label;
+        }
     });
 
     /* Módulo de Estadísticas (Sprint 2.2 Fase D, 2026-09-16) — checklist de variables (en

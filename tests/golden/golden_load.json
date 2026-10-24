@@ -1,0 +1,477 @@
+{
+ "attendees": [
+  {
+   "categories": [],
+   "certificate": false,
+   "user_id": "1.006"
+  },
+  {
+   "categories": [
+    "General",
+    "Zona A"
+   ],
+   "certificate": true,
+   "user_id": "1001"
+  },
+  {
+   "categories": [
+    "Zona B"
+   ],
+   "certificate": false,
+   "user_id": "1002"
+  },
+  {
+   "categories": [],
+   "certificate": false,
+   "user_id": "1003"
+  },
+  {
+   "categories": [],
+   "certificate": false,
+   "user_id": "1005"
+  },
+  {
+   "categories": [
+    "Zona A"
+   ],
+   "certificate": false,
+   "user_id": "1007"
+  },
+  {
+   "categories": [
+    "General"
+   ],
+   "certificate": false,
+   "user_id": "1008"
+  }
+ ],
+ "changes": [],
+ "event_categories": [
+  "General",
+  "Zona B",
+  "Zona A"
+ ],
+ "logs": 0,
+ "optional_labels": {
+  "opcional_1": "Talla",
+  "opcional_2": "Fecha nac. cliente"
+ },
+ "response": {
+  "birth": {
+   "completed": 0,
+   "ignored_rows": 0,
+   "kept_rows": [],
+   "replaced": 0,
+   "unreadable_rows": []
+  },
+  "columns": {
+   "created": [
+    {
+     "field": "Fecha nac. cliente",
+     "title": "fecha nac. cliente"
+    }
+   ],
+   "recognized": [
+    {
+     "field": "Cédula",
+     "title": "id"
+    },
+    {
+     "field": "Nombres",
+     "title": "nombres"
+    },
+    {
+     "field": "Apellidos",
+     "title": "apellidos"
+    },
+    {
+     "field": "Cargo",
+     "title": "cargo"
+    },
+    {
+     "field": "Entidad",
+     "title": "entidad"
+    },
+    {
+     "field": "Teléfono",
+     "title": "telefono"
+    },
+    {
+     "field": "Correo",
+     "title": "correo"
+    },
+    {
+     "field": "Tipo de asistente",
+     "title": "tipo de asistente"
+    },
+    {
+     "field": "Categoría",
+     "title": "categoria"
+    },
+    {
+     "field": "Certificado",
+     "title": "certificado"
+    },
+    {
+     "field": "Opcional 1",
+     "title": "opcional_1"
+    }
+   ],
+   "unused": []
+  },
+  "count": 8,
+  "errors": [
+   "⚠️ La cédula '1003' aparece repetida en 2 filas (A4, A5) — se combinaron los datos y quedó lo de la última fila.",
+   "❌ Fila 6 (A6): sin ID/cédula, se omitió esta fila.",
+   "⚠️ Fila 7: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).",
+   "⚠️ Fila 8 (B8): falta el nombre.",
+   "⚠️ Fila 8 (C8): falta el apellido.",
+   "⚠️ Fila 8 (G8): el correo 'no-es-correo' no parece válido — se guardó igual, revísalo.",
+   "⚠️ Fila 8 (F8): el teléfono 'tel-raro' tiene caracteres raros — se guardó igual, revísalo."
+  ],
+  "message": "Carga completa: 8 perfiles cargados. 7 observación(es) — revisa el detalle. Campos reconocidos: 11 · campos nuevos creados: 1 · columnas no usadas: 0.",
+  "optional_labels": {
+   "opcional_1": "Talla",
+   "opcional_2": "Fecha nac. cliente"
+  }
+ },
+ "retry": {
+  "attendees": [
+   {
+    "categories": [],
+    "certificate": false,
+    "user_id": "1.006"
+   },
+   {
+    "categories": [
+     "General",
+     "Zona A"
+    ],
+    "certificate": true,
+    "user_id": "1001"
+   },
+   {
+    "categories": [
+     "Zona B"
+    ],
+    "certificate": false,
+    "user_id": "1002"
+   },
+   {
+    "categories": [],
+    "certificate": false,
+    "user_id": "1003"
+   },
+   {
+    "categories": [],
+    "certificate": false,
+    "user_id": "1005"
+   },
+   {
+    "categories": [
+     "Zona A"
+    ],
+    "certificate": false,
+    "user_id": "1007"
+   },
+   {
+    "categories": [
+     "General"
+    ],
+    "certificate": false,
+    "user_id": "1008"
+   }
+  ],
+  "changes": [],
+  "event_categories": [
+   "General",
+   "Zona B",
+   "Zona A"
+  ],
+  "logs": 0,
+  "optional_labels": {
+   "opcional_1": "Talla",
+   "opcional_2": "Fecha nac. cliente"
+  },
+  "response": {
+   "birth": {
+    "completed": 0,
+    "ignored_rows": 0,
+    "kept_rows": [],
+    "replaced": 0,
+    "unreadable_rows": []
+   },
+   "columns": {
+    "created": [],
+    "recognized": [
+     {
+      "field": "Cédula",
+      "title": "id"
+     },
+     {
+      "field": "Nombres",
+      "title": "nombres"
+     },
+     {
+      "field": "Apellidos",
+      "title": "apellidos"
+     },
+     {
+      "field": "Cargo",
+      "title": "cargo"
+     },
+     {
+      "field": "Entidad",
+      "title": "entidad"
+     },
+     {
+      "field": "Teléfono",
+      "title": "telefono"
+     },
+     {
+      "field": "Correo",
+      "title": "correo"
+     },
+     {
+      "field": "Tipo de asistente",
+      "title": "tipo de asistente"
+     },
+     {
+      "field": "Categoría",
+      "title": "categoria"
+     },
+     {
+      "field": "Certificado",
+      "title": "certificado"
+     },
+     {
+      "field": "Talla",
+      "title": "opcional_1"
+     },
+     {
+      "field": "Fecha nac. cliente",
+      "title": "fecha nac. cliente"
+     }
+    ],
+    "unused": []
+   },
+   "count": 8,
+   "errors": [
+    "⚠️ La cédula '1003' aparece repetida en 2 filas (A4, A5) — se combinaron los datos y quedó lo de la última fila.",
+    "❌ Fila 6 (A6): sin ID/cédula, se omitió esta fila.",
+    "⚠️ Fila 7: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).",
+    "⚠️ Fila 8 (B8): falta el nombre.",
+    "⚠️ Fila 8 (C8): falta el apellido.",
+    "⚠️ Fila 8 (G8): el correo 'no-es-correo' no parece válido — se guardó igual, revísalo.",
+    "⚠️ Fila 8 (F8): el teléfono 'tel-raro' tiene caracteres raros — se guardó igual, revísalo."
+   ],
+   "message": "Carga completa: 8 perfiles cargados. 7 observación(es) — revisa el detalle. Campos reconocidos: 12 · campos nuevos creados: 0 · columnas no usadas: 0.",
+   "optional_labels": {
+    "opcional_1": "Talla",
+    "opcional_2": "Fecha nac. cliente"
+   }
+  },
+  "roster_uploaded": true,
+  "users": [
+   {
+    "bio": true,
+    "birth_date": null,
+    "email": "",
+    "entity": "",
+    "extras": {},
+    "first_name": "Dora",
+    "id": "1.006",
+    "last_name": "Puntos",
+    "opt_1": "",
+    "phone": "",
+    "role": ""
+   },
+   {
+    "bio": true,
+    "birth_date": null,
+    "email": "ana@acme.com",
+    "entity": "ACME",
+    "extras": {
+     "opcional_1": "Talla M",
+     "opcional_2": "10/03/1990"
+    },
+    "first_name": "Ana",
+    "id": "1001",
+    "last_name": "Mora",
+    "opt_1": "VIP",
+    "phone": "3001112233",
+    "role": "Gerente"
+   },
+   {
+    "bio": true,
+    "birth_date": "1985-05-05",
+    "email": "beto@beta.com",
+    "entity": "Beta SA",
+    "extras": {
+     "opcional_1": "Talla L"
+    },
+    "first_name": "Beto",
+    "id": "1002",
+    "last_name": "Paz",
+    "opt_1": "Invitado",
+    "phone": "3002223344",
+    "role": "Analista"
+   },
+   {
+    "bio": true,
+    "birth_date": null,
+    "email": "",
+    "entity": "",
+    "extras": {},
+    "first_name": "Cata",
+    "id": "1003",
+    "last_name": "Segunda",
+    "opt_1": "",
+    "phone": "",
+    "role": "Directora"
+   },
+   {
+    "bio": true,
+    "birth_date": null,
+    "email": "no-es-correo",
+    "entity": "",
+    "extras": {},
+    "first_name": "",
+    "id": "1005",
+    "last_name": "",
+    "opt_1": "",
+    "phone": "tel-raro",
+    "role": ""
+   },
+   {
+    "bio": true,
+    "birth_date": null,
+    "email": "",
+    "entity": "",
+    "extras": {
+     "opcional_2": "no-es-fecha"
+    },
+    "first_name": "Eli",
+    "id": "1007",
+    "last_name": "Fecha",
+    "opt_1": "",
+    "phone": "",
+    "role": ""
+   },
+   {
+    "bio": true,
+    "birth_date": null,
+    "email": "",
+    "entity": "",
+    "extras": {},
+    "first_name": "Fito",
+    "id": "1008",
+    "last_name": "Previo",
+    "opt_1": "",
+    "phone": "",
+    "role": ""
+   }
+  ]
+ },
+ "roster_uploaded": true,
+ "users": [
+  {
+   "bio": true,
+   "birth_date": null,
+   "email": "",
+   "entity": "",
+   "extras": {},
+   "first_name": "Dora",
+   "id": "1.006",
+   "last_name": "Puntos",
+   "opt_1": "",
+   "phone": "",
+   "role": ""
+  },
+  {
+   "bio": true,
+   "birth_date": null,
+   "email": "ana@acme.com",
+   "entity": "ACME",
+   "extras": {
+    "opcional_1": "Talla M",
+    "opcional_2": "10/03/1990"
+   },
+   "first_name": "Ana",
+   "id": "1001",
+   "last_name": "Mora",
+   "opt_1": "VIP",
+   "phone": "3001112233",
+   "role": "Gerente"
+  },
+  {
+   "bio": true,
+   "birth_date": "1985-05-05",
+   "email": "beto@beta.com",
+   "entity": "Beta SA",
+   "extras": {
+    "opcional_1": "Talla L"
+   },
+   "first_name": "Beto",
+   "id": "1002",
+   "last_name": "Paz",
+   "opt_1": "Invitado",
+   "phone": "3002223344",
+   "role": "Analista"
+  },
+  {
+   "bio": true,
+   "birth_date": null,
+   "email": "",
+   "entity": "",
+   "extras": {},
+   "first_name": "Cata",
+   "id": "1003",
+   "last_name": "Segunda",
+   "opt_1": "",
+   "phone": "",
+   "role": "Directora"
+  },
+  {
+   "bio": true,
+   "birth_date": null,
+   "email": "no-es-correo",
+   "entity": "",
+   "extras": {},
+   "first_name": "",
+   "id": "1005",
+   "last_name": "",
+   "opt_1": "",
+   "phone": "tel-raro",
+   "role": ""
+  },
+  {
+   "bio": true,
+   "birth_date": null,
+   "email": "",
+   "entity": "",
+   "extras": {
+    "opcional_2": "no-es-fecha"
+   },
+   "first_name": "Eli",
+   "id": "1007",
+   "last_name": "Fecha",
+   "opt_1": "",
+   "phone": "",
+   "role": ""
+  },
+  {
+   "bio": true,
+   "birth_date": null,
+   "email": "",
+   "entity": "",
+   "extras": {},
+   "first_name": "Fito",
+   "id": "1008",
+   "last_name": "Previo",
+   "opt_1": "",
+   "phone": "",
+   "role": ""
+  }
+ ]
+}

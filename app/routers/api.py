@@ -1,3 +1,4 @@
+import contextlib
 import os
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
@@ -19,7 +20,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, R
 from fastapi.responses import FileResponse, JSONResponse, Response
 from PIL import UnidentifiedImageError
 from sqlalchemy import func, or_, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PrintLog, StaffUser, BulkJob
@@ -281,6 +282,30 @@ def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, c
         row.certificate = certificate  # ítem 5: ¿le corresponde certificado en este evento?
     if digital_contact is not None:
         row.digital_contact = digital_contact or None  # ítem 17: '' lo borra
+
+
+ROSTER_MAX_ROWS = int(os.getenv("ROSTER_MAX_ROWS", "20000"))      # filas por archivo de la carga masiva
+_BULK_CHUNK = 500             # filas por lote al guardar la carga masiva
+_LOOKUP_CHUNK = 2000          # cédulas por consulta al traer lo que ya existe
+
+
+def _chunks(items: list, size: int):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
+def _upsert_attendee_cached(db: Session, event_id: int, user_id: str, tenant_id: str, cache: dict, created: list, categories: Optional[list] = None, certificate: Optional[bool] = None) -> None:
+    """Igual que `_upsert_attendee`, pero sin consultar la base: la inscripción sale de `cache` (traída de una vez al empezar la carga) y la nueva se agrega a él."""
+    row = cache.get(user_id)
+    if row is None:
+        row = EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id)
+        db.add(row)
+        cache[user_id] = row
+        created.append(user_id)
+    if categories is not None:
+        row.set_categories(categories)
+    if certificate is not None:
+        row.certificate = certificate
 
 
 def _clean_categories(event: Event, raw, auto_add: bool = False) -> list:
@@ -1688,6 +1713,8 @@ def _bulk_register_impl(
         }
 
     header_columns, rows = _read_roster_rows(roster_filename, content)
+    if len(rows) > ROSTER_MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"El archivo tiene {len(rows):,} filas y el máximo es {ROSTER_MAX_ROWS:,} por carga. Divídelo en varios archivos y cárgalos uno tras otro.".replace(",", "."))
     # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
     header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
     # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
@@ -1836,143 +1863,195 @@ def _bulk_register_impl(
 
     count = 0
     birth_bad_rows, birth_kept_rows, birth_completed, birth_replaced = [], [], 0, 0
-    for row_i, info in enumerate(row_infos, start=1):
-        done_units += bulk_jobs.ROW_WEIGHT
-        progress(f"Guardando personas ({row_i} de {len(row_infos)})", done_units, total_units)
-        row_num, clean_row, identificador = info["row_num"], info["clean_row"], info["identificador"]
-        errors.extend(info["notes"])
 
-        if not identificador:
-            where = info["id_cell"] or f"fila {row_num}"
-            errors.append(f"❌ Fila {row_num} ({where}): sin ID/cédula, se omitió esta fila.")
-            continue
+    # --- Rendimiento (23-oct-2026): antes cada persona costaba 9 viajes a la base (≈120 ms con Neon a 12 ms por viaje). Ahora se consulta TODO lo que ya existe de una vez (supresiones,
+    # personas, inscripciones del evento: una consulta por cada 2.000 cédulas) y las filas nuevas se escriben por lotes (un INSERT múltiple por tabla y lote). Las reglas por fila no cambian. ---
+    file_ids = list({i["identificador"] for i in row_infos if i["identificador"]})
+    suppressed_ids, users_by_id, attendees_by_user = set(), {}, {}
+    if file_ids:
+        from app.models import SuppressedPerson
+        hash_by_id = {i: consent_mod.cedula_hash(i) for i in file_ids}
+        id_by_hash = {}
+        for i, h in hash_by_id.items():
+            id_by_hash.setdefault(h, []).append(i)
+        for part in _chunks(list(id_by_hash), _LOOKUP_CHUNK):
+            for (h,) in db.query(SuppressedPerson.cedula_hash).filter(SuppressedPerson.tenant_id == event.tenant_id, SuppressedPerson.cedula_hash.in_(part)):
+                suppressed_ids.update(id_by_hash.get(h, []))
+        for part in _chunks(file_ids, _LOOKUP_CHUNK):
+            for u in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(part)):
+                users_by_id[u.id] = u
+            for att in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(part)):
+                attendees_by_user[att.user_id] = att
+    new_users, new_attendees = [], []
 
-        if privacy.is_suppressed(db, event.tenant_id, identificador):
-            errors.append(f"⚠️ Fila {row_num}: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).")
-            continue
+    for chunk_start in range(0, len(row_infos), _BULK_CHUNK):
+        chunk = list(enumerate(row_infos[chunk_start:chunk_start + _BULK_CHUNK], start=chunk_start + 1))
+        for isolate in (False, True):
+            # Primero se intenta el lote entero en UNA transacción interna; si la base rechaza algo, se deshace SOLO ese lote y se repite fila por fila con un SAVEPOINT cada una
+            # (como siempre): una fila mala se reporta y no arrastra a las demás.
+            snap = (len(errors), count, len(birth_bad_rows), len(birth_kept_rows), birth_completed, birth_replaced, done_units)
+            new_users.clear()
+            new_attendees.clear()
+            try:
+                with (contextlib.nullcontext() if isolate else db.begin_nested()):
+                    for row_i, info in chunk:
+                        done_units += bulk_jobs.ROW_WEIGHT
+                        progress(f"Guardando personas ({row_i} de {len(row_infos)})", done_units, total_units)
+                        row_num, clean_row, identificador = info["row_num"], info["clean_row"], info["identificador"]
+                        errors.extend(info["notes"])
 
-        if identificador in carried_ids:
-            # Ítem 18: un ID repetido entre el evento anterior y el Excel queda como UN solo registro,
-            # y prevalece el dato del evento anterior — no se toca a la persona que ya existe.
-            errors.append(f"ℹ️ Fila {row_num}: la cédula '{identificador}' ya venía del evento anterior — se conservaron sus datos del evento anterior (no se duplicó).")
-            continue
+                        if not identificador:
+                            where = info["id_cell"] or f"fila {row_num}"
+                            errors.append(f"❌ Fila {row_num} ({where}): sin ID/cédula, se omitió esta fila.")
+                            continue
 
-        # Validaciones de calidad de dato — no bloquean la fila (se guarda igual), solo avisan
-        # exactamente en qué celda está el problema para que el operador lo revise si quiere.
-        nombres, nombres_cell = _field_lookup(clean_row, header_columns, row_num, 'nombres', 'nombre')
-        if not nombres:
-            errors.append(f"⚠️ Fila {row_num} ({nombres_cell or 'sin columna de nombres'}): falta el nombre.")
-        apellidos, apellidos_cell = _field_lookup(clean_row, header_columns, row_num, 'apellidos', 'apellido')
-        if not apellidos:
-            errors.append(f"⚠️ Fila {row_num} ({apellidos_cell or 'sin columna de apellidos'}): falta el apellido.")
-        correo, correo_cell = _field_lookup(clean_row, header_columns, row_num, 'correo', 'e-mail corporativo')
-        if correo and not _EMAIL_RE.match(correo):
-            errors.append(f"⚠️ Fila {row_num} ({correo_cell}): el correo '{correo}' no parece válido — se guardó igual, revísalo.")
-        telefono, telefono_cell = _field_lookup(clean_row, header_columns, row_num, 'telefono', 'tel. celular')
-        if telefono and not _PHONE_RE.match(telefono):
-            errors.append(f"⚠️ Fila {row_num} ({telefono_cell}): el teléfono '{telefono}' tiene caracteres raros — se guardó igual, revísalo.")
+                        if identificador in suppressed_ids:
+                            errors.append(f"⚠️ Fila {row_num}: esta persona solicitó la supresión de sus datos — se omitió (no se volvió a crear).")
+                            continue
 
-        try:
-            face_enc_json = None
-            if str(identificador) in zip_encodings:
-                face_enc_json = json.dumps(zip_encodings[str(identificador)])
-            elif precalc:
-                img_key = photo_key(event.tenant_id, f"{identificador}")
-                if get_storage().exists(img_key):
-                    stored = crypto.read_array(img_key)          # la foto guardada puede estar cifrada
-                    enc = faces.extract(stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
-                    if enc:
-                        face_enc_json = json.dumps(enc)
-            # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
-            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "") if birth_used else ""
-            birth = minors.parse_birth(birth_raw)
-            if birth_raw and birth is None:
-                errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD, DD/MM/AAAA o una fecha de Excel).")
-                birth_bad_rows.append(row_num)
-            # Una persona que ya tenía una fecha válida distinta NO la pierde por una recarga (salvo que el coordinador marque «reemplazar»): manda la guardada. Quien no tenía fecha, la completa.
-            stored_birth = db.query(User.birth_date).filter(User.id == identificador, User.tenant_id == event.tenant_id).scalar()
-            birth_action = ""
-            if birth is not None and stored_birth is not None and stored_birth != birth:
-                if overwrite_birth:
-                    birth_action = "replaced"
-                else:
-                    birth_action = "kept"
-                    birth_kept_rows.append(row_num)
-                    errors.append(f"⚠️ Fila {row_num}: ya tenía una fecha de nacimiento guardada distinta a la del archivo; no se cambió (marca «{OVERWRITE_BIRTH_LABEL}» si quieres cambiarla).")
-                    birth = stored_birth
-            elif birth is not None and stored_birth is None:
-                birth_action = "completed"
-            row_minor = minors.is_minor(birth)
-            has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
-            if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
-                face_enc_json = None
-                has_photo = False
-                get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
-                errors.append(f"⚠️ Fila {row_num}: " + ("es menor de 18 años: no se guardó su rostro (solo cédula o QR)." if row_minor else "tiene foto pero no fecha de nacimiento: no se guardó su rostro (solo se capta el rostro de mayores de 18 años)."))
+                        if identificador in carried_ids:
+                            # Ítem 18: un ID repetido entre el evento anterior y el Excel queda como UN solo registro,
+                            # y prevalece el dato del evento anterior — no se toca a la persona que ya existe.
+                            errors.append(f"ℹ️ Fila {row_num}: la cédula '{identificador}' ya venía del evento anterior — se conservaron sus datos del evento anterior (no se duplicó).")
+                            continue
 
-            # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
-            # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
-            # transacción completa "abortada" para Postgres, y el error solo aparecía hasta el
-            # db.commit() final — tumbando TODA la carga con un 500, incluidas las filas que sí
-            # habían "funcionado" en Python pero nunca llegaron a guardarse. Con begin_nested(),
-            # si esta fila falla se revierte solo su savepoint (la transacción de afuera sigue
-            # sana) y el flush() intermedio asegura que el INSERT de User ya se mandó a Postgres
-            # antes del de EventAttendee (que depende de él por llave foránea).
-            with db.begin_nested():
-                user = db.query(User).filter(User.id == identificador, User.tenant_id == event.tenant_id).first()
-                if not user:
-                    user = User(id=identificador, tenant_id=event.tenant_id)
-                    db.add(user)
+                        # Validaciones de calidad de dato — no bloquean la fila (se guarda igual), solo avisan
+                        # exactamente en qué celda está el problema para que el operador lo revise si quiere.
+                        nombres, nombres_cell = _field_lookup(clean_row, header_columns, row_num, 'nombres', 'nombre')
+                        if not nombres:
+                            errors.append(f"⚠️ Fila {row_num} ({nombres_cell or 'sin columna de nombres'}): falta el nombre.")
+                        apellidos, apellidos_cell = _field_lookup(clean_row, header_columns, row_num, 'apellidos', 'apellido')
+                        if not apellidos:
+                            errors.append(f"⚠️ Fila {row_num} ({apellidos_cell or 'sin columna de apellidos'}): falta el apellido.")
+                        correo, correo_cell = _field_lookup(clean_row, header_columns, row_num, 'correo', 'e-mail corporativo')
+                        if correo and not _EMAIL_RE.match(correo):
+                            errors.append(f"⚠️ Fila {row_num} ({correo_cell}): el correo '{correo}' no parece válido — se guardó igual, revísalo.")
+                        telefono, telefono_cell = _field_lookup(clean_row, header_columns, row_num, 'telefono', 'tel. celular')
+                        if telefono and not _PHONE_RE.match(telefono):
+                            errors.append(f"⚠️ Fila {row_num} ({telefono_cell}): el teléfono '{telefono}' tiene caracteres raros — se guardó igual, revísalo.")
 
-                user.first_name = nombres
-                user.last_name = apellidos
-                user.role = clean_row.get('cargo', '')
-                user.entity = clean_row.get('entidad', '') or clean_row.get('empresa', '')  # 'empresa' = columna del nombre viejo, sigue aceptándose en Excels ya armados
-                user.phone = telefono
-                user.email = correo
-                user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
-                if birth is not None and birth_action != "kept":
-                    if birth_action == "replaced":
-                        db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id if staff else None, kind="birth_date",
-                                            old_value=stored_birth.isoformat(), new_value=birth.isoformat(), detail="reemplazada por una recarga de la base"))
-                        birth_replaced += 1
-                    elif birth_action == "completed":
-                        birth_completed += 1
-                    user.birth_date = birth
-                    user.is_biometric_enabled = not row_minor
-                    if row_minor:
-                        user.face_encoding = None
-                if has_photo and not face_enc_json and user.face_captured_at is None:
-                    user.face_captured_at = utcnow()          # foto guardada sin vector: el reloj de retención (7 días / tope de 180) corre igual
+                        try:
+                            face_enc_json = None
+                            if str(identificador) in zip_encodings:
+                                face_enc_json = json.dumps(zip_encodings[str(identificador)])
+                            elif precalc:
+                                img_key = photo_key(event.tenant_id, f"{identificador}")
+                                if get_storage().exists(img_key):
+                                    stored = crypto.read_array(img_key)          # la foto guardada puede estar cifrada
+                                    enc = faces.extract(stored, jitters=BiometricEngine.BULK_JITTERS, max_side=BiometricEngine.BULK_MAX_SIDE) if stored is not None else None
+                                    if enc:
+                                        face_enc_json = json.dumps(enc)
+                            # Menores (L3): la fecha de nacimiento (columna opcional «fecha de nacimiento») decide. Menor de 18 → sin vector ni foto y sin biometría; sin fecha, el rostro no se conserva.
+                            birth_raw = next((clean_row[k] for k in _BIRTH_KEYS if clean_row.get(k)), "") if birth_used else ""
+                            birth = minors.parse_birth(birth_raw)
+                            if birth_raw and birth is None:
+                                errors.append(f"⚠️ Fila {row_num}: la fecha de nacimiento '{birth_raw}' no es válida (usa AAAA-MM-DD, DD/MM/AAAA o una fecha de Excel).")
+                                birth_bad_rows.append(row_num)
+                            # Una persona que ya tenía una fecha válida distinta NO la pierde por una recarga (salvo que el coordinador marque «reemplazar»): manda la guardada. Quien no tenía fecha, la completa.
+                            known_user = users_by_id.get(identificador)
+                            stored_birth = known_user.birth_date if known_user is not None else None
+                            birth_action = ""
+                            if birth is not None and stored_birth is not None and stored_birth != birth:
+                                if overwrite_birth:
+                                    birth_action = "replaced"
+                                else:
+                                    birth_action = "kept"
+                                    birth_kept_rows.append(row_num)
+                                    errors.append(f"⚠️ Fila {row_num}: ya tenía una fecha de nacimiento guardada distinta a la del archivo; no se cambió (marca «{OVERWRITE_BIRTH_LABEL}» si quieres cambiarla).")
+                                    birth = stored_birth
+                            elif birth is not None and stored_birth is None:
+                                birth_action = "completed"
+                            row_minor = minors.is_minor(birth)
+                            has_photo = str(identificador) in zip_photos or get_storage().exists(photo_key(event.tenant_id, f"{identificador}"))
+                            if birth_used and (face_enc_json or has_photo) and (row_minor or birth is None):
+                                face_enc_json = None
+                                has_photo = False
+                                get_storage().delete(photo_key(event.tenant_id, f"{identificador}"))
+                                errors.append(f"⚠️ Fila {row_num}: " + ("es menor de 18 años: no se guardó su rostro (solo cédula o QR)." if row_minor else "tiene foto pero no fecha de nacimiento: no se guardó su rostro (solo se capta el rostro de mayores de 18 años)."))
 
-                extras = {}
-                for raw_key, value in clean_row.items():
-                    norm = _normalize_optional_key(raw_key)
-                    val = (value or "").strip()
-                    if norm and val:
-                        extras[norm] = val
-                user.set_extras(extras)
+                            # SAVEPOINT por fila (no solo un try/except de Python): con autoflush=False, una sola
+                            # fila con un problema real de base de datos (ej. una violación de llave) dejaba la
+                            # transacción completa "abortada" para Postgres, y el error solo aparecía hasta el
+                            # db.commit() final — tumbando TODA la carga con un 500, incluidas las filas que sí
+                            # habían "funcionado" en Python pero nunca llegaron a guardarse. Con begin_nested(),
+                            # si esta fila falla se revierte solo su savepoint (la transacción de afuera sigue
+                            # sana) y el flush() intermedio asegura que el INSERT de User ya se mandó a Postgres
+                            # antes del de EventAttendee (que depende de él por llave foránea).
+                            with (db.begin_nested() if isolate else contextlib.nullcontext()):
+                                user = users_by_id.get(identificador)
+                                if not user:
+                                    user = User(id=identificador, tenant_id=event.tenant_id)
+                                    db.add(user)
+                                    users_by_id[identificador] = user
+                                    new_users.append(identificador)
 
-                if face_enc_json:
-                    user.face_encoding = face_enc_json
-                    user.biometric_consent_at, user.biometric_consent_source = utcnow(), "carga_masiva"
+                                user.first_name = nombres
+                                user.last_name = apellidos
+                                user.role = clean_row.get('cargo', '')
+                                user.entity = clean_row.get('entidad', '') or clean_row.get('empresa', '')  # 'empresa' = columna del nombre viejo, sigue aceptándose en Excels ya armados
+                                user.phone = telefono
+                                user.email = correo
+                                user.opt_1 = clean_row.get('tipo de asistente', '') or clean_row.get('tipo_asistente', '')
+                                if birth is not None and birth_action != "kept":
+                                    if birth_action == "replaced":
+                                        db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id if staff else None, kind="birth_date",
+                                                            old_value=stored_birth.isoformat(), new_value=birth.isoformat(), detail="reemplazada por una recarga de la base"))
+                                        birth_replaced += 1
+                                    elif birth_action == "completed":
+                                        birth_completed += 1
+                                    user.birth_date = birth
+                                    user.is_biometric_enabled = not row_minor
+                                    if row_minor:
+                                        user.face_encoding = None
+                                if has_photo and not face_enc_json and user.face_captured_at is None:
+                                    user.face_captured_at = utcnow()          # foto guardada sin vector: el reloj de retención (7 días / tope de 180) corre igual
 
-                db.flush()
-                # Categorías (ítem 14): columna "categoria"/"categorias" (con o sin tilde), varias
-                # separadas por coma/;/|. Las que el evento no conocía se agregan solas.
-                raw_categories = next((clean_row[k] for k in ("categoria", "categorias", "categoría", "categorías") if clean_row.get(k)), None)
-                raw_certificate = clean_row.get('certificado')
-                _upsert_attendee(
-                    db, event.id, identificador, event.tenant_id,
-                    _clean_categories(event, raw_categories, auto_add=True) if raw_categories else None,
-                    certificate=_truthy(raw_certificate) if raw_certificate else None,
-                )
-                db.flush()
+                                extras = {}
+                                for raw_key, value in clean_row.items():
+                                    norm = _normalize_optional_key(raw_key)
+                                    val = (value or "").strip()
+                                    if norm and val:
+                                        extras[norm] = val
+                                user.set_extras(extras)
 
-            count += 1
-        except Exception as e:
-            where = info["id_cell"] or f"fila {row_num}"
-            errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {e}")
+                                if face_enc_json:
+                                    user.face_encoding = face_enc_json
+                                    user.biometric_consent_at, user.biometric_consent_source = utcnow(), "carga_masiva"
+
+                                if isolate:
+                                    db.flush()           # el User ya existe en la base antes que su inscripción (lo que antes hacía cada fila; por lotes se hace al cerrar el lote)
+                                # Categorías (ítem 14): columna "categoria"/"categorias" (con o sin tilde), varias
+                                # separadas por coma/;/|. Las que el evento no conocía se agregan solas.
+                                raw_categories = next((clean_row[k] for k in ("categoria", "categorias", "categoría", "categorías") if clean_row.get(k)), None)
+                                raw_certificate = clean_row.get('certificado')
+                                _upsert_attendee_cached(
+                                    db, event.id, identificador, event.tenant_id, attendees_by_user, new_attendees,
+                                    _clean_categories(event, raw_categories, auto_add=True) if raw_categories else None,
+                                    certificate=_truthy(raw_certificate) if raw_certificate else None,
+                                )
+                                if isolate:
+                                    db.flush()
+
+                            count += 1
+                        except Exception as e:
+                            where = info["id_cell"] or f"fila {row_num}"
+                            errors.append(f"❌ Fila {row_num} ({where}): no se pudo guardar — {e}")
+
+                    if not isolate:
+                        db.flush()
+                break
+            except SQLAlchemyError:
+                if isolate:
+                    raise
+                for uid in new_users:
+                    users_by_id.pop(uid, None)
+                for uid in new_attendees:
+                    attendees_by_user.pop(uid, None)
+                del errors[snap[0]:]
+                del birth_bad_rows[snap[2]:]
+                del birth_kept_rows[snap[3]:]
+                count, birth_completed, birth_replaced, done_units = snap[1], snap[4], snap[5], snap[6]
+                log.warning("carga masiva: un lote fue rechazado por la base; se repite fila por fila")
 
     if (count > 0 or carried_ids) and not event.roster_uploaded:
         event.roster_uploaded = True
