@@ -68,13 +68,15 @@ Object.defineProperty(global, 'navigator', { configurable: true, value: { userAg
 const REGISTERED = new Set(['1001']);
 let mode = 'self';
 const jobs = [];
+const reqIds = [];
+let flaky = false;
 const json = (status, data) => ({ ok: status >= 200 && status < 300, status, json: async () => data });
 global.fetch = async (url, init = {}) => {
   const u = new URL(url, 'http://x');
   if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode, printer_name: mode === 'shared' ? 'dig1' : '', printer_ready: true, serving: 0, poll: false });
   let m = u.pathname.match(/\/print-check\/(.+)$/);
   if (m) return json(200, REGISTERED.has(m[1]) ? { registered: true } : { registered: false, detail: `No se puede imprimir: Persona ${m[1]} aún no está registrado. Acredítalo o guarda su registro primero.` });
-  if (u.pathname.endsWith('/print-jobs') && init.method === 'POST') { const b = JSON.parse(init.body); jobs.push(b.user_id); return json(200, { id: jobs.length, status: 'queued', printer_name: 'dig1', printer_ready: true }); }
+  if (u.pathname.endsWith('/print-jobs') && init.method === 'POST') { const b = JSON.parse(init.body); reqIds.push(b.request_id); if (flaky && reqIds.length === 1) throw new TypeError('Failed to fetch'); jobs.push(b.user_id); return json(200, { id: jobs.length, status: 'queued', printer_name: 'dig1', printer_ready: true }); }
   if (/\/print-jobs\/\d+$/.test(u.pathname)) return json(200, { status: 'printed', printer_name: 'dig1' });
   if (u.pathname.endsWith('/print-count')) return json(200, { times_printed: 0 });
   if (u.pathname.endsWith('/print-log')) return json(200, {});
@@ -117,6 +119,13 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   await new Promise((r) => setTimeout(r, 1300));
   assert.deepStrictEqual(jobs, ['1002']);
   assert.ok(toasts.some((t) => t.m === '✅ Impreso en dig1.'), 'X ve «Impreso en dig1»');
+  // red intermitente: el primer pedido se pierde y se reintenta con el MISMO request_id (el servidor lo deduplica): un solo trabajo
+  REGISTERED.add('1009'); flaky = true; reqIds.length = 0; jobs.length = 0;
+  await GoldenSharedPrint.printFor('1009', false, true);
+  flaky = false;
+  assert.strictEqual(reqIds.length, 2, 'se reintentó una vez');
+  assert.strictEqual(reqIds[0], reqIds[1], 'con el mismo identificador de solicitud');
+  assert.deepStrictEqual(jobs, ['1009'], 'y se creó un solo trabajo');
   mode = 'self'; for (const f of docListeners.bubble.visibilitychange || []) f(new Ev('visibilitychange')); await settle();
 
   // ---- 2) Enter del teclado en pantalla
