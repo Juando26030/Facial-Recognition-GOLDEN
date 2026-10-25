@@ -87,31 +87,67 @@ const vieja = { id: "v", type: "qr", x: 4, y: 4, width: 22, height: 22 };
 assert.deepStrictEqual(G.bounds(vieja), G.bounds(Object.assign({ rotation: 0 }, vieja)));
 assert.strictEqual(G.isOutside(vieja, 62, 100), false);
 
-// ---- vertical ↔ horizontal: el lienzo cambia, los elementos giran con él, ida y vuelta devuelve lo mismo
-const diseno = tpl([el("n", 5, 8, 50, 12, 0), el("q", 38, 70, 22, 22, 0), el("f", 5, 25, 25, 30, 0), el("r", 10, 60, 20, 10, 30)]);
-const h = G.convertOrientation(diseno, true);
-assert.strictEqual(h.width_mm, 100); assert.strictEqual(h.height_mm, 62); assert.strictEqual(h.orientation, "horizontal");
-const hn = h.elements.find((e) => e.id === "n");
-near(hn.x, 8); near(hn.y, 62 - 5 - 50); near(hn.width, 12); near(hn.height, 50);            // x' = y, y' = W − x − w, w' = h, h' = w
+// ---- vertical ↔ horizontal (25-oct-2026): reubicar por PROPORCIÓN, sin intercambiar ancho y alto de las cajas; nada fuera, nada encima, ningún texto cortado; ida y vuelta exacta
+global.window = undefined;
+const R = require("../../static/js/badge-render.js");                              // el MISMO ajuste de texto que se dibuja e imprime (en node mide con un ancho aproximado)
+const LARGO = { first_name: "JUAN SEBASTIAN", last_name: "GARITA ROJAS", entity: "EMPRESA DENOMINADA INVERSIONES Y SERVICIOS DEL ORIENTE S.A.S.", id: "1020304050" };
+const measure = (e, w) => R.textHeightMm(e, w, LARGO);
+const txt = (id, variable, x, y, w, h, size) => ({ id, type: "text_variable", variable, x, y, width: w, height: h, font_size: size || 14, font_family: "Roboto", font_weight: "bold", align: "center", rotation: 0 });
+const ejemplo = { width_mm: 58.9, height_mm: 100, elements: [
+  txt("n", "first_name", 4, 6, 50.9, 10, 16), txt("a", "last_name", 4, 18, 50.9, 10, 16), txt("e", "entity", 4, 30, 50.9, 12, 11),
+  { id: "f", type: "image_variable", x: 17, y: 45, width: 25, height: 30, rotation: 0 }, { id: "q", type: "qr", x: 19.45, y: 78, width: 20, height: 20, rotation: 0 }] };
+const PXMM = 96 / 25.4, PXPT = 96 / 72;
+function revisar(t, nombre, ref) {
+  const W = t.width_mm, H = t.height_mm, els = t.elements;
+  els.forEach((e) => assert.ok(!G.isOutside(e, W, H), `${nombre}: ${e.id} fuera de la etiqueta`));
+  for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+    const a = G.bounds(els[i]), b = G.bounds(els[j]);
+    assert.ok(!(a.left < b.right - 0.01 && b.left < a.right - 0.01 && a.top < b.bottom - 0.01 && b.top < a.bottom - 0.01), `${nombre}: ${els[i].id} encima de ${els[j].id}`);
+  }
+  els.filter((e) => e.type === "text_variable").forEach((e) => {
+    const fit = R.fitText(LARGO[e.variable], e.width * PXMM, e.height * PXMM, e.font_size * PXPT, (s, px) => s.length * px * 0.6);
+    assert.ok(!fit.truncated, `${nombre}: el texto ${e.id} se cortaría (${fit.lines.join(" / ")})`);
+    assert.ok(e.width >= e.height, `${nombre}: la caja de ${e.id} quedó alta y angosta (${e.width} × ${e.height})`);
+  });
+  els.filter((e) => e.type === "qr" || e.type === "image_variable").forEach((e) => {
+    const o = (ref || ejemplo).elements.find((x) => x.id === e.id);
+    assert.ok(Math.abs(e.width / e.height - o.width / o.height) < 2e-3, `${nombre}: ${e.id} se deformó`);       // (milésimas de mm por redondeo)
+  });
+}
+revisar(ejemplo, "original");
+const h = G.convertOrientation(ejemplo, true, { acrossMm: 58.9, measure });
+assert.strictEqual(h.width_mm, 100); assert.strictEqual(h.height_mm, 58.9); assert.strictEqual(h.orientation, "horizontal"); assert.strictEqual(h.restored, false);
 assert.deepStrictEqual(h.doesNotFit, []);
-assert.ok(h.elements.every((e) => !G.isOutside(e, 100, 62)));
-const v = G.convertOrientation(h, false);
-assert.strictEqual(v.width_mm, 62); assert.strictEqual(v.height_mm, 100); assert.strictEqual(v.orientation, "vertical");
-diseno.elements.forEach((o) => { const back = v.elements.find((e) => e.id === o.id); ["x", "y", "width", "height", "rotation"].forEach((k) => near(back[k], o[k], `${o.id}.${k}`)); });
-// lo que no cabe se avisa: en horizontal 100×62 un elemento de 20×70 (más alto que la etiqueta) no cabe al pasar a vertical 62×100 con ancho 70
-const noCabe = G.convertOrientation({ width_mm: 100, height_mm: 62, elements: [el("y", 0, 0, 20, 70, 0)] }, false);
-assert.deepStrictEqual(noCabe.doesNotFit, ["y"]);
-// el elemento que quedaba medio afuera se mete en la etiqueta cuando cabe
-const borde = G.convertOrientation(tpl([el("b", 55, 90, 10, 10, 0)]), true);
-assert.ok(borde.elements[0].x >= 0 && !G.isOutside(borde.elements[0], 100, 62));
+revisar(h, "horizontal");
+const v = G.convertOrientation(h, false, { acrossMm: 58.9, measure });
+assert.strictEqual(v.width_mm, 58.9); assert.strictEqual(v.height_mm, 100); assert.strictEqual(v.restored, true);
+ejemplo.elements.forEach((o) => { const back = v.elements.find((e) => e.id === o.id); ["x", "y", "width", "height", "rotation"].forEach((k) => near(back[k], o[k], `ida y vuelta ${o.id}.${k}`)); });
+revisar(v, "vuelta a vertical");
+const h2 = G.convertOrientation(v, true, { acrossMm: 58.9, measure });                 // y otra vez: lo que tenía en horizontal
+h.elements.forEach((o) => { const e = h2.elements.find((x) => x.id === o.id); ["x", "y", "width", "height"].forEach((k) => near(e[k], o[k], `segunda ida ${o.id}.${k}`)); });
+// un diseño HECHO en horizontal (sin nada recordado) pasado a vertical
+const horizontal = { width_mm: 100, height_mm: 58.9, elements: [
+  txt("n", "first_name", 4, 5, 62, 10, 18), txt("a", "last_name", 4, 17, 62, 10, 18), txt("e", "entity", 4, 30, 62, 12, 11),
+  { id: "q", type: "qr", x: 72, y: 8, width: 22, height: 22, rotation: 0 }, { id: "f", type: "image_variable", x: 74, y: 32, width: 18, height: 22, rotation: 0 }] };
+const hv = G.convertOrientation(horizontal, false, { acrossMm: 58.9, measure });
+assert.strictEqual(hv.width_mm, 58.9); assert.strictEqual(hv.height_mm, 100);
+revisar(hv, "horizontal → vertical", horizontal);
+// lo centrado sigue centrado
+const centrado = G.convertOrientation({ width_mm: 58.9, height_mm: 100, elements: [txt("c", "first_name", 9.45, 40, 40, 10, 12)] }, true, { acrossMm: 58.9, measure });
+near(centrado.elements[0].x + centrado.elements[0].width / 2, 50, "el texto centrado sigue centrado");
+// «Ajustar a la cinta»: 100 × 65,5 → 100 × 58,9, nada fuera ni encima
+const ancho = Object.assign({}, h, { height_mm: 65.5, elements: h.elements.map((e) => Object.assign({}, e, { y: e.y * 65.5 / 58.9 })) });
+const fit = G.fitToTape(ancho, 58.9, { measure });
+assert.strictEqual(fit.width_mm, 100); assert.strictEqual(fit.height_mm, 58.9);
+revisar(fit, "ajustar a la cinta");
 // los datos originales no se modifican (el «Deshacer» depende de eso)
-assert.strictEqual(diseno.elements[0].x, 5);
+assert.strictEqual(ejemplo.elements[0].x, 4); assert.ok(!ejemplo.elements[0].layouts);
 
-// ---- no se gira dos veces: la rotación automática de la impresora decide por la forma (apaisado = 90°, vertical = 0°) y en ambos casos lo ancho de la etiqueta queda a lo ancho de la cinta
+// ---- no se gira dos veces y no se encoge: la impresora decide el giro por la forma (apaisado = 90°, vertical = 0°) y lo ancho de la cinta es exactamente lo imprimible
 const QL = require("../../static/js/ql-usb.js");
 const prefs = Object.assign({}, QL.PREF_DEFAULTS, { rotation: "auto" });
 const lv = QL.layout(prefs, v.width_mm, v.height_mm), lh = QL.layout(prefs, h.width_mm, h.height_mm);
 assert.strictEqual(lv.rotation, 0); assert.strictEqual(lh.rotation, 90);
-assert.strictEqual(lv.acrossMm, 62); assert.strictEqual(lh.acrossMm, 62); assert.strictEqual(lv.alongMm, 100); assert.strictEqual(lh.alongMm, 100);
+assert.strictEqual(lv.acrossMm, 58.9); assert.strictEqual(lh.acrossMm, 58.9); assert.strictEqual(lv.tooWide, false); assert.strictEqual(lh.tooWide, false);
 
 console.log("badge_geometry_check ok");

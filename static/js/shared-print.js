@@ -188,7 +188,9 @@
       BadgeRender.renderBadge(holder, template, data, { eventId: EID });
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       await Promise.all(Array.from(holder.querySelectorAll('img')).map((img) => (img.decode ? img.decode().catch(() => {}) : null)));
-      return await html2canvas(holder, { scale: (template.width_mm * DPM) / holder.offsetWidth * (holderScale || 1), useCORS: true, backgroundColor: '#ffffff', logging: false });
+      // con el ancho REAL (con decimales) de la caja: offsetWidth redondea a px enteros y la etiqueta salía 2-3 puntos más ancha y estirada (25-oct-2026)
+      const box = holder.getBoundingClientRect();
+      return await html2canvas(holder, { width: box.width, height: box.height, scale: (template.width_mm * DPM) / box.width * (holderScale || 1), useCORS: true, backgroundColor: '#ffffff', logging: false });
     } finally {
       holder.remove();
     }
@@ -592,7 +594,8 @@
     document.body.appendChild(panel);
   }
 
-  /* Etiqueta de prueba: horizontal (80×50 mm), asimétrica a propósito: la barra negra a la izquierda y la flecha muestran el giro, el espejo y el recorte. */
+  /* Etiqueta de prueba: horizontal (80×50 mm), asimétrica a propósito: la barra negra a la izquierda y la flecha muestran el giro, el espejo y el recorte.
+     25-oct-2026: un marco fino JUSTO en el borde y una cruz en el centro: si se pierde un borde o el centro sale corrido, se ve en la etiqueta impresa. */
   function testJob() {
     const r = resolved(), p = r.prefs;
     const W = 80, H = 50;
@@ -601,7 +604,9 @@
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 30, canvas.height);
-    ctx.lineWidth = 4; ctx.strokeRect(36, 4, canvas.width - 40, canvas.height - 8);
+    ctx.lineWidth = 4; ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);                       // marco en el borde de la plantilla
+    const cx = canvas.width / 2, cy = canvas.height / 2, arm = Math.round(8 * DPM);                     // cruz de 16 mm en el centro
+    ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy); ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm); ctx.stroke();
     ctx.font = 'bold 56px sans-serif'; ctx.textBaseline = 'top'; ctx.fillText('PRUEBA →', 60, 24);
     ctx.font = '30px sans-serif'; ctx.fillText(`cinta ${p.tapeWidth} mm · corte ${p.cut ? 'sí' : 'no'}`, 60, 110); ctx.fillText(`margen ${p.feedMm} mm · giro ${p.rotation}`, 60, 150);
     const out = composeJob(canvas, W, H, p);

@@ -105,27 +105,127 @@
     return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
   }
 
-  /* Vertical ↔ horizontal. La etiqueta pasa de W×H a H×W y cada elemento GIRA con ella 270° (sentido horario) — su posición y su tamaño — pero su contenido queda derecho (se edita siempre derecho).
-     Al imprimir, la rotación automática de la impresora (ql-usb.js `layout`: lo apaisado se gira 90°) lo deja a lo largo de la cinta: NO se gira aquí una segunda vez.
-     Vertical → horizontal: x' = y, y' = W − x − w, w' = h, h' = w.   Horizontal → vertical es la inversa exacta (ida y vuelta devuelve las mismas posiciones). */
-  function convertOrientation(template, toHorizontal) {
-    const W = template.width_mm, H = template.height_mm;
-    const nw = H, nh = W;
-    const elements = (template.elements || []).map((o) => {
-      const e = Object.assign({}, o);
-      const x = Number(o.x) || 0, y = Number(o.y) || 0, w = Number(o.width) || 0, h = Number(o.height) || 0;
-      if (toHorizontal) { e.x = y; e.y = W - x - w; } else { e.x = H - y - h; e.y = x; }
-      e.width = h; e.height = w;
-      // lo que cabe pero quedó medio fuera, se mete; lo que es más grande que la etiqueta se deja (se avisa)
-      const b = bounds(e);
-      if (b.width <= nw + EPS) { if (b.left < 0) e.x -= b.left; else if (b.right > nw) e.x -= b.right - nw; }
-      if (b.height <= nh + EPS) { if (b.top < 0) e.y -= b.top; else if (b.bottom > nh) e.y -= b.bottom - nh; }
-      e.x = round(e.x, 3); e.y = round(e.y, 3);
-      return e;
-    });
-    const doesNotFit = elements.filter((e) => isOutside(e, nw, nh)).map((e) => e.id);
-    return { width_mm: nw, height_mm: nh, orientation: toHorizontal ? 'horizontal' : 'vertical', elements, doesNotFit };
+  /* ---------- Vertical ↔ horizontal y «Ajustar a la cinta» (25-oct-2026: la versión anterior intercambiaba ancho y alto de cada caja y los textos quedaban altos y angostos) ----------
+     Cada elemento se REUBICA POR PROPORCIÓN: su centro y su ancho se escalan según la relación entre el lienzo viejo y el nuevo (lo centrado sigue centrado); el alto de un texto se
+     recalcula según su contenido (`measure(el, anchoMm)`, en el editor con el mismo ajuste de texto que se imprime); fotos, QR y códigos conservan su proporción y solo se achican
+     si no caben. Después se corrige lo que quede superpuesto (se baja) y, si aun así algo se sale, se reacomoda en una o dos columnas.
+     Cada orientación RECUERDA cómo quedó (`el.layouts`): ida y vuelta sin tocar nada devuelve exactamente el diseño original.
+     No se gira nada aquí: al imprimir, la rotación automática (ql-usb.js `layout`: lo apaisado se gira 90°) pone lo horizontal a lo largo de la cinta. */
+  const MARGIN = 2, GAP = 1;
+  const isText = (e) => e.type === 'text_static' || e.type === 'text_variable';
+  const r3 = (n) => round(n, 3);
+  const overlaps = (a, b) => a.left < b.right - EPS && b.left < a.right - EPS && a.top < b.bottom - EPS && b.top < a.bottom - EPS;
+
+  function placeCenter(e, cx, cy) { e.x = r3(cx - e.width / 2); e.y = r3(cy - e.height / 2); }
+  function clampInside(e, W, H) {
+    const b = bounds(e);
+    if (b.width <= W + EPS) { if (b.left < 0) e.x -= b.left; else if (b.right > W) e.x -= b.right - W; }
+    if (b.height <= H + EPS) { if (b.top < 0) e.y -= b.top; else if (b.bottom > H) e.y -= b.bottom - H; }
+    e.x = r3(e.x); e.y = r3(e.y);
   }
 
-  return { bounds, isOutside, targets, snapMove, snapPoint, snapAxis, align, snapAngle, angleFromPointer, resizeRotated, convertOrientation, normAngle, EPS };
+  function proportional(o, W, H, nW, nH, measure) {
+    const e = Object.assign({}, o);
+    const sx = nW / W, sy = nH / H;
+    const cx = (o.x + o.width / 2) * sx, cy = (o.y + o.height / 2) * sy;
+    if (isText(o)) {
+      e.width = Math.min(nW, o.width * sx);
+      const need = measure ? measure(e, e.width) : 0;
+      e.height = Math.min(nH, Math.max(need, Math.min(o.height, o.height * sy)));
+    } else {
+      let s = Math.min(1, Math.sqrt(sx * sy));                                // misma superficie de lienzo = mismo tamaño; nunca se agranda
+      s = Math.min(s, nW / o.width, nH / o.height);
+      e.width = o.width * s; e.height = o.height * s;
+    }
+    e.width = r3(e.width); e.height = r3(e.height);
+    placeCenter(e, cx, cy);
+    clampInside(e, nW, nH);
+    return e;
+  }
+
+  /* Lo que quede encima de otro baja hasta debajo (de arriba a abajo). Devuelve si todo quedó dentro. */
+  function unstack(list, H) {
+    const placed = [];
+    list.slice().sort((a, b) => bounds(a).top - bounds(b).top || bounds(a).left - bounds(b).left).forEach((e) => {
+      for (let guard = 0; guard < list.length + 1; guard++) {
+        const be = bounds(e);
+        const hit = placed.find((p) => overlaps(be, bounds(p)));
+        if (!hit) break;
+        e.y = r3(e.y + (bounds(hit).bottom + GAP - be.top));
+      }
+      placed.push(e);
+    });
+    return list.every((e) => bounds(e).bottom <= H + EPS);
+  }
+
+  /* Si al bajar algo se sale: textos apilados en una columna y, en una etiqueta apaisada, fotos/QR/códigos en una columna a la derecha. Lo que no alcanza se achica parejo. */
+  function columns(list, nW, nH, measure) {
+    const order = list.slice().sort((a, b) => bounds(a).top - bounds(b).top);
+    const texts = order.filter(isText), media = order.filter((e) => !isText(e));
+    const side = nW > nH && media.length && texts.length;
+    const colW = side ? Math.min(nW * 0.4, Math.max(...media.map((e) => e.width))) : 0;
+    const avail = nH - 2 * MARGIN;
+    const stack = (items, x0, width) => {
+      const heights = items.map((e) => e.height);
+      const total = heights.reduce((a, h) => a + h, 0) + GAP * Math.max(0, items.length - 1);
+      const f = total > avail ? (avail - GAP * Math.max(0, items.length - 1)) / heights.reduce((a, h) => a + h, 0) : 1;
+      let y = MARGIN;
+      items.forEach((e) => {
+        if (isText(e)) { e.width = r3(width); e.height = r3(Math.max(2, (measure ? Math.max(measure(e, e.width), e.height) : e.height) * f)); }
+        else { const s = Math.min(f, width / e.width); e.width = r3(e.width * s); e.height = r3(e.height * s); }
+        placeCenter(e, x0 + width / 2, y + e.height / 2);
+        y += e.height + GAP;
+      });
+      const spare = avail - (y - GAP - MARGIN);                               // la columna queda centrada a lo alto
+      if (spare > EPS) items.forEach((e) => { e.y = r3(e.y + spare / 2); });
+    };
+    if (side) {
+      stack(media, nW - MARGIN - colW, colW);
+      stack(texts, MARGIN, nW - 3 * MARGIN - colW);
+    } else stack(order, MARGIN, nW - 2 * MARGIN);
+    list.forEach((e) => clampInside(e, nW, nH));
+  }
+
+  function relayout(template, nW, nH, measure) {
+    const W = template.width_mm, H = template.height_mm;
+    const list = (template.elements || []).map((o) => proportional(o, W, H, nW, nH, measure));
+    if (!unstack(list, nH) || list.some((e) => isOutside(e, nW, nH))) {
+      columns(list, nW, nH, measure);
+      unstack(list, nH);
+    }
+    return list;
+  }
+
+  const sameSize = (a, b) => Math.abs(a - b) < 0.05;
+  /* opts.acrossMm: lo que la cinta imprime a lo ancho (p. ej. 58,9 mm): la dimensión que va a lo ancho de la cinta queda de esa medida (sin encogerse al imprimir).
+     opts.measure(el, anchoMm) → alto (mm) que necesita el texto. */
+  function convertOrientation(template, toHorizontal, opts) {
+    opts = opts || {};
+    const W = template.width_mm, H = template.height_mm, from = toHorizontal ? 'vertical' : 'horizontal', to = toHorizontal ? 'horizontal' : 'vertical';
+    let nW = Math.max(W, H), nH = Math.min(W, H);
+    if (!toHorizontal) { const t = nW; nW = nH; nH = t; }
+    if (opts.acrossMm) { if (toHorizontal) nH = opts.acrossMm; else nW = opts.acrossMm; }      // horizontal: el alto va a lo ancho de la cinta; vertical: el ancho
+    const els = template.elements || [];
+    const remember = (o) => Object.assign({}, o.layouts || {}, { [from]: { x: o.x, y: o.y, width: o.width, height: o.height, w: W, h: H } });
+    const saved = els.length && els.every((o) => o.layouts && o.layouts[to] && sameSize(o.layouts[to].w, nW) && sameSize(o.layouts[to].h, nH));
+    let elements;
+    if (saved) {                                                             // ida y vuelta: lo que el usuario tenía en esa orientación
+      elements = els.map((o) => { const l = o.layouts[to]; return Object.assign({}, o, { x: l.x, y: l.y, width: l.width, height: l.height, layouts: remember(o) }); });
+    } else {
+      elements = relayout(template, nW, nH, opts.measure).map((e, i) => Object.assign(e, { layouts: remember(els[i]) }));
+    }
+    const doesNotFit = elements.filter((e) => isOutside(e, nW, nH)).map((e) => e.id);
+    return { width_mm: r3(nW), height_mm: r3(nH), orientation: to, elements, doesNotFit, restored: !!saved };
+  }
+
+  /* «Ajustar a la cinta»: la dimensión que va a lo ancho de la cinta pasa a `acrossMm` y el diseño se reacomoda igual que al cambiar la orientación. */
+  function fitToTape(template, acrossMm, opts) {
+    opts = opts || {};
+    const horizontal = template.width_mm > template.height_mm;
+    const nW = horizontal ? template.width_mm : acrossMm, nH = horizontal ? acrossMm : template.height_mm;
+    const elements = relayout(template, nW, nH, opts.measure).map((e) => { delete e.layouts; return e; });   // las medidas cambiaron: lo recordado de cada orientación ya no aplica
+    return { width_mm: r3(nW), height_mm: r3(nH), elements, doesNotFit: elements.filter((e) => isOutside(e, nW, nH)).map((e) => e.id) };
+  }
+
+  return { bounds, isOutside, targets, snapMove, snapPoint, snapAxis, align, snapAngle, angleFromPointer, resizeRotated, convertOrientation, fitToTape, relayout, normAngle, EPS };
 });

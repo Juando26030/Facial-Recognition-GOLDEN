@@ -236,6 +236,10 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
           <option value="horizontal">Horizontal</option>
         </select>
       </div>
+      <div class="toolbar-group" id="fitTapeGroup">
+        <label>Cinta</label>
+        <button type="button" class="tb-btn ghost" id="fitTapeBtn" title="Deja la medida que va a lo ancho de la cinta igual a lo que la impresora imprime (sin encogerse al imprimir)">↔ Ajustar a la cinta</button>
+      </div>
       <div class="toolbar-sep"></div>
       <div class="toolbar-group">
         <label>Fondo</label>
@@ -1074,12 +1078,35 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       renderCanvas(); updateWarnings(true); return;
     }
     orientUndo = JSON.parse(JSON.stringify({ width_mm: template.width_mm, height_mm: template.height_mm, orientation: toHorizontal ? 'vertical' : 'horizontal', elements: template.elements }));
-    const out = G.convertOrientation(template, toHorizontal);
+    const out = G.convertOrientation(template, toHorizontal, { acrossMm: tapeAcrossMm(), measure: measureText });
     template.width_mm = out.width_mm; template.height_mm = out.height_mm; template.orientation = out.orientation; template.elements = out.elements;
     wEl.value = template.width_mm; hEl.value = template.height_mm;
     renderCanvas(); renderPropsPanel(); updateWarnings(true);
     const nf = out.doesNotFit.length;
-    showOrientNotice(`Etiqueta ${toHorizontal ? 'horizontal' : 'vertical'} (${template.width_mm} × ${template.height_mm} mm): los elementos se giraron con ella para conservar el diseño.` + (nf ? ` ⚠️ ${nf} elemento(s) no caben en la nueva medida (marcados en rojo).` : ''), true);
+    showOrientNotice(`Etiqueta ${toHorizontal ? 'horizontal' : 'vertical'} (${template.width_mm} × ${template.height_mm} mm): ` +
+      (out.restored ? 'se recuperó cómo estaba el diseño en esta orientación.' : 'los elementos se reacomodaron conservando sus proporciones.') + (nf ? ` ⚠️ ${nf} elemento(s) no caben en la nueva medida (marcados en rojo).` : ''), true);
+  });
+  /* Lo que la cinta imprime a lo ancho (p. ej. 58,9 mm en la de 62): al cambiar la orientación o con «Ajustar a la cinta», la medida que va a lo ancho de la cinta queda así y no hay
+     que encoger nada al imprimir. Solo escarapelas (el certificado no va a la cinta). */
+  function tapeAcrossMm() {
+    if (KIND !== 'badge' || !window.QLUsb) return null;
+    let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ }
+    const prefs = QLUsb.resolvePrefs(ls, tapeSettings).prefs;
+    return Math.floor(QLUsb.printableMm(prefs.tapeWidth) * 10) / 10;
+  }
+  const measureText = (el, widthMm) => BadgeRender.textHeightMm(el, widthMm, sampleData());      // alto que necesita cada texto (mismo ajuste que se imprime)
+  document.getElementById('fitTapeGroup').style.display = KIND === 'badge' ? '' : 'none';
+  document.getElementById('fitTapeBtn').addEventListener('click', () => {
+    const across = tapeAcrossMm();
+    if (!across) return;
+    const horizontal = template.width_mm > template.height_mm;
+    if (Math.abs((horizontal ? template.height_mm : template.width_mm) - across) < 0.05) { showToast(`La etiqueta ya mide ${across} mm a lo ancho de la cinta.`, 'info'); return; }
+    orientUndo = JSON.parse(JSON.stringify({ width_mm: template.width_mm, height_mm: template.height_mm, orientation: template.orientation, elements: template.elements }));
+    const out = G.fitToTape(template, across, { measure: measureText });
+    template.width_mm = out.width_mm; template.height_mm = out.height_mm; template.elements = out.elements;
+    document.getElementById('tplWidth').value = template.width_mm; document.getElementById('tplHeight').value = template.height_mm;
+    renderCanvas(); renderPropsPanel(); updateWarnings(true);
+    showOrientNotice(`Ajustada a la cinta: ${template.width_mm} × ${template.height_mm} mm (${across} mm a lo ancho de la cinta, sin encogerse al imprimir).` + (out.doesNotFit.length ? ` ⚠️ ${out.doesNotFit.length} elemento(s) no caben (marcados en rojo).` : ''), true);
   });
   document.getElementById('orientUndo').addEventListener('click', () => {
     if (!orientUndo) return;

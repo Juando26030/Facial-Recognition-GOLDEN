@@ -4,8 +4,73 @@
    acaba de registrar). Mismo código en los dos lados a propósito: así el editor SIEMPRE muestra
    fielmente cómo va a quedar impreso. El editor le agrega arrastre/selección ENCIMA de lo que
    esto devuelve — este módulo solo sabe dibujar, no sabe de edición. */
-(function () {
+(function (window) {
   const FONT_STACK_FALLBACK = 'sans-serif';
+  const LINE_HEIGHT = 1.15;                   // alto de línea de los textos (el mismo para medir y para dibujar)
+  const MIN_RATIO = 0.4;                      // la letra puede bajar hasta el 40 % del tamaño elegido antes de recortar con «…»
+  const PX_PER_MM = 96 / 25.4, PX_PER_PT = 96 / 72;
+
+  /* ---------- Ajuste de los textos a su caja (25-oct-2026, «ningún texto se corta»). PURO: recibe cómo medir un texto a un tamaño dado; se prueba en tests/js/badge_text_fit_check.js.
+     1) baja de línea por palabras (nunca parte una palabra); 2) si aún no cabe, reduce la letra (hasta MIN_RATIO); 3) solo entonces recorta con «…».
+     Devuelve las líneas YA partidas: se dibujan con `white-space: pre`, así el editor, la vista previa y la impresión (html2canvas) muestran exactamente las mismas líneas. */
+  function wrapWords(words, maxW, measure) {
+    const lines = [];
+    let cur = '';
+    words.forEach((w) => {
+      const cand = cur ? cur + ' ' + w : w;
+      if (!cur || measure(cand) <= maxW) cur = cand;
+      else { lines.push(cur); cur = w; }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  }
+  function fitText(text, boxW, boxH, sizePx, measureAt) {
+    const words = String(text == null ? '' : text).trim().split(/\s+/).filter(Boolean);
+    if (!words.length || !(boxW > 0) || !(boxH > 0)) return { lines: words.length ? [words.join(' ')] : [], size: sizePx, shrunk: false, truncated: false };
+    const tryAt = (px) => {
+      const m = (t) => measureAt(t, px);
+      if (words.some((w) => m(w) > boxW)) return null;                      // una palabra más ancha que la caja: a este tamaño no cabe
+      const lines = wrapWords(words, boxW, m);
+      return lines.length * px * LINE_HEIGHT <= boxH + 0.01 ? lines : null;
+    };
+    let lines = tryAt(sizePx);
+    if (lines) return { lines, size: sizePx, shrunk: false, truncated: false };
+    const minPx = sizePx * MIN_RATIO;
+    if (tryAt(minPx)) {                                                      // el tamaño más grande que cabe (búsqueda binaria)
+      let lo = minPx, hi = sizePx;
+      for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; if (tryAt(mid)) lo = mid; else hi = mid; }
+      return { lines: tryAt(lo), size: lo, shrunk: true, truncated: false };
+    }
+    const px = minPx, m = (t) => measureAt(t, px), ELL = '…';                // ni con la letra mínima: lo que cabe y «…»
+    const maxLines = Math.max(1, Math.floor((boxH + 0.01) / (px * LINE_HEIGHT)));
+    const all = wrapWords(words, boxW, m);
+    const clip = (t) => {                                                    // lo más largo que cabe, con «…» al final
+      let c = t;
+      while (c.length > 1 && m(c + ELL) > boxW) c = c.slice(0, -1);
+      return c.replace(/\s+$/, '') + ELL;
+    };
+    lines = all.slice(0, maxLines).map((t, i) => ((i === maxLines - 1 && all.length > maxLines) || m(t) > boxW ? clip(t) : t));
+    return { lines, size: px, shrunk: true, truncated: true };
+  }
+
+  let measureCtx = null;
+  function canvasMeasurer(family, weight) {
+    if (!measureCtx && typeof document !== 'undefined') measureCtx = document.createElement('canvas').getContext('2d');
+    const fam = `'${String(family || 'Roboto').replace(/'/g, '')}', ${FONT_STACK_FALLBACK}`;
+    return (t, px) => {
+      if (!measureCtx) return t.length * px * 0.6;
+      measureCtx.font = `${weight === 'bold' ? 700 : 400} ${px}px ${fam}`;
+      return measureCtx.measureText(t).width * 1.02;                         // 2 % de holgura: el navegador y el lienzo redondean distinto
+    };
+  }
+  /* Alto (mm) que necesita un texto a su tamaño elegido con ese ancho (para reacomodar al cambiar la orientación). */
+  function textHeightMm(el, widthMm, data) {
+    const content = el.type === 'text_static' ? (el.content || '') : resolveVariable(el.variable, data);
+    const px = (el.font_size || 12) * PX_PER_PT, m = canvasMeasurer(el.font_family, el.font_weight);
+    const words = String(content || '').trim().split(/\s+/).filter(Boolean);
+    const lines = words.length ? wrapWords(words, widthMm * PX_PER_MM, (t) => m(t, px)).length : 1;
+    return (lines * px * LINE_HEIGHT) / PX_PER_MM + 0.6;
+  }
 
   function resolveVariable(varName, data) {
     if (!varName) return '';
@@ -18,10 +83,13 @@
     return val != null ? String(val) : '';
   }
 
+  /* Antes: una sola línea sin saltos (`nowrap`), centrada y con lo que sobra escondido: un nombre o una empresa más largos que la caja se cortaban POR LOS DOS LADOS
+     («AN SEBAS», «IGARITA ROJA» en la QL-800, 25-oct-2026). Ahora el texto se ajusta a su caja (fitText) y se dibuja con las líneas ya partidas. */
   function renderTextElement(div, el, data) {
     const content = el.type === 'text_static' ? (el.content || '') : resolveVariable(el.variable, data);
+    const fit = fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, (el.font_size || 12) * PX_PER_PT, canvasMeasurer(el.font_family, el.font_weight));
     div.style.fontFamily = `'${el.font_family || 'Roboto'}', ${FONT_STACK_FALLBACK}`;
-    div.style.fontSize = `${el.font_size || 12}pt`;
+    div.style.fontSize = `${fit.size}px`;
     div.style.color = el.font_color || '#000000';
     div.style.fontWeight = el.font_weight || 'normal';
     div.style.display = 'flex';
@@ -29,9 +97,12 @@
     div.style.justifyContent = el.align === 'center' ? 'center' : el.align === 'right' ? 'flex-end' : 'flex-start';
     div.style.textAlign = el.align || 'left';
     div.style.overflow = 'hidden';
-    div.style.whiteSpace = 'nowrap';
-    div.style.lineHeight = '1.1';
-    div.innerText = content;
+    div.style.lineHeight = String(LINE_HEIGHT);
+    div.dataset.fit = fit.truncated ? 'truncated' : fit.shrunk ? 'shrunk' : 'ok';
+    const span = document.createElement('span');
+    span.style.cssText = `display:block; width:100%; white-space:pre; line-height:${LINE_HEIGHT}; text-align:${el.align || 'left'};`;
+    span.textContent = fit.lines.join('\n');
+    div.appendChild(span);
   }
 
   function renderImageStatic(div, el, opts) {
@@ -136,7 +207,7 @@
     return Promise.all(loads).then(() => undefined, () => undefined);
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del
@@ -236,4 +307,5 @@
   }
 
   window.BadgePrint = { printWindowUrl, openPrintWindow, openNow, maybeAutoPrint, claim, beginManual, printNow };
-})();
+  if (typeof module === 'object' && module.exports) module.exports = window.BadgeRender;           // node: tests/js/badge_text_fit_check.js
+})(typeof window !== 'undefined' ? window : globalThis);
