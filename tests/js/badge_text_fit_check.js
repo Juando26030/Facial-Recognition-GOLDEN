@@ -53,4 +53,24 @@ const data = { entity: "EMPRESA DENOMINADA INVERSIONES Y SERVICIOS DEL ORIENTE S
 assert.ok(R.textHeightMm(el, 40, data) > R.textHeightMm(el, 90, data));
 assert.ok(R.textHeightMm(el, 90, { entity: "ANA" }) < R.textHeightMm(el, 90, data) + 1e-9);
 
+// ---- un elemento GIRADO no recorta (html2canvas aplica el overflow:hidden de un elemento con transform con la caja SIN girar: la QL-800 imprimía «DRÍGL», «LAMIZ»)
+{
+  const fake = () => ({ style: {}, dataset: {}, children: [], appendChild(c) { this.children.push(c); return c; }, getContext: () => null });
+  global.document = { createElement: fake };
+  const txt = (rotation) => ({ id: "t", type: "text_variable", variable: "last_name", x: 4, y: 30, width: 50, height: 12, font_size: 16, font_family: "Roboto", rotation });
+  const data = { last_name: "RODRÍGUEZ VILLAMIZAR" };
+  for (const rot of [30, 45, 90, 180, 270, 349, -12]) {
+    const d = R.renderElement(txt(rot), data, {});
+    assert.strictEqual(d.style.overflow, "visible", `girado ${rot}°: no se recorta`);
+    assert.ok(d.style.cssText.includes(`rotate(${rot}deg)`));
+  }
+  for (const rot of [0, 360, undefined]) assert.strictEqual(R.renderElement(txt(rot), data, {}).style.overflow, "hidden", `sin giro (${rot}) se conserva el recorte de siempre`);
+  const qr = R.renderElement({ id: "q", type: "qr", variables: ["id"], x: 0, y: 0, width: 10, height: 10, rotation: 90 }, { id: "1" }, {});
+  assert.strictEqual(qr.style.overflow, "visible");
+  // el ajuste se calcula en los ejes del PROPIO elemento (ancho × alto de su caja, antes de girar): girarlo no cambia las líneas
+  const lines = (rot) => R.renderElement(txt(rot), data, {}).children[0].textContent;
+  assert.strictEqual(lines(90), lines(0)); assert.strictEqual(lines(349), lines(0));
+  delete global.document;
+}
+
 console.log("badge_text_fit_check ok");

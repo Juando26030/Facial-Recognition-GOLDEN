@@ -174,6 +174,10 @@
     else if (el.type === 'qr') renderQr(div, el, data);
     else if (el.type === 'barcode') renderBarcode(div, el, data);
 
+    /* Un elemento GIRADO no recorta lo que sobresale (25-oct-2026, QL-800: «DRÍGL», «LAMIZ»): html2canvas 1.4.1 aplica el `overflow: hidden` de un elemento con `transform`
+       usando la caja SIN girar, así que la impresión cortaba lo que la pantalla mostraba completo. El ajuste de texto (fitText) ya garantiza que el contenido cabe en su caja,
+       calculado en los ejes del propio elemento antes de girarlo; el recorte no hace falta. */
+    if (((Number(el.rotation) || 0) % 360 + 360) % 360 !== 0) div.style.overflow = 'visible';
     return div;
   }
 
