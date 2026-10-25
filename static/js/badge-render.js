@@ -95,7 +95,7 @@
     const div = document.createElement('div');
     div.className = 'badge-element badge-element-' + el.type;
     div.dataset.elId = el.id;
-    div.style.cssText = `position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${el.height}mm; transform:rotate(${el.rotation || 0}deg); z-index:${el.z_index || 1}; box-sizing:border-box;`;
+    div.style.cssText = `position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${el.height}mm; transform:rotate(${el.rotation || 0}deg); transform-origin:50% 50%; z-index:${el.z_index || 1}; box-sizing:border-box;`;
 
     if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data);
     else if (el.type === 'image_static') renderImageStatic(div, el, opts);
@@ -127,7 +127,16 @@
     sorted.forEach(el => container.appendChild(renderElement(el, data, opts)));
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge };
+  /* Espera a que las tipografías de la plantilla (normal y negrita) estén cargadas ANTES de dibujar o imprimir: si no, el navegador usa una de respaldo y la etiqueta impresa cambia de tipografía. */
+  function loadFonts(template) {
+    if (!(typeof document !== 'undefined' && document.fonts && document.fonts.load)) return Promise.resolve();
+    const fams = Array.from(new Set((template.elements || []).filter(e => e.font_family).map(e => String(e.font_family).replace(/'/g, ''))));
+    const loads = [];
+    fams.forEach(f => { loads.push(document.fonts.load(`400 16px '${f}'`)); loads.push(document.fonts.load(`700 16px '${f}'`)); });
+    return Promise.all(loads).then(() => undefined, () => undefined);
+  }
+
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del

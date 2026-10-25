@@ -1,6 +1,6 @@
-/* GENERADO por scripts/gen_fonts_css.py: no se edita a mano. Las 6 opciones de tipografía y la equivalencia de las familias que ya no se ofrecen. */
+/* GENERADO por scripts/gen_fonts_css.py: no se edita a mano. Las opciones de tipografía (todas alojadas) y la equivalencia de los nombres que ya no se ofrecen. */
 window.GoldenFonts = {
-  choices: ["Roboto", "Open Sans", "Montserrat", "Playfair Display", "Merriweather", "Bebas Neue"],
-  map: {"Lato": "Open Sans", "Noto Sans": "Open Sans", "Source Sans Pro": "Open Sans", "PT Sans": "Open Sans", "Fira Sans": "Open Sans", "Karla": "Open Sans", "Nunito": "Open Sans", "Mulish": "Open Sans", "Ubuntu": "Open Sans", "Inter": "Roboto", "Work Sans": "Roboto", "Barlow": "Roboto", "DM Sans": "Roboto", "Manrope": "Roboto", "Rubik": "Roboto", "Space Grotesk": "Roboto", "Poppins": "Montserrat", "Raleway": "Montserrat", "Quicksand": "Montserrat", "Comfortaa": "Montserrat", "Josefin Sans": "Montserrat", "Archivo Black": "Montserrat", "Oswald": "Bebas Neue", "Anton": "Bebas Neue", "Abril Fatface": "Playfair Display", "Cormorant Garamond": "Playfair Display", "Dancing Script": "Playfair Display", "Pacifico": "Playfair Display", "Lobster": "Playfair Display", "Caveat": "Playfair Display", "Crimson Text": "Merriweather", "Libre Baskerville": "Merriweather", "EB Garamond": "Merriweather", "Zilla Slab": "Merriweather"},
-  resolve: function (name) { return this.choices.indexOf(name) >= 0 ? name : (this.map[name] || this.choices[0]); },
+  choices: ["Abril Fatface", "Anton", "Archivo Black", "Barlow", "Bebas Neue", "Caveat", "Comfortaa", "Cormorant Garamond", "Crimson Text", "DM Sans", "Dancing Script", "EB Garamond", "Fira Sans", "Inter", "Josefin Sans", "Karla", "Lato", "Libre Baskerville", "Lobster", "Manrope", "Merriweather", "Montserrat", "Mulish", "Noto Sans", "Nunito", "Open Sans", "Oswald", "PT Sans", "Pacifico", "Playfair Display", "Poppins", "Quicksand", "Raleway", "Roboto", "Rubik", "Source Sans Pro", "Space Grotesk", "Ubuntu", "Work Sans", "Zilla Slab"],
+  map: {},
+  resolve: function (name) { return this.choices.indexOf(name) >= 0 ? name : (this.map[name] || 'Roboto'); },
 };

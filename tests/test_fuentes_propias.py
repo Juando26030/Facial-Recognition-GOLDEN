@@ -1,4 +1,5 @@
 """Nada de terceros en las páginas: ni fuentes ni el script del QR se piden fuera de nuestro servidor (app de biometría: la IP de las personas no se le entrega a nadie)."""
+import json
 import pathlib
 import re
 
@@ -40,7 +41,7 @@ def test_the_generated_font_files_match_the_single_map():
     spec.loader.exec_module(gen)
     assert pathlib.Path("static/css/fonts-propias.css").read_text(encoding="utf-8") == gen.css()
     assert pathlib.Path("static/js/fonts-propias.js").read_text(encoding="utf-8") == gen.js()
-    assert len(gen.SIX) == 6 and set(gen.MAP.values()) <= set(gen.SIX) and not set(gen.MAP) & set(gen.SIX)
+    assert len(gen.SIX) == 40 and set(gen.MAP.values()) <= set(gen.SIX) and not set(gen.MAP) & set(gen.SIX)
     for fam in (n.replace("_", " ") for n in LEGACY_40):                                                                              # ningún diseño guardado queda sin tipografía equivalente
         assert fam in gen.SIX or fam in gen.MAP, fam
     assert {"Montserrat", "Roboto", "Playfair Display"} <= set(gen.SIX)                                 # los diseños que usan estas tres se ven exactamente igual
@@ -49,20 +50,27 @@ def test_the_generated_font_files_match_the_single_map():
 def test_hosted_fonts_are_latin_woff2_400_700_with_license_and_within_200_kb():
     files = sorted(pathlib.Path("static/fonts").glob("*.woff2"))
     assert files and all(re.fullmatch(r"[a-z-]+-latin-(400|700)-normal\.woff2", f.name) for f in files), [f.name for f in files]
-    assert sum(f.stat().st_size for f in files) <= 200 * 1024
+    assert sum(f.stat().st_size for f in files) <= 2 * 1024 * 1024                  # 40 familias; cada navegador baja solo las que usa
     css = pathlib.Path("static/css/fonts-propias.css").read_text(encoding="utf-8")
     for name in re.findall(r"fonts/([\w.-]+\.woff2)", css):
         assert pathlib.Path("static/fonts", name).exists(), name
-    assert {f.stem for f in pathlib.Path("static/fonts/licencias").glob("*.txt")} == {"roboto", "open-sans", "montserrat", "playfair-display", "merriweather", "bebas-neue"}
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gen_fonts_css", "scripts/gen_fonts_css.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    assert {f.stem for f in pathlib.Path("static/fonts/licencias").glob("*.txt")} == set(gen.FAMILIES.values())            # cada familia, con su licencia
 
 
-def test_the_selectors_offer_only_the_six_hosted_families_and_agrandir_stays_apart(client):
-    theme = pathlib.Path("static/js/theme.js").read_text(encoding="utf-8")
-    six = re.search(r"GOLDEN_FONT_FAMILIES = \[([^\]]*)\]", theme).group(1)
-    assert re.findall(r"'([^']+)'", six) == ["Roboto", "Open Sans", "Montserrat", "Playfair Display", "Merriweather", "Bebas Neue"]
+def test_every_selector_offers_the_same_hosted_families_and_agrandir_stays_apart(client):
+    js = pathlib.Path("static/js/fonts-propias.js").read_text(encoding="utf-8")
+    offered = json.loads(re.search(r"choices: (\[[^\]]*\])", js).group(1))
+    assert len(offered) == 40 and {"Roboto", "Lato", "Pacifico", "Zilla Slab", "Bebas Neue"} <= set(offered) and "Agrandir" not in offered
+    assert "GOLDEN_FONT_FAMILIES" not in pathlib.Path("static/js/theme.js").read_text(encoding="utf-8")                  # ya no hay una segunda lista
     cfg = pathlib.Path("templates/configuracion.html").read_text(encoding="utf-8")
-    assert "Original (Agrandir)" in cfg and "Agrandir" not in six                                         # «Original» sigue igual y no es una de las 6
-    for page, marker in (("badge_editor", "GoldenFonts.choices"), ("kiosk_formulario_editor", "GoldenFonts.choices"), ("kiosk_ruleta_visual", "GoldenFonts.choices")):
+    assert "Original (Agrandir)" in cfg and "GoldenFontPicker.mount" in cfg and "js/fonts-propias.js" in cfg and "js/font-picker.js" in cfg    # el mismo selector que el diseñador
+    editor = pathlib.Path("templates/badge_editor.html").read_text(encoding="utf-8")
+    assert "GoldenFontPicker.mount" in editor and "GoldenFonts.resolve" in editor and "js/font-picker.js" in editor and "js/fonts-propias.js" in editor
+    for page, marker in (("kiosk_formulario_editor", "GoldenFonts.choices"), ("kiosk_ruleta_visual", "GoldenFonts.choices")):
         text = pathlib.Path(f"templates/{page}.html").read_text(encoding="utf-8")
         assert marker in text and "js/fonts-propias.js" in text and "css/fonts-propias.css" in text, page
     for page in ("form_public", "badge_print", "certificate_public", "digital_badge", "kiosk_certificados", "roulette_display"):

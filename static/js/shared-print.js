@@ -184,6 +184,7 @@
     const holder = document.createElement('div');
     stage.appendChild(holder);
     try {
+      await BadgeRender.loadFonts(template);                         // la tipografía elegida ya cargada: la etiqueta impresa no cambia de letra
       BadgeRender.renderBadge(holder, template, data, { eventId: EID });
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       await Promise.all(Array.from(holder.querySelectorAll('img')).map((img) => (img.decode ? img.decode().catch(() => {}) : null)));

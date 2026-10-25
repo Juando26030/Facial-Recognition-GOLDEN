@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
+    <script src="{{ url_for('static', path='js/font-picker.js') }}"></script>
     <style>
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
         .theme-row { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
@@ -58,9 +60,7 @@
         </div>
         <div class="theme-row">
           <label for="themeFonts">Tipografía</label>
-          <select id="themeFonts" class="theme-select">
-            <option value="" style="font-family: 'Agrandir', sans-serif;">Original (Agrandir)</option>
-          </select>
+          <div id="themeFonts" class="theme-select" style="padding:0; border:none;"></div>
         </div>
         <div style="display:flex; gap:10px; margin-top:1rem;">
           <button type="button" id="applyThemeBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 1.8rem;">Aplicar y guardar</button>
@@ -81,21 +81,11 @@
 <script>
 (function () {
   const colorInput = document.getElementById('themeColor');
-  const fontsSelect = document.getElementById('themeFonts');
+  // El mismo selector (con buscador y vista previa de cada fuente) que el diseñador de escarapelas: static/js/font-picker.js, con la lista de static/js/fonts-propias.js.
+  const fontsSelect = GoldenFontPicker.mount(document.getElementById('themeFonts'), { value: '', original: { value: '', label: 'Original (Agrandir)', css: "'Agrandir', sans-serif" } });
+  Object.defineProperty(fontsSelect, 'value', { get: () => fontsSelect.get(), set: (v) => fontsSelect.set(v) });
 
-  // Mismas 40 familias que el editor de escarapelas — expuestas por theme.js (cargado en <head>,
-  // antes que este script) como window.GOLDEN_FONT_FAMILIES para no duplicar la lista acá.
-  // Cada <option> se ve en SU PROPIA fuente (2026-09-17, pedido explícito: "que desde el menú se
-  // vea cómo son", antes había que elegirla y aplicarla para verla) — hace falta el <link> de
-  // Google Fonts cargado de una vez, no solo cuando ya hay una guardada en localStorage.
-  if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();
-  (window.GOLDEN_FONT_FAMILIES || []).forEach((f) => {
-    const opt = document.createElement('option');
-    opt.value = f;
-    opt.innerText = f;
-    opt.style.fontFamily = `'${f}', sans-serif`;
-    fontsSelect.appendChild(opt);
-  });
+  if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();          // las fuentes alojadas se cargan de una vez para que cada opción se vea en la suya
 
   try {
     const savedColor = localStorage.getItem('golden_theme_primary');

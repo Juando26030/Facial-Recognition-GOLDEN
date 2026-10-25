@@ -92,6 +92,7 @@
             // recibe el tamaño de etiqueta correcto en vez del tamaño carta por defecto del navegador.
             pageStyle.innerHTML = `@page { size: ${template.width_mm}mm ${template.height_mm}mm; margin: 0; }`;
 
+            await BadgeRender.loadFonts(template);            // la tipografía elegida ya cargada antes de dibujar e imprimir
             BadgeRender.renderBadge(badgeEl, template, data, { eventId: EVENT_ID });
             statusEl.style.display = 'none';
 

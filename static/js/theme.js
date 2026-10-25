@@ -22,12 +22,10 @@
     return luminance > 0.6 ? '#000000' : '#ffffff';
   };
 
-  // 6 familias tipográficas alojadas por nosotros (static/fonts, las mismas de los diseñadores) más «Original» (Agrandir) — un solo <link> a static/css/fonts-propias.css, inyectado una vez por
+  // Tipografías alojadas por nosotros (static/fonts, la lista está en static/js/fonts-propias.js) más «Original» (Agrandir) — un solo <link> a static/css/fonts-propias.css, inyectado una vez por
   // página (no todas las páginas lo tenían, y sin cargarlo la fuente elegida no se ve aunque la
   // variable CSS ya diga cuál es). Si la página ya lo trae (ej. badge_editor.html), no se duplica.
   var FONTS_URL = "/static/css/fonts-propias.css";
-
-  window.GOLDEN_FONT_FAMILIES = ['Roboto', 'Open Sans', 'Montserrat', 'Playfair Display', 'Merriweather', 'Bebas Neue'];          // las mismas 6 de static/js/fonts-propias.js
 
   // Expuesta globalmente (2026-09-16) — configuracion.html la reusa al aplicar un cambio EN LA
   // MISMA carga de página (este IIFE solo corre una vez, al inicio, con lo que ya había en

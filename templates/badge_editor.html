@@ -12,6 +12,8 @@
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <script src="{{ url_for('static', path='js/badge-geometry.js') }}"></script>
+    <script src="{{ url_for('static', path='js/font-picker.js') }}"></script>
     <script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
     <style>
         .badge-toolbar {
@@ -79,6 +81,18 @@
         #printInfo { font-size:0.76rem; color:#555; margin:0 0 6px; }
         .badge-element, .resize-handle { touch-action:none; }
         .badge-element.oob { outline:2px solid #c0392b !important; }
+        .snap-guide { position:absolute; pointer-events:none; z-index:99998; background:#e8308a; }
+        .snap-guide.v { top:0; bottom:0; width:1px; }
+        .snap-guide.h { left:0; right:0; height:1px; }
+        .rotate-handle { position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:#fff; border:2px solid var(--golden-primary); cursor:grab; pointer-events:auto; touch-action:none; box-sizing:border-box; }
+        .rotate-badge { position:absolute; transform:translate(-50%, -50%); background:#0A0E2E; color:#fff; font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; white-space:nowrap; pointer-events:none; }
+        .align-row { display:flex; gap:4px; margin-bottom:0.9rem; }
+        .align-row button { flex:1; min-height:34px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; color:var(--golden-dark); padding:0 2px; }
+        .align-row button:hover { border-color:var(--golden-primary); }
+        .quick-rot { display:flex; gap:4px; margin-top:4px; }
+        .quick-rot button { flex:1; min-height:30px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; }
+        #orientNotice { display:none; background:#e8f3ff; border:1px solid #b6d8f7; color:#0c3b66; border-radius:10px; padding:6px 12px; font-size:0.82rem; margin:0 0 6px; line-height:1.4; align-items:center; gap:10px; flex-wrap:wrap; }
+        #orientNotice button { border:1px solid #0c3b66; background:#fff; color:#0c3b66; border-radius:8px; min-height:30px; padding:0 12px; font-weight:700; cursor:pointer; }
         @media (min-width: 821px) {
             body.editor-page { overflow:hidden; }
             body.editor-page .golden-section-title { display:none; }
@@ -257,6 +271,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       <button type="button" id="mtSave" class="primary">Guardar</button>
     </div>
     <div id="editorWarn" role="status"></div>
+    <div id="orientNotice" role="status"><span id="orientNoticeText"></span><button type="button" id="orientUndo">Deshacer</button></div>
     <div id="printInfo"></div>
     <div class="editor-mobile-tabs" id="editorTabs">
       <button type="button" class="active" data-tab="canvas">Lienzo</button>
@@ -279,10 +294,14 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
           <button type="button" id="zoomIn" aria-label="Acercar">+</button>
           <button type="button" id="zoomFit" class="on">Ajustar a pantalla</button>
           <button type="button" id="zoomReal">Tamaño real</button>
+          <button type="button" id="magnetBtn" class="on" aria-pressed="true" title="Imán: el elemento se pega al centro y a los bordes (mantén Alt o Ctrl para soltarlo)">🧲 Imán</button>
           <span id="sizeInfo"></span>
         </div>
         <div class="badge-canvas-wrapper">
-          <div id="badgeCanvas" class="badge-canvas"></div>
+          <div id="canvasHost" style="position:relative; flex-shrink:0;">
+            <div id="badgeCanvas" class="badge-canvas"></div>
+            <div id="selOverlay" style="position:absolute; inset:0; pointer-events:none; overflow:visible;"></div>
+          </div>
         </div>
       </div>
       <div class="badge-props-panel" id="propsPanel">
@@ -320,7 +339,12 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   // hacer scroll). El arrastre/redimensión no dependen de este número — derivan el ratio px/mm
   // de canvasEl.getBoundingClientRect() en cada momento (ver startDrag/startResize más abajo),
   // así que cualquier valor de editorScale sigue funcionando igual de bien.
-  const FONT_FAMILIES = GoldenFonts.choices;          // las 6 tipografías alojadas (static/js/fonts-propias.js)
+  const G = window.BadgeGeometry;                    // geometría pura (static/js/badge-geometry.js): imán, alinear, girar, vertical ↔ horizontal
+  const SNAP_PX = 6;                                 // umbral del imán en pantalla
+  let magnetOn = true;
+  try { magnetOn = window.localStorage.getItem('badge_magnet') !== '0'; } catch (e) { /* sin almacenamiento */ }
+  let guides = { x: [], y: [] };                     // líneas guía visibles mientras el imán actúa
+  let rotateHint = null;                             // {elId, deg} mientras se gira
   const FIXED_VARIABLES = [
     ['first_name', 'Nombres'], ['last_name', 'Apellidos'], ['entity', 'Entidad'],
     ['role', 'Cargo'], ['id', 'Cédula / ID'], ['phone', 'Teléfono'], ['email', 'Correo'],
@@ -403,6 +427,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     renderCanvas();
     renderPropsPanel();
     updateWarnings(false);
+    BadgeRender.loadFonts(template).then(() => renderCanvas());          // cuando las fuentes elegidas estén cargadas, se vuelve a dibujar con la tipografía real
   }
 
   function syncToolbarFromTemplate() {
@@ -568,6 +593,35 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         div.appendChild(handle);
       }
     });
+    paintRotateHandle();
+    guides.x.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide v'; g.style.left = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
+    guides.y.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide h'; g.style.top = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
+  }
+
+  // La manija de giro vive en una capa ENCIMA del lienzo (los textos recortan lo que sobresale de su caja y el lienzo recorta lo que sale de la etiqueta): flota sobre el elemento seleccionado y gira con él.
+  function paintRotateHandle() {
+    const layer = document.getElementById('selOverlay');
+    layer.innerHTML = '';
+    const el = selectedElement();
+    if (!el || !template) return;
+    const pxPerMm = editorScale * PX_PER_MM, a = ((el.rotation || 0) * Math.PI) / 180;
+    const cx = (el.x + el.width / 2) * pxPerMm, cy = (el.y + el.height / 2) * pxPerMm;
+    const d = (el.height / 2) * pxPerMm + 24;
+    const hx = cx + Math.sin(a) * d, hy = cy - Math.cos(a) * d;
+    const rot = document.createElement('div');
+    rot.className = 'rotate-handle';
+    rot.style.left = hx + 'px'; rot.style.top = hy + 'px';
+    rot.title = 'Girar (Mayús: pasos de 15°; Alt/Ctrl: sin imán)';
+    rot.setAttribute('aria-label', 'Girar el elemento');
+    rot.addEventListener('pointerdown', (e) => { e.stopPropagation(); startRotate(e, el); });
+    layer.appendChild(rot);
+    if (rotateHint && rotateHint.elId === el.id) {
+      const tag = document.createElement('div');
+      tag.className = 'rotate-badge';
+      tag.style.left = hx + 'px'; tag.style.top = (hy - 24) + 'px';
+      tag.textContent = Math.round(rotateHint.deg * 10) / 10 + '°';
+      layer.appendChild(tag);
+    }
   }
 
   /* ---------- Zoom, ajuste a pantalla y avisos (orden B) ---------- */
@@ -615,7 +669,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   // Elementos que quedan fuera de la etiqueta (por ejemplo, al cambiar el tamaño o la orientación): se marcan en rojo en el lienzo y se avisa
   function isOutside(el) {
-    return el.x < -0.01 || el.y < -0.01 || el.x + el.width > template.width_mm + 0.01 || el.y + el.height > template.height_mm + 0.01;
+    return G.isOutside(el, template.width_mm, template.height_mm);          // con el cuadro ya girado
   }
   let tapeSettings = {};
   function updateWarnings(toastOutside) {
@@ -676,7 +730,11 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   function refocus(elId) { const d = canvasEl.querySelector('.badge-element[data-el-id="' + elId + '"]'); if (d) d.focus(); }
   wrapperEl.insertAdjacentHTML('beforebegin', '<p id="kbHint" style="font-size:0.78rem; color:#555; margin:0 0 6px;">⌨️ Con el teclado: <b>Tab</b> para recorrer los elementos, <b>Enter</b> para seleccionar, <b>flechas</b> para moverlo (con <b>Mayús</b>, de 5 en 5 mm), <b>Supr</b> para borrarlo. También puedes escribir la posición exacta en el panel de propiedades.</p>');
-  canvasEl.addEventListener('click', () => { selectedId = null; renderCanvas(); renderPropsPanel(); });
+  let swallowClick = false;                          // soltar tras girar/redimensionar/arrastrar dispara un «click» en el lienzo: no debe soltar la selección
+  canvasEl.addEventListener('click', () => { if (swallowClick) return; selectedId = null; renderCanvas(); renderPropsPanel(); });
+
+  function snapActive(ev) { return magnetOn && !(ev && (ev.altKey || ev.ctrlKey || ev.metaKey)); }
+  function clearGuides() { guides = { x: [], y: [] }; rotateHint = null; swallowClick = true; setTimeout(() => { swallowClick = false; }, 0); }
 
   function startDrag(e, el) {
     e.preventDefault();
@@ -685,19 +743,27 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const rect = canvasEl.getBoundingClientRect();
     const pxPerMmX = rect.width / template.width_mm;
     const pxPerMmY = rect.height / template.height_mm;
+    const thr = SNAP_PX / pxPerMmX;
     const startX = e.clientX, startY = e.clientY;
     const origX = el.x, origY = el.y;
     function onMove(ev) {
-      const dxMm = (ev.clientX - startX) / pxPerMmX;
-      const dyMm = (ev.clientY - startY) / pxPerMmY;
-      el.x = Math.max(0, origX + dxMm);
-      el.y = Math.max(0, origY + dyMm);
+      el.x = origX + (ev.clientX - startX) / pxPerMmX;
+      el.y = origY + (ev.clientY - startY) / pxPerMmY;
+      if (snapActive(ev)) {
+        const sn = G.snapMove(el, template, thr);
+        el.x += sn.dx; el.y += sn.dy; guides = sn.guides;
+      } else guides = { x: [], y: [] };
+      const b = G.bounds(el);                                   // nunca más allá del borde izquierdo ni del superior
+      if (b.left < 0) el.x -= b.left;
+      if (b.top < 0) el.y -= b.top;
       renderCanvas();
     }
     function onUp() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
+      el.x = Math.round(el.x * 100) / 100; el.y = Math.round(el.y * 100) / 100;
+      clearGuides(); renderCanvas(); renderPropsPanel(); updateWarnings(false);
     }
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
@@ -709,20 +775,48 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const rect = canvasEl.getBoundingClientRect();
     const pxPerMmX = rect.width / template.width_mm;
     const pxPerMmY = rect.height / template.height_mm;
+    const thr = SNAP_PX / pxPerMmX;
     const startX = e.clientX, startY = e.clientY;
-    const origW = el.width, origH = el.height;
+    const orig = { id: el.id, x: el.x, y: el.y, width: el.width, height: el.height, rotation: el.rotation || 0 };
+    const ang = (orig.rotation * Math.PI) / 180, cos = Math.cos(ang), sin = Math.sin(ang);
+    const cx0 = orig.x + orig.width / 2, cy0 = orig.y + orig.height / 2;
+    const corner0 = { x: cx0 + (orig.width / 2) * cos - (orig.height / 2) * sin, y: cy0 + (orig.width / 2) * sin + (orig.height / 2) * cos };      // esquina inferior derecha (ya girada)
     function onMove(ev) {
-      const dwMm = (ev.clientX - startX) / pxPerMmX;
-      const dhMm = (ev.clientY - startY) / pxPerMmY;
-      el.width = Math.max(3, origW + dwMm);
-      el.height = Math.max(3, origH + dhMm);
+      let tx = corner0.x + (ev.clientX - startX) / pxPerMmX, ty = corner0.y + (ev.clientY - startY) / pxPerMmY;
+      if (snapActive(ev)) {
+        const sn = G.snapPoint(tx, ty, template, el.id, thr);
+        tx = sn.x; ty = sn.y; guides = sn.guides;
+      } else guides = { x: [], y: [] };
+      Object.assign(el, G.resizeRotated(orig, tx, ty, 3));
       renderCanvas();
     }
     function onUp() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointercancel', onUp);
-      renderPropsPanel();
+      ['x', 'y', 'width', 'height'].forEach((k) => { el[k] = Math.round(el[k] * 100) / 100; });
+      clearGuides(); renderCanvas(); renderPropsPanel(); updateWarnings(false);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  }
+
+  function startRotate(e, el) {
+    e.preventDefault();
+    const rect = canvasEl.getBoundingClientRect(), k = rect.width / template.width_mm;
+    const cx = rect.left + (el.x + el.width / 2) * k, cy = rect.top + (el.y + el.height / 2) * k;          // el centro del elemento
+    function onMove(ev) {
+      const raw = G.angleFromPointer(cx, cy, ev.clientX, ev.clientY);
+      el.rotation = (snapActive(ev) || ev.shiftKey) ? G.snapAngle(raw, { shift: ev.shiftKey, tol: 3 }) : G.normAngle(raw);
+      rotateHint = { elId: el.id, deg: el.rotation };
+      renderCanvas();
+    }
+    function onUp() {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      clearGuides(); renderCanvas(); renderPropsPanel(); updateWarnings(false);
     }
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
@@ -788,10 +882,6 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   // ---------- Panel de propiedades ----------
 
-  function fontOptionsHtml(selected) {
-    return FONT_FAMILIES.map(f => `<option value="${f}" ${f === GoldenFonts.resolve(selected) ? 'selected' : ''}>${f}</option>`).join('');
-  }
-
   function variableOptionsHtml(selected) {
     return ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${k === selected ? 'selected' : ''}>${label}</option>`).join('');
   }
@@ -840,6 +930,14 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
     propsPanel.innerHTML = `
       <h4>Propiedades</h4>
+      <div class="align-row" role="group" aria-label="Alinear respecto a la etiqueta">
+        <button type="button" data-align="left" title="Alinear a la izquierda" aria-label="Alinear a la izquierda">⇤</button>
+        <button type="button" data-align="center" title="Centrar horizontalmente" aria-label="Centrar horizontalmente">↔</button>
+        <button type="button" data-align="right" title="Alinear a la derecha" aria-label="Alinear a la derecha">⇥</button>
+        <button type="button" data-align="top" title="Alinear arriba" aria-label="Alinear arriba">⤒</button>
+        <button type="button" data-align="middle" title="Centrar verticalmente" aria-label="Centrar verticalmente">↕</button>
+        <button type="button" data-align="bottom" title="Alinear abajo" aria-label="Alinear abajo">⤓</button>
+      </div>
       <div class="prop-row">
         <div class="prop-field"><label>X (mm)</label><input type="number" id="p_x" step="0.5" value="${(el.x).toFixed(1)}"></div>
         <div class="prop-field"><label>Y (mm)</label><input type="number" id="p_y" step="0.5" value="${(el.y).toFixed(1)}"></div>
@@ -848,7 +946,9 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         <div class="prop-field"><label>Ancho (mm)</label><input type="number" id="p_w" step="0.5" value="${(el.width).toFixed(1)}"></div>
         <div class="prop-field"><label>Alto (mm)</label><input type="number" id="p_h" step="0.5" value="${(el.height).toFixed(1)}"></div>
       </div>
-      <div class="prop-field"><label>Rotación (grados)</label><input type="number" id="p_rot" value="${el.rotation || 0}"></div>
+      <div class="prop-field"><label>Rotación (grados)</label><input type="number" id="p_rot" step="1" value="${el.rotation || 0}">
+        <div class="quick-rot"><button type="button" id="p_rot_ccw" aria-label="Girar 90° a la izquierda">↺ 90°</button><button type="button" id="p_rot_zero" aria-label="Sin giro">0°</button><button type="button" id="p_rot_cw" aria-label="Girar 90° a la derecha">↻ 90°</button></div>
+      </div>
       ${typeSpecificHtml}
       <div style="display:flex; gap:6px; margin-top:1rem;">
         <button type="button" class="tb-btn ghost" id="p_front" style="flex:1;">Al frente</button>
@@ -861,7 +961,17 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     document.getElementById('p_y').addEventListener('input', (e) => { el.y = parseFloat(e.target.value) || 0; renderCanvas(); });
     document.getElementById('p_w').addEventListener('input', (e) => { el.width = parseFloat(e.target.value) || 1; renderCanvas(); });
     document.getElementById('p_h').addEventListener('input', (e) => { el.height = parseFloat(e.target.value) || 1; renderCanvas(); });
-    document.getElementById('p_rot').addEventListener('input', (e) => { el.rotation = parseFloat(e.target.value) || 0; renderCanvas(); });
+    document.getElementById('p_rot').addEventListener('input', (e) => { el.rotation = G.normAngle(parseFloat(e.target.value) || 0); renderCanvas(); });
+    const setRot = (deg) => { el.rotation = G.normAngle(deg); renderCanvas(); renderPropsPanel(); updateWarnings(false); };
+    document.getElementById('p_rot_ccw').addEventListener('click', () => setRot((el.rotation || 0) - 90));
+    document.getElementById('p_rot_cw').addEventListener('click', () => setRot((el.rotation || 0) + 90));
+    document.getElementById('p_rot_zero').addEventListener('click', () => setRot(0));
+    propsPanel.querySelector('.align-row').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-align]');
+      if (!b) return;
+      Object.assign(el, G.align(el, template, b.dataset.align));
+      renderCanvas(); renderPropsPanel(); updateWarnings(false);
+    });
     document.getElementById('p_front').addEventListener('click', bringToFront);
     document.getElementById('p_back').addEventListener('click', sendToBack);
     document.getElementById('p_delete').addEventListener('click', deleteSelectedElement);
@@ -900,7 +1010,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   function fontFieldsHtml(el) {
     return `
-      <div class="prop-field"><label>Fuente</label><select id="p_font">${fontOptionsHtml(el.font_family)}</select></div>
+      <div class="prop-field"><label>Fuente</label><div id="p_font"></div></div>
       <div class="prop-row">
         <div class="prop-field"><label>Tamaño (pt)</label><input type="number" id="p_fsize" value="${el.font_size || 12}"></div>
         <div class="prop-field"><label>Color</label><input type="color" id="p_fcolor" value="${el.font_color || '#000000'}"></div>
@@ -923,7 +1033,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   }
 
   function wireFontFields(el) {
-    document.getElementById('p_font').addEventListener('change', (e) => { el.font_family = e.target.value; renderCanvas(); });
+    GoldenFontPicker.mount(document.getElementById('p_font'), { value: GoldenFonts.resolve(el.font_family), onChange: (v) => { el.font_family = v; renderCanvas(); } });          // el mismo selector que Configuración
     document.getElementById('p_fsize').addEventListener('input', (e) => { el.font_size = parseFloat(e.target.value) || 12; renderCanvas(); });
     document.getElementById('p_fcolor').addEventListener('input', (e) => { el.font_color = e.target.value; renderCanvas(); });
     document.getElementById('p_fweight').addEventListener('change', (e) => { el.font_weight = e.target.value; renderCanvas(); });
@@ -941,21 +1051,48 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const w = parseFloat(document.getElementById('tplWidth').value), h = parseFloat(document.getElementById('tplHeight').value);
     return { w: w >= 10 && w <= 300 ? w : null, h: h >= 10 && h <= 300 ? h : null };
   }
+  /* Vertical ↔ horizontal: el lienzo cambia de verdad (ancho y alto se intercambian) y los elementos GIRAN con él (posición y tamaño; el contenido queda derecho: se edita siempre derecho). Al imprimir,
+     la rotación automática de la impresora (ql-usb.js `layout`) pone lo apaisado a lo largo de la cinta; aquí NO se gira otra vez. Con aviso y «Deshacer». */
+  let orientUndo = null;
+  function showOrientNotice(text, withUndo) {
+    const box = document.getElementById('orientNotice');
+    document.getElementById('orientNoticeText').textContent = text;
+    document.getElementById('orientUndo').style.display = withUndo ? '' : 'none';
+    box.style.display = text ? 'flex' : 'none';
+  }
+  function syncOrientationFromSize() {
+    const sel = document.getElementById('tplOrientation');
+    sel.value = template.width_mm > template.height_mm ? 'horizontal' : 'vertical';
+    template.orientation = sel.value;
+  }
   document.getElementById('tplOrientation').addEventListener('change', (e) => {
+    const toHorizontal = e.target.value === 'horizontal';
     const wEl = document.getElementById('tplWidth'), hEl = document.getElementById('tplHeight');
-    const w = parseFloat(wEl.value), h = parseFloat(hEl.value);
-    const wantsHorizontal = e.target.value === 'horizontal';
-    if ((wantsHorizontal && h > w) || (!wantsHorizontal && w > h)) { wEl.value = h; hEl.value = w; }      // intercambia solo si hace falta (no se doble-intercambia)
-    const s = readSizeInputs();
-    if (s.w && s.h) { template.width_mm = s.w; template.height_mm = s.h; }
+    const needsTurn = toHorizontal ? template.width_mm < template.height_mm : template.width_mm > template.height_mm;
     template.orientation = e.target.value;
-    renderCanvas();
-    updateWarnings(true);
+    if (!needsTurn) {                                          // ya tiene esa forma: solo cambia la etiqueta
+      renderCanvas(); updateWarnings(true); return;
+    }
+    orientUndo = JSON.parse(JSON.stringify({ width_mm: template.width_mm, height_mm: template.height_mm, orientation: toHorizontal ? 'vertical' : 'horizontal', elements: template.elements }));
+    const out = G.convertOrientation(template, toHorizontal);
+    template.width_mm = out.width_mm; template.height_mm = out.height_mm; template.orientation = out.orientation; template.elements = out.elements;
+    wEl.value = template.width_mm; hEl.value = template.height_mm;
+    renderCanvas(); renderPropsPanel(); updateWarnings(true);
+    const nf = out.doesNotFit.length;
+    showOrientNotice(`Etiqueta ${toHorizontal ? 'horizontal' : 'vertical'} (${template.width_mm} × ${template.height_mm} mm): los elementos se giraron con ella para conservar el diseño.` + (nf ? ` ⚠️ ${nf} elemento(s) no caben en la nueva medida (marcados en rojo).` : ''), true);
+  });
+  document.getElementById('orientUndo').addEventListener('click', () => {
+    if (!orientUndo) return;
+    Object.assign(template, orientUndo); orientUndo = null;
+    document.getElementById('tplWidth').value = template.width_mm; document.getElementById('tplHeight').value = template.height_mm;
+    document.getElementById('tplOrientation').value = template.orientation;
+    showOrientNotice('', false); renderCanvas(); renderPropsPanel(); updateWarnings(false);
   });
   ['tplWidth', 'tplHeight'].forEach((id) => document.getElementById(id).addEventListener('input', () => {
     const s = readSizeInputs();
     if (!s.w || !s.h) return;
     template.width_mm = s.w; template.height_mm = s.h;
+    syncOrientationFromSize();
     renderCanvas();
     updateWarnings(false);
   }));
@@ -993,6 +1130,11 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     e.target.innerText = previewMode ? '✏️ Volver a edición' : '👁 Con datos de muestra';
     renderCanvas();
   });
+
+  const magnetBtn = document.getElementById('magnetBtn');
+  function paintMagnet() { magnetBtn.classList.toggle('on', magnetOn); magnetBtn.setAttribute('aria-pressed', magnetOn ? 'true' : 'false'); }
+  magnetBtn.addEventListener('click', () => { magnetOn = !magnetOn; try { window.localStorage.setItem('badge_magnet', magnetOn ? '1' : '0'); } catch (e) { /* sin almacenamiento */ } paintMagnet(); });
+  paintMagnet();
 
   document.getElementById('saveBtn').addEventListener('click', saveTemplate);
   document.getElementById('saveAsBtn').addEventListener('click', saveAsTemplate);
