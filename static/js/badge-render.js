@@ -53,6 +53,45 @@
     return { lines, size: px, shrunk: true, truncated: true };
   }
 
+  /* ---------- Mayúsculas / minúsculas de cada texto (25-oct-2026): SOLO presentación; los datos de la base y los reportes no cambian. ----------
+     text_case: «as_is» (como está en la base, por defecto y en las plantillas viejas) | «upper» | «lower» | «title» (Altas y Bajas).
+     Se aplica ANTES del ajuste de texto, así el ajuste mide lo que de verdad se imprime. Puro: se prueba en tests/js/badge_text_case_check.js. */
+  // Siglas que se quedan en MAYÚSCULA en «Altas y Bajas». Para agregar una, escríbela aquí (sin importar mayúsculas o puntos).
+  const SIGLAS = ['SAS', 'S.A.S.', 'S.A.', 'LTDA', 'ONG', 'EPS', 'IPS', 'DIAN', 'ESAP', 'UNAD', 'DNP'];
+  // Partículas que van en minúscula en «Altas y Bajas» (salvo si son la primera palabra).
+  const PARTICULAS = ['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'o', 'u'];
+  const ROMANOS = /^(?:II|III|IV|VI|VII|VIII|IX|XI|XII|XIII|XIV|XV|XVI|XVII|XVIII|XIX|XX)$/i;      // los de nombres y cargos (Juan Pablo II, Fase III)
+  const TEXT_CASES = ['as_is', 'upper', 'lower', 'title'];
+  const up = (t) => t.toLocaleUpperCase('es'), low = (t) => t.toLocaleLowerCase('es');
+  const SIGLAS_SET = new Set(SIGLAS.map((x) => up(x).replace(/\./g, '')));
+  const PARTICULAS_SET = new Set(PARTICULAS);
+
+  function capitalizeSegment(seg) {                       // primera LETRA en mayúscula, el resto en minúscula (respeta signos al inicio: «(», «¿», comillas)
+    const lower = low(seg);
+    const i = lower.search(/\p{L}/u);
+    return i < 0 ? lower : lower.slice(0, i) + up(lower[i]) + lower.slice(i + 1);
+  }
+  function titleWord(word, first) {
+    const core = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.]+$/gu, '');          // sin signos alrededor (se conserva el punto final de «S.A.S.»)
+    if (/\p{L}\.\p{L}/u.test(core)) return up(word);                                // con puntos intercalados: S.A.S., S.A., E.U.
+    if (SIGLAS_SET.has(up(core).replace(/\./g, ''))) return up(word);                // siglas de la lista
+    if (ROMANOS.test(core)) return up(word);                                            // números romanos
+    if (!first && PARTICULAS_SET.has(low(core))) return low(word);
+    return word.split(/([-'’])/).map((part, i) => (i % 2 ? part : capitalizeSegment(part))).join('');      // José-Luis, O'Brien
+  }
+  function applyTextCase(text, mode) {
+    const raw = text == null ? '' : String(text);
+    if (!mode || mode === 'as_is' || TEXT_CASES.indexOf(mode) < 0) return raw;
+    const clean = raw.replace(/\s+/g, ' ').trim();                                       // espacios repetidos y en los bordes, fuera
+    if (mode === 'upper') return up(clean);
+    if (mode === 'lower') return low(clean);
+    return clean.split(' ').map((w, i) => titleWord(w, i === 0)).join(' ');
+  }
+  function textContent(el, data) {                       // lo que se dibuja: el dato (o el texto fijo) con su modo de mayúsculas
+    const content = el.type === 'text_static' ? (el.content || '') : resolveVariable(el.variable, data);
+    return applyTextCase(content, el.text_case);
+  }
+
   let measureCtx = null;
   function canvasMeasurer(family, weight) {
     if (!measureCtx && typeof document !== 'undefined') measureCtx = document.createElement('canvas').getContext('2d');
@@ -65,7 +104,7 @@
   }
   /* Alto (mm) que necesita un texto a su tamaño elegido con ese ancho (para reacomodar al cambiar la orientación). */
   function textHeightMm(el, widthMm, data) {
-    const content = el.type === 'text_static' ? (el.content || '') : resolveVariable(el.variable, data);
+    const content = textContent(el, data);
     const px = (el.font_size || 12) * PX_PER_PT, m = canvasMeasurer(el.font_family, el.font_weight);
     const words = String(content || '').trim().split(/\s+/).filter(Boolean);
     const lines = words.length ? wrapWords(words, widthMm * PX_PER_MM, (t) => m(t, px)).length : 1;
@@ -86,7 +125,7 @@
   /* Antes: una sola línea sin saltos (`nowrap`), centrada y con lo que sobra escondido: un nombre o una empresa más largos que la caja se cortaban POR LOS DOS LADOS
      («AN SEBAS», «IGARITA ROJA» en la QL-800, 25-oct-2026). Ahora el texto se ajusta a su caja (fitText) y se dibuja con las líneas ya partidas. */
   function renderTextElement(div, el, data) {
-    const content = el.type === 'text_static' ? (el.content || '') : resolveVariable(el.variable, data);
+    const content = textContent(el, data);                 // con su modo de mayúsculas, ANTES de ajustar (se mide lo que se imprime)
     const fit = fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, (el.font_size || 12) * PX_PER_PT, canvasMeasurer(el.font_family, el.font_weight));
     div.style.fontFamily = `'${el.font_family || 'Roboto'}', ${FONT_STACK_FALLBACK}`;
     div.style.fontSize = `${fit.size}px`;
@@ -222,7 +261,7 @@
     return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del

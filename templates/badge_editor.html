@@ -88,6 +88,10 @@
         .align-row { display:flex; gap:4px; margin-bottom:0.9rem; }
         .align-row button { flex:1; min-height:34px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; color:var(--golden-dark); padding:0 2px; }
         .align-row button:hover { border-color:var(--golden-primary); }
+        .case-row { display:flex; gap:4px; }
+        .case-row button { flex:1; min-height:40px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.8rem; font-weight:700; color:var(--golden-dark); padding:0 2px; line-height:1.1; }
+        .case-row button.on { background:var(--golden-dark); color:#fff; border-color:var(--golden-dark); }
+        .case-all { width:100%; margin-top:6px; min-height:34px; border:1px dashed #bbb; background:#fafafa; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; color:var(--golden-dark); }
         .quick-rot { display:flex; gap:4px; margin-top:4px; }
         .quick-rot button { flex:1; min-height:30px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; }
         #orientNotice { display:none; background:#e8f3ff; border:1px solid #b6d8f7; color:#0c3b66; border-radius:10px; padding:6px 12px; font-size:0.82rem; margin:0 0 6px; line-height:1.4; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -1054,8 +1058,16 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
             <option value="right" ${el.align === 'right' ? 'selected' : ''}>Derecha</option>
           </select>
         </div>
+      </div>
+      <div class="prop-field"><label>Mayúsculas / minúsculas</label>
+        <div class="case-row" id="p_case" role="group" aria-label="Mayúsculas o minúsculas">
+          ${TEXT_CASE_OPTIONS.map(([v, label, title]) => `<button type="button" data-case="${v}" class="${(el.text_case || 'as_is') === v ? 'on' : ''}" title="${title}" aria-pressed="${(el.text_case || 'as_is') === v}">${label}</button>`).join('')}
+        </div>
+        <button type="button" class="case-all" id="p_case_all">Aplicar a todos los textos</button>
       </div>`;
   }
+  /* Mayúsculas / minúsculas (25-oct-2026): solo cómo se MUESTRA; el dato de la base no cambia. Las plantillas viejas (sin el campo) son «Como está». */
+  const TEXT_CASE_OPTIONS = [['as_is', 'Como está', 'Como está en la base'], ['upper', 'ABC', 'MAYÚSCULAS'], ['lower', 'abc', 'minúsculas'], ['title', 'Abc', 'Altas y Bajas (cada palabra con mayúscula inicial)']];
 
   function wireFontFields(el) {
     GoldenFontPicker.mount(document.getElementById('p_font'), { value: GoldenFonts.resolve(el.font_family), onChange: (v) => { el.font_family = v; renderCanvas(); } });          // el mismo selector que Configuración
@@ -1063,6 +1075,19 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     document.getElementById('p_fcolor').addEventListener('input', (e) => { el.font_color = e.target.value; renderCanvas(); });
     document.getElementById('p_fweight').addEventListener('change', (e) => { el.font_weight = e.target.value; renderCanvas(); });
     document.getElementById('p_falign').addEventListener('change', (e) => { el.align = e.target.value; renderCanvas(); });
+    document.getElementById('p_case').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-case]');
+      if (!b) return;
+      if (b.dataset.case === 'as_is') delete el.text_case; else el.text_case = b.dataset.case;          // «Como está» no guarda nada: igual que una plantilla vieja
+      renderCanvas(); renderPropsPanel();
+    });
+    document.getElementById('p_case_all').addEventListener('click', () => {
+      const mode = el.text_case || 'as_is';
+      const texts = template.elements.filter((x) => x.type === 'text_static' || x.type === 'text_variable');
+      texts.forEach((x) => { if (mode === 'as_is') delete x.text_case; else x.text_case = mode; });
+      renderCanvas(); renderPropsPanel();
+      showToast(`${texts.length} texto(s): «${TEXT_CASE_OPTIONS.find((o) => o[0] === mode)[2]}»`, 'success');
+    });
   }
 
   // ---------- Wiring general ----------
