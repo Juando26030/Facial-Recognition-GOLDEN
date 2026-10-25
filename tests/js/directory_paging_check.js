@@ -63,7 +63,7 @@ const { settle } = require('./settle');
   intervalFn(); await settle();
   assert.strictEqual(calls.length, 1);
   assert.ok(calls[0].startsWith('/api/users/changes?cursor=10%3A2500'));
-  assert.strictEqual(tbody.children.find(tr => tr.children[1] && tr.children[1].innerText === users[7].id).children.at(-1).innerText, 'Registrado');
+  assert.strictEqual(tbody.children.find(tr => tr.children[1] && tr.children[1].innerText === users[7].id).children[5].innerText, 'Registrado');
   assert.strictEqual(total(), 2500);
 
   // Nada cambió: una sola consulta pequeña, la tabla no se vuelve a dibujar.
@@ -88,6 +88,6 @@ const { settle } = require('./settle');
   document.visibilityState = 'visible';
   docListeners.visibilitychange(); await settle();
   assert.strictEqual(calls.length, 1);
-  assert.strictEqual(tbody.children.find(tr => tr.children[1] && tr.children[1].innerText === users[9].id).children.at(-1).innerText, 'Registrado');
+  assert.strictEqual(tbody.children.find(tr => tr.children[1] && tr.children[1].innerText === users[9].id).children[5].innerText, 'Registrado');
   console.log('directory.js: páginas + incremental OK');
 })().catch(e => { console.error(e); process.exit(1); });

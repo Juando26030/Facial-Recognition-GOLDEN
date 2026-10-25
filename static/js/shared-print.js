@@ -67,6 +67,28 @@
     'body.touch-mode button,body.touch-mode .golden-btn,body.touch-mode .small-btn{min-height:52px;font-size:1.05rem !important;padding-left:18px !important;padding-right:18px !important}',
     'body.touch-mode #searchNombre,body.touch-mode #searchEntidad,body.touch-mode #clearFiltersBtn,body.touch-mode .golden-sidebar-toggle{display:none !important}',
     'body.touch-mode label[for],body.touch-mode .badge-input-group label{font-size:1rem}',
+    /* Directorio en vivo como TARJETAS de dos filas (25-oct-2026, celular vertical: el nombre quedaba fuera de la pantalla detrás de los botones). Solo con el modo touch;
+       la tabla de escritorio no cambia. Fila 1: nombre grande, estado, empresa, cédula y tipo. Fila 2: los botones de siempre, grandes. Sin scroll de lado. */
+    'body.touch-mode .golden-table thead{display:none}',
+    'body.touch-mode .golden-table,body.touch-mode .golden-table tbody{display:block;width:100%}',
+    'body.touch-mode .golden-table tbody tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:12px 14px;margin:0 0 14px;border:2px solid #c9cdd8;border-left-width:8px;border-radius:14px;background:#fff;box-shadow:0 2px 6px rgba(10,14,46,.08)}',
+    'body.touch-mode .golden-table tbody tr:nth-child(even){background:#f4f5f9}',
+    'body.touch-mode .golden-table tbody tr.row-registrado,body.touch-mode .golden-table tbody tr.row-nuevo{border-color:#1e7e34}',
+    'body.touch-mode .golden-table tbody td{display:block;border:none;padding:0;background:transparent;min-width:0;overflow-wrap:anywhere}',
+    'body.touch-mode .golden-table tbody td.touch-only{display:block}',
+    'body.touch-mode .golden-table tbody td[data-field=first_name],body.touch-mode .golden-table tbody td[data-field=last_name]{order:1;font-size:1.35rem;font-weight:800;color:#0a0e2e;line-height:1.2}',
+    'body.touch-mode .golden-table tbody td[data-field=status]{order:2;margin-left:auto;font-size:0.95rem;padding:2px 10px;border-radius:999px;background:#eceef3}',
+    'body.touch-mode .golden-table tbody tr.row-registrado td[data-field=status],body.touch-mode .golden-table tbody tr.row-nuevo td[data-field=status]{background:#1e7e34;color:#fff !important}',
+    'body.touch-mode .golden-table tbody td[data-field=entity]{order:3;flex-basis:100%;font-size:1rem;font-weight:600;color:#333}',
+    'body.touch-mode .golden-table tbody td[data-field=id]{order:4;font-size:1rem;color:#444}',
+    "body.touch-mode .golden-table tbody td[data-field=id]::before{content:'C.C. ';font-weight:700}",
+    'body.touch-mode .golden-table tbody td[data-field=opt_1]{order:5;font-size:0.95rem;color:#555}',
+    'body.touch-mode .golden-table tbody td[data-field=opt_1]:empty,body.touch-mode .golden-table tbody td[data-field=entity]:empty{display:none}',
+    'body.touch-mode .golden-table tbody td.action-cell{order:10;flex-basis:100%;display:flex;gap:10px;margin-top:8px}',
+    'body.touch-mode .golden-table tbody td.action-cell .btn-table-action{flex:1 1 0;min-width:0;min-height:56px;font-size:1.05rem !important;margin:0;border-radius:12px;padding-left:8px !important;padding-right:8px !important;overflow-wrap:normal;word-break:keep-all;white-space:normal;line-height:1.15}',
+    'body.touch-mode .golden-table tbody td.action-cell .btn-accredit-row{flex-grow:1.7}',                                    /* «✅ Acreditar» con más espacio: nunca se parte una palabra */
+    "body.touch-mode .golden-table tbody td.action-cell .btn-table-action[title='Imprimir escarapela']{flex:0 0 64px;font-size:1.4rem !important}",
+    'body.touch-mode .golden-table tbody tr td[colspan]{flex-basis:100%;text-align:center}',
   ].join('\n');
   document.head.appendChild(style);
 

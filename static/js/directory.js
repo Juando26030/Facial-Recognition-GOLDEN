@@ -489,14 +489,22 @@
 
     FIELDS_ORDER.forEach(field => {
       const td = document.createElement('td');
+      td.dataset.field = field;                     // el modo «Registro touch» arma la tarjeta de dos filas con estas marcas (static/js/shared-print.js)
       td.innerText = user[field] || '';
       tr.appendChild(td);
     });
 
     const statusTd = document.createElement('td');
+    statusTd.dataset.field = 'status';
     statusTd.innerText = user.status;
     statusTd.style.fontWeight = 'bold';
     tr.appendChild(statusTd);
+
+    const entityTd = document.createElement('td');   // la empresa: va AL FINAL (las columnas de siempre no se corren) y solo se ve en la tarjeta del modo touch (en la tabla de escritorio no hay columna para ella)
+    entityTd.dataset.field = 'entity';
+    entityTd.className = 'touch-only';
+    entityTd.innerText = user.entity || '';
+    tr.appendChild(entityTd);
 
     return tr;
   }
