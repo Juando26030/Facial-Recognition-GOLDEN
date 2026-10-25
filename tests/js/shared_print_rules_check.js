@@ -181,6 +181,34 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   const lines = QLUsb.mmToDots(50);
   assert.ok(has(job, [0x1b, 0x69, 0x7a, 0x86, 0x0a, 62, 0, lines & 255, lines >> 8]), 'alto fijo de 50 mm');
 
+  // ---- 5) impresión compartida con los parámetros del equipo QUE PIDE (24-oct-2026): X manda los suyos ya resueltos; Y imprime con esos, no con los propios
+  const bodies = [];
+  const realFetch = global.fetch;
+  global.fetch = async (url, init = {}) => { if (String(url).endsWith('/print-jobs') && init.method === 'POST') bodies.push(JSON.parse(init.body)); return realFetch(url, init); };
+  QLUsb.clearPrefs(mem);
+  QLUsb.savePrefs(mem, { cut: false, feedMm: 4, mirror: true, rotation: 270 });                 // los de ESTE equipo (X)
+  mode = 'shared'; for (const f of docListeners.bubble.visibilitychange || []) f(new Ev('visibilitychange')); await settle();
+  REGISTERED.add('1010');
+  await GoldenSharedPrint.printFor('1010', false, true);
+  const sent = bodies[bodies.length - 1];
+  assert.ok(sent && sent.prefs, 'el pedido lleva los parámetros');
+  assert.strictEqual(sent.prefs.cut, false); assert.strictEqual(sent.prefs.feedMm, 4); assert.strictEqual(sent.prefs.mirror, true); assert.strictEqual(sent.prefs.rotation, 270);
+  BP.maybeAutoPrint('1010'); await new Promise((r) => setTimeout(r, 40));                       // la autoimpresión pasa por el mismo despachador: también los lleva
+  assert.ok(bodies.every((b) => b.prefs && b.prefs.feedMm === 4), 'autoimpresión y Cola con los mismos parámetros');
+  global.fetch = realFetch;
+  // Y (este mismo código en el equipo con la impresora) con OTROS valores locales: el pedido manda
+  QLUsb.clearPrefs(mem); QLUsb.savePrefs(mem, { cut: true, feedMm: 1, mirror: false, rotation: 90 });
+  let r = GoldenSharedPrint.prefsForJob({ prefs: sent.prefs });
+  assert.strictEqual(r.prefs.cut, false); assert.strictEqual(r.prefs.feedMm, 4); assert.strictEqual(r.prefs.mirror, true); assert.strictEqual(r.prefs.rotation, 270);
+  assert.ok(/el equipo que la pidió/.test(QLUsb.describePrefs(r.prefs, r.source)), QLUsb.describePrefs(r.prefs, r.source));
+  // pedido viejo en cola (sin parámetros): los del EVENTO, nunca los locales de Y
+  r = GoldenSharedPrint.prefsForJob({ id: 1, user_id: '1001' });
+  assert.strictEqual(r.prefs.feedMm, 1.5); assert.strictEqual(r.prefs.cut, true); assert.strictEqual(r.prefs.rotation, 'auto');
+  assert.ok(!Object.values(r.source).includes('equipo'), 'no usa nada de este equipo');
+  const src = fs.readFileSync(path.resolve(__dirname, '../../static/js/shared-print.js'), 'utf8');
+  assert.ok(src.includes('printUsb(job.user_id, prefsForJob(job))'), 'Y imprime cada pedido con prefsForJob');
+  mode = 'self'; QLUsb.clearPrefs(mem);
+
   console.log('shared_print_rules_check OK');
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

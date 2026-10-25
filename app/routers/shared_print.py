@@ -8,6 +8,7 @@ Equipos Android con Chrome. Algunos (los «Y») tienen una Brother QL-800 por US
     LOCKED), Y imprime por USB y confirma (`result`: printed | failed). Un trabajo reservado no se vuelve a entregar: nunca se imprime dos veces solo.
   - Lo que no se imprimió en PRINT_JOB_TTL queda «expired» (visible para reimprimir a mano); nunca se imprime después por su cuenta.
 Carga: solo pregunta el equipo que de verdad atiende a alguien (≤ 1 consulta indexada cada 1,5 s por impresora) y el resto reporta cada 10 s."""
+import json
 import logging
 import os
 from datetime import timedelta
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role_excluding
+from app.routers import print_settings
 from app.database import get_db
 from app.models import AccessLog, Event, EventAttendee, EventStaffAuthorization, PrintDevice, PrintJob, PrintLog, PrintRoute, StaffUser, User
 from app.timeutil import utcnow
@@ -45,6 +47,7 @@ class JobIn(BaseModel):
     user_id: str
     request_id: str
     reprint: bool = False          # reimpresión EXPLÍCITA (Cola o confirmada): la única forma de pedir otra escarapela de la misma persona dentro de la ventana
+    prefs: Optional[dict] = None   # parámetros de impresión YA resueltos del equipo que pide (24-oct-2026): el equipo con la impresora imprime con estos, no con los suyos
 
 
 class ResultIn(BaseModel):
@@ -169,8 +172,9 @@ def create_job(event_id: int, data: JobIn, db: Session = Depends(get_db), staff:
             return {**_job_out(db, recent), "duplicate": True, "printer_ready": _printer_ready(dev)}
     else:
         log.info("impresión compartida: REIMPRESIÓN explícita (evento %s, usuario %s)", event.id, staff.id)
+    prefs = print_settings.job_prefs(data.prefs)
     job = PrintJob(event_id=event.id, attendee_id=attendee.id, requested_by_staff_id=staff.id, printer_staff_id=printer_id, request_id=request_id,
-                   status="queued", created_at=utcnow())
+                   status="queued", created_at=utcnow(), prefs_json=json.dumps(prefs) if prefs else None)
     db.add(job)
     db.commit()
     dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=printer_id).first()
@@ -237,7 +241,12 @@ def next_job(event_id: int, db: Session = Depends(get_db), staff: StaffUser = De
     attendee = db.get(EventAttendee, job.attendee_id)
     requester = db.get(StaffUser, job.requested_by_staff_id) if job.requested_by_staff_id else None
     db.commit()
-    return {"job": {"id": job.id, "user_id": attendee.user_id if attendee else None, "requested_by": _name(requester)}}
+    try:
+        prefs = json.loads(job.prefs_json) if job.prefs_json else None
+    except ValueError:
+        prefs = None
+    # `prefs`: los del equipo que pidió; None (pedido viejo o sin parámetros) = el equipo con la impresora usa los del EVENTO, nunca los suyos
+    return {"job": {"id": job.id, "user_id": attendee.user_id if attendee else None, "requested_by": _name(requester), "prefs": prefs}}
 
 
 @router.post("/events/{event_id}/print-jobs/{job_id}/result")

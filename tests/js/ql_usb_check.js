@@ -32,18 +32,57 @@ for (let y = 0; y < 3; y++) {
 }
 assert.strictEqual(job[job.length - 1], 0x1a);                                                   // imprimir y avanzar
 
-// ---- posición de los puntos: margen de 12, MSB primero
+// ---- posición de los puntos (24-oct-2026, prueba física en la QL-800): el PRIMER punto de la línea queda en el borde DERECHO de la etiqueta, así que la columna IZQUIERDA del
+//      dibujo va al ÚLTIMO punto imprimible (12 + 695). MSB primero, margen de 12 a cada lado.
+const bitOn = (row, dot) => (row[dot >> 3] & (0x80 >> (dot & 7))) !== 0;
 const line = (n) => job.slice(200 + 2 + 4 + 4 + 13 + 4 + 4 + 4 + 5 + 2 + n * 93 + 3, 200 + 2 + 4 + 4 + 13 + 4 + 4 + 4 + 5 + 2 + n * 93 + 93);
-assert.strictEqual(line(0)[1], 0x08);                       // x=0 → punto 12 → byte 1, bit 0x80>>4
+assert.ok(bitOn(line(0), 12 + 695), "x=0 (izquierda del dibujo) → último punto");
+assert.strictEqual(line(0)[1], 0, "ya no va al primer punto (eso salía en espejo)");
 assert.strictEqual(line(0).reduce((a, v) => a + (v ? 1 : 0), 0), 1);
-assert.strictEqual(line(1)[(12 + 695) >> 3] & (0x80 >> ((12 + 695) & 7)), 0x80 >> ((12 + 695) & 7));
-assert.strictEqual(line(2)[(12 + 100) >> 3] & (0x80 >> ((12 + 100) & 7)), 0x80 >> ((12 + 100) & 7));
+assert.ok(bitOn(line(1), 12), "x=695 (derecha del dibujo) → primer punto");
+assert.ok(bitOn(line(2), 12 + 695 - 100), "x=100 → punto 12 + 595");
 
-// ---- espejo: el punto de la izquierda pasa a la derecha
+// ---- impresora simulada (lo que vio Juan en la QL-800: el primer punto de la línea sale a la DERECHA de la etiqueta): la etiqueta de prueba (barra a la izquierda) en vertical y en
+//      horizontal, normal y con espejo. El espejo SOLO refleja a lo ancho de la cinta; el giro (0°/90°) es otra cosa y no cambia con el espejo.
+{
+  const LD = 720;
+  const decode = (jobBytes, h) => {                       // de las líneas raster a la etiqueta física (fila y, columna física de izquierda a derecha)
+    const out = []; const start = jobBytes.length - 1 - h * 93;
+    for (let y = 0; y < h; y++) { const row = jobBytes.slice(start + y * 93 + 3, start + y * 93 + 93); const phys = new Uint8Array(LD); for (let d = 0; d < LD; d++) if (row[d >> 3] & (0x80 >> (d & 7))) phys[LD - 1 - d] = 1; out.push(phys); }
+    return out;
+  };
+  const label = (w, h) => { const b = new Uint8Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < 20; x++) b[y * w + x] = 1; for (let x = w - 40; x < w - 30; x++) b[(h >> 1) * w + x] = 1; return b; };
+  const run = (w, h, rotation, mirror) => {
+    const p = Object.assign({}, QL.PREF_DEFAULTS, { rotation, crop: false, mirror });
+    const lay = QL.layout(p, w / QL.mmToDots(1), h / QL.mmToDots(1));
+    const prep = QL.prepareBitmap(label(w, h), w, h, p, lay);
+    return decode(QL.buildJob({ bitmap: prep.bitmap, height: prep.height, mirror }), prep.height);
+  };
+  // vertical (sin giro): la barra sale a la IZQUIERDA sin espejo y a la DERECHA con espejo
+  const vn = run(600, 300, 0, false), vm = run(600, 300, 0, true);
+  const firstInk = (row) => row.indexOf(1), lastInk = (row) => row.lastIndexOf(1);
+  assert.ok(firstInk(vn[0]) < 360 && lastInk(vn[0]) < 360, "vertical normal: barra a la izquierda");
+  assert.ok(firstInk(vm[0]) > 360, "vertical con espejo: barra a la derecha");
+  // horizontal (giro 90°) y cualquier giro: con espejo es EXACTAMENTE el reflejo a lo ancho de la normal (el espejo no toca el giro)
+  for (const rot of [90, 270]) {
+    const hn = run(600, 300, rot, false), hm = run(600, 300, rot, true);
+    assert.strictEqual(hn.length, hm.length);
+    for (let y = 0; y < hn.length; y++) for (let x = 0; x < LD; x++) assert.strictEqual(hm[y][x], hn[y][LD - 1 - x], `giro ${rot}: fila ${y}`);
+  }
+}
+
+// ---- espejo: SOLO con «Espejo» la etiqueta sale reflejada (la columna izquierda va al primer punto)
 const mir = QL.buildJob({ bitmap: bitmap(1, [[0, 0]]), height: 1, mirror: true });
 const mline = mir.slice(mir.length - 1 - 90, mir.length - 1);
-assert.strictEqual(mline[(12 + 695) >> 3] & (0x80 >> ((12 + 695) & 7)), 0x80 >> ((12 + 695) & 7));
-assert.strictEqual(mline[1], 0);
+assert.ok(bitOn(mline, 12)); assert.ok(!bitOn(mline, 12 + 695));
+// la etiqueta de prueba (barra negra a la izquierda): sin espejo la barra ocupa el FINAL de cada línea; con espejo, el principio
+{
+  const bar = new Uint8Array(W * 2); for (let y = 0; y < 2; y++) for (let x = 0; x < 30; x++) bar[y * W + x] = 1;
+  const n = QL.buildJob({ bitmap: bar, height: 2 }), m = QL.buildJob({ bitmap: bar, height: 2, mirror: true });
+  const ln = n.slice(n.length - 1 - 93 + 3, n.length - 1), lm = m.slice(m.length - 1 - 93 + 3, m.length - 1);
+  assert.ok(bitOn(ln, 12 + 695) && bitOn(ln, 12 + 666) && !bitOn(ln, 12 + 665) && !bitOn(ln, 12));
+  assert.ok(bitOn(lm, 12) && bitOn(lm, 12 + 29) && !bitOn(lm, 12 + 30) && !bitOn(lm, 12 + 695));
+}
 
 // ---- troquelada y sin corte
 const die = QL.buildJob({ bitmap: bitmap(2, []), height: 2, lengthMm: 100, autoCut: false });
@@ -67,12 +106,26 @@ assert.ok(!nocut.join(",").includes([0x1b, 0x69, 0x41, 0x01].join(",")), "sin co
 const mem = { d: {}, getItem(k) { return k in this.d ? this.d[k] : null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
 assert.deepStrictEqual(QL.readPrefs(mem), { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 });
 QL.savePrefs(mem, { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true });
-assert.deepStrictEqual(mem.d, { ql_cut: "0", ql_feed_mm: "2", ql_length_mm: "90", ql_mirror: "1", ql_invert: "1" });
+assert.deepStrictEqual(mem.d, { ql_cut: "0", ql_feed_mm: "2", ql_length_mm: "90", ql_mirror_v2: "1", ql_invert: "1" });       // «Espejo» con la clave NUEVA (significado corregido)
 assert.deepStrictEqual(QL.readPrefs(mem), { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 });
 QL.savePrefs(mem, { lengthMm: null, feedMm: "abc" });
 assert.strictEqual(QL.readPrefs(mem).lengthMm, null);
 assert.strictEqual(QL.readPrefs(mem).feedMm, 1.5);                                               // valor ilegible: el de por defecto
 assert.deepStrictEqual(QL.readPrefs(null), QL.readPrefs({ getItem() { throw new Error("bloqueado"); } }));
+
+// ---- «Espejo» guardado con el significado VIEJO (ql_mirror, antes del 24-oct-2026) no se hereda: se ignora y dropLegacyPrefs lo borra
+{
+  const old = { d: { ql_mirror: "1", ql_cut: "0" }, getItem(k) { return k in this.d ? this.d[k] : null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
+  assert.strictEqual(QL.readPrefs(old).mirror, false, "el espejo viejo (que compensaba el error) ya no aplica");
+  assert.strictEqual(QL.resolvePrefs(old, {}).source.mirror, "defecto");
+  assert.strictEqual(QL.readPrefs(old).cut, false, "lo demás del equipo se conserva");
+  QL.dropLegacyPrefs(old);
+  assert.deepStrictEqual(old.d, { ql_cut: "0" });
+  old.d.ql_mirror_v2 = "1";
+  assert.strictEqual(QL.readPrefs(old).mirror, true, "el espejo nuevo sí se respeta");
+  old.d.ql_mirror = "0"; QL.clearPrefs(old); assert.deepStrictEqual(old.d, {});
+  QL.dropLegacyPrefs(null);                                                                        // sin almacenamiento: no falla
+}
 
 
 // ---- valores por EVENTO con sobrescritura por EQUIPO: lo del equipo > lo del evento > de fábrica; «Restablecer» deja solo lo del evento

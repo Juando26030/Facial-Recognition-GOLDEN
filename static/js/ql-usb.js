@@ -32,7 +32,10 @@
        tapeWidth/tapeType: la cinta puesta (ancho en mm de QLUsb.MEDIA; «continuous» o «diecut» = troquelada con largo fijo `lengthMm`).
        rotation: «auto» (el lado largo de la etiqueta corre a lo largo de la cinta) | 0 | 90 | 180 | 270.  crop/cropMarginMm: recortar al contenido (última fila con tinta + margen). */
   var PREF_DEFAULTS = { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 };
-  var PREF_KEYS = { cut: "ql_cut", feedMm: "ql_feed_mm", lengthMm: "ql_length_mm", mirror: "ql_mirror", invert: "ql_invert", tapeWidth: "ql_tape_width", tapeType: "ql_tape_type", rotation: "ql_rotation", crop: "ql_crop", cropMarginMm: "ql_crop_margin_mm" };
+  /* «Espejo» cambió de significado el 24-oct-2026 (ver packRow): la clave del equipo pasó a `ql_mirror_v2` y la vieja `ql_mirror` se IGNORA (quien la activó para compensar el error
+     quedaría ahora con la etiqueta reflejada). `dropLegacyPrefs` la borra. */
+  var LEGACY_KEYS = ["ql_mirror"];
+  var PREF_KEYS = { cut: "ql_cut", feedMm: "ql_feed_mm", lengthMm: "ql_length_mm", mirror: "ql_mirror_v2", invert: "ql_invert", tapeWidth: "ql_tape_width", tapeType: "ql_tape_type", rotation: "ql_rotation", crop: "ql_crop", cropMarginMm: "ql_crop_margin_mm" };
   function _num(v, lo, hi) { var n = parseFloat(v); return isFinite(n) && n >= lo && n <= hi ? n : null; }
   function _clean(field, raw) {            // valor válido o undefined
     if (raw === null || raw === undefined || raw === "") return undefined;
@@ -68,10 +71,14 @@
   }
   function clearPrefs(storage) {                     // «Restablecer»: el equipo vuelve a usar los valores del evento
     Object.keys(PREF_KEYS).forEach(function (f) { try { storage.removeItem(PREF_KEYS[f]); } catch (e) { /* nada que borrar */ } });
+    dropLegacyPrefs(storage);
+  }
+  function dropLegacyPrefs(storage) {                // borra las claves con el significado viejo (nunca se leen)
+    LEGACY_KEYS.forEach(function (k) { try { if (storage) storage.removeItem(k); } catch (e) { /* sin almacenamiento */ } });
   }
   function describePrefs(prefs, source, layoutInfo) {
     var src = {}; Object.keys(source || {}).forEach(function (k) { src[source[k]] = true; });
-    var from = src.equipo && src.evento ? "equipo y evento" : src.equipo ? "este equipo" : src.evento ? "el evento" : "valores de fábrica";
+    var from = src.origen ? "el equipo que la pidió" : src.equipo && src.evento ? "equipo y evento" : src.equipo ? "este equipo" : src.evento ? "el evento" : "valores de fábrica";
     var rot = layoutInfo ? (prefs.rotation === "auto" ? "giro automático (" + layoutInfo.rotation + "°)" : "giro " + layoutInfo.rotation + "°") : (prefs.rotation === "auto" ? "giro automático" : "giro " + prefs.rotation + "°");
     return "Cinta " + prefs.tapeWidth + " mm " + (prefs.tapeType === "diecut" ? "troquelada de " + prefs.lengthMm + " mm" : "continua") + " · " + rot +
       (prefs.tapeType === "diecut" ? "" : " · " + (prefs.crop ? "recorte al contenido (+" + prefs.cropMarginMm + " mm)" : "alto de la plantilla")) + " · corte " + (prefs.cut ? "sí" : "no") + " · margen " + prefs.feedMm + " mm · según " + from;
@@ -138,11 +145,14 @@
     return { bitmap: bitmap, height: height, rotation: lay.rotation, cropped: cropped };
   }
 
-  /* bitmap: Uint8Array (alto × ancho) con 1 = negro; ancho = puntos imprimibles de la cinta. Devuelve la fila de 90 bytes (MSB = primer punto). */
+  /* bitmap: Uint8Array (alto × ancho) con 1 = negro; ancho = puntos imprimibles de la cinta. Devuelve la fila de 90 bytes (MSB = primer punto).
+     El cabezal de la serie QL pone el PRIMER punto de cada línea en el borde DERECHO de la etiqueta (vista como sale de la impresora): por eso la columna izquierda del dibujo va al
+     ÚLTIMO punto. Error real (24-oct-2026, prueba física de Juan en la QL-800): se mandaba la columna izquierda en el primer punto y la etiqueta salía en espejo sin «Espejo»
+     (y derecha con «Espejo»). Es lo mismo que hace la librería brother_ql (voltea izquierda-derecha antes de mandar las líneas). Ahora: sin espejo = derecha; con espejo = reflejada. */
   function packRow(bitmap, width, y, margin, mirror) {
     var row = new Uint8Array(LINE_BYTES);
     for (var x = 0; x < width; x++) {
-      var v = bitmap[y * width + (mirror ? width - 1 - x : x)];
+      var v = bitmap[y * width + (mirror ? x : width - 1 - x)];
       if (v) {
         var dot = margin + x;
         if (dot >= 0 && dot < LINE_DOTS) row[dot >> 3] |= 0x80 >> (dot & 7);
@@ -316,7 +326,7 @@
   }
 
   var api = { readPrefs: readPrefs, savePrefs: savePrefs, resolvePrefs: resolvePrefs, clearPrefs: clearPrefs, describePrefs: describePrefs, PREF_DEFAULTS: PREF_DEFAULTS, PREF_KEYS: PREF_KEYS,
-              layout: layout, printableMm: printableMm, rotateBitmap: rotateBitmap, centerOnTape: centerOnTape, cropToContent: cropToContent, invertBitmap: invertBitmap, prepareBitmap: prepareBitmap, buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
+              layout: layout, printableMm: printableMm, dropLegacyPrefs: dropLegacyPrefs, LEGACY_KEYS: LEGACY_KEYS, rotateBitmap: rotateBitmap, centerOnTape: centerOnTape, cropToContent: cropToContent, invertBitmap: invertBitmap, prepareBitmap: prepareBitmap, buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
               supported: supported, connect: connect, sendJob: sendJob, readStatus: readStatus, close: close, info: function () { return state.device; },
               BUSY_MSG: BUSY_MSG, LOCK_NAME: LOCK_NAME, isOwner: function () { return owner.held; } };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.QLUsb = api;

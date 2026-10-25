@@ -191,6 +191,7 @@ templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Ev
 templates.env.globals["event_logo_url"] = event_logo_url
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
+templates.env.globals["print_settings_json"] = print_settings.settings_json       # valores de impresión del evento con el significado actual (sin lo de versiones viejas)
 
 
 def _include(router, prefix: str = "") -> None:

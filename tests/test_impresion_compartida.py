@@ -278,11 +278,11 @@ def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_a
     page = pathlib.Path("templates/impresion_usb.html").read_text(encoding="utf-8")
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     ql = pathlib.Path("static/js/ql-usb.js").read_text(encoding="utf-8")
-    # /impresion-usb guarda «ql_» + mirror|invert|cut como "1"/"0" (cortar: sí por defecto); el Registro lee esas mismas claves con los mismos valores por defecto y el mismo umbral
-    assert 'localStorage.getItem("ql_" + key)' in page and 'localStorage.setItem("ql_" + key, val ? "1" : "0")' in page
+    # /impresion-usb guarda mirror|invert|cut como "1"/"0" con las MISMAS claves que el Registro (QLUsb.PREF_KEYS; «Espejo» versionado desde el 24-oct-2026: ql_mirror_v2)
+    assert 'localStorage.getItem(QLUsb.PREF_KEYS[key])' in page and 'localStorage.setItem(QLUsb.PREF_KEYS[key], val ? "1" : "0")' in page
     assert 'pref("mirror", false)' in page and 'pref("invert", false)' in page and 'pref("cut", true)' in page
     assert "QLUsb.resolvePrefs(storage(), eventPrefs)" in sp and 'QLUsb.readPrefs(storage()).feedMm' in page                  # el Registro y la página leen las preferencias con la MISMA función (ql-usb.js)
-    assert all(f'"{k}"' in ql for k in ("ql_cut", "ql_mirror", "ql_invert", "ql_feed_mm", "ql_length_mm")) and "function resolvePrefs" in ql      # las mismas claves de siempre, ahora en PREF_KEYS
+    assert all(f'"{k}"' in ql for k in ("ql_cut", "ql_mirror_v2", "ql_invert", "ql_feed_mm", "ql_length_mm")) and "function resolvePrefs" in ql      # las mismas claves de siempre, ahora en PREF_KEYS
     assert re.search(r"bitmapFromRGBA\(ctx\.getImageData\(0, 0, w, h\)\.data, w, h, 140, false\)", sp) and re.search(r"bitmapFromRGBA\(rgba, DOTS, t\.height, 140,", page)
     assert "mirror: p.mirror, autoCut: p.cut" in sp and "feedDots: QLUsb.mmToDots(p.feedMm)" in sp and 'mirror: $("optMirror").checked, autoCut: $("optCut").checked' in page
     # la página de prueba suelta la impresora al terminar y al ocultarse o cerrarse; el cierre hace releaseInterface y suelta el candado entre pestañas

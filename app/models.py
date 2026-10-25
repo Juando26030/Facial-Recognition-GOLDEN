@@ -961,3 +961,4 @@ class PrintJob(Base):
     created_at = Column(DateTime, nullable=False, default=utcnow)
     sent_at = Column(DateTime, nullable=True)
     done_at = Column(DateTime, nullable=True)
+    prefs_json = Column(Text, nullable=True)       # 0071: parámetros de impresión del equipo que pidió (cinta, giro, espejo, corte...); NULL = los del evento

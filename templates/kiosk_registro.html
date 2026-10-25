@@ -346,7 +346,7 @@
 </main>
 
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
-{% if event.shared_print_enabled %}<meta name="gw-print-settings" content="{{ event.print_settings_json or '{}' }}">
+{% if event.shared_print_enabled %}<meta name="gw-print-settings" content="{{ print_settings_json(event) }}">
 {# Impresión compartida y USB (apagada por defecto): con el interruptor apagado esta página es exactamente la de siempre #}
 <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
 <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>

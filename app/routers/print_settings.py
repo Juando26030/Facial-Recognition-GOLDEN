@@ -20,6 +20,10 @@ READ = require_role("coordinador")
 CONFIG = require_role_excluding("coordinador", ("comercial",))
 
 SUPPORTED_TAPES = (62,)          # anchos de cinta (mm) que sabe imprimir QLUsb.MEDIA; las demás se agregan allá al probarlas con la cinta puesta
+# Versión de lo guardado. v2 (24-oct-2026): «Espejo» cambió de significado (static/js/ql-usb.js packRow: antes la etiqueta salía reflejada SIN espejo). Lo guardado sin «v»: 2 es
+# del significado viejo y su «mirror» se IGNORA al leer (quien lo activó para compensar quedaría ahora con la etiqueta reflejada). Sin migración de base: es el mismo JSON.
+SETTINGS_VERSION = 2
+LEGACY_KEYS_V1 = ("mirror",)
 DEFAULTS = {"cut": True, "feedMm": 1.5, "lengthMm": None, "mirror": False, "invert": False, "tapeWidth": 62, "tapeType": "continuous", "rotation": "auto", "crop": True, "cropMarginMm": 3}
 
 
@@ -71,11 +75,40 @@ def sanitize(data: dict) -> dict:
 
 
 def read_settings(event) -> dict:
+    """Los valores del evento con el significado ACTUAL (sin la clave de versión; lo de la versión vieja que cambió de significado no se hereda)."""
     try:
         raw = json.loads(event.print_settings_json) if event.print_settings_json else {}
     except ValueError:
         raw = {}
-    return raw if isinstance(raw, dict) else {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {k: v for k, v in raw.items() if k != "v"}
+    if raw.get("v") != SETTINGS_VERSION:
+        for key in LEGACY_KEYS_V1:
+            out.pop(key, None)
+    return out
+
+
+def settings_json(event) -> str:
+    """Para la pantalla de Registro (meta gw-print-settings): lo mismo que `read_settings`, en JSON."""
+    return json.dumps(read_settings(event))
+
+
+def stored(clean: dict) -> str:
+    return json.dumps({"v": SETTINGS_VERSION, **clean}) if clean else None
+
+
+def job_prefs(data) -> dict | None:
+    """Parámetros que manda el equipo que pide una impresión compartida (ya resueltos allá). Se validan con las mismas reglas que los del evento; si algo no cuadra, el pedido sigue
+    adelante con los del evento (nunca se bloquea una impresión por esto)."""
+    if not isinstance(data, dict) or not data:
+        return None
+    try:
+        clean = sanitize(data)
+    except HTTPException:
+        log.warning("impresión compartida: parámetros del equipo no válidos; se usan los del evento")
+        return None
+    return clean or None
 
 
 @router.get("/events/{event_id}/print-settings")
@@ -89,7 +122,7 @@ def put_settings(event_id: int, data: dict, db: Session = Depends(get_db), staff
     """Reemplaza los valores del evento por los enviados (lo omitido o `null` vuelve al valor de fábrica). `{}` = restablecer todo."""
     event = get_event_for_staff(event_id, db, staff)
     clean = sanitize(data.get("settings") if isinstance(data.get("settings"), dict) else data)
-    event.print_settings_json = json.dumps(clean) if clean else None
+    event.print_settings_json = stored(clean)
     db.commit()
     log.info("valores de impresión del evento %s actualizados por el usuario %s (%s claves)", event.id, staff.id, len(clean))
     return {"settings": clean, "defaults": DEFAULTS, "supported_tapes": list(SUPPORTED_TAPES)}

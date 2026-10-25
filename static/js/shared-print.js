@@ -194,7 +194,18 @@
     }
   }
 
-  async function badgeBitmap(userId) {
+  /* Parámetros con los que se imprime un pedido: los de ESTE equipo si lo imprime él mismo; los que mandó el equipo que lo pidió si es un pedido compartido (24-oct-2026: antes el
+     equipo con la impresora los resolvía con SUS valores y se perdían los del que pidió). Un pedido viejo sin parámetros usa los del evento (nunca los locales de quien lo imprime). */
+  function prefsForJob(job) {
+    if (job && job.prefs && typeof job.prefs === 'object') {
+      const r = QLUsb.resolvePrefs(null, job.prefs);
+      Object.keys(r.source).forEach((k) => { if (r.source[k] === 'evento') r.source[k] = 'origen'; });
+      return r;
+    }
+    return QLUsb.resolvePrefs(null, eventPrefs);
+  }
+
+  async function badgeBitmap(userId, given) {
     const dataRes = await fetch(`/api/users/${encodeURIComponent(userId)}/badge-print-data?event_id=${EID}`, { cache: 'no-store' });
     if (!dataRes.ok) throw new Error('No se encontró la persona en este evento.');
     const data = await dataRes.json();
@@ -202,7 +213,7 @@
     const tplRes = await fetch(`/api/events/${EID}/badge-template${qs}`, { cache: 'no-store' });
     if (!tplRes.ok) throw new Error('El evento no tiene plantilla de escarapela.');
     const template = await tplRes.json();
-    const r = resolved();
+    const r = given || resolved();
     const shot = await renderTemplate(template, data);
     const out = composeJob(shot, template.width_mm, template.height_mm, r.prefs);
     lastPrint = { text: QLUsb.describePrefs(r.prefs, r.source, out.layout), warn: out.layout.tooWide ? `La plantilla (${out.layout.acrossMm} mm) es más ancha que la cinta (${out.layout.availMm.toFixed(1)} mm imprimibles): se encogió.` : '', at: Date.now() };
@@ -212,11 +223,11 @@
   }
 
   let usbBusy = Promise.resolve();
-  function printUsb(userId) {                       // una impresión a la vez por equipo (la impresora no admite dos flujos a la vez)
+  function printUsb(userId, given) {                // una impresión a la vez por equipo (la impresora no admite dos flujos a la vez)
     const run = usbBusy.then(async () => {
       if (!usb.ok || !QLUsb.info()) await connectUsb(false);
       if (!usb.ok) throw new Error('La impresora no está conectada.');
-      await QLUsb.sendJob(await badgeBitmap(userId));
+      await QLUsb.sendJob(await badgeBitmap(userId, given));
     });
     usbBusy = run.catch(() => {});
     return run;
@@ -240,7 +251,7 @@
       if (job) {
         let ok = false;
         let error = '';
-        try { await printUsb(job.user_id); ok = true; } catch (e) { error = e && e.message ? e.message : String(e); }
+        try { await printUsb(job.user_id, prefsForJob(job)); ok = true; } catch (e) { error = e && e.message ? e.message : String(e); }
         for (let i = 0; i < 3; i++) {             // la confirmación se reintenta: si se pierde, el trabajo caduca (nunca se reimprime solo)
           try {
             const r = await fetch(`/api/events/${EID}/print-jobs/${job.id}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok, error }) });
@@ -261,7 +272,7 @@
     let job = null;
     for (let i = 0; i < 2 && !job; i++) {           // el mismo request_id: si la primera respuesta se perdió, el servidor no duplica
       try {
-        const res = await fetch(`/api/events/${EID}/print-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, request_id: requestId, reprint: !!reprint }) });
+        const res = await fetch(`/api/events/${EID}/print-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, request_id: requestId, reprint: !!reprint, prefs: prefs() }) });      // con los parámetros YA resueltos de este equipo
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { toast(`⚠️ No se pudo enviar la escarapela a imprimir: ${body.detail || res.status}`, 'error'); return; }
         job = body;
@@ -611,6 +622,7 @@
   bar.querySelector('#spPrefs').addEventListener('click', showPrefs);
   bar.querySelector('#spQueue').addEventListener('click', showQueue);
   function start() {
+    QLUsb.dropLegacyPrefs(storage());                    // «Espejo» con el significado viejo no se hereda
     mount();
     wireEnter();
     applyTouch();
@@ -619,5 +631,5 @@
     connectUsb(false);                                    // reconoce la impresora ya autorizada (sin pedir permiso) y manda la primera señal
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
-  window.GoldenSharedPrint = { printFor, testJob, cleanCedula, state: () => ({ route, usb, online, pending, deviceId, touch }) };
+  window.GoldenSharedPrint = { printFor, testJob, cleanCedula, prefsForJob, state: () => ({ route, usb, online, pending, deviceId, touch }) };
 })();
