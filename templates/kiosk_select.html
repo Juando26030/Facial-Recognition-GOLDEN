@@ -23,6 +23,8 @@
         .status-creado { background: rgba(0,123,255,0.12); color:#0056b3; }
         .status-en_proceso { background: rgba(40,167,69,0.15); color:#1e7e34; }
         .status-finalizado { background: #eee; color:#777; }
+        .event-code-line { margin:0.9rem auto 0; display:inline-flex; gap:0.5rem; align-items:baseline; padding:6px 16px; border:2px solid var(--golden-dark); border-radius:12px; background:#fff; font-size:0.95rem; color:var(--golden-dark); }      /* el código del evento, bien visible (orden 21-oct-2026) */
+        .event-code-line strong { font-size:1.15rem; letter-spacing:1px; }
         .status-note { font-size:0.8rem; color:#a66; margin-top:1.5rem; max-width:420px; margin-left:auto; margin-right:auto; }
     </style>
 </head>
@@ -60,6 +62,7 @@
         {{ {"creado": "Creado", "en_proceso": "En Proceso", "finalizado": "Finalizado"}.get(event.status, event.status) }}
       </span>
     </div>
+    <div><p class="event-code-line" id="eventCodeLine">Código del evento: <strong>{{ event.event_code }}</strong></p></div>
 
     <div class="mode-grid">
       <a href="/kiosk/{{ event.id }}/registro" class="mode-card enabled">

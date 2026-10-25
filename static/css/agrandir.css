@@ -1,0 +1,3 @@
+/* Agrandir (tipografía por defecto de TODA la app, Sprint 2.4 Fase 9) para las páginas que no cargan style.css, p. ej. /aceptar. Mismos dos archivos y mismos pesos que style.css: Thin para el texto normal, Regular para 600 o más. */
+@font-face { font-family: 'Agrandir'; src: url('../fonts/agrandir-thin.ttf') format('truetype'); font-weight: 100 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Agrandir'; src: url('../fonts/agrandir-regular.otf') format('opentype'); font-weight: 600 900; font-style: normal; font-display: swap; }

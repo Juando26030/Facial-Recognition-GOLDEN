@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
     <title>{{ form_title }}</title>
-    <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <style>
@@ -73,7 +73,6 @@ function applyTheme(t) {
   document.body.style.color = theme.text_color || "#0A0E2E";
   document.body.style.fontFamily = `'${theme.font || "Montserrat"}', sans-serif`;
   if (theme.bg_image) { document.body.style.backgroundImage = `url(${assetUrl(theme.bg_image)})`; document.body.style.backgroundSize = "cover"; document.body.style.backgroundAttachment = "fixed"; }
-  document.getElementById("fontsLink").href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font || "Montserrat").replace(/%20/g, "+")}:wght@400;700&display=swap`;
 }
 const LANG_NAMES = { es: "Spanish", en: "English", pt: "Portuguese" };
 const TR_LANGS = [["en", "English"], ["es", "Español"], ["pt", "Português"], ["fr", "Français"], ["de", "Deutsch"], ["it", "Italiano"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"],

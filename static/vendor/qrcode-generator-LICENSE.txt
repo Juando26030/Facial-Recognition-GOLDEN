@@ -1,0 +1,2 @@
+qrcode-generator 1.4.4 (https://github.com/kazuhikoarase/qrcode-generator), licencia MIT, Copyright (c) 2009 Kazuhiko Arase.
+Alojado aquí (antes se pedía a cdnjs.cloudflare.com) para no enviar la IP de las personas a un tercero.

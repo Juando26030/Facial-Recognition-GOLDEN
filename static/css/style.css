@@ -106,10 +106,11 @@ body { font-family: var(--font-body); color: #333; background: #f8f9fa; }
 .golden-table th, .golden-table td { padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: middle; }
 .golden-table th { background-color: var(--golden-dark); color: white; font-family: var(--font-heading-secondary); font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
 .golden-table td { color: #333; }
+.golden-table td.touch-only { display: none; }      /* solo en la tarjeta del modo «Registro touch» */
 
 /* Colores de las filas por Estado */
 .row-registrado { background-color: rgba(40, 167, 69, 0.22) !important; } /* Verde bien visible (reunión 2026-09-21, ítem 22: al 10% casi no se notaba el cambio a Registrado) */
-.row-registrado td:last-child { color: #1e7e34; }
+.row-registrado td:last-child:not(.touch-only), .row-registrado td[data-field=status] { color: #1e7e34; }
 .row-nuevo { background-color: rgba(0, 123, 255, 0.08) !important; } /* Azul suave (Nuevos manuales) */
 .row-noregistrado { background-color: #ffffff !important; } /* Blanco (En base de datos, aún no llegan) */
 

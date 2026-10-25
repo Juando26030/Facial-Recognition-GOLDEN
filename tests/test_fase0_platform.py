@@ -64,12 +64,15 @@ def test_failed_jobs_back_off_then_end_as_failed_and_can_be_seen(db, monkeypatch
     assert stats["failed"] == 1 and stats["pending"] == 0
 
 
-def test_unknown_kind_is_recorded_as_an_error_not_a_crash(db):
+def test_unknown_kind_is_not_claimed_and_keeps_its_attempts(db):
+    """Antes se reclamaba y se registraba «no hay manejador» gastando un intento: así quedó fallida para siempre la constancia de Beto en producción (Hallazgo 4,
+    21-oct-2026), en un proceso que no tenía ese manejador. Ahora el trabajo queda en cola, intacto, para el proceso que sí lo tenga (y el barrido avisa)."""
     jobs.enqueue(db, "no-existe", {})
     db.commit()
-    assert jobs.run_once() == 1
+    assert jobs.run_once() == 0
     db.expire_all()
-    assert "no hay manejador" in db.query(Job).one().last_error
+    job = db.query(Job).one()
+    assert job.status == "queued" and job.attempts == 0 and job.last_error is None
 
 
 def test_a_job_whose_process_died_is_reclaimed_after_the_lease(db, handlers):

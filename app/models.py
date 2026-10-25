@@ -235,6 +235,8 @@ class Event(Base):
     biometrics_locked = Column(Boolean, default=False, server_default='false', nullable=False)   # candado «sin biometría» (0063): el servidor no deja activar el rostro, guardar fotos ni encolar vectores en este evento
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
+    shared_print_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # impresión compartida (22-oct-2026, 0069): APAGADA por defecto; app/routers/shared_print.py
+    print_settings_json = Column(Text, nullable=True)   # valores de impresión de escarapelas del evento (0070, app/routers/print_settings.py); NULL = de fábrica
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
     certificates_token = Column(String, unique=True, nullable=True)  # enlace público /c/<token> para que cada persona descargue su certificado (2026-09-23)
@@ -915,3 +917,48 @@ def _stamp_face_captured(target, value, oldvalue, initiator):
     if value and value == oldvalue:
         return
     target.face_captured_at = utcnow() if value else None
+
+
+class PrintDevice(Base):
+    """Último equipo con el que cada usuario abrió el Registro de un evento con impresión compartida: plataforma, navegador y si tiene la impresora USB
+    conectada (lo reporta el propio equipo cada pocos segundos). Sin datos de personas ni direcciones IP."""
+    __tablename__ = 'print_devices'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    device_id = Column(String(64), nullable=False)
+    platform = Column(String(40), nullable=True)
+    browser = Column(String(40), nullable=True)
+    printer_connected = Column(Boolean, default=False, server_default='false', nullable=False)
+    printer_name = Column(String(80), nullable=True)
+    last_seen_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_print_device_event_staff'),)
+
+
+class PrintRoute(Base):
+    """A qué equipo imprime cada usuario en un evento: `printer_staff_id` NULL = en su propio equipo."""
+    __tablename__ = 'print_routes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    printer_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=True)
+    __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_print_route_event_staff'),)
+
+
+class PrintJob(Base):
+    """Una escarapela por imprimir en el equipo de otro usuario. Estados: queued → sent → printed | failed; lo que no se imprimió en PRINT_JOB_TTL queda
+    `expired` (visible para reimprimir, nunca se imprime solo después). `request_id` (lo genera quien pide) evita duplicados por reintentos.
+    Solo guarda el id de la inscripción (event_attendees.id), no datos de la persona."""
+    __tablename__ = 'print_jobs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    attendee_id = Column(Integer, nullable=False)
+    requested_by_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    printer_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    request_id = Column(String(64), nullable=False, unique=True)
+    status = Column(String(12), nullable=False, default='queued', server_default='queued')
+    error = Column(String(200), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    sent_at = Column(DateTime, nullable=True)
+    done_at = Column(DateTime, nullable=True)
+    prefs_json = Column(Text, nullable=True)       # 0071: parámetros de impresión del equipo que pidió (cinta, giro, espejo, corte...); NULL = los del evento

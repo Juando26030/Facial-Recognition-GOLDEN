@@ -154,7 +154,7 @@ def check_queue(db: Session) -> dict:
 
 
 def check_emails(db: Session) -> dict:
-    kinds = ("email", "form_feed")
+    kinds = ("email", "form_feed", "consent_receipt", "accept_mail")          # constancias de autorización y envío de enlaces personales también son correos (Hallazgo 4)
     pending = db.query(func.count(jobs.Job.id)).filter(jobs.Job.kind.in_(kinds), jobs.Job.status == "queued").scalar() or 0
     failed = db.query(func.count(jobs.Job.id)).filter(jobs.Job.kind.in_(kinds), jobs.Job.status == "failed").scalar() or 0
     level = "red" if failed >= 5 else "yellow" if failed or pending > 200 else "green"

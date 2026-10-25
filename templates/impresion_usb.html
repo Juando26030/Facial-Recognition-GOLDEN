@@ -53,7 +53,9 @@
             <label><input type="checkbox" id="optMirror"> Espejo</label>
             <label><input type="checkbox" id="optInvert"> Invertir (blanco/negro)</label>
             <label><input type="checkbox" id="optCut" checked> Cortar al final</label>
+            <label>Margen de avance <input type="number" id="optFeed" min="0" max="10" step="0.5" value="1.5"> mm</label>
         </div>
+        <p class="usb-help" style="margin:0;">Espejo, invertir, cortar y margen se guardan en este equipo: el Registro (y la impresión compartida) los usa igual. El alto de la escarapela se elige en el Registro, «⚙️ Impresión».</p>
         <div id="previewBox"><canvas id="preview"></canvas></div>
         <div class="usb-row">
             <button id="btnPrint" class="btn" disabled>Imprimir etiqueta de prueba</button>
@@ -70,8 +72,9 @@
   var DOTS = QLUsb.MEDIA[62].printable;
 
   function setStatus(el, text, kind) { el.textContent = text; el.className = "usb-status" + (kind ? " " + kind : ""); }
-  function pref(key, def) { try { var v = localStorage.getItem("ql_" + key); return v === null ? def : v === "1"; } catch (e) { return def; } }
-  function savePref(key, val) { try { localStorage.setItem("ql_" + key, val ? "1" : "0"); } catch (e) { /* sin almacenamiento: se usa el valor de esta sesión */ } }
+  function pref(key, def) { try { var v = localStorage.getItem(QLUsb.PREF_KEYS[key]); return v === null ? def : v === "1"; } catch (e) { return def; } }
+  function savePref(key, val) { try { localStorage.setItem(QLUsb.PREF_KEYS[key], val ? "1" : "0"); } catch (e) { /* sin almacenamiento: se usa el valor de esta sesión */ } }
+  try { QLUsb.dropLegacyPrefs(window.localStorage); } catch (e) { /* sin almacenamiento */ }      // «Espejo» con el significado viejo (antes del 24-oct-2026) no se hereda
 
   $("optMirror").checked = pref("mirror", false);
   $("optInvert").checked = pref("invert", false);
@@ -79,6 +82,9 @@
   ["Mirror", "Invert", "Cut"].forEach(function (name) {
     $("opt" + name).addEventListener("change", function () { savePref(name.toLowerCase(), this.checked); });
   });
+  function storage() { try { return window.localStorage; } catch (e) { return null; } }
+  $("optFeed").value = String(QLUsb.readPrefs(storage()).feedMm);                    // las mismas preferencias del equipo que usa el Registro (QLUsb.readPrefs)
+  $("optFeed").addEventListener("change", function () { var v = parseFloat(this.value); if (isFinite(v) && v >= 0) QLUsb.savePrefs(storage(), { feedMm: v }); });
 
   function drawTest() {
     var heightDots = QLUsb.mmToDots(Math.max(20, Math.min(300, parseInt($("lenMm").value, 10) || 60)));
@@ -101,45 +107,58 @@
   drawTest();
   $("lenMm").addEventListener("input", drawTest);
 
-  async function afterConnect(device) {
-    if (!device) return;
+  /* Esta página toma la impresora SOLO mientras hace una prueba y la suelta al terminar (releaseInterface + close), y también al ocultarse o cerrarse la pestaña:
+     así nunca deja al Registro con «Unable to claim interface». Si otra pestaña la tiene, se dice con claridad (QLUsb.BUSY_MSG). */
+  function errText(e) { return e && e.message ? e.message : String(e); }
+  async function withPrinter(ask, fn) {
+    var device = await QLUsb.connect(ask);
+    if (!device) return false;
     $("btnStatus").disabled = false; $("btnPrint").disabled = false;
-    setStatus($("connStatus"), "Conectada: " + (device.productName || "Brother") + ". Pulse «Probar conexión» para ver el estado de la cinta.", "ok");
+    try { await fn(device); } finally { await QLUsb.close(); }
+    return true;
   }
+  function release() { if (QLUsb.info()) QLUsb.close(); }
 
   $("btnConnect").addEventListener("click", async function () {
-    try { await afterConnect(await QLUsb.connect(true)); }
-    catch (e) { setStatus($("connStatus"), "No se pudo conectar: " + (e && e.message ? e.message : e), "bad"); }
+    try {
+      var ok = await withPrinter(true, function (device) {
+        setStatus($("connStatus"), "Autorizada: " + (device.productName || "Brother") + ". Pulse «Probar conexión» para ver el estado de la cinta.", "ok");
+      });
+      if (!ok) setStatus($("connStatus"), "No se eligió ninguna impresora.");
+    } catch (e) { setStatus($("connStatus"), (e && e.busy ? "" : "No se pudo conectar: ") + errText(e), "bad"); }
   });
 
   $("btnStatus").addEventListener("click", async function () {
     try {
-      var st = await QLUsb.readStatus();
-      if (!st) { setStatus($("connStatus"), "La impresora respondió, pero no con un estado entendible.", "bad"); return; }
-      setStatus($("connStatus"), "Cinta de " + st.mediaWidthMm + " mm. " + (st.ready ? "Lista para imprimir." : "Atención: " + st.errors.join(", ") + "."), st.ready ? "ok" : "bad");
-    } catch (e) { setStatus($("connStatus"), "Error al leer el estado: " + (e && e.message ? e.message : e), "bad"); }
+      await withPrinter(true, async function () {
+        var st = await QLUsb.readStatus();
+        if (!st) { setStatus($("connStatus"), "La impresora respondió, pero no con un estado entendible.", "bad"); return; }
+        setStatus($("connStatus"), "Cinta de " + st.mediaWidthMm + " mm. " + (st.ready ? "Lista para imprimir." : "Atención: " + st.errors.join(", ") + "."), st.ready ? "ok" : "bad");
+      });
+    } catch (e) { setStatus($("connStatus"), (e && e.busy ? "" : "Error al leer el estado: ") + errText(e), "bad"); }
   });
 
   $("btnPrint").addEventListener("click", async function () {
     var t = drawTest();
     try {
-      if (!QLUsb.info()) await afterConnect(await QLUsb.connect(true));          // sin impresora conectada, imprimir pide el permiso en ese mismo toque (no hace falta «Conectar» antes)
-      if (!QLUsb.info()) return;
-      var rgba = t.ctx.getImageData(0, 0, DOTS, t.height).data;
-      var bitmap = QLUsb.bitmapFromRGBA(rgba, DOTS, t.height, 140, $("optInvert").checked);
-      var job = QLUsb.buildJob({ bitmap: bitmap, height: t.height, mediaWidthMm: 62, mirror: $("optMirror").checked, autoCut: $("optCut").checked });
-      setStatus($("printStatus"), "Enviando " + Math.round(job.length / 1024) + " KB a la impresora…");
-      await QLUsb.sendJob(job);
-      setStatus($("printStatus"), "Enviado. Si no salió nada, pruebe «Probar conexión» y revise la cinta y la cubierta.", "ok");
-    } catch (e) { setStatus($("printStatus"), "No se pudo imprimir: " + (e && e.message ? e.message : e), "bad"); }
+      await withPrinter(true, async function () {                                  // sin permiso previo, imprimir lo pide en ese mismo toque
+        var rgba = t.ctx.getImageData(0, 0, DOTS, t.height).data;
+        var bitmap = QLUsb.bitmapFromRGBA(rgba, DOTS, t.height, 140, $("optInvert").checked);
+        var job = QLUsb.buildJob({ bitmap: bitmap, height: t.height, mediaWidthMm: 62, mirror: $("optMirror").checked, autoCut: $("optCut").checked,
+                                   feedDots: QLUsb.mmToDots(QLUsb.readPrefs(storage()).feedMm) });
+        setStatus($("printStatus"), "Enviando " + Math.round(job.length / 1024) + " KB a la impresora…");
+        await QLUsb.sendJob(job);
+        await new Promise(function (r) { setTimeout(r, 500); });                 // margen antes de soltarla (la cinta ya recibió todo el trabajo)
+        setStatus($("printStatus"), "Enviado. Si no salió nada, pruebe «Probar conexión» y revise la cinta y la cubierta. La impresora quedó libre para el Registro.", "ok");
+      });
+    } catch (e) { setStatus($("printStatus"), (e && e.busy ? "" : "No se pudo imprimir: ") + errText(e), "bad"); }
   });
 
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") release(); });
+  window.addEventListener("pagehide", release);
   if (QLUsb.supported()) {
-    // Impresora ya autorizada en este dispositivo: se reconoce sola al enchufarla (la PRIMERA vez Chrome exige un toque del usuario para dar el permiso: no se puede evitar).
-    navigator.usb.addEventListener("connect", function () { QLUsb.connect(false).then(afterConnect).catch(function () { /* se reintenta al imprimir */ }); });
     navigator.usb.addEventListener("disconnect", async function () {
       await QLUsb.close();
-      $("btnStatus").disabled = true;
       setStatus($("connStatus"), "Impresora desconectada.");
     });
   }
@@ -147,7 +166,9 @@
     setStatus($("connStatus"), "Este navegador no permite USB. Use Chrome en Android o en un computador (página segura https).", "bad");
     $("btnConnect").disabled = true;
   } else {
-    QLUsb.connect(false).then(afterConnect).catch(function () { /* sin permiso previo: se espera al botón */ });
+    navigator.usb.getDevices().then(function (list) {                              // solo mira si ya está autorizada; NO la toma (la toma cada prueba y la suelta)
+      if (list.some(function (d) { return d.vendorId === 0x04f9; })) { $("btnStatus").disabled = false; $("btnPrint").disabled = false; setStatus($("connStatus"), "Impresora autorizada en este equipo. Pulse «Probar conexión» o «Imprimir prueba».", "ok"); }
+    }).catch(function () { /* sin permiso: se espera al botón */ });
   }
 })();
 </script>

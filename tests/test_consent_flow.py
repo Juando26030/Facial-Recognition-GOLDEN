@@ -346,3 +346,21 @@ def test_no_match_message_and_nothing_is_stored(client, factory, db, monkeypatch
     r = _scan(client, ev)
     assert r == {"result": "NO", "details": "No te encontramos en la lista con reconocimiento facial. Por favor dirígete a la acreditación con tu cédula o QR."}
     assert set(get_storage().list("")) == before                                          # ni la foto en vivo ni el vector temporal se guardaron
+
+
+def test_a_door_acceptance_kicks_the_general_queue_so_the_receipt_email_goes_out_right_away(client, factory, db, company_env, monkeypatch):
+    """Regresión (21 oct 2026, PRUEBA-CORTE): en la puerta solo se avisaba a la cola de rostros; la constancia (trabajo `consent_receipt`, cola general) esperaba al barrido horario del Scheduler."""
+    from app.models import Job
+    from app.routers import consents
+    pools = []
+    monkeypatch.setattr(consents.jobs, "kick", lambda at=None, pool="general": pools.append(pool))
+    ev = _op(client, factory)
+    t = client.get(f"/api/events/{ev.id}/consent-text").json()
+    body = {"entries": [{"id": str(uuid.uuid4()), "user_id": "1001", "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"], "device": "tablet-1"}]}
+    assert client.post(f"/api/events/{ev.id}/consents", json=body).json()["inserted"] == 1
+    assert sorted(pools) == ["faces", "general"]                                                    # se avisa a las DOS colas, como en aceptar.py
+    receipts = db.query(Job).filter(Job.kind == "consent_receipt").all()
+    assert len(receipts) == 1 and json.loads(receipts[0].payload_json)["channel"] == "door" and receipts[0].status == "queued"
+    pools.clear()
+    assert client.post(f"/api/events/{ev.id}/consents", json=body).json()["inserted"] == 0          # el reintento no duplica ni vuelve a avisar
+    assert pools == [] and db.query(Job).filter(Job.kind == "consent_receipt").count() == 1

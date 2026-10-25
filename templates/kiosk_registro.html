@@ -346,6 +346,15 @@
 </main>
 
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+{% if event.shared_print_enabled %}<meta name="gw-print-settings" content="{{ print_settings_json(event) }}">
+{# Impresión compartida y USB (apagada por defecto): con el interruptor apagado esta página es exactamente la de siempre #}
+<link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+<script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+<script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
+<script src="{{ url_for('static', path='vendor/html2canvas-1.4.1.min.js') }}"></script>
+<script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
+<script src="{{ url_for('static', path='js/shared-print.js') }}"></script>
+{% endif %}
 <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>
 {% if contingency_enabled %}<script src="{{ url_for('static', path='js/contingency.js') }}"></script>
 <script src="{{ url_for('static', path='js/outbox.js') }}"></script>

@@ -40,7 +40,7 @@
     <div class="golden-badge-builder">
       <form id="newEventForm">
         <div class="badge-input-row">
-          <div class="badge-input-group"><label>Código interno *</label><input type="text" name="event_code" required></div>
+          <div class="badge-input-group"><label>Código interno *</label><input type="text" name="event_code" required pattern="[A-Za-z0-9._\-]+" title="Letras sin tilde, números, punto, guion o guion bajo, sin espacios. Ejemplo: FERIA-2026" aria-describedby="eventCodeHelp"><small id="eventCodeHelp" style="display:block; color:#555; margin-top:4px;">Va en los enlaces y QR del evento y no se puede cambiar después. Solo letras sin tilde, números, punto, guion o guion bajo (ej. FERIA-2026).</small></div>
           <div class="badge-input-group"><label>Nombre del evento *</label><input type="text" name="name" required></div>
         </div>
         <div class="badge-input-row">
