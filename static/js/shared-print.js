@@ -211,8 +211,7 @@
     const dataRes = await fetch(`/api/users/${encodeURIComponent(userId)}/badge-print-data?event_id=${EID}`, { cache: 'no-store' });
     if (!dataRes.ok) throw new Error('No se encontró la persona en este evento.');
     const data = await dataRes.json();
-    const qs = data.template_category ? `?category=${encodeURIComponent(data.template_category)}` : '';
-    const tplRes = await fetch(`/api/events/${EID}/badge-template${qs}`, { cache: 'no-store' });
+    const tplRes = await BadgeRender.fetchTemplate(EID, data.template_category);           // la vigente, en cada etiqueta
     if (!tplRes.ok) throw new Error('El evento no tiene plantilla de escarapela.');
     const template = await tplRes.json();
     const r = given || resolved();
@@ -481,9 +480,9 @@
   /* ------------------------------------------------------------------ «⚙️ Impresión»: valores del evento + lo que este equipo sobrescribe */
   const TAPE_FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm'];
   let previewTemplate = null;
-  async function loadPreviewTemplate() {
-    if (previewTemplate) return previewTemplate;
-    try { const r = await fetch(`/api/events/${EID}/badge-template`, { cache: 'no-store' }); if (r.ok) previewTemplate = await r.json(); } catch (e) { /* sin red: vista previa de prueba */ }
+  async function loadPreviewTemplate(fresh) {                 // la vista previa también usa la vigente: se vuelve a pedir cada vez que se abre el panel
+    if (previewTemplate && !fresh) return previewTemplate;
+    try { const r = await BadgeRender.fetchTemplate(EID); if (r.ok) previewTemplate = await r.json(); } catch (e) { /* sin red: la última que se tuvo */ }
     return previewTemplate;
   }
   const SAMPLE = { id: '1020304050', first_name: 'Juan David', last_name: 'Pérez Gómez', entity: 'GoldenWeb 2.0', role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP', extra_fields: {}, has_photo: false };
@@ -566,7 +565,7 @@
       } catch (e) { txt.textContent = 'No se pudo dibujar la vista previa.'; }
     };
     const refresh = () => { sync(); clearTimeout(timer); timer = setTimeout(paintPreview, 250); };
-    setForm(r.prefs); sync(); paintSources(); paintPreview();
+    setForm(r.prefs); sync(); paintSources(); loadPreviewTemplate(true).then(paintPreview);
     panel.addEventListener('input', refresh);
     panel.addEventListener('change', refresh);
     const saveOverrides = () => {                       // solo lo que DIFIERE de lo del evento queda como sobrescritura de este equipo

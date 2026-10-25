@@ -73,4 +73,16 @@ assert.ok(R.textHeightMm(el, 90, { entity: "ANA" }) < R.textHeightMm(el, 90, dat
   delete global.document;
 }
 
+// ---- la plantilla vigente en cada impresión: sin caché y con un parámetro único (ningún intermediario devuelve una copia)
+{
+  const calls = [];
+  global.fetch = (url, init) => { calls.push([url, init]); return Promise.resolve({ ok: true }); };
+  R.fetchTemplate(7, "VIP"); R.fetchTemplate(7);
+  assert.strictEqual(calls.length, 2);
+  assert.ok(/^\/api\/events\/7\/badge-template\?category=VIP&_=\d+$/.test(calls[0][0]), calls[0][0]);
+  assert.ok(/^\/api\/events\/7\/badge-template\?_=\d+$/.test(calls[1][0]), calls[1][0]);
+  assert.ok(calls.every((c) => c[1].cache === "no-store"));
+  delete global.fetch;
+}
+
 console.log("badge_text_fit_check ok");

@@ -211,7 +211,18 @@
     return Promise.all(loads).then(() => undefined, () => undefined);
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  /* La plantilla VIGENTE, siempre pedida al servidor (25-oct-2026: tras cambiar la orientación en el diseñador, la primera etiqueta de un Registro ya abierto pudo salir con la
+     geometría anterior). Sin caché del navegador (`no-store`) y con un parámetro único para que ningún intermediario devuelva una copia; el servidor también responde `no-store`.
+     Quien imprime arma la etiqueta y calcula el giro automático con ESTA misma plantilla (su `updated_at` queda en la respuesta). */
+  function fetchTemplate(eventId, category, extra) {
+    const qs = new URLSearchParams();
+    if (category) qs.set('category', category);
+    Object.keys(extra || {}).forEach((k) => qs.set(k, extra[k]));
+    qs.set('_', String(Date.now()));
+    return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
+  }
+
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del
