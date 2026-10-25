@@ -150,4 +150,50 @@ const lv = QL.layout(prefs, v.width_mm, v.height_mm), lh = QL.layout(prefs, h.wi
 assert.strictEqual(lv.rotation, 0); assert.strictEqual(lh.rotation, 90);
 assert.strictEqual(lv.acrossMm, 58.9); assert.strictEqual(lh.acrossMm, 58.9); assert.strictEqual(lv.tooWide, false); assert.strictEqual(lh.tooWide, false);
 
+// ---- manijas como PowerPoint (25-oct-2026): 4 esquinas + 4 lados + giro; lo opuesto queda fijo; en los ejes del elemento; la manija gana siempre al elemento de debajo
+{
+  const A = { id: "a", type: "text_static", x: 10, y: 20, width: 30, height: 10, rotation: 0 };
+  const P = G.handlePoints(A, 6);
+  assert.deepStrictEqual([P.nw.x, P.nw.y, P.se.x, P.se.y, P.n.x, P.n.y, P.e.x, P.e.y], [10, 20, 40, 30, 25, 20, 40, 25]);
+  near(P.rotate.x, 25); near(P.rotate.y, 14);
+  // hit-testing: la manija más cercana dentro de la zona; fuera de toda zona, nada
+  assert.strictEqual(G.hitHandle(40.5, 30.4, A, 2, 6), "se");
+  assert.strictEqual(G.hitHandle(25, 13.5, A, 2, 6), "rotate");
+  assert.strictEqual(G.hitHandle(25, 25, A, 2, 6), null, "el centro del elemento no es manija");
+  assert.strictEqual(G.hitHandle(25, 25, null, 2, 6), null);
+  // un elemento B encima justo donde está la manija: la manija igual se reconoce (la decisión no depende de qué elemento haya debajo)
+  const B = { id: "b", type: "qr", x: 35, y: 25, width: 20, height: 20, rotation: 0 };
+  assert.ok(!G.isOutside(B, 62, 100) && G.bounds(B).left < 40 && G.bounds(B).top < 30);
+  assert.strictEqual(G.hitHandle(40, 30, A, 2, 6), "se");
+  // cada manija: el punto opuesto no se mueve; los lados cambian una sola medida
+  const opposite = { nw: "se", n: "s", ne: "sw", e: "w", se: "nw", s: "n", sw: "ne", w: "e" };
+  for (const rot of [0, 30, 90, 349]) {
+    const E = Object.assign({}, A, { rotation: rot });
+    for (const h of Object.keys(G.HANDLES)) {
+      const p0 = G.handlePoints(E, 0);
+      const [hx, hy] = G.HANDLES[h];
+      const a = (rot * Math.PI) / 180, push = 5;                                    // arrastrar 5 mm hacia afuera en los ejes del elemento
+      const tx = p0[h].x + push * (hx * Math.cos(a) - hy * Math.sin(a)), ty = p0[h].y + push * (hx * Math.sin(a) + hy * Math.cos(a));
+      const r = Object.assign({}, E, G.resizeFromHandle(E, h, tx, ty));
+      const p1 = G.handlePoints(r, 0);
+      const mm = (x, y, m) => assert.ok(Math.abs(x - y) < 2e-3, `${m}: ${x} != ${y}`);          // se guarda con milésimas de mm
+      mm(p1[opposite[h]].x, p0[opposite[h]].x, `${rot}° ${h}: lo opuesto fijo (x)`); mm(p1[opposite[h]].y, p0[opposite[h]].y, `${rot}° ${h}: lo opuesto fijo (y)`);
+      mm(r.width, hx ? 35 : 30, `${rot}° ${h}: ancho`); mm(r.height, hy ? 15 : 10, `${rot}° ${h}: alto`);
+      near(r.rotation, rot);
+    }
+  }
+  // esquina con Mayús: en proporción
+  let r = G.resizeFromHandle(A, "se", 46, 31, { keepAspect: true });
+  near(r.width / r.height, 3, "Mayús conserva la proporción"); near(r.x, 10); near(r.y, 20);
+  // fotos, QR y códigos: proporción siempre (también por los lados)
+  const Q = { id: "q", type: "qr", x: 10, y: 10, width: 20, height: 20, rotation: 0 };
+  r = G.resizeFromHandle(Q, "e", 40, 20); near(r.width, 30); near(r.height, 30);
+  r = G.resizeFromHandle(Q, "nw", 0, 5); near(r.width, r.height); near(r.x + r.width, 30); near(r.y + r.height, 30);
+  const F = { id: "f", type: "image_variable", x: 0, y: 0, width: 25, height: 30, rotation: 0 };
+  r = G.resizeFromHandle(F, "se", 50, 31); near(r.width / r.height, 25 / 30);
+  // nunca menos de 3 mm (y nunca «al revés» al cruzar el lado opuesto)
+  r = G.resizeFromHandle(A, "e", 0, 25); near(r.width, 3); near(r.x, 10);
+  r = G.resizeFromHandle(A, "n", 25, 100); near(r.height, 3); near(r.y + r.height, 30);
+}
+
 console.log("badge_geometry_check ok");

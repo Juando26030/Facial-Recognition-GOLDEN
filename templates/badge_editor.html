@@ -49,10 +49,9 @@
         }
         .badge-canvas { box-shadow: 0 10px 40px rgba(0,0,0,0.25); flex-shrink:0; }
         .badge-element { cursor: move; }
-        .resize-handle {
-            position:absolute; right:-6px; bottom:-6px; width:14px; height:14px; border-radius:50%;
-            background: var(--golden-primary); border:2px solid white; cursor: nwse-resize; z-index:9999;
-        }
+        /* Manijas del elemento seleccionado: en una capa ENCIMA de todo (selOverlay). Solo se ven; qué manija se tocó lo decide BadgeGeometry.hitHandle (zona de 32 px). */
+        .sel-handle { position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px; background:#fff; border:2px solid var(--golden-primary); border-radius:3px; box-sizing:border-box; pointer-events:auto; touch-action:none; }
+        .sel-handle::after, .rotate-handle::after { content:''; position:absolute; inset:-10px; border-radius:50%; }      /* zona táctil de 32 px */
 
         .badge-props-panel {
             width:300px; flex-shrink:0; background:white; border-radius:16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06);
@@ -79,12 +78,12 @@
         #editorWarn { display:none; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; border-radius:10px; padding:6px 12px; font-size:0.82rem; margin:0 0 6px; line-height:1.4; }
         #editorWarn.bad { background:#fdeeee; border-color:#e8b4b8; color:#a12631; }
         #printInfo { font-size:0.76rem; color:#555; margin:0 0 6px; }
-        .badge-element, .resize-handle { touch-action:none; }
+        .badge-element { touch-action:none; }
         .badge-element.oob { outline:2px solid #c0392b !important; }
         .snap-guide { position:absolute; pointer-events:none; z-index:99998; background:#e8308a; }
         .snap-guide.v { top:0; bottom:0; width:1px; }
         .snap-guide.h { left:0; right:0; height:1px; }
-        .rotate-handle { position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:#fff; border:2px solid var(--golden-primary); cursor:grab; pointer-events:auto; touch-action:none; box-sizing:border-box; }
+        .rotate-handle { position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:#fff; border:2px solid var(--golden-primary); pointer-events:auto; touch-action:none; box-sizing:border-box; }
         .rotate-badge { position:absolute; transform:translate(-50%, -50%); background:#0A0E2E; color:#fff; font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; white-space:nowrap; pointer-events:none; }
         .align-row { display:flex; gap:4px; margin-bottom:0.9rem; }
         .align-row button { flex:1; min-height:34px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; color:var(--golden-dark); padding:0 2px; }
@@ -575,7 +574,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       if (!el) return;
       div.style.outline = (elId === selectedId) ? '2px dashed #D4AF37' : '1px dashed rgba(0,0,0,0.08)';
       if (isOutside(el)) div.classList.add('oob');
-      div.addEventListener('pointerdown', (e) => { if (e.target.classList.contains('resize-handle')) return; startDrag(e, el); });
+      div.addEventListener('pointerdown', (e) => startDrag(e, el));
       div.addEventListener('click', (e) => { e.stopPropagation(); selectElement(elId); });
       // Alternativa por TECLADO al arrastrar (WCAG 2.1.1): Tab elige, Enter selecciona, flechas mueven (Mayús = 5 mm), Supr borra, Esc suelta.
       div.tabIndex = 0;
@@ -590,43 +589,67 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         if (move) { e.preventDefault(); el.x = Math.max(0, +(el.x + move[0]).toFixed(1)); el.y = Math.max(0, +(el.y + move[1]).toFixed(1)); renderCanvas(); renderPropsPanel(); refocus(elId); }
         else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelectedElement(); }
       });
-      if (elId === selectedId) {
-        const handle = document.createElement('div');
-        handle.className = 'resize-handle';
-        handle.addEventListener('pointerdown', (e) => { e.stopPropagation(); startResize(e, el); });
-        div.appendChild(handle);
-      }
     });
-    paintRotateHandle();
+    paintHandles();
     guides.x.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide v'; g.style.left = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
     guides.y.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide h'; g.style.top = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
   }
 
-  // La manija de giro vive en una capa ENCIMA del lienzo (los textos recortan lo que sobresale de su caja y el lienzo recorta lo que sale de la etiqueta): flota sobre el elemento seleccionado y gira con él.
-  function paintRotateHandle() {
+  /* Manijas del elemento SELECCIONADO (25-oct-2026, como PowerPoint): cuatro esquinas, cuatro lados y la de giro, en una capa ENCIMA de todo el lienzo y girando con el elemento.
+     Qué se tocó lo decide `pointerTarget` (con BadgeGeometry.hitHandle) ANTES que cualquier elemento: una manija nunca cede el clic al elemento que tenga debajo ni cambia la selección. */
+  const HANDLE_ZONE_PX = 16;                         // radio de la zona que se puede tocar (32 px de diámetro)
+  const ROTATE_GAP_PX = 24;                          // la manija de giro, por encima del borde superior
+  const CURSORS = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', rotate: 'grab' };
+  function pxPerMmNow() { return editorScale * PX_PER_MM; }
+  function paintHandles() {
     const layer = document.getElementById('selOverlay');
     layer.innerHTML = '';
     const el = selectedElement();
     if (!el || !template) return;
-    const pxPerMm = editorScale * PX_PER_MM, a = ((el.rotation || 0) * Math.PI) / 180;
-    const cx = (el.x + el.width / 2) * pxPerMm, cy = (el.y + el.height / 2) * pxPerMm;
-    const d = (el.height / 2) * pxPerMm + 24;
-    const hx = cx + Math.sin(a) * d, hy = cy - Math.cos(a) * d;
+    const k = pxPerMmNow();
+    const pts = G.handlePoints(el, ROTATE_GAP_PX / k);
+    Object.keys(G.HANDLES).forEach((name) => {
+      const h = document.createElement('div');
+      h.className = 'sel-handle';
+      h.dataset.handle = name;
+      h.style.left = (pts[name].x * k) + 'px'; h.style.top = (pts[name].y * k) + 'px';
+      layer.appendChild(h);
+    });
     const rot = document.createElement('div');
     rot.className = 'rotate-handle';
-    rot.style.left = hx + 'px'; rot.style.top = hy + 'px';
+    rot.dataset.handle = 'rotate';
+    rot.style.left = (pts.rotate.x * k) + 'px'; rot.style.top = (pts.rotate.y * k) + 'px';
     rot.title = 'Girar (Mayús: pasos de 15°; Alt/Ctrl: sin imán)';
-    rot.setAttribute('aria-label', 'Girar el elemento');
-    rot.addEventListener('pointerdown', (e) => { e.stopPropagation(); startRotate(e, el); });
     layer.appendChild(rot);
     if (rotateHint && rotateHint.elId === el.id) {
       const tag = document.createElement('div');
       tag.className = 'rotate-badge';
-      tag.style.left = hx + 'px'; tag.style.top = (hy - 24) + 'px';
+      tag.style.left = (pts.rotate.x * k) + 'px'; tag.style.top = (pts.rotate.y * k - 24) + 'px';
       tag.textContent = Math.round(rotateHint.deg * 10) / 10 + '°';
       layer.appendChild(tag);
     }
   }
+  function pointerTarget(ev) {                        // ¿qué manija del seleccionado hay bajo el puntero? (o null)
+    const el = selectedElement();
+    if (!el) return null;
+    const rect = canvasEl.getBoundingClientRect(), k = rect.width / template.width_mm;
+    return G.hitHandle((ev.clientX - rect.left) / k, (ev.clientY - rect.top) / k, el, HANDLE_ZONE_PX / k, ROTATE_GAP_PX / k);
+  }
+  const hostEl = document.getElementById('canvasHost');
+  hostEl.addEventListener('pointerdown', (e) => {     // fase de CAPTURA: llega antes que a cualquier elemento del lienzo
+    if (!template) return;
+    const handle = pointerTarget(e);
+    if (!handle) return;
+    e.stopPropagation(); e.preventDefault();
+    const el = selectedElement();
+    if (handle === 'rotate') startRotate(e, el); else startResize(e, el, handle);
+  }, true);
+  hostEl.addEventListener('click', (e) => { if (swallowClick || (selectedElement() && pointerTarget(e))) { e.stopPropagation(); e.preventDefault(); } }, true);      // tocar una manija nunca cambia la selección
+  hostEl.addEventListener('pointermove', (e) => {
+    if (!template || e.buttons) return;
+    const h = pointerTarget(e);
+    hostEl.style.cursor = h ? CURSORS[h] : '';
+  });
 
   /* ---------- Zoom, ajuste a pantalla y avisos (orden B) ---------- */
   const wrapperEl = document.querySelector('.badge-canvas-wrapper');
@@ -774,24 +797,22 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     document.addEventListener('pointercancel', onUp);
   }
 
-  function startResize(e, el) {
+  function startResize(e, el, handle) {
     e.preventDefault();
     const rect = canvasEl.getBoundingClientRect();
     const pxPerMmX = rect.width / template.width_mm;
     const pxPerMmY = rect.height / template.height_mm;
     const thr = SNAP_PX / pxPerMmX;
     const startX = e.clientX, startY = e.clientY;
-    const orig = { id: el.id, x: el.x, y: el.y, width: el.width, height: el.height, rotation: el.rotation || 0 };
-    const ang = (orig.rotation * Math.PI) / 180, cos = Math.cos(ang), sin = Math.sin(ang);
-    const cx0 = orig.x + orig.width / 2, cy0 = orig.y + orig.height / 2;
-    const corner0 = { x: cx0 + (orig.width / 2) * cos - (orig.height / 2) * sin, y: cy0 + (orig.width / 2) * sin + (orig.height / 2) * cos };      // esquina inferior derecha (ya girada)
+    const orig = { id: el.id, type: el.type, x: el.x, y: el.y, width: el.width, height: el.height, rotation: el.rotation || 0 };
+    const start = G.handlePoints(orig, 0)[handle];                    // dónde estaba la manija que se arrastra
     function onMove(ev) {
-      let tx = corner0.x + (ev.clientX - startX) / pxPerMmX, ty = corner0.y + (ev.clientY - startY) / pxPerMmY;
+      let tx = start.x + (ev.clientX - startX) / pxPerMmX, ty = start.y + (ev.clientY - startY) / pxPerMmY;
       if (snapActive(ev)) {
         const sn = G.snapPoint(tx, ty, template, el.id, thr);
         tx = sn.x; ty = sn.y; guides = sn.guides;
       } else guides = { x: [], y: [] };
-      Object.assign(el, G.resizeRotated(orig, tx, ty, 3));
+      Object.assign(el, G.resizeFromHandle(orig, handle, tx, ty, { keepAspect: ev.shiftKey, min: 3 }));       // Mayús: en proporción (fotos, QR y códigos, siempre)
       renderCanvas();
     }
     function onUp() {

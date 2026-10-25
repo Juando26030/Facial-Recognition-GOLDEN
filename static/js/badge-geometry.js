@@ -227,5 +227,64 @@
     return { width_mm: r3(nW), height_mm: r3(nH), elements, doesNotFit: elements.filter((e) => isOutside(e, nW, nH)).map((e) => e.id) };
   }
 
-  return { bounds, isOutside, targets, snapMove, snapPoint, snapAxis, align, snapAngle, angleFromPointer, resizeRotated, convertOrientation, fitToTape, relayout, normAngle, EPS };
+  /* ---------- Manijas como en PowerPoint (25-oct-2026): cuatro esquinas, cuatro lados y la de giro. En los ejes del PROPIO elemento (si está girado, las manijas giran con él).
+     Esquinas: ancho y alto a la vez (con `keepAspect`, en proporción; fotos, QR y códigos siempre). Lados: solo el alto (arriba/abajo) o solo el ancho (izquierda/derecha).
+     El lado (o la esquina) opuesto al que se arrastra queda fijo. */
+  const HANDLES = { nw: [-1, -1], n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1], s: [0, 1], sw: [-1, 1], w: [-1, 0] };
+  const KEEP_ASPECT_TYPES = { image_static: true, image_variable: true, qr: true, barcode: true };
+
+  function toWorld(el, lx, ly) {                         // de los ejes del elemento (origen en su centro) a la etiqueta
+    const a = rad(Number(el.rotation) || 0), cos = Math.cos(a), sin = Math.sin(a);
+    const cx = el.x + el.width / 2, cy = el.y + el.height / 2;
+    return { x: cx + lx * cos - ly * sin, y: cy + lx * sin + ly * cos };
+  }
+  function toLocal(el, px, py, ox, oy) {                 // de la etiqueta a los ejes del elemento, relativo al punto (ox, oy)
+    const a = rad(Number(el.rotation) || 0), cos = Math.cos(a), sin = Math.sin(a);
+    const dx = px - ox, dy = py - oy;
+    return { x: dx * cos + dy * sin, y: -dx * sin + dy * cos };
+  }
+
+  /* Dónde va cada manija (mm de la etiqueta). `rotateOffsetMm`: cuánto por encima del borde superior va la de giro. */
+  function handlePoints(el, rotateOffsetMm) {
+    const out = {};
+    Object.keys(HANDLES).forEach((k) => { const [hx, hy] = HANDLES[k]; out[k] = toWorld(el, hx * el.width / 2, hy * el.height / 2); });
+    out.rotate = toWorld(el, 0, -el.height / 2 - (rotateOffsetMm || 0));
+    return out;
+  }
+
+  /* ¿Qué manija del elemento SELECCIONADO hay bajo el puntero? La más cercana dentro de `radiusMm` (zona táctil), o null. Se consulta ANTES que cualquier elemento:
+     una manija nunca cede el clic al elemento que esté debajo. */
+  function hitHandle(px, py, el, radiusMm, rotateOffsetMm) {
+    if (!el) return null;
+    const pts = handlePoints(el, rotateOffsetMm);
+    let best = null, bestD = Infinity;
+    Object.keys(pts).forEach((k) => {
+      const d = Math.hypot(pts[k].x - px, pts[k].y - py);
+      if (d <= radiusMm + EPS && d < bestD - EPS) { best = k; bestD = d; }
+    });
+    return best;
+  }
+
+  /* Nuevo {x, y, width, height} al arrastrar la manija `handle` hasta el punto (px, py) de la etiqueta. */
+  function resizeFromHandle(orig, handle, px, py, opts) {
+    opts = opts || {};
+    const hv = HANDLES[handle];
+    if (!hv) return { x: orig.x, y: orig.y, width: orig.width, height: orig.height };
+    const [hx, hy] = hv, min = opts.min || 3, w0 = Number(orig.width), h0 = Number(orig.height);
+    const anchor = toWorld(orig, -hx * w0 / 2, -hy * h0 / 2);                  // lo opuesto: queda fijo
+    const d = toLocal(orig, px, py, anchor.x, anchor.y);
+    let w = hx ? Math.max(min, hx * d.x) : w0, h = hy ? Math.max(min, hy * d.y) : h0;
+    if (opts.keepAspect || KEEP_ASPECT_TYPES[orig.type]) {
+      const s = hx && hy ? Math.max(w / w0, h / h0) : (hx ? w / w0 : h / h0);
+      const sMin = Math.max(min / w0, min / h0);
+      const k = Math.max(s, sMin);
+      w = w0 * k; h = h0 * k;
+    }
+    const a = rad(Number(orig.rotation) || 0), cos = Math.cos(a), sin = Math.sin(a);
+    const ox = hx * w / 2, oy = hy * h / 2;                                       // del punto fijo al centro nuevo, en los ejes del elemento
+    const cx = anchor.x + ox * cos - oy * sin, cy = anchor.y + ox * sin + oy * cos;
+    return { x: r3(cx - w / 2), y: r3(cy - h / 2), width: r3(w), height: r3(h) };
+  }
+
+  return { bounds, isOutside, targets, snapMove, snapPoint, snapAxis, align, snapAngle, angleFromPointer, resizeRotated, convertOrientation, fitToTape, relayout, handlePoints, hitHandle, resizeFromHandle, HANDLES, normAngle, EPS };
 });
