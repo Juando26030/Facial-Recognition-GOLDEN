@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role_excluding
 from app.routers import print_settings
+from app.routers.print_stations import read_station
 from app.database import get_db
 from app.models import AccessLog, Event, EventAttendee, EventStaffAuthorization, PrintDevice, PrintJob, PrintLog, PrintRoute, StaffUser, User
 from app.timeutil import utcnow
@@ -73,6 +74,11 @@ def _online(device: Optional[PrintDevice], now=None) -> bool:
 
 def _printer_ready(device: Optional[PrintDevice], now=None) -> bool:
     return bool(_online(device, now) and device.printer_connected)
+
+
+def _can_host(device: Optional[PrintDevice], now=None) -> bool:
+    """¿Puede elegirse como puesto? Activo y con impresora lista, o activo imprimiendo por el controlador CON cuadro de diálogo (atiende con «Imprimir pendientes»)."""
+    return bool(_printer_ready(device, now) or (_online(device, now) and "con cuadro" in (device.printer_name or "")))
 
 
 def _enabled_event(event_id: int, db: Session, staff: StaffUser) -> Event:
@@ -162,7 +168,8 @@ def heartbeat(event_id: int, data: HeartbeatIn, db: Session = Depends(get_db), s
     serving = db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == staff.id).count()
     return {"enabled": True, "mode": "shared" if printer_id else "self", "printer_name": _name(printer), "printer_ready": _printer_ready(printer_dev, now),
             "serving": serving, "poll": bool(serving and dev.printer_connected and dev.device_id == device_id and not held),
-            "holder": bool(dev.device_id == device_id and not held), **_station_counts(db, event.id, staff.id)}
+            "holder": bool(dev.device_id == device_id and not held), **_station_counts(db, event.id, staff.id),
+            "serving_names": [_name(db.get(StaffUser, r.staff_user_id)) for r in db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == staff.id).limit(12)]}
 
 
 # ------------------------------------------------------------------------------------------------ X: pedir y seguir una impresión
@@ -336,7 +343,8 @@ def config(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depe
                     "device": None if d is None else {"platform": d.platform, "browser": d.browser, "printer_connected": d.printer_connected,
                                                       "printer_name": d.printer_name, "online": _online(d, now),
                                                       "seconds_ago": int((now - d.last_seen_at).total_seconds())},
-                    "printer_staff_id": routes.get(u.id), "eligible_printer": _printer_ready(d, now), "serving": serving.get(u.id, 0)})
+                    "printer_staff_id": routes.get(u.id), "eligible_printer": _can_host(d, now), "serving": serving.get(u.id, 0),
+                    "print_station": bool(u.print_station), "station": read_station(db, event.id, u.id)})
     return {"enabled": bool(event.shared_print_enabled), "warn_per_printer": WARN_PER_PRINTER, "users": out}
 
 
@@ -367,8 +375,8 @@ def set_route(event_id: int, data: RouteIn, db: Session = Depends(get_db), staff
     if y is None or not y.is_active:
         raise HTTPException(status_code=404, detail="El equipo elegido no existe.")
     get_event_for_staff(event.id, db, y)                       # Y también debe ser de este evento
-    if not _online(db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=y.id).first()):     # basta que el equipo esté activo: un computador con cuadro de diálogo también atiende (con «Imprimir pendientes»)
-        raise HTTPException(status_code=409, detail="Ese equipo no está activo en este momento (ábrelo en el Registro): no se puede elegir.")
+    if not _can_host(db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=y.id).first()):     # con impresora lista, o un computador con cuadro de diálogo (atiende con «Imprimir pendientes»)
+        raise HTTPException(status_code=409, detail="Ese equipo no está conectado con la impresora en este momento: no se puede elegir.")
     if _route(db, event.id, y.id):
         raise HTTPException(status_code=409, detail="Ese usuario imprime en otro equipo: no puede atender a otros.")
     if db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == x.id).first():

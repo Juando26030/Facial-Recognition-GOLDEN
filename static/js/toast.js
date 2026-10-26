@@ -314,3 +314,34 @@
     window.GoldenLogoutCleanup().then((go) => go, () => true).then((go) => { if (go) { f.__loggingOut = true; f.submit(); } });
   });
 })();
+
+/* Sesión única (26-oct-2026, app/sessions.py): si esta cuenta entró en otro dispositivo, el servidor responde 401 «session_replaced» a las peticiones de esta sesión. Aquí se detecta en CUALQUIER
+   petición de la página: se avisa el evento `gw:session-replaced` (los sondeos y latidos se detienen), se muestra el motivo y se lleva al inicio de sesión en pocos segundos. Los ingresos hechos sin
+   red (outbox / contingencia) NO se descartan: siguen guardados y se envían al volver a iniciar sesión. Las pantallas operativas piden `window.GW_SESSION_PING = true` para enterarse en
+   menos de 10 s aunque estén quietas (una consulta mínima cada 8 s). */
+(function () {
+  if (window.__gwSessionGuard || typeof window.fetch !== "function") return;
+  window.__gwSessionGuard = true;
+  let replaced = false;
+  function onReplaced() {
+    if (replaced) return;
+    replaced = true;
+    try { window.dispatchEvent(new Event("gw:session-replaced")); } catch (e) { /* sin eventos */ }
+    const box = document.createElement("div");
+    box.setAttribute("role", "alertdialog");
+    box.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(10,14,46,.82);padding:24px";
+    box.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px 28px;max-width:440px;text-align:center;font:600 1.05rem system-ui,sans-serif;color:#0a0e2e"><div style="font-size:2rem">🔒</div><p style="margin:8px 0">Tu sesión se cerró porque entraste con esta cuenta en otro dispositivo.</p><p style="margin:8px 0;font-weight:400;font-size:.95rem">Te llevamos al inicio de sesión…</p></div>';
+    (document.body || document.documentElement).appendChild(box);
+    setTimeout(() => { window.location.href = "/login"; }, 3000);
+  }
+  const original = window.fetch;
+  window.fetch = function () {
+    return original.apply(this, arguments).then((res) => {
+      if (res && res.status === 401 && !replaced) res.clone().json().then((d) => { if (d && d.detail === "session_replaced") onReplaced(); }, () => {});
+      return res;
+    });
+  };
+  if (window.GW_SESSION_PING) {
+    setInterval(() => { if (!replaced && document.visibilityState === "visible") original("/api/session/ping", { cache: "no-store" }).then((res) => { if (res.status === 401) window.fetch("/api/session/ping"); }, () => {}); }, 8000);
+  }
+})();

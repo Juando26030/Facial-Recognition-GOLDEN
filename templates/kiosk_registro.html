@@ -6,6 +6,7 @@
     <title>Registro | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/boot-trace.js') }}"></script>
+    {% if staff_role not in ['admin', 'super_admin'] %}<script>window.GW_SESSION_PING = true;</script>{% endif %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>

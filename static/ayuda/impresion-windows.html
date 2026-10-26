@@ -33,22 +33,34 @@
   <li>Toca <b>Preferencias de impresión</b> y deja: <b>Papel: 62 mm (cinta continua)</b>, <b>Corte automático: Sí, al final de cada etiqueta</b> y <b>Margen: el más pequeño</b>. Guarda con <b>Aceptar</b>.</li>
 </ol>
 
-<h2>3. Elegir el modo en GoldenWeb</h2>
+<h2>3. Elegir el modo en GoldenWeb (lo hace Golden, no quien registra)</h2>
 <ol>
-  <li>Abre el Registro del evento y toca <b>⚙️ Impresión</b>.</li>
-  <li>En <b>Modo de impresión</b> elige <b>Controlador de Windows</b>. (En «Automático» la página pasa sola a este modo cuando Windows no deja usar el USB directo.)</li>
+  <li>Un administrador abre <b>Parámetros → Puestos de impresión</b> y, en la cuenta del puesto, elige <b>Modo = Controlador de Windows</b>, marca <b>Imprime sin cuadro</b> si el puesto lo usará y, si hace falta, el ancho de página y la calibración. Se guarda en el servidor: sobrevive a limpiar el navegador.</li>
+  <li>Quien registra solo ve una línea de estado («Imprime en: este puesto (lista)» o «Comparte impresora con: …»). No elige ni configura nada.</li>
   <li>La barra dirá <b>«Impresión por controlador de Windows»</b>. No es una falla: es un modo normal.</li>
 </ol>
 
 <h2>4. Imprimir SIN cuadro de diálogo (recomendado en el puesto de registro)</h2>
-<p>Por seguridad, Chrome no deja que una página imprima sin preguntar. Se logra abriendo Chrome con una opción especial. Para eso:</p>
+<p>Por seguridad, Chrome no deja que una página imprima sin preguntar. Se logra abriendo Chrome con la opción <code>--kiosk-printing</code>. Hay tres formas; usa la <b>primera</b> y las otras solo si no te sirve:</p>
+<h3>Opción A (recomendada): agregar la opción al acceso directo de Chrome</h3>
 <ol>
-  <li>En <b>⚙️ Impresión</b> (modo «Controlador de Windows») toca <b>Descargar lanzador para este computador</b>. Se baja el archivo <code>Imprimir-GoldenWeb.bat</code>.</li>
-  <li>Ábrelo desde <b>Descargas</b>. Si Windows dice <b>«Windows protegió su PC»</b>: toca <b>Más información → Ejecutar de todos modos</b>. (El archivo solo abre Chrome; <b>no instala nada ni cambia el registro</b>.)</li>
-  <li>Se abre una ventana de Chrome con GoldenWeb. La <b>primera vez</b> inicia sesión (esa ventana tiene su propio perfil, por eso no hereda tu sesión).</li>
-  <li>En la barra debe decir <b>«Impresión automática activa»</b>. Registra a alguien: la escarapela sale sola.</li>
-  <li>Usa <b>siempre</b> esa ventana para registrar. Puedes crear un acceso directo con el comando que aparece en ⚙️ Impresión.</li>
+  <li>Cierra Chrome por completo (también en la bandeja de iconos junto al reloj).</li>
+  <li>Clic derecho en el acceso directo de Chrome que usarás para GoldenWeb → <b>Propiedades</b>.</li>
+  <li>En <b>Destino</b>, al final, después de las comillas, deja un espacio y escribe <code>--kiosk-printing</code>. Debe quedar así: <code>"C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk-printing</code>. <b>Aceptar</b>.</li>
+  <li>Ábrelo con ese acceso directo y verifica en la barra de direcciones <code>chrome://version</code>: en <b>Línea de comandos</b> debe aparecer <code>--kiosk-printing</code>.</li>
+  <li>Mismo procedimiento para <b>Microsoft Edge</b> (acceso directo de Edge, mismo texto al final del Destino).</li>
 </ol>
+<p class="nota"><b>Advertencia:</b> con esa opción <b>TODO lo que se imprima desde ese Chrome sale directo a la impresora predeterminada</b>, sin preguntar. Usa ese acceso directo solo para GoldenWeb y deja la Brother QL-800 como impresora predeterminada.</p>
+<h3>Opción B: Win+R</h3>
+<ol>
+  <li>Cierra Chrome por completo. Presiona <b>Win+R</b>, pega el comando que aparece en ⚙️ Impresión (solo administradores lo ven) y presiona Enter.</li>
+</ol>
+<h3>Opción C (la última): el archivo .bat</h3>
+<ol>
+  <li>Un administrador, en <b>⚙️ Impresión</b>, toca <b>Descargar lanzador para este computador</b>. Se baja <code>Imprimir-GoldenWeb.bat</code>.</li>
+  <li>Ábrelo desde <b>Descargas</b>. Si Windows dice <b>«Windows protegió su PC»</b>: <b>Más información → Ejecutar de todos modos</b>. (Solo abre Chrome con su propio perfil; <b>no instala nada ni cambia el registro</b>. Esa ventana pide iniciar sesión la primera vez.)</li>
+</ol>
+<p>En cualquiera de las tres, la barra debe decir <b>«Impresión automática activa»</b>. Registra a alguien: la escarapela sale sola. Si en Parámetros se marcó «sin cuadro» pero Chrome muestra el cuadro de impresión, la barra del puesto avisa a los administradores con un ⚠️.</p>
 <p class="nota">Si abres GoldenWeb en un Chrome normal, la barra dirá «Impresión con cuadro de diálogo»: saldrá el cuadro de Chrome en cada escarapela (destino «Brother QL-800», márgenes «Ninguno», escala 100 %). Lo que llegue de otros equipos queda esperando el botón <b>«Imprimir pendientes»</b>.</p>
 
 <h2>5. Imprimir para otros equipos (impresión compartida)</h2>

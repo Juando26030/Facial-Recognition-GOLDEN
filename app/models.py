@@ -196,6 +196,8 @@ class StaffUser(Base):
     phone = Column(String, nullable=True, unique=True)  # Sprint 2.4, 2026-09-16: WhatsApp; Fase 4: obligatorio+único salvo cliente/digitador (ver routers/staff.py, routers/events.py)
     is_active = Column(Boolean, default=True, nullable=False)
     must_change_password = Column(Boolean, default=False, server_default='false', nullable=False)  # Sprint 4: tras un restablecimiento por un admin/coordinador, en el próximo ingreso debe elegir su propia contraseña
+    print_station = Column(Boolean, default=False, server_default='false', nullable=False)  # 0072: «Puesto de impresión» (cuenta protegida: un segundo inicio de sesión se rechaza; app/sessions.py)
+    session_token = Column(String(40), nullable=True)  # 0072: sesión vigente de la cuenta (NULL = ninguna registrada: una sesión anterior al cambio sigue válida)
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
@@ -962,3 +964,34 @@ class PrintJob(Base):
     sent_at = Column(DateTime, nullable=True)
     done_at = Column(DateTime, nullable=True)
     prefs_json = Column(Text, nullable=True)       # 0071: parámetros de impresión del equipo que pidió (cinta, giro, espejo, corte...); NULL = los del evento
+
+
+class PrintStation(Base):
+    """0072: configuración de impresión de UNA cuenta de puesto en UN evento (modo, «sin cuadro», ancho de página, calibración, recorte y parámetros físicos), guardada en el servidor
+    (no en el navegador). Sin fila, el puesto usa lo de siempre (valores del evento + lo guardado en el equipo)."""
+    __tablename__ = 'print_stations'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=False)
+    settings_json = Column(Text, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+    __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_print_station_event_staff'),)
+
+
+class AppSetting(Base):
+    """0072: clave/valor de configuración del sistema que un admin cambia desde Configuración (p. ej. «single_session»)."""
+    __tablename__ = 'app_settings'
+    key = Column(String(64), primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=utcnow)
+
+
+class SessionAudit(Base):
+    """0072: sesiones cerradas, rechazadas o forzadas. Solo lo necesario (Ley 1581): cuenta, hora, tipo de dispositivo, navegador y resultado; sin IP. Se borra a los 90 días (ops_runner.purge)."""
+    __tablename__ = 'session_audit'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow, index=True)
+    device = Column(String(20), nullable=True)
+    browser = Column(String(40), nullable=True)
+    result = Column(String(20), nullable=False)

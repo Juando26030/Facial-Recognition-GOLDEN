@@ -17,10 +17,10 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
-from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, timing
+from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import shared_print
+from app.routers import print_stations, shared_print
 from app.routers import print_settings
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
@@ -230,6 +230,7 @@ _include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
 _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
 _include(roulette.router, prefix="/api")
+_include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
 _include(print_settings.router, prefix="/api")   # valores de impresión de escarapelas por evento (cinta, giro, recorte)
 _include(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
@@ -248,7 +249,11 @@ def _page_staff(request: Request, db: Session):
     staff_id = request.session.get("staff_user_id")
     if not staff_id:
         return None
-    return db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
+    staff = db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
+    if staff is not None and sessions.is_replaced(db, request, staff):
+        request.session.clear()
+        return None
+    return staff
 
 
 def _display_role(role: str, secondary_role: str = None) -> str:

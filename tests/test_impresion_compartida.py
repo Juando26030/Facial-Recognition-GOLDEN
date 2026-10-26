@@ -92,7 +92,7 @@ def test_devices_report_and_appear_with_last_signal_and_printer(client, setup):
     ev, u = setup
     _as(client, "y1")
     r = _beat(client, ev, printer=True)
-    assert r.json() == {"enabled": True, "mode": "self", "printer_name": "", "printer_ready": False, "serving": 0, "poll": False, "holder": True, "waiting": 0, "claimed": 0}
+    assert r.json() == {"enabled": True, "mode": "self", "printer_name": "", "printer_ready": False, "serving": 0, "poll": False, "holder": True, "waiting": 0, "claimed": 0, "serving_names": []}
     _as(client, "x1")
     _beat(client, ev, printer=False)
     _as(client, "adm")
@@ -351,7 +351,7 @@ def test_the_queue_shows_the_parameters_applied_to_each_job_and_a_phone_job_keep
 def test_the_computer_that_prints_for_others_without_the_launcher_is_told_so_in_the_bar():
     import pathlib
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
-    assert "Este computador imprime solo si abres la app con el lanzador." in sp and 'id="spHostLauncher"' in sp and "(SHARED && driverOn() && !kiosk)" in sp
+    assert "Este computador imprime solo si abres la app con el lanzador." in sp and 'id="spHostLauncher"' in sp and "(isAdmin && SHARED && driverOn() && !kiosk)" in sp
     assert "#sharedPrintBar #spPending{min-height:64px" in sp and "Imprimir pendientes (${waitingCount()})" in sp          # grande y con el contador
 
 
@@ -372,7 +372,7 @@ def test_shared_print_js_never_calls_shared_routes_when_the_event_has_it_off():
     import pathlib
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "window.SHARED_PRINT_ENABLED !== false" in sp
-    assert "if (!SHARED) return true;" in sp and "if (!SHARED || polling" in sp and "if (!SHARED) { online = true;" in sp
+    assert "if (!SHARED) return true;" in sp and "if (!SHARED || sessionDead || polling" in sp and "if (!SHARED) { online = true;" in sp
 
 
 def test_the_last_resort_print_page_declares_the_rotated_page_so_nothing_is_cut():

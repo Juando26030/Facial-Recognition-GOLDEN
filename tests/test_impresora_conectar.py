@@ -9,7 +9,7 @@ def _read(path):
 
 def test_the_usb_layer_is_idempotent_single_flight_and_talks_between_tabs():
     ql = _read("static/js/ql-usb.js")
-    assert "var inflight = null;" in ql and "if (state.device && state.device.opened) return Promise.resolve(state.device);" in ql          # ya abierta: no se vuelve a abrir
+    assert "var inflight = null" in ql and "if (state.device && state.device.opened) return Promise.resolve(state.device);" in ql          # ya abierta: no se vuelve a abrir
     assert "var wasLive = state.device === device && device.opened;" in ql                                                                  # un fallo al reabrir no cierra la conexión viva
     assert 'new BroadcastChannel("golden-ql-usb")' in ql and "function remoteOwner" in ql and "function sendViaOwner" in ql and "function releaseNow" in ql
     assert "no puede usar la impresora por USB directo (Windows)" in ql and "Controlador de Windows" in ql and "cuadro de Windows" not in ql          # «Access denied» con la acción a seguir

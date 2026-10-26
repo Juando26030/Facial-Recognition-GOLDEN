@@ -327,11 +327,17 @@
   /* «Conectar» es IDEMPOTENTE y de un solo vuelo (25-oct-2026): si ya está abierta en esta página, la devuelve sin volver a abrir; si hay otro intento en marcha (arranque de la página,
      evento de conexión, toque del botón) se espera ese mismo; si ya está autorizada (getDevices) no pide permiso otra vez. Antes dos intentos a la vez se pisaban: el segundo no conseguía
      el candado, se declaraba «en uso en otra pestaña» y soltaba el candado y la impresora del primero. */
-  var inflight = null;
+  var inflight = null, preferredSerial = "";
+  function setPreferredSerial(serial) { preferredSerial = String(serial || ""); }
+  async function authorizedCount() {                // cuántas Brother ya autorizadas hay en este navegador (0 = falta la primera autorización, que requiere un clic)
+    if (!supported()) return 0;
+    try { return (await navigator.usb.getDevices()).filter(function (d) { return d.vendorId === BROTHER_VENDOR; }).length; } catch (e) { return 0; }
+  }
   async function doConnect(askPermission) {
     if (state.device && state.device.opened) return state.device;
     var devices = await navigator.usb.getDevices();
-    var device = devices.find(function (d) { return d.vendorId === BROTHER_VENDOR; });
+    var brothers = devices.filter(function (d) { return d.vendorId === BROTHER_VENDOR; });
+    var device = (preferredSerial && brothers.find(function (d) { return d.serialNumber === preferredSerial; })) || brothers[0];     // la que indique Parámetros (serie) o la primera
     if (!device && askPermission) device = await navigator.usb.requestDevice({ filters: [{ vendorId: BROTHER_VENDOR }] });
     if (!device) return null;
     return open(device);
@@ -433,7 +439,7 @@
   }
 
   var api = { readPrefs: readPrefs, savePrefs: savePrefs, resolvePrefs: resolvePrefs, clearPrefs: clearPrefs, describePrefs: describePrefs, PREF_DEFAULTS: PREF_DEFAULTS, PREF_KEYS: PREF_KEYS,
-              layout: layout, printableMm: printableMm, dropLegacyPrefs: dropLegacyPrefs, LEGACY_KEYS: LEGACY_KEYS, rotateBitmap: rotateBitmap, centerOnTape: centerOnTape, cropToContent: cropToContent, invertBitmap: invertBitmap, prepareBitmap: prepareBitmap, buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
+              layout: layout, setPreferredSerial: setPreferredSerial, authorizedCount: authorizedCount, printableMm: printableMm, dropLegacyPrefs: dropLegacyPrefs, LEGACY_KEYS: LEGACY_KEYS, rotateBitmap: rotateBitmap, centerOnTape: centerOnTape, cropToContent: cropToContent, invertBitmap: invertBitmap, prepareBitmap: prepareBitmap, buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
               supported: supported, connect: connect, sendJob: sendJob, readStatus: readStatus, close: close, releaseNow: releaseNow, friendlyError: friendlyError, remoteOwner: remoteOwner,
               ready: function () { return !!(state.device && state.device.opened); }, info: function () { return state.device; },
               BUSY_MSG: BUSY_MSG, LOCK_NAME: LOCK_NAME, isOwner: function () { return owner.held; } };

@@ -176,7 +176,8 @@ def test_a_step_that_fails_in_the_middle_leaves_nothing_and_is_repeated_without_
 
 
 # ---------------------------------------------------------------------------------------------------- (e) dos cargas a la vez
-def test_a_second_load_while_one_is_running_is_refused_and_two_steps_at_once_do_not_double_process(client, factory, coord, db, small_steps):
+def test_a_second_load_while_one_is_running_is_refused_and_two_steps_at_once_do_not_double_process(client, factory, coord, db, small_steps, monkeypatch):
+    monkeypatch.setenv("SINGLE_SESSION", "0")                       # tres dispositivos de la misma cuenta a la vez (con sesión única los anteriores se cerrarían)
     data = G.xlsx_bytes(_rows(12))
     first = _post(client, coord, data).json()
     assert _post(client, coord, data).status_code == 409                               # otra carga del mismo evento: «ya hay una en curso»

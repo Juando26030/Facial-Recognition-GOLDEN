@@ -58,7 +58,8 @@ def test_a_second_request_for_the_same_person_in_the_window_returns_the_same_job
     assert _job(client, ev, "1002").json()["id"] != first["id"]                 # otra persona: otro trabajo
 
 
-def test_two_devices_asking_at_once_for_the_same_person_get_one_job(client, setup, db):
+def test_two_devices_asking_at_once_for_the_same_person_get_one_job(client, setup, db, monkeypatch):
+    monkeypatch.setenv("SINGLE_SESSION", "0")                       # esta prueba simula DOS dispositivos de la misma cuenta a la vez (con sesión única el primero se cerraría)
     ev, users = setup
     from app.main import app
     clients = []

@@ -63,7 +63,7 @@ const pageListeners = {};
 global.addEventListener = (k, f) => { (pageListeners[k] = pageListeners[k] || []).push(f); };       // pagehide / beforeunload de la página
 global.window = global;
 Object.assign(global, {
-  EVENT_ID: 7, EVENT_AUTO_PRINT: true, SHARED_PRINT_ENABLED: !process.env.SHARED_OFF, STAFF_ROLE: 'digitador', localStorage: mem,
+  EVENT_ID: 7, EVENT_AUTO_PRINT: true, SHARED_PRINT_ENABLED: !process.env.SHARED_OFF, __me: process.env.STATION ? { admin: false, station: true, settings: { mode: 'driver', noDialog: false, pageWidthMm: 60, dx: 1.5, dy: -0.5, rotation: 90, crop: false, feedMm: 4 } } : null, STAFF_ROLE: 'digitador', localStorage: mem,
   showToast: (m, t) => { toasts.push({ m, t }); }, showConfirm: async () => true,
   BadgePrint: { openPrintWindow: (id) => { original.open.push(id); }, maybeAutoPrint: (id) => { original.auto.push(id); } },
 });
@@ -78,6 +78,7 @@ const json = (status, data) => ({ ok: status >= 200 && status < 300, status, jso
 global.fetch = async (url, init = {}) => {
   const u = new URL(url, 'http://x');
   if (process.env.SHARED_OFF && /print-devices|print-jobs|print-check/.test(u.pathname)) { sharedCalls.push(u.pathname); return json(409, { detail: 'La impresión compartida está desactivada' }); }
+  if (u.pathname.endsWith('/print-station/me')) return json(200, global.__me || { admin: true, station: false, settings: null });
   if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode, printer_name: mode === 'shared' ? 'dig1' : '', printer_ready: true, serving: 0, poll: false });
   let m = u.pathname.match(/\/print-check\/(.+)$/);
   if (m) return json(200, REGISTERED.has(m[1]) ? { registered: true } : { registered: false, detail: `No se puede imprimir: Persona ${m[1]} aún no está registrado. Acredítalo o guarda su registro primero.` });
@@ -100,6 +101,28 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
 (async () => {
   await settle();
   const BP = window.BadgePrint;
+  if (process.env.STATION) {                                            // puesto configurado desde el servidor + digitador (no admin)
+    const sp = () => GoldenSharedPrint; QLUsb.releaseNow = () => {};
+    mem.d = { gw_print_mode: 'usb', ql_rotation: '270', ql_crop: '1', gw_driver_page_mm: '62' };      // lo que el navegador tenía guardado: el servidor GANA
+    await new Promise((r) => setTimeout(r, 300));
+    const st = sp().stationState();
+    assert.ok(!st.isAdmin && st.isStation && st.cfg && st.cfg.mode === 'driver', 'lee su configuración del servidor');
+    assert.ok(sp().driverOn(), 'el modo del servidor manda sobre el navegador');
+    assert.ok(st.bar.prefs && st.bar.queue && st.bar.connect && st.bar.always && st.bar.guide, 'el digitador no ve ⚙️, Cola, Conectar ni la guía: ' + JSON.stringify(st.bar));
+    assert.ok(/^Imprime en: este puesto/.test(st.line), st.line);
+    const f0 = global.fetch, tpl0 = { width_mm: 100, height_mm: 58.9, orientation: 'horizontal', background_type: 'color', background_value: '#fff', elements: [] };
+    global.fetch = async (url, init = {}) => { const u = new URL(url, 'http://x'); if (u.pathname.includes('/badge-print-data')) return json(200, { id: '1001', first_name: 'Ana', last_name: 'Mora', has_photo: false }); return f0(url, init); };
+    global.BadgeRender = { loadFonts: async () => {}, renderBadge() {}, fetchTemplate: async () => json(200, tpl0) };
+    global.html2canvas = async () => ({ width: Math.round(100 * 300 / 25.4), height: Math.round(58.9 * 300 / 25.4), getContext: () => null });
+    driverPages.length = 0;
+    await sp().printFor('1001', false, true);
+    const pg = driverPages[0].spec;
+    assert.ok(Math.abs(pg.pageWidthMm - 60) < 0.01, 'ancho de página del servidor (60), no el del navegador (62): ' + pg.pageWidthMm);
+    mem.d = {};                                                         // borrar el almacenamiento del navegador no cambia nada
+    driverPages.length = 0; await sp().printFor('1001', false, true);
+    assert.ok(Math.abs(driverPages[0].spec.pageWidthMm - 60) < 0.01 && sp().driverOn(), 'el puesto conserva su configuración tras borrar el navegador');
+    console.log('station_config OK'); process.exit(0);
+  }
   if (process.env.SHARED_OFF) {
     const sp = () => GoldenSharedPrint; QLUsb.releaseNow = () => {};                                         // evento SIN impresión compartida: el modo por controlador funciona igual y no se llama a ninguna ruta compartida
     sp().setPrintMode('driver'); await settle(); await new Promise((r) => setTimeout(r, 200));

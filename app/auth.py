@@ -2,7 +2,7 @@ import bcrypt
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app import event_rules
+from app import event_rules, sessions
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
 
@@ -28,6 +28,9 @@ def get_current_staff(request: Request, db: Session = Depends(get_db)) -> StaffU
     if not staff:
         request.session.clear()
         raise HTTPException(status_code=401, detail="Sesión inválida o usuario desactivado")
+    if sessions.is_replaced(db, request, staff):         # entró con esta cuenta en otro dispositivo (sesión única): el cliente detiene todo y lleva al inicio de sesión
+        request.session.clear()
+        raise HTTPException(status_code=401, detail="session_replaced")
     return staff
 
 

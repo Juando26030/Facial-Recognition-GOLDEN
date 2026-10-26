@@ -71,6 +71,11 @@
 
     {% if staff_role in ["admin", "super_admin"] %}
     <div id="staff" class="section" style="max-width:100%;">
+      <div id="singleSessionCard" style="background:white; padding:1.2rem 1.6rem; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1rem; max-width:760px;">
+        <label style="display:flex; gap:10px; align-items:center; font-weight:700;"><input type="checkbox" id="singleSessionChk" style="width:22px; height:22px;"> Sesión única para digitadores y demás roles operativos</label>
+        <p style="color:#555; font-size:0.85rem; margin:0.5rem 0 0;">Al iniciar sesión se cierra la anterior de esa cuenta (el otro dispositivo ve «Tu sesión se cerró porque entraste con esta cuenta en otro dispositivo»). <b>Admin y super_admin</b> pueden tener varias sesiones sin límite, y una cuenta marcada como <b>Puesto de impresión</b> rechaza un segundo inicio de sesión mientras esté en uso. Si algo falla en un evento, apágalo: vuelve al comportamiento anterior sin desplegar nada.</p>
+        <p id="singleSessionNote" style="color:#a12631; font-size:0.85rem; margin:0.4rem 0 0;" hidden>Está forzado por la variable de entorno SINGLE_SESSION: este interruptor no cambia nada mientras exista.</p>
+      </div>
       <iframe src="/admin/staff?embed=1" style="width:100%; min-height:80vh; border:none; border-radius:20px; background:transparent;" title="Staff y Permisos"></iframe>
     </div>
     {% endif %}
@@ -78,6 +83,23 @@
   </div>
 </main>
 
+<script>
+/* Interruptor «Sesión única» (26-oct-2026, solo admin): app/routers/print_stations.py → app/sessions.py */
+(function () {
+  const chk = document.getElementById('singleSessionChk');
+  if (!chk) return;
+  fetch('/api/settings/single-session', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((d) => {
+    if (!d) return;
+    chk.checked = !!d.enabled;
+    document.getElementById('singleSessionNote').hidden = !d.forced_by_env;
+  }).catch(() => {});
+  chk.addEventListener('change', async () => {
+    const res = await fetch('/api/settings/single-session', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: chk.checked }) });
+    if (!res.ok) { chk.checked = !chk.checked; showToast('No se pudo cambiar la sesión única', 'error'); return; }
+    showToast(chk.checked ? 'Sesión única ACTIVADA.' : 'Sesión única apagada: cada cuenta puede tener varias sesiones, como antes.', 'success');
+  });
+})();
+</script>
 <script>
 (function () {
   const colorInput = document.getElementById('themeColor');
