@@ -10,7 +10,8 @@
        · en el equipo de Y → se crea un trabajo (con un id propio: un reintento no duplica) y se sigue su estado; «Impreso en Y», o el aviso y la cola visible.
    - El equipo Y imprime lo que el servidor le reserva (nunca dos veces: el servidor no vuelve a entregar un trabajo reservado) y confirma impreso/fallido.
    - Reconexión de la impresora sin pedir permiso de nuevo (navigator.usb.getDevices), pantalla siempre encendida (Wake Lock) y avisos si se pierde la conexión.
-   - «Registro touch» (recordado en este equipo): botones grandes, solo lo esencial, el campo del lector conserva el foco y no abre el teclado (con botón para abrirlo). */
+   - «Registro touch» (recordado en este equipo): botones grandes y los TRES buscadores (cédula, nombre, entidad). La cédula abre el teclado numérico; con «Solo lector» (opción del puesto en
+     Parámetros, para lectores USB/Bluetooth) no abre teclado, conserva el foco y un ícono ⌨️ pegado al campo lo abre (26-oct-2026). */
 (function () {
   'use strict';
   const EID = window.EVENT_ID;
@@ -58,7 +59,9 @@
   let isAdmin = false, isStation = false, stationCfg = null, dialogWarn = false, recoveredUntil = 0, authCount = -1;
   const overlay = {};                     // clave de almacenamiento → valor que manda el servidor (gana sobre el navegador)
   const waitingCount = () => (route && route.waiting) | 0;      // trabajos de otros equipos que esperan EN EL SERVIDOR a este puesto (nadie los reclama hasta que una ventana pueda imprimirlos sola o se toque «Imprimir pendientes»)
-  const driverOn = () => printMode === 'driver' || (printMode === 'auto' && drvFallback);
+  /* Celular y tablet (Android/iOS) no tienen controlador de Windows: nunca se usa ni se nombra ese modo ni el «cuadro de diálogo» (26-oct-2026). */
+  const MOBILE = platform === 'Android' || platform === 'iOS';
+  const driverOn = () => !MOBILE && (printMode === 'driver' || (printMode === 'auto' && drvFallback));
   let pending = 0;                       // trabajos de este equipo pendientes de confirmar
 
   /* ------------------------------------------------------------------ barra de estado */
@@ -84,7 +87,7 @@
     '#sharedPrintBar.bad{border-color:#a12631;background:#fdeeee}#sharedPrintBar.warn{border-color:#b26a00;background:#fff6e5}',
     '#sharedPrintBar .sp-text{flex:1 1 220px;font-weight:600}',
     '#sharedPrintBar #spHostNote{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:#fff6e5;border:2px solid #b26a00;font-size:0.92rem}',
-    '#sharedPrintBar #spHostNote[hidden],#sharedPrintBar #spPending[hidden]{display:none}',
+    '#sharedPrintBar [hidden]{display:none !important}',                 /* «Ver guía» es un <a> con display en línea: sin esto el atributo hidden no lo ocultaba (lo veía el digitador) */
     '#sharedPrintBar #spPending{min-height:64px;padding:8px 22px;font-size:1.3rem;background:#b26a00;border-color:#7a4a00;color:#fff}',
     '#sharedPrintBar .sp-btn{min-height:44px;padding:6px 14px;border-radius:10px;border:2px solid #0a0e2e;background:#fff;color:#0a0e2e;font-weight:700;cursor:pointer}',
     '#spQueuePanel{position:fixed;inset:auto 12px 12px 12px;max-height:60vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.25)}',
@@ -95,7 +98,11 @@
     'body.touch-mode{font-size:18px}',
     'body.touch-mode input[type=text],body.touch-mode input[type=search]{min-height:56px;font-size:1.25rem !important}',
     'body.touch-mode button,body.touch-mode .golden-btn,body.touch-mode .small-btn{min-height:52px;font-size:1.05rem !important;padding-left:18px !important;padding-right:18px !important}',
-    'body.touch-mode #searchNombre,body.touch-mode #searchEntidad,body.touch-mode #clearFiltersBtn,body.touch-mode .golden-sidebar-toggle{display:none !important}',
+    'body.touch-mode #clearFiltersBtn,body.touch-mode .golden-sidebar-toggle{display:none !important}',
+    'body.touch-mode #searchCedula,body.touch-mode #searchNombre,body.touch-mode #searchEntidad{min-height:60px;font-size:1.3rem !important;width:100%;box-sizing:border-box}',
+    '.sp-kbd-wrap{position:relative;display:block}.sp-kbd-wrap>input{padding-right:64px !important}',
+    '.sp-kbd{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-width:48px;min-height:48px;border-radius:10px;border:2px solid #0a0e2e;background:#fff;font-size:1.4rem;line-height:1;cursor:pointer;padding:0}',
+    '.sp-kbd[aria-pressed=true]{background:#0a0e2e;color:#fff}',
     'body.touch-mode label[for],body.touch-mode .badge-input-group label{font-size:1rem}',
     /* Directorio en vivo como TARJETAS de dos filas (25-oct-2026, celular vertical: el nombre quedaba fuera de la pantalla detrás de los botones). Solo con el modo touch;
        la tabla de escritorio no cambia. Fila 1: nombre grande, estado, empresa, cédula y tipo. Fila 2: los botones de siempre, grandes. Sin scroll de lado. */
@@ -148,7 +155,7 @@
     } else {
       kind = route.serving ? 'bad' : 'warn';
       msg = route.serving ? `Impresora DESCONECTADA: ${route.serving} equipo(s) imprimen aquí y sus escarapelas quedan en cola. Conéctela.`
-        : 'Sin impresora USB: se usará la impresión normal del navegador.';
+        : (MOBILE ? 'Sin impresora.' : 'Sin impresora USB: se usará la impresión normal del navegador.');
       if (usb.code === 'denied' || usb.code === 'disconnected' || usb.code === 'permission') msg += ` ${usb.lastError}`;       // el motivo y qué hacer, a la vista (no solo en un aviso que se va)
     }
     if (pending) msg += ` · ${pending} por confirmar`;
@@ -167,14 +174,15 @@
     bar.querySelector('#spHostNote').hidden = !(isAdmin && SHARED && driverOn() && !kiosk);      // este computador puede ser la impresora de otros: sin lanzador, Chrome pide confirmar cada impresión
     bar.querySelector('#spPending').hidden = !(SHARED && driverOn() && !kiosk && waitingCount());   // la acción del puesto: la ve también quien no es admin
     bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${waitingCount()})`;
-    bar.querySelector('#spAlways').hidden = !(isAdmin && printMode === 'auto' && drvFallback);
-    bar.querySelector('#spGuide').hidden = !(isAdmin && (driverOn() || usb.code === 'denied'));
+    bar.querySelector('#spAlways').hidden = true;                 // la configuración (modo, guía) vive detrás de un solo ícono ⚙️ (26-oct-2026)
+    bar.querySelector('#spGuide').hidden = true;
   }
   function stationLine() {
     const ready = printerReady();
     const names = route.serving_names && route.serving_names.length ? route.serving_names.join(', ') : '';
     if (route.mode === 'shared') return route.printer_ready ? { kind: 'ok', msg: `Imprime en: ${route.printer_name} (lista)` } : { kind: 'info', msg: `Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme.` };
     if (route.serving) return { kind: ready ? 'ok' : 'warn', msg: `Comparte impresora con: ${names || route.serving + ' equipo(s)'} (${ready ? 'lista' : 'sin impresora'})` + (waitingCount() && !kiosk ? ` · ${waitingCount()} esperan: toca «Imprimir pendientes».` : '') };
+    if (MOBILE && !ready) return { kind: 'warn', msg: 'Sin impresora.' };
     return { kind: 'ok', msg: `Imprime en: este puesto (${ready ? 'lista' : 'impresión normal del navegador'})` };
   }
 
@@ -226,6 +234,7 @@
     heartbeat();
   }
   function fallToDriver(message) {                 // «automático»: de WebUSB al controlador, sin aviso rojo repetido
+    if (MOBILE) return;                             // en celular o tablet no hay controlador: queda «Sin impresora» (o imprime en el puesto que comparte)
     drvFallback = true;
     if (!drvNoticeShown) { drvNoticeShown = true; toast('ℹ️ ' + message, 'info'); }
   }
@@ -633,27 +642,40 @@
   const READER_IDS = ['searchCedula', 'regScanCedulaInput', 'bioCedula'];
   let touch = store.get('gw_touch_mode', '0') === '1';
   let keyboard = false;
+  const readerOnly = () => !!(stationCfg && stationCfg.readerOnly);        // opción del PUESTO (Parámetros): solo lector de códigos, sin teclado en pantalla
   function readerField() { return READER_IDS.map((id) => document.getElementById(id)).find((el) => el && el.offsetParent !== null) || null; }
+  function kbdButton(el) {                                                       // ícono ⌨️ PEGADO al campo (solo con «Solo lector»): abre o cierra el teclado en pantalla
+    let wrap = el.parentNode && el.parentNode.classList && el.parentNode.classList.contains('sp-kbd-wrap') ? el.parentNode : null;
+    if (!wrap) {
+      wrap = document.createElement('span'); wrap.className = 'sp-kbd-wrap';
+      el.parentNode.insertBefore(wrap, el); wrap.appendChild(el);
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'sp-kbd'; b.textContent = '⌨️'; b.setAttribute('aria-label', 'Abrir el teclado');
+      b.addEventListener('click', () => { keyboard = !keyboard; applyTouch(); el.blur(); setTimeout(() => el.focus(), 50); });
+      wrap.appendChild(b);
+    }
+    return wrap.querySelector('.sp-kbd');
+  }
   function applyTouch() {
     document.body.classList.toggle('touch-mode', touch);
     const tbtn = bar.querySelector('#spTouch');
     tbtn.setAttribute('aria-pressed', touch ? 'true' : 'false');
     tbtn.textContent = touch ? '📱 Registro touch: ACTIVADO' : '📱 Registro touch';
-    const kbtn = bar.querySelector('#spKeyboard');
-    kbtn.hidden = !touch;
-    kbtn.textContent = keyboard ? '⌨️ Ocultar teclado' : '⌨️ Teclado';
+    bar.querySelector('#spKeyboard').hidden = true;                            // el botón lejano de la barra ya no se usa: el ícono va pegado al campo
+    const lector = touch && readerOnly();
     READER_IDS.forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
-      if (!el.dataset.origInputmode) el.dataset.origInputmode = el.getAttribute('inputmode') || '';
-      if (touch && !keyboard) el.setAttribute('inputmode', 'none');              // el lector USB escribe como teclado: sin abrir el teclado en pantalla
-      else if (el.dataset.origInputmode) el.setAttribute('inputmode', el.dataset.origInputmode); else el.removeAttribute('inputmode');
+      if (el.dataset.origInputmode === undefined) el.dataset.origInputmode = el.getAttribute('inputmode') || '';
+      if (lector && !keyboard) el.setAttribute('inputmode', 'none');            // solo lector: el lector escribe como teclado, sin abrir el teclado en pantalla
+      else el.setAttribute('inputmode', el.dataset.origInputmode || 'numeric');  // por defecto: el teclado NUMÉRICO al tocar la cédula
+      if (lector) { const b = kbdButton(el); b.setAttribute('aria-pressed', keyboard ? 'true' : 'false'); b.hidden = false; b.setAttribute('aria-label', keyboard ? 'Ocultar el teclado' : 'Abrir el teclado'); }
+      else { const w = el.parentNode; if (w && w.classList && w.classList.contains('sp-kbd-wrap')) w.querySelector('.sp-kbd').hidden = true; }
     });
   }
-  bar.querySelector('#spTouch').addEventListener('click', () => { touch = !touch; keyboard = false; store.set('gw_touch_mode', touch ? '1' : '0'); applyTouch(); const f = readerField(); if (touch && f) f.focus(); });
+  bar.querySelector('#spTouch').addEventListener('click', () => { touch = !touch; keyboard = false; store.set('gw_touch_mode', touch ? '1' : '0'); applyTouch(); const f = readerField(); if (touch && readerOnly() && f) f.focus(); });
   bar.querySelector('#spKeyboard').addEventListener('click', () => { keyboard = !keyboard; applyTouch(); const f = readerField(); if (f) { f.blur(); setTimeout(() => f.focus(), 50); } });
-  document.addEventListener('focusout', () => {                                   // el campo del lector recupera el foco (salvo que se esté usando otro campo o un diálogo)
-    if (!touch) return;
+  document.addEventListener('focusout', () => {                                   // solo lector: el campo del lector recupera el foco (salvo que se esté usando otro campo o un diálogo)
+    if (!touch || !readerOnly()) return;
     setTimeout(() => {
       const a = document.activeElement;
       if (a && a !== document.body && a.closest && !a.closest('#sharedPrintBar')) return;

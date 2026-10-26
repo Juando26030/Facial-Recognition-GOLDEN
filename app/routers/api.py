@@ -38,6 +38,28 @@ from app.routers.events import _typo_match, _words
 log = logging.getLogger("golden.api")
 
 
+SKIP_REQUIRED_TYPES = ("signature", "categories")       # se guardan aparte (archivo por evento / inscripción): no se pueden comprobar con los datos de la persona
+
+
+def person_missing_required(db: Session, event: Event, user: User) -> list:
+    """A3 (26-oct-2026): los campos OBLIGATORIOS del evento que esta persona tiene vacíos ({key, label}), con los mismos valores que comprueba «Editar persona» (update_user). Sirve para
+    no acreditar a quien le falta un obligatorio (p. ej. se marcó obligatorio después de cargar la base): el escaneo, la fila y el autoregistro responden MISSING_REQUIRED."""
+    field_configs = [c for c in parametros.field_configs_for_event(db, event) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
+    if not any(c["required"] for c in field_configs):
+        return []
+    values = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
+              "birth_date": user.birth_date.isoformat() if getattr(user, "birth_date", None) else ""}
+    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+    values["certificate"] = "true" if (attendee and attendee.certificate) else ""
+    values["digital_contact"] = (attendee.digital_contact if attendee else "") or ""
+    labels = set(_missing_required_fields(field_configs, values))
+    return [{"key": c["key"], "label": c["label"]} for c in field_configs if c["required"] and c["label"] in labels]
+
+
+def missing_required_message(missing: list) -> str:
+    return ("Falta el campo obligatorio: " if len(missing) == 1 else "Faltan los campos obligatorios: ") + ", ".join(m["label"] for m in missing)
+
+
 def _missing_required_fields(field_configs: list, values: dict) -> list:
     """Nombres (rótulos) de los campos marcados obligatorios en Parámetros del Evento que no
     vienen con valor en `values` — usado por manual_register y update_user (PATCH) para no dejar
@@ -626,6 +648,9 @@ def recognize(
     }
     if not event.auto_register and not confirm:
         return _private_json({"result": "MATCH_PENDING", "data": data, **extra})
+    missing = person_missing_required(db, event, user)
+    if missing:                                         # A3: reconocida, pero no se acredita hasta completar el obligatorio
+        return _private_json({"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing), **extra})
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
         event_id=event.id, registered_by_staff_id=staff.id,
@@ -766,6 +791,9 @@ def checkin_cedula(
 
     if not event.auto_register and not confirm:
         return {"result": "FOUND_PENDING", "data": data}
+    missing = person_missing_required(db, event, user)
+    if missing:                                         # A3: NO se acredita; la página abre «Editar persona» en el primer campo vacío
+        return {"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing)}
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
@@ -1333,6 +1361,15 @@ def delete_user_from_event(
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
 
+    # 26-oct-2026 (A2): TODO lo de la persona en este evento, sin dejar huérfanos. Antes quedaban el historial de impresión (print_logs, con llave hacia la persona: al borrarla del todo
+    # el servidor fallaba), los trabajos de impresión compartida, movimientos de áreas, entregas de inventario, envíos de enlaces y el historial de cambios. Lo legal (aceptación de la
+    # persona: audit_consent_logs y web_acceptances) NO se toca: es un registro inmutable con su propia retención (app/consent.py, app/privacy.py).
+    from app.models import AcceptMailLog, AreaMovement, InventoryDelivery, PersonChange, PrintJob, PrintLog
+    att_ids = [a for (a,) in db.query(EventAttendee.id).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id)]
+    if att_ids:
+        db.query(PrintJob).filter(PrintJob.event_id == event_id, PrintJob.attendee_id.in_(att_ids)).delete(synchronize_session=False)
+    for model in (PrintLog, AreaMovement, InventoryDelivery, AcceptMailLog, PersonChange):
+        db.query(model).filter(model.event_id == event_id, model.user_id == user_id).delete(synchronize_session=False)
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
     db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
     signatures.delete_signatures(event.tenant_id, event_id, user_id)
@@ -1347,6 +1384,8 @@ def delete_user_from_event(
 
     fully_deleted = False
     if not other_attendee and not other_log:
+        for model in (PrintLog, AreaMovement, InventoryDelivery):       # lo que tenga en otros eventos YA cerrados del cliente (sin inscripción ni ingresos) también apunta a la persona
+            db.query(model).filter(model.tenant_id == event.tenant_id, model.user_id == user_id).delete(synchronize_session=False)
         get_storage().delete(photo_key(event.tenant_id, user_id))
         db.delete(user)
         fully_deleted = True
@@ -1388,6 +1427,10 @@ def update_registration_status(
 
     was_registered = _already_checked_in(db, event_id, user_id)
     deleted_logs = 0
+    if new_status == "registrado" and not was_registered:
+        missing = person_missing_required(db, event, user)
+        if missing:                                     # A3: el mismo código claro en todos los caminos
+            raise HTTPException(status_code=409, detail={"code": "missing_required", "missing": missing, "message": missing_required_message(missing)})
     if new_status == "registrado":
         if not _already_checked_in(db, event_id, user_id):
             log = AccessLog(
@@ -2229,3 +2272,29 @@ def download_report(
 ):
     event = get_event_for_staff(event_id, db, staff)
     return heavy.excel_response(lambda path: ReportManager.generate_excel_report(db, event.id, event.tenant_id, path), heavy.event_report_filename(event, "Reporte final"))
+
+
+@router.get("/events/{event_id}/incomplete-registrations")
+def incomplete_registrations(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
+    """A3: personas YA registradas en este evento a las que les falta un obligatorio (se acreditaron sin conexión, o el campo se volvió obligatorio después). La pantalla las lista
+    como «falta completar» para abrir «Editar persona» en el campo vacío. Sin columnas nuevas: se calcula con los datos de hoy."""
+    event = get_event_for_staff(event_id, db, staff)
+    field_configs = [c for c in parametros.field_configs_for_event(db, event) if c["field_type"] not in SKIP_REQUIRED_TYPES and not c.get("locked")]
+    if not any(c["required"] for c in field_configs):
+        return {"count": 0, "people": []}
+    ids = {u for (u,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado").distinct()}
+    if not ids:
+        return {"count": 0, "people": []}
+    attendees = {a.user_id: a for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(ids))}
+    people = []
+    for user in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(ids)):
+        att = attendees.get(user.id)
+        values = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(),
+                  "birth_date": user.birth_date.isoformat() if getattr(user, "birth_date", None) else "",
+                  "certificate": "true" if (att and att.certificate) else "", "digital_contact": (att.digital_contact if att else "") or ""}
+        labels = set(_missing_required_fields(field_configs, values))
+        if labels:
+            people.append({"id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+                           "missing": [{"key": c["key"], "label": c["label"]} for c in field_configs if c["required"] and c["label"] in labels]})
+    people.sort(key=lambda p: (p["last_name"] or "", p["first_name"] or ""))
+    return {"count": len(people), "people": people[:200]}

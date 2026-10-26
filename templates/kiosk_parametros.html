@@ -891,6 +891,7 @@
         ${IS_ADMIN ? `<label><input type="checkbox" data-k="print_station" ${u.print_station ? 'checked' : ''}> Cuenta de <b>Puesto de impresión</b> (protegida: un segundo inicio de sesión se rechaza)</label>` : ''}
         <label>Modo<br><select data-k="mode" style="min-height:36px;"><option value="">Del evento / automático</option><option value="auto" ${c.mode === 'auto' ? 'selected' : ''}>Automático</option><option value="usb" ${c.mode === 'usb' ? 'selected' : ''}>USB directo</option><option value="driver" ${c.mode === 'driver' ? 'selected' : ''}>Controlador de Windows</option></select></label>
         <label><input type="checkbox" data-k="noDialog" ${c.noDialog ? 'checked' : ''}> Imprime <b>sin cuadro</b> (Chrome abierto con --kiosk-printing)</label>
+        <label><input type="checkbox" data-k="readerOnly" ${c.readerOnly ? 'checked' : ''}> <b>Solo lector</b> en «Registro touch» (lector de códigos USB/Bluetooth: la cédula no abre el teclado; un ícono ⌨️ junto al campo lo abre)</label>
         <label>Ancho de página (mm)<br>${num('pageWidthMm', 90, 20, 120, 0.1)}</label>
         <label>Calibración horizontal (mm)<br>${num('dx', 90, -5, 5, 0.1)}</label>
         <label>Calibración vertical (mm)<br>${num('dy', 90, -5, 5, 0.1)}</label>
@@ -919,6 +920,7 @@
     const out = {};
     const mode = get('mode').value; if (mode) out.mode = mode;
     if (get('noDialog').checked) out.noDialog = true;
+    if (get('readerOnly').checked) out.readerOnly = true;
     ['pageWidthMm', 'dx', 'dy', 'feedMm'].forEach((k) => { const x = get(k).value; if (x !== '') out[k] = Number(x); });
     const serial = get('usbSerial').value.trim(); if (serial) out.usbSerial = serial;
     const rot = get('rotation').value; if (rot !== '') out.rotation = rot === 'auto' ? 'auto' : Number(rot);

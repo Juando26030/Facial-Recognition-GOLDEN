@@ -67,7 +67,7 @@ Object.assign(global, {
   showToast: (m, t) => { toasts.push({ m, t }); }, showConfirm: async () => true,
   BadgePrint: { openPrintWindow: (id) => { original.open.push(id); }, maybeAutoPrint: (id) => { original.auto.push(id); } },
 });
-Object.defineProperty(global, 'navigator', { configurable: true, value: { userAgent: 'Mozilla/5.0 (Linux; Android 14) Chrome/130', usb: { addEventListener() {}, getDevices: async () => [] } } });
+Object.defineProperty(global, 'navigator', { configurable: true, value: { userAgent: process.env.MOBILE ? 'Mozilla/5.0 (Linux; Android 14) Chrome/130 Mobile' : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130', usb: { addEventListener() {}, getDevices: async () => [] } } });
 const sharedCalls = [];
 const REGISTERED = new Set(['1001']);
 let mode = 'self';
@@ -101,6 +101,20 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
 (async () => {
   await settle();
   const BP = window.BadgePrint;
+  if (process.env.MOBILE) {                                             // celular/tablet: nunca «controlador de Windows» ni «cuadro de diálogo»
+    const sp = () => GoldenSharedPrint; QLUsb.releaseNow = () => {};
+    const denied = Object.assign(new Error("Failed to execute 'open' on 'USBDevice': Access denied."), { name: 'SecurityError' });
+    QLUsb.connect = async () => { throw QLUsb.friendlyError(denied); };
+    QLUsb.remoteOwner = async () => null;
+    mem.d = {}; sp().setPrintMode('auto'); await settle(); await sp().connectUsb(false); await settle();
+    assert.ok(!sp().driverOn(), 'en celular no se pasa al controlador');
+    sp().setPrintMode('driver'); await settle();
+    assert.ok(!sp().driverOn(), 'aunque el modo diga controlador');
+    const txt = sp().stationState().line + ' ' + toasts.map((t) => t.m).join(' ');
+    assert.ok(!/controlador|Windows|cuadro de di/i.test(txt), txt);
+    assert.ok(/Sin impresora/.test(sp().stationState().line), sp().stationState().line);
+    console.log('mobile_bar OK'); process.exit(0);
+  }
   if (process.env.STATION) {                                            // puesto configurado desde el servidor + digitador (no admin)
     const sp = () => GoldenSharedPrint; QLUsb.releaseNow = () => {};
     mem.d = { gw_print_mode: 'usb', ql_rotation: '270', ql_crop: '1', gw_driver_page_mm: '62' };      // lo que el navegador tenía guardado: el servidor GANA

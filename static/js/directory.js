@@ -4,6 +4,14 @@
    opcional (marca a alguien como Registrado sin pasar por el escáner) + mountSearch() para los
    3 campos de búsqueda en vivo y el atajo de lector de código de barras. */
 (function () {
+  /* A5 (26-oct-2026): las últimas 5 personas que ESTE equipo registró o editó (de la más reciente a la más antigua), guardadas en el equipo. Van primero en SU lista, también tras
+     «Limpiar filtros» o refrescar; con un filtro de búsqueda activo se respeta el filtro. No cambia el orden de otros equipos. */
+  const Recent = {
+    key() { return 'gw_recent_' + (window.EVENT_ID || ''); },
+    list() { try { const v = JSON.parse(localStorage.getItem(this.key()) || '[]'); return Array.isArray(v) ? v.map(String).slice(0, 5) : []; } catch (e) { return []; } },
+    add(id) { if (!id) return; id = String(id); const l = [id].concat(this.list().filter((x) => x !== id)).slice(0, 5); try { localStorage.setItem(this.key(), JSON.stringify(l)); } catch (e) { /* sin almacenamiento */ } },
+    has(id) { return !!id && this.list().indexOf(String(id)) >= 0; },
+  };
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
   }
@@ -236,13 +244,14 @@
     const box = document.createElement('div');
     box.style.cssText = 'background:white; border-radius:16px; padding:1.8rem; max-width:520px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif); max-height:90vh; overflow:auto;';
     box.innerHTML = `
-      <h4 style="margin-top:0; color:var(--golden-dark);">Editar persona</h4>
+      <div class="gw-modal-head" style="position:sticky; top:-1.8rem; z-index:2; background:white; margin:-1.8rem -1.8rem 1rem; padding:1rem 1.8rem 0.8rem; border-bottom:1px solid #eee; display:flex; align-items:center; gap:10px; flex-wrap:wrap; border-radius:16px 16px 0 0;">
+        <h4 style="margin:0; color:var(--golden-dark); flex:1 1 auto;">Editar persona</h4>
+        <button type="button" id="editModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:10px 18px; min-height:44px; cursor:pointer; font-weight:600;">Cancelar</button>
+        <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:10px 18px; min-height:44px; cursor:pointer; font-weight:700;">Guardar cambios</button>
+      </div>
+      <div id="editModalNotice" role="alert" style="display:none; background:#fff6e5; border-left:4px solid #b26a00; color:#7a4a00; padding:8px 12px; border-radius:8px; margin-bottom:0.8rem; font-weight:600;"></div>
       <form id="editModalForm">
         ${configuredHtml}
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
-          <button type="button" id="editModalCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-          <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar cambios</button>
-        </div>
       </form>
       ${canManageStatus ? `
       <hr style="margin:1.2rem 0; border:none; border-top:1px solid #eee;">
@@ -266,6 +275,15 @@
     });
 
     function close() { overlay.remove(); }
+    if (opts && opts.missing && opts.missing.length) {               // A3: llegó aquí porque falta un obligatorio: se dice cuál y el foco va al primero vacío
+      const note = box.querySelector('#editModalNotice');
+      note.textContent = `Falta el campo obligatorio: ${opts.missing.map((m) => m.label).join(', ')}. Complétalo y guarda: queda acreditado(a) en el mismo paso.`;
+      note.style.display = 'block';
+      const first = box.querySelector(`#editModalForm [name="${CSS.escape(opts.missing[0].key)}"]`);
+      if (first) setTimeout(() => { first.scrollIntoView({ block: 'center' }); first.focus(); first.style.outline = '3px solid #b26a00'; }, 60);
+    }
+    const snapshot = () => { const f = box.querySelector('#editModalForm'); return f ? JSON.stringify(Array.from(new FormData(f).entries()).filter(([, v]) => typeof v === 'string')) : ''; };
+    const initialData = snapshot();
     // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
     // solo con "Cancelar" o guardando, para no perder cambios sin querer.
     box.querySelector('#editModalCancel').addEventListener('click', close);
@@ -274,7 +292,8 @@
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;
       if (GCs && GCs.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto: aviso claro, no «Error de red»
       const form = box.querySelector('#editModalForm');
-      if (!form.reportValidity()) return;
+      const dataChanged = snapshot() !== initialData || (opts && opts.missing && opts.missing.length);
+      if (dataChanged && !form.reportValidity()) return;
 
       const saveBtn = box.querySelector('#editModalSave');
       const val = (name) => {
@@ -320,6 +339,7 @@
       // "Aplicar" aparte, ahora se aplica junto con el resto de campos en un solo Guardar). Solo
       // se llama al endpoint si el valor del select realmente cambió — evitar un PATCH de estado
       // sin sentido en cada guardado normal del perfil.
+      async function applyStatus() {                // devuelve false si no se pudo (ya avisó)
       if (canManageStatus) {
         const statusSelect = box.querySelector('#editModalStatus');
         const newStatus = statusSelect ? statusSelect.value : originalStatus;
@@ -328,7 +348,7 @@
           // Pasar a "Registrado" (el valor por defecto de este modal) no pide confirmación: es
           // justo el flujo de "buscar, Editar, Guardar". Volver a "No registrado" sí la pide.
           const ok = newStatus === 'registrado' || await showConfirm(`¿Cambiar el estado de registro de esta persona a "${label}"? Se guardará junto con el resto de cambios.`, { variant: 'warning', confirmLabel: 'Sí, cambiar y guardar' });
-          if (!ok) return;
+          if (!ok) return false;
           saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
           try {
             const statusRes = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
@@ -336,9 +356,10 @@
             });
             if (!statusRes.ok) {
               const data = await statusRes.json().catch(() => ({}));
-              showToast(data.detail || 'No se pudo cambiar el estado', 'error');
+              const d = data.detail && typeof data.detail === 'object' ? data.detail.message : data.detail;
+              showToast(d || 'No se pudo cambiar el estado', 'error');
               saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
-              return;
+              return false;
             }
             // Autoimpresión (2026-09-17, pedido explícito): "apenas cambia el estado a
             // registrado, si está autoimpresión activo entonces debe mandar a imprimir" — este es
@@ -348,9 +369,11 @@
           } catch (e) {
             showToast('Error de red', 'error');
             saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
-            return;
+            return false;
           }
         }
+      }
+      return true;
       }
 
       const payload = { first_name: val('first_name'), last_name: val('last_name') };
@@ -374,9 +397,10 @@
 
       saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
       try {
-        const res = await fetch(withEvent(`/api/users/${currentId}`), {
+        const res = dataChanged ? await fetch(withEvent(`/api/users/${currentId}`), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-        });
+        }) : { ok: true, clone: () => ({ json: async () => ({}) }) };          // solo cambió el estado: no se reenvían los datos (no los bloquea un obligatorio vacío)
+        if (res.ok && !(await applyStatus())) return;                    // los datos quedaron guardados; el estado se aplica DESPUÉS (con su propio aviso si no se pudo)
         if (res.ok) {
           try {
             const info = await res.clone().json();
@@ -398,6 +422,7 @@
           showToast('Cambios guardados', 'success');
           close();
           if (window.directorySearch) window.directorySearch.reload();
+          Recent.add(currentId);
           if (opts.onSaved) opts.onSaved(currentId);
         } else {
           const data = await res.json().catch(() => ({}));
@@ -438,6 +463,7 @@
     tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
     tr.dataset.userId = user.id;
     if (user.__h) tr.dataset.h = user.__h;          // fila de la lista local (sin cédula)
+    if (Recent.has(user.id)) { tr.dataset.recent = '1'; queueMicrotask(() => { const nameTd = tr.querySelector('td[data-field="first_name"]') || tr.cells[1]; if (nameTd && !nameTd.querySelector('.gw-recent')) { const b = document.createElement('span'); b.className = 'gw-recent'; b.textContent = 'Reciente'; b.title = 'Registrada o editada hace poco en este equipo'; b.style.cssText = 'margin-left:6px; font-size:0.7rem; font-weight:700; color:#2b6cb0; border:1px solid #2b6cb0; border-radius:999px; padding:0 6px; vertical-align:middle;'; nameTd.appendChild(b); } }); }      // A5: marca discreta
 
     /* La columna de Acción va PRIMERO (2026-09-16, pedido explícito: antes al final, obligaba a
        desplazarse hasta el final de la fila para editar/imprimir). El resto de columnas
@@ -682,6 +708,12 @@
         if (entidad.length && !matchesWords(k.entity, entidad)) return false;
         return true;
       });
+      const rec = Recent.list();
+      if (rec.length && !cedula && !nombre.length && !entidad.length) {          // sin filtro de búsqueda: las recientes de ESTE equipo primero
+        const pos = new Map(rec.map((id, i) => [id, i]));
+        const top = lastFiltered.filter((u) => pos.has(u.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
+        if (top.length) lastFiltered = top.concat(lastFiltered.filter((u) => !pos.has(u.id)));
+      }
       updateCounterLabel();
       drawRows();
     }
@@ -805,8 +837,37 @@
 
     function reload() {
       if (loading) T('directory:reload-joined-in-flight');          // ya hay una carga en curso: esta llamada espera a ESA (si está colgada en una petición, espera con ella)
-      if (!loading) loading = fullLoad().finally(() => { loading = null; });
+      if (!loading) loading = fullLoad().finally(() => { loading = null; checkIncomplete(); });
       return loading;
+    }
+    /* A3 (26-oct-2026): registradas a las que les falta un obligatorio (acreditadas sin conexión, o el campo se volvió obligatorio después): aviso con la lista «falta completar». */
+    let incompleteAt = 0, incompleteBar = null;
+    async function checkIncomplete(force) {
+      if (!opts.fastCheckin || localMode || (!force && Date.now() - incompleteAt < 20000)) return;
+      incompleteAt = Date.now();
+      let data = null;
+      try { const r = await fetch(`/api/events/${window.EVENT_ID}/incomplete-registrations`, { cache: 'no-store' }); data = r.ok ? await r.json() : null; } catch (e) { data = null; }
+      if (!data) return;
+      const table = document.getElementById(opts.tbodyId);
+      if (!incompleteBar && table) {
+        incompleteBar = document.createElement('div');
+        incompleteBar.setAttribute('role', 'status');
+        incompleteBar.style.cssText = 'display:none; margin:0 0 10px; padding:10px 14px; border-radius:10px; background:#fff6e5; border-left:5px solid #b26a00; color:#7a4a00; font-weight:600;';
+        const host = table.closest('table') || table;
+        host.parentNode.insertBefore(incompleteBar, host);
+        incompleteBar.addEventListener('click', async (e) => {
+          const b = e.target.closest('[data-complete]');
+          if (b) { const id = b.dataset.complete; const p = (incompleteBar.__people || []).find((x) => x.id === id); const person = allUsers.find((u) => u.id === id) || p; if (person) buildEditModal(person, { missing: p ? p.missing : [], onSaved: () => checkIncomplete(true) }); return; }
+          if (e.target.closest('[data-toggle]')) { const l = incompleteBar.querySelector('[data-list]'); l.hidden = !l.hidden; }
+        });
+      }
+      if (!incompleteBar) return;
+      incompleteBar.__people = data.people;
+      incompleteBar.style.display = data.count ? 'block' : 'none';
+      if (!data.count) return;
+      const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      incompleteBar.innerHTML = `⚠️ ${data.count} persona(s) registradas con datos obligatorios por completar. <button type="button" data-toggle class="small-btn" style="margin-left:8px;">Ver lista</button>
+        <div data-list hidden style="margin-top:8px; font-weight:400;">${data.people.map((p) => `<div style="display:flex; gap:8px; align-items:center; padding:4px 0; border-top:1px solid #f0d9b5;"><span style="flex:1;">${esc(p.first_name)} ${esc(p.last_name)} — falta: ${esc(p.missing.map((m) => m.label).join(', '))}</span><button type="button" class="small-btn" data-complete="${esc(p.id)}">Completar</button></div>`).join('')}</div>`;
     }
 
     {
@@ -962,11 +1023,21 @@
           if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method, cid);
           return;
         }
+        if (data.result === 'MISSING_REQUIRED') {
+          // A3 (26-oct-2026): falta un campo OBLIGATORIO (p. ej. se marcó obligatorio después de cargar la base): NO se acredita. Se dice cuál y se abre «Editar persona» con el foco en el
+          // primer campo vacío; al guardar queda acreditado(a) en el mismo paso y la autoimpresión imprime después, con el dato ya lleno.
+          showToast(data.details || `Falta el campo obligatorio: ${(data.missing || []).map((m) => m.label).join(', ')}`, 'warning');
+          await reload();
+          const person = allUsers.find((u) => u.id === data.data.id) || Object.assign({ status: 'No registrado' }, data.data);
+          buildEditModal(person, { missing: data.missing || [], method });
+          return;
+        }
         if (data.result === 'SÍ') {
           // Match exacto por cédula: acredita de una vez, sin modal aparte (2026-09-16, pedido
           // explícito) — la "confirmación" es ver la fila aparecer filtrada en el Directorio,
           // como si se hubiera buscado por cédula a mano.
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          Recent.add(data.data.id);
           lastAccredit = { cid, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
           if (data.data.sibling_events && data.data.sibling_events.length) {
             showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
@@ -1076,5 +1147,5 @@
     };
   }
 
-  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode, matchesWordPrefix, openEdit: buildEditModal };
+  window.GoldenDirectory = { render: renderRows, load: loadRows, mountSearch, parseOldCedulaBarcode, matchesWordPrefix, openEdit: buildEditModal, noteRecent: (id) => Recent.add(id), recent: () => Recent.list() };
 })();
