@@ -351,7 +351,7 @@ def test_the_queue_shows_the_parameters_applied_to_each_job_and_a_phone_job_keep
 def test_the_computer_that_prints_for_others_without_the_launcher_is_told_so_in_the_bar():
     import pathlib
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
-    assert "Este computador imprime solo si abres la app con el lanzador." in sp and 'id="spHostLauncher"' in sp and "(isAdmin && SHARED && driverOn() && !kiosk)" in sp
+    assert "Este computador imprime solo si abres la app con el lanzador." in sp and 'id="spHostLauncher"' in sp and "(shown && SHARED && driverOn() && !kiosk)" in sp
     assert "#sharedPrintBar #spPending{min-height:64px" in sp and "Imprimir pendientes (${waitingCount()})" in sp          # grande y con el contador
 
 

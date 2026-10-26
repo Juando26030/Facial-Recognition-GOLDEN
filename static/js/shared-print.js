@@ -159,20 +159,22 @@
       if (usb.code === 'denied' || usb.code === 'disconnected' || usb.code === 'permission') msg += ` ${usb.lastError}`;       // el motivo y qué hacer, a la vista (no solo en un aviso que se va)
     }
     if (pending) msg += ` · ${pending} por confirmar`;
-    if (!isAdmin && online) {                          // el digitador ve UNA línea: con quién comparte, no cómo se configura
+    if (!configShown() && online) {                    // menú ESCONDIDO para este puesto (Parámetros): solo UNA línea, con quién comparte
       const line = stationLine(); msg = line.msg; kind = line.kind;
-    } else if (dialogWarn && isAdmin) {
+    } else if (dialogWarn) {
       kind = 'warn'; msg += ' ⚠️ Se marcó «sin cuadro», pero Chrome mostró el cuadro de impresión: abre Chrome con --kiosk-printing (ver la guía) o desmarca «sin cuadro» en Parámetros.';
     }
     if (online && recoveredUntil > Date.now()) msg += ' · Reconectado.';
     text.textContent = msg;
     bar.className = kind;
-    const needsFirstAuth = isAdmin && authCount === 0 && !usb.ok && !usb.busy && !driverOn() && route.mode !== 'shared' && !!(window.QLUsb && QLUsb.supported());      // solo admin, y solo si NO hay ninguna Brother autorizada
-    bar.querySelector('#spConnect').hidden = !needsFirstAuth;
-    bar.querySelector('#spQueue').hidden = !(SHARED && isAdmin);
-    bar.querySelector('#spPrefs').hidden = !isAdmin;
-    bar.querySelector('#spHostNote').hidden = !(isAdmin && SHARED && driverOn() && !kiosk);      // este computador puede ser la impresora de otros: sin lanzador, Chrome pide confirmar cada impresión
-    bar.querySelector('#spPending').hidden = !(SHARED && driverOn() && !kiosk && waitingCount());   // la acción del puesto: la ve también quien no es admin
+    /* 27-oct-2026: la visibilidad NO depende del rol (como en 4797531, cualquier persona del personal configura y conecta); la decide el interruptor del PUESTO en Parámetros («Mostrar» por
+       defecto). «Esconder»: solo la línea de estado y, si hay trabajos esperando, «Imprimir pendientes». */
+    const shown = configShown();
+    bar.querySelector('#spConnect').hidden = !shown || usb.ok || usb.busy || route.mode === 'shared' || driverOn() || !(window.QLUsb && QLUsb.supported());
+    bar.querySelector('#spQueue').hidden = !(SHARED && shown);
+    bar.querySelector('#spPrefs').hidden = !shown;
+    bar.querySelector('#spHostNote').hidden = !(shown && SHARED && driverOn() && !kiosk);      // este computador puede ser la impresora de otros: sin lanzador, Chrome pide confirmar cada impresión
+    bar.querySelector('#spPending').hidden = !(SHARED && driverOn() && !kiosk && waitingCount());   // la acción del puesto: se ve también con el menú escondido
     bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${waitingCount()})`;
     bar.querySelector('#spAlways').hidden = true;                 // la configuración (modo, guía) vive detrás de un solo ícono ⚙️ (26-oct-2026)
     bar.querySelector('#spGuide').hidden = true;
@@ -299,13 +301,19 @@
   /* Valores de impresión: los del EVENTO (meta gw-print-settings, se editan en Parámetros) y, encima, lo que ESTE equipo sobrescribió en «⚙️ Impresión». */
   const eventPrefs = (() => { try { const m = document.querySelector('meta[name="gw-print-settings"]'); const v = m ? JSON.parse(m.getAttribute('content') || '{}') : {}; return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } })();
   function realStorage() { try { return window.localStorage; } catch (e) { return null; } }
+  /* ¿Se muestra el menú de configuración en este Registro? Interruptor del PUESTO en Parámetros (`showConfig`); sin configuración guardada o sin el campo: «Mostrar» (como anoche). */
+  const configShown = () => !(stationCfg && stationCfg.showConfig === false);
+  const localKey = (k) => 'gw_ovr_' + EID + '_' + k;           // lo que se cambió A MANO en el panel de este computador, aparte de lo que el navegador tuviera de antes
   function storage() {
     const real = realStorage();
     if (!stationCfg) return real;
-    return {                                                  // lo que manda el servidor gana sobre el navegador; lo demás se lee y guarda como siempre
-      getItem(k) { return k in overlay ? overlay[k] : (real ? real.getItem(k) : null); },
-      setItem(k, v) { if (!(k in overlay) && real) real.setItem(k, v); },
-      removeItem(k) { if (!(k in overlay) && real) real.removeItem(k); },
+    const get = (k) => { try { return real ? real.getItem(k) : null; } catch (e) { return null; } };
+    return {
+      /* Base: lo del puesto en Parámetros (gana sobre lo que el navegador tuviera guardado de antes). Con el menú VISIBLE, lo que se cambie en el panel vale solo para este computador;
+         con el menú ESCONDIDO se ignora y se usa solo lo de Parámetros (ningún puesto queda con valores sueltos). */
+      getItem(k) { if (k in overlay) { const own = configShown() ? get(localKey(k)) : null; return own !== null ? own : overlay[k]; } return get(k); },
+      setItem(k, v) { if (!real) return; if (!(k in overlay)) real.setItem(k, v); else if (configShown()) real.setItem(localKey(k), v); },
+      removeItem(k) { if (!real) return; if (!(k in overlay)) real.removeItem(k); else if (configShown()) real.removeItem(localKey(k)); },
     };
   }
   /* Configuración del puesto → claves de almacenamiento que ya lee el resto del código (QLUsb.resolvePrefs, DriverPrint.getMode/getPageWidthMm/getOffsets). */
@@ -321,7 +329,7 @@
       overlay[QLUsb.PREF_KEYS[f]] = v === undefined || v === null ? null : (typeof v === 'boolean' ? (v ? '1' : '0') : String(v));
     });
     if (QLUsb.setPreferredSerial) QLUsb.setPreferredSerial(c.usbSerial || '');
-    if (c.noDialog) kiosk = true;                              // «imprime sin cuadro»: Chrome debe haberse abierto con --kiosk-printing (si no, el aviso de la barra se lo dice al admin)
+    if (c.noDialog) kiosk = true;                              // «imprime sin cuadro»: Chrome debe haberse abierto con --kiosk-printing (si no, la barra lo avisa)
   }
   async function loadStation() {
     const key = 'gw_station_me_' + EID;
@@ -776,7 +784,7 @@
       '<div data-src style="font-size:0.78rem;color:#555"></div>' +
       '<div style="margin:8px 0"><canvas data-preview style="max-width:100%;border:1px solid #ccc;background:#fff"></canvas><div data-prevtext style="font-size:0.82rem;margin-top:4px"></div></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sp-btn" data-save>Guardar en este equipo</button><button type="button" class="sp-btn" data-test>🖨️ Imprimir prueba</button><button type="button" class="sp-btn" data-reset>↺ Restablecer</button></div>' +
-      '<p style="font-size:0.8rem;color:#555;margin:8px 0 0">Los valores del evento los fija el coordinador en Parámetros. Lo que cambies aquí vale solo para este equipo y se aplica a toda la impresión (Registro, compartida y /impresion-usb).</p>';
+      '<p style="font-size:0.8rem;color:#555;margin:8px 0 0">La base la fija el coordinador en Parámetros (valores del evento y de este puesto). Lo que cambies aquí vale <b>solo para este computador</b> y se aplica a toda la impresión (Registro, compartida y /impresion-usb). Cuando el coordinador esconde este menú para el puesto, se usa solo la configuración de Parámetros y se ignoran los cambios hechos aquí.</p>';
     const q = (sel) => panel.querySelector(sel);
     const setForm = (prefs) => {
       TAPE_FIELDS.forEach((f) => {
@@ -945,5 +953,5 @@
   window.addEventListener('online', () => { recoveredUntil = Date.now() + 20000; online = true; heartbeat(); connectUsb(false); render(); });
   window.addEventListener('offline', () => { online = false; render(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
-  window.GoldenSharedPrint = { stationState: () => ({ isAdmin, isStation, cfg: stationCfg, line: stationLine().msg, bar: { prefs: bar.querySelector('#spPrefs').hidden, queue: bar.querySelector('#spQueue').hidden, connect: bar.querySelector('#spConnect').hidden, always: bar.querySelector('#spAlways').hidden, guide: bar.querySelector('#spGuide').hidden } }), printFor, testJob, testCompose, cleanCedula, prefsForJob, connectUsb, setPrintMode, printPending, driverOn, lastDriverSpec: () => lastDriverSpec, drvPrint, disconnectForTest: () => { usb = DISCONNECTED(); connecting = null; }, setKioskForTest: (v) => { kiosk = v; }, state: () => ({ mode: printMode, kiosk, pendingJobs: waitingCount(), route, usb, online, pending, deviceId, touch }) };
+  window.GoldenSharedPrint = { storageForTest: () => storage(), applyStationForTest: (me) => { applyStation(me); render(); }, stationState: () => ({ isAdmin, isStation, cfg: stationCfg, shown: configShown(), line: stationLine().msg, bar: { prefs: bar.querySelector('#spPrefs').hidden, queue: bar.querySelector('#spQueue').hidden, connect: bar.querySelector('#spConnect').hidden, always: bar.querySelector('#spAlways').hidden, guide: bar.querySelector('#spGuide').hidden } }), printFor, testJob, testCompose, cleanCedula, prefsForJob, connectUsb, setPrintMode, printPending, driverOn, lastDriverSpec: () => lastDriverSpec, drvPrint, disconnectForTest: () => { usb = DISCONNECTED(); connecting = null; }, setKioskForTest: (v) => { kiosk = v; }, state: () => ({ mode: printMode, kiosk, pendingJobs: waitingCount(), route, usb, online, pending, deviceId, touch }) };
 })();

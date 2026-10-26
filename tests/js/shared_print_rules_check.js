@@ -63,7 +63,7 @@ const pageListeners = {};
 global.addEventListener = (k, f) => { (pageListeners[k] = pageListeners[k] || []).push(f); };       // pagehide / beforeunload de la página
 global.window = global;
 Object.assign(global, {
-  EVENT_ID: 7, EVENT_AUTO_PRINT: true, SHARED_PRINT_ENABLED: !process.env.SHARED_OFF, __me: process.env.STATION ? { admin: false, station: true, settings: { mode: 'driver', noDialog: false, pageWidthMm: 60, dx: 1.5, dy: -0.5, rotation: 90, crop: false, feedMm: 4 } } : null, STAFF_ROLE: 'digitador', localStorage: mem,
+  EVENT_ID: 7, EVENT_AUTO_PRINT: true, SHARED_PRINT_ENABLED: !process.env.SHARED_OFF, __me: process.env.STATION ? { admin: false, station: true, settings: Object.assign({ mode: 'driver', noDialog: false, pageWidthMm: 60, dx: 1.5, dy: -0.5, rotation: 90, crop: false, feedMm: 4 }, process.env.STATION === 'show' ? {} : { showConfig: false }) } : null, STAFF_ROLE: 'digitador', localStorage: mem,
   showToast: (m, t) => { toasts.push({ m, t }); }, showConfirm: async () => true,
   BadgePrint: { openPrintWindow: (id) => { original.open.push(id); }, maybeAutoPrint: (id) => { original.auto.push(id); } },
 });
@@ -115,14 +115,39 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
     assert.ok(/Sin impresora/.test(sp().stationState().line), sp().stationState().line);
     console.log('mobile_bar OK'); process.exit(0);
   }
-  if (process.env.STATION) {                                            // puesto configurado desde el servidor + digitador (no admin)
+  if (process.env.STATION === 'show') {                                 // «Mostrar» (por defecto): un DIGITADOR ve y usa el menú; lo que cambie vale solo para este computador
+    const sp = () => GoldenSharedPrint; QLUsb.releaseNow = () => {};
+    mem.d = { gw_print_mode: 'usb', ql_rotation: '270', gw_driver_page_mm: '62' };      // lo que el navegador tenía de ANTES: no reaparece (gana Parámetros)
+    await new Promise((r) => setTimeout(r, 300));
+    let st = sp().stationState();
+    assert.ok(!st.isAdmin && st.shown, 'digitador con el menú visible');
+    assert.ok(!st.bar.prefs && !st.bar.queue, 've ⚙️ y la Cola sin ser admin: ' + JSON.stringify(st.bar));
+    assert.ok(sp().driverOn(), 'modo del puesto (controlador), no el «usb» viejo del navegador');
+    const f0 = global.fetch, tpl0 = { width_mm: 100, height_mm: 58.9, orientation: 'horizontal', background_type: 'color', background_value: '#fff', elements: [] };
+    global.fetch = async (url, init = {}) => { const u = new URL(url, 'http://x'); if (u.pathname.includes('/badge-print-data')) return json(200, { id: '1001', first_name: 'Ana', last_name: 'Mora', has_photo: false }); return f0(url, init); };
+    global.BadgeRender = { loadFonts: async () => {}, renderBadge() {}, fetchTemplate: async () => json(200, tpl0) };
+    global.html2canvas = async () => ({ width: Math.round(100 * 300 / 25.4), height: Math.round(58.9 * 300 / 25.4), getContext: () => null });
+    driverPages.length = 0; await sp().printFor('1001', false, true);
+    assert.ok(Math.abs(driverPages[0].spec.pageWidthMm - 60) < 0.01, 'base = Parámetros (60), no lo viejo del navegador (62): ' + driverPages[0].spec.pageWidthMm);
+    DriverPrint.setPageWidthMm(sp().storageForTest(), 61);                // el panel de ESTE computador cambia el ancho
+    driverPages.length = 0; await sp().printFor('1001', false, true);
+    assert.ok(Math.abs(driverPages[0].spec.pageWidthMm - 61) < 0.01, 'con el menú visible, el cambio local vale en este computador: ' + driverPages[0].spec.pageWidthMm);
+    assert.strictEqual(mem.d.gw_driver_page_mm, '62', 'lo viejo del navegador no se tocó'); assert.strictEqual(mem.d.gw_ovr_7_gw_driver_page_mm, '61');
+    global.__me.settings.showConfig = false; sp().applyStationForTest(global.__me);                      // el coordinador lo esconde
+    driverPages.length = 0; await sp().printFor('1001', false, true);
+    st = sp().stationState();
+    assert.ok(!st.shown && st.bar.prefs && st.bar.queue && st.bar.connect, 'escondido: sin menú');
+    assert.ok(Math.abs(driverPages[0].spec.pageWidthMm - 60) < 0.01, 'escondido: solo Parámetros, se ignora el cambio local: ' + driverPages[0].spec.pageWidthMm);
+    console.log('station_show OK'); process.exit(0);
+  }
+  if (process.env.STATION) {                                            // puesto con el menú ESCONDIDO desde Parámetros (cualquier rol)
     const sp = () => GoldenSharedPrint; QLUsb.releaseNow = () => {};
     mem.d = { gw_print_mode: 'usb', ql_rotation: '270', ql_crop: '1', gw_driver_page_mm: '62' };      // lo que el navegador tenía guardado: el servidor GANA
     await new Promise((r) => setTimeout(r, 300));
     const st = sp().stationState();
     assert.ok(!st.isAdmin && st.isStation && st.cfg && st.cfg.mode === 'driver', 'lee su configuración del servidor');
     assert.ok(sp().driverOn(), 'el modo del servidor manda sobre el navegador');
-    assert.ok(st.bar.prefs && st.bar.queue && st.bar.connect && st.bar.always && st.bar.guide, 'el digitador no ve ⚙️, Cola, Conectar ni la guía: ' + JSON.stringify(st.bar));
+    assert.ok(!st.shown && st.bar.prefs && st.bar.queue && st.bar.connect && st.bar.always && st.bar.guide, 'menú escondido: no se ve ⚙️, Cola, Conectar ni la guía: ' + JSON.stringify(st.bar));
     assert.ok(/^Imprime en: este puesto/.test(st.line), st.line);
     const f0 = global.fetch, tpl0 = { width_mm: 100, height_mm: 58.9, orientation: 'horizontal', background_type: 'color', background_value: '#fff', elements: [] };
     global.fetch = async (url, init = {}) => { const u = new URL(url, 'http://x'); if (u.pathname.includes('/badge-print-data')) return json(200, { id: '1001', first_name: 'Ana', last_name: 'Mora', has_photo: false }); return f0(url, init); };

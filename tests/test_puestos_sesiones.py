@@ -174,3 +174,33 @@ def test_the_guard_script_and_the_requester_message_are_in_place():
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme." in sp and "NO está listo para imprimir solo" not in sp
     assert "gw:session-replaced" in sp
+
+
+# ---------------------------------------------------------------------------------------------------- 27-oct-2026: «Mostrar la configuración de impresión en el Registro» por puesto
+def test_show_config_defaults_to_show_and_only_coordinator_or_more_changes_it(client, env, factory, db):
+    ev, u = env
+    login(client, "dig1")
+    assert client.get(f"/api/events/{ev.id}/print-station/me").json()["settings"] is None          # sin configuración: «Mostrar» (lo decide la página: showConfig !== false)
+    assert client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"settings": {"showConfig": False}}).status_code == 403
+    client.cookies.clear()
+    factory.staff("coordinador", "coord"); factory.authorize(ev, db.query(StaffUser).filter_by(username="coord").one())
+    login(client, "coord")
+    r = client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"settings": {"showConfig": False, "mode": "driver"}})
+    assert r.status_code == 200 and r.json()["settings"] == {"showConfig": False, "mode": "driver"}
+    assert client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"settings": {"showConfig": "no"}}).status_code == 400
+    other = factory.event("en_proceso"); factory.authorize(other, u["puesto"]); factory.authorize(other, db.query(StaffUser).filter_by(username="coord").one())
+    client.cookies.clear(); login(client, "puesto")
+    assert client.get(f"/api/events/{ev.id}/print-station/me").json()["settings"]["showConfig"] is False
+    assert client.get(f"/api/events/{other.id}/print-station/me").json()["settings"] is None       # no se mezcla entre eventos
+    client.cookies.clear(); login(client, "dig2")
+    assert client.get(f"/api/events/{ev.id}/print-station/me").json()["settings"] is None          # ni entre puestos
+
+
+def test_no_print_menu_visibility_rule_depends_on_the_role():
+    import pathlib
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    body = sp[sp.index("  function render() {"):sp.index("  function stationLine() {")]
+    assert "isAdmin" not in body and "role" not in body.lower().replace("rol de", "")             # ninguna regla de visibilidad depende del rol
+    assert "const configShown = () => !(stationCfg && stationCfg.showConfig === false);" in sp    # por defecto: Mostrar
+    for el in ("#spConnect", "#spQueue", "#spPrefs", "#spHostNote"):
+        assert f"bar.querySelector('{el}').hidden = !shown" in body or f"bar.querySelector('{el}').hidden = !({'SHARED && shown' if el == '#spQueue' else 'shown && SHARED && driverOn() && !kiosk'})" in body

@@ -47,6 +47,10 @@ def sanitize(data: dict) -> dict:
         if data["mode"] not in MODES:
             raise HTTPException(status_code=400, detail="El modo es Automático, USB directo o Controlador de Windows")
         out["mode"] = data["mode"]
+    if data.get("showConfig") is not None:
+        if not isinstance(data["showConfig"], bool):
+            raise HTTPException(status_code=400, detail="«Mostrar la configuración de impresión» debe ser sí o no")
+        out["showConfig"] = data["showConfig"]
     if data.get("readerOnly") is not None:
         if not isinstance(data["readerOnly"], bool):
             raise HTTPException(status_code=400, detail="«Solo lector» debe ser sí o no")
