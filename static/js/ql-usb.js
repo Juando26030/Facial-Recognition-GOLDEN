@@ -250,7 +250,27 @@
   var LOCK_NAME = "golden-ql-usb";
   var owner = { held: false, release: null };
 
-  function busyError() { var e = new Error(BUSY_MSG); e.busy = true; return e; }
+  function busyError() { var e = new Error(BUSY_MSG); e.busy = true; e.code = "busy"; return e; }
+
+  /* Errores de WebUSB en español y con lo que hay que hacer (25-oct-2026, «Failed to execute 'open' on 'USBDevice': Access denied»). `code`: busy | denied | cancelled | permission |
+     disconnected | notfound | other. `raw` conserva el texto original para soporte. */
+  function friendlyError(e) {
+    if (e && e.code && e.friendly) return e;
+    var name = (e && e.name) || "", raw = (e && e.message) || String(e), low = raw.toLowerCase(), msg, code;
+    if (e && e.busy) { code = "busy"; msg = BUSY_MSG; }
+    else if (/access denied|denied access|unable to open/.test(low) || (name === "SecurityError" && /open/.test(low))) {
+      code = "denied";
+      msg = "Chrome no pudo abrir la impresora (acceso denegado). Cierra otras pestañas o programas de Brother (P-touch Editor, Printer Setting Tool) que estén usando la impresora, " +
+        "desconecta y vuelve a conectar el cable USB, y vuelve a intentar. En Windows, si el controlador de Brother la tiene tomada, este computador imprime con el cuadro de Windows pero no puede atender a otros equipos por USB directo.";
+    } else if (name === "NotFoundError" && /no device selected|chose|selected/.test(low)) { code = "cancelled"; msg = "No elegiste ninguna impresora. Vuelve a tocar «Conectar impresora» y elige la Brother QL."; }
+    else if (name === "NotFoundError" || /disconnected|no such device|device was not found/.test(low)) { code = "disconnected"; msg = "No se encuentra la impresora: revisa que esté encendida y con el cable USB bien puesto, y vuelve a conectar."; }
+    else if (name === "SecurityError" || name === "NotAllowedError") { code = "permission"; msg = "Chrome no dio permiso para usar la impresora USB. Toca «Conectar impresora» y elige la Brother QL cuando Chrome pregunte (la página debe ser https)."; }
+    else if (name === "NetworkError" || /transfer|stall|babble/.test(low)) { code = "disconnected"; msg = "La impresora dejó de responder. Revisa el cable y que esté encendida, y vuelve a conectar."; }
+    else { code = "other"; msg = raw; }
+    var out = new Error(msg);
+    out.code = code; out.busy = code === "busy"; out.raw = raw; out.friendly = true;
+    return out;
+  }
 
   /* Candado entre pestañas del mismo equipo (Web Locks). Sin Web Locks en el navegador se decide solo por claimInterface. */
   function own() {
@@ -272,6 +292,7 @@
 
   async function open(device) {
     if (!(await own())) throw busyError();
+    var wasLive = state.device === device && device.opened;                          // ya conectada por esta página: un fallo al reabrir NO debe cerrarla
     try {
       await device.open();
       if (device.configuration === null) await device.selectConfiguration(1);
@@ -283,22 +304,44 @@
       state.ep = ep;
       return device;
     } catch (e) {
-      try { if (device.opened) await device.close(); } catch (e2) { /* ya cerrada */ }
-      disown();
+      if (!wasLive) {
+        try { if (device.opened) await device.close(); } catch (e2) { /* ya cerrada */ }
+        if (state.device === device) { state.device = null; state.ep = null; }
+        disown();
+      }
       throw e;
     }
   }
 
-  async function connect(askPermission) {
-    if (!supported()) throw new Error("Este navegador no permite USB. Use Chrome (Android o computador) y la página segura (https).");
+  /* «Conectar» es IDEMPOTENTE y de un solo vuelo (25-oct-2026): si ya está abierta en esta página, la devuelve sin volver a abrir; si hay otro intento en marcha (arranque de la página,
+     evento de conexión, toque del botón) se espera ese mismo; si ya está autorizada (getDevices) no pide permiso otra vez. Antes dos intentos a la vez se pisaban: el segundo no conseguía
+     el candado, se declaraba «en uso en otra pestaña» y soltaba el candado y la impresora del primero. */
+  var inflight = null;
+  async function doConnect(askPermission) {
+    if (state.device && state.device.opened) return state.device;
     var devices = await navigator.usb.getDevices();
     var device = devices.find(function (d) { return d.vendorId === BROTHER_VENDOR; });
     if (!device && askPermission) device = await navigator.usb.requestDevice({ filters: [{ vendorId: BROTHER_VENDOR }] });
     if (!device) return null;
     return open(device);
   }
+  function connect(askPermission) {
+    if (!supported()) return Promise.reject(friendlyError(new Error("Este navegador no permite USB. Use Chrome (Android o computador) y la página segura (https).")));
+    if (state.device && state.device.opened) return Promise.resolve(state.device);
+    var run;
+    if (inflight) run = askPermission && !inflight.ask ? inflight.p.then(function (d) { return d || doConnect(true); }) : inflight.p;     // quien sí puede pedir permiso no se queda con un «null» del intento sin permiso
+    else {
+      var p = doConnect(askPermission);
+      inflight = { p: p, ask: !!askPermission };
+      var clear = function () { if (inflight && inflight.p === p) inflight = null; };
+      p.then(clear, clear);
+      run = p;
+    }
+    return run.catch(function (e) { throw friendlyError(e); });
+  }
 
   async function sendJob(job) {
+    if (!state.device && channel) { if (await remoteOwner()) return sendViaOwner(job); }
     if (!state.device) throw new Error("La impresora no está conectada.");
     var CHUNK = 16384;
     for (var at = 0; at < job.length; at += CHUNK) {
@@ -315,6 +358,19 @@
     return res.data ? parseStatus(new Uint8Array(res.data.buffer)) : null;
   }
 
+  /* Suelta la impresora SIN esperar (para pagehide / beforeunload: la página no espera promesas al cerrarse). Chrome también la suelta al destruir la página, pero a veces tarda
+     lo bastante para que la página nueva (una recarga) reciba «Access denied». */
+  function releaseNow() {
+    var d = state.device, iface = state.ep && state.ep.iface;
+    state.device = null; state.ep = null;
+    if (d) {
+      try { if (iface !== null && iface !== undefined) d.releaseInterface(iface).catch(function () {}); } catch (e) { /* ya suelta */ }
+      try { d.close().catch(function () {}); } catch (e) { /* ya cerrada */ }
+    }
+    disown();
+    announce({ t: "closed" });
+  }
+
   async function close() {                                                     // suelta la impresora para otra pestaña: releaseInterface + close + candado
     if (state.device) {
       try { if (state.ep && state.ep.iface !== null) await state.device.releaseInterface(state.ep.iface); } catch (e) { /* ya suelta o desconectada */ }
@@ -323,11 +379,52 @@
     state.device = null;
     state.ep = null;
     disown();
+    announce({ t: "closed" });
+  }
+
+  /* ---------------------------------------------------------------- entre pestañas del mismo navegador (BroadcastChannel)
+     Solo UNA pestaña es la dueña de la conexión USB (candado). Las demás le preguntan quién es (`who`) y, si imprimen, le mandan el trabajo (`job`) para que ella lo envíe a la impresora. */
+  var channel = null, pending = {}, served = {}, seq = 0;
+  var tabId = Math.random().toString(36).slice(2);
+  try { if (typeof BroadcastChannel !== "undefined") channel = new BroadcastChannel("golden-ql-usb"); } catch (e) { channel = null; }
+  if (channel && typeof channel.unref === "function") channel.unref();                // (solo node, en las pruebas: el canal no mantiene vivo el proceso)
+  function announce(msg) { try { if (channel) { msg.from = tabId; channel.postMessage(msg); } } catch (e) { /* sin canal: cada pestaña decide sola */ } }
+  if (channel) {
+    channel.onmessage = function (ev) {
+      var m = ev && ev.data;
+      if (!m || m.from === tabId) return;
+      if (m.t === "who" && state.device && state.device.opened && owner.held) announce({ t: "owner", to: m.from, id: m.id, name: state.device.productName || "Brother" });
+      else if (m.t === "job" && state.device && state.device.opened && owner.held && !served[m.id]) {          // solo la DUEÑA (la del candado) atiende, y cada trabajo una sola vez
+        served[m.id] = true;
+        sendJob(m.bytes).then(function () { announce({ t: "done", to: m.from, id: m.id, ok: true }); },
+                              function (e) { announce({ t: "done", to: m.from, id: m.id, ok: false, error: (e && e.message) || String(e) }); });
+      } else if ((m.t === "owner" || m.t === "done") && m.to === tabId && pending[m.id]) { var p = pending[m.id]; delete pending[m.id]; clearTimeout(p.timer); p.resolve(m); }
+    };
+  }
+  function ask(msg, ms) {                                                      // manda un mensaje y espera la respuesta de la pestaña dueña (o null si nadie responde)
+    return new Promise(function (resolve) {
+      if (!channel) { resolve(null); return; }
+      var id = tabId + ":" + (++seq);
+      pending[id] = { resolve: resolve, timer: setTimeout(function () { delete pending[id]; resolve(null); }, ms) };
+      msg.id = id; announce(msg);
+    });
+  }
+  /* ¿Otra pestaña de este navegador tiene la impresora abierta y lista? → {name} o null. */
+  async function remoteOwner() {
+    if (state.device && state.device.opened) return { name: state.device.productName || "Brother", here: true };
+    var r = await ask({ t: "who" }, 500);
+    return r ? { name: r.name, here: false } : null;
+  }
+  async function sendViaOwner(job) {
+    var r = await ask({ t: "job", bytes: job }, 60000);
+    if (!r) throw new Error("La pestaña que tiene la impresora no respondió. Ciérrala o recárgala y vuelve a intentar.");
+    if (!r.ok) throw new Error(r.error || "La impresora no aceptó el trabajo.");
   }
 
   var api = { readPrefs: readPrefs, savePrefs: savePrefs, resolvePrefs: resolvePrefs, clearPrefs: clearPrefs, describePrefs: describePrefs, PREF_DEFAULTS: PREF_DEFAULTS, PREF_KEYS: PREF_KEYS,
               layout: layout, printableMm: printableMm, dropLegacyPrefs: dropLegacyPrefs, LEGACY_KEYS: LEGACY_KEYS, rotateBitmap: rotateBitmap, centerOnTape: centerOnTape, cropToContent: cropToContent, invertBitmap: invertBitmap, prepareBitmap: prepareBitmap, buildJob: buildJob, bitmapFromRGBA: bitmapFromRGBA, parseStatus: parseStatus, mmToDots: mmToDots, MEDIA: MEDIA, LINE_BYTES: LINE_BYTES,
-              supported: supported, connect: connect, sendJob: sendJob, readStatus: readStatus, close: close, info: function () { return state.device; },
+              supported: supported, connect: connect, sendJob: sendJob, readStatus: readStatus, close: close, releaseNow: releaseNow, friendlyError: friendlyError, remoteOwner: remoteOwner,
+              ready: function () { return !!(state.device && state.device.opened); }, info: function () { return state.device; },
               BUSY_MSG: BUSY_MSG, LOCK_NAME: LOCK_NAME, isOwner: function () { return owner.held; } };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.QLUsb = api;
 })(typeof window !== "undefined" ? window : this);

@@ -58,6 +58,8 @@ global.document = {
 const mem = { d: {}, getItem(k) { return k in this.d ? this.d[k] : null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
 const toasts = [];
 const original = { open: [], auto: [] };
+const pageListeners = {};
+global.addEventListener = (k, f) => { (pageListeners[k] = pageListeners[k] || []).push(f); };       // pagehide / beforeunload de la página
 global.window = global;
 Object.assign(global, {
   EVENT_ID: 7, EVENT_AUTO_PRINT: true, STAFF_ROLE: 'digitador', localStorage: mem,
@@ -208,6 +210,44 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   const src = fs.readFileSync(path.resolve(__dirname, '../../static/js/shared-print.js'), 'utf8');
   assert.ok(src.includes('printUsb(job.user_id, prefsForJob(job))'), 'Y imprime cada pedido con prefsForJob');
   mode = 'self'; QLUsb.clearPrefs(mem);
+
+  // ---- 6) la impresora la tiene OTRA pestaña de este navegador (25-oct-2026): el estado sale «conectada» (se imprime a través de ella) y el latido lo anuncia; si Chrome dice «Access denied», se explica qué hacer
+  const beats = [];
+  const f0 = global.fetch;
+  global.fetch = async (url, init = {}) => { if (String(url).endsWith('/print-devices/heartbeat')) beats.push(JSON.parse(init.body)); return f0(url, init); };
+  const realConnect = QLUsb.connect, realOwner = QLUsb.remoteOwner;
+  const busy = Object.assign(new Error(QLUsb.BUSY_MSG), { busy: true, code: 'busy', friendly: true });
+  QLUsb.connect = async () => { throw busy; };
+  QLUsb.remoteOwner = async () => ({ name: 'QL-800', here: false });
+  mode = 'self'; beats.length = 0;
+  for (const f of docListeners.bubble.visibilitychange || []) f(new Ev('visibilitychange'));
+  await settle();
+  let st = GoldenSharedPrint.state();
+  assert.ok(st.usb.ok && st.usb.viaTab && st.usb.name === 'QL-800' && !st.usb.busy, 'conectada a través de la otra pestaña');
+  assert.ok(beats.length && beats[beats.length - 1].printer_connected === true && beats[beats.length - 1].printer_name === 'QL-800', 'el latido anuncia la impresora (se imprime a través de la pestaña dueña)');
+  // «Conectar» con la impresora ya conectada: «Ya conectada», sin intentar abrirla otra vez
+  let calls = 0; QLUsb.connect = async () => { calls++; throw busy; };
+  toasts.length = 0; await GoldenSharedPrint.connectUsb(true);
+  assert.strictEqual(calls, 0, 'no se vuelve a abrir'); assert.ok(toasts.some((t) => /ya está conectada/.test(t.m)), 'dice «ya está conectada»');
+  // nadie la tiene y Chrome dice «Access denied»: mensaje claro, estado desconectado y reintento posible
+  QLUsb.remoteOwner = async () => null;
+  const denied = Object.assign(new Error("Failed to execute 'open' on 'USBDevice': Access denied."), { name: 'SecurityError' });
+  QLUsb.connect = async () => { throw QLUsb.friendlyError(denied); };
+  await GoldenSharedPrint.disconnectForTest();
+  toasts.length = 0; await GoldenSharedPrint.connectUsb(true);
+  st = GoldenSharedPrint.state();
+  assert.ok(!st.usb.ok && st.usb.code === 'denied' && /Cierra otras pestañas o programas de Brother/.test(st.usb.lastError), st.usb.lastError);
+  assert.ok(toasts.some((t) => t.t === 'error' && /Cierra otras pestañas o programas de Brother/.test(t.m)), 'el aviso trae la acción a seguir');
+  // dos toques a la vez: un solo intento
+  const realReady = QLUsb.ready; QLUsb.ready = () => true;
+  calls = 0; QLUsb.connect = async () => { calls++; await new Promise((r) => setTimeout(r, 20)); return { productName: 'QL-800' }; };
+  await Promise.all([GoldenSharedPrint.connectUsb(false), GoldenSharedPrint.connectUsb(true), GoldenSharedPrint.connectUsb(true)]);
+  assert.strictEqual(calls, 1, 'un solo intento de conexión aunque lo pidan tres veces');
+  // al cerrar o recargar la página se suelta la impresora
+  let released = 0; QLUsb.releaseNow = () => { released++; };
+  for (const ev of ['pagehide', 'beforeunload']) (pageListeners[ev] || []).forEach((f) => f());
+  assert.strictEqual(released, 2, 'pagehide y beforeunload sueltan la impresora');
+  QLUsb.ready = realReady; QLUsb.connect = realConnect; QLUsb.remoteOwner = realOwner; global.fetch = f0;
 
   console.log('shared_print_rules_check OK');
   process.exit(0);

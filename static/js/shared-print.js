@@ -109,11 +109,12 @@
       kind = 'warn';
       msg = `${QLUsb.BUSY_MSG} Se vuelve a intentar sola cada pocos segundos.`;
     } else if (usb.ok) {
-      msg = `Impresora conectada (${usb.name}).` + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
+      msg = (usb.viaTab ? `Impresora conectada en otra pestaña de este navegador (${usb.name}): se imprime a través de ella.` : `Impresora conectada (${usb.name}).`) + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
     } else {
       kind = route.serving ? 'bad' : 'warn';
       msg = route.serving ? `Impresora DESCONECTADA: ${route.serving} equipo(s) imprimen aquí y sus escarapelas quedan en cola. Conéctela.`
         : 'Sin impresora USB: se usará la impresión normal del navegador.';
+      if (usb.code === 'denied' || usb.code === 'disconnected' || usb.code === 'permission') msg += ` ${usb.lastError}`;       // el motivo y qué hacer, a la vista (no solo en un aviso que se va)
     }
     if (pending) msg += ` · ${pending} por confirmar`;
     text.textContent = msg;
@@ -122,19 +123,38 @@
   }
 
   /* ------------------------------------------------------------------ impresora USB */
-  let busyTimer = null;
-  async function connectUsb(ask) {
+  /* El estado «Impresora conectada» sale SOLO de lo que de verdad sirve para imprimir (25-oct-2026): la conexión abierta de QLUsb (`QLUsb.ready()`), o la de otra pestaña de este mismo
+     navegador, a través de la cual también se imprime (`viaTab`). Un solo intento a la vez (`connectUsb` espera al que esté en marcha) y «Conectar» no vuelve a abrir lo que ya está abierto. */
+  let busyTimer = null, connecting = null;
+  const DISCONNECTED = (extra) => Object.assign({ ok: false, name: '', lastError: '', busy: false, viaTab: false, code: '' }, extra || {});
+  function connectUsb(ask) {
     clearTimeout(busyTimer);
-    if (!ask && usb.ok && window.QLUsb && QLUsb.info()) { render(); heartbeat(); return; }      // ya conectada: no se vuelve a abrir
-    if (!(window.QLUsb && QLUsb.supported())) { usb = { ok: false, name: '', lastError: 'USB no disponible en este navegador', busy: false }; render(); return; }
+    if (connecting) return ask ? connecting.then(() => (usb.ok ? undefined : doConnectUsb(true))) : connecting;     // el que toca el botón no se queda con el resultado de un intento sin permiso
+    connecting = doConnectUsb(ask).finally(() => { connecting = null; });
+    return connecting;
+  }
+  async function doConnectUsb(ask) {
+    if (usb.ok && (usb.viaTab || (window.QLUsb && QLUsb.ready()))) {                       // ya conectada y abierta: «Ya conectada», sin volver a abrir
+      if (ask) toast('✅ La impresora ya está conectada.', 'success');
+      render(); heartbeat(); return;
+    }
+    if (!(window.QLUsb && QLUsb.supported())) { usb = DISCONNECTED({ lastError: 'USB no disponible en este navegador', code: 'other' }); render(); return; }
     try {
       const d = await QLUsb.connect(ask);
-      usb = { ok: !!d, name: d ? (d.productName || 'Brother') : '', lastError: '', busy: false };
+      usb = d ? DISCONNECTED({ ok: true, name: d.productName || 'Brother' }) : DISCONNECTED();
     } catch (e) {
-      const busy = !!(e && e.busy);                    // otra pestaña de este equipo tiene la impresora: aviso amable y reintento solo, sin desconectar el cable
-      usb = { ok: false, name: '', lastError: e && e.message ? e.message : String(e), busy };
-      if (busy) busyTimer = setTimeout(() => connectUsb(false), BUSY_RETRY_MS);
-      else if (ask) toast('No se pudo conectar la impresora: ' + usb.lastError, 'error');
+      const f = QLUsb.friendlyError ? QLUsb.friendlyError(e) : e;
+      const remote = f && f.busy && QLUsb.remoteOwner ? await QLUsb.remoteOwner().catch(() => null) : null;
+      if (remote) {                                    // otra pestaña de ESTE navegador tiene la impresora abierta: se muestra conectada y se imprime a través de ella
+        usb = DISCONNECTED({ ok: true, name: remote.name, viaTab: true });
+        if (ask) toast('ℹ️ La impresora ya está conectada en otra pestaña de este navegador: se imprime a través de ella.', 'info');
+      } else {
+        const busy = !!(f && f.busy);                  // en uso en otra pestaña que no responde: aviso amable y reintento solo, sin desconectar el cable
+        usb = DISCONNECTED({ lastError: f && f.message ? f.message : String(e), busy, code: (f && f.code) || 'other' });
+        if (busy) busyTimer = setTimeout(() => connectUsb(false), BUSY_RETRY_MS);
+        else if (ask) toast('No se pudo conectar la impresora: ' + usb.lastError, 'error');
+        try { console.info('[impresora] no se pudo conectar:', f && f.code, f && f.raw ? f.raw : e); } catch (e2) { /* sin consola */ }
+      }
     }
     render();
     heartbeat();
@@ -143,11 +163,13 @@
     navigator.usb.addEventListener('connect', () => connectUsb(false));
     navigator.usb.addEventListener('disconnect', async () => {
       await QLUsb.close();
-      usb = { ok: false, name: '', lastError: 'desconectada', busy: false };
+      usb = DISCONNECTED({ lastError: 'desconectada', code: 'disconnected' });
       render();
       toast('⚠️ Se desconectó la impresora USB.', 'warning');
       heartbeat();
     });
+    // La impresora se SUELTA al cerrar o recargar la página (sin esperar promesas): si no, la página nueva puede recibir «Access denied» mientras Chrome termina de soltarla.
+    ['pagehide', 'beforeunload'].forEach((ev) => window.addEventListener(ev, () => { try { QLUsb.releaseNow(); } catch (e) { /* ya suelta */ } }));
   }
 
   /* ------------------------------------------------------------------ pantalla siempre encendida */
@@ -158,9 +180,13 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); heartbeat(); connectUsb(false); } });
 
   /* ------------------------------------------------------------------ señal con el servidor */
-  let hbTimer = null;
+  let hbTimer = null, lastRecheck = 0;
   async function heartbeat() {
     clearTimeout(hbTimer);
+    if (usb.ok && !usb.viaTab && window.QLUsb && QLUsb.ready && !QLUsb.ready() && Date.now() - lastRecheck > 5000) { lastRecheck = Date.now(); usb = DISCONNECTED({ lastError: 'desconectada', code: 'disconnected' }); connectUsb(false); }       // la conexión se cayó sin avisar: no se anuncia una impresora que no imprime
+    if (usb.ok && usb.viaTab && window.QLUsb && QLUsb.remoteOwner && !(await QLUsb.remoteOwner().catch(() => null))) {                 // la pestaña dueña se cerró: esta intenta quedarse con la impresora
+      usb = DISCONNECTED(); await connectUsb(false); return;
+    }
     try {
       const res = await fetch(`/api/events/${EID}/print-devices/heartbeat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
         body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy ? null : usb.ok, printer_name: usb.name || null }) });      // null: otra pestaña es la dueña, no se pisa su estado
@@ -248,9 +274,9 @@
   let usbBusy = Promise.resolve();
   function printUsb(userId, given) {                // una impresión a la vez por equipo (la impresora no admite dos flujos a la vez)
     const run = usbBusy.then(async () => {
-      if (!usb.ok || !QLUsb.info()) await connectUsb(false);
+      if (!usb.ok || !(usb.viaTab || QLUsb.ready())) await connectUsb(false);
       if (!usb.ok) throw new Error('La impresora no está conectada.');
-      await QLUsb.sendJob(await badgeBitmap(userId, given));
+      await QLUsb.sendJob(await badgeBitmap(userId, given));                 // por la conexión de esta pestaña o, si la dueña es otra, a través de ella
     });
     usbBusy = run.catch(() => {});
     return run;
@@ -392,7 +418,7 @@
       }
       return sendToPrinter(userId, !auto && explicit);
     }
-    if (usb.ok) {
+    if (usb.ok && (usb.viaTab || QLUsb.ready())) {
       try {
         if (!auto && !confirmed && original.openPrintWindow) { /* el aviso de reimpresión de siempre */
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`).catch(() => null);
@@ -636,8 +662,8 @@
   }
   function printTest() {
     const run = usbBusy.then(async () => {
-      if (!usb.ok || !QLUsb.info()) await connectUsb(false);
-      if (!usb.ok) throw new Error(usb.busy ? QLUsb.BUSY_MSG : 'La impresora no está conectada a este equipo.');
+      if (!usb.ok || !(usb.viaTab || QLUsb.ready())) await connectUsb(false);
+      if (!usb.ok) throw new Error(usb.busy ? QLUsb.BUSY_MSG : (usb.lastError || 'La impresora no está conectada a este equipo.'));
       await QLUsb.sendJob(testJob());
     });
     usbBusy = run.catch(() => {});
@@ -657,5 +683,5 @@
     connectUsb(false);                                    // reconoce la impresora ya autorizada (sin pedir permiso) y manda la primera señal
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
-  window.GoldenSharedPrint = { printFor, testJob, cleanCedula, prefsForJob, state: () => ({ route, usb, online, pending, deviceId, touch }) };
+  window.GoldenSharedPrint = { printFor, testJob, cleanCedula, prefsForJob, connectUsb, disconnectForTest: () => { usb = DISCONNECTED(); connecting = null; }, state: () => ({ route, usb, online, pending, deviceId, touch }) };
 })();
