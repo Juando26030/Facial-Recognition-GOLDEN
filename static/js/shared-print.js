@@ -417,9 +417,7 @@
     if (!DP) throw new Error('Falta el módulo de impresión por controlador.');
     const spec = DP.pageSpec(out.tapeDots, out.height, DP.getPageWidthMm(storage()), DP.getOffsets(storage()));
     lastDriverSpec = spec;
-    // Sin cuadro (--kiosk-printing): la etiqueta va como PDF de tamaño exacto (el visor de PDF no dibuja encabezados ni pies de Chrome; hotfix 27-oct-2026). Con cuadro, la página de siempre.
-    const pdf = kiosk ? { bitmap: out.bitmap, width: out.tapeDots, height: out.height, mirror: p.mirror } : null;
-    await DP.printPage(spec, DP.bitmapToDataUrl(out.bitmap, out.tapeDots, out.height, p.mirror), pdf ? { pdf } : undefined);
+    await DP.printPage(spec, DP.bitmapToDataUrl(out.bitmap, out.tapeDots, out.height, p.mirror));
   }
   let lastDriverSpec = null;
   const DIALOG_WARN_MS = 20000;            // con --kiosk-printing la hoja sale en segundos; si tarda más, Chrome está mostrando el cuadro y nadie lo confirma

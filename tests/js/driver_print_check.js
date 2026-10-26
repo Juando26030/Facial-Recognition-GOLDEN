@@ -109,29 +109,4 @@ assert.ok(cmd.startsWith('"%ProgramFiles%\\Google\\Chrome\\Application\\chrome.e
   }
 }
 
-// ---- hotfix 27-oct-2026: sin cuadro (--kiosk-printing) la etiqueta va como PDF de UNA página del tamaño exacto (el visor de PDF de Chrome no dibuja encabezados ni pies)
-{
-  const W = 696, H = 709, bm = new Uint8Array(W * H);
-  for (let x = 0; x < W; x++) { bm[x] = 1; bm[(H - 1) * W + x] = 1; }                         // marco arriba y abajo
-  for (const [dx, dy, pw] of [[0, 0, null], [1.5, 0.8, null], [0, 0, 62]]) {
-    const spec = D.pageSpec(W, H, pw, { dx, dy });
-    const bytes = D.pdfFromBitmap(bm, W, H, spec, false);
-    const txt = Buffer.from(bytes).toString("latin1");
-    assert.ok(txt.startsWith("%PDF-1.4") && txt.trimEnd().endsWith("%%EOF"), "PDF bien formado");
-    const mb = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(txt).slice(1).map((v) => (+v) * 25.4 / 72);
-    assert.ok(Math.abs(mb[0] - spec.pageWidthMm) < 0.2 && Math.abs(mb[1] - spec.pageHeightMm) < 0.2, "hoja exacta (±0,2 mm): " + mb + " vs " + spec.pageWidthMm + "×" + spec.pageHeightMm);
-    const cm = /q ([\d.]+) 0 0 ([\d.]+) (-?[\d.]+) (-?[\d.]+) cm \/Im0 Do Q/.exec(txt).slice(1).map((v) => (+v) * 25.4 / 72);
-    assert.ok(Math.abs(cm[0] - spec.imageWidthMm) < 0.05 && Math.abs(cm[1] - spec.imageHeightMm) < 0.05, "la imagen no se escala");
-    assert.ok(Math.abs(cm[2] - spec.leftMm) < 0.05 && Math.abs(cm[3] - (spec.pageHeightMm - spec.topMm - spec.imageHeightMm)) < 0.05, "centrada y con la calibración: " + cm);
-    assert.ok(!/\/Font|BT |Tj|\/Title|https?:|\d\/\d/.test(txt.replace(/0000\d{6} \d{5} [nf] /g, "").replace(/\/MediaBox[^\]]*\]/, "")), "sin texto, título, dirección ni número de página");
-    const xref = +/startxref\n(\d+)/.exec(txt)[1];
-    assert.ok(txt.slice(xref, xref + 4) === "xref", "xref en su sitio");
-    const offs = txt.slice(xref).match(/(\d{10}) 00000 n /g).map((l) => +l.slice(0, 10));
-    offs.forEach((o, i) => assert.ok(txt.slice(o).startsWith((i + 1) + " 0 obj"), "objeto " + (i + 1) + " en su desplazamiento"));
-    const rowBytes = Math.ceil(W / 8), start = txt.indexOf("stream\n", txt.indexOf("/Subtype /Image")) + 7;
-    assert.strictEqual(bytes[start], 0x00, "la primera fila (marco) es tinta");
-    assert.strictEqual(bytes[start + rowBytes * 5], 0xff, "una fila sin tinta es papel");
-  }
-}
-
 console.log("driver_print_check OK");
