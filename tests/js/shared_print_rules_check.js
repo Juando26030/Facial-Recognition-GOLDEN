@@ -247,7 +247,7 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   await settle();
   let st = GoldenSharedPrint.state();
   assert.ok(st.usb.ok && st.usb.viaTab && st.usb.name === 'QL-800' && !st.usb.busy, 'conectada a través de la otra pestaña');
-  assert.ok(beats.length && beats[beats.length - 1].printer_connected === true && beats[beats.length - 1].printer_name === 'QL-800', 'el latido anuncia la impresora (se imprime a través de la pestaña dueña)');
+  assert.ok(beats.length && beats[beats.length - 1].printer_connected === null, 'la pestaña que imprime a través de otra NO pisa el estado del puesto (la dueña lo anuncia)');
   // «Conectar» con la impresora ya conectada: «Ya conectada», sin intentar abrirla otra vez
   let calls = 0; QLUsb.connect = async () => { calls++; throw busy; };
   toasts.length = 0; await GoldenSharedPrint.connectUsb(true);
@@ -291,7 +291,7 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   assert.ok(!toasts.some((t) => t.t === 'error'), 'ningún aviso rojo');
   assert.strictEqual(toasts.filter((t) => /controlador de Brother/.test(t.m)).length, 1, 'un mensaje corto, UNA sola vez');
   assert.ok(!/no se pudo conectar/i.test(toasts.map((t) => t.m).join(' ')));
-  assert.ok(beats2.length && beats2[beats2.length - 1].printer_connected === true && /Windows/.test(beats2[beats2.length - 1].printer_name), 'anuncia «Impresora conectada por Windows»');
+  assert.ok(beats2.length && beats2[beats2.length - 1].printer_connected === false && /con cuadro/.test(beats2[beats2.length - 1].printer_name), 'en controlador CON cuadro anuncia que NO imprime sola');
   // b) imprimir en este modo: una página de tamaño exacto, con la misma etiqueta de «Imprimir prueba» y sin tocar WebUSB
   driverPages.length = 0; let usbTouched = 0; QLUsb.connect = async () => { usbTouched++; return null; };
   await sp().drvPrint(sp().testCompose(), QLUsb.resolvePrefs(null, {}).prefs);
@@ -307,13 +307,13 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   assert.ok(sp().driverOn() && !sp().state().usb.ok);
   // d) trabajos de OTROS equipos: sin lanzador (con cuadro de diálogo) quedan PENDIENTES hasta «Imprimir pendientes»; con lanzador (sin cuadro) se imprimen solos
   await new Promise((r) => setTimeout(r, 250));                       // que terminen los latidos en vuelo de los pasos anteriores (no pisan al nuevo)
-  const results = []; let queue = [{ id: 71, user_id: '1001', requested_by: 'x1', prefs: { rotation: 'auto', mirror: true } }, { id: 72, user_id: '1002', requested_by: 'x1' }];
+  const results = [], claims = []; let queue = [{ id: 71, user_id: '1001', requested_by: 'x1', prefs: { rotation: 'auto', mirror: true } }, { id: 72, user_id: '1002', requested_by: 'x1' }];
   const tpl = { width_mm: 58.9, height_mm: 100, orientation: 'vertical', background_type: 'color', background_value: '#fff', elements: [] };
   const f2 = global.fetch;
   global.fetch = async (url, init = {}) => {
     const u = new URL(url, 'http://x');
-    if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode: 'self', printer_name: '', printer_ready: false, serving: 2, poll: true });
-    if (u.pathname.endsWith('/print-jobs-next')) return json(200, { job: queue.shift() || null });
+    if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode: 'self', printer_name: '', printer_ready: false, serving: 2, poll: true, waiting: queue.length, claimed: 0, holder: true });
+    if (u.pathname.endsWith('/print-jobs-next')) { claims.push({ manual: u.searchParams.get('manual') === '1', device: u.searchParams.get('device_id') }); return json(200, { job: queue.shift() || null }); }
     if (/\/print-jobs\/\d+\/result$/.test(u.pathname)) { results.push(Object.assign({ id: Number(u.pathname.match(/(\d+)\/result/)[1]) }, JSON.parse(init.body))); return json(200, {}); }
     if (u.pathname.includes('/badge-print-data')) return json(200, { id: '1001', first_name: 'Ana', last_name: 'Mora', has_photo: false });
     return f2(url, init);
@@ -324,12 +324,13 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   for (const f of docListeners.bubble.visibilitychange || []) f(new Ev('visibilitychange'));
   await new Promise((r) => setTimeout(r, 160));
   assert.strictEqual(sp().state().route.serving, 2);
-  assert.strictEqual(sp().state().pendingJobs, 2, 'con cuadro de diálogo, lo que llega de otros equipos espera');
+  assert.strictEqual(sp().state().pendingJobs, 2, 'con cuadro de diálogo, lo que llega de otros equipos espera EN EL SERVIDOR');
+  assert.strictEqual(claims.length, 0, 'una ventana con cuadro de diálogo NUNCA reclama por sondeo: el trabajo no desaparece del servidor');
+  assert.strictEqual(queue.length, 2, 'los dos trabajos siguen en la cola del servidor');
   assert.strictEqual(results.length, 0, 'nada se imprime solo sin el lanzador');
-  assert.ok(toasts.some((t) => /Imprimir pendientes/.test(t.m)), 'avisa que hay pendientes');
   driverPages.length = 0;
   await sp().printPending();
-  assert.strictEqual(sp().state().pendingJobs, 0);
+  assert.ok(claims.length >= 2 && claims.slice(0, 2).every((c) => c.manual && c.device === sp().state().deviceId), '«Imprimir pendientes» reclama al tocarlo, con el id del equipo');
   assert.deepStrictEqual(results.map((r) => [r.id, r.ok]), [[71, true], [72, true]], 'confirma cada trabajo como impreso');
   assert.strictEqual(driverPages.length, 2, 'cada uno, una página por el controlador');
   assert.ok(driverPages.every((p) => p.spec.pageCss.includes('margin: 0') && p.spec.pageWidthMm < 58.95 && p.spec.imageWidthMm > 58.9 && p.spec.imageWidthMm < 58.95), 'tamaño exacto');
@@ -338,7 +339,7 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   for (const f of docListeners.bubble.visibilitychange || []) f(new Ev('visibilitychange'));
   await sp().connectUsb(false); await new Promise((r) => setTimeout(r, 1700));
   assert.ok(results.some((r) => r.id === 81 && r.ok === true), 'con el lanzador se imprime sin cuadro y sin pedir nada');
-  assert.strictEqual(sp().state().pendingJobs, 0);
+  assert.ok(claims.some((c) => !c.manual), 'con el lanzador SÍ reclama por sondeo');
   // si el controlador falla, el trabajo se confirma como fallido (no se pierde ni se repite solo)
   DriverPrint.printPage = async () => { throw new Error('La impresora de Windows no respondió.'); };
   results.length = 0; queue = [{ id: 91, user_id: '1004', requested_by: 'x2' }];

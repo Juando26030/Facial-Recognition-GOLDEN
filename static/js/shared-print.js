@@ -47,7 +47,7 @@
   let drvFallback = false;                // en «auto»: el USB directo no se pudo usar en este equipo
   let drvNoticeShown = false;
   let kiosk = false;
-  const pendingJobs = [];                 // trabajos de otros equipos que esperan «Imprimir pendientes» (equipo con cuadro de diálogo)
+  const waitingCount = () => (route && route.waiting) | 0;      // trabajos de otros equipos que esperan EN EL SERVIDOR a este puesto (nadie los reclama hasta que una ventana pueda imprimirlos sola o se toque «Imprimir pendientes»)
   const driverOn = () => printMode === 'driver' || (printMode === 'auto' && drvFallback);
   let pending = 0;                       // trabajos de este equipo pendientes de confirmar
 
@@ -123,13 +123,13 @@
     let msg;
     if (!online) { kind = 'bad'; msg = 'Sin conexión con el servidor: la impresión compartida no funciona hasta que vuelva la red.'; }
     else if (route.mode === 'shared') {
-      msg = route.printer_ready ? `Imprime en el equipo de ${route.printer_name}.` : `Imprime en el equipo de ${route.printer_name}, que NO está conectado con su impresora: las escarapelas quedan en cola.`;
+      msg = route.printer_ready ? `Imprime en el equipo de ${route.printer_name}.` : `Imprime en el equipo de ${route.printer_name}, que NO está listo para imprimir solo (sin impresora conectada o con cuadro de diálogo): las escarapelas quedan en cola.`;
       if (!route.printer_ready) kind = 'warn';
     } else if (driverOn()) {                         // un modo NORMAL de trabajo, no un error: ícono neutro
       kind = 'info';
       msg = 'Impresión por controlador de Windows — ' + (kiosk ? 'impresión automática activa.' : 'impresión con cuadro de diálogo.') +
         (route.serving ? ` Impresora conectada por Windows: imprime también para ${route.serving} equipo(s).` : '') +
-        (pendingJobs.length ? ` ${pendingJobs.length} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».` : '');
+        (waitingCount() && !kiosk ? ` ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».` : '');
     } else if (usb.busy) {
       kind = 'warn';
       msg = `${QLUsb.BUSY_MSG} Se vuelve a intentar sola cada pocos segundos.`;
@@ -147,8 +147,8 @@
     bar.querySelector('#spConnect').hidden = usb.ok || usb.busy || route.mode === 'shared' || driverOn() || !(window.QLUsb && QLUsb.supported());
     bar.querySelector('#spQueue').hidden = !SHARED;
     bar.querySelector('#spHostNote').hidden = !(SHARED && driverOn() && !kiosk);             // este computador puede ser la impresora de otros: sin lanzador, Chrome pide confirmar cada impresión
-    bar.querySelector('#spPending').hidden = !pendingJobs.length;
-    bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${pendingJobs.length})`;
+    bar.querySelector('#spPending').hidden = !(SHARED && driverOn() && !kiosk && waitingCount());
+    bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${waitingCount()})`;
     bar.querySelector('#spAlways').hidden = !(printMode === 'auto' && drvFallback);
     bar.querySelector('#spGuide').hidden = !(driverOn() || usb.code === 'denied');
   }
@@ -243,7 +243,7 @@
     if (!SHARED) { online = true; render(); hbTimer = setTimeout(heartbeat, HEARTBEAT_MS); return; }                  // sin impresión compartida: solo se revisa la conexión local
     try {
       const res = await fetch(`/api/events/${EID}/print-devices/heartbeat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy ? null : (usb.ok || driverOn()), printer_name: usb.name || (driverOn() ? 'Controlador de Windows (Brother QL-800)' : null) }) });      // null: otra pestaña es la dueña, no se pisa su estado
+        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy || (usb.ok && usb.viaTab && !driverOn()) ? null : canAuto(), printer_name: usb.name || (driverOn() ? (kiosk ? 'Controlador de Windows (Brother QL-800)' : 'Controlador de Windows (con cuadro: no imprime sola)') : null) }) });      // null: otra pestaña es la dueña, no se pisa su estado. «Conectada» = puede imprimir SOLA
       online = true;
       if (res.ok) { route = await res.json(); startPolling(); }
     } catch (e) { online = false; }
@@ -373,6 +373,9 @@
   /* ------------------------------------------------------------------ Y: atender a otros equipos */
   let polling = false;
   const printerReady = () => driverOn() || (usb.ok && (usb.viaTab || (window.QLUsb && QLUsb.ready())));
+  /* ¿Esta ventana puede imprimir SOLA, sin que nadie confirme nada? Solo entonces reclama trabajos de otros equipos: la dueña de la impresora USB, o el modo controlador abierto con el lanzador (sin cuadro).
+     Una ventana en modo controlador CON cuadro de diálogo nunca reclama por sondeo (el trabajo desaparecía del servidor y esperaba en su memoria): ahí se usa «Imprimir pendientes», que reclama al tocarlo. */
+  const canAuto = () => (driverOn() ? kiosk : !!(usb.ok && !usb.viaTab && window.QLUsb && QLUsb.ready()));
   /* Imprime un trabajo de otro equipo y confirma (la confirmación se reintenta: si se pierde, el trabajo caduca; nunca se reimprime solo). */
   async function runJob(job) {
     let ok = false;
@@ -388,21 +391,31 @@
     }
     if (!ok) toast(`⚠️ No se pudo imprimir la escarapela que pidió ${job.requested_by || 'otro equipo'}: ${error}`, 'error');
   }
-  async function printPending() {                  // un clic del usuario: imprime lo que llegó de otros equipos mientras no había impresión automática
-    while (pendingJobs.length) { const job = pendingJobs.shift(); render(); await runJob(job); }
-    render();
+  async function claimNext(manual) {
+    const res = await fetch(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}${manual ? '&manual=1' : ''}`, { cache: 'no-store' });
+    return res.ok ? (await res.json()).job : null;
+  }
+  let printingPending = false;
+  async function printPending() {                  // un clic de la persona: reclama e imprime, UNO A UNO, lo que espera en el servidor (el cuadro de Chrome lo confirma ella)
+    if (printingPending) return;
+    printingPending = true;
+    try {
+      for (let guard = 0; guard < 50; guard++) {
+        let job = null;
+        try { job = await claimNext(true); } catch (e) { online = false; break; }
+        if (!job) break;
+        await runJob(job);
+        route.waiting = Math.max(0, waitingCount() - 1); render();
+      }
+    } finally { printingPending = false; heartbeat(); render(); }
   }
   async function startPolling() {
-    if (!SHARED || polling || !route.poll || !printerReady()) return;
+    if (!SHARED || polling || !route.poll || !canAuto()) return;
     polling = true;
-    while (route.poll && printerReady()) {
+    while (route.poll && canAuto()) {
       let job = null;
-      try {
-        const res = await fetch(`/api/events/${EID}/print-jobs-next`, { cache: 'no-store' });
-        if (res.ok) job = (await res.json()).job;
-      } catch (e) { online = false; render(); }
+      try { job = await claimNext(false); } catch (e) { online = false; render(); }
       if (job) {
-        if (driverOn() && !kiosk) { pendingJobs.push(job); render(); toast(`🖨️ Llegó una escarapela de ${job.requested_by || 'otro equipo'}: toca «Imprimir pendientes».`, 'info'); continue; }       // con cuadro de diálogo: la imprime una persona
         await runJob(job);
         continue;                                   // hay trabajo: se pregunta de nuevo enseguida
       }
@@ -463,7 +476,16 @@
     try {
       const res = await fetch(`/api/events/${EID}/print-jobs`, { cache: 'no-store' });
       const data = res.ok ? await res.json() : { jobs: [] };
-      if (!data.jobs.length) { body.textContent = 'No hay escarapelas pendientes.'; return; }
+      let station = [];                                       // lo que espera EN ESTE PUESTO (pendientes y reclamados, con su estado)
+      try { const sr = await fetch(`/api/events/${EID}/print-jobs?scope=station`, { cache: 'no-store' }); if (sr.ok) station = (await sr.json()).jobs; } catch (e) { /* sin red: se muestra lo otro */ }
+      const stationBox = document.createElement('div');
+      if (station.length) {
+        const st = document.createElement('table');
+        st.innerHTML = '<tr><th>En este puesto</th><th>Estado</th><th>Pidió</th></tr>';
+        station.forEach((j) => { const tr = document.createElement('tr'); [j.user_id, j.status === 'sent' ? 'Reclamado (imprimiéndose)' : 'Pendiente', j.requested_by].forEach((t) => { const td = document.createElement('td'); td.textContent = t || ''; tr.appendChild(td); }); st.appendChild(tr); });
+        stationBox.appendChild(st);
+      }
+      if (!data.jobs.length) { if (station.length) body.replaceChildren(stationBox); else body.textContent = 'No hay escarapelas pendientes.'; return; }
       const table = document.createElement('table');
       table.innerHTML = '<tr><th>Cédula</th><th>Estado</th><th>Equipo</th><th>Parámetros aplicados</th><th></th></tr>';
       data.jobs.forEach((j) => {
@@ -476,7 +498,7 @@
         tr.appendChild(td);
         table.appendChild(tr);
       });
-      body.replaceChildren(table);
+      body.replaceChildren(...(station.length ? [stationBox, table] : [table]));
     } catch (e) { body.textContent = 'Sin conexión con el servidor.'; }
   }
 
@@ -829,5 +851,5 @@
     connectUsb(false);                                    // reconoce la impresora ya autorizada (sin pedir permiso) y manda la primera señal
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
-  window.GoldenSharedPrint = { printFor, testJob, testCompose, cleanCedula, prefsForJob, connectUsb, setPrintMode, printPending, driverOn, lastDriverSpec: () => lastDriverSpec, drvPrint, disconnectForTest: () => { usb = DISCONNECTED(); connecting = null; }, setKioskForTest: (v) => { kiosk = v; }, state: () => ({ mode: printMode, kiosk, pendingJobs: pendingJobs.length, route, usb, online, pending, deviceId, touch }) };
+  window.GoldenSharedPrint = { printFor, testJob, testCompose, cleanCedula, prefsForJob, connectUsb, setPrintMode, printPending, driverOn, lastDriverSpec: () => lastDriverSpec, drvPrint, disconnectForTest: () => { usb = DISCONNECTED(); connecting = null; }, setKioskForTest: (v) => { kiosk = v; }, state: () => ({ mode: printMode, kiosk, pendingJobs: waitingCount(), route, usb, online, pending, deviceId, touch }) };
 })();

@@ -20,4 +20,4 @@ def test_the_registration_screen_shows_the_real_state_and_releases_the_printer_o
     assert "QLUsb.ready()" in sp and "viaTab" in sp and "QLUsb.remoteOwner()" in sp                                                        # el estado sale de la conexión real o de la pestaña dueña
     assert "['pagehide', 'beforeunload']" in sp and "QLUsb.releaseNow()" in sp                                                             # se suelta al cerrar o recargar
     assert "Impresora conectada en otra pestaña de este navegador" in sp and "ya está conectada" in sp
-    assert "printer_connected: usb.busy ? null : (usb.ok || driverOn())" in sp                                                            # el latido anuncia lo que sirve para imprimir (USB o controlador)
+    assert "printer_connected: usb.busy || (usb.ok && usb.viaTab && !driverOn()) ? null : canAuto()" in sp                                                            # el latido anuncia lo que sirve para imprimir (USB o controlador)

@@ -92,7 +92,7 @@ def test_devices_report_and_appear_with_last_signal_and_printer(client, setup):
     ev, u = setup
     _as(client, "y1")
     r = _beat(client, ev, printer=True)
-    assert r.json() == {"enabled": True, "mode": "self", "printer_name": "", "printer_ready": False, "serving": 0, "poll": False}
+    assert r.json() == {"enabled": True, "mode": "self", "printer_name": "", "printer_ready": False, "serving": 0, "poll": False, "holder": True, "waiting": 0, "claimed": 0}
     _as(client, "x1")
     _beat(client, ev, printer=False)
     _as(client, "adm")
@@ -289,7 +289,7 @@ def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_a
     # la página de prueba suelta la impresora al terminar y al ocultarse o cerrarse; el cierre hace releaseInterface y suelta el candado entre pestañas
     assert "finally { await QLUsb.close(); }" in page and '"visibilitychange"' in page and '"pagehide"' in page
     assert "releaseInterface" in ql and "navigator.locks.request(LOCK_NAME, { ifAvailable: true }" in ql
-    assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy ? null : (usb.ok || driverOn())" in sp
+    assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy || (usb.ok && usb.viaTab && !driverOn()) ? null : canAuto()" in sp
 
 
 # ---------------------------------------------------------------------------------------------------- solo se imprime a quien está Registrado
@@ -352,7 +352,7 @@ def test_the_computer_that_prints_for_others_without_the_launcher_is_told_so_in_
     import pathlib
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "Este computador imprime solo si abres la app con el lanzador." in sp and 'id="spHostLauncher"' in sp and "(SHARED && driverOn() && !kiosk)" in sp
-    assert "#sharedPrintBar #spPending{min-height:64px" in sp and "Imprimir pendientes (${pendingJobs.length})" in sp          # grande y con el contador
+    assert "#sharedPrintBar #spPending{min-height:64px" in sp and "Imprimir pendientes (${waitingCount()})" in sp          # grande y con el contador
 
 
 def test_the_driver_print_bar_loads_with_and_without_shared_print_but_not_for_clients(client, factory, db):
@@ -379,3 +379,68 @@ def test_the_last_resort_print_page_declares_the_rotated_page_so_nothing_is_cut(
     import pathlib
     html = pathlib.Path("templates/badge_print.html").read_text(encoding="utf-8")
     assert "template.width_mm > template.height_mm" in html and "@page { size: ${pw}mm ${ph}mm; margin: 0; }" in html and "rotate(90deg)" in html
+
+
+# ---------------------------------------------------------------------------------------------------- reclamo: solo quien imprime sola (25-oct-2026, bloque 1.1)
+def _beat_as(client, ev, device, printer, name=None):
+    return client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json={"device_id": device, "platform": "x", "browser": "Chrome", "printer_connected": printer, "printer_name": name}).json()
+
+
+def test_another_session_of_the_station_account_never_overwrites_the_station_or_claims_its_jobs(client, setup, db):
+    ev, u = setup
+    _as(client, "y1")
+    _beat_as(client, ev, "pc", True, "Controlador de Windows (Brother QL-800)")
+    assert _route(client, ev, u["x1"], u["y1"]).status_code == 200
+    _as(client, "x1")
+    job = _job(client, ev, "1001").json()
+    _as(client, "y1")
+    phone = _beat_as(client, ev, "celular", False)                                                 # el admin consulta desde el celular con la MISMA cuenta
+    assert phone["holder"] is False and phone["poll"] is False and phone["waiting"] == 1
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=celular").json()["job"] is None        # el celular no reclama
+    pc = _beat_as(client, ev, "pc", True, "Controlador de Windows (Brother QL-800)")
+    assert pc["holder"] is True and pc["poll"] is True                                              # y el puesto sigue siendo el computador
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc").json()["job"]["id"] == job["id"]
+    _as(client, "x1")
+    assert client.get(f"/api/events/{ev.id}/print-jobs/{job['id']}").json()["status"] == "sent"
+
+
+def test_a_window_with_a_print_dialog_never_claims_by_polling_but_the_click_claims(client, setup):
+    ev, u = setup
+    _as(client, "y1")
+    _beat_as(client, ev, "pc", False, "Controlador de Windows (con cuadro: no imprime sola)")        # imprime por controlador pero Chrome pide confirmar cada hoja
+    assert _route(client, ev, u["x1"], u["y1"]).status_code == 200
+    _as(client, "x1")
+    job = _job(client, ev, "1002").json()
+    _as(client, "y1")
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc").json()["job"] is None     # el sondeo no reclama: el trabajo sigue en el servidor
+    hb = _beat_as(client, ev, "pc", False, "Controlador de Windows (con cuadro: no imprime sola)")
+    assert hb["waiting"] == 1 and hb["claimed"] == 0 and hb["poll"] is False
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc&manual=1").json()["job"]["id"] == job["id"]      # «Imprimir pendientes»: la persona está ahí
+    assert _beat_as(client, ev, "pc", False)["claimed"] == 1
+
+
+def test_a_claimed_job_that_does_not_finish_in_60_seconds_goes_back_to_the_queue_and_a_late_result_is_still_accepted(client, setup, db):
+    ev, u = setup
+    _ready(client, ev, u)
+    _as(client, "x1")
+    job = _job(client, ev, "1001").json()
+    _as(client, "y1")
+    got = client.get(f"/api/events/{ev.id}/print-jobs-next").json()["job"]
+    assert got["id"] == job["id"] and client.get(f"/api/events/{ev.id}/print-jobs-next").json()["job"] is None        # reclamado
+    row = db.get(PrintJob, job["id"]); row.sent_at = utcnow() - timedelta(seconds=61); db.commit()
+    again = client.get(f"/api/events/{ev.id}/print-jobs-next").json()["job"]                         # arrendamiento vencido: vuelve y otra ventana lo puede reclamar
+    assert again and again["id"] == job["id"]
+    db.expire_all()
+    assert client.post(f"/api/events/{ev.id}/print-jobs/{job['id']}/result", json={"ok": True}).json()["status"] == "printed"
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next").json()["job"] is None
+
+
+def test_the_station_queue_shows_pending_and_claimed_jobs_with_their_state(client, setup):
+    ev, u = setup
+    _ready(client, ev, u)
+    _as(client, "x1")
+    _job(client, ev, "1001"); _job(client, ev, "1002")
+    _as(client, "y1")
+    client.get(f"/api/events/{ev.id}/print-jobs-next")
+    rows = client.get(f"/api/events/{ev.id}/print-jobs?scope=station").json()["jobs"]
+    assert sorted(r["status"] for r in rows) == ["queued", "sent"] and all(r["requested_by"] for r in rows)

@@ -28,6 +28,7 @@ log = logging.getLogger("golden.shared_print")
 router = APIRouter()
 
 PRINT_JOB_TTL = timedelta(minutes=5)
+CLAIM_LEASE = timedelta(seconds=int(os.getenv("PRINT_CLAIM_LEASE_SECONDS", "60")))    # un trabajo reclamado que no termina en este tiempo vuelve a la cola
 DEDUPE_WINDOW = timedelta(seconds=int(os.getenv("PRINT_DEDUPE_SECONDS", "30")))      # una persona = una impresión por ventana (salvo reimpresión explícita)
 ONLINE_WINDOW = timedelta(seconds=30)          # sin señal en 30 s = desconectado
 WARN_PER_PRINTER = 6                           # orden del 22-oct-2026: sin tope duro; con más de 6 usuarios en una impresora, aviso suave en Parámetros
@@ -88,11 +89,23 @@ def _name(staff: Optional[StaffUser]) -> str:
 def _expire(db: Session, event_id: int) -> None:
     """Lo que no se imprimió a tiempo queda «expired» (nunca se imprime después por su cuenta)."""
     cut = utcnow() - PRINT_JOB_TTL
+    back = (db.query(PrintJob).filter(PrintJob.event_id == event_id, PrintJob.status == "sent", PrintJob.sent_at < utcnow() - CLAIM_LEASE, PrintJob.created_at >= cut)
+            .update({PrintJob.status: "queued", PrintJob.sent_at: None}, synchronize_session=False))       # arrendamiento vencido: el equipo que lo reclamó no terminó (se cerró, se colgó el cuadro...)
+    if back:
+        db.commit()
+        log.warning("impresión compartida: %s trabajo(s) reclamados volvieron a la cola en el evento %s", back, event_id)
     n = (db.query(PrintJob).filter(PrintJob.event_id == event_id, PrintJob.status.in_(("queued", "sent")), PrintJob.created_at < cut)
          .update({PrintJob.status: "expired", PrintJob.done_at: utcnow()}, synchronize_session=False))
     if n:
         db.commit()
         log.warning("impresión compartida: %s trabajo(s) caducaron sin imprimirse en el evento %s", n, event_id)
+
+
+def _station_counts(db: Session, event_id: int, staff_id: int) -> dict:
+    """Lo que espera en el puesto de esta cuenta: pendientes (en cola) y reclamados (enviados a una ventana que aún no confirma)."""
+    rows = db.query(PrintJob.status).filter(PrintJob.event_id == event_id, PrintJob.printer_staff_id == staff_id, PrintJob.status.in_(("queued", "sent")),
+                                            PrintJob.created_at >= utcnow() - PRINT_JOB_TTL).all()
+    return {"waiting": sum(1 for (st,) in rows if st == "queued"), "claimed": sum(1 for (st,) in rows if st == "sent")}
 
 
 def _route(db: Session, event_id: int, staff_id: int) -> Optional[int]:
@@ -130,21 +143,26 @@ def heartbeat(event_id: int, data: HeartbeatIn, db: Session = Depends(get_db), s
     event = _enabled_event(event_id, db, staff)
     now = utcnow()
     dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff.id).first()
-    if dev is None:
-        dev = PrintDevice(event_id=event.id, staff_user_id=staff.id, device_id=_clip(data.device_id, 64) or "?", last_seen_at=now)
-        db.add(dev)
-    dev.device_id = _clip(data.device_id, 64) or dev.device_id
-    dev.platform, dev.browser = _clip(data.platform, 40), _clip(data.browser, 40)
-    if data.printer_connected is not None or dev.printer_connected is None:
-        dev.printer_connected, dev.printer_name = bool(data.printer_connected), _clip(data.printer_name, 80)
-    dev.last_seen_at = now
+    device_id = _clip(data.device_id, 64) or "?"
+    # Un equipo por cuenta (sin columnas nuevas): el que PUEDE IMPRIMIR SOLO manda. Otra sesión de la misma cuenta (p. ej. el celular del admin) que no tiene impresora NO pisa su estado ni su señal.
+    held = dev is not None and dev.device_id != device_id and _printer_ready(dev, now) and not data.printer_connected
+    if not held:
+        if dev is None:
+            dev = PrintDevice(event_id=event.id, staff_user_id=staff.id, device_id=device_id, last_seen_at=now)
+            db.add(dev)
+        dev.device_id = device_id
+        dev.platform, dev.browser = _clip(data.platform, 40), _clip(data.browser, 40)
+        if data.printer_connected is not None or dev.printer_connected is None:
+            dev.printer_connected, dev.printer_name = bool(data.printer_connected), _clip(data.printer_name, 80)
+        dev.last_seen_at = now
     db.commit()
     printer_id = _route(db, event.id, staff.id)
     printer = db.get(StaffUser, printer_id) if printer_id else None
     printer_dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=printer_id).first() if printer_id else None
     serving = db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == staff.id).count()
     return {"enabled": True, "mode": "shared" if printer_id else "self", "printer_name": _name(printer), "printer_ready": _printer_ready(printer_dev, now),
-            "serving": serving, "poll": bool(serving and dev.printer_connected)}
+            "serving": serving, "poll": bool(serving and dev.printer_connected and dev.device_id == device_id and not held),
+            "holder": bool(dev.device_id == device_id and not held), **_station_counts(db, event.id, staff.id)}
 
 
 # ------------------------------------------------------------------------------------------------ X: pedir y seguir una impresión
@@ -217,10 +235,15 @@ def job_status(event_id: int, job_id: int, db: Session = Depends(get_db), staff:
 
 
 @router.get("/events/{event_id}/print-jobs")
-def my_jobs(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+def my_jobs(event_id: int, scope: str = "mine", db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
     """La cola visible de quien pidió: lo que no se imprimió en las últimas 4 horas (en cola, enviado, fallido o caducado), con la persona para reimprimir."""
     event = _enabled_event(event_id, db, staff)
     _expire(db, event.id)
+    if scope == "station":                                     # la Cola del PUESTO: lo que espera aquí (en cola) o ya fue reclamado y no confirma
+        srows = (db.query(PrintJob, EventAttendee).join(EventAttendee, EventAttendee.id == PrintJob.attendee_id)
+                 .filter(PrintJob.event_id == event.id, PrintJob.printer_staff_id == staff.id, PrintJob.status.in_(("queued", "sent")), PrintJob.created_at >= utcnow() - PRINT_JOB_TTL)
+                 .order_by(PrintJob.id).limit(50).all())
+        return {"jobs": [{**_job_out(db, j), "user_id": a.user_id, "requested_by": _name(db.get(StaffUser, j.requested_by_staff_id)) if j.requested_by_staff_id else ""} for j, a in srows]}
     rows = (db.query(PrintJob, EventAttendee).join(EventAttendee, EventAttendee.id == PrintJob.attendee_id)
             .filter(PrintJob.event_id == event.id, PrintJob.requested_by_staff_id == staff.id, PrintJob.status != "printed",
                     PrintJob.created_at >= utcnow() - timedelta(hours=4))
@@ -232,11 +255,19 @@ def my_jobs(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Dep
 
 # ------------------------------------------------------------------------------------------------ Y: recibir e imprimir
 @router.get("/events/{event_id}/print-jobs-next")
-def next_job(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+def next_job(event_id: int, device_id: Optional[str] = None, manual: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
     """El siguiente trabajo para el equipo de este usuario: se RESERVA de forma atómica (queued → sent). Un trabajo reservado no se vuelve a entregar."""
     event = _enabled_event(event_id, db, staff)
     now = utcnow()
-    db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff.id).update({PrintDevice.last_seen_at: now}, synchronize_session=False)
+    dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff.id).first()
+    # Solo reclama la ventana que PUEDE IMPRIMIR SOLA (la que el servidor tiene como dueña de la impresora, sin cuadro de diálogo). Una ventana con cuadro de diálogo, o la sesión
+    # del celular de la misma cuenta, NUNCA reclaman por sondeo: `manual` es el clic de «Imprimir pendientes» (la persona está ahí para confirmar el cuadro).
+    if not manual and (dev is None or not dev.printer_connected or (device_id and dev.device_id != _clip(device_id, 64))):
+        _expire(db, event.id)
+        db.commit()
+        return {"job": None}
+    if dev is not None and (manual or not device_id or dev.device_id == _clip(device_id, 64)):
+        dev.last_seen_at = now
     _expire(db, event.id)
     job = (db.query(PrintJob).filter(PrintJob.event_id == event.id, PrintJob.printer_staff_id == staff.id, PrintJob.status == "queued",
                                      PrintJob.created_at >= now - PRINT_JOB_TTL)
@@ -262,7 +293,7 @@ def job_result(event_id: int, job_id: int, data: ResultIn, db: Session = Depends
     job = db.query(PrintJob).filter(PrintJob.id == job_id, PrintJob.event_id == event.id).with_for_update().first()
     if job is None or job.printer_staff_id != staff.id:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado.")
-    if job.status != "sent":                                   # ya confirmado (o caducado): no cambia, idempotente
+    if job.status not in ("sent", "queued"):                   # ya confirmado (o caducado): no cambia, idempotente. «queued» = el arrendamiento venció pero el equipo sí terminó: se acepta
         db.commit()
         return _job_out(db, job)
     job.status = "printed" if data.ok else "failed"
@@ -336,8 +367,8 @@ def set_route(event_id: int, data: RouteIn, db: Session = Depends(get_db), staff
     if y is None or not y.is_active:
         raise HTTPException(status_code=404, detail="El equipo elegido no existe.")
     get_event_for_staff(event.id, db, y)                       # Y también debe ser de este evento
-    if not _printer_ready(db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=y.id).first()):
-        raise HTTPException(status_code=409, detail="Ese equipo no está conectado con la impresora en este momento: no se puede elegir.")
+    if not _online(db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=y.id).first()):     # basta que el equipo esté activo: un computador con cuadro de diálogo también atiende (con «Imprimir pendientes»)
+        raise HTTPException(status_code=409, detail="Ese equipo no está activo en este momento (ábrelo en el Registro): no se puede elegir.")
     if _route(db, event.id, y.id):
         raise HTTPException(status_code=409, detail="Ese usuario imprime en otro equipo: no puede atender a otros.")
     if db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == x.id).first():
