@@ -58,6 +58,7 @@
   bar.setAttribute('aria-live', 'polite');
   bar.innerHTML = '<span class="sp-dot" aria-hidden="true"></span><span class="sp-text">Impresión: comprobando…</span>' +
     '<button type="button" class="sp-btn" id="spConnect">🔌 Conectar impresora</button>' +
+    '<div id="spHostNote" hidden><b>Este computador imprime solo si abres la app con el lanzador.</b> Sin él, Chrome pide confirmar cada impresión: lo que llega de otros equipos espera en «Imprimir pendientes». <button type="button" class="sp-btn" id="spHostLauncher">⬇️ Descargar lanzador</button></div>' +
     '<button type="button" class="sp-btn" id="spPending" hidden>🖨️ Imprimir pendientes</button>' +
     '<button type="button" class="sp-btn" id="spAlways" hidden>Usar siempre este modo en este equipo</button>' +
     '<a class="sp-btn" id="spGuide" href="/static/ayuda/impresion-windows.html" target="_blank" rel="noopener" hidden style="text-decoration:none;display:inline-flex;align-items:center">Ver guía</a>' +
@@ -72,6 +73,9 @@
     '#sharedPrintBar.ok .sp-dot{background:#1e7e34}#sharedPrintBar.warn .sp-dot{background:#b26a00}#sharedPrintBar.bad .sp-dot{background:#a12631}#sharedPrintBar.info .sp-dot{background:#2b6cb0}',
     '#sharedPrintBar.bad{border-color:#a12631;background:#fdeeee}#sharedPrintBar.warn{border-color:#b26a00;background:#fff6e5}',
     '#sharedPrintBar .sp-text{flex:1 1 220px;font-weight:600}',
+    '#sharedPrintBar #spHostNote{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:#fff6e5;border:2px solid #b26a00;font-size:0.92rem}',
+    '#sharedPrintBar #spHostNote[hidden],#sharedPrintBar #spPending[hidden]{display:none}',
+    '#sharedPrintBar #spPending{min-height:64px;padding:8px 22px;font-size:1.3rem;background:#b26a00;border-color:#7a4a00;color:#fff}',
     '#sharedPrintBar .sp-btn{min-height:44px;padding:6px 14px;border-radius:10px;border:2px solid #0a0e2e;background:#fff;color:#0a0e2e;font-weight:700;cursor:pointer}',
     '#spQueuePanel{position:fixed;inset:auto 12px 12px 12px;max-height:60vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.25)}',
     '#spPrefsPanel{position:fixed;inset:auto 12px 12px 12px;max-height:80vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:14px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-size:1rem}',
@@ -142,6 +146,7 @@
     bar.className = kind;
     bar.querySelector('#spConnect').hidden = usb.ok || usb.busy || route.mode === 'shared' || driverOn() || !(window.QLUsb && QLUsb.supported());
     bar.querySelector('#spQueue').hidden = !SHARED;
+    bar.querySelector('#spHostNote').hidden = !(SHARED && driverOn() && !kiosk);             // este computador puede ser la impresora de otros: sin lanzador, Chrome pide confirmar cada impresión
     bar.querySelector('#spPending').hidden = !pendingJobs.length;
     bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${pendingJobs.length})`;
     bar.querySelector('#spAlways').hidden = !(printMode === 'auto' && drvFallback);
@@ -297,11 +302,22 @@
 
   /* Parámetros con los que se imprime un pedido: los de ESTE equipo si lo imprime él mismo; los que mandó el equipo que lo pidió si es un pedido compartido (24-oct-2026: antes el
      equipo con la impresora los resolvía con SUS valores y se perdían los del que pidió). Un pedido viejo sin parámetros usa los del evento (nunca los locales de quien lo imprime). */
+  /* 25-oct-2026: la FORMA de la etiqueta (giro, escala, recorte, cinta, largo) sale IGUAL desde cualquier equipo: la fijan el evento y lo que el equipo que IMPRIME tenga a propósito (lo mismo
+     que usa cuando imprime sus propias escarapelas), nunca lo que tenía guardado el celular que la pidió (un giro de prueba en el celular encogía la etiqueta: otra escala con el mismo
+     salto de líneas). Del equipo que pidió solo viajan los parámetros físicos de la impresión (corte, margen de avance, espejo, invertir). `diff`: qué campos de forma traía el pedido
+     distintos de los aplicados (queda en la Cola). */
+  const SHAPE_FIELDS = ['rotation', 'crop', 'cropMarginMm', 'cropMode', 'tapeWidth', 'tapeType', 'lengthMm'];
   function prefsForJob(job) {
+    const host = resolved();
     if (job && job.prefs && typeof job.prefs === 'object') {
-      const r = QLUsb.resolvePrefs(null, job.prefs);
-      Object.keys(r.source).forEach((k) => { if (r.source[k] === 'evento') r.source[k] = 'origen'; });
-      return r;
+      const asked = QLUsb.resolvePrefs(null, job.prefs);
+      const prefs = Object.assign({}, asked.prefs), source = {}, diff = [];
+      Object.keys(asked.source).forEach((k) => { source[k] = asked.source[k] === 'evento' ? 'origen' : asked.source[k]; });
+      SHAPE_FIELDS.forEach((f) => {
+        if (job.prefs[f] !== undefined && job.prefs[f] !== null && String(job.prefs[f]) !== String(host.prefs[f])) diff.push(f);
+        prefs[f] = host.prefs[f]; source[f] = host.source[f];
+      });
+      return { prefs, source, diff };
     }
     return QLUsb.resolvePrefs(null, eventPrefs);
   }
@@ -361,10 +377,12 @@
   async function runJob(job) {
     let ok = false;
     let error = '';
-    try { await printLabel(job.user_id, prefsForJob(job)); ok = true; } catch (e) { error = e && e.message ? e.message : String(e); }
+    const used = prefsForJob(job);
+    try { await printLabel(job.user_id, used); ok = true; } catch (e) { error = e && e.message ? e.message : String(e); }
+    const applied = (lastPrint ? lastPrint.text : QLUsb.describePrefs(used.prefs, used.source)) + (used.diff && used.diff.length ? ' · el pedido traía otra forma (' + used.diff.join(', ') + '): se usó la de este equipo' : '');
     for (let i = 0; i < 3; i++) {
       try {
-        const r = await fetch(`/api/events/${EID}/print-jobs/${job.id}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok, error }) });
+        const r = await fetch(`/api/events/${EID}/print-jobs/${job.id}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok, error, applied }) });
         if (r.ok) break;
       } catch (e) { await sleep(1000); }
     }
@@ -447,10 +465,10 @@
       const data = res.ok ? await res.json() : { jobs: [] };
       if (!data.jobs.length) { body.textContent = 'No hay escarapelas pendientes.'; return; }
       const table = document.createElement('table');
-      table.innerHTML = '<tr><th>Cédula</th><th>Estado</th><th>Equipo</th><th></th></tr>';
+      table.innerHTML = '<tr><th>Cédula</th><th>Estado</th><th>Equipo</th><th>Parámetros aplicados</th><th></th></tr>';
       data.jobs.forEach((j) => {
         const tr = document.createElement('tr');
-        [j.user_id, (STATUS[j.status] || j.status) + (j.printed_later ? ' (ya se imprimió después)' : ''), j.printer_name].forEach((t) => { const td = document.createElement('td'); td.textContent = t || ''; tr.appendChild(td); });
+        [j.user_id, (STATUS[j.status] || j.status) + (j.printed_later ? ' (ya se imprimió después)' : ''), j.printer_name, j.applied || (j.status === 'queued' || j.status === 'sent' ? 'Se fijan al imprimir' : '')].forEach((t) => { const td = document.createElement('td'); td.textContent = t || ''; tr.appendChild(td); });
         const td = document.createElement('td');
         if (j.status !== 'queued' && j.status !== 'sent') {
           const b = document.createElement('button'); b.type = 'button'; b.className = 'sp-btn'; b.textContent = 'Reimprimir'; b.dataset.reprint = j.user_id; td.appendChild(b);
@@ -605,7 +623,7 @@
   }, true);
 
   /* ------------------------------------------------------------------ «⚙️ Impresión»: valores del evento + lo que este equipo sobrescribe */
-  const TAPE_FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm'];
+  const TAPE_FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm', 'cropMode'];
   let previewTemplate = null;
   async function loadPreviewTemplate(fresh) {                 // la vista previa también usa la vigente: se vuelve a pedir cada vez que se abre el panel
     if (previewTemplate && !fresh) return previewTemplate;
@@ -638,7 +656,7 @@
       `<label>Cinta <select data-p="tapeWidth">${tapes.map((t) => `<option value="${t}">${t} mm</option>`).join('')}</select> <select data-p="tapeType"><option value="continuous">continua</option><option value="diecut">troquelada (largo fijo)</option></select></label>` +
       '<label data-row="length">Largo de la etiqueta <input type="number" data-p="lengthMm" min="10" max="1000" step="1"> mm</label>' +
       '<label>Giro <select data-p="rotation"><option value="auto">Automático</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>' +
-      '<label data-row="crop"><input type="checkbox" data-p="crop"> Recortar al contenido, con margen <input type="number" data-p="cropMarginMm" min="0" max="30" step="0.5"> mm</label>' +
+      '<label data-row="crop"><input type="checkbox" data-p="crop"> Recortar al contenido, con margen mínimo <input type="number" data-p="cropMarginMm" min="0" max="30" step="0.5"> mm · <select data-p="cropMode"><option value="symmetric">simétrico (igual que la vista previa)</option><option value="min">mínimo</option></select></label>' +
       '<label><input type="checkbox" data-p="cut"> Cortar la cinta al final de cada etiqueta</label>' +
       '<label>Margen de avance <input type="number" data-p="feedMm" min="0" max="10" step="0.5"> mm</label>' +
       '<label><input type="checkbox" data-p="mirror"> Espejo</label>' +
@@ -663,7 +681,7 @@
         if (el.type === 'checkbox') v[f] = el.checked;
         else if (f === 'rotation') v[f] = el.value === 'auto' ? 'auto' : Number(el.value);
         else if (f === 'tapeWidth') v[f] = Number(el.value);
-        else if (f === 'tapeType') v[f] = el.value;
+        else if (f === 'tapeType' || f === 'cropMode') v[f] = el.value;
         else v[f] = el.value === '' ? null : Number(el.value);
       });
       return v;
@@ -745,16 +763,18 @@
       q('[data-dx]').addEventListener('change', saveOffsets); q('[data-dy]').addEventListener('change', saveOffsets);
       q('[data-pagew]').value = DP.getPageWidthMm(storage()) || '';
       q('[data-pagew]').addEventListener('change', (e) => { DP.setPageWidthMm(storage(), parseFloat(e.target.value)); toast('Ancho de página guardado en este equipo.', 'success'); });
-      q('[data-launcher]').addEventListener('click', () => {                  // un archivo .bat que se descarga (no se ejecuta solo ni instala nada)
-        const blob = new Blob([DP.launcherBat(appUrl)], { type: 'application/octet-stream' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'Imprimir-GoldenWeb.bat';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-        toast('Lanzador descargado. Ábrelo desde Descargas (si Windows avisa «protegió su PC»: Más información → Ejecutar de todos modos).', 'success');
-      });
+      q('[data-launcher]').addEventListener('click', downloadLauncher);
     }
     document.body.appendChild(panel);
+  }
+
+  function downloadLauncher() {                    // un archivo .bat que se descarga (no se ejecuta solo ni instala nada)
+    const blob = new Blob([DP.launcherBat(window.location ? window.location.origin + window.location.pathname : '')], { type: 'application/octet-stream' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'Imprimir-GoldenWeb.bat';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('Lanzador descargado. Ábrelo desde Descargas (si Windows avisa «protegió su PC»: Más información → Ejecutar de todos modos).', 'success');
   }
 
   /* Etiqueta de prueba: horizontal (80×50 mm), asimétrica a propósito: la barra negra a la izquierda y la flecha muestran el giro, el espejo y el recorte.
@@ -790,6 +810,7 @@
 
   bar.querySelector('#spConnect').addEventListener('click', () => connectUsb(true));
   bar.querySelector('#spPending').addEventListener('click', () => printPending());
+  bar.querySelector('#spHostLauncher').addEventListener('click', downloadLauncher);
   bar.querySelector('#spAlways').addEventListener('click', () => { setPrintMode('driver'); toast('Este equipo imprimirá siempre por el controlador de Windows.', 'success'); });
   bar.querySelector('#spPrefs').addEventListener('click', showPrefs);
   bar.querySelector('#spQueue').addEventListener('click', showQueue);

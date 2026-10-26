@@ -331,6 +331,30 @@ def test_the_print_check_is_closed_when_the_switch_is_off(client, factory, db):
     assert client.get(f"/api/events/{ev.id}/print-check/1001").status_code == 409
 
 
+def test_the_queue_shows_the_parameters_applied_to_each_job_and_a_phone_job_keeps_only_physical_ones(client, setup):
+    ev, u = setup
+    _ready(client, ev, u)
+    _as(client, "x1")
+    celular = {"rotation": 0, "crop": False, "cut": False, "feedMm": 4, "mirror": True}              # lo que traería un celular con valores de prueba
+    job = client.post(f"/api/events/{ev.id}/print-jobs", json={"user_id": "1001", "request_id": str(uuid.uuid4()), "prefs": celular}).json()
+    _as(client, "y1")
+    got = client.get(f"/api/events/{ev.id}/print-jobs-next").json()["job"]
+    assert got["prefs"]["rotation"] == 0 and got["prefs"]["mirror"] is True                         # el pedido viaja tal cual; QUIEN IMPRIME decide la forma (shared-print.js prefsForJob)
+    applied = "Cinta 62 mm continua · giro automático (90°) · recorte simétrico (mín. 3 mm) · corte no · margen 4 mm · el pedido traía otra forma (rotation, crop): se usó la de este equipo"
+    client.post(f"/api/events/{ev.id}/print-jobs/{job['id']}/result", json={"ok": False, "error": "sin papel", "applied": applied})
+    _as(client, "x1")
+    row = [j for j in client.get(f"/api/events/{ev.id}/print-jobs").json()["jobs"] if j["id"] == job["id"]][0]
+    assert row["applied"] == applied and row["status"] == "failed"
+    assert client.get(f"/api/events/{ev.id}/print-jobs/{job['id']}").json()["applied"] == applied
+
+
+def test_the_computer_that_prints_for_others_without_the_launcher_is_told_so_in_the_bar():
+    import pathlib
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert "Este computador imprime solo si abres la app con el lanzador." in sp and 'id="spHostLauncher"' in sp and "(SHARED && driverOn() && !kiosk)" in sp
+    assert "#sharedPrintBar #spPending{min-height:64px" in sp and "Imprimir pendientes (${pendingJobs.length})" in sp          # grande y con el contador
+
+
 def test_the_driver_print_bar_loads_with_and_without_shared_print_but_not_for_clients(client, factory, db):
     factory.staff("coordinador", "coord")
     on = factory.event("en_proceso"); on.shared_print_enabled = True

@@ -125,11 +125,15 @@
     const cx = (Number(e.x) || 0) + w / 2, cy = (Number(e.y) || 0) + h / 2;
     return { left: cx - bw / 2, right: cx + bw / 2, top: cy - bh / 2, bottom: cy + bh / 2 };
   }
-  /* Espacio libre debajo de un texto (mm): hasta el siguiente elemento que se le cruce por debajo o hasta el borde de la etiqueta. Solo crece un texto SIN giro. */
+  /* Espacio libre debajo de un texto (mm): hasta el siguiente elemento que se le cruce por debajo o hasta el borde de la etiqueta menos un margen (el de arriba del primer elemento, mínimo 3 mm). Solo crece un texto SIN giro. */
+  const MIN_EDGE_MM = 3;
   function freeHeightMm(el, template) {
     if (Number(el.rotation) % 360) return Number(el.height) || 0;
     const own = boundsOf(el);
-    let bottom = Number(template.height_mm) || (own.bottom);
+    const els = template.elements || [];
+    const topMargin = els.length ? Math.max(0, Math.min.apply(null, els.map((o) => boundsOf(o).top))) : 0;
+    const edge = Math.max(MIN_EDGE_MM, topMargin);                                       // crecer nunca pega el texto al borde: deja el margen de arriba del primer elemento (mínimo 3 mm)
+    let bottom = (Number(template.height_mm) || (own.bottom + edge)) - edge;
     (template.elements || []).forEach((o) => {
       if (o === el || o.id === el.id) return;
       const b = boundsOf(o);

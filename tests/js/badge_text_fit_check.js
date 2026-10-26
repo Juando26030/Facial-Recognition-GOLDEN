@@ -133,6 +133,11 @@ assert.strictEqual(R.MIN_RATIO, 0.6);
   const tapado = tpl([T("n", "first_name", 4, 8, 50.9, 12, 24), Object.assign({}, MESA, { y: 22 })]);
   const pn = R.planText(tapado, { first_name: "MARÍA DE LOS ÁNGELES RODRÍGUEZ VILLAMIZAR" }).get("n");
   assert.ok(pn.heightPx <= (22 - 0.5 - 8) * PXMM2 + 0.5, "no invade al de abajo");
+  // crecer hacia abajo deja un margen al borde de la plantilla (el de arriba del primer elemento, mínimo 3 mm): nunca pega el texto al borde
+  const abajo = R.planText(tpl([T("n", "first_name", 4, 6, 50.9, 12, 24), T("o", "opt_1", 4, 70, 50.9, 12, 12)]), { first_name: "A", opt_1: "UNA EMPRESA CON UN NOMBRE MUY LARGO QUE OCUPA MUCHAS LINEAS DE TEXTO PARA PROBAR" }).get("o");
+  assert.ok(70 + abajo.heightPx / PXMM2 <= 100 - 6 + 0.01, "deja al menos el margen de arriba (6 mm) al borde: llega a " + (70 + abajo.heightPx / PXMM2));
+  const pocoArriba = R.planText(tpl([T("o", "opt_1", 4, 1, 50.9, 8, 12)]), { opt_1: "UNA EMPRESA CON UN NOMBRE MUY LARGO QUE OCUPA MUCHAS LINEAS DE TEXTO PARA PROBAR UNA Y OTRA VEZ" }).get("o");
+  assert.ok(1 + pocoArriba.heightPx / PXMM2 <= 100 - 3 + 0.01, "con poco margen arriba, el mínimo es 3 mm");
   const girado = R.planText(tpl([T("n", "first_name", 4, 8, 50.9, 12, 24, { rotation: 90 })]), { first_name: "MARÍA DE LOS ÁNGELES RODRÍGUEZ" }).get("n");
   assert.ok(!girado.grown, "un texto girado no crece");
   // por defecto: los variables crecen; los fijos se reducen; se puede elegir

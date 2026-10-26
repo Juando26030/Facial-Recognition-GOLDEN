@@ -31,11 +31,11 @@
      Orden: lo que el equipo fijó a mano > lo del evento > el valor de fábrica. `source` dice de dónde salió cada valor (para el indicador «impreso con…»); «Restablecer» borra lo del equipo.
        tapeWidth/tapeType: la cinta puesta (ancho en mm de QLUsb.MEDIA; «continuous» o «diecut» = troquelada con largo fijo `lengthMm`).
        rotation: «auto» (el lado largo de la etiqueta corre a lo largo de la cinta) | 0 | 90 | 180 | 270.  crop/cropMarginMm: recortar al contenido (última fila con tinta + margen). */
-  var PREF_DEFAULTS = { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 };
+  var PREF_DEFAULTS = { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3, cropMode: "symmetric" };
   /* «Espejo» cambió de significado el 24-oct-2026 (ver packRow): la clave del equipo pasó a `ql_mirror_v2` y la vieja `ql_mirror` se IGNORA (quien la activó para compensar el error
      quedaría ahora con la etiqueta reflejada). `dropLegacyPrefs` la borra. */
   var LEGACY_KEYS = ["ql_mirror"];
-  var PREF_KEYS = { cut: "ql_cut", feedMm: "ql_feed_mm", lengthMm: "ql_length_mm", mirror: "ql_mirror_v2", invert: "ql_invert", tapeWidth: "ql_tape_width", tapeType: "ql_tape_type", rotation: "ql_rotation", crop: "ql_crop", cropMarginMm: "ql_crop_margin_mm" };
+  var PREF_KEYS = { cut: "ql_cut", feedMm: "ql_feed_mm", lengthMm: "ql_length_mm", mirror: "ql_mirror_v2", invert: "ql_invert", tapeWidth: "ql_tape_width", tapeType: "ql_tape_type", rotation: "ql_rotation", crop: "ql_crop", cropMarginMm: "ql_crop_margin_mm", cropMode: "ql_crop_mode" };
   function _num(v, lo, hi) { var n = parseFloat(v); return isFinite(n) && n >= lo && n <= hi ? n : null; }
   function _clean(field, raw) {            // valor válido o undefined
     if (raw === null || raw === undefined || raw === "") return undefined;
@@ -45,6 +45,7 @@
       case "cropMarginMm": { var c = _num(raw, 0, 30); return c === null ? undefined : c; }
       case "lengthMm": { var l = _num(raw, 10, 1000); return l === null ? undefined : l; }
       case "tapeWidth": { var t = _num(raw, 1, 1000); return t !== null && MEDIA[Math.round(t)] ? Math.round(t) : undefined; }
+      case "cropMode": return raw === "symmetric" || raw === "min" ? raw : undefined;
       case "tapeType": return raw === "continuous" || raw === "diecut" ? raw : undefined;
       case "rotation": { if (raw === "auto") return "auto"; var r = _num(raw, 0, 270); return r !== null && r % 90 === 0 ? r : undefined; }
     }
@@ -66,7 +67,7 @@
   function savePrefs(storage, p) {
     function set(k, v) { try { if (v === null || v === "") storage.removeItem(k); else storage.setItem(k, String(v)); } catch (e) { /* sin almacenamiento: vale para esta sesión */ } }
     ["cut", "mirror", "invert", "crop"].forEach(function (f) { if (f in p) set(PREF_KEYS[f], p[f] ? "1" : "0"); });
-    ["feedMm", "cropMarginMm", "tapeWidth", "tapeType", "rotation"].forEach(function (f) { if (f in p) set(PREF_KEYS[f], p[f]); });
+    ["feedMm", "cropMarginMm", "tapeWidth", "tapeType", "rotation", "cropMode"].forEach(function (f) { if (f in p) set(PREF_KEYS[f], p[f]); });
     if ("lengthMm" in p) set(PREF_KEYS.lengthMm, p.lengthMm || "");
   }
   function clearPrefs(storage) {                     // «Restablecer»: el equipo vuelve a usar los valores del evento
@@ -81,7 +82,7 @@
     var from = src.origen ? "el equipo que la pidió" : src.equipo && src.evento ? "equipo y evento" : src.equipo ? "este equipo" : src.evento ? "el evento" : "valores de fábrica";
     var rot = layoutInfo ? (prefs.rotation === "auto" ? "giro automático (" + layoutInfo.rotation + "°)" : "giro " + layoutInfo.rotation + "°") : (prefs.rotation === "auto" ? "giro automático" : "giro " + prefs.rotation + "°");
     return "Cinta " + prefs.tapeWidth + " mm " + (prefs.tapeType === "diecut" ? "troquelada de " + prefs.lengthMm + " mm" : "continua") + " · " + rot +
-      (prefs.tapeType === "diecut" ? "" : " · " + (prefs.crop ? "recorte al contenido (+" + prefs.cropMarginMm + " mm)" : "alto de la plantilla")) + " · corte " + (prefs.cut ? "sí" : "no") + " · margen " + prefs.feedMm + " mm · según " + from;
+      (prefs.tapeType === "diecut" ? "" : " · " + (prefs.crop ? "recorte " + (prefs.cropMode === "min" ? "mínimo" : "simétrico") + " (mín. " + prefs.cropMarginMm + " mm)" : "alto de la plantilla")) + " · corte " + (prefs.cut ? "sí" : "no") + " · margen " + prefs.feedMm + " mm · según " + from;
   }
 
   /* ---- geometría pura de la etiqueta (sin navegador; se prueba en tests/js/ql_usb_check.js) ---- */
@@ -117,11 +118,21 @@
     for (var y = h - 1; y >= 0; y--) { var base = y * w; for (var x = 0; x < w; x++) if (bm[base + x]) return y; }
     return -1;
   }
-  function cropToContent(bm, w, h, marginDots) {      // conserva hasta la última fila con tinta + margen (nunca más que lo que había; si no hay tinta, no recorta)
+  function firstInkRow(bm, w, h) {
+    for (var y = 0; y < h; y++) { var base = y * w; for (var x = 0; x < w; x++) if (bm[base + x]) return y; }
+    return -1;
+  }
+  /* Recorte al final. «min»: última fila con tinta + margen (si hay más blanco antes que después, el contenido queda corrido hacia el final). «symmetric» (por defecto, 25-oct-2026): el blanco
+     de ATRÁS iguala al de ADELANTE (y nunca menos que el margen, sin agregar papel por eso), así lo impreso coincide con la vista previa del diseñador; si hace falta, se agrega blanco. Sin tinta, no recorta. */
+  function cropToContent(bm, w, h, marginDots, mode) {
     var last = lastInkRow(bm, w, h);
     if (last < 0) return { bitmap: bm, h: h };
-    var nh = Math.min(h, last + 1 + Math.max(0, Math.round(marginDots)));
-    return nh === h ? { bitmap: bm, h: h } : { bitmap: bm.subarray(0, w * nh), h: nh };
+    var nh = Math.min(h, last + 1 + Math.max(0, Math.round(marginDots)));       // el margen nunca agrega papel
+    if (mode !== "min") nh = Math.max(nh, last + 1 + firstInkRow(bm, w, h));    // simétrico: el blanco de atrás iguala al de adelante (puede agregar blanco)
+    if (nh === h) return { bitmap: bm, h: h };
+    if (nh < h) return { bitmap: bm.subarray(0, w * nh), h: nh };
+    var out = new Uint8Array(w * nh); out.set(bm);
+    return { bitmap: out, h: nh };
   }
   function invertBitmap(bm) { var out = new Uint8Array(bm.length); for (var i = 0; i < bm.length; i++) out[i] = bm[i] ? 0 : 1; return out; }
   /* De la etiqueta ya dibujada (mapa 1 = tinta, sin invertir) al trabajo para la cinta: giro, centrado, recorte (solo continua) e invertir. Devuelve {bitmap, height, rotation, cropped}. */
@@ -134,7 +145,7 @@
       fixed.set(bitmap.subarray(0, Math.min(bitmap.length, fixed.length)));
       bitmap = fixed; height = want;
     } else if (prefs.crop) {
-      var c = cropToContent(bitmap, tapeDots, height, mmToDots(prefs.cropMarginMm));
+      var c = cropToContent(bitmap, tapeDots, height, mmToDots(prefs.cropMarginMm), prefs.cropMode);
       cropped = c.h !== height; bitmap = c.bitmap; height = c.h;
     } else if (prefs.lengthMm) {                                              // alto fijo manual (continua)
       var fh = mmToDots(prefs.lengthMm), fx = new Uint8Array(tapeDots * fh);

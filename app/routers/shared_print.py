@@ -53,6 +53,7 @@ class JobIn(BaseModel):
 class ResultIn(BaseModel):
     ok: bool
     error: Optional[str] = None
+    applied: Optional[str] = None   # parámetros con los que el equipo que imprime armó la etiqueta (se muestran en la Cola)
 
 
 class RouteIn(BaseModel):
@@ -112,7 +113,13 @@ def _not_registered_msg(db: Session, tenant_id: str, user_id: str) -> str:
 
 def _job_out(db: Session, job: PrintJob) -> dict:
     printer = db.get(StaffUser, job.printer_staff_id) if job.printer_staff_id else None
-    return {"id": job.id, "status": job.status, "printer_name": _name(printer), "error": job.error,
+    applied = None
+    if job.prefs_json:
+        try:
+            applied = (json.loads(job.prefs_json) or {}).get("_applied")
+        except (ValueError, AttributeError):
+            applied = None
+    return {"id": job.id, "status": job.status, "printer_name": _name(printer), "error": job.error, "applied": applied,
             "created_at": job.created_at.isoformat() + "Z", "done_at": job.done_at.isoformat() + "Z" if job.done_at else None}
 
 
@@ -261,6 +268,13 @@ def job_result(event_id: int, job_id: int, data: ResultIn, db: Session = Depends
     job.status = "printed" if data.ok else "failed"
     job.error = None if data.ok else _clip(data.error or "La impresora no respondió.", 200)
     job.done_at = utcnow()
+    applied = _clip(data.applied, 300)
+    if applied:                                                # sin columna nueva: va junto a lo pedido en prefs_json (el pedido ya se entregó; no se vuelve a leer para imprimir)
+        try:
+            asked = json.loads(job.prefs_json) if job.prefs_json else {}
+        except ValueError:
+            asked = {}
+        job.prefs_json = json.dumps({**(asked if isinstance(asked, dict) else {}), "_applied": applied})
     if data.ok:
         attendee = db.get(EventAttendee, job.attendee_id)
         if attendee is not None:                               # el conteo de impresiones de siempre (aviso de reimpresión), a nombre de quien lo pidió

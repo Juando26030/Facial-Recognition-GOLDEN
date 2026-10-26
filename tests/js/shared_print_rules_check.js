@@ -221,17 +221,17 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   BP.maybeAutoPrint('1010'); await new Promise((r) => setTimeout(r, 40));                       // la autoimpresión pasa por el mismo despachador: también los lleva
   assert.ok(bodies.every((b) => b.prefs && b.prefs.feedMm === 4), 'autoimpresión y Cola con los mismos parámetros');
   global.fetch = realFetch;
-  // Y (este mismo código en el equipo con la impresora) con OTROS valores locales: el pedido manda
+  // Y (este mismo código en el equipo con la impresora) con OTROS valores locales: del pedido, los físicos (corte, avance, espejo); la forma, la del equipo que imprime
   QLUsb.clearPrefs(mem); QLUsb.savePrefs(mem, { cut: true, feedMm: 1, mirror: false, rotation: 90 });
   let r = GoldenSharedPrint.prefsForJob({ prefs: sent.prefs });
-  assert.strictEqual(r.prefs.cut, false); assert.strictEqual(r.prefs.feedMm, 4); assert.strictEqual(r.prefs.mirror, true); assert.strictEqual(r.prefs.rotation, 270);
+  assert.strictEqual(r.prefs.cut, false); assert.strictEqual(r.prefs.feedMm, 4); assert.strictEqual(r.prefs.mirror, true); assert.strictEqual(r.prefs.rotation, 90, 'la FORMA (giro) es la del equipo que imprime, no la del que pidió'); assert.deepStrictEqual(r.diff, ['rotation']);
   assert.ok(/el equipo que la pidió/.test(QLUsb.describePrefs(r.prefs, r.source)), QLUsb.describePrefs(r.prefs, r.source));
   // pedido viejo en cola (sin parámetros): los del EVENTO, nunca los locales de Y
   r = GoldenSharedPrint.prefsForJob({ id: 1, user_id: '1001' });
   assert.strictEqual(r.prefs.feedMm, 1.5); assert.strictEqual(r.prefs.cut, true); assert.strictEqual(r.prefs.rotation, 'auto');
   assert.ok(!Object.values(r.source).includes('equipo'), 'no usa nada de este equipo');
   const src = fs.readFileSync(path.resolve(__dirname, '../../static/js/shared-print.js'), 'utf8');
-  assert.ok(src.includes('printLabel(job.user_id, prefsForJob(job))'), 'Y imprime cada pedido con prefsForJob');
+  assert.ok(src.includes('printLabel(job.user_id, used)') && src.includes('const used = prefsForJob(job)'), 'Y imprime cada pedido con prefsForJob');
   mode = 'self'; QLUsb.clearPrefs(mem);
 
   // ---- 6) la impresora la tiene OTRA pestaña de este navegador (25-oct-2026): el estado sale «conectada» (se imprime a través de ella) y el latido lo anuncia; si Chrome dice «Access denied», se explica qué hacer
@@ -347,6 +347,13 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   // e) volver a «automático» y a «USB directo» se guarda y se respeta
   sp().setPrintMode('usb'); assert.strictEqual(mem.d.gw_print_mode, 'usb'); assert.ok(!sp().driverOn());
   sp().setPrintMode('auto'); assert.ok(!('gw_print_mode' in mem.d)); assert.ok(!sp().driverOn());
+  // f) la forma de la etiqueta sale IGUAL desde cualquier equipo: un trabajo con las prefs de un celular (giro 0, sin recorte) se arma con la forma del equipo que imprime; solo viajan los parámetros físicos
+  const phone = sp().prefsForJob({ prefs: { rotation: 0, crop: false, cropMarginMm: 9, tapeType: 'continuous', tapeWidth: 62, cut: false, feedMm: 4, mirror: true, invert: false } });
+  assert.strictEqual(phone.prefs.rotation, 'auto'); assert.strictEqual(phone.prefs.crop, true); assert.strictEqual(phone.prefs.cropMarginMm, 3); assert.strictEqual(phone.prefs.cropMode, 'symmetric');
+  assert.ok(phone.prefs.cut === false && phone.prefs.feedMm === 4 && phone.prefs.mirror === true, 'corte, margen de avance y espejo SÍ vienen de quien pidió');
+  assert.deepStrictEqual(phone.diff.sort(), ['crop', 'cropMarginMm', 'rotation'], 'se avisa qué traía distinto');
+  const lay = QLUsb.layout(phone.prefs, 100, 58.9); assert.strictEqual(lay.rotation, 90); assert.strictEqual(lay.scale, 1, 'la horizontal 100×58,9 no se encoge');
+  const same = sp().prefsForJob({ prefs: { rotation: 'auto', crop: true } }); assert.deepStrictEqual(same.diff, []);
   global.fetch = f2;
   console.log('shared_print_rules_check OK');
   process.exit(0);
