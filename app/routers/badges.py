@@ -306,6 +306,30 @@ def get_badge_print_data(
     }
 
 
+@router.get("/events/{event_id}/badge-longest-sample")
+def get_longest_sample(
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """La persona del evento con MÁS caracteres en nombre, apellido, entidad, cargo y campos opcionales (25-oct-2026): el diseñador la usa para probar la plantilla con el peor caso real
+    (la muestra «Juan David» esconde los textos que no caben). Mismos datos que `badge-print-data`, de UNA sola persona. `null` si el evento no tiene personas."""
+    event = get_event_for_staff(event_id, db, staff)
+    best, best_score = None, -1
+    rows = db.query(User).join(EventAttendee, (EventAttendee.user_id == User.id) & (EventAttendee.tenant_id == User.tenant_id)).filter(EventAttendee.event_id == event.id).all()
+    for u in rows:
+        extras = u.get_extras() or {}
+        score = sum(len(str(v or "")) for v in (u.first_name, u.last_name, u.entity, u.role, u.opt_1)) + sum(len(str(v or "")) for v in extras.values())
+        longest = max([len(str(u.first_name or "")), len(str(u.last_name or "")), len(str(u.entity or "")), len(str(u.role or ""))] + [len(str(v or "")) for v in extras.values()])
+        score = longest * 1000 + score                           # primero quien tenga el texto suelto más largo; luego el total
+        if score > best_score:
+            best, best_score = u, score
+    if best is None:
+        return {"sample": None}
+    return {"sample": {
+        "id": best.id, "first_name": best.first_name, "last_name": best.last_name, "role": best.role, "entity": best.entity, "phone": best.phone, "email": best.email,
+        "opt_1": best.opt_1, "extra_fields": best.get_extras(), "optional_field_labels": event.get_optional_labels(), "has_photo": False, "categories": "",
+    }}
+
+
 @router.get("/users/{user_id}/photo")
 def get_user_photo(
     user_id: str, event_id: int, db: Session = Depends(get_db),

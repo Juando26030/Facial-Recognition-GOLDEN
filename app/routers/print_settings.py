@@ -24,7 +24,7 @@ SUPPORTED_TAPES = (62,)          # anchos de cinta (mm) que sabe imprimir QLUsb.
 # del significado viejo y su «mirror» se IGNORA al leer (quien lo activó para compensar quedaría ahora con la etiqueta reflejada). Sin migración de base: es el mismo JSON.
 SETTINGS_VERSION = 2
 LEGACY_KEYS_V1 = ("mirror",)
-DEFAULTS = {"cut": True, "feedMm": 1.5, "lengthMm": None, "mirror": False, "invert": False, "tapeWidth": 62, "tapeType": "continuous", "rotation": "auto", "crop": True, "cropMarginMm": 3}
+DEFAULTS = {"cut": True, "feedMm": 1.5, "lengthMm": None, "mirror": False, "invert": False, "tapeWidth": 62, "tapeType": "continuous", "rotation": "auto", "crop": True, "cropMarginMm": 3, "cropMode": "symmetric"}
 
 
 def _num(value: Any, lo: float, hi: float, what: str) -> float:
@@ -51,6 +51,10 @@ def sanitize(data: dict) -> dict:
         out["feedMm"] = _num(data["feedMm"], 0, 50, "margen de avance (mm)")
     if data.get("cropMarginMm") is not None:
         out["cropMarginMm"] = _num(data["cropMarginMm"], 0, 30, "margen del recorte (mm)")
+    if data.get("cropMode") is not None:
+        if data["cropMode"] not in ("symmetric", "min"):
+            raise HTTPException(status_code=400, detail="El recorte es «simétrico» o «mínimo»")
+        out["cropMode"] = data["cropMode"]
     if data.get("lengthMm") not in (None, ""):
         out["lengthMm"] = _num(data["lengthMm"], 10, 1000, "largo de la etiqueta (mm)")
     if data.get("tapeWidth") is not None:
