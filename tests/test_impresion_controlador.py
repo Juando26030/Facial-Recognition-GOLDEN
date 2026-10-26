@@ -86,3 +86,14 @@ def test_the_driver_page_never_goes_over_the_useful_tape_width_and_has_the_calib
     assert "var pageW = pageWidthMm && pageWidthMm >= imgW ? pageWidthMm : imgW;" in dp and "clampOffset" in dp
     sp = _read("static/js/shared-print.js")
     assert "data-dx" in sp and "data-dy" in sp and "Calibración: desplazamiento horizontal" in sp and "DP.getOffsets(storage())" in sp
+
+
+def test_kiosk_printing_goes_as_pdf_without_chrome_headers_in_every_path():
+    """Hotfix 27-oct-2026: con --kiosk-printing Chrome dibujaba sus encabezados y pies (fecha, título, dirección, «1/1») en el margen de la impresora real. Sin cuadro, la etiqueta va como PDF
+    del tamaño exacto (el visor de PDF no los dibuja): controlador, etiqueta de prueba y compartida (drvPrint) y la ruta antigua. El PDF se prueba en tests/js/driver_print_check.js."""
+    dp = _read("static/js/driver-print.js")
+    assert "function pdfFromBitmap(" in dp and "function printPdf(" in dp and 'type: "application/pdf"' in dp and "if (opts && opts.pdf)" in dp
+    sp = _read("static/js/shared-print.js")
+    assert "const pdf = kiosk ? { bitmap: out.bitmap, width: out.tapeDots, height: out.height, mirror: p.mirror } : null;" in sp
+    legacy = _read("templates/badge_print.html")
+    assert "js/driver-print.js" in legacy and "html2canvas" in legacy and "if (kioskMode()) await printAsPdf(template, rotate, pw, ph); else window.print();" in legacy

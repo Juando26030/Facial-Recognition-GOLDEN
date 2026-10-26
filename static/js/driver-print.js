@@ -131,10 +131,84 @@
     return canvas.toDataURL("image/png");
   }
 
+  /* ---------------------------------------------------------------- la etiqueta como PDF (impresión SIN cuadro: --kiosk-printing)
+     27-oct-2026 (hotfix): con --kiosk-printing Chrome usa SU configuración por defecto, con «Encabezados y pies de página» activados; en una impresora real la zona que no puede imprimir le da
+     margen, y ahí dibuja fecha y hora, el título, la dirección y «1/1» (con el cuadro, no: la vista previa los apaga sin margen). Ni el título vacío ni el iframe del tamaño de la hoja lo evitan
+     (probado en Chrome real). El visor de PDF de Chrome NO dibuja encabezados ni pies: en modo sin cuadro la etiqueta se imprime como un PDF de UNA página del tamaño exacto de la hoja, con la
+     imagen ya compuesta en blanco y negro (1 bit por punto, sin compresión ni dependencias). Función pura: se prueba en tests/js/driver_print_check.js. */
+  function ptOfMm(mm) { return (mm * 72 / 25.4).toFixed(4); }
+  function pdfFromBitmap(bitmap, width, height, spec, mirror) {
+    var rowBytes = Math.ceil(width / 8), img = new Uint8Array(rowBytes * height), x, y;
+    img.fill(0xff);                                                             // DeviceGray de 1 bit: 1 = papel, 0 = tinta
+    for (y = 0; y < height; y++) {
+      for (x = 0; x < width; x++) {
+        if (bitmap[y * width + (mirror ? width - 1 - x : x)]) img[y * rowBytes + (x >> 3)] &= ~(0x80 >> (x & 7));
+      }
+    }
+    var pw = ptOfMm(spec.pageWidthMm), ph = ptOfMm(spec.pageHeightMm), iw = ptOfMm(spec.imageWidthMm), ih = ptOfMm(spec.imageHeightMm);
+    var ix = ptOfMm(spec.leftMm), iy = ptOfMm(spec.pageHeightMm - spec.topMm - spec.imageHeightMm);
+    var content = "q " + iw + " 0 0 " + ih + " " + ix + " " + iy + " cm /Im0 Do Q";
+    var enc = function (t) { var b = new Uint8Array(t.length); for (var i = 0; i < t.length; i++) b[i] = t.charCodeAt(i) & 0xff; return b; };
+    var parts = [], offsets = [], size = 0;
+    var push = function (b) { parts.push(b); size += b.length; };
+    var obj = function (n, head, stream) {
+      offsets[n] = size;
+      push(enc(n + " 0 obj\n" + head));
+      if (stream) { push(enc("stream\n")); push(stream); push(enc("\nendstream")); }
+      push(enc("\nendobj\n"));
+    };
+    push(enc("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"));
+    obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pw + " " + ph + "] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>");
+    obj(4, "<< /Type /XObject /Subtype /Image /Width " + width + " /Height " + height + " /ColorSpace /DeviceGray /BitsPerComponent 1 /Interpolate false /Length " + img.length + " >>\n", img);
+    var c = enc(content);
+    obj(5, "<< /Length " + c.length + " >>\n", c);
+    var xref = size, lines = ["xref", "0 6", "0000000000 65535 f "];
+    for (var n = 1; n <= 5; n++) lines.push(("0000000000" + offsets[n]).slice(-10) + " 00000 n ");
+    push(enc(lines.join("\n") + "\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n"));
+    var out = new Uint8Array(size), at = 0;
+    parts.forEach(function (b) { out.set(b, at); at += b.length; });
+    return out;
+  }
+
   var chain = Promise.resolve();
   /* Imprime la página en un iframe OCULTO (sin pestañas nuevas). Una impresión a la vez. Devuelve una promesa que se cumple cuando el navegador termina con el cuadro o con el envío
      (`afterprint`) y falla si no se pudo ni armar la página. */
+  /* Sin cuadro (`opts.pdf` = {bitmap, width, height, mirror}): el PDF de la etiqueta en un iframe fuera de la pantalla, del tamaño de la hoja; se espera a que el visor cargue y se imprime. El visor
+     no avisa al terminar (`afterprint`): con --kiosk-printing el envío es inmediato, así que se da por enviada a los `PDF_SETTLE_MS` (una impresión a la vez: los trabajos esperan en fila). */
+  function printPdf(spec, opts) {
+    return new Promise(function (resolve, reject) {
+      var doc = root.document, bytes;
+      try { bytes = pdfFromBitmap(opts.pdf.bitmap, opts.pdf.width, opts.pdf.height, spec, opts.pdf.mirror); } catch (e) { reject(e); return; }
+      var url = root.URL.createObjectURL(new root.Blob([bytes], { type: "application/pdf" }));
+      var frame = doc.createElement("iframe");
+      frame.setAttribute("aria-hidden", "true");
+      frame.style.cssText = "position:fixed;left:-10000px;top:0;border:0;width:" + spec.pageWidthMm + "mm;height:" + spec.pageHeightMm + "mm";
+      var done = false;
+      function finish(err) {
+        if (done) return; done = true;
+        setTimeout(function () { try { frame.remove(); } catch (e) { /* ya quitado */ } try { root.URL.revokeObjectURL(url); } catch (e) { /* ya liberada */ } }, 1500);
+        if (err) reject(err); else resolve({ printed: true, pdf: true });
+      }
+      var tries = 0;
+      function go() {
+        try { frame.contentWindow.focus(); frame.contentWindow.print(); setTimeout(function () { finish(); }, api.PDF_SETTLE_MS); }
+        catch (e) { if (++tries < 5) setTimeout(go, 400); else finish(e); }       // el visor de PDF aún no cargó: se reintenta
+      }
+      frame.onload = function () { setTimeout(go, api.PDF_VIEWER_WAIT_MS); };
+      setTimeout(function () { if (!done && tries === 0) finish(new Error("El visor de PDF no cargó la etiqueta.")); }, (opts && opts.timeoutMs) || 20000);
+      frame.src = url;
+      doc.body.appendChild(frame);
+    });
+  }
+
   function printPage(spec, imageUrl, opts) {
+    if (opts && opts.pdf) {
+      var runPdf = chain.then(function () { return printPdf(spec, opts); });
+      chain = runPdf.catch(function () { /* la siguiente impresión no hereda el fallo */ });
+      return runPdf;
+    }
     var run = chain.then(function () {
       return new Promise(function (resolve, reject) {
         var doc = root.document;
@@ -168,7 +242,7 @@
     return run;
   }
 
-  var api = { PRINT_TIMEOUT_MS: 120000, DPI: DPI, MODES: MODES, MODE_LABELS: MODE_LABELS, MODE_KEY: MODE_KEY, PAGE_KEY: PAGE_KEY, KIOSK_KEY: KIOSK_KEY, getMode: getMode, setMode: setMode, getPageWidthMm: getPageWidthMm, setPageWidthMm: setPageWidthMm, getOffsets: getOffsets, setOffsets: setOffsets,
+  var api = { PRINT_TIMEOUT_MS: 120000, PDF_SETTLE_MS: 2500, PDF_VIEWER_WAIT_MS: 600, pdfFromBitmap: pdfFromBitmap, DPI: DPI, MODES: MODES, MODE_LABELS: MODE_LABELS, MODE_KEY: MODE_KEY, PAGE_KEY: PAGE_KEY, KIOSK_KEY: KIOSK_KEY, getMode: getMode, setMode: setMode, getPageWidthMm: getPageWidthMm, setPageWidthMm: setPageWidthMm, getOffsets: getOffsets, setOffsets: setOffsets,
               kioskFromUrl: kioskFromUrl, mmOfDots: mmOfDots, pageSpec: pageSpec, pageHtml: pageHtml, kioskUrl: kioskUrl, launcherCommand: launcherCommand, launcherBat: launcherBat,
               bitmapToDataUrl: bitmapToDataUrl, printPage: printPage };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.DriverPrint = api;

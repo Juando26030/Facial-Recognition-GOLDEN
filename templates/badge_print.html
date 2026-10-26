@@ -8,6 +8,8 @@
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/html2canvas-1.4.1.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/driver-print.js') }}"></script>
     <style>
         html, body { margin:0; padding:0; background:#ddd; }
         .print-toolbar {
@@ -75,6 +77,24 @@
         return Promise.race([Promise.all(promises), timeout]);
     }
 
+    /* Hotfix 27-oct-2026: abierta SIN cuadro (--kiosk-printing, la ventana del lanzador), Chrome imprimía esta página con sus encabezados y pies (fecha, título, dirección, «1/1»). Ahí la
+       escarapela se imprime como un PDF del tamaño exacto de la hoja (static/js/driver-print.js: el visor de PDF no dibuja encabezados); con el cuadro, como siempre. */
+    function kioskMode() {
+        let session = null; try { session = window.sessionStorage; } catch (e) { session = null; }
+        return !!(window.DriverPrint && window.html2canvas && DriverPrint.kioskFromUrl(window.location.search, session));
+    }
+    async function printAsPdf(template, rotate, pw, ph) {
+        const DPM = 300 / 25.4, box = badgeEl.getBoundingClientRect();
+        const shot = await html2canvas(badgeEl, { width: box.width, height: box.height, scale: (template.width_mm * DPM) / box.width, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        const W = Math.round(pw * DPM), H = Math.round(ph * DPM);
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+        if (rotate) { ctx.translate(W, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(shot, 0, 0, H, W); } else ctx.drawImage(shot, 0, 0, W, H);      // mismo giro (horario) que la página
+        const px = ctx.getImageData(0, 0, W, H).data, bm = new Uint8Array(W * H);
+        for (let i = 0; i < W * H; i++) bm[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) < 140 ? 1 : 0;
+        await DriverPrint.printPage(DriverPrint.pageSpec(W, H, null, null), '', { pdf: { bitmap: bm, width: W, height: H, mirror: false } });
+    }
+
     async function load() {
         try {
             // Primero los datos de la persona: dicen qué plantilla le toca (por categoría, ítem 14).
@@ -101,13 +121,13 @@
             statusEl.style.display = 'none';
 
             await waitForImages(badgeEl, 4000);
-            window.print();
+            if (kioskMode()) await printAsPdf(template, rotate, pw, ph); else window.print();
         } catch (e) {
             statusEl.innerText = 'Error de red cargando la escarapela.';
         }
     }
 
-    document.getElementById('printBtn').addEventListener('click', () => window.print());
+    document.getElementById('printBtn').addEventListener('click', () => window.print());          // a mano (con el cuadro): como siempre
     load();
 })();
 </script>
