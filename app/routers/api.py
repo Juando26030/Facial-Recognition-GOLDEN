@@ -290,13 +290,13 @@ def _send_now(value) -> bool:
     return str(value).strip().lower() not in ("false", "0", "no", "off", "")
 
 
-def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None, digital_contact: Optional[str] = None) -> None:
+def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None, digital_contact: Optional[str] = None, origin: Optional[str] = "manual") -> None:
     """Asegura que esta persona quede en la lista del evento, se haya precargado o no (ej. un
     'Nuevo' dado de alta sobre la marcha el día del evento) — ver EventAttendee en models.py.
     `categories` (ítem 14): si viene, fija las categorías de la persona EN este evento."""
     row = db.query(EventAttendee).filter_by(event_id=event_id, user_id=user_id).first()
     if not row:
-        row = EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id)
+        row = EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id, origin=origin)       # B1: el origen se asigna al CREAR y nunca cambia con el estado
         db.add(row)
     if categories is not None:
         row.set_categories(categories)
@@ -348,7 +348,7 @@ def _upsert_attendee_cached(db: Session, event_id: int, user_id: str, tenant_id:
     """Igual que `_upsert_attendee`, pero sin consultar la base: la inscripción sale de `cache` (traída de una vez al empezar la carga) y la nueva se agrega a él."""
     row = cache.get(user_id)
     if row is None:
-        row = EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id)
+        row = EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id, origin="base")       # B1: carga masiva = «Base (Excel)»
         db.add(row)
         cache[user_id] = row
         created.append(user_id)
@@ -458,10 +458,11 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
         real, new = counts.get(u.id, (0, 0))
         att = attendees.get(u.id)
         status = "No registrado" if not real else ("Nuevo" if new else "Registrado")
+        origin = (att.origin if att is not None and att.origin else ("manual" if new else "desconocido"))      # B1: origen aparte del estado
         result.append({
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "entity": u.entity, "phone": u.phone,
-            "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status,
+            "email": u.email, "opt_1": u.opt_1, "opt_2": u.opt_2, "status": status, "origin": origin,
             "birth_date": u.birth_date.isoformat() if (u.birth_date and event.facial_enabled) else "",
             # 2026-09-16: el modal de "Editar" del Directorio necesita los opcionales de esta persona.
             "extra_fields": u.get_extras(),
@@ -972,7 +973,7 @@ def sync_access_logs(
                 db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
                                  registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when))
                 if user.id not in attendees:
-                    db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id))
+                    db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id, origin="manual"))
                 db.flush()
         except IntegrityError:
             results.append({"client_id": client_id, "result": "replayed"})

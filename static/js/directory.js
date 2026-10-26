@@ -12,6 +12,7 @@
     add(id) { if (!id) return; id = String(id); const l = [id].concat(this.list().filter((x) => x !== id)).slice(0, 5); try { localStorage.setItem(this.key(), JSON.stringify(l)); } catch (e) { /* sin almacenamiento */ } },
     has(id) { return !!id && this.list().indexOf(String(id)) >= 0; },
   };
+  const ORIGINS = { base: { icon: '📄', label: 'Base (Excel)' }, manual: { icon: '✍️', label: 'Alta manual' }, autoregistro: { icon: '🌐', label: 'Autoregistro' }, desconocido: { icon: '❔', label: 'Desconocido' } };
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
   }
@@ -250,6 +251,12 @@
         <button type="button" id="editModalSave" style="border:none; background:var(--golden-primary,#D4AF37); color:#1a1200; border-radius:20px; padding:10px 18px; min-height:44px; cursor:pointer; font-weight:700;">Guardar cambios</button>
       </div>
       <div id="editModalNotice" role="alert" style="display:none; background:#fff6e5; border-left:4px solid #b26a00; color:#7a4a00; padding:8px 12px; border-radius:8px; margin-bottom:0.8rem; font-weight:600;"></div>
+      <label style="display:flex; gap:8px; align-items:center; font-weight:600; margin-bottom:0.6rem;"><input type="checkbox" id="editNewCedulaChk" style="width:20px; height:20px;"> ¿Es cédula nueva?</label>
+      <div id="editNewCedulaBox" hidden style="margin-bottom:0.8rem; padding:0.6rem; background:#faf8f0; border-radius:10px; display:flex; gap:6px; flex-wrap:wrap;">
+        <button type="button" id="editMrzFileBtn" class="small-btn">📎 Adjuntar imagen</button>
+        <button type="button" id="editMrzCamBtn" class="small-btn">📸 Usar cámara</button>
+        <input type="file" id="editMrzInput" accept="image/*" style="display:none;">
+      </div>
       <form id="editModalForm">
         ${configuredHtml}
       </form>
@@ -275,6 +282,25 @@
     });
 
     function close() { overlay.remove(); }
+    {                                                                   // B3: cédula NUEVA (foto del reverso, MRZ): llena nombres, apellidos y —si se puede editar— la cédula
+      const chk = box.querySelector('#editNewCedulaChk'), nbox = box.querySelector('#editNewCedulaBox'), file = box.querySelector('#editMrzInput');
+      chk.addEventListener('change', () => { nbox.hidden = !chk.checked; nbox.style.display = chk.checked ? 'flex' : 'none'; });
+      nbox.style.display = 'none';
+      const readMrz = async (blob) => {
+        const fd = new FormData(); fd.append('file', blob, 'cedula.jpg');
+        try {
+          const res = await fetch(`/api/events/${window.EVENT_ID}/cedula-mrz-scan`, { method: 'POST', body: fd });
+          const d = await res.json().catch(() => ({}));
+          if (!res.ok) { showToast(d.detail || 'No se pudo leer la foto — intenta de nuevo', 'error'); return; }
+          const set = (sel, v) => { const el = box.querySelector(sel); if (el && v && !el.disabled) el.value = v; };
+          set('#editModalForm [name="first_name"]', d.first_name); set('#editModalForm [name="last_name"]', d.last_name); set('#editModalCedulaField', d.id);
+          showToast('Cédula leída — revisa los datos y guarda', 'success');
+        } catch (e) { showToast('Error de red', 'error'); }
+      };
+      box.querySelector('#editMrzFileBtn').addEventListener('click', () => file.click());
+      file.addEventListener('change', () => { const f = file.files[0]; file.value = ''; if (f) readMrz(f); });
+      box.querySelector('#editMrzCamBtn').addEventListener('click', () => { if (window.CameraCapture) window.CameraCapture.open({ title: 'Foto del reverso de la cédula', onCapture: readMrz }); });
+    }
     if (opts && opts.missing && opts.missing.length) {               // A3: llegó aquí porque falta un obligatorio: se dice cuál y el foco va al primero vacío
       const note = box.querySelector('#editModalNotice');
       note.textContent = `Falta el campo obligatorio: ${opts.missing.map((m) => m.label).join(', ')}. Complétalo y guarda: queda acreditado(a) en el mismo paso.`;
@@ -460,7 +486,7 @@
   let rowAccredit = null;          // lo fija mountSearch cuando quien mira puede acreditar (digitador o más): botón «✅ Acreditar» en TODAS las filas
   function buildRow(user) {
     const tr = document.createElement('tr');
-    tr.className = user.status === 'Registrado' ? 'row-registrado' : user.status === 'Nuevo' ? 'row-nuevo' : 'row-noregistrado';
+    tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
     tr.dataset.userId = user.id;
     if (user.__h) tr.dataset.h = user.__h;          // fila de la lista local (sin cédula)
     if (Recent.has(user.id)) { tr.dataset.recent = '1'; queueMicrotask(() => { const nameTd = tr.querySelector('td[data-field="first_name"]') || tr.cells[1]; if (nameTd && !nameTd.querySelector('.gw-recent')) { const b = document.createElement('span'); b.className = 'gw-recent'; b.textContent = 'Reciente'; b.title = 'Registrada o editada hace poco en este equipo'; b.style.cssText = 'margin-left:6px; font-size:0.7rem; font-weight:700; color:#2b6cb0; border:1px solid #2b6cb0; border-radius:999px; padding:0 6px; vertical-align:middle;'; nameTd.appendChild(b); } }); }      // A5: marca discreta
@@ -522,8 +548,15 @@
 
     const statusTd = document.createElement('td');
     statusTd.dataset.field = 'status';
-    statusTd.innerText = user.status;
+    statusTd.innerText = user.status === 'No registrado' ? 'No registrado' : 'Registrado';
     statusTd.style.fontWeight = 'bold';
+    const og = ORIGINS[user.origin];
+    if (og && user.origin !== 'desconocido') {                      // B1: el ORIGEN de carga, aparte del estado (no cambia al registrar o quitar el registro)
+      const tag = document.createElement('span');
+      tag.className = 'gw-origin'; tag.dataset.origin = user.origin; tag.textContent = og.icon + ' ' + og.label; tag.title = 'Origen de carga: ' + og.label;
+      tag.style.cssText = 'display:inline-block; margin-left:6px; font-size:0.72rem; font-weight:600; color:#555; border:1px solid #ccc; border-radius:999px; padding:0 6px; white-space:nowrap;';
+      statusTd.appendChild(tag);
+    }
     tr.appendChild(statusTd);
 
     const entityTd = document.createElement('td');   // la empresa: va AL FINAL (las columnas de siempre no se corren) y solo se ve en la tarjeta del modo touch (en la tabla de escritorio no hay columna para ella)
@@ -586,6 +619,7 @@
     const tableEl = tbodyEl ? tbodyEl.closest('table') : null;
     let counterBtn = null;
     let totalCounterEl = null;
+    let originSelect = null;
     if (tableEl && tableEl.parentNode) {
       counterBtn = document.createElement('button');
       counterBtn.type = 'button';
@@ -603,6 +637,13 @@
       totalCounterEl.className = 'total-registered-counter';
       totalCounterEl.style.cssText = 'display:inline-block; margin-bottom:1rem; border:1px solid #28a745; background:#eaf6ec; color:#1c7a34; border-radius:20px; padding:6px 16px; font-weight:700; font-size:0.85rem;';
       tableEl.parentNode.insertBefore(totalCounterEl, tableEl);
+      originSelect = document.createElement('select');                 // B1: filtro por origen de carga
+      originSelect.className = 'origin-filter';
+      originSelect.setAttribute('aria-label', 'Filtrar por origen de carga');
+      originSelect.style.cssText = 'margin:0 0 1rem 0.6rem; border:1px solid #ccc; border-radius:20px; padding:6px 12px; font-weight:600; min-height:36px;';
+      originSelect.innerHTML = '<option value="">Origen: todos</option>' + Object.keys(ORIGINS).map((k) => `<option value="${k}">${ORIGINS[k].icon} ${ORIGINS[k].label}</option>`).join('');
+      originSelect.addEventListener('change', () => { pageIdx = 0; applyFilters(); });
+      tableEl.parentNode.insertBefore(originSelect, tableEl);
     }
 
     function updateCounterLabel() {
@@ -701,6 +742,7 @@
       }
       lastFiltered = allUsers.filter(u => {
         if (onlyNotRegistered && u.status !== 'No registrado') return false;
+        if (originSelect && originSelect.value && (u.origin || 'desconocido') !== originSelect.value) return false;
         if (!cedula && !nombre.length && !entidad.length) return true;
         const k = keysOf(u);
         if (cedula && !(u.__local ? (wantH && u.__h === wantH) : k.id.includes(cedula))) return false;
@@ -1140,6 +1182,7 @@
         if (nombreInput) nombreInput.value = '';
         if (entidadInput) entidadInput.value = '';
         onlyNotRegistered = false;
+        if (originSelect) originSelect.value = '';
         pageIdx = 0;
         if (counterBtn) { counterBtn.style.background = '#fbe9ea'; counterBtn.style.color = '#a12631'; }
         applyFilters();

@@ -24,6 +24,7 @@ _FIXED_VARIABLES = [
     ("role", "Cargo"),
     ("opt_1", "Tipo de Asistente"),
     ("status", "Estado de registro"),
+    ("origin", "Origen de carga"),          # B1 (0073): Base (Excel) / Alta manual / Autoregistro / Desconocido, aparte del estado
 ]
 
 _MAX_CATEGORIES = 15  # más allá de esto, se agrupa en "Otros" para que el gráfico siga siendo legible
@@ -50,12 +51,23 @@ def _status_of(db: Session, event_id: int, user_id: str) -> str:
     ).all()
     if not logs:
         return "No registrado"
-    return "Nuevo" if any(l.record_type == "Nuevo" for l in logs) else "Registrado"
+    return "Registrado"                     # B1: el estado es solo Registrado / No registrado; el alta manual se ve en «Origen de carga»
+
+
+def _origin_of(db: Session, event_id: int, user_id: str) -> str:
+    from app.reports import ORIGIN_LABELS
+    att = db.query(EventAttendee.origin).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).first()
+    origin = att[0] if att else None
+    if not origin and db.query(AccessLog.id).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id, AccessLog.record_type == "Nuevo").first():
+        origin = "manual"
+    return ORIGIN_LABELS.get(origin, "Desconocido")
 
 
 def _value_of(db: Session, event_id: int, user: User, variable: str):
     if variable == "status":
         return _status_of(db, event_id, user.id)
+    if variable == "origin":
+        return _origin_of(db, event_id, user.id)
     if variable.startswith("opcional_"):
         return user.get_extras().get(variable)
     return getattr(user, variable, None)

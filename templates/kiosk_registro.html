@@ -269,20 +269,15 @@
                     </div>
                     {% if event.status != "en_proceso" %}<p style="text-align:center; color:#a66; font-size:0.85rem; margin-bottom:1rem;">Deshabilitado: el evento no está en proceso.</p>{% endif %}
 
-                    <!-- "Registrar con cédula" (Sprint 2.4 Fase 2, 2026-09-16, pedido explícito):
-                         opcional, arriba de todo — escanear acá completa ID/Nombres/Apellidos
-                         solos, el operador solo revisa/completa el resto. Funciona con la cédula
-                         vieja (lector = teclado, Enter) y la nueva (foto del reverso + OCR MRZ,
-                         mismo endpoint que ya usa la búsqueda del Directorio). -->
-                    <div style="margin-bottom:1.2rem; padding:1rem; background:#faf8f0; border-radius:12px;">
-                        <div class="badge-input-group" style="margin-bottom:0.6rem;">
-                            <label>Registrar con cédula (opcional)</label>
-                            <input type="text" id="regScanCedulaInput" placeholder="Escanea la cédula (lector) o escribe el número y presiona Enter" autocomplete="off" inputmode="numeric">
-                        </div>
+                    <!-- B3 (26-oct-2026): la cédula se escanea (lector o QR) en el MISMO campo de cédula/ID de abajo; con la cédula NUEVA se marca la casilla y aparecen
+                         «Adjuntar imagen» y «Usar cámara» (foto del reverso, se lee la MRZ). Si la lectura trae nombres y apellidos, llena el formulario. -->
+                    <label style="display:flex; gap:8px; align-items:center; font-weight:600; margin-bottom:0.6rem;"><input type="checkbox" id="regNewCedulaChk" style="width:22px; height:22px;"> ¿Es cédula nueva?</label>
+                    <div id="regNewCedulaBox" hidden style="margin-bottom:1rem; padding:0.8rem; background:#faf8f0; border-radius:12px;">
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                            <button type="button" id="regScanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📎 Cédula nueva (imagen)</button>
-                            <button type="button" id="regScanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📸 Cédula nueva (cámara)</button>
+                            <button type="button" id="regScanMrzBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📎 Adjuntar imagen</button>
+                            <button type="button" id="regScanMrzCameraBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto; flex:1 1 auto;">📸 Usar cámara</button>
                         </div>
+                        <small style="display:block; color:#666; margin-top:4px;">Foto del reverso de la cédula nueva: se leen la cédula, los nombres y los apellidos.</small>
                         <input type="file" id="regScanMrzInput" accept="image/*" style="display:none;">
                     </div>
 
@@ -300,7 +295,7 @@
                             <input type="date" name="{{ cfg.key }}" id="regBirth" style="max-width:220px;">
                             <small style="display:block; color:#666; margin-top:3px;">Con ella se sabe si es menor de 18 años: un menor no pasa por el reconocimiento facial (solo cédula o QR).{% if event.facial_enabled %} Obligatoria si se sube foto.{% endif %}</small>
                             {% elif cfg.locked %}
-                            <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField"{% endif %} required>
+                            <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField" inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %} required>
                             {% elif cfg.field_type in ("consent", "signature", "email") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "text_long" %}
@@ -576,7 +571,9 @@
        diferencia del escaneo de arriba (que busca/acredita en el Directorio), este solo LLENA el
        formulario de alta manual con lo que se lea, sea cédula vieja (lector) o nueva (foto/MRZ).
        No acredita nada por sí mismo — el operador sigue completando y guardando como siempre. */
-    const regScanCedulaInput = document.getElementById('regScanCedulaInput');
+    const regScanCedulaInput = document.getElementById('manualIdField');           // B3: el escaneo (lector o QR) va en el MISMO campo de cédula/ID
+    const regNewCedulaChk = document.getElementById('regNewCedulaChk'), regNewCedulaBox = document.getElementById('regNewCedulaBox');
+    if (regNewCedulaChk && regNewCedulaBox) regNewCedulaChk.addEventListener('change', () => { regNewCedulaBox.hidden = !regNewCedulaChk.checked; });
     const regScanMrzBtn = document.getElementById('regScanMrzBtn');
     const regScanMrzCameraBtn = document.getElementById('regScanMrzCameraBtn');
     const regScanMrzInput = document.getElementById('regScanMrzInput');
@@ -603,8 +600,7 @@
                 const qr = QrCode.parse(raw);
                 if (qr && qr.isQr) fillRegFormFromScan(qr.cedula, { nombres: qr.nombres, apellidos: qr.apellidos });
                 else if (parsed) fillRegFormFromScan(parsed.cedula, { nombres: parsed.nombres, apellidos: parsed.apellidos });
-                else fillRegFormFromScan(raw, null);
-                regScanCedulaInput.value = '';
+                else { regScanCedulaInput.value = raw.replace(/[\s.]/g, ''); const nx = document.querySelector('#regForm input[name="first_name"]'); if (nx) nx.focus(); }      // número escrito a mano: se queda y sigue al siguiente campo
             }
         });
     }

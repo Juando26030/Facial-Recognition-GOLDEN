@@ -261,8 +261,9 @@ def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Se
 
 
 def _upsert():
+    import functools
     from app.routers.api import _upsert_attendee
-    return _upsert_attendee
+    return functools.partial(_upsert_attendee, origin="autoregistro")      # B1: lo que entra por un formulario web = «Autoregistro»
 
 
 def _maybe_feed_on_close(db: Session, form: WebForm) -> None:

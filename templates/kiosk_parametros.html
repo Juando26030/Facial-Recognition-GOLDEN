@@ -304,6 +304,7 @@
                 <th style="min-width:180px;">Opciones (lista desplegable)</th>
                 <th style="width:130px;">Generar estadística</th>
                 <th style="min-width:140px;">Tipo de gráfico</th>
+                <th style="width:110px;"></th>
               </tr>
             </thead>
             <tbody id="paramsTableBody"></tbody>
@@ -690,6 +691,31 @@
         if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo subir el logo', 'error');
     });
 
+    /* B2 (26-oct-2026): borrar un campo de ESTE evento (también uno de la base original). Confirmación fuerte: cuántas personas tienen dato, qué plantillas y formularios lo usan, y
+       escribir el nombre del campo. Cédula/ID, nombres y apellidos no se pueden borrar. */
+    const DELETABLE_FIXED = ['role', 'entity', 'phone', 'email', 'opt_1'];
+    async function deleteField(cfg, tr) {
+        const base = `/api/events/${window.EVENT_ID}/fields/${encodeURIComponent(cfg.key)}`;
+        let u = null;
+        try { const r = await fetch(`${base}/usage`, { cache: 'no-store' }); u = r.ok ? await r.json() : null; } catch (e) { u = null; }
+        if (!u) { showToast('No se pudo consultar el uso del campo', 'error'); return; }
+        if (!u.deletable) { showToast(u.reason || 'Este campo no se puede borrar', 'error'); return; }
+        const lines = [`⚠️ Vas a BORRAR el campo «${esc(u.label)}» de este evento.`,
+            `• ${u.people} persona(s) tienen dato en este campo: ese dato se borra.`,
+            `• Plantillas de escarapela que lo usan: ${u.templates.length ? esc(u.templates.join(', ')) : 'ninguna'} (se quita la variable).`,
+            `• Formularios que lo usan: ${u.forms.length ? esc(u.forms.join(', ')) : 'ninguno'} (la pregunta deja de alimentar la base).`,
+            'Desaparece de formularios, edición, directorio, reporte y escarapela. No se puede deshacer.',
+            `Escribe <b>${esc(u.label)}</b> para confirmar:`];
+        const typed = await showPrompt(lines.join('<br>'), { confirmLabel: 'Borrar campo', placeholder: u.label });
+        if (typed === null || typed === undefined) return;
+        if (String(typed).trim().toLowerCase() !== String(u.label).trim().toLowerCase()) { showToast('El nombre no coincide: no se borró nada.', 'error'); return; }
+        const res = await fetch(base, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: typed }) });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(out.detail || 'No se pudo borrar el campo', 'error'); return; }
+        tr.remove();
+        showToast(`Campo «${out.label}» borrado. Datos borrados: ${out.cleared}${out.kept_other_events ? ` (se conservaron ${out.kept_other_events} de personas que también están en otro evento)` : ''}.`, 'success');
+    }
+
     function buildRow(cfg) {
         const tr = document.createElement('tr');
         tr.dataset.key = cfg.key;
@@ -706,7 +732,10 @@
                 <select class="cfg-tpl" aria-label="Insertar un texto de autorización tipo" style="display:${['consent'].includes(cfg.field_type) ? 'block' : 'none'}; margin-top:4px; max-width:100%;"><option value="">Insertar texto tipo…</option><option value="general">Autorización de datos personales</option><option value="bio">Autorización del dato biométrico (rostro) — usar en un campo aparte</option></select></td>
             <td><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-chart-type" style="display:${cfg.default_stat_enabled ? 'block' : 'none'};">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
+            <td>${!locked && (DELETABLE_FIXED.includes(cfg.key) || cfg.key.startsWith('opcional_')) ? `<button type="button" class="small-btn cfg-delete" style="color:#a12631; border-color:#a12631;">🗑️ Borrar campo</button>` : ''}</td>
         `;
+        const del = tr.querySelector('.cfg-delete');
+        if (del) del.addEventListener('click', () => deleteField(cfg, tr));
         if (locked) {
             tr.querySelectorAll('.cfg-field-type, .cfg-options, .cfg-stat-enabled, .cfg-chart-type').forEach(el => { el.disabled = true; });
         }

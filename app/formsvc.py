@@ -1,6 +1,7 @@
 """Servicios de los Formularios Web (Sprint 5) que sí tocan la base: estado vigente, resolución de personas para el
 pre-llenado, carga de inscripciones a la base del evento y rutas de archivos. La lógica pura vive en `app/formlib.py`."""
 import hashlib
+import functools
 import json
 import logging
 import os
@@ -335,7 +336,7 @@ def run_feed_job(submission_id: int) -> None:
         if not sub or sub.fed or sub.status != "confirmed" or sub.is_test:
             return
         form = db.get(WebForm, sub.form_id)
-        err = feed_submission(db, form, sub, _upsert_attendee)
+        err = feed_submission(db, form, sub, functools.partial(_upsert_attendee, origin="autoregistro"))      # B1: el formulario web = «Autoregistro»
         if err:
             log.warning("inscripción %s no se cargó a la base: %s", submission_id, err)
         db.commit()

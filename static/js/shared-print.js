@@ -690,7 +690,7 @@
   /* En Android, la tecla de acción del teclado en pantalla pasaba al campo siguiente («Siguiente») en vez de buscar. Con enterkeyhint="search" Chrome manda Enter;
      y si el teclado no lo manda como tecla (keyCode 229, Samsung, etc.) se toma el salto de línea (beforeinput) o el Enter al soltar (keyup) y se manda un Enter.
      El lector USB ya manda Enter normal: no cambia (y no se repite: un Enter en el último segundo cuenta una sola vez). */
-  const SEARCH_IDS = ['searchCedula', 'searchNombre', 'searchEntidad', 'regScanCedulaInput'];
+  const SEARCH_IDS = ['searchCedula', 'searchNombre', 'searchEntidad', 'manualIdField'];      // B3: el escaneo de «Registrar nuevo» va en el campo de cédula/ID
   const ENTER_ONCE_MS = 1000;
   function wireEnter() {
     SEARCH_IDS.forEach((id) => document.querySelectorAll(`#${id}`).forEach((el) => {

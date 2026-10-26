@@ -88,6 +88,7 @@ class EventAttendee(Base):
     accept_token = Column(String, unique=True, nullable=True)       # enlace personal de autorización /aceptar/<código>/<token> (0064): uno por persona y evento, revocable (se vuelve a generar)
     accept_trusted = Column(Boolean, default=False, server_default='false', nullable=False)   # el enlace salió del listado que cargó el organizador (correo propio): abrirlo verifica la aceptación; si salió de un formulario abierto, no
     accept_sent_at = Column(DateTime, nullable=True)
+    origin = Column(String(16), nullable=True)  # 0073 (B1): origen de carga en ESTE evento — base | manual | autoregistro; NULL = Desconocido. No cambia con el estado de registro
     created_at = Column(DateTime, default=utcnow)
 
     __table_args__ = (

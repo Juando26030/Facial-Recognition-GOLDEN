@@ -164,7 +164,7 @@ def test_the_background_report_is_the_same_excel_as_the_direct_one_and_downloads
     assert len(a) == len(b) == 300 + 5 and a[:5] == b[:5]                            # título + encabezado + 300 filas, mismas columnas
     by_id = lambda row: str(row[0])                                                  # noqa: E731 — el orden de las filas lo decide la base (colación): se compara por cédula, en Python
     assert sorted(a[5:], key=by_id) == sorted(b[5:], key=by_id)                      # mismos datos, fila por fila
-    assert a[4][0] == "Cédula" and sum(1 for row in a[5:] if row[-3] != "No registrado") == 250
+    assert a[4][0] == "Cédula" and sum(1 for row in a[5:] if row[a[4].index("Estado")] == "Registrado") == 250          # B1: columna «Estado» (por nombre: se agregaron columnas)
 
 
 def test_the_report_progress_goes_through_named_stages(client, loaded, monkeypatch):
