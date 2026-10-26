@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Imprimir escarapelas desde Windows | GoldenWeb 2.0</title>
+<style>
+  body { margin:0; background:#f4f5f9; color:#1b1d2a; font:16px/1.55 system-ui, "Segoe UI", Arial, sans-serif; padding:20px 14px 60px; }
+  main { max-width:760px; margin:0 auto; background:#fff; border-radius:16px; box-shadow:0 6px 24px rgba(10,14,46,.08); padding:22px 24px 30px; }
+  h1 { font-size:1.45rem; margin:0 0 4px; color:#0a0e2e; } h2 { font-size:1.1rem; margin:26px 0 6px; color:#0a0e2e; }
+  ol, ul { padding-left:1.3rem; } li { margin:6px 0; }
+  .nota { background:#fff6e5; border:1px solid #e6c97a; border-radius:10px; padding:8px 12px; }
+  code { background:#eef0f6; padding:1px 6px; border-radius:6px; font-size:.92em; word-break:break-all; }
+</style>
+</head>
+<body>
+<main>
+<h1>Imprimir escarapelas desde un computador con Windows</h1>
+<p>Para un computador con Windows y la Brother QL-800 por USB. <b>No se instala nada más que el controlador oficial de Brother.</b> Si no quieres usar Windows, una tablet o un celular con Chrome (Android) imprime directo por USB sin instalar nada.</p>
+
+<h2>1. Instalar el controlador (una sola vez por computador)</h2>
+<ol>
+  <li>Entra a <b>support.brother.com</b>, busca <b>QL-800</b> y elige tu Windows.</li>
+  <li>Descarga el <b>controlador de impresora</b> («Printer Driver»). Instala <b>solo el controlador</b>: no hace falta P-touch Editor ni los otros programas.</li>
+  <li>Antes de conectar la impresora, <b>apaga el modo «Editor Lite»</b>: la luz verde de «Editor Lite» debe estar apagada (mantén el botón hasta que se apague).</li>
+  <li>Conecta el cable USB y enciende la impresora. En <b>Configuración de Windows → Impresoras y escáneres</b> debe aparecer <b>Brother QL-800</b>.</li>
+</ol>
+
+<h2>2. Dejar la impresora lista</h2>
+<ol>
+  <li>En <b>Impresoras y escáneres</b>, toca <b>Brother QL-800 → Establecer como predeterminada</b> (o quita «Permitir que Windows administre mi impresora predeterminada» primero).</li>
+  <li>Toca <b>Preferencias de impresión</b> y deja: <b>Papel: 62 mm (cinta continua)</b>, <b>Corte automático: Sí, al final de cada etiqueta</b> y <b>Margen: el más pequeño</b>. Guarda con <b>Aceptar</b>.</li>
+</ol>
+
+<h2>3. Elegir el modo en GoldenWeb</h2>
+<ol>
+  <li>Abre el Registro del evento y toca <b>⚙️ Impresión</b>.</li>
+  <li>En <b>Modo de impresión</b> elige <b>Controlador de Windows</b>. (En «Automático» la página pasa sola a este modo cuando Windows no deja usar el USB directo.)</li>
+  <li>La barra dirá <b>«Impresión por controlador de Windows»</b>. No es una falla: es un modo normal.</li>
+</ol>
+
+<h2>4. Imprimir SIN cuadro de diálogo (recomendado en el puesto de registro)</h2>
+<p>Por seguridad, Chrome no deja que una página imprima sin preguntar. Se logra abriendo Chrome con una opción especial. Para eso:</p>
+<ol>
+  <li>En <b>⚙️ Impresión</b> (modo «Controlador de Windows») toca <b>Descargar lanzador para este computador</b>. Se baja el archivo <code>Imprimir-GoldenWeb.bat</code>.</li>
+  <li>Ábrelo desde <b>Descargas</b>. Si Windows dice <b>«Windows protegió su PC»</b>: toca <b>Más información → Ejecutar de todos modos</b>. (El archivo solo abre Chrome; <b>no instala nada ni cambia el registro</b>.)</li>
+  <li>Se abre una ventana de Chrome con GoldenWeb. La <b>primera vez</b> inicia sesión (esa ventana tiene su propio perfil, por eso no hereda tu sesión).</li>
+  <li>En la barra debe decir <b>«Impresión automática activa»</b>. Registra a alguien: la escarapela sale sola.</li>
+  <li>Usa <b>siempre</b> esa ventana para registrar. Puedes crear un acceso directo con el comando que aparece en ⚙️ Impresión.</li>
+</ol>
+<p class="nota">Si abres GoldenWeb en un Chrome normal, la barra dirá «Impresión con cuadro de diálogo»: saldrá el cuadro de Chrome en cada escarapela (destino «Brother QL-800», márgenes «Ninguno», escala 100 %). Lo que llegue de otros equipos queda esperando el botón <b>«Imprimir pendientes»</b>.</p>
+
+<h2>5. Imprimir para otros equipos (impresión compartida)</h2>
+<ul>
+  <li>El computador con la impresora debe tener abierto el Registro (de preferencia con el lanzador) y decir <b>«Impresora conectada por Windows»</b>.</li>
+  <li>Con el lanzador, las escarapelas de los demás equipos salen solas. Sin lanzador, toca <b>«Imprimir pendientes»</b> (tienes 5 minutos; si no, quedan en la Cola de quien las pidió para reimprimir).</li>
+</ul>
+
+<h2>5.b Ajustes del cuadro de Chrome (solo si imprimes con cuadro de diálogo)</h2>
+<ul>
+  <li><b>Destino:</b> Brother QL-800. <b>Papel:</b> 62 mm. <b>Márgenes:</b> Ninguno. <b>Escala:</b> 100 (predeterminada, sin «ajustar»).</li>
+  <li><b>Encabezados y pies de página:</b> desmarcado. <b>Gráficos de fondo:</b> da igual (la etiqueta va como imagen).</li>
+  <li>La página que se manda mide <b>58,9 mm de ancho</b> (el ancho útil de la cinta de 62 mm), ya girada si el diseño es horizontal: <b>no hace falta girar nada a mano</b>.</li>
+</ul>
+
+<h2>6. Si algo sale mal</h2>
+<ul>
+  <li><b>Sale en blanco o muy pequeña:</b> en las preferencias de la Brother elige papel <b>62 mm</b> continuo y sin escala. En el cuadro de Chrome: márgenes «Ninguno», escala 100 %.</li>
+  <li><b>No corta:</b> en las preferencias del controlador activa el corte automático al final de cada etiqueta.</li>
+  <li><b>Sale corrida a un lado o arriba:</b> ⚙️ Impresión (modo «Controlador de Windows») → <b>Calibración</b>: «desplazamiento horizontal» y «vertical» (de −5 a +5 mm, de 0,1 en 0,1). Toca «🖨️ Imprimir prueba» (marco en el borde y cruz en el centro) y ajusta hasta que el marco quede parejo y la cruz al centro. Cada equipo guarda lo suyo.</li>
+  <li><b>Sale con tamaño raro:</b> en ⚙️ Impresión, «Ancho de página»: déjalo vacío (58,9 mm); si el controlador lo pide, prueba 62.</li>
+  <li><b>No me aparece «Modo de impresión»:</b> la barra de impresión solo está cuando el evento tiene encendida la <b>Impresión compartida</b> (Parámetros). Se puede encender y usar con un solo computador.</li>
+  <li><b>La barra dice acceso denegado:</b> es normal en Windows para el USB directo. Elige «Controlador de Windows».</li>
+</ul>
+
+<h2>7. Cómo volver atrás</h2>
+<ul>
+  <li>En ⚙️ Impresión elige <b>Automático</b> otra vez.</li>
+  <li>Para quitar el lanzador: borra el archivo <code>Imprimir-GoldenWeb.bat</code> y la carpeta <code>%LOCALAPPDATA%\GoldenWebImpresion</code>. No quedó nada más instalado.</li>
+</ul>
+</main>
+</body>
+</html>

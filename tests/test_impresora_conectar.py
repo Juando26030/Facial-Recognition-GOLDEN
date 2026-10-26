@@ -12,7 +12,7 @@ def test_the_usb_layer_is_idempotent_single_flight_and_talks_between_tabs():
     assert "var inflight = null;" in ql and "if (state.device && state.device.opened) return Promise.resolve(state.device);" in ql          # ya abierta: no se vuelve a abrir
     assert "var wasLive = state.device === device && device.opened;" in ql                                                                  # un fallo al reabrir no cierra la conexión viva
     assert 'new BroadcastChannel("golden-ql-usb")' in ql and "function remoteOwner" in ql and "function sendViaOwner" in ql and "function releaseNow" in ql
-    assert "Cierra otras pestañas o programas de Brother" in ql and "Printer Setting Tool" in ql                                           # «Access denied» con la acción a seguir
+    assert "no puede usar la impresora por USB directo (Windows)" in ql and "Controlador de Windows" in ql and "cuadro de Windows" not in ql          # «Access denied» con la acción a seguir
 
 
 def test_the_registration_screen_shows_the_real_state_and_releases_the_printer_on_close():
@@ -20,4 +20,4 @@ def test_the_registration_screen_shows_the_real_state_and_releases_the_printer_o
     assert "QLUsb.ready()" in sp and "viaTab" in sp and "QLUsb.remoteOwner()" in sp                                                        # el estado sale de la conexión real o de la pestaña dueña
     assert "['pagehide', 'beforeunload']" in sp and "QLUsb.releaseNow()" in sp                                                             # se suelta al cerrar o recargar
     assert "Impresora conectada en otra pestaña de este navegador" in sp and "ya está conectada" in sp
-    assert "printer_connected: usb.busy ? null : usb.ok" in sp                                                                             # el latido anuncia lo que sirve para imprimir
+    assert "printer_connected: usb.busy ? null : (usb.ok || driverOn())" in sp                                                            # el latido anuncia lo que sirve para imprimir (USB o controlador)

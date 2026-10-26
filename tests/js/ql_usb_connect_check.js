@@ -76,7 +76,8 @@ const reset = () => { tabs.forEach((x) => x.Q.releaseNow()); tabs.length = 0; hw
   reset(); const C = newTab("C"); hw.openedBy = "P-touch Editor";
   const err = await C.Q.connect(true).then(() => null, (e) => e);
   assert.ok(err && err.code === "denied" && err.busy === false, "código «denied»");
-  assert.ok(/Cierra otras pestañas o programas de Brother/.test(err.message) && /vuelve a intentar/.test(err.message), err.message);
+  assert.ok(/no puede usar la impresora por USB directo/.test(err.message) && /Controlador de Windows/.test(err.message) && /tablet o celular/.test(err.message), err.message);
+  assert.ok(!/cuadro de Windows/.test(err.message), "ya no afirma que el computador «imprime con el cuadro de Windows»");
   assert.ok(/Access denied/.test(err.raw), "se conserva el texto original para soporte");
   assert.ok(!C.Q.ready() && !locks.has(C.Q.LOCK_NAME), "no queda ni conexión ni candado");
   hw.openedBy = null;                                               // el otro programa la suelta

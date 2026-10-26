@@ -260,8 +260,8 @@
     if (e && e.busy) { code = "busy"; msg = BUSY_MSG; }
     else if (/access denied|denied access|unable to open/.test(low) || (name === "SecurityError" && /open/.test(low))) {
       code = "denied";
-      msg = "Chrome no pudo abrir la impresora (acceso denegado). Cierra otras pestañas o programas de Brother (P-touch Editor, Printer Setting Tool) que estén usando la impresora, " +
-        "desconecta y vuelve a conectar el cable USB, y vuelve a intentar. En Windows, si el controlador de Brother la tiene tomada, este computador imprime con el cuadro de Windows pero no puede atender a otros equipos por USB directo.";
+      msg = "Este computador no puede usar la impresora por USB directo (Windows). Imprime por el controlador de Brother: instálalo una vez y elige «Controlador de Windows», " +
+        "o usa una tablet o celular como puesto de impresión. (Si tienes abierto Brother P-touch Editor, ciérralo y vuelve a intentar.)";
     } else if (name === "NotFoundError" && /no device selected|chose|selected/.test(low)) { code = "cancelled"; msg = "No elegiste ninguna impresora. Vuelve a tocar «Conectar impresora» y elige la Brother QL."; }
     else if (name === "NotFoundError" || /disconnected|no such device|device was not found/.test(low)) { code = "disconnected"; msg = "No se encuentra la impresora: revisa que esté encendida y con el cable USB bien puesto, y vuelve a conectar."; }
     else if (name === "SecurityError" || name === "NotAllowedError") { code = "permission"; msg = "Chrome no dio permiso para usar la impresora USB. Toca «Conectar impresora» y elige la Brother QL cuando Chrome pregunte (la página debe ser https)."; }

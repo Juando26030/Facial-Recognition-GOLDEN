@@ -288,7 +288,7 @@ def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_a
     # la página de prueba suelta la impresora al terminar y al ocultarse o cerrarse; el cierre hace releaseInterface y suelta el candado entre pestañas
     assert "finally { await QLUsb.close(); }" in page and '"visibilitychange"' in page and '"pagehide"' in page
     assert "releaseInterface" in ql and "navigator.locks.request(LOCK_NAME, { ifAvailable: true }" in ql
-    assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy ? null : usb.ok" in sp
+    assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy ? null : (usb.ok || driverOn())" in sp
 
 
 # ---------------------------------------------------------------------------------------------------- solo se imprime a quien está Registrado

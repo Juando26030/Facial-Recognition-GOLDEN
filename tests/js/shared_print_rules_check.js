@@ -11,6 +11,7 @@ const assert = require('assert');
 const docListeners = { capture: {}, bubble: {} };
 class El {
   constructor(tag, id) { this.tagName = tag; this.id = id || ''; this.children = []; this.style = {}; this.dataset = {}; this.attrs = {}; this.listeners = {}; this.value = ''; this.hidden = false; this.textContent = ''; this.className = ''; this.offsetParent = {}; this.parentNode = null; this._sel = {}; }
+  getBoundingClientRect() { return { width: 222, height: 378, left: 0, top: 0 }; }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   removeAttribute(k) { delete this.attrs[k]; }
@@ -85,6 +86,10 @@ global.fetch = async (url, init = {}) => {
   throw new Error('ruta inesperada ' + u.pathname);
 };
 global.QLUsb = require(path.resolve(__dirname, '../../static/js/ql-usb.js'));
+global.DriverPrint = require(path.resolve(__dirname, '../../static/js/driver-print.js'));
+const driverPages = [];                                                   // lo que se manda a imprimir por el controlador (tamaño exacto)
+DriverPrint.bitmapToDataUrl = () => 'data:image/png;base64,AAA';
+DriverPrint.printPage = async (spec, url) => { driverPages.push({ spec, url }); return { printed: true }; };
 QLUsb.connect = async () => null;                                  // este equipo no tiene impresora USB: imprime con la ventana de siempre
 eval(fs.readFileSync(path.resolve(__dirname, '../../static/js/shared-print.js'), 'utf8'));
 const settle = () => new Promise((r) => setTimeout(r, 30));
@@ -208,7 +213,7 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   assert.strictEqual(r.prefs.feedMm, 1.5); assert.strictEqual(r.prefs.cut, true); assert.strictEqual(r.prefs.rotation, 'auto');
   assert.ok(!Object.values(r.source).includes('equipo'), 'no usa nada de este equipo');
   const src = fs.readFileSync(path.resolve(__dirname, '../../static/js/shared-print.js'), 'utf8');
-  assert.ok(src.includes('printUsb(job.user_id, prefsForJob(job))'), 'Y imprime cada pedido con prefsForJob');
+  assert.ok(src.includes('printLabel(job.user_id, prefsForJob(job))'), 'Y imprime cada pedido con prefsForJob');
   mode = 'self'; QLUsb.clearPrefs(mem);
 
   // ---- 6) la impresora la tiene OTRA pestaña de este navegador (25-oct-2026): el estado sale «conectada» (se imprime a través de ella) y el latido lo anuncia; si Chrome dice «Access denied», se explica qué hacer
@@ -234,10 +239,11 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   const denied = Object.assign(new Error("Failed to execute 'open' on 'USBDevice': Access denied."), { name: 'SecurityError' });
   QLUsb.connect = async () => { throw QLUsb.friendlyError(denied); };
   await GoldenSharedPrint.disconnectForTest();
+  GoldenSharedPrint.setPrintMode('usb');                               // en «USB directo» el aviso sí se muestra (en «automático» pasa al controlador)
   toasts.length = 0; await GoldenSharedPrint.connectUsb(true);
   st = GoldenSharedPrint.state();
-  assert.ok(!st.usb.ok && st.usb.code === 'denied' && /Cierra otras pestañas o programas de Brother/.test(st.usb.lastError), st.usb.lastError);
-  assert.ok(toasts.some((t) => t.t === 'error' && /Cierra otras pestañas o programas de Brother/.test(t.m)), 'el aviso trae la acción a seguir');
+  assert.ok(!st.usb.ok && st.usb.code === 'denied' && /no puede usar la impresora por USB directo/.test(st.usb.lastError), st.usb.lastError);
+  assert.ok(toasts.some((t) => t.t === 'error' && /Controlador de Windows/.test(t.m)), 'el aviso trae la acción a seguir');
   // dos toques a la vez: un solo intento
   const realReady = QLUsb.ready; QLUsb.ready = () => true;
   calls = 0; QLUsb.connect = async () => { calls++; await new Promise((r) => setTimeout(r, 20)); return { productName: 'QL-800' }; };
@@ -249,6 +255,81 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   assert.strictEqual(released, 2, 'pagehide y beforeunload sueltan la impresora');
   QLUsb.ready = realReady; QLUsb.connect = realConnect; QLUsb.remoteOwner = realOwner; global.fetch = f0;
 
+  // ---- 7) IMPRESIÓN POR EL CONTROLADOR DE WINDOWS (25-oct-2026): un modo normal, sin aviso rojo; tamaño exacto; persistencia por equipo; trabajos de otros equipos
+  const beats2 = [];
+  const fPrev = global.fetch;
+  global.fetch = async (url, init = {}) => { if (String(url).endsWith('/print-devices/heartbeat')) beats2.push(JSON.parse(init.body)); return fPrev(url, init); };
+  QLUsb.releaseNow = () => {};
+  mem.d = {};
+  const sp = () => GoldenSharedPrint;
+  // a) «Automático» + «Access denied» de Windows: pasa al controlador con UN solo aviso corto (nada de rojo) y la barra queda en modo controlador
+  const denied2 = Object.assign(new Error("Failed to execute 'open' on 'USBDevice': Access denied."), { name: 'SecurityError' });
+  QLUsb.connect = async () => { throw QLUsb.friendlyError(denied2); };
+  QLUsb.remoteOwner = async () => null;
+  toasts.length = 0;
+  sp().setPrintMode('auto'); await settle();
+  await sp().disconnectForTest(); await sp().connectUsb(false); await sp().connectUsb(false); await sp().connectUsb(true);
+  assert.ok(sp().driverOn(), 'en automático, con acceso denegado se pasa al controlador');
+  assert.ok(!toasts.some((t) => t.t === 'error'), 'ningún aviso rojo');
+  assert.strictEqual(toasts.filter((t) => /controlador de Brother/.test(t.m)).length, 1, 'un mensaje corto, UNA sola vez');
+  assert.ok(!/no se pudo conectar/i.test(toasts.map((t) => t.m).join(' ')));
+  assert.ok(beats2.length && beats2[beats2.length - 1].printer_connected === true && /Windows/.test(beats2[beats2.length - 1].printer_name), 'anuncia «Impresora conectada por Windows»');
+  // b) imprimir en este modo: una página de tamaño exacto, con la misma etiqueta de «Imprimir prueba» y sin tocar WebUSB
+  driverPages.length = 0; let usbTouched = 0; QLUsb.connect = async () => { usbTouched++; return null; };
+  await sp().drvPrint(sp().testCompose(), QLUsb.resolvePrefs(null, {}).prefs);
+  const pg = driverPages[0].spec;
+  assert.ok(Math.abs(pg.imageWidthMm - 696 * 25.4 / 300) < 0.01 && pg.pageWidthMm < 58.95 && pg.pageCss.includes('margin: 0') && pg.pageCss.includes(`size: ${pg.pageWidthMm}mm ${pg.pageHeightMm}mm`), JSON.stringify(pg));
+  assert.ok(Math.abs(pg.pageHeightMm - 1181 * 25.4 / 300) < 40, 'el largo sale de la etiqueta real');
+  // c) el modo se guarda en ESTE equipo y se respeta: «Controlador de Windows» no intenta WebUSB ni muestra «Conectar»
+  sp().setPrintMode('driver'); await settle();
+  assert.strictEqual(mem.d.gw_print_mode, 'driver');
+  toasts.length = 0; usbTouched = 0;
+  await sp().connectUsb(true); await sp().connectUsb(false);
+  assert.strictEqual(usbTouched, 0, 'no intenta WebUSB'); assert.ok(!toasts.length, 'ni un aviso');
+  assert.ok(sp().driverOn() && !sp().state().usb.ok);
+  // d) trabajos de OTROS equipos: sin lanzador (con cuadro de diálogo) quedan PENDIENTES hasta «Imprimir pendientes»; con lanzador (sin cuadro) se imprimen solos
+  await new Promise((r) => setTimeout(r, 250));                       // que terminen los latidos en vuelo de los pasos anteriores (no pisan al nuevo)
+  const results = []; let queue = [{ id: 71, user_id: '1001', requested_by: 'x1', prefs: { rotation: 'auto', mirror: true } }, { id: 72, user_id: '1002', requested_by: 'x1' }];
+  const tpl = { width_mm: 58.9, height_mm: 100, orientation: 'vertical', background_type: 'color', background_value: '#fff', elements: [] };
+  const f2 = global.fetch;
+  global.fetch = async (url, init = {}) => {
+    const u = new URL(url, 'http://x');
+    if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode: 'self', printer_name: '', printer_ready: false, serving: 2, poll: true });
+    if (u.pathname.endsWith('/print-jobs-next')) return json(200, { job: queue.shift() || null });
+    if (/\/print-jobs\/\d+\/result$/.test(u.pathname)) { results.push(Object.assign({ id: Number(u.pathname.match(/(\d+)\/result/)[1]) }, JSON.parse(init.body))); return json(200, {}); }
+    if (u.pathname.includes('/badge-print-data')) return json(200, { id: '1001', first_name: 'Ana', last_name: 'Mora', has_photo: false });
+    return f2(url, init);
+  };
+  global.BadgeRender = { loadFonts: async () => {}, renderBadge() {}, fetchTemplate: async () => json(200, tpl) };
+  global.html2canvas = async () => ({ width: Math.round(58.9 * 300 / 25.4), height: Math.round(100 * 300 / 25.4), getContext: () => null });
+  const realCompose = QLUsb.prepareBitmap;
+  for (const f of docListeners.bubble.visibilitychange || []) f(new Ev('visibilitychange'));
+  await new Promise((r) => setTimeout(r, 160));
+  assert.strictEqual(sp().state().route.serving, 2);
+  assert.strictEqual(sp().state().pendingJobs, 2, 'con cuadro de diálogo, lo que llega de otros equipos espera');
+  assert.strictEqual(results.length, 0, 'nada se imprime solo sin el lanzador');
+  assert.ok(toasts.some((t) => /Imprimir pendientes/.test(t.m)), 'avisa que hay pendientes');
+  driverPages.length = 0;
+  await sp().printPending();
+  assert.strictEqual(sp().state().pendingJobs, 0);
+  assert.deepStrictEqual(results.map((r) => [r.id, r.ok]), [[71, true], [72, true]], 'confirma cada trabajo como impreso');
+  assert.strictEqual(driverPages.length, 2, 'cada uno, una página por el controlador');
+  assert.ok(driverPages.every((p) => p.spec.pageCss.includes('margin: 0') && p.spec.pageWidthMm < 58.95 && p.spec.imageWidthMm > 58.9 && p.spec.imageWidthMm < 58.95), 'tamaño exacto');
+  // con el lanzador (--kiosk-printing): los trabajos se imprimen solos, sin clic
+  sp().setKioskForTest(true); results.length = 0; driverPages.length = 0; queue = [{ id: 81, user_id: '1003', requested_by: 'x2' }];
+  for (const f of docListeners.bubble.visibilitychange || []) f(new Ev('visibilitychange'));
+  await sp().connectUsb(false); await new Promise((r) => setTimeout(r, 1700));
+  assert.ok(results.some((r) => r.id === 81 && r.ok === true), 'con el lanzador se imprime sin cuadro y sin pedir nada');
+  assert.strictEqual(sp().state().pendingJobs, 0);
+  // si el controlador falla, el trabajo se confirma como fallido (no se pierde ni se repite solo)
+  DriverPrint.printPage = async () => { throw new Error('La impresora de Windows no respondió.'); };
+  results.length = 0; queue = [{ id: 91, user_id: '1004', requested_by: 'x2' }];
+  await new Promise((r) => setTimeout(r, 1700));
+  assert.ok(results.some((r) => r.id === 91 && r.ok === false && /Windows/.test(r.error)), 'confirma el fallo');
+  // e) volver a «automático» y a «USB directo» se guarda y se respeta
+  sp().setPrintMode('usb'); assert.strictEqual(mem.d.gw_print_mode, 'usb'); assert.ok(!sp().driverOn());
+  sp().setPrintMode('auto'); assert.ok(!('gw_print_mode' in mem.d)); assert.ok(!sp().driverOn());
+  global.fetch = f2;
   console.log('shared_print_rules_check OK');
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

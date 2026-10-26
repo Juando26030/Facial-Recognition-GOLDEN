@@ -263,6 +263,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       <div class="toolbar-group">
         <label>Vista previa</label>
         <button type="button" class="tb-btn ghost" id="previewToggleBtn">👁 Con datos de muestra</button>
+        <button type="button" class="tb-btn ghost" id="longestBtn" title="Muestra la plantilla con la persona del evento que tiene el nombre, apellido o texto más largo">🔎 Probar con el nombre más largo del evento</button>
       </div>
 
       <div class="toolbar-actions">
@@ -362,6 +363,9 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   let template = null;      // {id, name, width_mm, height_mm, orientation, background_type, background_value, elements}
   let selectedId = null;
   let previewMode = false;
+  let warnTimer = null;
+  let previewSource = 'sample';                      // 'sample' (Juan David) | 'longest' (la persona del evento con el texto más largo)
+  let longestSample = null;                          // se pide una vez por plantilla; sirve para el aviso de textos que se achicarían o cortarían
   let dragState = null;
   let elCounter = 0;
 
@@ -378,6 +382,17 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       role: 'Coordinador', phone: '3001234567', email: 'juan@correo.com', opt_1: 'VIP',
       extra_fields: extras, has_photo: false,
     };
+  }
+
+  function previewData() { return previewSource === 'longest' && longestSample ? longestSample : sampleData(); }
+  /* La persona del evento con el texto más largo (25-oct-2026): «Juan David» esconde los textos que no caben. Se usa para probar y para los avisos. */
+  async function loadLongestSample() {
+    if (KIND !== 'badge') return null;
+    try {
+      const r = await fetch(`/api/events/${window.EVENT_ID}/badge-longest-sample`, { cache: 'no-store' });
+      longestSample = r.ok ? ((await r.json()).sample || null) : null;
+    } catch (e) { longestSample = null; }
+    return longestSample;
   }
 
   function scaledForEditor(tpl) {
@@ -434,7 +449,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     renderCanvas();
     renderPropsPanel();
     updateWarnings(false);
-    BadgeRender.loadFonts(template).then(() => renderCanvas());          // cuando las fuentes elegidas estén cargadas, se vuelve a dibujar con la tipografía real
+    loadLongestSample().then(() => { if (template) { updateWarnings(false); if (previewMode && previewSource === 'longest') renderCanvas(); } });
+    BadgeRender.loadFonts(template).then(() => { renderCanvas(); updateWarnings(false); });          // cuando las fuentes elegidas estén cargadas, se vuelve a dibujar con la tipografía real
   }
 
   function syncToolbarFromTemplate() {
@@ -570,7 +586,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   function renderCanvas() {
     applyScale();
     const scaledTpl = scaledForEditor(template);
-    BadgeRender.renderBadge(canvasEl, scaledTpl, previewMode ? sampleData() : null, { eventId: window.EVENT_ID });
+    BadgeRender.renderBadge(canvasEl, scaledTpl, previewMode ? previewData() : null, { eventId: window.EVENT_ID });
     canvasEl.style.cursor = 'default';
     Array.from(canvasEl.querySelectorAll('.badge-element')).forEach(div => {
       const elId = div.dataset.elId;
@@ -595,6 +611,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       });
     });
     paintHandles();
+    clearTimeout(warnTimer); warnTimer = setTimeout(() => { if (template) updateWarnings(false); }, 250);          // los avisos de texto (achicado / cortado) siguen a cada cambio
     guides.x.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide v'; g.style.left = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
     guides.y.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide h'; g.style.top = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
   }
@@ -709,6 +726,22 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const parts = [];
     let severe = outside > 0;
     if (outside) parts.push(`⚠️ ${outside} elemento(s) quedaron fuera de la etiqueta (marcados en rojo): muévelos o cámbialos de tamaño.`);
+    if (KIND === 'badge') {                         // textos que se achicarían a menos del 80 % o se cortarían, con el PEOR caso real del evento (no con «Juan David»)
+      const data = longestSample || sampleData();
+      const plan = BadgeRender.planText(template, data);
+      const small = [], cut = [];
+      template.elements.forEach((el) => {
+        const f = plan.get(el.id);
+        if (!f) return;
+        const name = el.type === 'text_variable' ? ((ALL_VARIABLES.find(([k]) => k === el.variable) || [])[1] || el.variable) : `«${String(el.content || '').slice(0, 18)}»`;
+        if (f.truncated) cut.push(`${name} se cortaría con «…»`);
+        else if (f.ratio < 0.8) small.push(`${name} se achicaría al ${Math.round(f.ratio * 100)} %`);
+      });
+      if (cut.length || small.length) {
+        const who = longestSample ? `con el nombre más largo del evento (${[longestSample.first_name, longestSample.last_name].filter(Boolean).join(' ')})` : 'con la muestra';
+        parts.push(`⚠️ ${who}: ${cut.concat(small).join('; ')}. Agranda la caja, dale espacio libre debajo o elige otro «Ajuste» en Propiedades.`);
+      }
+    }
     if (KIND === 'badge' && window.QLUsb) {
       let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ }
       const prefs = QLUsb.resolvePrefs(ls, tapeSettings).prefs;
@@ -1059,6 +1092,11 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
           </select>
         </div>
       </div>
+      <div class="prop-field"><label>Ajuste del texto</label>
+        <select id="p_fit" title="Qué hace el texto cuando no cabe en su caja">
+          ${[['grow', 'Crecer hacia abajo'], ['shrink', 'Reducir para caber'], ['single', 'Una sola línea']].map(([v, l]) => `<option value="${v}" ${BadgeRender.fitModeOf(el) === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </div>
       <div class="prop-field"><label>Mayúsculas / minúsculas</label>
         <div class="case-row" id="p_case" role="group" aria-label="Mayúsculas o minúsculas">
           ${TEXT_CASE_OPTIONS.map(([v, label, title]) => `<button type="button" data-case="${v}" class="${(el.text_case || 'as_is') === v ? 'on' : ''}" title="${title}" aria-pressed="${(el.text_case || 'as_is') === v}">${label}</button>`).join('')}
@@ -1075,6 +1113,11 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     document.getElementById('p_fcolor').addEventListener('input', (e) => { el.font_color = e.target.value; renderCanvas(); });
     document.getElementById('p_fweight').addEventListener('change', (e) => { el.font_weight = e.target.value; renderCanvas(); });
     document.getElementById('p_falign').addEventListener('change', (e) => { el.align = e.target.value; renderCanvas(); });
+    document.getElementById('p_fit').addEventListener('change', (e) => {
+      const def = el.type === 'text_variable' ? 'grow' : 'shrink';
+      if (e.target.value === def) delete el.fit_mode; else el.fit_mode = e.target.value;          // lo de siempre no se guarda: una plantilla vieja queda idéntica
+      renderCanvas(); updateWarnings(false);
+    });
     document.getElementById('p_case').addEventListener('click', (e) => {
       const b = e.target.closest('button[data-case]');
       if (!b) return;
@@ -1199,10 +1242,19 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   });
 
   document.getElementById('previewToggleBtn').addEventListener('click', (e) => {
-    previewMode = !previewMode;
+    previewMode = !previewMode; previewSource = 'sample';
     e.target.innerText = previewMode ? '✏️ Volver a edición' : '👁 Con datos de muestra';
     renderCanvas();
   });
+  document.getElementById('longestBtn').addEventListener('click', async () => {
+    const sample = await loadLongestSample();
+    if (!sample) { showToast('El evento todavía no tiene personas para probar.', 'info'); return; }
+    previewMode = true; previewSource = 'longest';
+    document.getElementById('previewToggleBtn').innerText = '✏️ Volver a edición';
+    renderCanvas(); updateWarnings(false);
+    showToast(`Probando con ${[sample.first_name, sample.last_name].filter(Boolean).join(' ')}`, 'success');
+  });
+  if (KIND !== 'badge') document.getElementById('longestBtn').style.display = 'none';
 
   const magnetBtn = document.getElementById('magnetBtn');
   function paintMagnet() { magnetBtn.classList.toggle('on', magnetOn); magnetBtn.setAttribute('aria-pressed', magnetOn ? 'true' : 'false'); }
