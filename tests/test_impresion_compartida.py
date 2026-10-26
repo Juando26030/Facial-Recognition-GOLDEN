@@ -52,15 +52,16 @@ def _job(client, ev, user_id="1001", request_id=None):
 
 
 # ---------------------------------------------------------------------------------------------------- apagado = igual que hoy
-def test_it_is_off_by_default_and_the_registration_page_is_unchanged(client, factory, db):
+def test_it_is_off_by_default_and_the_driver_print_mode_is_still_available(client, factory, db):
     factory.staff("coordinador", "coord")
     ev = factory.event("en_proceso")
     assert ev.shared_print_enabled is False
     factory.authorize(ev, factory.staff("digitador", "dig"))
     login(client, "dig")
     page = client.get(f"/kiosk/{ev.id}/registro").text
-    assert "shared-print.js" not in page and "ql-usb.js" not in page and "html2canvas" not in page and "sharedPrintBar" not in page
-    assert "js/badge-render.js" in page                                                            # la impresión de siempre sigue ahí
+    assert "window.SHARED_PRINT_ENABLED = false" in page                                           # apagada: lo compartido no se usa...
+    assert "js/shared-print.js" in page and "js/driver-print.js" in page and "js/ql-usb.js" in page and "html2canvas" in page   # ...pero la barra y el modo por controlador existen igual
+    assert "js/badge-render.js" in page
     for method, path in (("post", f"/api/events/{ev.id}/print-devices/heartbeat"), ("post", f"/api/events/{ev.id}/print-jobs"), ("get", f"/api/events/{ev.id}/print-jobs-next")):
         body = {"device_id": "d", "user_id": "1", "request_id": "r"} if method == "post" else None
         r = getattr(client, method)(path, json=body) if body else getattr(client, method)(path)
@@ -328,3 +329,29 @@ def test_the_print_check_is_closed_when_the_switch_is_off(client, factory, db):
     factory.authorize(ev, db.query(__import__("app.models", fromlist=["StaffUser"]).StaffUser).filter_by(username="dig0").one())
     login(client, "dig0")
     assert client.get(f"/api/events/{ev.id}/print-check/1001").status_code == 409
+
+
+def test_the_driver_print_bar_loads_with_and_without_shared_print_but_not_for_clients(client, factory, db):
+    factory.staff("coordinador", "coord")
+    on = factory.event("en_proceso"); on.shared_print_enabled = True
+    off = factory.event("en_proceso")
+    db.commit()
+    dig = factory.staff("digitador", "dig2")
+    factory.authorize(on, dig); factory.authorize(off, dig)
+    login(client, "dig2")
+    assert "window.SHARED_PRINT_ENABLED = true" in client.get(f"/kiosk/{on.id}/registro").text
+    page = client.get(f"/kiosk/{off.id}/registro").text
+    assert "window.SHARED_PRINT_ENABLED = false" in page and "gw-print-settings" in page
+
+
+def test_shared_print_js_never_calls_shared_routes_when_the_event_has_it_off():
+    import pathlib
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert "window.SHARED_PRINT_ENABLED !== false" in sp
+    assert "if (!SHARED) return true;" in sp and "if (!SHARED || polling" in sp and "if (!SHARED) { online = true;" in sp
+
+
+def test_the_last_resort_print_page_declares_the_rotated_page_so_nothing_is_cut():
+    import pathlib
+    html = pathlib.Path("templates/badge_print.html").read_text(encoding="utf-8")
+    assert "template.width_mm > template.height_mm" in html and "@page { size: ${pw}mm ${ph}mm; margin: 0; }" in html and "rotate(90deg)" in html

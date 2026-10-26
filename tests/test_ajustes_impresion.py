@@ -202,19 +202,19 @@ def test_the_tapes_the_server_accepts_are_exactly_the_ones_qlusb_can_print():
         assert re.search(rf"\b{key}:\s*{re.escape(json.dumps(val))}", defaults), key               # los valores de fábrica son los mismos en el servidor y en el navegador
 
 
-def test_the_registration_page_carries_the_event_values_only_when_the_switch_is_on(client, factory, db):
+def test_the_registration_page_carries_the_event_values_with_or_without_shared_print(client, factory, db):
     factory.staff("coordinador", "coord")
     ev = factory.event("en_proceso")
     ev.print_settings_json = json.dumps({"cropMarginMm": 5})
     db.commit()
     login(client, "coord")
-    assert "gw-print-settings" not in client.get(f"/kiosk/{ev.id}/registro").text                 # interruptor apagado: la página de siempre
-    ev.shared_print_enabled = True
-    db.commit()
-    page = client.get(f"/kiosk/{ev.id}/registro").text
-    m = re.search(r'<meta name="gw-print-settings" content="([^"]*)">', page)
-    assert m and json.loads(m.group(1).replace("&#34;", '"').replace("&quot;", '"')) == {"cropMarginMm": 5}
-    assert "shared-print.js" in page and "ql-usb.js" in page
+    for shared in (False, True):                                                                  # el modo por controlador y los valores del evento no dependen del interruptor compartido
+        ev.shared_print_enabled = shared
+        db.commit()
+        page = client.get(f"/kiosk/{ev.id}/registro").text
+        m = re.search(r'<meta name="gw-print-settings" content="([^"]*)">', page)
+        assert m and json.loads(m.group(1).replace("&#34;", '"').replace("&quot;", '"')) == {"cropMarginMm": 5}
+        assert "shared-print.js" in page and "ql-usb.js" in page
 
 
 def test_parameters_page_has_the_event_print_values_card_with_the_62mm_continuous_default(client, factory, db):

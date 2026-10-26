@@ -38,6 +38,9 @@
   let online = true;
   /* MODO DE IMPRESIÓN POR EQUIPO (25-oct-2026): «auto» (WebUSB y, si no se puede, el controlador de Windows), «usb» (solo WebUSB) o «driver» (cola de Windows «Brother QL-800»; no se intenta
      WebUSB ni se muestra aviso rojo). `kiosk`: la ventana se abrió con el lanzador (--kiosk-printing: Chrome imprime sin cuadro de diálogo). */
+  /* «Impresión compartida» (interruptor del evento) solo gobierna que OTROS equipos usen esta impresora: latido, trabajos, Cola y la regla de «solo se imprime a quien está Registrado». El modo de
+     impresión, el lanzador, la calibración y «Imprimir prueba» valen en todos los eventos (26-oct-2026). Sin el interruptor no se llama a ninguna ruta de impresión compartida (el servidor respondería 409). */
+  const SHARED = window.SHARED_PRINT_ENABLED !== false;
   const DP = window.DriverPrint;
   const GUIDE_URL = '/static/ayuda/impresion-windows.html';
   let printMode = 'auto';
@@ -138,6 +141,7 @@
     text.textContent = msg;
     bar.className = kind;
     bar.querySelector('#spConnect').hidden = usb.ok || usb.busy || route.mode === 'shared' || driverOn() || !(window.QLUsb && QLUsb.supported());
+    bar.querySelector('#spQueue').hidden = !SHARED;
     bar.querySelector('#spPending').hidden = !pendingJobs.length;
     bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${pendingJobs.length})`;
     bar.querySelector('#spAlways').hidden = !(printMode === 'auto' && drvFallback);
@@ -231,6 +235,7 @@
     if (usb.ok && usb.viaTab && window.QLUsb && QLUsb.remoteOwner && !(await QLUsb.remoteOwner().catch(() => null))) {                 // la pestaña dueña se cerró: esta intenta quedarse con la impresora
       usb = DISCONNECTED(); await connectUsb(false); return;
     }
+    if (!SHARED) { online = true; render(); hbTimer = setTimeout(heartbeat, HEARTBEAT_MS); return; }                  // sin impresión compartida: solo se revisa la conexión local
     try {
       const res = await fetch(`/api/events/${EID}/print-devices/heartbeat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
         body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy ? null : (usb.ok || driverOn()), printer_name: usb.name || (driverOn() ? 'Controlador de Windows (Brother QL-800)' : null) }) });      // null: otra pestaña es la dueña, no se pisa su estado
@@ -370,7 +375,7 @@
     render();
   }
   async function startPolling() {
-    if (polling || !route.poll || !printerReady()) return;
+    if (!SHARED || polling || !route.poll || !printerReady()) return;
     polling = true;
     while (route.poll && printerReady()) {
       let job = null;
@@ -461,6 +466,7 @@
   /* Orden del 22-oct-2026: SOLO se imprime a quien está «Registrado» en este evento (botón, autoimpresión, Cola; local o compartida). El servidor también lo
      valida al crear el trabajo compartido. Si no se puede comprobar, NO se imprime. */
   async function registeredOrSay(userId) {
+    if (!SHARED) return true;                       // sin impresión compartida, la regla de siempre (el Directorio imprime a quien se elija)
     for (let i = 0; i < 2; i++) {
       try {
         const r = await fetch(`/api/events/${EID}/print-check/${encodeURIComponent(userId)}`, { cache: 'no-store' });

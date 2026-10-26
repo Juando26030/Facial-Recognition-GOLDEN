@@ -89,7 +89,12 @@
 
             // @page con el tamaño REAL de la plantilla — así la impresora (ej. Brother QL-800)
             // recibe el tamaño de etiqueta correcto en vez del tamaño carta por defecto del navegador.
-            pageStyle.innerHTML = `@page { size: ${template.width_mm}mm ${template.height_mm}mm; margin: 0; }`;
+            // 26-oct-2026 (último recurso: el camino normal es la barra de impresión de Registro, que arma una imagen de 58,9 mm): una etiqueta APAISADA (más ancha que alta) se gira 90° y la página
+            // se declara girada (alto × ancho), igual que el giro automático del USB; así el lado largo va a lo largo de la cinta y nada sale cortado por ningún borde.
+            const rotate = template.width_mm > template.height_mm;
+            const pw = rotate ? template.height_mm : template.width_mm, ph = rotate ? template.width_mm : template.height_mm;
+            pageStyle.innerHTML = `@page { size: ${pw}mm ${ph}mm; margin: 0; } @media print { #badgeWrapper { display:block; position:relative; width:${pw}mm; height:${ph}mm; overflow:hidden; padding:0; } ` +
+                (rotate ? `#badgePrint { position:absolute; left:${pw}mm; top:0; transform-origin:0 0; transform:rotate(90deg); }` : '#badgePrint { position:absolute; left:0; top:0; }') + ' }';
 
             await BadgeRender.loadFonts(template);            // la tipografía elegida ya cargada antes de dibujar e imprimir
             BadgeRender.renderBadge(badgeEl, template, data, { eventId: EVENT_ID });
