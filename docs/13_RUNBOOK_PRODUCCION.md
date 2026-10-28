@@ -1,6 +1,6 @@
 # 13 · Runbook de producción — paso del 28-oct-2026 (staging → producción)
 
-Lo ejecuta **Juan David**; Claude no corre nada en la nube. **Producción queda EXACTAMENTE como staging el 28-oct-2026**: el código de `79348da` (rama `migra/fase1-2`), probado por Juan en su Brother QL-800 (vertical y horizontal). Sin funciones nuevas ni arreglos extra.
+Lo ejecuta **Juan David**; Claude no corre nada en la nube. **Producción queda como staging el 28-oct-2026**: el código de `79348da` (rama `migra/fase1-2`), probado por Juan en su Brother QL-800 (vertical y horizontal). Sin funciones nuevas ni arreglos extra. **Única diferencia de código/configuración frente a `79348da`:** `CONTINGENCY_ENABLED=1` en producción (orden explícita de Juan David, 28-oct-2026, 14:46).
 Los parámetros de impresión son **inamovibles** ([`IMPRESION_PARAMETROS_INAMOVIBLES.md`](IMPRESION_PARAMETROS_INAMOVIBLES.md); los fija `tests/test_impresion_parametros_fijos.py`).
 
 > **Nada de esto se ejecuta hasta que Juan David escriba exactamente «DESPLIEGA PRODUCCIÓN».** Armar el paquete (esta rama y este documento) no despliega nada.
@@ -12,7 +12,7 @@ Los parámetros de impresión son **inamovibles** ([`IMPRESION_PARAMETROS_INAMOV
 | `main` | `b225a2d` (PR #1 «corte/main»: producción en Cloud Run) | el candidato `candidato/produccion-28oct` (avance directo: `b225a2d` es su ancestro) |
 | Código de los 3 servicios y los Jobs | el de `b225a2d` | el de `79348da` (el candidato solo agrega documentación y scripts) |
 | Base de datos | `0068_door_liveness` | `0073_attendee_origin` (migraciones 0069–0073, solo aditivas) |
-| `CONTINGENCY_ENABLED` | `0` (decisión, no se cambia) | `0` |
+| `CONTINGENCY_ENABLED` | `0` | **`1`** (orden de Juan David del 28-oct-2026: el modo sin conexión va ENCENDIDO; `deploy/gcp/config.sh`, línea 27) |
 
 **Comprobar el estado real de producción antes de tocar nada** (solo lectura, en Cloud Shell, proyecto `goldenweb-prod`, región `us-east4`):
 
@@ -79,7 +79,7 @@ Origen: `deploy/gcp/config.sh`, `deploy/gcp/deploy.sh`, `deploy/gcp/env/common.y
 
 | Qué | Staging | Producción | ¿Afecta lo que Juan probó? |
 |---|---|---|---|
-| `CONTINGENCY_ENABLED` | 1 | **0 (decisión; no se cambia sin orden escrita de Juan)** | No: la contingencia sin conexión no es parte de lo probado hoy |
+| `CONTINGENCY_ENABLED` | 1 | **1** (era 0 hasta el 28-oct-2026; cambiado por orden explícita de Juan David en un commit propio, `deploy/gcp/config.sh`) | **Ahora igual en los dos**: el quiosco de producción trae la copia local de la lista y el service worker `/kiosk/sw.js`. Apagarlo = volver la línea a `=0` y redesplegar |
 | Rama que puede desplegar (Workload Identity) | `migra/fase1-2` (cada push) | **solo `main`, solo manual** con `confirm=DESPLEGAR` | No |
 | Congelamiento de despliegue | no | **sí** (`/api/ops/deploy-allowed`; `force` solo emergencias) | No |
 | `DEPLOY_ENV` / avisos | `staging`: distintivo STAGING y correos con prefijo `[STAGING]` | `production`: sin distintivo ni prefijo | Cosmético |
@@ -103,6 +103,7 @@ for s in golden-web golden-publico golden-biometria; do gcloud run services desc
 ## 5. Lo que CAMBIA para el operador al subir esta versión (ver las notas de la versión)
 
 - **Sesión única** (encendida por defecto en cuanto existe `app_settings`): los roles que no son admin/super_admin solo pueden tener **una** sesión; entrar en otro equipo cierra la anterior. Las **cuentas de puesto de impresión** rechazan un segundo inicio mientras estén en uso. Se apaga en Configuración (o con la variable `SINGLE_SESSION=0`). Los admin no tienen límite. Nadie pierde su sesión al desplegar.
+- **Modo sin conexión (contingencia) ENCENDIDO:** el quiosco descarga una copia local de la lista del evento (con huellas) y registra un service worker; sin red se puede registrar y al volver la red se sincroniza. Probarlo en cada dispositivo antes de un evento (pruebas de humo, paso 12). Requisitos legales ya cubiertos por la política 1.1 (sección 8; `docs/legal/CONTINGENCIA_PRODUCCION_LISTA.md`).
 - **Impresión** (ver `IMPRESION_PARAMETROS_INAMOVIBLES.md`).
 
 ## 6. PR candidato → main (NO fusionar hasta DESPLIEGA PRODUCCIÓN)

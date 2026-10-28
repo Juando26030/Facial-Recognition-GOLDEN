@@ -33,6 +33,19 @@ for ruta in /api/session/ping /api/bulk_steps/active; do
   else bien "Ruta $ruta" "responde $c (existe; pide sesión)"; fi
 done
 
+titulo "3b. Modo sin conexión (contingencia) encendido"
+cont="$(curl -s --max-time 20 "$DOMINIO/kiosk/sw.js")"
+if echo "$cont" | grep -q "contingencia APAGADO"; then mal "Contingencia" "el service worker servido dice «APAGADO»: CONTINGENCY_ENABLED no quedó en 1"
+elif echo "$cont" | grep -q "addEventListener"; then bien "Contingencia" "el service worker del quiosco está ENCENDIDO"
+else aviso "Contingencia" "no se pudo leer /kiosk/sw.js"; fi
+for s in $SERVICIOS; do
+  v="$(g run services describe "$s" --region "$REGION" --format=json 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+print(next((e.get("value", "") for e in d["spec"]["template"]["spec"]["containers"][0].get("env", []) if e["name"] == "CONTINGENCY_ENABLED"), "?"))' 2>/dev/null)"
+  [ "$v" = "1" ] && bien "CONTINGENCY_ENABLED en $s" "1" || mal "CONTINGENCY_ENABLED en $s" "vale «${v:-?}» (se esperaba 1)"
+done
+
 titulo "4. Firebase Hosting"
 v="$(version_hosting_actual)"
 # shellcheck disable=SC2012  # los nombres los pone anotar_estado_previo.sh (fecha y hora, sin espacios)

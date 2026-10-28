@@ -22,6 +22,10 @@ Producción queda igual que staging el 28-oct-2026 (código `79348da`). Lo que s
 ## Para quien arma el evento
 - La **procedencia** de cada persona (base, manual, autoregistro) queda registrada; las ya existentes se rellenan con lo que hay y el resto queda «Desconocido».
 
+## Modo sin conexión (contingencia) — **ENCENDIDO en producción**
+- El quiosco guarda en el equipo una **copia de la lista del evento** y un service worker: si se cae el internet, **se sigue registrando** y, cuando vuelve la red, **se sincroniza solo**. La lista local muestra «N de N».
+- Antes de cada evento, **prueba cada dispositivo**: abre el Registro con red (carga la lista), corta la red, registra a una persona, vuelve la red y mira que sincronice.
+- Se apaga volviendo `CONTINGENCY_ENABLED` a 0 en `deploy/gcp/config.sh` y redesplegando (el equipo se limpia solo en la siguiente visita).
+
 ## Lo que NO cambia
 - Textos de autorización y política de privacidad. No se recoge ningún dato personal nuevo.
-- La **contingencia sin conexión sigue APAGADA en producción** (decisión de Juan David).

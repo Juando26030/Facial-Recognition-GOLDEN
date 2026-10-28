@@ -12,6 +12,7 @@ Datos **ficticios**, con un evento **PRUEBA-SALIDA** que se crea para esto y se 
 8. **Compartida:** encender «Impresión compartida» en el evento; con un celular/tablet Android conectado a la impresora y otro equipo pidiendo la escarapela: sale **una sola vez**; lo que no sale queda en la **Cola**; «Imprimir pendientes» funciona.
 9. **Sesiones:** con una cuenta digitador, iniciar sesión en dos navegadores: la primera debe cerrarse con aviso; un admin no tiene límite.
 10. **`/sistema`:** sin rojos (base, almacenamiento, cola, Job horario).
-11. **Cierre:** apagar la compartida, **finalizar PRUEBA-SALIDA**, y correr `bash deploy/produccion_28oct/verificar_despues.sh <hash de main>` (0 errores en los registros).
+11. **Contingencia (modo sin conexión):** con el Registro de PRUEBA-SALIDA abierto y la **lista cargada** en el dispositivo (la barra del Registro muestra la lista local «N de N»), **corta la red** (modo avión o desconectar el cable), registra a una persona ficticia **sin conexión** (debe quedar registrada y en cola), **vuelve la red** y comprueba que **sincroniza** (la cola baja a 0, la persona aparece Registrada en el servidor) y que la lista local sigue mostrando **N de N**.
+12. **Cierre:** apagar la compartida, **finalizar PRUEBA-SALIDA**, y correr `bash deploy/produccion_28oct/verificar_despues.sh <hash de main>` (0 errores en los registros).
 
 Si algo falla: criterio y pasos de vuelta atrás en `docs/13_RUNBOOK_PRODUCCION.md` §7.
