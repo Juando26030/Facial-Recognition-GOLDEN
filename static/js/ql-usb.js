@@ -117,10 +117,14 @@
     for (var y = h - 1; y >= 0; y--) { var base = y * w; for (var x = 0; x < w; x++) if (bm[base + x]) return y; }
     return -1;
   }
-  function cropToContent(bm, w, h, marginDots) {      // conserva hasta la última fila con tinta + margen (nunca más que lo que había; si no hay tinta, no recorta)
+  function firstInkRow(bm, w, h) {
+    for (var y = 0; y < h; y++) { var base = y * w; for (var x = 0; x < w; x++) if (bm[base + x]) return y; }
+    return -1;
+  }
+  function cropToContent(bm, w, h, marginDots, minTailDots) {      // conserva hasta la última fila con tinta + margen (nunca más que lo que había; si no hay tinta, no recorta). minTailDots: blanco mínimo al final (horizontal: el del inicio)
     var last = lastInkRow(bm, w, h);
     if (last < 0) return { bitmap: bm, h: h };
-    var nh = Math.min(h, last + 1 + Math.max(0, Math.round(marginDots)));
+    var nh = Math.min(h, last + 1 + Math.max(0, Math.round(marginDots), Math.round(minTailDots || 0)));
     return nh === h ? { bitmap: bm, h: h } : { bitmap: bm.subarray(0, w * nh), h: nh };
   }
   function invertBitmap(bm) { var out = new Uint8Array(bm.length); for (var i = 0; i < bm.length; i++) out[i] = bm[i] ? 0 : 1; return out; }
@@ -134,7 +138,10 @@
       fixed.set(bitmap.subarray(0, Math.min(bitmap.length, fixed.length)));
       bitmap = fixed; height = want;
     } else if (prefs.crop) {
-      var c = cropToContent(bitmap, tapeDots, height, mmToDots(prefs.cropMarginMm));
+      // Horizontal (gira 90°/270°): el texto suele quedar centrado a lo largo de la tira y el recorte solo quitaba el blanco del FINAL, así que la tinta salía pegada al extremo. 28-oct-2026
+      // (prueba física en la Brother, producción): el blanco del final iguala al del inicio (nunca más largo que la plantilla). La vertical no cambia.
+      var sideways = lay.rotation === 90 || lay.rotation === 270;
+      var c = cropToContent(bitmap, tapeDots, height, mmToDots(prefs.cropMarginMm), sideways ? Math.max(0, firstInkRow(bitmap, tapeDots, height)) : 0);
       cropped = c.h !== height; bitmap = c.bitmap; height = c.h;
     } else if (prefs.lengthMm) {                                              // alto fijo manual (continua)
       var fh = mmToDots(prefs.lengthMm), fx = new Uint8Array(tapeDots * fh);
