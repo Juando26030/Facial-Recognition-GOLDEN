@@ -1,6 +1,6 @@
 # 18 · Exportar e importar eventos (diseño e inventario)
 
-Rama `producto/exportar-evento` (cortada de `main` = `6c71cc3`, 28-oct-2026). Estado: **F0 — inventario y diseño** (sin código todavía).
+Rama `producto/exportar-evento` (cortada de `main` = `6c71cc3`, 28-oct-2026). Estado: **F1 hecha** (exportar/importar sin biometría ni archivos: `app/event_transfer.py`, `app/routers/event_transfer.py`, `scripts/event_export.py`, `scripts/event_import.py`, migración `0074_event_transfer`). F2–F5 pendientes.
 Objetivo: sacar un evento COMPLETO de un entorno (staging, producción o servidor local) y crearlo en otro quedando igual: configuración, parámetros, campos, plantilla de escarapela, ajustes de impresión, formularios, ruleta, personas, registros con sus horas y resultados.
 Reglas que mandan sobre todo lo de abajo: `CLAUDE.md` (endpoints `def`, archivos solo por `app/storage.py`, lo largo por `app/jobs.py` o Cloud Run Job, nada de datos personales en logs, horas en UTC, compatible con el pooler de Neon, revision Alembic ≤ 32 caracteres) y la regla legal de biometría (L1–L4).
 
@@ -77,10 +77,14 @@ Se reutiliza el patrón de `form_transfer.py`: nombre de formato + `version`, li
 Los ids numéricos cambian entre entornos. El importador procesa las tablas en **orden topológico** (evento → campos/áreas/ítems/plantillas/formularios → formulario hijos → personas → registros) y mantiene un **mapa origen→destino por tabla**. Se conservan los identificadores de negocio: `event_code` (o uno nuevo si choca), cédulas, `client_id` de los registros, tokens, slugs, referencias de pago, `audit_consent_logs.id`. Las horas se copian en UTC sin convertir.
 
 ### 2.3 Personal (cuentas)
-Las cuentas NO se copian y nunca se crean cuentas ni contraseñas. Donde una fila guarda «quién lo hizo» (`registered_by_staff_id`, `printed_by_staff_id`, `staff_user_id`, `coordinator_staff_id`…), el export lo convierte a **nombre de usuario**. En el destino: si existe un usuario con ese nombre, se enlaza; si no, el enlace queda NULL y el **texto se conserva** en una columna nueva de nombre (migración 0074, aditiva: `registered_by_name`, `printed_by_name`, `delivered_by_name`, `actor_name`, … `varchar(80) NULL` solo en las tablas que hoy no tienen dónde guardarlo). El nombre de usuario no es un dato sensible del titular; no se copia nada más del personal.
+Las cuentas NO se copian y nunca se crean cuentas ni contraseñas. Donde una fila guarda «quién lo hizo» (`registered_by_staff_id`, `printed_by_staff_id`, `staff_user_id`, `coordinator_staff_id`…), el export lo convierte a **nombre de usuario** (`@names` en la fila). En el destino: si existe un usuario con ese nombre, se enlaza; si no, el enlace queda NULL y el **texto se conserva** en la tabla `event_import_actors` (migración 0074: importación, tabla, fila, columna y nombre). *Decisión de F1:* una tabla aparte en vez de agregar columnas de nombre a `access_logs` y demás, para no alterar tablas grandes y calientes. El nombre de usuario no es un dato sensible del titular; no se copia nada más del personal.
 
 ### 2.4 Importar SIEMPRE crea un evento NUEVO
 Nunca sobrescribe. Si el código o nombre ya existe, el asistente pide uno nuevo. Pasos: **1) simulacro** (dry-run: no escribe nada; lista qué entraría, conteos, conflictos —código/nombre, personas ya existentes con datos distintos, tokens o referencias que chocan, usuarios del personal sin enlace, tipografías ausentes, personas suprimidas que se omiten, estados/super-eventos sin equivalente—) y **2) importar de verdad**. **Una transacción por evento**, con SAVEPOINT por lote en cargas grandes. **Idempotente:** el importador anota en una tabla de control (`event_imports`, migración 0074) la huella del paquete y el evento creado; reintentar tras un corte retoma o responde «ya importado», y no duplica personas, registros ni consentimientos.
+
+### 2.4b Estado al importar (ajustes del 28-oct-2026)
+- Los **formularios** entran en «pruebas» (sin calendario). Opción del asistente **«conservar el estado original»** (apagada por defecto, con aviso): el estado y calendario originales quedan guardados y se aplican solo al **confirmar**.
+- Un evento **finalizado** o **creado** entra tal cual y sin efectos. Un evento **en proceso** entra en espera (estado «creado») hasta que se **confirma** la importación (`POST /api/event-transfer/imports/{n}/confirm` o `--confirm N`): mientras tanto **no activa el congelamiento de despliegues**. Importar no dispara cierres automáticos, purgas ni correos.
 
 ### 2.5 Biometría y privacidad (regla legal, no negociable)
 - **Por defecto NO se exporta** ningún rostro, foto de registro, encoding ni vector: se anulan `users.face_encoding`, `face_captured_at`, `biometric_consent_at`, `biometric_consent_source`, `is_biometric_enabled=false` y no se copian las fotos.
@@ -92,7 +96,7 @@ Nunca sobrescribe. Si el código o nombre ya existe, el asistente pide uno nuevo
 
 ### 2.6 Sin efectos secundarios
 Importar **no** envía correos, **no** llama a Wompi ni dispara webhooks, **no** encola trabajos de reconocimiento ni notificaciones y **no** crea pagos nuevos. Los pagos y respuestas se copian como registros históricos con `origin='importado'` (columna nueva `form_payments.origin`, migración 0074; en `form_submissions` se usa la columna `source` que ya existe). Las banderas de «ya enviado» (`digital_sent_at`, `accept_sent_at`, `sent_at`) se copian tal cual para que el destino NO reenvíe. Los formularios importados quedan en estado «pruebas».
-**Migración 0074** (a escribir en F1, aditiva, id ≤ 32 caracteres: `0074_event_transfer`): tabla `event_transfer_log` (bitácora y control de idempotencia), `form_payments.origin`, columnas de nombre de usuario (§2.3). Nada toca datos existentes.
+**Migración 0074** (escrita a mano, aditiva, id de 19 caracteres: `0074_event_transfer`): tablas `event_transfer_log` (bitácora; guarda el estado en espera de una importación) y `event_import_actors` (nombres de usuario sin cuenta, §2.3), y la columna `form_payments.origin`. Probada sobre una copia de la base de demostración (subir, comprobar, bajar y volver a subir; los conteos de las tablas previas no cambian). Nada toca datos existentes.
 
 ### 2.7 Seguridad, tamaño y archivos
 - Solo **`super_admin`** exporta e importa. Bitácora en `event_transfer_log`: quién, cuándo, evento, conteos, opciones, huella; **sin datos personales** y nunca el contenido del paquete en logs.
