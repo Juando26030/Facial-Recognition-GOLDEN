@@ -145,8 +145,9 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
     const notices = toasts.filter((t) => /Windows usa su propio controlador/.test(t.m));
     assert.strictEqual(notices.length, 1, 'el aviso sale UNA vez'); assert.ok(notices[0].t !== 'error' && /Para recibir trabajos de otros equipos, usa un celular o tablet Android conectado a la impresora, o toca «Imprimir pendientes» y confirma en el cuadro de Chrome\./.test(notices[0].m), notices[0].m);
     assert.ok(!toasts.some((t) => t.t === 'error'), 'ningún aviso rojo');
-    await GoldenSharedPrint.connectForTest(true); await settle();                                  // la persona toca «Conectar»: un intento, y el aviso NO se repite
-    assert.strictEqual(toasts.filter((t) => /Windows usa su propio controlador/.test(t.m)).length, 1, 'no se repite');
+    await GoldenSharedPrint.connectForTest(true); await settle();                                  // la persona toca «Conectar»: un intento y el aviso se muestra otra vez (nunca «no pasa nada»)
+    assert.strictEqual(toasts.filter((t) => /Windows usa su propio controlador/.test(t.m)).length, 2, 'al tocar Conectar se explica de nuevo');
+    const bst = GoldenSharedPrint.stationState(); assert.ok(bst.bar.connect, 'el botón inútil se oculta');
     assert.ok(!GoldenSharedPrint.state().usb.ok && GoldenSharedPrint.state().usb.denied, 'no queda como dueño de la impresora');
     assert.ok(beats.every((b) => b.printer_connected !== true), 'el latido nunca lo anuncia con impresora: ' + JSON.stringify(beats.map((b) => b.printer_connected)));
     console.log('denied_notice OK'); process.exit(0);

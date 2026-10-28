@@ -474,3 +474,15 @@ def test_usb_works_with_shared_print_off_and_never_touches_the_shared_routes():
     assert "if (SHARED && !(await registeredOrSay(userId))) return;" in sp and "if (sessionDead || !SHARED) { render(); return; }" in sp   # ninguna ruta compartida
     assert "Sin impresora: se usa la ventana de impresión del navegador." in sp and "Impresora conectada (" in sp
     assert "Windows usa su propio controlador" in sp and "gw_denied_notice" in sp and "if (!ask && usb.denied)" in sp
+
+
+def test_normal_print_window_uses_the_62mm_paper_width_of_the_driver():
+    from pathlib import Path
+    html = Path("templates/badge_print.html").read_text(encoding="utf-8")                          # probado en hardware: con 58,93 mm (o menos de 99,8 mm de alto) Chrome ignora margin:0 y pone fecha, ruta y «1/1»
+    assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_MIN_H = 99.8;" in html and "@page { size: ${PAGE_W}mm ${pageH}mm; margin: 0 }" in html and "margin-left:${PAGE_LEFT_MM}mm" in html
+
+
+def test_denied_bar_explains_and_hides_the_useless_connect_button():
+    from pathlib import Path
+    sp = Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert sp.count("Este computador no puede abrir la impresora directamente") == 2 and "usb.busy || usb.denied ||" in sp

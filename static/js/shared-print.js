@@ -128,6 +128,7 @@
     if (!SHARED) {                                    // sin impresión compartida: USB directo si hay impresora; si no, la ventana de impresión del navegador (sin mencionar la compartida)
       if (usb.busy) { kind = 'warn'; msg = `${QLUsb.BUSY_MSG} Se vuelve a intentar sola cada pocos segundos.`; }
       else if (usb.ok) msg = `Impresora conectada (${usb.name || 'Brother'}).`;
+      else if (usb.denied) { kind = 'warn'; msg = 'Este computador no puede abrir la impresora directamente (Windows usa su propio controlador): se imprime con la ventana de Chrome. Para compartir la impresora usa un celular o tablet Android.'; }
       else { kind = 'warn'; msg = 'Sin impresora: se usa la ventana de impresión del navegador.'; }
     } else if (!online) { kind = 'bad'; msg = 'Sin conexión con el servidor: la impresión compartida no funciona hasta que vuelva la red.'; }
     else if (route.mode === 'shared') {
@@ -137,6 +138,9 @@
       msg = `${QLUsb.BUSY_MSG} Se vuelve a intentar sola cada pocos segundos.`;
     } else if (usb.ok) {
       msg = `Impresora conectada (${usb.name}).` + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
+    } else if (usb.denied) {
+      kind = 'warn'; msg = 'Este computador no puede abrir la impresora directamente (Windows usa su propio controlador): se imprime con la ventana de Chrome. Para compartir la impresora usa un celular o tablet Android.';
+      if (waitingCount()) msg += ` ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».`;
     } else {
       kind = route.serving ? 'bad' : 'warn';
       msg = route.serving ? `Impresora DESCONECTADA: ${route.serving} equipo(s) imprimen aquí y sus escarapelas quedan en cola. Conéctela.`
@@ -150,7 +154,7 @@
     text.textContent = msg;
     bar.className = kind;
     /* La visibilidad NO depende del rol: la decide el interruptor del PUESTO en Parámetros («Mostrar» por defecto). */
-    bar.querySelector('#spConnect').hidden = !shown || usb.ok || usb.busy || (SHARED && route.mode === 'shared') || !(window.QLUsb && QLUsb.supported());
+    bar.querySelector('#spConnect').hidden = !shown || usb.ok || usb.busy || usb.denied || (SHARED && route.mode === 'shared') || !(window.QLUsb && QLUsb.supported());
     bar.querySelector('#spQueue').hidden = !(SHARED && shown);
     bar.querySelector('#spPrefs').hidden = !shown;
     bar.querySelector('#spPending').hidden = !(SHARED && !usb.ok && waitingCount());            // la acción del puesto: se ve también con el menú escondido
@@ -185,7 +189,7 @@
       if (isDenied(e)) {
         usb = { ok: false, name: '', lastError: DENIED_MSG, busy: false, denied: true };
         let seen = false; try { seen = sessionStorage.getItem('gw_denied_notice') === '1'; } catch (er) { seen = deniedShown; }
-        if (!seen && !deniedShown) { deniedShown = true; try { sessionStorage.setItem('gw_denied_notice', '1'); } catch (er) { /* sin almacenamiento */ } toast('ℹ️ ' + DENIED_MSG, 'info'); }      // UNA vez por sesión, sin rojo
+        if (ask || (!seen && !deniedShown)) { deniedShown = true; try { sessionStorage.setItem('gw_denied_notice', '1'); } catch (er) { /* sin almacenamiento */ } toast('ℹ️ ' + DENIED_MSG, 'info'); }      // UNA vez por sesión, sin rojo
       } else {
         usb = { ok: false, name: '', lastError: e && e.message ? e.message : String(e), busy };
         if (busy) busyTimer = setTimeout(() => connectUsb(false), BUSY_RETRY_MS);
