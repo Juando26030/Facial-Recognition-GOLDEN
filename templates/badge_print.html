@@ -100,18 +100,22 @@
         // INAMOVIBLE (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md): estos valores salen de pruebas físicas; no se cambian sin pedido expreso de Juan David y nueva prueba.
         // 28-oct-2026 (probado en una Brother QL-800 con Windows): Chrome solo respeta «margin: 0» (y quita fecha, ruta y «1/1») si el ancho de la página es el del papel del controlador, 62 mm;
         // con 58,93 mm los ignora. Por eso la página mide 62 mm de ancho y la etiqueta de 58,93 mm va a PAGE_LEFT_MM del borde izquierdo (el área imprimible empieza en el borde izquierdo y mide ~60 mm).
-        const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_MIN_H = 99.8;       // probado en la Brother: 62×99,8 / 95 / 110 mm salen limpias y sin girar; 40, 45, 65 mm traen fecha, ruta y «1/1», y 60,6 mm el controlador la gira (papel de 79 mm). Por eso nunca se pide una página más corta que el papel de 99,8 mm
-        const pageH = Math.max(spec.pageHeightMm, PAGE_MIN_H);
+        const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;          // probado en la Brother: SOLO el papel exacto del controlador (62×99,8 mm) sale bien. Otras alturas: 40/45/65 mm traen fecha, ruta y «1/1»; 60,6 mm lo gira el controlador (papel de 79 mm); 99,99 mm (apenas más que el papel) sale de 62×62 mm y la tinta pegada a un extremo (28-oct-2026, etiqueta horizontal de 105 mm). Por eso la página mide SIEMPRE 62×99,8 mm
+        // La impresora NO imprime los últimos milímetros del papel (la marca de fin se pierde y el controlador acorta la tira): probado con una imagen de 99,4 mm salió de 6,2 cm; con 96 mm sale de 9 cm y centrada. Por eso la imagen mide como MÁXIMO MAX_IMG_H = 96 mm: una más alta (plantilla horizontal de más de ~101 mm) se reduce
+        // proporcionalmente y queda centrada a lo ancho; las de 100 mm de plantilla (95,08 mm de imagen) y las más bajas conservan su tamaño real (la marca de fin fija su largo).
+        const fit = Math.min(1, MAX_IMG_H / spec.imageHeightMm), imgW = Math.round(spec.imageWidthMm * fit * 100) / 100, imgH = Math.round(spec.imageHeightMm * fit * 100) / 100;
+        const imgLeft = Math.round((PAGE_LEFT_MM + (spec.imageWidthMm - imgW) / 2) * 100) / 100;
+        const pageH = PAGE_H;
         spec.pageCss = `@page { size: ${PAGE_W}mm ${pageH}mm; margin: 0 }`;
         const img = document.createElement('img');
         img.id = 'labelImg'; img.alt = '';
         img.src = LabelCompose.bitmapToDataUrl(out.bitmap, out.tapeDots, out.height, p.mirror);
-        img.style.cssText = `display:block; margin-left:${PAGE_LEFT_MM}mm; width:${spec.imageWidthMm}mm; height:${spec.imageHeightMm}mm; image-rendering:pixelated; background:#fff;`;
+        img.style.cssText = `display:block; margin-left:${imgLeft}mm; width:${imgW}mm; height:${imgH}mm; image-rendering:pixelated; background:#fff;`;
         badgeEl.style.display = 'none';
         document.getElementById('badgeWrapper').appendChild(img);
         // El controlador de la Brother recorta el blanco del final de la tira (probado: una página de 75 mm salió de 54 mm); una marca de 0,3 mm en la última fila de la imagen fija el largo de la etiqueta, igual que en el USB.
         const endMark = document.createElement('div');
-        endMark.id = 'endMark'; endMark.style.cssText = `position:relative; z-index:1; width:0.3mm; height:0.3mm; margin:-0.3mm 0 0 ${PAGE_LEFT_MM}mm; background:#000; -webkit-print-color-adjust:exact; print-color-adjust:exact;`;
+        endMark.id = 'endMark'; endMark.style.cssText = `position:relative; z-index:1; width:0.3mm; height:0.3mm; margin:-0.3mm 0 0 ${imgLeft}mm; background:#000; -webkit-print-color-adjust:exact; print-color-adjust:exact;`;
         document.getElementById('badgeWrapper').appendChild(endMark);
         pageStyle.innerHTML = `${spec.pageCss} @media print { html, body { margin:0; padding:0; background:#fff; } #badgeWrapper { display:block; padding:0; margin:0; width:${PAGE_W}mm; height:calc(${pageH}mm - 0.2mm); overflow:hidden; } ` +
             `#badgePrint { display:none !important; } #labelImg { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;

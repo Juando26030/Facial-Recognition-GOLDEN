@@ -479,7 +479,7 @@ def test_usb_works_with_shared_print_off_and_never_touches_the_shared_routes():
 def test_normal_print_window_uses_the_62mm_paper_width_of_the_driver():
     from pathlib import Path
     html = Path("templates/badge_print.html").read_text(encoding="utf-8")                          # probado en hardware: con 58,93 mm (o menos de 99,8 mm de alto) Chrome ignora margin:0 y pone fecha, ruta y «1/1»
-    assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_MIN_H = 99.8;" in html and "@page { size: ${PAGE_W}mm ${pageH}mm; margin: 0 }" in html and "margin-left:${PAGE_LEFT_MM}mm" in html and "endMark" in html
+    assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;" in html and "@page { size: ${PAGE_W}mm ${pageH}mm; margin: 0 }" in html and "margin-left:${imgLeft}mm" in html and "endMark" in html
 
 
 def test_denied_bar_explains_and_hides_the_useless_connect_button():
