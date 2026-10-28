@@ -108,6 +108,10 @@
         img.style.cssText = `display:block; margin-left:${PAGE_LEFT_MM}mm; width:${spec.imageWidthMm}mm; height:${spec.imageHeightMm}mm; image-rendering:pixelated; background:#fff;`;
         badgeEl.style.display = 'none';
         document.getElementById('badgeWrapper').appendChild(img);
+        // El controlador de la Brother recorta el blanco del final de la tira (probado: una página de 75 mm salió de 54 mm); una marca de 0,3 mm en la última fila de la imagen fija el largo de la etiqueta, igual que en el USB.
+        const endMark = document.createElement('div');
+        endMark.id = 'endMark'; endMark.style.cssText = `position:relative; z-index:1; width:0.3mm; height:0.3mm; margin:-0.3mm 0 0 ${PAGE_LEFT_MM}mm; background:#000; -webkit-print-color-adjust:exact; print-color-adjust:exact;`;
+        document.getElementById('badgeWrapper').appendChild(endMark);
         pageStyle.innerHTML = `${spec.pageCss} @media print { html, body { margin:0; padding:0; background:#fff; } #badgeWrapper { display:block; padding:0; margin:0; width:${PAGE_W}mm; height:calc(${pageH}mm - 0.2mm); overflow:hidden; } ` +
             `#badgePrint { display:none !important; } #labelImg { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;
         statusEl.style.display = 'none';
