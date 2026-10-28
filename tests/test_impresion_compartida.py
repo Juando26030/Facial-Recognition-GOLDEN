@@ -284,7 +284,8 @@ def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_a
     assert 'pref("mirror", false)' in page and 'pref("invert", false)' in page and 'pref("cut", true)' in page
     assert "QLUsb.resolvePrefs(storage(), eventPrefs)" in sp and 'QLUsb.readPrefs(storage()).feedMm' in page                  # el Registro y la página leen las preferencias con la MISMA función (ql-usb.js)
     assert all(f'"{k}"' in ql for k in ("ql_cut", "ql_mirror_v2", "ql_invert", "ql_feed_mm", "ql_length_mm")) and "function resolvePrefs" in ql      # las mismas claves de siempre, ahora en PREF_KEYS
-    assert re.search(r"bitmapFromRGBA\(ctx\.getImageData\(0, 0, w, h\)\.data, w, h, 140, false\)", sp) and re.search(r"bitmapFromRGBA\(rgba, DOTS, t\.height, 140,", page)
+    lc = pathlib.Path("static/js/label-compose.js").read_text(encoding="utf-8")                                        # la composición vive en un módulo compartido por el USB y la ventana de impresión
+    assert re.search(r"bitmapFromRGBA\(ctx\.getImageData\(0, 0, w, h\)\.data, w, h, 140, false\)", lc) and re.search(r"bitmapFromRGBA\(rgba, DOTS, t\.height, 140,", page)
     assert "mirror: p.mirror, autoCut: p.cut" in sp and "feedDots: QLUsb.mmToDots(p.feedMm)" in sp and 'mirror: $("optMirror").checked, autoCut: $("optCut").checked' in page
     # la página de prueba suelta la impresora al terminar y al ocultarse o cerrarse; el cierre hace releaseInterface y suelta el candado entre pestañas
     assert "finally { await QLUsb.close(); }" in page and '"visibilitychange"' in page and '"pagehide"' in page
@@ -373,8 +374,8 @@ def test_shared_print_js_never_calls_shared_routes_when_the_event_has_it_off():
     import pathlib
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "window.SHARED_PRINT_ENABLED !== false" in sp
-    assert "if (!SHARED) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);" in sp       # sin compartida: la impresión de siempre
-    assert "if (sessionDead || !SHARED) { render(); return; }" in sp and "if (!SHARED || sessionDead || polling" in sp and "if (!SHARED) { render(); return; }" in sp
+    assert "if (!SHARED && !usb.ok) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);" in sp       # sin compartida y sin impresora: la ventana de siempre
+    assert "if (sessionDead || !SHARED) { render(); return; }" in sp and "if (!SHARED || sessionDead || polling" in sp
 
 
 def test_the_last_resort_print_page_declares_the_rotated_page_so_nothing_is_cut():
@@ -446,3 +447,30 @@ def test_the_station_queue_shows_pending_and_claimed_jobs_with_their_state(clien
     client.get(f"/api/events/{ev.id}/print-jobs-next")
     rows = client.get(f"/api/events/{ev.id}/print-jobs?scope=station").json()["jobs"]
     assert sorted(r["status"] for r in rows) == ["queued", "sent"] and all(r["requested_by"] for r in rows)
+
+
+# ---------------------------------------------------------------------------------------------------- 27-oct-2026: arreglos de impresión
+def test_the_browser_print_page_uses_the_same_composed_label_as_usb_and_keeps_the_fallback_and_the_horizontal_turn():
+    import pathlib
+    page = pathlib.Path("templates/badge_print.html").read_text(encoding="utf-8")
+    assert "js/label-compose.js" in page and "js/ql-usb.js" in page and "html2canvas" in page and 'name="gw-print-settings"' in page
+    assert "LabelCompose.renderShot" in page and "LabelCompose.composeBitmap" in page and "LabelCompose.pageSpec(out)" in page and "QLUsb.resolvePrefs(storage, printSettings())" in page
+    assert "margin: 0" in pathlib.Path("static/js/label-compose.js").read_text(encoding="utf-8")
+    assert "No se pudo armar la etiqueta con el recorte y el margen de Parámetros: se imprime la hoja de la plantilla." in page          # si la composición falla: la hoja de siempre, y avisa
+    assert "const rotate = template.width_mm > template.height_mm;" in page and "@page { size: ${pw}mm ${ph}mm; margin: 0; }" in page and "rotate(90deg)" in page      # giro de la horizontal (a50a284) en la hoja de siempre
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert "LabelCompose.composeBitmap(shot, tplW, tplH, p)" in sp and "LabelCompose.renderShot(stage, template, data, EID, holderScale)" in sp
+    reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
+    assert reg.index("js/ql-usb.js") < reg.index("js/label-compose.js") < reg.index("js/shared-print.js")
+
+
+def test_usb_works_with_shared_print_off_and_never_touches_the_shared_routes():
+    import pathlib
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert "if (!SHARED) return { kind" not in sp.replace("if (!SHARED) return usb.ok", "")                                   # la barra no depende de la compartida para el USB
+    assert "if (!SHARED) { render(); return; }" not in sp                                                                     # connectUsb ya no se corta sin la compartida
+    assert "if (window.QLUsb && QLUsb.supported()) {\n    navigator.usb.addEventListener('connect'" in sp                       # connect / disconnect de WebUSB también sin la compartida
+    assert "if (!SHARED && !usb.ok) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);" in sp
+    assert "if (SHARED && !(await registeredOrSay(userId))) return;" in sp and "if (sessionDead || !SHARED) { render(); return; }" in sp   # ninguna ruta compartida
+    assert "Sin impresora: se usa la ventana de impresión del navegador." in sp and "Impresora conectada (" in sp
+    assert "Windows usa su propio controlador" in sp and "gw_denied_notice" in sp and "if (!ask && usb.denied)" in sp

@@ -47,6 +47,6 @@ def test_the_editor_page_loads_the_new_scripts_and_they_are_served(client, facto
 
 def test_every_print_path_waits_for_the_chosen_fonts_before_drawing():
     assert "loadFonts" in pathlib.Path("static/js/badge-render.js").read_text(encoding="utf-8")
-    assert "await BadgeRender.loadFonts(template)" in pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")          # QL-800 por USB (html2canvas)
+    assert "await BadgeRender.loadFonts(template)" in pathlib.Path("static/js/label-compose.js").read_text(encoding="utf-8")        # QL-800 por USB y ventana de impresión (html2canvas): composición compartida
     assert "await BadgeRender.loadFonts(template)" in pathlib.Path("templates/badge_print.html").read_text(encoding="utf-8")        # impresión del navegador
     assert "BadgeRender.loadFonts(template)" in pathlib.Path("templates/badge_editor.html").read_text(encoding="utf-8")

@@ -122,7 +122,7 @@ def test_touch_mode_shows_three_searches_numeric_keyboard_and_reader_only_option
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "body.touch-mode #searchNombre,body.touch-mode #searchEntidad,body.touch-mode #clearFiltersBtn" not in sp
     assert "readerOnly" in sp and "el.dataset.origInputmode || 'numeric'" in sp and "sp-kbd" in sp
-    assert "const MOBILE = platform === 'Android' || platform === 'iOS';" in sp and "(MOBILE ? 'Sin impresora.'" in sp
+    assert "const MOBILE = platform === 'Android' || platform === 'iOS';" in sp and "MOBILE && !usb.ok" in sp
     reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
     assert 'class="gw-modal-head" style="position:sticky' in reg
     assert 'class="gw-modal-head" style="position:sticky' in pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")

@@ -20,6 +20,7 @@ class El {
   remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((x) => x !== this); }
   querySelector(sel) { return this._sel[sel] || (this._sel[sel] = new El('x', sel.replace('#', ''))); }
   querySelectorAll() { return []; }
+  getBoundingClientRect() { return { width: 234, height: 378, left: 0, top: 0 }; }
   closest() { return null; }
   focus() { document.activeElement = this; }
   blur() { this.blurred = true; document.activeElement = document.body; }
@@ -62,14 +63,15 @@ global.window = global;
 const pageListeners = {};
 global.addEventListener = (k, f) => { (pageListeners[k] = pageListeners[k] || []).push(f); };       // eventos de la página (online / offline / gw:session-replaced)
 global.dispatchEvent = (ev) => { (pageListeners[ev.type] || []).forEach((f) => f(ev)); return true; };
-const sharedCalls = [];
+const sharedCalls = [], beats = [];
 Object.assign(global, {
   EVENT_ID: 7, EVENT_AUTO_PRINT: true, STAFF_ROLE: 'digitador', localStorage: mem, SHARED_PRINT_ENABLED: !process.env.SHARED_OFF,
   __me: process.env.STATION ? { admin: false, station: true, settings: Object.assign({ readerOnly: false, mode: 'driver', pageWidthMm: 60, rotation: 90 }, process.env.STATION === 'show' ? {} : { showConfig: false }) } : null,
   showToast: (m, t) => { toasts.push({ m, t }); }, showConfirm: async () => true,
   BadgePrint: { openPrintWindow: (id) => { original.open.push(id); }, maybeAutoPrint: (id) => { original.auto.push(id); } },
 });
-Object.defineProperty(global, 'navigator', { configurable: true, value: { userAgent: process.env.MOBILE ? 'Mozilla/5.0 (Linux; Android 14) Chrome/130 Mobile' : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130', usb: { addEventListener() {}, getDevices: async () => [] } } });
+const fakeUsb = process.env.NOWEBUSB ? undefined : { addEventListener() {}, getDevices: async () => [] };
+Object.defineProperty(global, 'navigator', { configurable: true, value: { usb: fakeUsb, userAgent: process.env.MOBILE ? 'Mozilla/5.0 (Linux; Android 14) Chrome/130 Mobile' : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130' } });
 const REGISTERED = new Set(['1001']);
 let mode = 'self';
 const jobs = [];
@@ -80,6 +82,7 @@ global.fetch = async (url, init = {}) => {
   const u = new URL(url, 'http://x');
   if (u.pathname.endsWith('/print-station/me')) return json(200, global.__me || { admin: false, station: false, settings: null });
   if (process.env.SHARED_OFF && /print-devices|print-jobs|print-check/.test(u.pathname)) { sharedCalls.push(u.pathname); return json(409, { detail: 'La impresión compartida está desactivada' }); }
+  if (u.pathname.endsWith('/print-devices/heartbeat')) { try { beats.push(JSON.parse(init.body)); } catch (e) { /* sin cuerpo */ } }
   if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode, printer_name: mode === 'shared' ? 'dig1' : '', printer_ready: true, serving: 0, poll: false });
   let m = u.pathname.match(/\/print-check\/(.+)$/);
   if (m) return json(200, REGISTERED.has(m[1]) ? { registered: true } : { registered: false, detail: `No se puede imprimir: Persona ${m[1]} aún no está registrado. Acredítalo o guarda su registro primero.` });
@@ -90,6 +93,7 @@ global.fetch = async (url, init = {}) => {
   throw new Error('ruta inesperada ' + u.pathname);
 };
 global.QLUsb = require(path.resolve(__dirname, '../../static/js/ql-usb.js'));
+global.LabelCompose = require(path.resolve(__dirname, '../../static/js/label-compose.js'));
 QLUsb.connect = async () => null;                                  // este equipo no tiene impresora USB: imprime con la ventana de siempre
 eval(fs.readFileSync(path.resolve(__dirname, '../../static/js/shared-print.js'), 'utf8'));
 const settle = () => new Promise((r) => setTimeout(r, 30));
@@ -100,14 +104,52 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   const BP = window.BadgePrint;
 
   /* ---------------------------------------------------------------- 27-oct-2026: lo que se conserva sobre la impresión del domingo */
-  if (process.env.SHARED_OFF) {                                         // compartida APAGADA: la impresión de siempre, sin ninguna ruta compartida
+  if (process.env.SHARED_OFF) {                                         // compartida APAGADA
     await new Promise((r) => setTimeout(r, 200));
-    await BP.openPrintWindow('1999'); BP.maybeAutoPrint('1998'); await settle();
-    assert.deepStrictEqual(original.open, ['1999'], 'el botón abre la ventana de siempre'); assert.deepStrictEqual(original.auto, ['1998'], 'la autoimpresión es la de siempre');
-    assert.deepStrictEqual(sharedCalls, [], 'ninguna llamada a rutas de impresión compartida: ' + sharedCalls.join(','));
-    const st = GoldenSharedPrint.stationState();
-    assert.ok(st.shown && !st.bar.prefs && st.bar.connect && st.bar.queue, 'menú visible (sin Conectar ni Cola: no hay compartida): ' + JSON.stringify(st.bar));
-    console.log('shared_print_off OK'); process.exit(0);
+    if (process.env.NOWEBUSB) {                                          // sin WebUSB: se comporta como antes (la ventana de siempre, sin «Conectar»)
+      await BP.openPrintWindow('1999'); BP.maybeAutoPrint('1998'); await settle();
+      assert.deepStrictEqual(original.open, ['1999'], 'el botón abre la ventana de siempre'); assert.deepStrictEqual(original.auto, ['1998'], 'la autoimpresión es la de siempre');
+      assert.deepStrictEqual(sharedCalls, [], 'ninguna llamada a rutas de impresión compartida: ' + sharedCalls.join(','));
+      const st = GoldenSharedPrint.stationState();
+      assert.ok(st.shown && !st.bar.prefs && st.bar.connect && st.bar.queue && st.bar.pending, 'menú visible; sin Conectar (no hay WebUSB), Cola ni pendientes: ' + JSON.stringify(st.bar));
+      assert.ok(/^Sin impresora: se usa la ventana de impresión del navegador\./.test(st.line) && !/compartida/i.test(st.line), st.line);
+      console.log('shared_print_off OK'); process.exit(0);
+    }
+    // con WebUSB simulado: aparece «Conectar impresora», se conecta y se imprime por USB, SIN llamar a ninguna ruta compartida
+    assert.ok(!GoldenSharedPrint.stationState().bar.connect, '«Conectar impresora» visible con la compartida apagada');
+    assert.ok(/^Sin impresora: se usa la ventana de impresión del navegador\./.test(GoldenSharedPrint.stationState().line));
+    const sent = []; QLUsb.connect = async () => ({ productName: 'QL-800' }); QLUsb.info = () => ({ name: 'QL-800' }); QLUsb.sendJob = async (j) => { sent.push(j.length); };
+    await GoldenSharedPrint.connectForTest(true); await settle();
+    assert.ok(GoldenSharedPrint.state().usb.ok && /^Impresora conectada \(QL-800\)\.$/.test(GoldenSharedPrint.stationState().line) && GoldenSharedPrint.stationState().bar.connect, GoldenSharedPrint.stationState().line);
+    const f0 = global.fetch, tpl0 = { width_mm: 62, height_mm: 100, orientation: 'vertical', background_type: 'color', background_value: '#fff', elements: [] };
+    global.fetch = async (url, init = {}) => { const u = new URL(url, 'http://x'); if (u.pathname.includes('/badge-print-data')) return json(200, { id: '1001', first_name: 'Ana', last_name: 'Mora', has_photo: false }); return f0(url, init); };
+    global.BadgeRender = { loadFonts: async () => {}, renderBadge() {}, fetchTemplate: async () => json(200, tpl0) };
+    global.html2canvas = async () => ({ width: Math.round(62 * 300 / 25.4), height: Math.round(100 * 300 / 25.4), getContext: () => null });
+    original.open.length = 0;
+    await BP.openPrintWindow('1001'); await settle();
+    assert.strictEqual(sent.length, 1, 'imprime por USB con el mismo flujo de siempre: ' + JSON.stringify(toasts.slice(-3))); assert.deepStrictEqual(original.open, [], 'sin abrir la ventana del navegador');
+    assert.deepStrictEqual(sharedCalls, [], 'ninguna ruta compartida (latido, sondeo, Cola, reclamo): ' + sharedCalls.join(','));
+    QLUsb.connect = async () => null; QLUsb.info = () => null; await GoldenSharedPrint.disconnectForTest(); await GoldenSharedPrint.connectForTest(false);   // sin impresora: cae a la ventana normal
+    await BP.openPrintWindow('1002'); await settle(); assert.deepStrictEqual(original.open, ['1002'], 'sin impresora, cae a la ventana normal');
+    console.log('shared_print_off_usb OK'); process.exit(0);
+  }
+  if (process.env.DENIED) {                                             // Windows: «Access denied» → aviso claro UNA vez, sin reintentos en bucle ni «dueño de la impresora»
+    await new Promise((r) => setTimeout(r, 200));
+    let calls = 0; const denied = Object.assign(new Error("Failed to execute 'open' on 'USBDevice': Access denied."), { name: 'SecurityError' });
+    QLUsb.connect = async () => { calls++; throw denied; };
+    toasts.length = 0; beats.length = 0;
+    await GoldenSharedPrint.connectForTest(false); await GoldenSharedPrint.connectForTest(false); await GoldenSharedPrint.connectForTest(false);
+    for (const f of (docListeners.bubble.visibilitychange || [])) f({ type: 'visibilitychange' });
+    await settle();
+    assert.strictEqual(calls, 1, 'un solo intento: no reintenta en bucle (' + calls + ')');
+    const notices = toasts.filter((t) => /Windows usa su propio controlador/.test(t.m));
+    assert.strictEqual(notices.length, 1, 'el aviso sale UNA vez'); assert.ok(notices[0].t !== 'error' && /Para recibir trabajos de otros equipos, usa un celular o tablet Android conectado a la impresora, o toca «Imprimir pendientes» y confirma en el cuadro de Chrome\./.test(notices[0].m), notices[0].m);
+    assert.ok(!toasts.some((t) => t.t === 'error'), 'ningún aviso rojo');
+    await GoldenSharedPrint.connectForTest(true); await settle();                                  // la persona toca «Conectar»: un intento, y el aviso NO se repite
+    assert.strictEqual(toasts.filter((t) => /Windows usa su propio controlador/.test(t.m)).length, 1, 'no se repite');
+    assert.ok(!GoldenSharedPrint.state().usb.ok && GoldenSharedPrint.state().usb.denied, 'no queda como dueño de la impresora');
+    assert.ok(beats.every((b) => b.printer_connected !== true), 'el latido nunca lo anuncia con impresora: ' + JSON.stringify(beats.map((b) => b.printer_connected)));
+    console.log('denied_notice OK'); process.exit(0);
   }
   if (process.env.MOBILE) {                                             // celular / tablet: nunca «controlador» ni «cuadro de diálogo»
     await new Promise((r) => setTimeout(r, 200));
@@ -273,7 +315,7 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
     // con la impresora USB conectada en ESTA ventana: reclama por sondeo, sin que nadie toque nada
     queue = [{ id: 81, user_id: '1001', requested_by: 'x2' }]; claims.length = 0;
     QLUsb.connect = async () => ({ productName: 'QL-800' }); QLUsb.info = () => ({ name: 'QL-800' }); QLUsb.sendJob = async () => {};
-    await GoldenSharedPrint.connectForTest(); await new Promise((r) => setTimeout(r, 400));
+    await GoldenSharedPrint.connectForTest(true); await new Promise((r) => setTimeout(r, 400));
     assert.ok(claims.some((c) => !c.manual), 'la dueña de la impresora USB reclama sola');
     assert.ok(results.some((r) => r.id === 81), 'y confirma el resultado (no se pierde)');
     global.fetch = f2;
