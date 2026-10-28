@@ -97,6 +97,7 @@
             out = LabelCompose.composeBitmap(shot, template.width_mm, template.height_mm, p);
         } finally { stage.remove(); }
         const spec = LabelCompose.pageSpec(out);
+        // INAMOVIBLE (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md): estos valores salen de pruebas físicas; no se cambian sin pedido expreso de Juan David y nueva prueba.
         // 28-oct-2026 (probado en una Brother QL-800 con Windows): Chrome solo respeta «margin: 0» (y quita fecha, ruta y «1/1») si el ancho de la página es el del papel del controlador, 62 mm;
         // con 58,93 mm los ignora. Por eso la página mide 62 mm de ancho y la etiqueta de 58,93 mm va a PAGE_LEFT_MM del borde izquierdo (el área imprimible empieza en el borde izquierdo y mide ~60 mm).
         const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_MIN_H = 99.8;       // probado en la Brother: 62×99,8 / 95 / 110 mm salen limpias y sin girar; 40, 45, 65 mm traen fecha, ruta y «1/1», y 60,6 mm el controlador la gira (papel de 79 mm). Por eso nunca se pide una página más corta que el papel de 99,8 mm
