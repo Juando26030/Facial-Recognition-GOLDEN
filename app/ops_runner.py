@@ -133,14 +133,23 @@ def _alert(key: str, subject: str, body: str) -> None:
 
 
 # ------------------------------------------------------------------ otros pasos
+def _load_handlers() -> None:
+    """Registra en este proceso TODOS los manejadores de la cola general (cada módulo los registra al importarse). Los de rostro NO: esos trabajos van por su
+    propia cola, en el servicio de biometría (2 CPU), y el barrido los excluye. Lo comprueba tests/test_trabajos_huerfanos.py."""
+    from app import jobs
+    jobs.load_handlers(jobs.GENERAL_KINDS)
+
+
 def purge() -> str:
     """Retención biométrica (app/privacy.py): solo conteos en el resultado y en el log. Con errores el paso FALLA (alerta) y se reintenta la hora siguiente."""
-    from app import acceptmail, privacy
+    from app import acceptmail, privacy, sessions
+    _load_handlers()
     from app.database import SessionLocal
     db = SessionLocal()
     try:
         r = privacy.purge_expired(db)
         r["mail_log_rows"] = acceptmail.purge_log(db)       # registro de envíos de enlaces personales (misma retención que lo biométrico)
+        r["session_audit_rows"] = sessions.purge_audit(db)     # auditoría de sesiones cerradas/rechazadas/forzadas: 90 días (Ley 1581)
     finally:
         db.close()
     log.info("purga biométrica: %s", json.dumps(r))
@@ -149,18 +158,35 @@ def purge() -> str:
     return json.dumps(r)
 
 
+UNHANDLED_ALERT_WINDOW = timedelta(minutes=65)          # un trabajo sin manejador se avisa en el primer barrido después de crearse (no cada hora)
+
+
 def sweep() -> str:
+    """Ejecuta la cola general. FALLA (y así main() avisa por correo y el Job sale con 1) si en ESTE barrido algún trabajo pasó a «failed», o si apareció
+    un trabajo nuevo de un tipo sin manejador (se queda en cola, sin gastar intentos). Solo lo nuevo: un fallo viejo no se vuelve a avisar cada hora."""
     from sqlalchemy import func
 
-    from app import formsvc, jobs, reconcile  # noqa: F401 — registran sus trabajos
+    from app import jobs
     from app.database import SessionLocal
     from app.models import Job
+    _load_handlers()
+    started = utcnow()
     ran = jobs.drain(exclude=jobs.FACE_KINDS)                 # los cálculos faciales NO corren aquí (este Job no tiene el manejador ni la CPU): van por su cola, en el servicio de biometría
     with SessionLocal() as db:
         faces_due = db.query(func.count(Job.id)).filter(Job.kind.in_(list(jobs.FACE_KINDS)), Job.status.in_(("queued", "running")), Job.run_at <= utcnow()).scalar() or 0
+        failed_now = [(i, k) for i, k in db.query(Job.id, Job.kind).filter(Job.status == "failed", Job.finished_at >= started).order_by(Job.id).all()]
+        orphans = jobs.unhandled_due(db, since=started - UNHANDLED_ALERT_WINDOW)
     if faces_due:
         jobs.kick(pool="faces")                               # el barrido horario despierta a la cola facial por si una tarea de Cloud Tasks se perdió
-    return f"{ran} trabajo(s) pendiente(s) ejecutado(s); {faces_due} cálculo(s) facial(es) pendiente(s) avisados a su cola"
+    detail = f"{ran} trabajo(s) pendiente(s) ejecutado(s); {faces_due} cálculo(s) facial(es) pendiente(s) avisados a su cola"
+    problems = []
+    if failed_now:                                            # solo tipo e id: ningún dato de la persona
+        problems.append(f"{len(failed_now)} trabajo(s) fallaron en este barrido: " + ", ".join(f"{k}#{i}" for i, k in failed_now[:20]))
+    if orphans:
+        problems.append(f"{len(orphans)} trabajo(s) sin manejador en el Job (siguen en cola, sin gastar intentos): " + ", ".join(f"{k}#{i}" for i, k in orphans[:20]))
+    if problems:
+        raise RuntimeError(f"{'; '.join(problems)}. ({detail})")
+    return detail
 
 
 def warmup() -> str:
@@ -175,6 +201,15 @@ def warmup() -> str:
     return f"{'; '.join(changes) or 'sin cambios'} · {json.dumps(p['why'])}"
 
 
+def purge_reports() -> str:
+    """Borra los reportes Excel de Estadísticas que ya vencieron (duran una hora; ver app/report_jobs.py)."""
+    from app.database import SessionLocal
+    from app import bulk_steps
+    from app.report_jobs import purge_expired
+    with SessionLocal() as db:
+        return f"{purge_expired(db)} reporte(s) vencido(s) y {bulk_steps.purge_expired(db)} carga(s) abandonada(s) borrados"
+
+
 def hourly(now=None) -> dict:
     now = now or _local_now()
     steps = [("backup", lambda: backup_db("hourly", now=now))]
@@ -182,7 +217,7 @@ def hourly(now=None) -> dict:
         steps.append(("backup-daily", lambda: backup_db("daily", now=now)))
     if now.hour == int(os.getenv("OPS_PURGE_HOUR", "4")):
         steps.append(("purge", purge))
-    steps += [("check-backups", check_backups), ("sweep", sweep), ("warmup", warmup)]
+    steps += [("check-backups", check_backups), ("sweep", sweep), ("reports", purge_reports), ("warmup", warmup)]
     results = {}
     for name, fn in steps:
         try:

@@ -135,5 +135,5 @@ def render(event, first: str, last: str, link: str):
         return re.sub(r"\{(\w+)\}", lambda m: (html.escape(vals[m.group(1)], quote=True) if escape and m.group(1) not in ("boton",) else vals[m.group(1)]) if m.group(1) in vals else m.group(0), text)
 
     body = fill(body_t, True)
-    wrapped = f'<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;line-height:1.5;max-width:600px;margin:0 auto;">{body}</div>'
+    wrapped = f'<div style="font-family:Agrandir,Arial,Helvetica,sans-serif;font-size:15px;color:#222;line-height:1.5;max-width:600px;margin:0 auto;">{body}</div>'
     return fill(subject_t, False).replace("\n", " ")[:200], wrapped, to_text(body)

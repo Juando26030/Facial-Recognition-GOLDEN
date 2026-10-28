@@ -37,6 +37,11 @@
           <button type="submit" class="small-btn primary" style="padding:10px 22px;">Crear y editar</button>
         </form>
       </div>
+      <div class="card" id="importCard" hidden>
+        <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Importar formulario</h4>
+        <p style="font-size:0.82rem; color:#666; margin-top:0;">Trae un formulario exportado de otro entorno (por ejemplo, de staging) como un archivo .zip. Se crea una COPIA nueva «(importado)», en estado «En pruebas», sin cupo, sin calendario y sin clave: la revisas y la activas tú.</p>
+        <div class="row"><input type="file" id="importFile" accept=".zip,application/zip"><button type="button" class="small-btn primary" id="importBtn" style="padding:10px 22px;">Importar formulario</button></div>
+      </div>
       <div class="card">
         <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Formularios de este evento</h4>
         <div style="overflow-x:auto;"><table class="forms"><thead><tr><th>Nombre</th><th>Estado</th><th>Inscripciones</th><th>Cupo</th><th>Enlace</th><th></th></tr></thead><tbody id="body"></tbody></table></div>
@@ -49,6 +54,7 @@ const EV = window.EVENT_ID, api = `/api/events/${EV}`;
 const $ = (id) => document.getElementById(id);
 const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const LABELS = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrado', cupo_lleno: 'Cupo lleno', finalizado: 'Finalizado' };
+let canTransfer = false;          // exportar / importar: solo admin y super_admin (el servidor lo exige igual)
 async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
 
 async function load() {
@@ -59,7 +65,7 @@ async function load() {
     <td>${f.submissions}${f.test_submissions ? `<span style="font-size:0.72rem; color:#666;"> (+${f.test_submissions} de prueba)</span>` : ''}</td>
     <td>${f.capacity == null ? '—' : f.capacity}</td>
     <td><button class="small-btn" data-copy="${esc(f.public_url)}">Copiar enlace</button> <a class="small-btn" href="${esc(f.test_url)}" target="_blank" rel="noopener">Probar</a></td>
-    <td style="white-space:nowrap;"><a class="small-btn primary" href="/kiosk/${EV}/formularios/${f.id}">Editar</a> <button class="small-btn" data-dup="${f.id}">Duplicar</button> <button class="small-btn danger" data-del="${f.id}" data-name="${esc(f.name)}">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="6" style="color:#666;">Este evento todavía no tiene formularios.</td></tr>';
+    <td style="white-space:nowrap;"><a class="small-btn primary" href="/kiosk/${EV}/formularios/${f.id}">Editar</a> <button class="small-btn" data-dup="${f.id}">Duplicar</button> ${canTransfer ? `<a class="small-btn" href="${api}/forms/${f.id}/export" data-export>Exportar formulario</a> ` : ''}<button class="small-btn danger" data-del="${f.id}" data-name="${esc(f.name)}">Eliminar</button></td></tr>`).join('') || '<tr><td colspan="6" style="color:#666;">Este evento todavía no tiene formularios.</td></tr>';
   document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) {} showToast('Enlace copiado (el formulario público solo abre cuando está en estado Activo)', 'success'); }));
   document.querySelectorAll('[data-dup]').forEach((b) => b.addEventListener('click', async () => { await j(`${api}/forms/${b.dataset.dup}/duplicate`, { method: 'POST' }); showToast('Formulario duplicado', 'success'); load(); }));
   document.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
@@ -67,6 +73,24 @@ async function load() {
     try { await j(`${api}/forms/${b.dataset.del}`, { method: 'DELETE' }); showToast('Formulario eliminado', 'success'); load(); } catch (e) { showToast(e.message, 'error'); }
   }));
 }
+$('importBtn').addEventListener('click', async () => {
+  const file = $('importFile').files[0];
+  if (!file) { showToast('Elige el archivo .zip del formulario exportado', 'error'); return; }
+  const send = async (url) => { const fd = new FormData(); fd.append('file', file); return j(url, { method: 'POST', body: fd }); };
+  try {
+    const p = await send(`${api}/forms-import/preview`);
+    const extra = [
+      p.optional_created.length ? `Campos opcionales que se CREARÁN en este evento: ${p.optional_created.map(esc).join(', ')}.` : '',
+      p.optional_reused.length ? `Campos opcionales que ya existen y se usarán: ${p.optional_reused.map(esc).join(', ')}.` : '',
+      p.notes.length ? `Avisos: ${p.notes.map(esc).join(' ')}` : '',
+    ].filter(Boolean).join('<br><br>');
+    if (!(await showConfirm(`${esc(p.summary)}${extra ? '<br><br>' + extra : ''}<br><br>¿Crear el formulario?`, { confirmLabel: 'Sí, importar' }))) return;
+    const out = await send(`${api}/forms-import`);
+    showToast(`Formulario importado: «${out.name}» (en pruebas)` + (out.optional_created.length ? ` · campos opcionales creados: ${out.optional_created.join(', ')}` : ''), 'success');
+    $('importFile').value = '';
+    load();
+  } catch (err) { showToast(err.message, 'error'); }
+});
 $('newForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
@@ -76,6 +100,8 @@ $('newForm').addEventListener('submit', async (e) => {
   } catch (err) { showToast(err.message, 'error'); }
 });
 (async () => {
+  try { canTransfer = (await j(`${api}/forms-transfer/allowed`)).allowed; } catch (e) { canTransfer = false; }
+  $('importCard').hidden = !canTransfer;
   const tpls = await j(`${api}/form-templates`);
   $('newTemplate').insertAdjacentHTML('beforeend', tpls.map((t) => `<option value="${t.id}">Plantilla: ${esc(t.name)} (${t.fields} elementos)</option>`).join(''));
   load();

@@ -8,7 +8,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <style>
         .params-table { width:100%; border-collapse:collapse; }
         .params-table th, .params-table td { padding:0.7rem 0.6rem; border-bottom:1px solid #eee; vertical-align:top; text-align:left; font-size:0.9rem; }
@@ -142,6 +142,39 @@
           <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
           <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
         </div>
+        <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
+        <div id="sharedPrintCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Impresión compartida</h4>
+          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="sharedPrintEnabled" {% if event.shared_print_enabled %}checked{% endif %} style="width:22px; height:22px;"> Activar la impresión compartida y por USB (Brother QL-800 conectada a un Android con Chrome)</label>
+          <p style="color:#555; font-size:0.85rem; margin:0.5rem 0 0;">Apagada, todo imprime como siempre. Encendida, cada equipo que abre el Registro de este evento reporta si tiene la impresora conectada; aquí eliges, para cada usuario, si imprime en su propio equipo o en el equipo de otro usuario que tenga impresora (sin límite; con más de 6 en una misma impresora puede haber espera). La escarapela llega sola a ese equipo y se imprime sin que nadie acepte nada. Lo que no se imprime en 5 minutos queda en la «Cola» de quien registró, para reimprimir.</p>
+          <div id="sharedPrintTable" style="margin-top:0.8rem;"{% if not event.shared_print_enabled %} hidden{% endif %}></div>
+        </div>
+        <!-- Puestos de impresión (26-oct-2026): configuración por cuenta, guardada en el SERVIDOR. app/routers/print_stations.py -->
+        <div id="stationsCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Puestos de impresión</h4>
+          <p style="color:#555; font-size:0.85rem; margin:0 0 0.8rem;">Por cada cuenta: si es <b>Puesto de impresión</b>, si usa <b>solo lector</b> en «Registro touch» y si en su Registro se <b>muestra o esconde</b> el menú de impresión (⚙️, Conectar impresora, Cola). La etiqueta sale con los valores del evento (más abajo) y lo que se ajuste en ⚙️ de cada computador. A qué cuentas atiende cada puesto se elige en «Impresión compartida».</p>
+          <div id="stationsTable">Cargando…</div>
+        </div>
+        <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel «⚙️ Impresión» del Registro. app/routers/print_settings.py -->
+        <div id="printSettingsCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Impresión de escarapelas en la QL-800 (valores del evento)</h4>
+          <p style="color:#555; font-size:0.85rem; margin:0 0 0.8rem;">Cinta puesta, giro, recorte y corte para todos los equipos de este evento. La cinta de siempre es la <b>continua de 62 mm (DK-22205)</b>. Cada equipo puede cambiarlos solo para sí en el botón «⚙️ Impresión» del Registro, y «Restablecer» lo devuelve a estos valores.</p>
+          <div id="psForm" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px 18px; align-items:end;">
+            <label>Ancho de la cinta<br><select id="ps_tapeWidth" style="min-height:40px; width:100%;"></select></label>
+            <label>Tipo de cinta<br><select id="ps_tapeType" style="min-height:40px; width:100%;"><option value="continuous">Continua</option><option value="diecut">Troquelada (largo fijo)</option></select></label>
+            <label id="ps_lengthRow">Largo de la etiqueta (mm)<br><input type="number" id="ps_lengthMm" min="10" max="1000" step="1" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label>Giro<br><select id="ps_rotation" style="min-height:40px; width:100%;"><option value="auto">Automático (el lado largo a lo largo de la cinta)</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
+            <label id="ps_cropRow"><input type="checkbox" id="ps_crop"> Recortar al contenido, con margen (mm)<br><input type="number" id="ps_cropMarginMm" min="0" max="30" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label>Margen de avance (mm)<br><input type="number" id="ps_feedMm" min="0" max="10" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label><input type="checkbox" id="ps_cut"> Cortar al final de cada etiqueta</label>
+            <label><input type="checkbox" id="ps_mirror"> Espejo</label>
+            <label><input type="checkbox" id="ps_invert"> Invertir (negativo)</label>
+          </div>
+          <div style="margin-top:0.9rem; display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="golden-btn golden-btn-primary" id="psSave" style="width:auto; padding:0.5rem 1.4rem;">Guardar valores del evento</button>
+            <button type="button" class="golden-btn" id="psReset" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">↺ Volver a los de fábrica</button>
+          </div>
+        </div>
         <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
@@ -271,6 +304,7 @@
                 <th style="min-width:180px;">Opciones (lista desplegable)</th>
                 <th style="width:130px;">Generar estadística</th>
                 <th style="min-width:140px;">Tipo de gráfico</th>
+                <th style="width:110px;"></th>
               </tr>
             </thead>
             <tbody id="paramsTableBody"></tbody>
@@ -657,6 +691,31 @@
         if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo subir el logo', 'error');
     });
 
+    /* B2 (26-oct-2026): borrar un campo de ESTE evento (también uno de la base original). Confirmación fuerte: cuántas personas tienen dato, qué plantillas y formularios lo usan, y
+       escribir el nombre del campo. Cédula/ID, nombres y apellidos no se pueden borrar. */
+    const DELETABLE_FIXED = ['role', 'entity', 'phone', 'email', 'opt_1'];
+    async function deleteField(cfg, tr) {
+        const base = `/api/events/${window.EVENT_ID}/fields/${encodeURIComponent(cfg.key)}`;
+        let u = null;
+        try { const r = await fetch(`${base}/usage`, { cache: 'no-store' }); u = r.ok ? await r.json() : null; } catch (e) { u = null; }
+        if (!u) { showToast('No se pudo consultar el uso del campo', 'error'); return; }
+        if (!u.deletable) { showToast(u.reason || 'Este campo no se puede borrar', 'error'); return; }
+        const lines = [`⚠️ Vas a BORRAR el campo «${esc(u.label)}» de este evento.`,
+            `• ${u.people} persona(s) tienen dato en este campo: ese dato se borra.`,
+            `• Plantillas de escarapela que lo usan: ${u.templates.length ? esc(u.templates.join(', ')) : 'ninguna'} (se quita la variable).`,
+            `• Formularios que lo usan: ${u.forms.length ? esc(u.forms.join(', ')) : 'ninguno'} (la pregunta deja de alimentar la base).`,
+            'Desaparece de formularios, edición, directorio, reporte y escarapela. No se puede deshacer.',
+            `Escribe <b>${esc(u.label)}</b> para confirmar:`];
+        const typed = await showPrompt(lines.join('<br>'), { confirmLabel: 'Borrar campo', placeholder: u.label });
+        if (typed === null || typed === undefined) return;
+        if (String(typed).trim().toLowerCase() !== String(u.label).trim().toLowerCase()) { showToast('El nombre no coincide: no se borró nada.', 'error'); return; }
+        const res = await fetch(base, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: typed }) });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) { showToast(out.detail || 'No se pudo borrar el campo', 'error'); return; }
+        tr.remove();
+        showToast(`Campo «${out.label}» borrado. Datos borrados: ${out.cleared}${out.kept_other_events ? ` (se conservaron ${out.kept_other_events} de personas que también están en otro evento)` : ''}.`, 'success');
+    }
+
     function buildRow(cfg) {
         const tr = document.createElement('tr');
         tr.dataset.key = cfg.key;
@@ -673,7 +732,10 @@
                 <select class="cfg-tpl" aria-label="Insertar un texto de autorización tipo" style="display:${['consent'].includes(cfg.field_type) ? 'block' : 'none'}; margin-top:4px; max-width:100%;"><option value="">Insertar texto tipo…</option><option value="general">Autorización de datos personales</option><option value="bio">Autorización del dato biométrico (rostro) — usar en un campo aparte</option></select></td>
             <td><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-chart-type" style="display:${cfg.default_stat_enabled ? 'block' : 'none'};">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
+            <td>${!locked && (DELETABLE_FIXED.includes(cfg.key) || cfg.key.startsWith('opcional_')) ? `<button type="button" class="small-btn cfg-delete" style="color:#a12631; border-color:#a12631;">🗑️ Borrar campo</button>` : ''}</td>
         `;
+        const del = tr.querySelector('.cfg-delete');
+        if (del) del.addEventListener('click', () => deleteField(cfg, tr));
         if (locked) {
             tr.querySelectorAll('.cfg-field-type, .cfg-options, .cfg-stat-enabled, .cfg-chart-type').forEach(el => { el.disabled = true; });
         }
@@ -777,6 +839,185 @@
         }
         setButtonLoading(btn, false);
     });
+})();
+</script>
+<script>
+/* Impresión compartida (22-oct-2026): interruptor, equipos que reportan y a qué equipo imprime cada usuario. Se actualiza cada 5 s mientras está abierta. */
+(function () {
+  const chk = document.getElementById('sharedPrintEnabled');
+  const box = document.getElementById('sharedPrintTable');
+  if (!chk || !box) return;
+  const api = `/api/events/${window.EVENT_ID}/shared-print`;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let timer = null;
+  function deviceText(d) {
+    if (!d) return '<span style="color:#666;">sin señal todavía (abra el Registro en ese equipo)</span>';
+    const ago = d.seconds_ago < 60 ? `${d.seconds_ago} s` : `${Math.round(d.seconds_ago / 60)} min`;
+    const state = d.online ? '<b style="color:#1e7e34;">conectado</b>' : '<b style="color:#a12631;">desconectado</b>';
+    const printer = d.printer_connected ? `🖨️ ${esc(d.printer_name || 'impresora')}` : 'sin impresora';
+    return `${esc(d.platform || '?')} · ${esc(d.browser || '?')} · ${printer} · ${state} (última señal hace ${ago})`;
+  }
+  async function load() {
+    clearTimeout(timer);
+    if (!chk.checked) { box.hidden = true; return; }
+    box.hidden = false;
+    let data;
+    try { const r = await fetch(api, { cache: 'no-store' }); data = r.ok ? await r.json() : null; } catch (e) { data = null; }
+    if (!data) { box.textContent = 'No se pudo leer el estado de los equipos.'; return; }
+    const printers = data.users.filter((u) => u.eligible_printer && !u.printer_staff_id);
+    const rows = data.users.map((u) => {
+      const opts = [`<option value="">En su propio equipo</option>`].concat(printers.filter((p) => p.staff_id !== u.staff_id).map((p) =>
+        `<option value="${p.staff_id}" ${u.printer_staff_id === p.staff_id ? 'selected' : ''} >En el equipo de ${esc(p.name)} (${p.serving} usuario${p.serving === 1 ? '' : 's'}${p.serving > data.warn_per_printer ? ' · ⚠️ puede haber espera' : ''})</option>`));
+      if (u.printer_staff_id && !printers.some((p) => p.staff_id === u.printer_staff_id)) {
+        const cur = data.users.find((x) => x.staff_id === u.printer_staff_id);
+        opts.push(`<option value="${u.printer_staff_id}" selected>En el equipo de ${esc(cur ? cur.name : '?')} (⚠️ sin impresora ahora)</option>`);
+      }
+      const serving = u.serving ? `<br><small>Imprime para ${u.serving} usuario(s)</small>` + (u.serving > data.warn_per_printer ? `<br><small data-sp-wait style="color:#b26a00; font-weight:600;">⚠️ Más de ${data.warn_per_printer} equipos en esta impresora: puede haber espera de impresión.</small>` : '') : '';
+      return `<tr><td style="padding:6px; border-bottom:1px solid #eee;"><b>${esc(u.name)}</b><br><small>${esc(u.username)} · ${esc(u.role)}</small>${serving}</td>
+        <td style="padding:6px; border-bottom:1px solid #eee; font-size:0.85rem;">${deviceText(u.device)}</td>
+        <td style="padding:6px; border-bottom:1px solid #eee;"><select data-route="${u.staff_id}" style="min-height:44px; max-width:100%;" ${u.serving ? 'disabled title="Atiende a otros usuarios"' : ''}>${opts.join('')}</select></td></tr>`;
+    }).join('');
+    box.innerHTML = data.users.length ? `<table style="width:100%; border-collapse:collapse;"><tr><th style="text-align:left; padding:6px;">Usuario</th><th style="text-align:left; padding:6px;">Equipo</th><th style="text-align:left; padding:6px;">Imprime</th></tr>${rows}</table>`
+      : '<p>Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
+    timer = setTimeout(load, 5000);
+  }
+  box.addEventListener('change', async (e) => {
+    const sel = e.target.closest('select[data-route]');
+    if (!sel) return;
+    clearTimeout(timer);
+    const res = await fetch(`${api}/route`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staff_user_id: Number(sel.dataset.route), printer_staff_id: sel.value ? Number(sel.value) : null }) });
+    const out = await res.json().catch(() => ({}));
+    showToast(res.ok ? (out.warning ? 'Guardado. ⚠️ ' + out.warning : 'Guardado') : (out.detail || 'No se pudo guardar'), res.ok ? (out.warning ? 'warning' : 'success') : 'error');
+    load();
+  });
+  chk.addEventListener('change', async () => {
+    const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: chk.checked }) });
+    if (!res.ok) { chk.checked = !chk.checked; showToast('No se pudo cambiar la impresión compartida', 'error'); return; }
+    showToast(chk.checked ? 'Impresión compartida ACTIVADA: abre (o recarga) el Registro en cada equipo.' : 'Impresión compartida apagada: todo imprime como siempre.', 'success');
+    load();
+  });
+  load();
+})();
+</script>
+
+<script>
+/* Puestos de impresión (26-oct-2026): una fila por cuenta del evento; «Guardar» envía la configuración al servidor. */
+(function () {
+  const box = document.getElementById('stationsTable');
+  if (!box) return;
+  const IS_ADMIN = {{ 'true' if staff_role in ['admin', 'super_admin'] else 'false' }};
+  const api = `/api/events/${window.EVENT_ID}`;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const v = (o, k, d) => (o && o[k] !== undefined && o[k] !== null ? o[k] : d);
+  let users = [];
+  function rowHtml(u) {
+    const c = u.station || {};
+    const num = (k, w, min, max, step) => `<input type="number" data-k="${k}" value="${esc(v(c, k, ''))}" min="${min}" max="${max}" step="${step}" style="width:${w}px; min-height:36px;">`;
+    return `<details data-staff="${u.staff_id}" style="border:1px solid #e1e4ec; border-radius:12px; padding:8px 12px; margin-bottom:8px;"${u.station || u.print_station ? ' open' : ''}>
+      <summary style="cursor:pointer; font-weight:700;">${esc(u.name)} <small style="font-weight:400;">${esc(u.username)} · ${esc(u.role)}</small>${u.print_station ? ' <span style="color:#1e7e34;">· 🖨️ puesto</span>' : ''}${u.station ? ' <span style="color:#2b6cb0;">· con configuración</span>' : ''}</summary>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px 16px; margin-top:8px; align-items:end;">
+        ${IS_ADMIN ? `<label><input type="checkbox" data-k="print_station" ${u.print_station ? 'checked' : ''}> Cuenta de <b>Puesto de impresión</b> (protegida: un segundo inicio de sesión se rechaza)</label>` : ''}
+        <label>Mostrar la configuración de impresión en el Registro<br><select data-k="showConfig" style="min-height:36px;"><option value="">Mostrar (por defecto)</option><option value="0" ${c.showConfig === false ? 'selected' : ''}>Esconder</option></select><br><small style="color:#666;">Mostrar: en ese computador se ven ⚙️ Impresión, Conectar impresora y la Cola (lo que cambien allí vale solo para ese computador). Esconder: solo la línea de estado; la impresión sigue igual.</small></label>
+        <label><input type="checkbox" data-k="readerOnly" ${c.readerOnly ? 'checked' : ''}> <b>Solo lector</b> en «Registro touch» (lector de códigos USB/Bluetooth: la cédula no abre el teclado; un ícono ⌨️ junto al campo lo abre)</label>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button type="button" class="golden-btn" data-save="${u.staff_id}">Guardar</button>
+        <button type="button" class="golden-btn" data-clear="${u.staff_id}" style="background:#eee; color:#333;">Quitar configuración (usar lo de siempre)</button>
+        ${IS_ADMIN && u.print_station ? `<button type="button" class="golden-btn" data-release="${u.staff_id}" style="background:#fff6e5; color:#7a4a00;">Liberar cuenta (forzar el cambio de dispositivo)</button>` : ''}
+      </div></details>`;
+  }
+  async function load() {
+    let data = null;
+    try { const r = await fetch(`${api}/shared-print`, { cache: 'no-store' }); data = r.ok ? await r.json() : null; } catch (e) { data = null; }
+    if (!data) { box.textContent = 'No se pudo leer la lista de cuentas.'; return; }
+    users = data.users;
+    box.innerHTML = users.length ? users.map(rowHtml).join('') : '<p>Aún no hay cuentas asignadas a este evento.</p>';
+  }
+  function read(d) {
+    const get = (k) => d.querySelector(`[data-k="${k}"]`);
+    const out = {};
+    if (get('readerOnly').checked) out.readerOnly = true;
+    if (get('showConfig').value === '0') out.showConfig = false;
+    return out;
+  }
+  async function put(id, body, ok) {
+    const res = await fetch(`${api}/print-stations/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const out = await res.json().catch(() => ({}));
+    showToast(res.ok ? ok : (out.detail || 'No se pudo guardar'), res.ok ? 'success' : 'error');
+    if (res.ok) load();
+  }
+  box.addEventListener('click', async (e) => {
+    const save = e.target.closest('[data-save]'), clear = e.target.closest('[data-clear]'), rel = e.target.closest('[data-release]');
+    if (save) {
+      const d = save.closest('details'), body = { settings: read(d) };
+      const ps = d.querySelector('[data-k="print_station"]'); if (ps) body.print_station = ps.checked;
+      put(save.dataset.save, body, 'Puesto guardado. El equipo lo aplica al recargar el Registro.');
+    } else if (clear) {
+      if (await showConfirm('¿Quitar la configuración de este puesto? Volverá a imprimir como siempre.', { confirmLabel: 'Sí, quitar' })) put(clear.dataset.clear, { settings: null }, 'Configuración quitada.');
+    } else if (rel) {
+      if (!(await showConfirm('¿Liberar esta cuenta? La sesión actual se cierra y la cuenta podrá entrar desde otro dispositivo. Queda en auditoría.', { confirmLabel: 'Sí, liberar' }))) return;
+      const res = await fetch(`/api/print-stations/${rel.dataset.release}/release`, { method: 'POST' });
+      showToast(res.ok ? 'Cuenta liberada.' : 'No se pudo liberar', res.ok ? 'success' : 'error');
+    }
+  });
+  load();
+})();
+</script>
+
+<script>
+(function () {
+  /* Valores de impresión del evento (cinta, giro, recorte, corte). Se guardan en el servidor (print_settings.py); los equipos pueden sobrescribirlos. */
+  const api = `/api/events/${window.EVENT_ID}/print-settings`;
+  const $ = (id) => document.getElementById(id);
+  const FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm'];
+  let defaults = {};
+  function fill(values) {
+    const v = Object.assign({}, defaults, values || {});
+    FIELDS.forEach((f) => { const el = $('ps_' + f); if (el.type === 'checkbox') el.checked = !!v[f]; else el.value = v[f] === null || v[f] === undefined ? '' : String(v[f]); });
+    toggle();
+  }
+  function toggle() {
+    const die = $('ps_tapeType').value === 'diecut';
+    $('ps_lengthRow').style.display = die ? '' : 'none';
+    $('ps_cropRow').style.display = die ? 'none' : '';
+  }
+  function read() {
+    const out = {};
+    FIELDS.forEach((f) => {
+      const el = $('ps_' + f);
+      if (el.type === 'checkbox') out[f] = el.checked;
+      else if (f === 'rotation') out[f] = el.value === 'auto' ? 'auto' : Number(el.value);
+      else if (f === 'tapeWidth') out[f] = Number(el.value);
+      else if (f === 'tapeType') out[f] = el.value;
+      else out[f] = el.value === '' ? null : Number(el.value);
+    });
+    if (out.tapeType !== 'diecut') out.lengthMm = null;
+    return out;
+  }
+  async function load() {
+    const r = await fetch(api, { cache: 'no-store' });
+    if (!r.ok) { $('printSettingsCard').hidden = true; return; }
+    const d = await r.json();
+    defaults = d.defaults;
+    $('ps_tapeWidth').innerHTML = d.supported_tapes.map((t) => `<option value="${t}">${t} mm</option>`).join('');
+    fill(d.settings);
+  }
+  $('ps_tapeType').addEventListener('change', toggle);
+  $('psSave').addEventListener('click', async () => {
+    const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: read() }) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(out.detail || 'No se pudo guardar', 'error'); return; }
+    fill(out.settings);
+    showToast('Valores de impresión del evento guardados. Los equipos los toman al recargar el Registro.', 'success');
+  });
+  $('psReset').addEventListener('click', async () => {
+    const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: {} }) });
+    if (!res.ok) { showToast('No se pudo restablecer', 'error'); return; }
+    fill({});
+    showToast('Valores de fábrica restablecidos.', 'success');
+  });
+  load();
 })();
 </script>
 </body>

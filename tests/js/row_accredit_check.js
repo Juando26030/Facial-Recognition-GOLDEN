@@ -102,6 +102,15 @@ const lastToast = () => toasts[toasts.length - 1];
   offToast.o.action.onClick(); await until(() => /deshecha|Ya se envió|No se pudo/.test((lastToast() || {}).m || ''), 'aviso de Deshacer (sin red)'); await advance(10);
   assert.strictEqual((await GC.queueList()).length, 0, 'Deshacer la quitó de la cola'); assert.ok(/deshecha/.test(lastToast().m));
   assert.strictEqual(rowByName('Ana Pérez').className, 'row-noregistrado', 'la fila vuelve a «No registrado»'); assert.ok(!actionBtn(rowByName('Ana Pérez')).disabled);
+  // tarjeta del modo «Registro touch» (25-oct-2026): cada celda dice qué es (la tarjeta de dos filas se arma con CSS) y la empresa va en una celda que solo se ve en ese modo
+  {
+    const tr = rows()[0];
+    const fields = tr.children.map((td) => td.dataset.field || td.className);
+    assert.deepStrictEqual(fields, ['action-cell', 'id', 'first_name', 'last_name', 'opt_1', 'status', 'entity'], fields.join(','));
+    const ent = tr.children.find((td) => td.dataset.field === 'entity');
+    assert.strictEqual(ent.className, 'touch-only'); assert.ok(typeof ent.innerText === 'string');
+    assert.ok(tr.children[0].children.length >= 1, 'los botones siguen en su celda (mismo comportamiento)');
+  }
   console.log('directory.js: «✅ Acreditar» en todas las filas con «Deshacer» (en línea y sin red) OK');
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

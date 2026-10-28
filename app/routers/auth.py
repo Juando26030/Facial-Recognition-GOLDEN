@@ -13,7 +13,7 @@ from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
 from app.auth import hash_password, verify_password
-from app import security
+from app import security, sessions
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -52,7 +52,14 @@ def login_submit(
             context={"error": "Usuario o contraseña incorrectos"}, status_code=401,
         )
     security.clear_events(db, "login_fail", username)
+    prev_sid = request.session.get("sid")
+    busy = sessions.login_gate(db, request, staff, prev_sid)      # puesto de impresión en uso: se rechaza (sesión única / protegida; ver app/sessions.py)
+    if busy:
+        return templates.TemplateResponse(request=request, name="login.html", context={"error": busy}, status_code=403)
+    sid = request.session.get("sid")                # login_gate lo dejó en la sesión actual; se conserva al limpiarla
     request.session.clear()
+    if sid:
+        request.session["sid"] = sid
     request.session["staff_user_id"] = staff.id
     request.session["staff_role"] = staff.role
     request.session["staff_secondary_role"] = staff.secondary_role  # Sprint 2.4 Fase 15: doble rol coordinador+comercial
@@ -65,7 +72,13 @@ def login_submit(
 
 
 @router.post("/logout")
-def logout(request: Request):
+def logout(request: Request, db: Session = Depends(get_db)):
+    staff_id, sid = request.session.get("staff_user_id"), request.session.get("sid")
+    if staff_id and sid:                                # al cerrar sesión la cuenta queda libre (un puesto puede volver a entrar sin esperar)
+        staff = db.get(StaffUser, staff_id)
+        if staff is not None and staff.session_token == sid:
+            staff.session_token = None
+            db.commit()
     request.session.clear()
     return RedirectResponse("/login", status_code=302)
 

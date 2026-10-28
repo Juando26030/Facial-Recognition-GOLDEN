@@ -215,7 +215,18 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /* `ui(fase, fracción, texto)`: 'upload' = subida del archivo (bytes), 'process' = avance real del servidor. Cada
    lote pesa 15 % subida + 85 % proceso dentro de su parte de la barra total (ver makeUi). */
+/* Tiempos de cada carga (orden del 24-oct-2026): dónde se va el tiempo (preparar en el navegador, firmar y subir el archivo, el POST que lee y valida, el primer paso, los pasos, el total).
+   Se muestran en la consola del navegador (console.info «[carga]») y se mandan al servidor (/api/bulk_timing) para la bitácora junto con las líneas «carga masiva: fases». Solo números. */
+function reportTiming(T, data, extra) {
+    const out = Object.assign({ mode: (data && data.mode) || "?", job_id: data && data.job_id, rows: data && data.total, prep_client_ms: T.prep, sign_ms: T.sign, put_ms: T.put, post_ms: T.post,
+        first_step_ms: T.first, steps_ms: T.steps, steps: T.nsteps, total_ms: performance.now() - T.t0, bytes: T.bytes }, extra || {});
+    Object.keys(out).forEach((k) => { if (typeof out[k] === "number") out[k] = Math.round(out[k]); });
+    console.info("[carga]", out);
+    try { fetch("/api/bulk_timing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(out), keepalive: true }).catch(() => {}); } catch (e) { /* sin red: solo la consola */ }
+}
+
 async function postBulkRegister(formData, ui) {
+    const T = { t0: performance.now(), prep: window.__rosterClickAt ? performance.now() - window.__rosterClickAt : 0, sign: 0, put: 0, post: 0, first: 0, steps: 0, nsteps: 0, bytes: 0 };
     formData.set("background", "true");
     // Los archivos suben DIRECTO al almacenamiento (Cloud Run no acepta peticiones de más de 32 MiB); a la app solo va el token.
     // En un reintento por NEEDS_LABELS el FormData ya trae los tokens y no se vuelve a subir nada.
@@ -229,8 +240,11 @@ async function postBulkRegister(formData, ui) {
         return null;
     }
     let res;
+    T.sign = DirectUpload.timing.sign_ms; T.put = DirectUpload.timing.put_ms; T.bytes = DirectUpload.timing.bytes;
+    const tPost = performance.now();
     try {
-        res = await xhrPost("/api/bulk_register", formData, (loaded, total) => {
+        // Solo la base (sin zip de fotos) va por /api/bulk_roster: la sirve el servicio web, sin el arranque en frío del servicio de biometría (que carga el modelo facial). Con fotos: /api/bulk_register.
+        res = await xhrPost((formData.get("zip_upload") || formData.get("zip_file")) ? "/api/bulk_register" : "/api/bulk_roster", formData, (loaded, total) => {
             ui && ui("upload", loaded / total, `Subiendo archivos… ${(loaded / 1048576).toFixed(1)} de ${(total / 1048576).toFixed(1)} MB`);
         });
     } catch (e) {
@@ -258,12 +272,19 @@ async function postBulkRegister(formData, ui) {
         showToast(data.detail || "No se pudo cargar la base", "error");
         return null;
     }
-    if (!data.job_id) return data;   // respuesta directa (sin tarea en segundo plano)
+    T.post = performance.now() - tPost;
+    if (!data.job_id) { reportTiming(T, data); return data; }   // respuesta directa (sin tarea en segundo plano)
+    if (data.mode === "steps") {   // carga POR PASOS: cada paso se procesa dentro de su propia petición (ver app/bulk_steps.py); el primero ya corrió dentro del POST
+        const out = await runSteps(data, ui, T);
+        reportTiming(T, data, { outcome: out ? "ok" : "fallo" });
+        return out;
+    }
 
-    // La carga corre en el servidor: se consulta su avance cada segundo hasta que termine.
-    let failures = 0;
+    // La carga corre en el servidor (Job de Cloud Run o hilo): se consulta su avance cada medio segundo hasta que termine (la primera consulta sale de inmediato).
+    let failures = 0, first = true;
     while (true) {
-        await sleep(1000);
+        if (!first) await sleep(500);
+        first = false;
         let st;
         try {
             const r = await fetch(`/api/bulk_jobs/${data.job_id}`);
@@ -275,8 +296,33 @@ async function postBulkRegister(formData, ui) {
             continue;
         }
         if (st.status === "error") { showToast(st.error.detail || "No se pudo cargar la base", "error"); return null; }
-        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); return st.result; }
+        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); reportTiming(T, data, { outcome: "ok" }); return st.result; }
         if (ui) ui("process", st.total ? st.done / st.total : 0, st.stage);
+    }
+}
+
+/* Carga por pasos: el servidor ya leyó y validó el archivo; aquí se pide un paso tras otro (cada uno guarda un grupo de filas) hasta que termina. Un paso que falla por la red se reintenta
+   solo (es idempotente: repetirlo no duplica nada). Si se cierra la página a la mitad, al volver se retoma donde quedó (resumeSteps). */
+async function runSteps(first, ui, T) {
+    let st = first, failures = 0, n = 0;
+    const tSteps = performance.now();
+    while (true) {
+        if (st.status === "error") { showToast((st.error && st.error.detail) || "No se pudo cargar la base", "error"); return null; }
+        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); if (T) { T.steps = performance.now() - tSteps; T.nsteps = n; } return st.result; }
+        if (ui) ui("process", st.total ? st.done / st.total : 0, st.stage);
+        try {
+            const tStep = performance.now();
+            const r = await fetch(`/api/bulk_jobs/${first.job_id || first.id}/step`, { method: "POST" });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.detail || "paso");
+            if (T && n === 0) T.first = performance.now() - tStep;
+            n++;
+            st = d;
+            failures = 0;
+        } catch (e) {
+            if (++failures >= 5) { showToast("Se perdió la conexión con el servidor. La carga queda a medias y se retoma al volver a esta página.", "error"); return null; }
+            await sleep(1000 * failures);
+        }
     }
 }
 
@@ -315,6 +361,26 @@ async function submitRoster(formData) {
     rosterResult.prepend(keep);
     resetRosterForm();
 }
+
+// Retoma una carga por pasos que quedó a medias (se cerró la página o se reinició el servicio)
+async function resumeSteps() {
+    try {
+        const r = await fetch(`/api/bulk_steps/active?event_id=${window.EVENT_ID}`, { cache: "no-store" });
+        if (!r.ok) return;
+        const job = (await r.json()).job;
+        if (!job) return;
+        rosterResult.innerHTML = "";
+        const bar = ProgressBar.create(rosterResult, { title: "Retomando la carga de la base", stage: "Continuando…" });
+        const data = await runSteps(job, makeUi(bar, 0, 1));
+        if (!data) { bar.fail("No se pudo completar la carga"); return; }
+        bar.finish(data.message || "Base cargada");
+        showToast(data.message || "Base cargada", "success");
+        const keep = bar.element;
+        renderRosterResult(data);
+        rosterResult.prepend(keep);
+    } catch (e) { /* sin red: no se retoma ahora */ }
+}
+document.addEventListener("DOMContentLoaded", resumeSteps);
 
 function resetRosterForm() {
     rosterForm.reset();
@@ -472,6 +538,7 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
 
 rosterForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    window.__rosterClickAt = performance.now();       // para el tiempo de preparación en el navegador (bitácora de la carga)
 
     // El evento ya arrancó — cargar (o volver a cargar) la base aquí puede pisar registros que
     // ya se hicieron en vivo. Avisamos SIEMPRE antes de intentarlo; si de verdad es un re-upload

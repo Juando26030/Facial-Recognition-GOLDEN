@@ -297,6 +297,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
+            if (data.result === 'MISSING_REQUIRED') {           // A3: reconocida, pero le falta un obligatorio: no se acredita; se completa en «Editar persona» y ahí se acredita
+                showToast(data.details || 'Falta un campo obligatorio', 'warning');
+                if (window.GoldenDirectory && window.GoldenDirectory.openEdit) window.GoldenDirectory.openEdit(Object.assign({ status: 'No registrado' }, data.data), { missing: data.missing || [], method: 'biometrico' });
+                return;
+            }
             if (data.result === 'MATCH_PENDING') {
                 resTexto.innerText = "🟡 Coincidencia encontrada — compara las fotos y confirma";
                 resTexto.style.color = "#f0ad4e";
@@ -432,6 +437,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
                     if (window.directorySearch) window.directorySearch.reload();
                     if (window.closeRegisterModal) window.closeRegisterModal();
+                    if (window.GoldenDirectory && window.GoldenDirectory.noteRecent) window.GoldenDirectory.noteRecent(registeredId);      // A5: queda primera en la lista de ESTE equipo
                     if (window.BadgePrint) BadgePrint.maybeAutoPrint(registeredId);
                     const photoSent = formData.get('file');
                     if (photoSent && photoSent.size) showPrint(registeredId);      // registro facial nuevo: «Imprimir» ahí mismo (la auto-impresión ya se disparó arriba si el evento la tiene)

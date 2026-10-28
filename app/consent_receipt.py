@@ -95,7 +95,7 @@ def render(event: Event, user: User, entry: AuditConsentLog, channel: str, badge
     li = "".join(f"<li><b>{e(k)}:</b> {e(v)}</li>" for k, v in details)
     anexo_html = "".join(f"<p style=\"margin:0 0 8px\">{e(p)}</p>" for p in paragraphs) if same else f"<p>{e(anexo_missing)}</p>"
     badge_html = f"<p>🎫 Tu escarapela virtual: <a href=\"{e(badge_link)}\">{e(badge_link)}</a><br><span style=\"color:#666\">Puedes usar este enlace en cualquier momento para ver tu código de acceso.</span></p>" if badge_link else ""
-    html_body = (f"<div style=\"font-family:system-ui,Arial,sans-serif;max-width:600px;margin:0 auto;color:#222;line-height:1.5\">"
+    html_body = (f"<div style=\"font-family:Agrandir,Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#222;line-height:1.5\">"
                  f"<p>Hola {e(nombre)}:</p><p>Recibimos tu autorización para usar tu rostro como método de ingreso rápido a <b>{e(event.name)}</b>.</p>{badge_html}"
                  f"<h3 style=\"margin:18px 0 6px\">Detalles de tu autorización (Constancia de Habeas Data)</h3><ul style=\"padding-left:18px\">{li}</ul>"
                  f"<p>{e(revoke)}</p><p>Consulta nuestra Política de privacidad completa <a href=\"{e(policy)}\">aquí</a>.</p>"
