@@ -7,14 +7,11 @@
 (function (window) {
   const FONT_STACK_FALLBACK = 'sans-serif';
   const LINE_HEIGHT = 1.15;                   // alto de línea de los textos (el mismo para medir y para dibujar)
-  const MIN_RATIO = 0.6;                      // la letra puede bajar hasta el 60 % del tamaño elegido antes de recortar con «…» (era 40 %: demasiado)
-  const FIT_MODES = ['grow', 'shrink', 'single'];     // «Ajuste» por texto: crecer hacia abajo | reducir para caber | una línea
+  const MIN_RATIO = 0.4;                      // la letra puede bajar hasta el 40 % del tamaño elegido antes de recortar con «…»
   const PX_PER_MM = 96 / 25.4, PX_PER_PT = 96 / 72;
 
-  /* ---------- Ajuste de los textos a su caja (25-oct-2026: «ningún texto se corta», y el orden nuevo del mismo día). PURO: recibe cómo medir un texto a un tamaño dado; se prueba en
-     tests/js/badge_text_fit_check.js. Orden: (a) partir por palabras en varias líneas con el tamaño DISEÑADO; (b) si no cabe, dejar CRECER la caja hacia abajo hasta el espacio libre
-     (`opts.maxH`: el siguiente elemento que estorbe o el borde de la etiqueta); (c) solo entonces reducir la letra, con piso del 60 % (y el que ponga `opts.floorPx`); (d) «…» solo como
-     último recurso (`truncated`, para avisar). Modos por texto (`fit_mode`): «grow» (crecer; lo normal en los textos variables), «shrink» (reducir para caber en su caja) y «single» (una línea).
+  /* ---------- Ajuste de los textos a su caja (25-oct-2026, «ningún texto se corta»). PURO: recibe cómo medir un texto a un tamaño dado; se prueba en tests/js/badge_text_fit_check.js.
+     1) baja de línea por palabras (nunca parte una palabra); 2) si aún no cabe, reduce la letra (hasta MIN_RATIO); 3) solo entonces recorta con «…».
      Devuelve las líneas YA partidas: se dibujan con `white-space: pre`, así el editor, la vista previa y la impresión (html2canvas) muestran exactamente las mismas líneas. */
   function wrapWords(words, maxW, measure) {
     const lines = [];
@@ -27,45 +24,33 @@
     if (cur) lines.push(cur);
     return lines;
   }
-  function fitText(text, boxW, boxH, sizePx, measureAt, opts) {
-    opts = opts || {};
-    const mode = FIT_MODES.indexOf(opts.mode) >= 0 ? opts.mode : 'shrink';
+  function fitText(text, boxW, boxH, sizePx, measureAt) {
     const words = String(text == null ? '' : text).trim().split(/\s+/).filter(Boolean);
-    const base = { size: sizePx, shrunk: false, truncated: false, grown: false, heightPx: boxH, ratio: 1, mode };
-    if (!words.length || !(boxW > 0) || !(boxH > 0)) return Object.assign(base, { lines: words.length ? [words.join(' ')] : [] });
-    const growLimit = mode === 'grow' ? Math.max(boxH, opts.maxH || boxH) : boxH;
-    const startPx = opts.fixedPx || sizePx;
-    const minPx = opts.fixedPx ? opts.fixedPx : Math.min(sizePx, Math.max(sizePx * MIN_RATIO, opts.floorPx || 0));
-    const tryAt = (px, limitH) => {
+    if (!words.length || !(boxW > 0) || !(boxH > 0)) return { lines: words.length ? [words.join(' ')] : [], size: sizePx, shrunk: false, truncated: false };
+    const tryAt = (px) => {
       const m = (t) => measureAt(t, px);
-      let lines;
-      if (mode === 'single') { lines = [words.join(' ')]; if (m(lines[0]) > boxW) return null; }
-      else {
-        if (words.some((w) => m(w) > boxW)) return null;                    // una palabra más ancha que la caja: a este tamaño no cabe
-        lines = wrapWords(words, boxW, m);
-      }
-      return lines.length * px * LINE_HEIGHT <= limitH + 0.01 ? lines : null;
+      if (words.some((w) => m(w) > boxW)) return null;                      // una palabra más ancha que la caja: a este tamaño no cabe
+      const lines = wrapWords(words, boxW, m);
+      return lines.length * px * LINE_HEIGHT <= boxH + 0.01 ? lines : null;
     };
-    const done = (lines, px, extra) => Object.assign(base, { lines, size: px, ratio: px / sizePx, shrunk: px < sizePx - 1e-9 }, extra || {});
-    let lines = tryAt(startPx, boxH);
-    if (lines) return done(lines, startPx);                                  // (a) cabe tal cual
-    if (mode === 'grow' && growLimit > boxH && (lines = tryAt(startPx, growLimit))) return done(lines, startPx, { grown: true, heightPx: lines.length * startPx * LINE_HEIGHT });      // (b) la caja crece
-    if (minPx < startPx && tryAt(minPx, growLimit)) {                        // (c) el tamaño más grande que cabe (búsqueda binaria)
-      let lo = minPx, hi = startPx;
-      for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; if (tryAt(mid, growLimit)) lo = mid; else hi = mid; }
-      lines = tryAt(lo, growLimit);
-      return done(lines, lo, { grown: lines.length * lo * LINE_HEIGHT > boxH + 0.01, heightPx: Math.max(boxH, mode === 'grow' ? lines.length * lo * LINE_HEIGHT : boxH) });
+    let lines = tryAt(sizePx);
+    if (lines) return { lines, size: sizePx, shrunk: false, truncated: false };
+    const minPx = sizePx * MIN_RATIO;
+    if (tryAt(minPx)) {                                                      // el tamaño más grande que cabe (búsqueda binaria)
+      let lo = minPx, hi = sizePx;
+      for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; if (tryAt(mid)) lo = mid; else hi = mid; }
+      return { lines: tryAt(lo), size: lo, shrunk: true, truncated: false };
     }
-    const px = minPx, m = (t) => measureAt(t, px), ELL = '…';                // (d) ni con la letra mínima: lo que cabe y «…»
-    const maxLines = Math.max(1, Math.floor((growLimit + 0.01) / (px * LINE_HEIGHT)));
-    const all = mode === 'single' ? [words.join(' ')] : wrapWords(words, boxW, m);
+    const px = minPx, m = (t) => measureAt(t, px), ELL = '…';                // ni con la letra mínima: lo que cabe y «…»
+    const maxLines = Math.max(1, Math.floor((boxH + 0.01) / (px * LINE_HEIGHT)));
+    const all = wrapWords(words, boxW, m);
     const clip = (t) => {                                                    // lo más largo que cabe, con «…» al final
       let c = t;
       while (c.length > 1 && m(c + ELL) > boxW) c = c.slice(0, -1);
       return c.replace(/\s+$/, '') + ELL;
     };
     lines = all.slice(0, maxLines).map((t, i) => ((i === maxLines - 1 && all.length > maxLines) || m(t) > boxW ? clip(t) : t));
-    return done(lines, px, { truncated: true, grown: lines.length * px * LINE_HEIGHT > boxH + 0.01, heightPx: Math.max(boxH, mode === 'grow' ? lines.length * px * LINE_HEIGHT : boxH) });
+    return { lines, size: px, shrunk: true, truncated: true };
   }
 
   /* ---------- Mayúsculas / minúsculas de cada texto (25-oct-2026): SOLO presentación; los datos de la base y los reportes no cambian. ----------
@@ -117,60 +102,6 @@
       return measureCtx.measureText(t).width * 1.02;                         // 2 % de holgura: el navegador y el lienzo redondean distinto
     };
   }
-  const isTextEl = (e) => e.type === 'text_static' || e.type === 'text_variable';
-  const fitModeOf = (el) => (FIT_MODES.indexOf(el.fit_mode) >= 0 ? el.fit_mode : (el.type === 'text_variable' ? 'grow' : 'shrink'));          // por defecto, los textos variables crecen hacia abajo
-  function boundsOf(e) {                                   // cuadro que envuelve al elemento YA girado (mm)
-    const w = Number(e.width) || 0, h = Number(e.height) || 0, a = ((Number(e.rotation) || 0) * Math.PI) / 180;
-    const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a)), bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
-    const cx = (Number(e.x) || 0) + w / 2, cy = (Number(e.y) || 0) + h / 2;
-    return { left: cx - bw / 2, right: cx + bw / 2, top: cy - bh / 2, bottom: cy + bh / 2 };
-  }
-  /* Espacio libre debajo de un texto (mm): hasta el siguiente elemento que se le cruce por debajo o hasta el borde de la etiqueta menos un margen (el de arriba del primer elemento, mínimo 3 mm). Solo crece un texto SIN giro. */
-  const MIN_EDGE_MM = 3;
-  function freeHeightMm(el, template) {
-    if (Number(el.rotation) % 360) return Number(el.height) || 0;
-    const own = boundsOf(el);
-    const els = template.elements || [];
-    const topMargin = els.length ? Math.max(0, Math.min.apply(null, els.map((o) => boundsOf(o).top))) : 0;
-    const edge = Math.max(MIN_EDGE_MM, topMargin);                                       // crecer nunca pega el texto al borde: deja el margen de arriba del primer elemento (mínimo 3 mm)
-    let bottom = (Number(template.height_mm) || (own.bottom + edge)) - edge;
-    (template.elements || []).forEach((o) => {
-      if (o === el || o.id === el.id) return;
-      const b = boundsOf(o);
-      const overlapsX = b.left < own.right - 0.1 && b.right > own.left + 0.1;
-      if (overlapsX && b.top >= own.bottom - 0.5) bottom = Math.min(bottom, b.top - 0.5);          // lo que empieza a partir del final de este texto
-    });
-    return Math.max(Number(el.height) || 0, bottom - own.top);
-  }
-  /* PLAN de todos los textos de la plantilla con los datos de UNA persona (25-oct-2026): cada uno se ajusta con su modo, y entre todos se cuida la JERARQUÍA del diseño — un texto cuyo
-     tamaño de diseño es mayor que el de otro nunca se imprime menor que ese otro (el nombre nunca queda más chico que «MESA») — y los que comparten tamaño, fuente y peso (nombre y apellido)
-     quedan PAREJOS. Devuelve Map(id → resultado de fitText + `ratio`). Es lo que usan el diseñador (con sus avisos), la vista previa, la QL-800 y el controlador. */
-  function planText(template, data) {
-    const plan = new Map();
-    const texts = (template.elements || []).filter(isTextEl);
-    const designPx = (e) => (e.font_size || 12) * PX_PER_PT;
-    const groups = new Map();
-    texts.forEach((e) => { const k = designPx(e) + '|' + (e.font_family || 'Roboto') + '|' + (e.font_weight || 'normal'); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); });
-    const ordered = Array.from(groups.values()).sort((a, b) => designPx(a[0]) - designPx(b[0]));
-    let floorFromSmaller = 0;
-    ordered.forEach((members) => {
-      const run = (e, fixedPx) => {
-        const measure = canvasMeasurer(e.font_family, e.font_weight), mode = fitModeOf(e);
-        const go = (floorPx) => fitText(textContent(e, data), (e.width || 0) * PX_PER_MM, (e.height || 0) * PX_PER_MM, designPx(e), measure,
-          { mode, maxH: freeHeightMm(e, template) * PX_PER_MM, floorPx, fixedPx });
-        const r = go(floorFromSmaller);
-        // la jerarquía es un piso BLANDO: si por cuidarla habría que cortar con «…», «…» es el último recurso y se baja hasta el 60 % del diseño
-        return r.truncated && floorFromSmaller > designPx(e) * MIN_RATIO && !fixedPx ? go(0) : r;
-      };
-      let fits = members.map((e) => run(e));
-      const common = Math.min.apply(null, fits.map((f) => f.size));
-      if (members.length > 1 && fits.some((f) => Math.abs(f.size - common) > 1e-6)) fits = members.map((e) => run(e, common));          // parejos
-      members.forEach((e, i) => plan.set(e.id, fits[i]));
-      floorFromSmaller = Math.max(floorFromSmaller, common);
-    });
-    return plan;
-  }
-
   /* Alto (mm) que necesita un texto a su tamaño elegido con ese ancho (para reacomodar al cambiar la orientación). */
   function textHeightMm(el, widthMm, data) {
     const content = textContent(el, data);
@@ -193,10 +124,9 @@
 
   /* Antes: una sola línea sin saltos (`nowrap`), centrada y con lo que sobra escondido: un nombre o una empresa más largos que la caja se cortaban POR LOS DOS LADOS
      («AN SEBAS», «IGARITA ROJA» en la QL-800, 25-oct-2026). Ahora el texto se ajusta a su caja (fitText) y se dibuja con las líneas ya partidas. */
-  function renderTextElement(div, el, data, plan) {
+  function renderTextElement(div, el, data) {
     const content = textContent(el, data);                 // con su modo de mayúsculas, ANTES de ajustar (se mide lo que se imprime)
-    const fit = (plan && plan.get(el.id)) || fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, (el.font_size || 12) * PX_PER_PT, canvasMeasurer(el.font_family, el.font_weight), { mode: fitModeOf(el) });
-    if (fit.grown) div.style.height = (fit.heightPx / PX_PER_MM) + 'mm';          // la caja creció hacia abajo (había espacio libre)
+    const fit = fitText(content, (el.width || 0) * PX_PER_MM, (el.height || 0) * PX_PER_MM, (el.font_size || 12) * PX_PER_PT, canvasMeasurer(el.font_family, el.font_weight));
     div.style.fontFamily = `'${el.font_family || 'Roboto'}', ${FONT_STACK_FALLBACK}`;
     div.style.fontSize = `${fit.size}px`;
     div.style.color = el.font_color || '#000000';
@@ -207,7 +137,7 @@
     div.style.textAlign = el.align || 'left';
     div.style.overflow = 'hidden';
     div.style.lineHeight = String(LINE_HEIGHT);
-    div.dataset.fit = fit.truncated ? 'truncated' : fit.shrunk ? 'shrunk' : fit.grown ? 'grown' : 'ok';
+    div.dataset.fit = fit.truncated ? 'truncated' : fit.shrunk ? 'shrunk' : 'ok';
     const span = document.createElement('span');
     span.style.cssText = `display:block; width:100%; white-space:pre; line-height:${LINE_HEIGHT}; text-align:${el.align || 'left'};`;
     span.textContent = fit.lines.join('\n');
@@ -277,7 +207,7 @@
     div.dataset.elId = el.id;
     div.style.cssText = `position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${el.height}mm; transform:rotate(${el.rotation || 0}deg); transform-origin:50% 50%; z-index:${el.z_index || 1}; box-sizing:border-box;`;
 
-    if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data, opts.plan);
+    if (el.type === 'text_static' || el.type === 'text_variable') renderTextElement(div, el, data);
     else if (el.type === 'image_static') renderImageStatic(div, el, opts);
     else if (el.type === 'image_variable') renderImageVariable(div, el, data, opts);
     else if (el.type === 'qr') renderQr(div, el, data);
@@ -308,8 +238,7 @@
       container.style.backgroundColor = template.background_value || '#ffffff';
     }
     const sorted = (template.elements || []).slice().sort((a, b) => (a.z_index || 0) - (b.z_index || 0));
-    const withPlan = Object.assign({}, opts, { plan: planText(template, data) });                   // el ajuste de TODOS los textos, con la jerarquía y el espacio libre
-    sorted.forEach(el => container.appendChild(renderElement(el, data, withPlan)));
+    sorted.forEach(el => container.appendChild(renderElement(el, data, opts)));
   }
 
   /* Espera a que las tipografías de la plantilla (normal y negrita) estén cargadas ANTES de dibujar o imprimir: si no, el navegador usa una de respaldo y la etiqueta impresa cambia de tipografía. */
@@ -332,7 +261,7 @@
     return fetch(`/api/events/${eventId}/badge-template?${qs.toString()}`, { cache: 'no-store' });
   }
 
-  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, planText, fitModeOf, FIT_MODES, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
+  window.BadgeRender = { resolveVariable, renderElement, renderBadge, loadFonts, fetchTemplate, applyTextCase, textContent, SIGLAS, PARTICULAS, TEXT_CASES, fitText, wrapWords, textHeightMm, LINE_HEIGHT, MIN_RATIO };
 
   /* Disparo de impresión (Historia 2.2) — compartido por los 4 puntos donde un registro puede
      terminar exitosamente (escáner facial, cédula, alta manual, botón "Acreditar" del

@@ -33,24 +33,26 @@ def _api_ok(c):
 
 
 # ---------------------------------------------------------------------------------------------------- bloque 2: configuración por puesto en el servidor
-def test_the_station_settings_live_on_the_server_and_the_digitador_cannot_touch_them(client, env, db):
+def test_the_station_keeps_only_reader_only_and_show_hide_and_the_digitador_cannot_touch_them(client, env, db):
     ev, u = env
+    db.add(PrintStation(event_id=ev.id, staff_user_id=u["puesto"].id, settings_json=json.dumps({"mode": "driver", "noDialog": True, "pageWidthMm": 60, "rotation": 90})))
+    db.commit()                                                                                    # lo guardado antes (63a2a8a)
     login(client, "adm")
-    body = {"print_station": True, "settings": {"mode": "driver", "noDialog": True, "pageWidthMm": 58.9, "dx": 1.2, "dy": -0.4, "usbSerial": "ABC123", "cut": False, "feedMm": 4, "rotation": "auto", "crop": True, "cropMode": "symmetric"}}
-    r = client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json=body)
-    assert r.status_code == 200 and r.json()["print_station"] is True and r.json()["settings"]["mode"] == "driver" and r.json()["settings"]["pageWidthMm"] == 58.9
-    assert db.query(PrintStation).filter_by(event_id=ev.id, staff_user_id=u["puesto"].id).count() == 1
+    r = client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"print_station": True, "settings": {"readerOnly": True, "showConfig": False, "mode": "usb", "dx": 2}})
+    assert r.status_code == 200 and r.json()["print_station"] is True
+    saved = r.json()["settings"]
+    assert saved["readerOnly"] is True and saved["showConfig"] is False
+    assert saved["mode"] == "driver" and saved["pageWidthMm"] == 60 and "dx" not in saved       # lo viejo NO se borra (se ignora); lo nuevo de impresión no se guarda
     client.cookies.clear(); login(client, "puesto")
     me = client.get(f"/api/events/{ev.id}/print-station/me").json()
-    assert me["admin"] is False and me["station"] is True and me["settings"]["noDialog"] is True and me["settings"]["usbSerial"] == "ABC123"
-    for method, path, payload in (("put", f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", {"settings": {"mode": "usb"}}), ("post", f"/api/print-stations/{u['puesto'].id}/release", None),
+    assert me["admin"] is False and me["station"] is True and me["settings"]["readerOnly"] is True
+    for method, path, payload in (("put", f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", {"settings": {"readerOnly": False}}), ("post", f"/api/print-stations/{u['puesto'].id}/release", None),
                                   ("get", "/api/settings/single-session", None), ("put", "/api/settings/single-session", {"enabled": False}), ("get", f"/api/events/{ev.id}/shared-print", None)):
         r = getattr(client, method)(path, json=payload) if payload is not None else getattr(client, method)(path)
         assert r.status_code == 403, (method, path)                                                  # los endpoints de configuración rechazan a los roles sin permiso
     client.cookies.clear(); login(client, "adm")
-    assert client.get(f"/api/events/{ev.id}/print-station/me").json()["admin"] is True
     r = client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"settings": None})
-    assert r.status_code == 200 and r.json()["settings"] is None and db.query(PrintStation).count() == 0       # sin fila: vuelve a lo de siempre
+    assert r.status_code == 200 and r.json()["settings"] is None and db.query(PrintStation).count() == 0       # «Quitar configuración»: vuelve a lo de siempre
 
 
 def test_station_settings_are_validated_and_only_an_admin_marks_the_station(client, env, factory, db):
@@ -58,10 +60,10 @@ def test_station_settings_are_validated_and_only_an_admin_marks_the_station(clie
     factory.staff("coordinador", "coord"); factory.authorize(ev, db.query(StaffUser).filter_by(username="coord").one())
     login(client, "coord")
     put = lambda settings, **extra: client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"settings": settings, **extra})
-    assert put({"mode": "raro"}).status_code == 400 and put({"pageWidthMm": 500}).status_code == 400 and put({"dx": 9}).status_code == 400 and put({"feedMm": -2}).status_code == 400
-    assert put({"mode": "usb", "dx": 2}).status_code == 200
-    assert put({"mode": "usb"}, print_station=True).status_code == 403                                 # la casilla es del admin
-    assert put({"mode": "usb", "inventado": 1}).json()["settings"] == {"mode": "usb"}                  # solo claves conocidas
+    assert put({"showConfig": "no"}).status_code == 400 and put({"readerOnly": 1}).status_code == 400
+    assert put({"readerOnly": True}).status_code == 200
+    assert put({"readerOnly": True}, print_station=True).status_code == 403                        # la casilla es del admin
+    assert put({"readerOnly": True, "mode": "raro", "inventado": 1}).json()["settings"] == {"readerOnly": True}      # lo de impresión ya no se guarda
 
 
 def test_a_station_without_a_row_keeps_working_as_today(client, env):
@@ -186,7 +188,7 @@ def test_show_config_defaults_to_show_and_only_coordinator_or_more_changes_it(cl
     factory.staff("coordinador", "coord"); factory.authorize(ev, db.query(StaffUser).filter_by(username="coord").one())
     login(client, "coord")
     r = client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"settings": {"showConfig": False, "mode": "driver"}})
-    assert r.status_code == 200 and r.json()["settings"] == {"showConfig": False, "mode": "driver"}
+    assert r.status_code == 200 and r.json()["settings"] == {"showConfig": False}
     assert client.put(f"/api/events/{ev.id}/print-stations/{u['puesto'].id}", json={"settings": {"showConfig": "no"}}).status_code == 400
     other = factory.event("en_proceso"); factory.authorize(other, u["puesto"]); factory.authorize(other, db.query(StaffUser).filter_by(username="coord").one())
     client.cookies.clear(); login(client, "puesto")
@@ -202,5 +204,4 @@ def test_no_print_menu_visibility_rule_depends_on_the_role():
     body = sp[sp.index("  function render() {"):sp.index("  function stationLine() {")]
     assert "isAdmin" not in body and "role" not in body.lower().replace("rol de", "")             # ninguna regla de visibilidad depende del rol
     assert "const configShown = () => !(stationCfg && stationCfg.showConfig === false);" in sp    # por defecto: Mostrar
-    for el in ("#spConnect", "#spQueue", "#spPrefs", "#spHostNote"):
-        assert f"bar.querySelector('{el}').hidden = !shown" in body or f"bar.querySelector('{el}').hidden = !({'SHARED && shown' if el == '#spQueue' else 'shown && SHARED && driverOn() && !kiosk'})" in body
+    assert "bar.querySelector('#spConnect').hidden = !shown ||" in body and "bar.querySelector('#spQueue').hidden = !(SHARED && shown)" in body and "bar.querySelector('#spPrefs').hidden = !shown" in body

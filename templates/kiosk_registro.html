@@ -343,8 +343,8 @@
 </main>
 
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
-{# Barra de impresión (26-oct-2026): modo de impresión (automático / USB directo / controlador de Windows), lanzador, calibración e «Imprimir prueba» están en TODOS los eventos para quien imprime
-   (no para cliente ni comercial, que no imprimen). «Impresión compartida» solo decide si OTROS equipos usan esta impresora (latido, trabajos, Cola, solo «Registrado»). #}
+{# Barra de Registro (27-oct-2026): la impresión es la del domingo 25-oct 18:00 (c10c3d2). Los scripts se cargan en todos los eventos (salvo cliente y comercial, que no imprimen) por el
+   modo touch, «solo lector», la barra y el menú; con «Impresión compartida» APAGADA, shared-print.js no toca la impresión (la ventana de siempre). #}
 {% if event.shared_print_enabled or staff_role not in ['cliente', 'comercial'] %}<meta name="gw-print-settings" content="{{ print_settings_json(event) }}">
 <script>window.SHARED_PRINT_ENABLED = {{ 'true' if event.shared_print_enabled else 'false' }};</script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
@@ -352,7 +352,6 @@
 <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
 <script src="{{ url_for('static', path='vendor/html2canvas-1.4.1.min.js') }}"></script>
 <script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
-<script src="{{ url_for('static', path='js/driver-print.js') }}"></script>
 <script src="{{ url_for('static', path='js/shared-print.js') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', path='js/camera-capture.js') }}"></script>

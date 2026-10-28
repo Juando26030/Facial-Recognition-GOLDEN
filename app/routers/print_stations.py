@@ -1,9 +1,9 @@
-"""Puestos de impresión configurados desde Parámetros (26-oct-2026). La configuración de impresión la define Golden: el digitador no elige, no configura y no conecta nada.
+"""Puestos de impresión configurados desde Parámetros (26-oct-2026; 27-oct-2026: la impresión vuelve a la del domingo 25-oct 18:00).
 
-  - Por cada cuenta de puesto y evento se guarda en el SERVIDOR (`print_stations.settings_json`): modo (Controlador de Windows / USB directo / Automático), «imprime sin cuadro», ancho de página,
-    calibración (mm), serie de la impresora USB y los parámetros físicos (los mismos de `print_settings`: corte, avance, espejo, recorte…). Los valores del EVENTO son la base y el puesto los sobrescribe.
-  - Sin fila para la cuenta, el equipo usa lo de siempre (valores del evento + lo guardado en el navegador): nada cambia en eventos que ya estaban cargados.
-  - El puesto, al cargar, lee su configuración (`GET …/print-station/me`) y se aplica sola. Los endpoints de configuración rechazan a los roles sin permiso (CONFIG = coordinador o más, sin comercial).
+  - Por cada cuenta de puesto y evento se guarda en el SERVIDOR (`print_stations.settings_json`) solo lo que NO cambia cómo sale la etiqueta: «solo lector» (`readerOnly`) y si en su
+    Registro se muestra o esconde el menú de impresión (`showConfig`; sin el campo = Mostrar). La etiqueta sale con los valores del evento y lo de ⚙️ de cada computador.
+  - Lo que se haya guardado antes (modo, ancho de página, calibración, serie USB, giro, recorte, corte…) NO se borra: se conserva tal cual en el JSON y se IGNORA.
+  - El puesto, al cargar, lee su configuración (`GET …/print-station/me`). Los endpoints de configuración rechazan a los roles sin permiso (CONFIG = coordinador o más, sin comercial).
   - Casilla «Puesto de impresión» (`staff_users.print_station`): la cuenta queda protegida contra un segundo inicio de sesión (app/sessions.py). Solo admin la marca y la libera."""
 import json
 import logging
@@ -16,7 +16,6 @@ from app import sessions
 from app.auth import get_current_staff, get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.models import PrintStation, StaffUser
-from app.routers import print_settings
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.print_stations")
@@ -25,28 +24,16 @@ router = APIRouter()
 ADMIN = require_role("admin")
 CONFIG = require_role_excluding("coordinador", ("comercial",))
 OPERATOR = require_role_excluding("digitador", ("comercial",))
-MODES = ("auto", "usb", "driver")
 
 
-def _num(value, lo: float, hi: float, what: str) -> float:
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail=f"«{what}» debe ser un número")
-    if not lo <= n <= hi:
-        raise HTTPException(status_code=400, detail=f"«{what}» debe estar entre {lo:g} y {hi:g}")
-    return round(n, 2)
+MANAGED = ("readerOnly", "showConfig")      # lo único que se usa; el resto de lo guardado se conserva y se ignora
 
 
 def sanitize(data: dict) -> dict:
-    """Solo claves conocidas y válidas (400 con mensaje claro si algo no cuadra). Lo omitido o `None` = «usar lo del evento / de fábrica»."""
+    """Solo «solo lector» y «Mostrar/Esconder» (sí/no; 400 si no). Cualquier otra clave se ignora (ya no cambia la impresión)."""
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="La configuración del puesto no es válida")
     out = {}
-    if data.get("mode") is not None:
-        if data["mode"] not in MODES:
-            raise HTTPException(status_code=400, detail="El modo es Automático, USB directo o Controlador de Windows")
-        out["mode"] = data["mode"]
     if data.get("showConfig") is not None:
         if not isinstance(data["showConfig"], bool):
             raise HTTPException(status_code=400, detail="«Mostrar la configuración de impresión» debe ser sí o no")
@@ -55,18 +42,6 @@ def sanitize(data: dict) -> dict:
         if not isinstance(data["readerOnly"], bool):
             raise HTTPException(status_code=400, detail="«Solo lector» debe ser sí o no")
         out["readerOnly"] = data["readerOnly"]
-    if data.get("noDialog") is not None:
-        if not isinstance(data["noDialog"], bool):
-            raise HTTPException(status_code=400, detail="«Imprime sin cuadro» debe ser sí o no")
-        out["noDialog"] = data["noDialog"]
-    if data.get("pageWidthMm") not in (None, ""):
-        out["pageWidthMm"] = _num(data["pageWidthMm"], 20, 120, "ancho de página (mm)")
-    for key, what in (("dx", "calibración horizontal (mm)"), ("dy", "calibración vertical (mm)")):
-        if data.get(key) not in (None, ""):
-            out[key] = _num(data[key], -5, 5, what)
-    if data.get("usbSerial") not in (None, ""):
-        out["usbSerial"] = str(data["usbSerial"]).strip()[:40]
-    out.update(print_settings.sanitize({k: v for k, v in data.items() if k in print_settings.DEFAULTS}))
     return out
 
 
@@ -116,7 +91,13 @@ def put_station(event_id: int, staff_id: int, data: dict, db: Session = Depends(
             if row is None:
                 row = PrintStation(event_id=event.id, staff_user_id=target.id)
                 db.add(row)
-            row.settings_json, row.updated_at = json.dumps(clean), utcnow()
+            old = {}
+            try:
+                old = json.loads(row.settings_json) if row.settings_json else {}
+            except ValueError:
+                old = {}
+            kept = {k: v for k, v in (old if isinstance(old, dict) else {}).items() if k not in MANAGED}      # lo guardado antes no se borra (se ignora)
+            row.settings_json, row.updated_at = json.dumps({**kept, **clean}), utcnow()
     db.commit()
     log.info("puesto de impresión %s del evento %s actualizado por el usuario %s", target.id, event.id, staff.id)
     return {"staff_id": target.id, "print_station": bool(target.print_station), "settings": read_station(db, event.id, target.id)}

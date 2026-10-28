@@ -968,8 +968,8 @@ class PrintJob(Base):
 
 
 class PrintStation(Base):
-    """0072: configuración de impresión de UNA cuenta de puesto en UN evento (modo, «sin cuadro», ancho de página, calibración, recorte y parámetros físicos), guardada en el servidor
-    (no en el navegador). Sin fila, el puesto usa lo de siempre (valores del evento + lo guardado en el equipo)."""
+    """0072: lo de UNA cuenta de puesto en UN evento, guardado en el servidor: «solo lector» y Mostrar/Esconder el menú de impresión (app/routers/print_stations.py). Otras claves que
+    hayan quedado de antes se conservan y se ignoran. Sin fila, el puesto funciona como siempre."""
     __tablename__ = 'print_stations'
     id = Column(Integer, primary_key=True, autoincrement=True)
     event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)

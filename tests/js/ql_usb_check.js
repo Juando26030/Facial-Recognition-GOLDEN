@@ -104,10 +104,10 @@ assert.ok(!nocut.join(",").includes([0x1b, 0x69, 0x41, 0x01].join(",")), "sin co
 
 // ---- preferencias del equipo: por defecto corte sí, margen 1,5 mm, alto = el de la plantilla; se guardan y se leen con las mismas claves
 const mem = { d: {}, getItem(k) { return k in this.d ? this.d[k] : null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
-assert.deepStrictEqual(QL.readPrefs(mem), { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3, cropMode: "symmetric" });
+assert.deepStrictEqual(QL.readPrefs(mem), { cut: true, feedMm: 1.5, lengthMm: null, mirror: false, invert: false, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 });
 QL.savePrefs(mem, { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true });
 assert.deepStrictEqual(mem.d, { ql_cut: "0", ql_feed_mm: "2", ql_length_mm: "90", ql_mirror_v2: "1", ql_invert: "1" });       // «Espejo» con la clave NUEVA (significado corregido)
-assert.deepStrictEqual(QL.readPrefs(mem), { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3, cropMode: "symmetric" });
+assert.deepStrictEqual(QL.readPrefs(mem), { cut: false, feedMm: 2, lengthMm: 90, mirror: true, invert: true, tapeWidth: 62, tapeType: "continuous", rotation: "auto", crop: true, cropMarginMm: 3 });
 QL.savePrefs(mem, { lengthMm: null, feedMm: "abc" });
 assert.strictEqual(QL.readPrefs(mem).lengthMm, null);
 assert.strictEqual(QL.readPrefs(mem).feedMm, 1.5);                                               // valor ilegible: el de por defecto
@@ -133,7 +133,7 @@ assert.deepStrictEqual(QL.readPrefs(null), QL.readPrefs({ getItem() { throw new 
   const dev = { d: {}, getItem(k) { return k in this.d ? this.d[k] : null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
   const evt = { cropMarginMm: 5, rotation: 270, feedMm: 2, cut: false, tapeType: "diecut", lengthMm: 80, tapeWidth: 50, crop: false };   // 50 mm NO existe en MEDIA: se ignora
   let r = QL.resolvePrefs(dev, evt);
-  assert.deepStrictEqual(r.prefs, { cut: false, feedMm: 2, lengthMm: 80, mirror: false, invert: false, tapeWidth: 62, tapeType: "diecut", rotation: 270, crop: false, cropMarginMm: 5, cropMode: "symmetric" });
+  assert.deepStrictEqual(r.prefs, { cut: false, feedMm: 2, lengthMm: 80, mirror: false, invert: false, tapeWidth: 62, tapeType: "diecut", rotation: 270, crop: false, cropMarginMm: 5 });
   assert.strictEqual(r.source.tapeWidth, "defecto"); assert.strictEqual(r.source.cropMarginMm, "evento"); assert.strictEqual(r.source.mirror, "defecto");
   QL.savePrefs(dev, { cropMarginMm: 1, cut: true });
   r = QL.resolvePrefs(dev, evt);
@@ -185,11 +185,11 @@ assert.deepStrictEqual(QL.readPrefs(null), QL.readPrefs({ getItem() { throw new 
 {
   const W = QL.MEDIA[62].printable, H = 400, bm = new Uint8Array(W * H);
   bm[100 * W + 5] = 1;                                            // la última tinta está en la fila 100
-  let c = QL.cropToContent(bm, W, H, QL.mmToDots(3), "min");
+  let c = QL.cropToContent(bm, W, H, QL.mmToDots(3));
   assert.strictEqual(c.h, 101 + 35); assert.strictEqual(c.bitmap.length, W * c.h);
-  c = QL.cropToContent(bm, W, H, 0, "min"); assert.strictEqual(c.h, 101);
-  c = QL.cropToContent(new Uint8Array(W * H), W, H, 35, "min"); assert.strictEqual(c.h, H);                    // vacía: se deja
-  bm[399 * W] = 1; c = QL.cropToContent(bm, W, H, 35, "min"); assert.strictEqual(c.h, H);                       // tinta al final: no crece
+  c = QL.cropToContent(bm, W, H, 0); assert.strictEqual(c.h, 101);
+  c = QL.cropToContent(new Uint8Array(W * H), W, H, 35); assert.strictEqual(c.h, H);                    // vacía: se deja
+  bm[399 * W] = 1; c = QL.cropToContent(bm, W, H, 35); assert.strictEqual(c.h, H);                       // tinta al final: no crece
   // pipeline completo: plantilla 100×55 mm horizontal → gira 90° (55 a lo ancho, 100 a lo largo), centrada y recortada
   const pw = Math.round(100 * 300 / 25.4), ph = Math.round(55 * 300 / 25.4), tpl = new Uint8Array(pw * ph);
   for (let x = 0; x < pw; x++) tpl[(ph - 1) * pw + x] = 1;       // una raya en el borde inferior de la plantilla
@@ -222,17 +222,3 @@ assert.strictEqual(QL.parseStatus(new Uint8Array(5)), null);
 assert.strictEqual(QL.supported(), false);                                                       // sin navegador no hay WebUSB: la página lo avisa
 
 console.log("ql_usb_check OK");
-
-// ---- recorte SIMÉTRICO (25-oct-2026): el blanco final iguala al inicial (±0,5 mm), nunca menos que el margen; «min» conserva el recorte viejo
-{
-  const w = 100, h = 400, mm = (n) => QL.mmToDots(n);
-  const bm = new Uint8Array(w * h);
-  for (let y = 160; y < 300; y++) bm[y * w + 10] = 1;                                   // tinta de la fila 160 a la 299 (16 mm de blanco antes; 100 puntos = 8,5 mm después)
-  const sym = QL.cropToContent(bm, w, h, mm(3), "symmetric"), min = QL.cropToContent(bm, w, h, mm(3), "min");
-  const trailing = (c) => c.h - 1 - 299, leading = 160;
-  assert.ok(Math.abs(trailing(sym) - leading) <= mm(0.5), "simétrico: blanco final = inicial " + trailing(sym) + " vs " + leading);
-  assert.strictEqual(trailing(min), mm(3), "mínimo: solo el margen");
-  const small = new Uint8Array(w * h); for (let y = 10; y < 380; y++) small[y * w + 5] = 1;     // poco blanco antes: gana el margen mínimo
-  assert.strictEqual(QL.cropToContent(small, w, h, mm(3), "symmetric").h, h, "poco blanco antes: el margen mínimo y nunca más papel que el de la plantilla");
-}
-console.log("recorte simétrico OK");

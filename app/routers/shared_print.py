@@ -77,8 +77,8 @@ def _printer_ready(device: Optional[PrintDevice], now=None) -> bool:
 
 
 def _can_host(device: Optional[PrintDevice], now=None) -> bool:
-    """¿Puede elegirse como puesto? Activo y con impresora lista, o activo imprimiendo por el controlador CON cuadro de diálogo (atiende con «Imprimir pendientes»)."""
-    return bool(_printer_ready(device, now) or (_online(device, now) and "con cuadro" in (device.printer_name or "")))
+    """¿Puede elegirse como puesto? Que esté activo (abierto en el Registro): con la impresora USB conectada imprime solo; sin ella, los trabajos esperan su «Imprimir pendientes»."""
+    return _online(device, now)
 
 
 def _enabled_event(event_id: int, db: Session, staff: StaffUser) -> Event:
@@ -267,8 +267,8 @@ def next_job(event_id: int, device_id: Optional[str] = None, manual: bool = Fals
     event = _enabled_event(event_id, db, staff)
     now = utcnow()
     dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff.id).first()
-    # Solo reclama la ventana que PUEDE IMPRIMIR SOLA (la que el servidor tiene como dueña de la impresora, sin cuadro de diálogo). Una ventana con cuadro de diálogo, o la sesión
-    # del celular de la misma cuenta, NUNCA reclaman por sondeo: `manual` es el clic de «Imprimir pendientes» (la persona está ahí para confirmar el cuadro).
+    # Solo reclama por sondeo la ventana que PUEDE IMPRIMIR SOLA (la dueña de la impresora USB, que el servidor tiene como su equipo). Una ventana sin impresora, o la sesión
+    # del celular de la misma cuenta, NUNCA reclaman por sondeo: `manual` es el toque de «Imprimir pendientes» (la persona está ahí para confirmar la ventana de impresión).
     if not manual and (dev is None or not dev.printer_connected or (device_id and dev.device_id != _clip(device_id, 64))):
         _expire(db, event.id)
         db.commit()

@@ -52,7 +52,7 @@ def _job(client, ev, user_id="1001", request_id=None):
 
 
 # ---------------------------------------------------------------------------------------------------- apagado = igual que hoy
-def test_it_is_off_by_default_and_the_driver_print_mode_is_still_available(client, factory, db):
+def test_it_is_off_by_default_and_the_registration_bar_is_still_there(client, factory, db):
     factory.staff("coordinador", "coord")
     ev = factory.event("en_proceso")
     assert ev.shared_print_enabled is False
@@ -60,7 +60,7 @@ def test_it_is_off_by_default_and_the_driver_print_mode_is_still_available(clien
     login(client, "dig")
     page = client.get(f"/kiosk/{ev.id}/registro").text
     assert "window.SHARED_PRINT_ENABLED = false" in page                                           # apagada: lo compartido no se usa...
-    assert "js/shared-print.js" in page and "js/driver-print.js" in page and "js/ql-usb.js" in page and "html2canvas" in page   # ...pero la barra y el modo por controlador existen igual
+    assert "js/shared-print.js" in page and "js/ql-usb.js" in page and "html2canvas" in page and "driver-print" not in page   # ...pero la barra (touch, menú) sigue; sin modo controlador
     assert "js/badge-render.js" in page
     for method, path in (("post", f"/api/events/{ev.id}/print-devices/heartbeat"), ("post", f"/api/events/{ev.id}/print-jobs"), ("get", f"/api/events/{ev.id}/print-jobs-next")):
         body = {"device_id": "d", "user_id": "1", "request_id": "r"} if method == "post" else None
@@ -99,7 +99,7 @@ def test_devices_report_and_appear_with_last_signal_and_printer(client, setup):
     users = {x["username"]: x for x in client.get(f"/api/events/{ev.id}/shared-print").json()["users"]}
     assert users["y1"]["eligible_printer"] is True and users["y1"]["device"]["printer_connected"] is True and users["y1"]["device"]["online"] is True
     assert users["y1"]["device"]["platform"] == "Android" and users["y1"]["device"]["browser"] == "Chrome"
-    assert users["x1"]["eligible_printer"] is False and users["x2"]["device"] is None                # sin señal todavía
+    assert users["x1"]["eligible_printer"] is True and users["x2"]["device"] is None                 # activo sin USB: puede atender con «Imprimir pendientes»; x2 sin señal todavía
 
 
 def test_a_printer_must_be_connected_reporting_and_has_no_hard_limit_only_a_soft_warning_over_six(client, factory, setup, db):
@@ -270,7 +270,7 @@ def test_a_tab_that_does_not_own_the_printer_reports_null_and_does_not_overwrite
     client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json={"device_id": "x", "printer_connected": None})
     _as(client, "adm")
     x1 = {x["username"]: x for x in client.get(f"/api/events/{ev.id}/shared-print").json()["users"]}["x1"]
-    assert x1["device"]["printer_connected"] is False and x1["eligible_printer"] is False
+    assert x1["device"]["printer_connected"] is False and x1["eligible_printer"] is True
 
 
 def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_and_the_test_page_lets_the_printer_go():
@@ -289,7 +289,7 @@ def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_a
     # la página de prueba suelta la impresora al terminar y al ocultarse o cerrarse; el cierre hace releaseInterface y suelta el candado entre pestañas
     assert "finally { await QLUsb.close(); }" in page and '"visibilitychange"' in page and '"pagehide"' in page
     assert "releaseInterface" in ql and "navigator.locks.request(LOCK_NAME, { ifAvailable: true }" in ql
-    assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy || (usb.ok && usb.viaTab && !driverOn()) ? null : canAuto()" in sp
+    assert "busy" in sp and "BUSY_RETRY_MS" in sp and "printer_connected: usb.busy ? null : usb.ok" in sp
 
 
 # ---------------------------------------------------------------------------------------------------- solo se imprime a quien está Registrado
@@ -348,11 +348,12 @@ def test_the_queue_shows_the_parameters_applied_to_each_job_and_a_phone_job_keep
     assert client.get(f"/api/events/{ev.id}/print-jobs/{job['id']}").json()["applied"] == applied
 
 
-def test_the_computer_that_prints_for_others_without_the_launcher_is_told_so_in_the_bar():
+def test_the_pending_button_is_big_with_its_counter_and_there_is_no_launcher_nor_driver_mode():
     import pathlib
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
-    assert "Este computador imprime solo si abres la app con el lanzador." in sp and 'id="spHostLauncher"' in sp and "(shown && SHARED && driverOn() && !kiosk)" in sp
     assert "#sharedPrintBar #spPending{min-height:64px" in sp and "Imprimir pendientes (${waitingCount()})" in sp          # grande y con el contador
+    for gone in ("DriverPrint", "driver-print", "kioskFromUrl", "launcher", "spHostNote", "driverOn", "impresion=kiosk"):
+        assert gone not in sp, gone
 
 
 def test_the_driver_print_bar_loads_with_and_without_shared_print_but_not_for_clients(client, factory, db):
@@ -372,7 +373,8 @@ def test_shared_print_js_never_calls_shared_routes_when_the_event_has_it_off():
     import pathlib
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "window.SHARED_PRINT_ENABLED !== false" in sp
-    assert "if (!SHARED) return true;" in sp and "if (!SHARED || sessionDead || polling" in sp and "if (!SHARED) { online = true;" in sp
+    assert "if (!SHARED) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);" in sp       # sin compartida: la impresión de siempre
+    assert "if (sessionDead || !SHARED) { render(); return; }" in sp and "if (!SHARED || sessionDead || polling" in sp and "if (!SHARED) { render(); return; }" in sp
 
 
 def test_the_last_resort_print_page_declares_the_rotated_page_so_nothing_is_cut():
@@ -389,7 +391,7 @@ def _beat_as(client, ev, device, printer, name=None):
 def test_another_session_of_the_station_account_never_overwrites_the_station_or_claims_its_jobs(client, setup, db):
     ev, u = setup
     _as(client, "y1")
-    _beat_as(client, ev, "pc", True, "Controlador de Windows (Brother QL-800)")
+    _beat_as(client, ev, "pc", True, "QL-800")
     assert _route(client, ev, u["x1"], u["y1"]).status_code == 200
     _as(client, "x1")
     job = _job(client, ev, "1001").json()
@@ -397,7 +399,7 @@ def test_another_session_of_the_station_account_never_overwrites_the_station_or_
     phone = _beat_as(client, ev, "celular", False)                                                 # el admin consulta desde el celular con la MISMA cuenta
     assert phone["holder"] is False and phone["poll"] is False and phone["waiting"] == 1
     assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=celular").json()["job"] is None        # el celular no reclama
-    pc = _beat_as(client, ev, "pc", True, "Controlador de Windows (Brother QL-800)")
+    pc = _beat_as(client, ev, "pc", True, "QL-800")
     assert pc["holder"] is True and pc["poll"] is True                                              # y el puesto sigue siendo el computador
     assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc").json()["job"]["id"] == job["id"]
     _as(client, "x1")
@@ -407,13 +409,13 @@ def test_another_session_of_the_station_account_never_overwrites_the_station_or_
 def test_a_window_with_a_print_dialog_never_claims_by_polling_but_the_click_claims(client, setup):
     ev, u = setup
     _as(client, "y1")
-    _beat_as(client, ev, "pc", False, "Controlador de Windows (con cuadro: no imprime sola)")        # imprime por controlador pero Chrome pide confirmar cada hoja
+    _beat_as(client, ev, "pc", False, "QL-800 (sin USB)")        # imprime por controlador pero Chrome pide confirmar cada hoja
     assert _route(client, ev, u["x1"], u["y1"]).status_code == 200
     _as(client, "x1")
     job = _job(client, ev, "1002").json()
     _as(client, "y1")
     assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc").json()["job"] is None     # el sondeo no reclama: el trabajo sigue en el servidor
-    hb = _beat_as(client, ev, "pc", False, "Controlador de Windows (con cuadro: no imprime sola)")
+    hb = _beat_as(client, ev, "pc", False, "QL-800 (sin USB)")
     assert hb["waiting"] == 1 and hb["claimed"] == 0 and hb["poll"] is False
     assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc&manual=1").json()["job"]["id"] == job["id"]      # «Imprimir pendientes»: la persona está ahí
     assert _beat_as(client, ev, "pc", False)["claimed"] == 1

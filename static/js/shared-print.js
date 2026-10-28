@@ -1,6 +1,7 @@
 /* Impresión compartida + impresión directa por USB (Brother QL-800, cinta continua de 62 mm) en la pantalla de Registro. Orden del 22-oct-2026.
 
-   SOLO se carga si el evento tiene «Impresión compartida» encendida (kiosk_registro.html): con el interruptor apagado, la impresión es exactamente la de siempre.
+   27-oct-2026: la IMPRESIÓN y la impresión compartida son las del domingo 25-oct 18:00 (c10c3d2). Se carga en todos los eventos (kiosk_registro.html) para el modo touch, «solo lector»,
+   la barra y el menú; con «Impresión compartida» APAGADA no toca la impresión: se imprime con la ventana de siempre, exactamente como el domingo. Solo USB directo (con la compartida) o la ventana de siempre.
 
    - Cada equipo reporta cada 10 s su plataforma, navegador y si tiene la impresora USB conectada (POST print-devices/heartbeat). El servidor responde dónde
      imprime este usuario («en su propio equipo» o «en el equipo de Y») y si este equipo atiende a otros (entonces pregunta por trabajos cada 1,5 s).
@@ -10,8 +11,10 @@
        · en el equipo de Y → se crea un trabajo (con un id propio: un reintento no duplica) y se sigue su estado; «Impreso en Y», o el aviso y la cola visible.
    - El equipo Y imprime lo que el servidor le reserva (nunca dos veces: el servidor no vuelve a entregar un trabajo reservado) y confirma impreso/fallido.
    - Reconexión de la impresora sin pedir permiso de nuevo (navigator.usb.getDevices), pantalla siempre encendida (Wake Lock) y avisos si se pierde la conexión.
-   - «Registro touch» (recordado en este equipo): botones grandes y los TRES buscadores (cédula, nombre, entidad). La cédula abre el teclado numérico; con «Solo lector» (opción del puesto en
-     Parámetros, para lectores USB/Bluetooth) no abre teclado, conserva el foco y un ícono ⌨️ pegado al campo lo abre (26-oct-2026). */
+   - «Registro touch» (recordado en este equipo): botones grandes y los TRES buscadores; la cédula abre el teclado numérico. «Solo lector» (opción del PUESTO en Parámetros, para lectores
+     USB/Bluetooth): la cédula no abre teclado, conserva el foco y un ícono ⌨️ pegado al campo lo abre.
+   - Menú de impresión (⚙️, Conectar, Cola): para TODO el personal; el interruptor del puesto en Parámetros («Mostrar» por defecto) lo esconde y deja solo la línea de estado.
+   - Trabajos de otros equipos: los reclama SOLO la ventana que puede imprimir sin confirmar (la dueña de la impresora USB); sin ella esperan en «Imprimir pendientes», que reclama al tocarlo. */
 (function () {
   'use strict';
   const EID = window.EVENT_ID;
@@ -42,27 +45,15 @@
   let route = { mode: 'self', printer_name: '', printer_ready: false, serving: 0, poll: false };
   let usb = { ok: false, name: '', lastError: '', busy: false };
   let online = true;
-  /* MODO DE IMPRESIÓN POR EQUIPO (25-oct-2026): «auto» (WebUSB y, si no se puede, el controlador de Windows), «usb» (solo WebUSB) o «driver» (cola de Windows «Brother QL-800»; no se intenta
-     WebUSB ni se muestra aviso rojo). `kiosk`: la ventana se abrió con el lanzador (--kiosk-printing: Chrome imprime sin cuadro de diálogo). */
-  /* «Impresión compartida» (interruptor del evento) solo gobierna que OTROS equipos usen esta impresora: latido, trabajos, Cola y la regla de «solo se imprime a quien está Registrado». El modo de
-     impresión, el lanzador, la calibración y «Imprimir prueba» valen en todos los eventos (26-oct-2026). Sin el interruptor no se llama a ninguna ruta de impresión compartida (el servidor respondería 409). */
-  const SHARED = window.SHARED_PRINT_ENABLED !== false;
-  const DP = window.DriverPrint;
-  const GUIDE_URL = '/static/ayuda/impresion-windows.html';
-  let printMode = 'auto';
-  let drvFallback = false;                // en «auto»: el USB directo no se pudo usar en este equipo
-  let drvNoticeShown = false;
-  let kiosk = false;
-  /* PUESTOS (26-oct-2026): la configuración de impresión la define Golden en Parámetros y vive en el SERVIDOR (por cuenta de puesto). El digitador no elige, no configura y no conecta nada: ve una
-     línea de estado. Solo admin/super_admin ven ⚙️ Impresión, el selector de modo, la calibración, «Conectar impresora» y la Cola completa. Sin configuración guardada para la cuenta, el equipo usa
-     lo de siempre (valores del evento + lo guardado en el navegador). */
-  let isAdmin = false, isStation = false, stationCfg = null, dialogWarn = false, recoveredUntil = 0, authCount = -1;
-  const overlay = {};                     // clave de almacenamiento → valor que manda el servidor (gana sobre el navegador)
-  const waitingCount = () => (route && route.waiting) | 0;      // trabajos de otros equipos que esperan EN EL SERVIDOR a este puesto (nadie los reclama hasta que una ventana pueda imprimirlos sola o se toque «Imprimir pendientes»)
-  /* Celular y tablet (Android/iOS) no tienen controlador de Windows: nunca se usa ni se nombra ese modo ni el «cuadro de diálogo» (26-oct-2026). */
-  const MOBILE = platform === 'Android' || platform === 'iOS';
-  const driverOn = () => !MOBILE && (printMode === 'driver' || (printMode === 'auto' && drvFallback));
   let pending = 0;                       // trabajos de este equipo pendientes de confirmar
+  /* «Impresión compartida» (interruptor del evento): solo con ella se usa la impresión directa por USB, el latido, los trabajos y la Cola. Apagada, la impresión es la de siempre. */
+  const SHARED = window.SHARED_PRINT_ENABLED !== false;
+  const MOBILE = platform === 'Android' || platform === 'iOS';
+  /* PUESTO (Parámetros): «Puesto de impresión», «solo lector» y «Mostrar/Esconder la configuración». Lo demás que haya guardado (modo, calibración, ancho, giro, recorte…) se IGNORA:
+     la etiqueta sale con los valores del evento y lo de ⚙️ de este equipo, como el domingo. */
+  let isAdmin = false, isStation = false, stationCfg = null, recoveredUntil = 0;
+  const configShown = () => !(stationCfg && stationCfg.showConfig === false);
+  const waitingCount = () => (route && route.waiting) | 0;      // trabajos de otros equipos que esperan EN EL SERVIDOR a este puesto
 
   /* ------------------------------------------------------------------ barra de estado */
   const bar = document.createElement('div');
@@ -71,10 +62,7 @@
   bar.setAttribute('aria-live', 'polite');
   bar.innerHTML = '<span class="sp-dot" aria-hidden="true"></span><span class="sp-text">Impresión: comprobando…</span>' +
     '<button type="button" class="sp-btn" id="spConnect">🔌 Conectar impresora</button>' +
-    '<div id="spHostNote" hidden><b>Este computador imprime solo si abres la app con el lanzador.</b> Sin él, Chrome pide confirmar cada impresión: lo que llega de otros equipos espera en «Imprimir pendientes». <button type="button" class="sp-btn" id="spHostLauncher">⬇️ Descargar lanzador</button></div>' +
     '<button type="button" class="sp-btn" id="spPending" hidden>🖨️ Imprimir pendientes</button>' +
-    '<button type="button" class="sp-btn" id="spAlways" hidden>Usar siempre este modo en este equipo</button>' +
-    '<a class="sp-btn" id="spGuide" href="/static/ayuda/impresion-windows.html" target="_blank" rel="noopener" hidden style="text-decoration:none;display:inline-flex;align-items:center">Ver guía</a>' +
     '<button type="button" class="sp-btn" id="spQueue">🧾 Cola</button>' +
     '<button type="button" class="sp-btn" id="spPrefs">⚙️ Impresión</button>' +
     '<button type="button" class="sp-btn" id="spTouch" aria-pressed="false">📱 Registro touch</button>' +
@@ -83,11 +71,10 @@
   style.textContent = [
     '#sharedPrintBar{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;margin:0 0 12px;border-radius:12px;background:#fff;border:2px solid #d0d4de;font-size:0.95rem}',
     '#sharedPrintBar .sp-dot{width:14px;height:14px;border-radius:50%;background:#999;flex:none}',
-    '#sharedPrintBar.ok .sp-dot{background:#1e7e34}#sharedPrintBar.warn .sp-dot{background:#b26a00}#sharedPrintBar.bad .sp-dot{background:#a12631}#sharedPrintBar.info .sp-dot{background:#2b6cb0}',
+    '#sharedPrintBar.ok .sp-dot{background:#1e7e34}#sharedPrintBar.warn .sp-dot{background:#b26a00}#sharedPrintBar.bad .sp-dot{background:#a12631}',
     '#sharedPrintBar.bad{border-color:#a12631;background:#fdeeee}#sharedPrintBar.warn{border-color:#b26a00;background:#fff6e5}',
     '#sharedPrintBar .sp-text{flex:1 1 220px;font-weight:600}',
-    '#sharedPrintBar #spHostNote{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:#fff6e5;border:2px solid #b26a00;font-size:0.92rem}',
-    '#sharedPrintBar [hidden]{display:none !important}',                 /* «Ver guía» es un <a> con display en línea: sin esto el atributo hidden no lo ocultaba (lo veía el digitador) */
+    '#sharedPrintBar [hidden]{display:none !important}',
     '#sharedPrintBar #spPending{min-height:64px;padding:8px 22px;font-size:1.3rem;background:#b26a00;border-color:#7a4a00;color:#fff}',
     '#sharedPrintBar .sp-btn{min-height:44px;padding:6px 14px;border-radius:10px;border:2px solid #0a0e2e;background:#fff;color:#0a0e2e;font-weight:700;cursor:pointer}',
     '#spQueuePanel{position:fixed;inset:auto 12px 12px 12px;max-height:60vh;overflow:auto;z-index:9998;background:#fff;border:2px solid #0a0e2e;border-radius:14px;padding:12px;box-shadow:0 10px 40px rgba(0,0,0,.25)}',
@@ -138,129 +125,71 @@
     const text = bar.querySelector('.sp-text');
     let kind = 'ok';
     let msg;
-    if (!online) { kind = 'bad'; msg = 'Sin conexión con el servidor: la impresión compartida no funciona hasta que vuelva la red.'; }
+    if (!SHARED) { msg = 'Impresión: la de siempre (ventana de impresión del navegador).'; }
+    else if (!online) { kind = 'bad'; msg = 'Sin conexión con el servidor: la impresión compartida no funciona hasta que vuelva la red.'; }
     else if (route.mode === 'shared') {
       msg = route.printer_ready ? `Imprime en el equipo de ${route.printer_name}.` : `Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme.`;
-      if (!route.printer_ready) kind = 'info';
-    } else if (driverOn()) {                         // un modo NORMAL de trabajo, no un error: ícono neutro
-      kind = 'info';
-      msg = 'Impresión por controlador de Windows — ' + (kiosk ? 'impresión automática activa.' : 'impresión con cuadro de diálogo.') +
-        (route.serving ? ` Impresora conectada por Windows: imprime también para ${route.serving} equipo(s).` : '') +
-        (waitingCount() && !kiosk ? ` ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».` : '');
     } else if (usb.busy) {
       kind = 'warn';
       msg = `${QLUsb.BUSY_MSG} Se vuelve a intentar sola cada pocos segundos.`;
     } else if (usb.ok) {
-      msg = (usb.viaTab ? `Impresora conectada en otra pestaña de este navegador (${usb.name}): se imprime a través de ella.` : `Impresora conectada (${usb.name}).`) + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
+      msg = `Impresora conectada (${usb.name}).` + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
     } else {
       kind = route.serving ? 'bad' : 'warn';
       msg = route.serving ? `Impresora DESCONECTADA: ${route.serving} equipo(s) imprimen aquí y sus escarapelas quedan en cola. Conéctela.`
         : (MOBILE ? 'Sin impresora.' : 'Sin impresora USB: se usará la impresión normal del navegador.');
-      if (usb.code === 'denied' || usb.code === 'disconnected' || usb.code === 'permission') msg += ` ${usb.lastError}`;       // el motivo y qué hacer, a la vista (no solo en un aviso que se va)
+      if (SHARED && waitingCount()) msg += ` ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».`;
     }
     if (pending) msg += ` · ${pending} por confirmar`;
-    if (!configShown() && online) {                    // menú ESCONDIDO para este puesto (Parámetros): solo UNA línea, con quién comparte
-      const line = stationLine(); msg = line.msg; kind = line.kind;
-    } else if (dialogWarn) {
-      kind = 'warn'; msg += ' ⚠️ Se marcó «sin cuadro», pero Chrome mostró el cuadro de impresión: abre Chrome con --kiosk-printing (ver la guía) o desmarca «sin cuadro» en Parámetros.';
-    }
+    const shown = configShown();
+    if (!shown && online) { const line = stationLine(); msg = line.msg; kind = line.kind; }      // menú ESCONDIDO para este puesto: solo UNA línea
     if (online && recoveredUntil > Date.now()) msg += ' · Reconectado.';
     text.textContent = msg;
     bar.className = kind;
-    /* 27-oct-2026: la visibilidad NO depende del rol (como en 4797531, cualquier persona del personal configura y conecta); la decide el interruptor del PUESTO en Parámetros («Mostrar» por
-       defecto). «Esconder»: solo la línea de estado y, si hay trabajos esperando, «Imprimir pendientes». */
-    const shown = configShown();
-    bar.querySelector('#spConnect').hidden = !shown || usb.ok || usb.busy || route.mode === 'shared' || driverOn() || !(window.QLUsb && QLUsb.supported());
+    /* La visibilidad NO depende del rol: la decide el interruptor del PUESTO en Parámetros («Mostrar» por defecto). */
+    bar.querySelector('#spConnect').hidden = !shown || !SHARED || usb.ok || usb.busy || route.mode === 'shared' || !(window.QLUsb && QLUsb.supported());
     bar.querySelector('#spQueue').hidden = !(SHARED && shown);
     bar.querySelector('#spPrefs').hidden = !shown;
-    bar.querySelector('#spHostNote').hidden = !(shown && SHARED && driverOn() && !kiosk);      // este computador puede ser la impresora de otros: sin lanzador, Chrome pide confirmar cada impresión
-    bar.querySelector('#spPending').hidden = !(SHARED && driverOn() && !kiosk && waitingCount());   // la acción del puesto: se ve también con el menú escondido
+    bar.querySelector('#spPending').hidden = !(SHARED && !usb.ok && waitingCount());            // la acción del puesto: se ve también con el menú escondido
     bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${waitingCount()})`;
-    bar.querySelector('#spAlways').hidden = true;                 // la configuración (modo, guía) vive detrás de un solo ícono ⚙️ (26-oct-2026)
-    bar.querySelector('#spGuide').hidden = true;
   }
   function stationLine() {
-    const ready = printerReady();
     const names = route.serving_names && route.serving_names.length ? route.serving_names.join(', ') : '';
-    if (route.mode === 'shared') return route.printer_ready ? { kind: 'ok', msg: `Imprime en: ${route.printer_name} (lista)` } : { kind: 'info', msg: `Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme.` };
-    if (route.serving) return { kind: ready ? 'ok' : 'warn', msg: `Comparte impresora con: ${names || route.serving + ' equipo(s)'} (${ready ? 'lista' : 'sin impresora'})` + (waitingCount() && !kiosk ? ` · ${waitingCount()} esperan: toca «Imprimir pendientes».` : '') };
-    if (MOBILE && !ready) return { kind: 'warn', msg: 'Sin impresora.' };
-    return { kind: 'ok', msg: `Imprime en: este puesto (${ready ? 'lista' : 'impresión normal del navegador'})` };
+    if (!SHARED) return { kind: 'ok', msg: 'Imprime en: este equipo (ventana de impresión del navegador)' };
+    if (route.mode === 'shared') return route.printer_ready ? { kind: 'ok', msg: `Imprime en: ${route.printer_name} (lista)` } : { kind: 'ok', msg: `Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme.` };
+    if (route.serving) return { kind: usb.ok ? 'ok' : 'warn', msg: `Comparte impresora con: ${names || route.serving + ' equipo(s)'} (${usb.ok ? 'lista' : 'sin impresora'})` + (waitingCount() && !usb.ok ? ` · ${waitingCount()} esperan: toca «Imprimir pendientes».` : '') };
+    if (MOBILE && !usb.ok) return { kind: 'warn', msg: 'Sin impresora.' };
+    return { kind: 'ok', msg: `Imprime en: este puesto (${usb.ok ? 'lista' : 'ventana de impresión del navegador'})` };
   }
 
   /* ------------------------------------------------------------------ impresora USB */
-  /* El estado «Impresora conectada» sale SOLO de lo que de verdad sirve para imprimir (25-oct-2026): la conexión abierta de QLUsb (`QLUsb.ready()`), o la de otra pestaña de este mismo
-     navegador, a través de la cual también se imprime (`viaTab`). Un solo intento a la vez (`connectUsb` espera al que esté en marcha) y «Conectar» no vuelve a abrir lo que ya está abierto. */
-  let busyTimer = null, connecting = null;
-  const DISCONNECTED = (extra) => Object.assign({ ok: false, name: '', lastError: '', busy: false, viaTab: false, code: '' }, extra || {});
-  function connectUsb(ask) {
+  let busyTimer = null;
+  async function connectUsb(ask) {
     clearTimeout(busyTimer);
-    if (printMode === 'driver' || driverOn()) { render(); heartbeat(); return Promise.resolve(); }      // por controlador: no se intenta WebUSB ni «Conectar» (nada de avisos rojos)
-    if (connecting) return ask ? connecting.then(() => (usb.ok ? undefined : doConnectUsb(true))) : connecting;     // el que toca el botón no se queda con el resultado de un intento sin permiso
-    connecting = doConnectUsb(ask).finally(() => { connecting = null; });
-    return connecting;
-  }
-  async function doConnectUsb(ask) {
-    if (usb.ok && (usb.viaTab || (window.QLUsb && QLUsb.ready()))) {                       // ya conectada y abierta: «Ya conectada», sin volver a abrir
-      if (ask) toast('✅ La impresora ya está conectada.', 'success');
-      render(); heartbeat(); return;
-    }
-    if (!(window.QLUsb && QLUsb.supported())) {
-      usb = DISCONNECTED({ lastError: 'USB no disponible en este navegador', code: 'other' });
-      if (printMode === 'auto') fallToDriver('Este navegador no permite USB directo: se imprime por el controlador de Windows.');
-      render(); return;
-    }
-    if (QLUsb.authorizedCount) QLUsb.authorizedCount().then((n) => { authCount = n; render(); });          // ¿hay alguna Brother ya autorizada? (si no, falta la primera autorización, que hace Golden con un clic)
+    if (!SHARED) { render(); return; }                // sin impresión compartida: la impresión de siempre (el domingo no había USB directo en ese caso)
+    if (!ask && usb.ok && window.QLUsb && QLUsb.info()) { render(); heartbeat(); return; }      // ya conectada: no se vuelve a abrir
+    if (!(window.QLUsb && QLUsb.supported())) { usb = { ok: false, name: '', lastError: 'USB no disponible en este navegador', busy: false }; render(); return; }
     try {
       const d = await QLUsb.connect(ask);
-      usb = d ? DISCONNECTED({ ok: true, name: d.productName || 'Brother' }) : DISCONNECTED();
-      if (d) authCount = Math.max(authCount, 1);
+      usb = { ok: !!d, name: d ? (d.productName || 'Brother') : '', lastError: '', busy: false };
     } catch (e) {
-      const f = QLUsb.friendlyError ? QLUsb.friendlyError(e) : e;
-      const remote = f && f.busy && QLUsb.remoteOwner ? await QLUsb.remoteOwner().catch(() => null) : null;
-      if (remote) {                                    // otra pestaña de ESTE navegador tiene la impresora abierta: se muestra conectada y se imprime a través de ella
-        usb = DISCONNECTED({ ok: true, name: remote.name, viaTab: true });
-        if (ask) toast('ℹ️ La impresora ya está conectada en otra pestaña de este navegador: se imprime a través de ella.', 'info');
-      } else if (printMode === 'auto' && f && f.code === 'denied') {                 // Windows no deja abrirla por USB directo: se pasa al controlador, con UN aviso corto
-        usb = DISCONNECTED();
-        fallToDriver('Este computador no puede usar la impresora por USB directo (Windows): se imprime por el controlador de Brother.');
-      } else {
-        const busy = !!(f && f.busy);                  // en uso en otra pestaña que no responde: aviso amable y reintento solo, sin desconectar el cable
-        usb = DISCONNECTED({ lastError: f && f.message ? f.message : String(e), busy, code: (f && f.code) || 'other' });
-        if (busy) busyTimer = setTimeout(() => connectUsb(false), BUSY_RETRY_MS);
-        else if (ask) toast('No se pudo conectar la impresora: ' + usb.lastError, 'error');
-        try { console.info('[impresora] no se pudo conectar:', f && f.code, f && f.raw ? f.raw : e); } catch (e2) { /* sin consola */ }
-      }
+      const busy = !!(e && e.busy);                    // otra pestaña de este equipo tiene la impresora: aviso amable y reintento solo, sin desconectar el cable
+      usb = { ok: false, name: '', lastError: e && e.message ? e.message : String(e), busy };
+      if (busy) busyTimer = setTimeout(() => connectUsb(false), BUSY_RETRY_MS);
+      else if (ask) toast('No se pudo conectar la impresora: ' + usb.lastError, 'error');
     }
     render();
     heartbeat();
   }
-  function fallToDriver(message) {                 // «automático»: de WebUSB al controlador, sin aviso rojo repetido
-    if (MOBILE) return;                             // en celular o tablet no hay controlador: queda «Sin impresora» (o imprime en el puesto que comparte)
-    drvFallback = true;
-    if (!drvNoticeShown) { drvNoticeShown = true; toast('ℹ️ ' + message, 'info'); }
-  }
-  /* Cambia el modo de ESTE equipo (se guarda y se respeta al cargar la página). */
-  function setPrintMode(mode) {
-    if (!DP || !DP.setMode(storage(), mode)) return;
-    printMode = mode; drvFallback = false; drvNoticeShown = false;
-    if (mode === 'driver') { try { QLUsb.releaseNow(); } catch (e) { /* no estaba abierta */ } usb = DISCONNECTED(); }
-    else usb = DISCONNECTED();
-    clearTimeout(busyTimer);
-    render(); heartbeat();
-    if (mode !== 'driver') connectUsb(false);
-  }
-  if (window.QLUsb && QLUsb.supported()) {
+  if (SHARED && window.QLUsb && QLUsb.supported()) {
     navigator.usb.addEventListener('connect', () => connectUsb(false));
     navigator.usb.addEventListener('disconnect', async () => {
       await QLUsb.close();
-      usb = DISCONNECTED({ lastError: 'desconectada', code: 'disconnected' });
+      usb = { ok: false, name: '', lastError: 'desconectada', busy: false };
       render();
       toast('⚠️ Se desconectó la impresora USB.', 'warning');
       heartbeat();
     });
-    // La impresora se SUELTA al cerrar o recargar la página (sin esperar promesas): si no, la página nueva puede recibir «Access denied» mientras Chrome termina de soltarla.
-    ['pagehide', 'beforeunload'].forEach((ev) => window.addEventListener(ev, () => { try { QLUsb.releaseNow(); } catch (e) { /* ya suelta */ } }));
   }
 
   /* ------------------------------------------------------------------ pantalla siempre encendida */
@@ -271,19 +200,14 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); heartbeat(); connectUsb(false); } });
 
   /* ------------------------------------------------------------------ señal con el servidor */
-  let hbTimer = null, lastRecheck = 0, sessionDead = false;
+  let hbTimer = null, sessionDead = false;
   window.addEventListener('gw:session-replaced', () => { sessionDead = true; clearTimeout(hbTimer); route = Object.assign({}, route, { poll: false }); });       // entró en otro dispositivo: se detienen latido y sondeo
   async function heartbeat() {
     clearTimeout(hbTimer);
-    if (sessionDead) return;
-    if (usb.ok && !usb.viaTab && window.QLUsb && QLUsb.ready && !QLUsb.ready() && Date.now() - lastRecheck > 5000) { lastRecheck = Date.now(); usb = DISCONNECTED({ lastError: 'desconectada', code: 'disconnected' }); connectUsb(false); }       // la conexión se cayó sin avisar: no se anuncia una impresora que no imprime
-    if (usb.ok && usb.viaTab && window.QLUsb && QLUsb.remoteOwner && !(await QLUsb.remoteOwner().catch(() => null))) {                 // la pestaña dueña se cerró: esta intenta quedarse con la impresora
-      usb = DISCONNECTED(); await connectUsb(false); return;
-    }
-    if (!SHARED) { online = true; render(); hbTimer = setTimeout(heartbeat, HEARTBEAT_MS); return; }                  // sin impresión compartida: solo se revisa la conexión local
+    if (sessionDead || !SHARED) { render(); return; }                // sin impresión compartida no se llama a ninguna ruta compartida
     try {
       const res = await fetchT(`/api/events/${EID}/print-devices/heartbeat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy || (usb.ok && usb.viaTab && !driverOn()) ? null : canAuto(), printer_name: usb.name || (driverOn() ? (kiosk ? 'Controlador de Windows (Brother QL-800)' : 'Controlador de Windows (con cuadro: no imprime sola)') : null) }) });      // null: otra pestaña es la dueña, no se pisa su estado. «Conectada» = puede imprimir SOLA
+        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy ? null : usb.ok, printer_name: usb.name || null }) });      // null: otra pestaña es la dueña, no se pisa su estado
       if (!online) recoveredUntil = Date.now() + 20000;                  // volvió la red: lo dice la barra y se reanudan sondeo y latido sin que nadie toque nada
       online = true;
       if (res.ok) { route = await res.json(); startPolling(); }
@@ -300,42 +224,16 @@
 
   /* Valores de impresión: los del EVENTO (meta gw-print-settings, se editan en Parámetros) y, encima, lo que ESTE equipo sobrescribió en «⚙️ Impresión». */
   const eventPrefs = (() => { try { const m = document.querySelector('meta[name="gw-print-settings"]'); const v = m ? JSON.parse(m.getAttribute('content') || '{}') : {}; return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } })();
-  function realStorage() { try { return window.localStorage; } catch (e) { return null; } }
-  /* ¿Se muestra el menú de configuración en este Registro? Interruptor del PUESTO en Parámetros (`showConfig`); sin configuración guardada o sin el campo: «Mostrar» (como anoche). */
-  const configShown = () => !(stationCfg && stationCfg.showConfig === false);
-  const localKey = (k) => 'gw_ovr_' + EID + '_' + k;           // lo que se cambió A MANO en el panel de este computador, aparte de lo que el navegador tuviera de antes
-  function storage() {
-    const real = realStorage();
-    if (!stationCfg) return real;
-    const get = (k) => { try { return real ? real.getItem(k) : null; } catch (e) { return null; } };
-    return {
-      /* Base: lo del puesto en Parámetros (gana sobre lo que el navegador tuviera guardado de antes). Con el menú VISIBLE, lo que se cambie en el panel vale solo para este computador;
-         con el menú ESCONDIDO se ignora y se usa solo lo de Parámetros (ningún puesto queda con valores sueltos). */
-      getItem(k) { if (k in overlay) { const own = configShown() ? get(localKey(k)) : null; return own !== null ? own : overlay[k]; } return get(k); },
-      setItem(k, v) { if (!real) return; if (!(k in overlay)) real.setItem(k, v); else if (configShown()) real.setItem(localKey(k), v); },
-      removeItem(k) { if (!real) return; if (!(k in overlay)) real.removeItem(k); else if (configShown()) real.removeItem(localKey(k)); },
-    };
-  }
-  /* Configuración del puesto → claves de almacenamiento que ya lee el resto del código (QLUsb.resolvePrefs, DriverPrint.getMode/getPageWidthMm/getOffsets). */
+  function storage() { try { return window.localStorage; } catch (e) { return null; } }
   function applyStation(me) {
     isAdmin = !!(me && me.admin); isStation = !!(me && me.station);
     stationCfg = me && me.settings && typeof me.settings === 'object' ? me.settings : null;
-    Object.keys(overlay).forEach((k) => { delete overlay[k]; });
-    if (!stationCfg) return;
-    const c = stationCfg;
-    if (DP) { overlay[DP.MODE_KEY] = c.mode && c.mode !== 'auto' ? c.mode : null; overlay[DP.PAGE_KEY] = c.pageWidthMm || null; overlay.gw_driver_dx = c.dx || null; overlay.gw_driver_dy = c.dy || null; }
-    Object.keys(QLUsb.PREF_KEYS).forEach((f) => {
-      const v = c[f];
-      overlay[QLUsb.PREF_KEYS[f]] = v === undefined || v === null ? null : (typeof v === 'boolean' ? (v ? '1' : '0') : String(v));
-    });
-    if (QLUsb.setPreferredSerial) QLUsb.setPreferredSerial(c.usbSerial || '');
-    if (c.noDialog) kiosk = true;                              // «imprime sin cuadro»: Chrome debe haberse abierto con --kiosk-printing (si no, la barra lo avisa)
   }
   async function loadStation() {
     const key = 'gw_station_me_' + EID;
     let me = null;
     try { const r = await fetchT(`/api/events/${EID}/print-station/me`, { cache: 'no-store' }, 5000); if (r.ok) me = await r.json(); } catch (e) { me = null; }
-    const rs = realStorage();
+    const rs = storage();
     if (me) { try { if (rs) rs.setItem(key, JSON.stringify(me)); } catch (e) { /* sin almacenamiento */ } }
     else { try { me = JSON.parse((rs && rs.getItem(key)) || 'null'); } catch (e) { me = null; } }       // sin red al abrir: la última configuración conocida
     applyStation(me);
@@ -368,8 +266,6 @@
     try {
       await BadgeRender.loadFonts(template);                         // la tipografía elegida ya cargada: la etiqueta impresa no cambia de letra
       BadgeRender.renderBadge(holder, template, data, { eventId: EID });
-      const cut = holder.querySelectorAll('[data-fit="truncated"]').length;                    // «…» solo como último recurso, y con aviso
-      if (cut) toast(`⚠️ ${cut} texto(s) no cupieron completos y salieron con «…»: agranda la caja o dale espacio libre debajo en el diseñador.`, 'warning');
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
       await Promise.all(Array.from(holder.querySelectorAll('img')).map((img) => (img.decode ? img.decode().catch(() => {}) : null)));
       // con el ancho REAL (con decimales) de la caja: offsetWidth redondea a px enteros y la etiqueta salía 2-3 puntos más ancha y estirada (25-oct-2026)
@@ -382,27 +278,16 @@
 
   /* Parámetros con los que se imprime un pedido: los de ESTE equipo si lo imprime él mismo; los que mandó el equipo que lo pidió si es un pedido compartido (24-oct-2026: antes el
      equipo con la impresora los resolvía con SUS valores y se perdían los del que pidió). Un pedido viejo sin parámetros usa los del evento (nunca los locales de quien lo imprime). */
-  /* 25-oct-2026: la FORMA de la etiqueta (giro, escala, recorte, cinta, largo) sale IGUAL desde cualquier equipo: la fijan el evento y lo que el equipo que IMPRIME tenga a propósito (lo mismo
-     que usa cuando imprime sus propias escarapelas), nunca lo que tenía guardado el celular que la pidió (un giro de prueba en el celular encogía la etiqueta: otra escala con el mismo
-     salto de líneas). Del equipo que pidió solo viajan los parámetros físicos de la impresión (corte, margen de avance, espejo, invertir). `diff`: qué campos de forma traía el pedido
-     distintos de los aplicados (queda en la Cola). */
-  const SHAPE_FIELDS = ['rotation', 'crop', 'cropMarginMm', 'cropMode', 'tapeWidth', 'tapeType', 'lengthMm'];
   function prefsForJob(job) {
-    const host = resolved();
     if (job && job.prefs && typeof job.prefs === 'object') {
-      const asked = QLUsb.resolvePrefs(null, job.prefs);
-      const prefs = Object.assign({}, asked.prefs), source = {}, diff = [];
-      Object.keys(asked.source).forEach((k) => { source[k] = asked.source[k] === 'evento' ? 'origen' : asked.source[k]; });
-      SHAPE_FIELDS.forEach((f) => {
-        if (job.prefs[f] !== undefined && job.prefs[f] !== null && String(job.prefs[f]) !== String(host.prefs[f])) diff.push(f);
-        prefs[f] = host.prefs[f]; source[f] = host.source[f];
-      });
-      return { prefs, source, diff };
+      const r = QLUsb.resolvePrefs(null, job.prefs);
+      Object.keys(r.source).forEach((k) => { if (r.source[k] === 'evento') r.source[k] = 'origen'; });
+      return r;
     }
     return QLUsb.resolvePrefs(null, eventPrefs);
   }
 
-  async function badgeCompose(userId, given) {
+  async function badgeBitmap(userId, given) {
     const dataRes = await fetch(`/api/users/${encodeURIComponent(userId)}/badge-print-data?event_id=${EID}`, { cache: 'no-store' });
     if (!dataRes.ok) throw new Error('No se encontró la persona en este evento.');
     const data = await dataRes.json();
@@ -415,37 +300,15 @@
     lastPrint = { text: QLUsb.describePrefs(r.prefs, r.source, out.layout), warn: out.layout.tooWide ? `La plantilla (${out.layout.acrossMm} mm) es más ancha que la cinta (${out.layout.availMm.toFixed(1)} mm imprimibles): se encogió.` : '', at: Date.now() };
     if (out.layout.tooWide) toast('⚠️ ' + lastPrint.warn, 'warning');
     bar.title = 'Última impresión: ' + lastPrint.text;
-    return out;
+    return out.job;
   }
-  const badgeBitmap = async (userId, given) => (await badgeCompose(userId, given)).job;
-
-  /* Por el CONTROLADOR de Windows: la misma etiqueta (mismo motor y ajustes), como una página de tamaño exacto en mm, impresa desde un iframe oculto (static/js/driver-print.js).
-     «Espejo» se aplica reflejando la imagen (el controlador no gira ni refleja nada por su cuenta). El corte y el margen los fija el controlador de Brother. */
-  async function drvPrint(out, p) {
-    if (!DP) throw new Error('Falta el módulo de impresión por controlador.');
-    const spec = DP.pageSpec(out.tapeDots, out.height, DP.getPageWidthMm(storage()), DP.getOffsets(storage()));
-    lastDriverSpec = spec;
-    await DP.printPage(spec, DP.bitmapToDataUrl(out.bitmap, out.tapeDots, out.height, p.mirror));
-  }
-  let lastDriverSpec = null;
-  const DIALOG_WARN_MS = 20000;            // con --kiosk-printing la hoja sale en segundos; si tarda más, Chrome está mostrando el cuadro y nadie lo confirma
-  function printDriver(userId, given) {
-    const run = usbBusy.then(async () => {
-      const declared = !!(stationCfg && stationCfg.noDialog) && kiosk;
-      const timer = declared ? setTimeout(() => { dialogWarn = true; render(); }, DIALOG_WARN_MS) : null;
-      try { const out = await drvPrint(await badgeCompose(userId, given), (given || resolved()).prefs); if (declared) { dialogWarn = false; render(); } return out; } finally { if (timer) clearTimeout(timer); }
-    });
-    usbBusy = run.catch(() => {});
-    return run;
-  }
-  const printLabel = (userId, given) => (driverOn() ? printDriver(userId, given) : printUsb(userId, given));
 
   let usbBusy = Promise.resolve();
   function printUsb(userId, given) {                // una impresión a la vez por equipo (la impresora no admite dos flujos a la vez)
     const run = usbBusy.then(async () => {
-      if (!usb.ok || !(usb.viaTab || QLUsb.ready())) await connectUsb(false);
+      if (!usb.ok || !QLUsb.info()) await connectUsb(false);
       if (!usb.ok) throw new Error('La impresora no está conectada.');
-      await QLUsb.sendJob(await badgeBitmap(userId, given));                 // por la conexión de esta pestaña o, si la dueña es otra, a través de ella
+      await QLUsb.sendJob(await badgeBitmap(userId, given));
     });
     usbBusy = run.catch(() => {});
     return run;
@@ -456,32 +319,43 @@
   }
 
   /* ------------------------------------------------------------------ Y: atender a otros equipos */
+  /* Reclamo (4797531): SOLO reclama por sondeo la ventana que puede imprimir sin que nadie confirme nada, la dueña de la impresora USB. El servidor entrega el trabajo solo a ese
+     equipo (`device_id`) y, si no termina en 60 s, lo devuelve a la cola. Sin impresora USB, los trabajos esperan EN EL SERVIDOR hasta que alguien toque «Imprimir pendientes»: cada uno
+     se reclama en ese momento y se imprime con la ventana de impresión de siempre (la escarapela con su plantilla), y se confirma. Nunca se pierde ni se reimprime solo. */
   let polling = false;
-  const printerReady = () => driverOn() || (usb.ok && (usb.viaTab || (window.QLUsb && QLUsb.ready())));
-  /* ¿Esta ventana puede imprimir SOLA, sin que nadie confirme nada? Solo entonces reclama trabajos de otros equipos: la dueña de la impresora USB, o el modo controlador abierto con el lanzador (sin cuadro).
-     Una ventana en modo controlador CON cuadro de diálogo nunca reclama por sondeo (el trabajo desaparecía del servidor y esperaba en su memoria): ahí se usa «Imprimir pendientes», que reclama al tocarlo. */
-  const canAuto = () => (driverOn() ? kiosk : !!(usb.ok && !usb.viaTab && window.QLUsb && QLUsb.ready()));
-  /* Imprime un trabajo de otro equipo y confirma (la confirmación se reintenta: si se pierde, el trabajo caduca; nunca se reimprime solo). */
-  async function runJob(job) {
+  async function claimNext(manual) {
+    const res = await fetchT(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}${manual ? '&manual=1' : ''}`, { cache: 'no-store' }, 8000);
+    return res.ok ? (await res.json()).job : null;
+  }
+  async function runJob(job, viaWindow) {
     let ok = false;
     let error = '';
-    const used = prefsForJob(job);
-    try { await printLabel(job.user_id, used); ok = true; } catch (e) { error = e && e.message ? e.message : String(e); }
-    const applied = (lastPrint ? lastPrint.text : QLUsb.describePrefs(used.prefs, used.source)) + (used.diff && used.diff.length ? ' · el pedido traía otra forma (' + used.diff.join(', ') + '): se usó la de este equipo' : '');
-    for (let i = 0; i < 3; i++) {
+    try {
+      if (viaWindow) (original.openNow || original.openPrintWindow)(job.user_id);       // sin USB: la ventana de impresión de siempre
+      else await printUsb(job.user_id, prefsForJob(job));
+      ok = true;
+    } catch (e) { error = e && e.message ? e.message : String(e); }
+    for (let i = 0; i < 3; i++) {             // la confirmación se reintenta: si se pierde, el trabajo vuelve a la cola o caduca (nunca se reimprime solo)
       try {
-        const r = await fetch(`/api/events/${EID}/print-jobs/${job.id}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok, error, applied }) });
+        const r = await fetch(`/api/events/${EID}/print-jobs/${job.id}/result`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok, error }) });
         if (r.ok) break;
       } catch (e) { await sleep(1000); }
     }
     if (!ok) toast(`⚠️ No se pudo imprimir la escarapela que pidió ${job.requested_by || 'otro equipo'}: ${error}`, 'error');
   }
-  async function claimNext(manual) {
-    const res = await fetchT(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}${manual ? '&manual=1' : ''}`, { cache: 'no-store' }, 8000);
-    return res.ok ? (await res.json()).job : null;
+  async function startPolling() {
+    if (!SHARED || sessionDead || polling || !route.poll || !usb.ok) return;
+    polling = true;
+    while (route.poll && usb.ok && !sessionDead) {
+      let job = null;
+      try { job = await claimNext(false); } catch (e) { online = false; render(); }
+      if (job) { await runJob(job, false); continue; }               // hay trabajo: se pregunta de nuevo enseguida
+      await sleep(POLL_MS);
+    }
+    polling = false;
   }
   let printingPending = false;
-  async function printPending() {                  // un clic de la persona: reclama e imprime, UNO A UNO, lo que espera en el servidor (el cuadro de Chrome lo confirma ella)
+  async function printPending() {                  // un toque de la persona: reclama e imprime, UNO A UNO, lo que espera en el servidor
     if (printingPending) return;
     printingPending = true;
     try {
@@ -489,24 +363,10 @@
         let job = null;
         try { job = await claimNext(true); } catch (e) { online = false; break; }
         if (!job) break;
-        await runJob(job);
+        await runJob(job, !usb.ok);
         route.waiting = Math.max(0, waitingCount() - 1); render();
       }
     } finally { printingPending = false; heartbeat(); render(); }
-  }
-  async function startPolling() {
-    if (!SHARED || sessionDead || polling || !route.poll || !canAuto()) return;
-    polling = true;
-    while (route.poll && canAuto() && !sessionDead) {
-      let job = null;
-      try { job = await claimNext(false); } catch (e) { online = false; render(); }
-      if (job) {
-        await runJob(job);
-        continue;                                   // hay trabajo: se pregunta de nuevo enseguida
-      }
-      await sleep(POLL_MS);
-    }
-    polling = false;
   }
 
   /* ------------------------------------------------------------------ X: mandar a otro equipo y seguir el estado */
@@ -572,10 +432,10 @@
       }
       if (!data.jobs.length) { if (station.length) body.replaceChildren(stationBox); else body.textContent = 'No hay escarapelas pendientes.'; return; }
       const table = document.createElement('table');
-      table.innerHTML = '<tr><th>Cédula</th><th>Estado</th><th>Equipo</th><th>Parámetros aplicados</th><th></th></tr>';
+      table.innerHTML = '<tr><th>Cédula</th><th>Estado</th><th>Equipo</th><th></th></tr>';
       data.jobs.forEach((j) => {
         const tr = document.createElement('tr');
-        [j.user_id, (STATUS[j.status] || j.status) + (j.printed_later ? ' (ya se imprimió después)' : ''), j.printer_name, j.applied || (j.status === 'queued' || j.status === 'sent' ? 'Se fijan al imprimir' : '')].forEach((t) => { const td = document.createElement('td'); td.textContent = t || ''; tr.appendChild(td); });
+        [j.user_id, (STATUS[j.status] || j.status) + (j.printed_later ? ' (ya se imprimió después)' : ''), j.printer_name].forEach((t) => { const td = document.createElement('td'); td.textContent = t || ''; tr.appendChild(td); });
         const td = document.createElement('td');
         if (j.status !== 'queued' && j.status !== 'sent') {
           const b = document.createElement('button'); b.type = 'button'; b.className = 'sp-btn'; b.textContent = 'Reimprimir'; b.dataset.reprint = j.user_id; td.appendChild(b);
@@ -591,7 +451,6 @@
   /* Orden del 22-oct-2026: SOLO se imprime a quien está «Registrado» en este evento (botón, autoimpresión, Cola; local o compartida). El servidor también lo
      valida al crear el trabajo compartido. Si no se puede comprobar, NO se imprime. */
   async function registeredOrSay(userId) {
-    if (!SHARED) return true;                       // sin impresión compartida, la regla de siempre (el Directorio imprime a quien se elija)
     for (let i = 0; i < 2; i++) {
       try {
         const r = await fetch(`/api/events/${EID}/print-check/${encodeURIComponent(userId)}`, { cache: 'no-store' });
@@ -606,6 +465,7 @@
   }
 
   async function printFor(userId, auto, confirmed) {
+    if (!SHARED) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);       // sin impresión compartida: exactamente la impresión de siempre
     if (auto && original.claim && !(await original.claim(userId))) return;          // una impresión automática por persona (entre pestañas del mismo equipo, 30 s)
     if (!auto && original.beginManual && !original.beginManual(userId)) return;       // doble clic / doble toque en «Imprimir»: una sola
     if (!(await registeredOrSay(userId))) return;
@@ -622,7 +482,7 @@
       }
       return sendToPrinter(userId, !auto && explicit);
     }
-    if (driverOn() || (usb.ok && (usb.viaTab || QLUsb.ready()))) {
+    if (usb.ok) {
       try {
         if (!auto && !confirmed && original.openPrintWindow) { /* el aviso de reimpresión de siempre */
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`).catch(() => null);
@@ -630,9 +490,9 @@
           if (c.times_printed > 0 && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
             { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return;
         }
-        await printLabel(userId);
+        await printUsb(userId);
         await logPrint(userId);
-        toast('🖨️ Escarapela ' + (driverOn() ? 'enviada a la impresora de Windows' : 'impresa') + (lastPrint ? ` (${lastPrint.text})` : '.'), 'success');
+        toast('🖨️ Escarapela impresa' + (lastPrint ? ` (${lastPrint.text})` : '.'), 'success');
         return;
       } catch (e) {
         toast(`⚠️ No se pudo imprimir por USB (${e && e.message ? e.message : e}). Se abre la impresión normal.`, 'warning');
@@ -743,7 +603,7 @@
   }, true);
 
   /* ------------------------------------------------------------------ «⚙️ Impresión»: valores del evento + lo que este equipo sobrescribe */
-  const TAPE_FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm', 'cropMode'];
+  const TAPE_FIELDS = ['cut', 'feedMm', 'lengthMm', 'mirror', 'invert', 'tapeWidth', 'tapeType', 'rotation', 'crop', 'cropMarginMm'];
   let previewTemplate = null;
   async function loadPreviewTemplate(fresh) {                 // la vista previa también usa la vigente: se vuelve a pedir cada vez que se abre el panel
     if (previewTemplate && !fresh) return previewTemplate;
@@ -761,22 +621,11 @@
     panel.id = 'spPrefsPanel';
     panel.setAttribute('role', 'dialog');
     panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>Impresión de escarapelas</strong><button type="button" class="sp-btn" data-close>Cerrar</button></div>' +
-      '<label>Modo de impresión <select data-mode><option value="auto">Automático (recomendado)</option><option value="usb">USB directo</option><option value="driver">Controlador de Windows</option></select></label>' +
-      '<div data-driver style="display:none;border:1px solid #c9cdd8;border-radius:10px;padding:8px 10px;margin:4px 0 8px;background:#f4f8fd;font-size:0.9rem">' +
-        '<div data-kiosk style="font-weight:700"></div>' +
-        '<p style="margin:6px 0">Imprime por la cola «Brother QL-800» de Windows (instala una vez el controlador oficial de Brother y ponla como impresora predeterminada). <a href="' + GUIDE_URL + '" target="_blank" rel="noopener">Ver la guía</a></p>' +
-        '<button type="button" class="sp-btn" data-launcher>⬇️ Descargar lanzador para este computador</button>' +
-        '<p style="margin:6px 0 2px">O copia este comando en un acceso directo:</p><textarea data-cmd readonly rows="3" style="width:100%;font-size:0.78rem"></textarea>' +
-        '<label>Calibración: desplazamiento horizontal <input type="number" data-dx min="-5" max="5" step="0.1" style="width:80px"> mm</label>' +
-        '<label>Calibración: desplazamiento vertical <input type="number" data-dy min="-5" max="5" step="0.1" style="width:80px"> mm</label>' +
-        '<p style="margin:2px 0 6px;font-size:0.82rem">Si la etiqueta sale corrida, toca «🖨️ Imprimir prueba» y ajusta hasta que el marco quede parejo y la cruz al centro (cada equipo guarda lo suyo).</p>' +
-        '<label>Ancho de página (vacío = automático, 58,9 mm) <input type="number" data-pagew min="20" max="120" step="0.1" style="width:90px"> mm</label>' +
-      '</div>' +
       '<p data-last style="font-size:0.85rem;margin:6px 0;color:#444"></p>' +
       `<label>Cinta <select data-p="tapeWidth">${tapes.map((t) => `<option value="${t}">${t} mm</option>`).join('')}</select> <select data-p="tapeType"><option value="continuous">continua</option><option value="diecut">troquelada (largo fijo)</option></select></label>` +
       '<label data-row="length">Largo de la etiqueta <input type="number" data-p="lengthMm" min="10" max="1000" step="1"> mm</label>' +
       '<label>Giro <select data-p="rotation"><option value="auto">Automático</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>' +
-      '<label data-row="crop"><input type="checkbox" data-p="crop"> Recortar al contenido, con margen mínimo <input type="number" data-p="cropMarginMm" min="0" max="30" step="0.5"> mm · <select data-p="cropMode"><option value="symmetric">simétrico (igual que la vista previa)</option><option value="min">mínimo</option></select></label>' +
+      '<label data-row="crop"><input type="checkbox" data-p="crop"> Recortar al contenido, con margen <input type="number" data-p="cropMarginMm" min="0" max="30" step="0.5"> mm</label>' +
       '<label><input type="checkbox" data-p="cut"> Cortar la cinta al final de cada etiqueta</label>' +
       '<label>Margen de avance <input type="number" data-p="feedMm" min="0" max="10" step="0.5"> mm</label>' +
       '<label><input type="checkbox" data-p="mirror"> Espejo</label>' +
@@ -784,7 +633,7 @@
       '<div data-src style="font-size:0.78rem;color:#555"></div>' +
       '<div style="margin:8px 0"><canvas data-preview style="max-width:100%;border:1px solid #ccc;background:#fff"></canvas><div data-prevtext style="font-size:0.82rem;margin-top:4px"></div></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sp-btn" data-save>Guardar en este equipo</button><button type="button" class="sp-btn" data-test>🖨️ Imprimir prueba</button><button type="button" class="sp-btn" data-reset>↺ Restablecer</button></div>' +
-      '<p style="font-size:0.8rem;color:#555;margin:8px 0 0">La base la fija el coordinador en Parámetros (valores del evento y de este puesto). Lo que cambies aquí vale <b>solo para este computador</b> y se aplica a toda la impresión (Registro, compartida y /impresion-usb). Cuando el coordinador esconde este menú para el puesto, se usa solo la configuración de Parámetros y se ignoran los cambios hechos aquí.</p>';
+      '<p style="font-size:0.8rem;color:#555;margin:8px 0 0">Los valores del evento los fija el coordinador en Parámetros. Lo que cambies aquí vale solo para este equipo y se aplica a toda la impresión (Registro, compartida y /impresion-usb).</p>';
     const q = (sel) => panel.querySelector(sel);
     const setForm = (prefs) => {
       TAPE_FIELDS.forEach((f) => {
@@ -801,7 +650,7 @@
         if (el.type === 'checkbox') v[f] = el.checked;
         else if (f === 'rotation') v[f] = el.value === 'auto' ? 'auto' : Number(el.value);
         else if (f === 'tapeWidth') v[f] = Number(el.value);
-        else if (f === 'tapeType' || f === 'cropMode') v[f] = el.value;
+        else if (f === 'tapeType') v[f] = el.value;
         else v[f] = el.value === '' ? null : Number(el.value);
       });
       return v;
@@ -866,40 +715,12 @@
       }
       if (e.target.closest('[data-test]')) { if (saveOverrides()) { paintSources(); await printTest(); paintSources(); } }
     });
-    const modeSel = q('[data-mode]');
-    const syncDriver = () => {
-      const on = modeSel.value === 'driver';
-      q('[data-driver]').style.display = on ? '' : 'none';
-      q('[data-kiosk]').textContent = kiosk ? '✅ Impresión automática activa (abierto con el lanzador).' : 'Impresión con cuadro de diálogo (abre Chrome con el lanzador para imprimir sin cuadro).';
-    };
-    modeSel.value = printMode; syncDriver();
-    modeSel.addEventListener('change', () => { setPrintMode(modeSel.value); syncDriver(); });
-    const appUrl = window.location ? window.location.origin + window.location.pathname : '';
-    if (DP) {
-      q('[data-cmd]').value = DP.launcherCommand(appUrl);
-      const off = DP.getOffsets(storage());
-      q('[data-dx]').value = off.dx; q('[data-dy]').value = off.dy;
-      const saveOffsets = () => { const o = DP.setOffsets(storage(), q('[data-dx]').value, q('[data-dy]').value); q('[data-dx]').value = o.dx; q('[data-dy]').value = o.dy; toast(`Calibración guardada en este equipo (${o.dx} mm, ${o.dy} mm).`, 'success'); };
-      q('[data-dx]').addEventListener('change', saveOffsets); q('[data-dy]').addEventListener('change', saveOffsets);
-      q('[data-pagew]').value = DP.getPageWidthMm(storage()) || '';
-      q('[data-pagew]').addEventListener('change', (e) => { DP.setPageWidthMm(storage(), parseFloat(e.target.value)); toast('Ancho de página guardado en este equipo.', 'success'); });
-      q('[data-launcher]').addEventListener('click', downloadLauncher);
-    }
     document.body.appendChild(panel);
-  }
-
-  function downloadLauncher() {                    // un archivo .bat que se descarga (no se ejecuta solo ni instala nada)
-    const blob = new Blob([DP.launcherBat(window.location ? window.location.origin + window.location.pathname : '')], { type: 'application/octet-stream' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'Imprimir-GoldenWeb.bat';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast('Lanzador descargado. Ábrelo desde Descargas (si Windows avisa «protegió su PC»: Más información → Ejecutar de todos modos).', 'success');
   }
 
   /* Etiqueta de prueba: horizontal (80×50 mm), asimétrica a propósito: la barra negra a la izquierda y la flecha muestran el giro, el espejo y el recorte.
      25-oct-2026: un marco fino JUSTO en el borde y una cruz en el centro: si se pierde un borde o el centro sale corrido, se ve en la etiqueta impresa. */
-  function testCompose() {
+  function testJob() {
     const r = resolved(), p = r.prefs;
     const W = 80, H = 50;
     const canvas = document.createElement('canvas');
@@ -914,14 +735,12 @@
     ctx.font = '30px sans-serif'; ctx.fillText(`cinta ${p.tapeWidth} mm · corte ${p.cut ? 'sí' : 'no'}`, 60, 110); ctx.fillText(`margen ${p.feedMm} mm · giro ${p.rotation}`, 60, 150);
     const out = composeJob(canvas, W, H, p);
     lastPrint = { text: QLUsb.describePrefs(p, r.source, out.layout), warn: out.layout.tooWide ? `La plantilla es más ancha que la cinta: se encogió.` : '', at: Date.now() };
-    return out;
+    return out.job;
   }
-  const testJob = () => testCompose().job;
   function printTest() {
     const run = usbBusy.then(async () => {
-      if (driverOn()) { await drvPrint(testCompose(), prefs()); return; }
-      if (!usb.ok || !(usb.viaTab || QLUsb.ready())) await connectUsb(false);
-      if (!usb.ok) throw new Error(usb.busy ? QLUsb.BUSY_MSG : (usb.lastError || 'La impresora no está conectada a este equipo.'));
+      if (!usb.ok || !QLUsb.info()) await connectUsb(false);
+      if (!usb.ok) throw new Error(usb.busy ? QLUsb.BUSY_MSG : 'La impresora no está conectada a este equipo.');
       await QLUsb.sendJob(testJob());
     });
     usbBusy = run.catch(() => {});
@@ -930,18 +749,11 @@
 
   bar.querySelector('#spConnect').addEventListener('click', () => connectUsb(true));
   bar.querySelector('#spPending').addEventListener('click', () => printPending());
-  bar.querySelector('#spHostLauncher').addEventListener('click', downloadLauncher);
-  bar.querySelector('#spAlways').addEventListener('click', () => { setPrintMode('driver'); toast('Este equipo imprimirá siempre por el controlador de Windows.', 'success'); });
   bar.querySelector('#spPrefs').addEventListener('click', showPrefs);
   bar.querySelector('#spQueue').addEventListener('click', showQueue);
   async function start() {
-    await loadStation();                                  // lo que Golden definió para este puesto (servidor); sin configuración, lo de siempre
-    if (DP) {
-      printMode = DP.getMode(storage());
-      let session = null; try { session = window.sessionStorage; } catch (e) { session = null; }
-      kiosk = DP.kioskFromUrl(window.location ? window.location.search : '', session) || !!(stationCfg && stationCfg.noDialog);
-    }
-    QLUsb.dropLegacyPrefs(realStorage());                // «Espejo» con el significado viejo no se hereda
+    await loadStation();                                  // «solo lector» y Mostrar/Esconder de este puesto (servidor)
+    QLUsb.dropLegacyPrefs(storage());                    // «Espejo» con el significado viejo no se hereda
     mount();
     wireEnter();
     applyTouch();
@@ -949,9 +761,11 @@
     keepAwake();
     connectUsb(false);                                    // reconoce la impresora ya autorizada (sin pedir permiso) y manda la primera señal
   }
-  /* Autorrecuperación (26-oct-2026): tras una caída de red o una suspensión, se reconecta, se reanudan latido y sondeo y la barra lo dice. */
+  /* Autorrecuperación: tras una caída de red o una suspensión, se reconecta, se reanudan latido y sondeo y la barra lo dice. */
   window.addEventListener('online', () => { recoveredUntil = Date.now() + 20000; online = true; heartbeat(); connectUsb(false); render(); });
   window.addEventListener('offline', () => { online = false; render(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
-  window.GoldenSharedPrint = { storageForTest: () => storage(), applyStationForTest: (me) => { applyStation(me); render(); }, stationState: () => ({ isAdmin, isStation, cfg: stationCfg, shown: configShown(), line: stationLine().msg, bar: { prefs: bar.querySelector('#spPrefs').hidden, queue: bar.querySelector('#spQueue').hidden, connect: bar.querySelector('#spConnect').hidden, always: bar.querySelector('#spAlways').hidden, guide: bar.querySelector('#spGuide').hidden } }), printFor, testJob, testCompose, cleanCedula, prefsForJob, connectUsb, setPrintMode, printPending, driverOn, lastDriverSpec: () => lastDriverSpec, drvPrint, disconnectForTest: () => { usb = DISCONNECTED(); connecting = null; }, setKioskForTest: (v) => { kiosk = v; }, state: () => ({ mode: printMode, kiosk, pendingJobs: waitingCount(), route, usb, online, pending, deviceId, touch }) };
+  window.GoldenSharedPrint = { printFor, testJob, cleanCedula, prefsForJob, printPending, connectForTest: () => connectUsb(false), applyStationForTest: (me) => { applyStation(me); applyTouch(); render(); },
+    stationState: () => ({ isAdmin, isStation, cfg: stationCfg, shown: configShown(), line: stationLine().msg, bar: { prefs: bar.querySelector('#spPrefs').hidden, queue: bar.querySelector('#spQueue').hidden, connect: bar.querySelector('#spConnect').hidden, pending: bar.querySelector('#spPending').hidden } }),
+    state: () => ({ route, usb, online, pending, deviceId, touch, pendingJobs: waitingCount(), shared: SHARED }) };
 })();
