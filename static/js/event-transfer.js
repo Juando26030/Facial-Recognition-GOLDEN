@@ -12,6 +12,7 @@
     access_logs: "Registros / acreditaciones", area_movements: "Movimientos de áreas", inventory_deliveries: "Entregas de inventario", print_logs: "Impresiones", person_changes: "Cambios de personas",
     audit_consent_logs: "Consentimientos", web_acceptances: "Aceptaciones web", event_documents: "Documentos", event_expenses: "Gastos", biometrics: "Biometría"
   };
+  var SMALL_UPLOAD = 24 * 1024 * 1024;     // hasta aquí el paquete sube por la propia aplicación (igual que el límite del servidor)
   var ROLE_LABELS = { badge_asset: "imágenes de diseño", form_file: "archivos de formularios", signature: "firmas", event_doc: "documentos", expense: "comprobantes", logo: "logo", report: "informe PDF", biometric_photo: "fotos de registro" };
 
   function esc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
@@ -184,10 +185,18 @@
       S.filename = f.name;
       ui.set(progressHtml("Subiendo y revisando el paquete…"), []);
       try {
-        var up = await post("/api/event-transfer/upload-url", { filename: f.name, size: f.size });
-        var put = await fetch(up.url, { method: up.method || "PUT", headers: up.headers || {}, body: f });
-        if (!put.ok) throw new Error("No se pudo subir el archivo (" + put.status + ").");
-        S.token = up.token;
+        if (f.size <= SMALL_UPLOAD) {                       // chico: sube POR la aplicación (no depende del CORS del bucket)
+          var fd = new FormData();
+          fd.append("file", f, f.name);
+          S.token = (await jfetch("/api/event-transfer/upload", { method: "POST", body: fd })).token;
+        } else {                                            // grande: subida directa al almacenamiento (URL firmada)
+          var up = await post("/api/event-transfer/upload-url", { filename: f.name, size: f.size });
+          var put;
+          try { put = await fetch(up.url, { method: up.method || "PUT", headers: up.headers || {}, body: f }); }
+          catch (netErr) { throw new Error("No se pudo subir el paquete directo al almacenamiento (el navegador lo bloqueó: falta autorizar este sitio en el CORS del bucket). Los paquetes de hasta 24 MB suben por la aplicación sin ese permiso."); }
+          if (!put.ok) throw new Error("No se pudo subir el archivo (" + put.status + ").");
+          S.token = up.token;
+        }
         S.info = await post("/api/event-transfer/import/inspect", { token: S.token });
         stepOptions();
       } catch (e) { fail(e.message, stepFile); }
