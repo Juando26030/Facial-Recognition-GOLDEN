@@ -16,7 +16,9 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
+import uuid
 import zipfile
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -27,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app import consent
 from app import models as m
+from app.storage import badge_asset_key, form_file_key, get_storage, key_of, normalize_key
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.event_transfer")
@@ -36,7 +39,11 @@ FORMAT_VERSION = 1
 MAX_ZIP_BYTES = int(os.getenv("EVENT_TRANSFER_MAX_ZIP_MB", "512")) * 1024 * 1024
 MAX_UNZIPPED_BYTES = MAX_ZIP_BYTES * 4        # lo que de verdad sale al descomprimir (contra «zip bomb»); se cuenta leyendo, no lo que diga el zip
 MAX_ENTRIES = 200
+MAX_ENTRIES_WITH_FILES = int(os.getenv("EVENT_TRANSFER_MAX_ENTRIES", "20000"))
 CHUNK = 500
+ASSET_EXT = r"(?:png|jpe?g|webp|gif|svg)"
+FILE_NAME_RE = re.compile(r"^files/[0-9a-f]{64}$")
+OPTIONAL_TABLES = ("event_documents", "event_expenses")          # los paquetes de la fase F1 no las traen
 BIOMETRIC_USER_COLUMNS = ("face_encoding", "face_captured_at", "biometric_consent_at", "biometric_consent_source", "is_biometric_enabled")
 
 
@@ -74,6 +81,8 @@ TABLES = [
     {"name": "person_changes", "kind": "event", "staff": ("staff_user_id",), "user": "user_id"},
     {"name": "audit_consent_logs", "kind": "event", "user": "user_id"},
     {"name": "web_acceptances", "kind": "event", "staff": ("verified_by_staff_id",), "user": "user_id"},
+    {"name": "event_documents", "kind": "event", "staff": ("uploaded_by_id",)},
+    {"name": "event_expenses", "kind": "event", "staff": ("created_by_id",)},
 ]
 SPEC = {t["name"]: t for t in TABLES}
 PERSON_TABLES = ("event_attendees", "access_logs", "area_movements", "inventory_deliveries", "print_logs", "person_changes", "audit_consent_logs", "web_acceptances")
@@ -128,6 +137,69 @@ def _known_revisions() -> list:
     return [r.revision for r in reversed(list(ScriptDirectory.from_config(cfg).walk_revisions()))]
 
 
+# ------------------------------------------------------------------------------------------------ archivos del storage (F2)
+ASSET_COLUMNS = {"badge_templates": ("elements_json", "background_value"), "web_forms": ("design_json", "settings_json"), "roulette_configs": ("style_json",)}
+MAX_FILE_BYTES = int(os.getenv("EVENT_TRANSFER_MAX_FILE_MB", "100")) * 1024 * 1024
+
+
+def _asset_re(tenant: str):
+    return re.compile(r"(?:/api/badge-assets/)?" + re.escape(tenant) + r"/(?P<name>[A-Za-z0-9._-]+\." + ASSET_EXT + ")", re.IGNORECASE)
+
+
+def _rewrite_assets(text_, tenant_src: str, tenant_dst: str, mapping: dict):
+    """Cambia, en un JSON de diseño, las referencias a imágenes del cliente de origen por las del destino (otro cliente y/o nombre nuevo si chocó con otra imagen distinta)."""
+    if not text_:
+        return text_
+
+    def sub(mt):
+        name = mt.group("name")
+        prefix = "/api/badge-assets/" if mt.group(0).startswith("/api/badge-assets/") else ""
+        return f"{prefix}{tenant_dst}/{mapping.get(name, name)}"
+    return _asset_re(tenant_src).sub(sub, text_)
+
+
+def _collect_files(db: Session, event, form_ids: list, warnings: list) -> list:
+    """(rol, referencia, clave de storage) de cada archivo que cuelga del evento. Solo lo que EXISTE en el storage."""
+    st, tenant, out, seen = get_storage(), event.tenant_id, [], set()
+
+    def add(role, ref, key):
+        if not key:
+            return
+        try:
+            key = normalize_key(key)
+        except ValueError:
+            return
+        if (role, key) in seen:
+            return
+        seen.add((role, key))
+        if st.exists(key):
+            out.append((role, ref, key))
+        else:
+            warnings.append(f"Un archivo de «{role}» está en la base pero no en el almacenamiento: no viaja.")
+
+    names = set()
+    for table, cols in ASSET_COLUMNS.items():
+        t = _table(table)
+        where = t.c.event_id == event.id if table != "web_forms" else t.c.event_id == event.id
+        for row in db.execute(select(*[t.c[c] for c in cols]).where(where)).all():
+            for val in row:
+                names.update(mt.group("name") for mt in _asset_re(tenant).finditer(val or ""))
+    for n in sorted(names):
+        add("badge_asset", {"name": n}, badge_asset_key(tenant, n))
+    for fid in form_ids:
+        for key in sorted(st.list(form_file_key(tenant, fid))):
+            add("form_file", {"form_id": fid, "name": key.rsplit("/", 1)[-1]}, key)
+    for key in sorted(st.list(key_of(tenant, "signatures", event.id))):
+        add("signature", {"name": key.rsplit("/", 1)[-1]}, key)
+    for (path,) in db.execute(select(m.EventDocument.stored_path).where(m.EventDocument.event_id == event.id)).all():
+        add("event_doc", {"path": path}, path)
+    for (path,) in db.execute(select(m.EventExpense.evidence_path).where(m.EventExpense.event_id == event.id, m.EventExpense.evidence_path.isnot(None))).all():
+        add("expense", {"path": path}, path)
+    add("logo", {"path": event.logo_path}, event.logo_path)
+    add("report", {"path": event.report_pdf_path}, event.report_pdf_path)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ exportar
 def _table(name):
     return m.Base.metadata.tables[name]
@@ -180,8 +252,8 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
     tenant = db.get(m.Tenant, event.tenant_id)
     manifest = {"format": FORMAT, "format_version": FORMAT_VERSION, "alembic_revision": _revision(db), "source_env": os.getenv("DEPLOY_ENV", "").strip().lower() or "local",
                 "created_at": utcnow().isoformat(), "tenant": {"id": tenant.id, "client_code": tenant.client_code, "name": tenant.name} if tenant else {"id": event.tenant_id},
-                "event": {"event_code": event.event_code, "name": event.name, "status": event.status}, "options": {"include_biometrics": False}, "includes_files": False,
-                "tables": {}, "staff_usernames": [], "warnings": []}
+                "event": {"event_code": event.event_code, "name": event.name, "status": event.status}, "options": {"include_biometrics": False}, "includes_files": True,
+                "tables": {}, "files": [], "staff_usernames": [], "warnings": []}
     used_staff = set()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -212,8 +284,18 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                     n += 1
             manifest["tables"][spec["name"]] = {"count": n, "sha256": h.hexdigest()}
         manifest["staff_usernames"] = sorted(used_staff)
-        if event.logo_path or event.report_pdf_path:
-            manifest["warnings"].append("El logo propio y el informe PDF del evento no viajan en esta versión del paquete (llegan con los archivos, F2).")
+        written = set()
+        st = get_storage()
+        for role, ref, key in _collect_files(db, event, ctx["form_ids"], manifest["warnings"]):
+            raw = st.get(key)
+            if len(raw) > MAX_FILE_BYTES:
+                manifest["warnings"].append(f"Un archivo de «{role}» pesa más de {MAX_FILE_BYTES // (1024 * 1024)} MB y no viaja.")
+                continue
+            sha = hashlib.sha256(raw).hexdigest()
+            if sha not in written:
+                zf.writestr(f"files/{sha}", raw)
+                written.add(sha)
+            manifest["files"].append({"role": role, "ref": ref, "sha256": sha, "size": len(raw)})
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
         zf.writestr("LEEME.txt", "Paquete de evento de GoldenWeb (docs/18_EXPORTAR_EVENTOS.md).\nContiene DATOS PERSONALES: guárdalo y envíalo con cuidado, bórralo al terminar.\n"
                                  "Se importa desde «Importar evento» (solo super_admin); siempre crea un evento NUEVO.\n")
@@ -241,7 +323,7 @@ def read_package(data: bytes) -> tuple:
         raise TransferError("El archivo no es un paquete de evento válido (.zip).")
     infos = zf.infolist()
     allowed = {"manifest.json", "LEEME.txt"} | {f"data/{n}.jsonl" for n in TABLE_NAMES}
-    if len(infos) > MAX_ENTRIES or any(i.filename not in allowed for i in infos):
+    if len(infos) > MAX_ENTRIES_WITH_FILES or any(i.filename not in allowed and not FILE_NAME_RE.fullmatch(i.filename) for i in infos):
         raise TransferError("El paquete trae archivos que no corresponden a un evento exportado.")
     total = 0
 
@@ -277,6 +359,9 @@ def read_package(data: bytes) -> tuple:
     for spec in TABLES:
         name = spec["name"]
         info = manifest.get("tables", {}).get(name)
+        if info is None and name in OPTIONAL_TABLES:                       # paquetes de F1: sin documentos ni gastos
+            rows[name] = []
+            continue
         if info is None:
             raise TransferError(f"Al paquete le falta la tabla «{name}».")
         raw = _read(f"data/{name}.jsonl")
@@ -288,7 +373,18 @@ def read_package(data: bytes) -> tuple:
         rows[name] = items
     if len(rows["events"]) != 1:
         raise TransferError("El paquete debe traer exactamente un evento.")
-    return manifest, rows
+    names = set(zf.namelist())
+    for f in manifest.get("files", []):
+        if f.get("sha256") is None or f"files/{f['sha256']}" not in names:
+            raise TransferError("Al paquete le falta un archivo que el manifest declara.")
+
+    def opener(sha: str) -> bytes:
+        """Contenido de un archivo del paquete, verificando su huella al leerlo."""
+        raw = _read(f"files/{sha}")
+        if hashlib.sha256(raw).hexdigest() != sha:
+            raise TransferError("Un archivo del paquete no coincide con su suma de control: está dañado o fue modificado.")
+        return raw
+    return manifest, rows, opener
 
 
 # ------------------------------------------------------------------------------------------------ importar
@@ -327,13 +423,16 @@ def _clean_user_row(row: dict) -> dict:
 
 
 def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = None, new_event_code: Optional[str] = None, new_name: Optional[str] = None,
-                   keep_original_state: bool = False, dry_run: bool = True) -> dict:
-    """Importa un paquete creando un evento NUEVO. `dry_run=True` (por defecto) hace TODO y lo deshace: lista qué entraría y qué conflictos hay. Devuelve el informe."""
+                   keep_original_state: bool = False, dry_run: bool = True, target_tenant_id: Optional[str] = None) -> dict:
+    """Importa un paquete creando un evento NUEVO. `dry_run=True` (por defecto) hace TODO y lo deshace (sin escribir archivos): lista qué entraría y qué conflictos hay.
+    `target_tenant_id`: el cliente del destino (por defecto el mismo del paquete; si es otro, todo lo del evento pasa a ese cliente). Devuelve el informe."""
     from app.routers.events import EVENT_CODE_RE                     # el mismo formato de código que al crear un evento a mano
-    manifest, rows = read_package(data)
+    manifest, rows, opener = read_package(data)
     src_event = rows["events"][0]
+    tenant_dst = target_tenant_id or src_event["tenant_id"]
     report = {"dry_run": dry_run, "event_code": None, "name": None, "event_id": None, "source_env": manifest.get("source_env"), "tables": {}, "skipped": {}, "warnings": list(manifest.get("warnings", [])),
-              "conflicts": [], "persons": {"new": 0, "existing_kept": 0, "existing_different": 0, "suppressed_skipped": 0}, "staff_without_link": [], "pending_confirm": False, "package_sha256": _package_hash(manifest)}
+              "conflicts": [], "persons": {"new": 0, "existing_kept": 0, "existing_different": 0, "suppressed_skipped": 0}, "staff_without_link": [], "pending_confirm": False,
+              "package_sha256": _package_hash(manifest), "files": {"planned": 0, "written": 0, "by_role": {}}, "tenant": tenant_dst}
 
     def skip(table, why, n=1):
         report["skipped"].setdefault(table, {})
@@ -348,37 +447,48 @@ def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = 
     from sqlalchemy import func
     if db.query(m.Event.id).filter(func.lower(func.btrim(m.Event.event_code)) == code.lower()).first():
         report["conflicts"].append(f"Ya existe un evento con el código «{code}»: escribe un código nuevo para el evento importado.")
-    if db.query(m.Event.id).filter(m.Event.tenant_id == src_event["tenant_id"], func.lower(func.btrim(m.Event.name)) == name.lower()).first():
+    if db.query(m.Event.id).filter(m.Event.tenant_id == tenant_dst, func.lower(func.btrim(m.Event.name)) == name.lower()).first():
         report["conflicts"].append(f"Ya existe un evento con el nombre «{name}» en ese cliente: escribe un nombre nuevo.")
+    if tenant_dst != src_event["tenant_id"] and not db.get(m.Tenant, tenant_dst):
+        report["conflicts"].append("El cliente elegido no existe en este sistema.")
     if report["conflicts"]:
         db.rollback()
         report["ok"] = False
         return report
 
+    written = []
     try:
-        _do_import(db, manifest, rows, report, skip, code=code, name=name, staff_username=staff_username, keep_original_state=keep_original_state)
+        written = _do_import(db, manifest, rows, opener, report, skip, code=code, name=name, staff_username=staff_username, keep_original_state=keep_original_state,
+                             tenant_dst=tenant_dst, dry_run=dry_run)
+        report["ok"] = True
+        if dry_run:
+            db.rollback()
+        else:
+            db.commit()
     except Exception:
         db.rollback()
+        for key in written:                                                    # lo que ya se escribió en el almacenamiento se quita: nada a medias
+            try:
+                get_storage().delete(key)
+            except Exception:  # noqa: BLE001
+                log.warning("no se pudo quitar un archivo de una importación fallida")
         raise
-    report["ok"] = True
-    if dry_run:
-        db.rollback()
-    else:
-        db.commit()
-    log.info("event_import dry_run=%s tables=%s", dry_run, {k: v["imported"] for k, v in report["tables"].items()})
+    log.info("event_import dry_run=%s tables=%s files=%s", dry_run, {k: v["imported"] for k, v in report["tables"].items()}, report["files"]["planned"])
     return report
 
 
-def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, code: str, name: str, staff_username: Optional[str], keep_original_state: bool) -> None:
-    tenant_src = manifest.get("tenant") or {}
+def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, skip, *, code: str, name: str, staff_username: Optional[str], keep_original_state: bool,
+               tenant_dst: str, dry_run: bool) -> list:
     ev_src = rows["events"][0]
-    tenant_id = ev_src["tenant_id"]
-    # ---- cliente (solo nombre y código si falta)
+    tenant_src = ev_src.get("tenant_id")
+    tenant_info = manifest.get("tenant") or {}
+    tenant_id = tenant_dst
+    # ---- cliente (solo nombre y código si falta, y solo cuando es el mismo del paquete)
     if not db.get(m.Tenant, tenant_id):
-        client_code = tenant_src.get("client_code") or tenant_id
+        client_code = tenant_info.get("client_code") or tenant_id
         if db.query(m.Tenant.id).filter(m.Tenant.client_code == client_code).first():
             raise TransferError("El código de cliente del paquete ya existe en este sistema con otro identificador: crea el cliente a mano y vuelve a importar.")
-        db.add(m.Tenant(id=tenant_id, client_code=client_code, name=tenant_src.get("name") or tenant_id))
+        db.add(m.Tenant(id=tenant_id, client_code=client_code, name=tenant_info.get("name") or tenant_id))
         db.flush()
         report["warnings"].append("El cliente no existía en el destino: se creó solo con su nombre y código.")
     staff_by_name = {un: sid for sid, un in db.execute(select(m.StaffUser.id, m.StaffUser.username)).all()}
@@ -386,12 +496,32 @@ def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, c
     supers = {n: sid for sid, n in db.execute(select(m.SuperEvent.id, m.SuperEvent.name).where(m.SuperEvent.tenant_id == tenant_id)).all()}
     suppressed = {r[0] for r in db.execute(select(m.SuppressedPerson.cedula_hash).where(m.SuppressedPerson.tenant_id == tenant_id)).all()}
     log_row = m.EventTransferLog(kind="import", staff_username=staff_username, event_code=code, package_sha256=report["package_sha256"], status="done",
-                                 options_json=json.dumps({"keep_original_state": keep_original_state, "source_env": manifest.get("source_env")}))
+                                 options_json=json.dumps({"keep_original_state": keep_original_state, "source_env": manifest.get("source_env"), "tenant": tenant_id}))
     db.add(log_row)
     db.flush()
     actors = []                                                   # (tabla, referencia de la fila, columna, nombre de usuario sin cuenta aquí)
     new_ids = {}                                                  # tabla → {id origen: id nuevo}
     pending = {"forms": []}
+    files = manifest.get("files", []) if manifest.get("includes_files") else []
+    file_by_ref = {(f["role"], f["ref"].get("path") or f["ref"].get("name")): f for f in files}
+    writes = []                                                   # (clave de destino, sha256, rol)
+    st = get_storage()
+
+    # ---- imágenes de diseño (badge_assets): se reutiliza la misma imagen; si hay otra DISTINTA con el mismo nombre, la nueva se guarda con otro nombre y se reescriben las referencias
+    assets_map = {}
+    for f in files:
+        if f["role"] != "badge_asset":
+            continue
+        fname = f["ref"]["name"]
+        dest = badge_asset_key(tenant_id, fname)
+        if st.exists(dest):
+            if hashlib.sha256(st.get(dest)).hexdigest() == f["sha256"]:
+                continue
+            stem, ext = os.path.splitext(fname)
+            assets_map[fname] = f"{stem}-{f['sha256'][:8]}{ext}"
+            dest = badge_asset_key(tenant_id, assets_map[fname])
+            report["warnings"].append("Una imagen del diseño ya existía con otro contenido: se guardó con otro nombre y el diseño la usa.")
+        writes.append((dest, f["sha256"], "badge_asset"))
 
     def staff_link(row, d, table, ref):
         for col, un in (row.get("@names") or {}).items():
@@ -422,7 +552,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, c
             new_id = _alloc_ids(db, "events", 1)[0]
             new_ids["events"] = {ev_src["id"]: new_id}
             d = {k: _parse(t.c[k], v) for k, v in ev_src.items() if k in t.c}
-            d.update({"id": new_id, "event_code": code, "name": name, "faces_version": 0})
+            d.update({"id": new_id, "event_code": code, "name": name, "faces_version": 0, "tenant_id": tenant_id})
             staff_link(ev_src, d, "events", new_id)
             names = ev_src.get("@names") or {}
             d["state_id"] = states.get(names.get("state_id")) if names.get("state_id") else None
@@ -434,16 +564,19 @@ def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, c
             if d.get("certificates_token") and _existing(db, "events", "certificates_token", [d["certificates_token"]]):
                 d["certificates_token"] = None
                 report["warnings"].append("El token de certificados ya existía en el destino: se dejó vacío (se genera de nuevo desde Parámetros).")
-            d["biometrics_purged_at"] = _parse(t.c["biometrics_purged_at"], ev_src.get("biometrics_purged_at"))
-            if not manifest.get("includes_files"):
-                if d.get("logo_path"):
-                    d["logo_path"] = None
-                    if d.get("logo_mode") == "custom":
-                        d["logo_mode"] = "default"
-                d["report_pdf_path"] = None
+            logo, rpt = ev_src.get("logo_path"), ev_src.get("report_pdf_path")
+            d["logo_path"] = d["report_pdf_path"] = None
+            if logo and ("logo", logo) in file_by_ref:
+                d["logo_path"] = key_of(tenant_id, "event_logos", uuid.uuid4().hex + os.path.splitext(logo)[1])
+                writes.append((d["logo_path"], file_by_ref[("logo", logo)]["sha256"], "logo"))
+            if rpt and ("report", rpt) in file_by_ref:
+                d["report_pdf_path"] = key_of(tenant_id, "event_reports", new_id, os.path.basename(rpt))
+                writes.append((d["report_pdf_path"], file_by_ref[("report", rpt)]["sha256"], "report"))
+            else:
                 d["report_uploaded_at"] = None
-            src_status = d.get("status")
-            if src_status == "en_proceso":
+            if d.get("logo_mode") == "custom" and not d["logo_path"]:
+                d["logo_mode"] = "default"
+            if d.get("status") == "en_proceso":
                 d["status"] = "creado"                              # en espera: no activa el congelamiento de despliegues hasta confirmar
                 pending["event_status"] = "en_proceso"
                 report["pending_confirm"] = True
@@ -462,6 +595,9 @@ def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, c
                 skip(tname, "persona suprimida en el destino")
                 continue
             if tname == "users" and r["id"] in banned:
+                continue
+            if tname == "event_documents" and ("event_doc", r.get("stored_path")) not in file_by_ref:
+                skip(tname, "su archivo no viajó")
                 continue
             keep.append(r)
         ids = _alloc_ids(db, tname, len(keep)) if has_int_id else []
@@ -488,12 +624,15 @@ def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, c
                     continue
                 d = {k: _parse(t.c[k], v) for k, v in _clean_user_row(r).items() if k in t.c}
                 d["is_biometric_enabled"] = False
+                d["tenant_id"] = tenant_id
                 report["persons"]["new"] += 1
                 out.append(d)
                 continue
             d = {k: _parse(t.c[k], v) for k, v in r.items() if k in t.c}
             if has_int_id:
                 d["id"] = ids[i]
+            if "tenant_id" in t.c and d.get("tenant_id") is not None:
+                d["tenant_id"] = tenant_id
             drop = False
             for col, target in spec.get("remap", {}).items():
                 optional = target.endswith("?")
@@ -538,14 +677,37 @@ def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, c
                 continue
             for col, val in spec.get("set", {}).items():
                 d[col] = val
+            for col in ASSET_COLUMNS.get(tname, ()):
+                d[col] = _rewrite_assets(d.get(col), tenant_src, tenant_id, assets_map)
             if tname == "web_forms":
                 d["test_key"] = secrets.token_urlsafe(12)           # la clave de pruebas nunca se copia
                 pending["forms"].append({"id": d["id"], "manual_status": d.get("manual_status"), "use_schedule": d.get("use_schedule")})
                 d["manual_status"], d["use_schedule"] = "pruebas", False
+            if tname == "event_documents":
+                meta = file_by_ref[("event_doc", r["stored_path"])]
+                d["stored_path"] = key_of(tenant_id, "event_docs", d["event_id"], uuid.uuid4().hex + os.path.splitext(r["stored_path"])[1].lower())
+                writes.append((d["stored_path"], meta["sha256"], "event_doc"))
+            if tname == "event_expenses" and r.get("evidence_path"):
+                meta = file_by_ref.get(("expense", r["evidence_path"]))
+                if meta:
+                    d["evidence_path"] = key_of(tenant_id, "event_expenses", d["event_id"], uuid.uuid4().hex + os.path.splitext(r["evidence_path"])[1].lower())
+                    writes.append((d["evidence_path"], meta["sha256"], "expense"))
+                else:
+                    d["evidence_path"] = d["evidence_name"] = None
+                    report["warnings"].append("Un comprobante de gasto no viajó con el paquete: el gasto entra sin comprobante.")
             staff_link(r, d, tname, d.get("id") if has_int_id else f"{d.get('tenant_id')}|{d.get('user_id')}|{d.get('event_id')}")
             out.append(d)
         rep["imported"] = len(out)
         _insert(db, tname, out)
+
+    # ---- archivos que dependen de los ids nuevos: respuestas de formularios y firmas
+    for f in files:
+        if f["role"] == "form_file":
+            new_form = new_ids.get("web_forms", {}).get(f["ref"]["form_id"])
+            if new_form is not None:
+                writes.append((form_file_key(tenant_id, new_form, f["ref"]["name"]), f["sha256"], "form_file"))
+        elif f["role"] == "signature":
+            writes.append((key_of(tenant_id, "signatures", new_ids["events"][ev_src["id"]], f["ref"]["name"]), f["sha256"], "signature"))
 
     if not keep_original_state:
         pending["forms"] = []
@@ -558,6 +720,18 @@ def _do_import(db: Session, manifest: dict, rows: dict, report: dict, skip, *, c
         db.add(m.EventImportActor(import_id=log_row.id, table_name=tname, row_ref=ref, column_name=col, username=un))
     report["import_id"] = log_row.id
     db.flush()
+
+    # ---- escribir los archivos (solo en la importación de verdad; el simulacro solo los cuenta)
+    for _, _, role in writes:
+        report["files"]["by_role"][role] = report["files"]["by_role"].get(role, 0) + 1
+    report["files"]["planned"] = len(writes)
+    written = []
+    if not dry_run:
+        for key, sha, _role in writes:
+            st.put(key, opener(sha))
+            written.append(key)
+        report["files"]["written"] = len(written)
+    return written
 
 
 def confirm_import(db: Session, import_id: int, staff_username: Optional[str] = None) -> dict:

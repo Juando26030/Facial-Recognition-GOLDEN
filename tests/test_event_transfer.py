@@ -339,3 +339,117 @@ def test_command_line_scripts_use_the_same_engine(db, factory, tmp_path, capsys)
     assert db.query(m.Event).filter_by(event_code="CLI-1").count() == 1
     assert _script("event_import").main([str(out)]) == 3                                       # mismo código y nombre: conflicto, código de salida 3
     assert _script("event_export").main(["--event-code", "NO-EXISTE", "--out", str(tmp_path / "x.zip")]) == 2
+
+
+# ------------------------------------------------------------------------------------------------ F2: archivos del storage
+def _files_event(db, factory):
+    from app.storage import badge_asset_key, form_file_key, get_storage, key_of
+    ev = _build(db, factory)
+    st = get_storage()
+    t = ev.tenant_id
+    st.put(badge_asset_key(t, "fondo.png"), b"PNG-FONDO")
+    st.put(badge_asset_key(t, "logo-form.png"), b"PNG-LOGO-FORM")
+    st.put(badge_asset_key(t, "no-referenciada.png"), b"X")
+    tpl = db.query(m.BadgeTemplate).filter_by(event_id=ev.id).one()
+    tpl.background_type, tpl.background_value = "image", f"/api/badge-assets/{t}/fondo.png"
+    form = db.query(m.WebForm).filter_by(event_id=ev.id).one()
+    form.design_json = json.dumps({"theme": {"logo": f"{t}/logo-form.png"}})
+    st.put(form_file_key(t, form.id, "cv.pdf"), b"%PDF-CV")
+    st.put(key_of(t, "signatures", ev.id, "1001__firma.png"), b"FIRMA")
+    st.put(key_of(t, "event_docs", ev.id, "doc1.pdf"), b"%PDF-DOC")
+    db.add(m.EventDocument(event_id=ev.id, name="Contrato", original_filename="contrato.pdf", stored_path=key_of(t, "event_docs", ev.id, "doc1.pdf"), mime_type="application/pdf", size_bytes=8))
+    st.put(key_of(t, "event_expenses", ev.id, "ev1.png"), b"EVIDENCIA")
+    db.add(m.EventExpense(event_id=ev.id, category="Logística", responsible="Ana", amount=1500, evidence_path=key_of(t, "event_expenses", ev.id, "ev1.png"), evidence_name="ev1.png"))
+    st.put(key_of(t, "event_logos", "abc.png"), b"LOGO-EVENTO")
+    ev.logo_mode, ev.logo_path = "custom", key_of(t, "event_logos", "abc.png")
+    st.put(key_of(t, "event_reports", "informe.pdf"), b"%PDF-INFORME")
+    ev.report_pdf_path = key_of(t, "event_reports", "informe.pdf")
+    db.commit()
+    return ev
+
+
+def test_export_carries_the_referenced_files_by_hash_and_skips_the_rest(db, factory):
+    ev = _files_event(db, factory)
+    data, manifest = et.export_event(db, ev, staff_username="root")
+    roles = sorted(f["role"] for f in manifest["files"])
+    assert roles == ["badge_asset", "badge_asset", "event_doc", "expense", "form_file", "logo", "report", "signature"] and manifest["includes_files"] is True
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    assert all(f"files/{f['sha256']}" in zf.namelist() for f in manifest["files"])
+    assert b"X" not in [zf.read(f"files/{f['sha256']}") for f in manifest["files"]]            # la imagen que ningún diseño usa no viaja
+
+
+def test_import_writes_the_files_under_the_new_ids_and_rewrites_design_references(db, factory):
+    from app.storage import badge_asset_key, form_file_key, get_storage, key_of
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    st = get_storage()
+    dry = et.import_package(db, data, new_event_code="F2-DRY", new_name="Dry", dry_run=True)
+    assert dry["ok"] and dry["files"]["planned"] == 6 and dry["files"]["written"] == 0           # el simulacro solo cuenta; badge_asset ya existe igual (misma huella): no se vuelve a escribir (por eso son 6 y no 8)
+    assert not st.list(key_of(ev.tenant_id, "signatures", "9999"))
+    rep = et.import_package(db, data, new_event_code="F2-1", new_name="Con archivos", dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="F2-1").one()
+    t = new.tenant_id
+    assert rep["files"]["written"] == rep["files"]["planned"] == 6
+    form = db.query(m.WebForm).filter_by(event_id=new.id).one()
+    assert st.get(form_file_key(t, form.id, "cv.pdf")) == b"%PDF-CV"
+    assert st.get(key_of(t, "signatures", new.id, "1001__firma.png")) == b"FIRMA"
+    doc = db.query(m.EventDocument).filter_by(event_id=new.id).one()
+    assert doc.stored_path != db.query(m.EventDocument).filter_by(event_id=ev.id).one().stored_path and st.get(doc.stored_path) == b"%PDF-DOC" and f"/{new.id}/" in doc.stored_path
+    exp = db.query(m.EventExpense).filter_by(event_id=new.id).one()
+    assert st.get(exp.evidence_path) == b"EVIDENCIA" and exp.evidence_name == "ev1.png"
+    assert new.logo_mode == "custom" and st.get(new.logo_path) == b"LOGO-EVENTO" and new.logo_path != ev.logo_path
+    assert st.get(new.report_pdf_path) == b"%PDF-INFORME" and f"/{new.id}/" in new.report_pdf_path
+    tpl = db.query(m.BadgeTemplate).filter_by(event_id=new.id).one()
+    assert tpl.background_value == f"/api/badge-assets/{t}/fondo.png" and st.get(badge_asset_key(t, "fondo.png")) == b"PNG-FONDO"
+
+
+def test_a_different_image_with_the_same_name_gets_a_new_name_and_the_design_follows(db, factory):
+    from app.storage import badge_asset_key, get_storage
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    st = get_storage()
+    st.put(badge_asset_key(ev.tenant_id, "fondo.png"), b"OTRA-IMAGEN-DISTINTA")                 # en el destino ya hay OTRA con ese nombre
+    rep = et.import_package(db, data, new_event_code="F2-2", new_name="Nombre choca", dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="F2-2").one()
+    tpl = db.query(m.BadgeTemplate).filter_by(event_id=new.id).one()
+    assert tpl.background_value != f"/api/badge-assets/{ev.tenant_id}/fondo.png" and tpl.background_value.startswith(f"/api/badge-assets/{ev.tenant_id}/fondo-")
+    assert st.get(badge_asset_key(ev.tenant_id, "fondo.png")) == b"OTRA-IMAGEN-DISTINTA"        # la del destino NO se pisa
+    assert st.get(badge_asset_key(ev.tenant_id, tpl.background_value.rsplit("/", 1)[-1])) == b"PNG-FONDO"
+    assert any("otro nombre" in w for w in rep["warnings"])
+
+
+def test_a_failure_while_writing_files_leaves_no_event_and_no_orphan_files(db, factory, monkeypatch):
+    from app import storage as storage_mod
+    from app.storage import get_storage, key_of
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    st = get_storage()
+    real_put, calls = st.put, {"n": 0}
+
+    def flaky(key, content):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("disco lleno")
+        return real_put(key, content)
+    monkeypatch.setattr(st, "put", flaky)
+    with pytest.raises(RuntimeError):
+        et.import_package(db, data, new_event_code="F2-FALLA", new_name="Falla", dry_run=False)
+    assert db.query(m.Event).filter_by(event_code="F2-FALLA").count() == 0
+    new_prefix = key_of(ev.tenant_id, "event_docs")
+    assert [k for k in st.list(new_prefix) if k.rsplit("/", 2)[-2] != str(ev.id)] == []        # nada huérfano de la importación fallida
+    assert storage_mod is not None
+
+
+def test_import_into_another_client_moves_everything_to_that_client(db, factory):
+    from app.storage import get_storage, key_of
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    other = factory.tenant("otro")
+    rep = et.import_package(db, data, new_event_code="OTRO-1", new_name="En otro cliente", target_tenant_id=other.id, dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="OTRO-1").one()
+    assert rep["ok"] and new.tenant_id == "otro"
+    assert db.query(m.User).filter_by(tenant_id="otro").count() == 3 and db.query(m.EventAttendee).filter_by(event_id=new.id, tenant_id="otro").count() == 3
+    assert db.query(m.AccessLog).filter_by(event_id=new.id, tenant_id="otro").count() == 2
+    assert get_storage().get(key_of("otro", "signatures", new.id, "1001__firma.png")) == b"FIRMA"
+    bad = et.import_package(db, data, new_event_code="OTRO-2", new_name="Cliente inexistente", target_tenant_id="no-existe", dry_run=True)
+    assert not bad["ok"] and "cliente elegido no existe" in bad["conflicts"][0]
