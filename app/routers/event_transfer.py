@@ -99,6 +99,22 @@ def upload_url(body: UploadReq, staff: StaffUser = Depends(SUPER)):
     return uploads.create("event_package", event_transfer_jobs.package_scope(staff), "transfer", body.filename, body.size, "application/zip")
 
 
+SMALL_UPLOAD = 24 * 1024 * 1024          # por debajo de esto el paquete sube POR la aplicación (Cloud Run admite 32 MB por petición): no depende del CORS del bucket
+
+
+@router.post("/event-transfer/upload")
+def upload_small(file: UploadFile = File(...), staff: StaffUser = Depends(SUPER)):
+    """Subida de un paquete CHICO por la propia aplicación (sin tocar el bucket desde el navegador, así no hace falta CORS). Los grandes usan `upload-url` (subida directa)."""
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="El paquete debe ser un archivo .zip.")
+    data = file.file.read(SMALL_UPLOAD + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    if len(data) > SMALL_UPLOAD:
+        raise HTTPException(status_code=400, detail="El paquete pesa más de 24 MB: se sube directo al almacenamiento.")
+    return {"token": uploads.stash("event_package", event_transfer_jobs.package_scope(staff), "transfer", file.filename, data, "application/zip")}
+
+
 class TokenReq(BaseModel):
     token: str
 

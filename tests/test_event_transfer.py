@@ -551,6 +551,13 @@ def inline_jobs(monkeypatch):
 
 
 def _upload(client, pkg: bytes) -> str:
+    """Como el asistente: los paquetes chicos suben POR la aplicación (sin CORS del bucket)."""
+    r = client.post("/api/event-transfer/upload", files={"file": ("evento.zip", pkg, "application/zip")})
+    assert r.status_code == 200, r.text
+    return r.json()["token"]
+
+
+def _upload_direct(client, pkg: bytes) -> str:
     r = client.post("/api/event-transfer/upload-url", json={"filename": "evento.zip", "size": len(pkg)})
     assert r.status_code == 200, r.text
     up = r.json()
@@ -696,3 +703,16 @@ def test_buttons_are_painted_only_for_super_admin_and_the_wizard_script_is_valid
     assert js.status_code == 200 and "/api/event-transfer/export/start" in js.text and "onclick" not in js.text                              # sin onclick inline
     r = subprocess.run(["node", "--check", "static/js/event-transfer.js"], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
+
+
+def test_small_packages_upload_through_the_app_and_direct_upload_still_works(client, db, factory, inline_jobs):
+    factory.staff("super_admin", "root")
+    ev = _build(db, factory)
+    login(client, "root")
+    pkg = client.get(f"/api/event-transfer/export/{ev.id}").content
+    for up in (_upload(client, pkg), _upload_direct(client, pkg)):                                        # por la aplicación (sin CORS) y directo (grandes)
+        assert client.post("/api/event-transfer/import/inspect", json={"token": up}).json()["event_code"] == ev.event_code
+    assert client.post("/api/event-transfer/upload", files={"file": ("x.txt", b"hola", "text/plain")}).status_code == 400                # solo .zip
+    assert client.post("/api/event-transfer/upload", files={"file": ("x.zip", b"", "application/zip")}).status_code == 400                # vacío
+    js = client.get("/static/js/event-transfer.js").text
+    assert '"/api/event-transfer/upload"' in js and "SMALL_UPLOAD" in js and "CORS del bucket" in js                                     # el asistente usa la subida por la app para los chicos
