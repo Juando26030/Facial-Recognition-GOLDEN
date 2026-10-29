@@ -6,6 +6,7 @@
     <title>Eventos | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <style>
@@ -72,6 +73,9 @@
       {% endif %}
     </div>
 
+    {% if staff_role == "super_admin" %}
+    <div style="margin:-0.6rem 0 1rem;"><button type="button" class="small-btn primary" data-import-event title="Crear un evento nuevo a partir de un paquete exportado de otro entorno">📥 Importar evento</button></div>
+    {% endif %}
     <div id="eventsList"></div>
   </div>
 </main>
@@ -97,6 +101,7 @@ function eventCard(e) {
           ).join("")}
         </select>
         <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
+        ${STAFF_ROLE === "super_admin" ? `<button type="button" class="small-btn" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">📦 Exportar</button>` : ""}
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
       </div>
     </div></div>

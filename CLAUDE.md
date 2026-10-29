@@ -35,6 +35,7 @@ app/formlib.py         lógica pura de formularios; app/formsvc.py lo que toca l
 app/ops.py             estado del sistema; app/ops_runner.py Job horario (respaldos, purga, cola, precalentamiento: app/warmup.py)
 app/appmode.py         APP_MODE all|publico|web|biometria (app/entrypoints/); qué rutas sirve cada servicio
 app/crypto.py, privacy.py   cifrado del rostro (FACE_ENCRYPTION_KEY) y retención/purga biométrica
+app/event_transfer.py, event_transfer_jobs.py   exportar/importar un evento completo entre entornos (docs/18_EXPORTAR_EVENTOS.md); solo super_admin
 static/js/             app.js (kiosco), directory.js, toast.js, form-render.js, badge-render.js, …
 templates/             páginas Jinja2; alembic/versions/ migraciones; tests/ pytest (+ tests/js)
 scripts/               create_staff_user, bench_jitters, purge_biometrics, neon_app_role, migrate_db_to_neon, migrate_files_to_gcs, …

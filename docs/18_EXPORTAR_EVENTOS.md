@@ -1,6 +1,6 @@
 # 18 · Exportar e importar eventos (diseño e inventario)
 
-Rama `producto/exportar-evento` (cortada de `main` = `6c71cc3`, 28-oct-2026). Estado: **F1 hecha** (exportar/importar sin biometría ni archivos: `app/event_transfer.py`, `app/routers/event_transfer.py`, `scripts/event_export.py`, `scripts/event_import.py`, migración `0074_event_transfer`). F2–F5 pendientes.
+Rama `producto/exportar-evento` (cortada de `main` = `6c71cc3`, 28-oct-2026). Estado: **F0–F5 hechas** (28-oct-2026): motor (`app/event_transfer.py`), trabajos en segundo plano (`app/event_transfer_jobs.py`), endpoints (`app/routers/event_transfer.py`, solo super_admin), interfaz (`static/js/event-transfer.js`), scripts `scripts/event_export.py` y `scripts/event_import.py`, y migraciones `0074_event_transfer` y `0075_transfer_jobs` (aditivas).
 Objetivo: sacar un evento COMPLETO de un entorno (staging, producción o servidor local) y crearlo en otro quedando igual: configuración, parámetros, campos, plantilla de escarapela, ajustes de impresión, formularios, ruleta, personas, registros con sus horas y resultados.
 Reglas que mandan sobre todo lo de abajo: `CLAUDE.md` (endpoints `def`, archivos solo por `app/storage.py`, lo largo por `app/jobs.py` o Cloud Run Job, nada de datos personales en logs, horas en UTC, compatible con el pooler de Neon, revision Alembic ≤ 32 caracteres) y la regla legal de biometría (L1–L4).
 
@@ -125,3 +125,25 @@ En la ficha del evento (Parámetros), botones «Exportar evento» e «Importar e
 | **F5** | informe «Origen vs Destino» y prueba de oro |
 
 Pruebas: `pytest` con datos **sintéticos** en `golden_test` (nunca datos reales; el evento 20 real de staging NO se toca: el caso de prueba usa un evento sintético equivalente).
+
+## 4. Cómo se usa (F4)
+
+**Interfaz (solo `super_admin`):**
+- **Exportar:** en «Clientes» (dentro de cada cliente, en la fila de cada evento) y en «Eventos» (en cada tarjeta) hay un botón **📦 Exportar**. El asistente ofrece incluir biometría (apagado por defecto; pide una frase de transporte de 8+ caracteres que NO se guarda), genera el paquete en segundo plano con barra de avance y entrega un enlace de descarga firmado que dura 5 minutos. El `.zip` se borra del servidor a las 24 h.
+- **Importar:** en «Clientes», cada cliente tiene **📥 Importar evento** (el cliente ya viene elegido); en «Eventos» hay uno general donde se elige el cliente. Pasos: subir el paquete (subida directa) → revisión → código y nombre del evento nuevo, «conservar el estado original» (apagada, con aviso) y, si el paquete trae biometría, su frase → **simulacro** (no escribe nada: conteos, omitidas, personas nuevas/existentes/suprimidas, archivos, avisos) → **importar de verdad** → informe **«Origen vs Destino»** → **confirmar** el estado si el evento quedó en espera. Todo queda en la bitácora (quién, cuándo, evento y filas; sin datos personales).
+
+**Endpoints:** `POST /api/event-transfer/export/start`, `GET …/jobs/{n}`, `GET …/download/{n}?t=`, `POST …/upload-url`, `POST …/import/inspect`, `POST …/import/start` (`dry_run` true/false), `POST …/imports/{n}/confirm`, `GET …/log`; y los de un paso de F1 (`export/{id}`, `import/dry-run`, `import`) para scripts y pruebas.
+
+**Línea de comandos:** `python scripts/event_export.py --event-code X --out evento.zip` y `python scripts/event_import.py evento.zip --new-code Y --new-name "…" [--dry-run]` (mismo motor).
+
+## 5. Verificación realizada
+
+- **Pruebas** (`tests/test_event_transfer.py`, 28): exportar (huellas, sin biometría ni cuentas), simulacro que no deja nada, importar creando un evento nuevo, no sobrescribir, personas existentes y suprimidas, personal sin cuenta, sin efectos secundarios, pagos históricos, evento en espera y congelamiento, archivos (misma imagen reutilizada, otra distinta con otro nombre, fallo a medias sin huérfanos), importar a otro cliente, biometría (frase, solo adultos con consentimiento, re-cifrado con la llave del destino), descarga firmada y borrado a las 24 h, flujo completo del asistente y la **prueba de oro** (exportar → importar en base vacía → exportar: paquetes equivalentes y archivos byte a byte iguales).
+- **Navegador** (base de demostración con 8 000 personas sintéticas): exportar, subir, simulacro e importar tardan 1–2 s cada uno; origen y destino iguales.
+- **Migraciones 0074 y 0075:** probadas bajando y subiendo sobre una copia con datos sintéticos; los conteos de las tablas previas no cambian.
+
+## 6. Límites conocidos
+
+- Un solo evento por paquete. El paquete se arma en memoria del servicio (límite por archivo 100 MB y 512 MB por paquete, configurables con `EVENT_TRANSFER_MAX_FILE_MB` y `EVENT_TRANSFER_MAX_ZIP_MB`).
+- La importación sobre el MISMO evento («solo lo nuevo» del modo local, §2.10) sigue como diseño; no se construyó.
+- Una persona que ya existe en el destino no se actualiza (se informa cuántas difieren).

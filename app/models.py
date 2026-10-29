@@ -1013,6 +1013,11 @@ class EventTransferLog(Base):
     counts_json = Column(Text, nullable=True)
     options_json = Column(Text, nullable=True)
     state_json = Column(Text, nullable=True)                # importación en espera: el estado original que se aplica al confirmar
+    stage = Column(String(60), nullable=True)               # 0075: etapa del trabajo en segundo plano
+    progress = Column(Integer, nullable=False, default=0, server_default='0')
+    result_json = Column(Text, nullable=True)               # informe final (conteos y avisos, sin datos personales) o el mensaje de error
+    file_key = Column(String(300), nullable=True)           # el .zip generado en el almacenamiento (se borra a las 24 h)
+    finished_at = Column(DateTime, nullable=True)
 
 
 class EventImportActor(Base):

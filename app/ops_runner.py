@@ -202,12 +202,13 @@ def warmup() -> str:
 
 
 def purge_reports() -> str:
-    """Borra los reportes Excel de Estadísticas que ya vencieron (duran una hora; ver app/report_jobs.py)."""
+    """Borra los reportes Excel de Estadísticas que ya vencieron (duran una hora; ver app/report_jobs.py) y los paquetes de exportar evento de más de 24 h (app/event_transfer_jobs.py)."""
     from app.database import SessionLocal
-    from app import bulk_steps
+    from app import bulk_steps, event_transfer_jobs
     from app.report_jobs import purge_expired
     with SessionLocal() as db:
-        return f"{purge_expired(db)} reporte(s) vencido(s) y {bulk_steps.purge_expired(db)} carga(s) abandonada(s) borrados"
+        return (f"{purge_expired(db)} reporte(s) vencido(s), {bulk_steps.purge_expired(db)} carga(s) abandonada(s) y "
+                f"{event_transfer_jobs.purge_expired(db)} paquete(s) de evento (a las 24 h) borrados")
 
 
 def hourly(now=None) -> dict:

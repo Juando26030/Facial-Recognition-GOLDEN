@@ -339,3 +339,360 @@ def test_command_line_scripts_use_the_same_engine(db, factory, tmp_path, capsys)
     assert db.query(m.Event).filter_by(event_code="CLI-1").count() == 1
     assert _script("event_import").main([str(out)]) == 3                                       # mismo código y nombre: conflicto, código de salida 3
     assert _script("event_export").main(["--event-code", "NO-EXISTE", "--out", str(tmp_path / "x.zip")]) == 2
+
+
+# ------------------------------------------------------------------------------------------------ F2: archivos del storage
+def _files_event(db, factory):
+    from app.storage import badge_asset_key, form_file_key, get_storage, key_of
+    ev = _build(db, factory)
+    st = get_storage()
+    t = ev.tenant_id
+    st.put(badge_asset_key(t, "fondo.png"), b"PNG-FONDO")
+    st.put(badge_asset_key(t, "logo-form.png"), b"PNG-LOGO-FORM")
+    st.put(badge_asset_key(t, "no-referenciada.png"), b"X")
+    tpl = db.query(m.BadgeTemplate).filter_by(event_id=ev.id).one()
+    tpl.background_type, tpl.background_value = "image", f"/api/badge-assets/{t}/fondo.png"
+    form = db.query(m.WebForm).filter_by(event_id=ev.id).one()
+    form.design_json = json.dumps({"theme": {"logo": f"{t}/logo-form.png"}})
+    st.put(form_file_key(t, form.id, "cv.pdf"), b"%PDF-CV")
+    st.put(key_of(t, "signatures", ev.id, "1001__firma.png"), b"FIRMA")
+    st.put(key_of(t, "event_docs", ev.id, "doc1.pdf"), b"%PDF-DOC")
+    db.add(m.EventDocument(event_id=ev.id, name="Contrato", original_filename="contrato.pdf", stored_path=key_of(t, "event_docs", ev.id, "doc1.pdf"), mime_type="application/pdf", size_bytes=8))
+    st.put(key_of(t, "event_expenses", ev.id, "ev1.png"), b"EVIDENCIA")
+    db.add(m.EventExpense(event_id=ev.id, category="Logística", responsible="Ana", amount=1500, evidence_path=key_of(t, "event_expenses", ev.id, "ev1.png"), evidence_name="ev1.png"))
+    st.put(key_of(t, "event_logos", "abc.png"), b"LOGO-EVENTO")
+    ev.logo_mode, ev.logo_path = "custom", key_of(t, "event_logos", "abc.png")
+    st.put(key_of(t, "event_reports", "informe.pdf"), b"%PDF-INFORME")
+    ev.report_pdf_path = key_of(t, "event_reports", "informe.pdf")
+    db.commit()
+    return ev
+
+
+def test_export_carries_the_referenced_files_by_hash_and_skips_the_rest(db, factory):
+    ev = _files_event(db, factory)
+    data, manifest = et.export_event(db, ev, staff_username="root")
+    roles = sorted(f["role"] for f in manifest["files"])
+    assert roles == ["badge_asset", "badge_asset", "event_doc", "expense", "form_file", "logo", "report", "signature"] and manifest["includes_files"] is True
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    assert all(f"files/{f['sha256']}" in zf.namelist() for f in manifest["files"])
+    assert b"X" not in [zf.read(f"files/{f['sha256']}") for f in manifest["files"]]            # la imagen que ningún diseño usa no viaja
+
+
+def test_import_writes_the_files_under_the_new_ids_and_rewrites_design_references(db, factory):
+    from app.storage import badge_asset_key, form_file_key, get_storage, key_of
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    st = get_storage()
+    dry = et.import_package(db, data, new_event_code="F2-DRY", new_name="Dry", dry_run=True)
+    assert dry["ok"] and dry["files"]["planned"] == 6 and dry["files"]["written"] == 0           # el simulacro solo cuenta; badge_asset ya existe igual (misma huella): no se vuelve a escribir (por eso son 6 y no 8)
+    assert not st.list(key_of(ev.tenant_id, "signatures", "9999"))
+    rep = et.import_package(db, data, new_event_code="F2-1", new_name="Con archivos", dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="F2-1").one()
+    t = new.tenant_id
+    assert rep["files"]["written"] == rep["files"]["planned"] == 6
+    form = db.query(m.WebForm).filter_by(event_id=new.id).one()
+    assert st.get(form_file_key(t, form.id, "cv.pdf")) == b"%PDF-CV"
+    assert st.get(key_of(t, "signatures", new.id, "1001__firma.png")) == b"FIRMA"
+    doc = db.query(m.EventDocument).filter_by(event_id=new.id).one()
+    assert doc.stored_path != db.query(m.EventDocument).filter_by(event_id=ev.id).one().stored_path and st.get(doc.stored_path) == b"%PDF-DOC" and f"/{new.id}/" in doc.stored_path
+    exp = db.query(m.EventExpense).filter_by(event_id=new.id).one()
+    assert st.get(exp.evidence_path) == b"EVIDENCIA" and exp.evidence_name == "ev1.png"
+    assert new.logo_mode == "custom" and st.get(new.logo_path) == b"LOGO-EVENTO" and new.logo_path != ev.logo_path
+    assert st.get(new.report_pdf_path) == b"%PDF-INFORME" and f"/{new.id}/" in new.report_pdf_path
+    tpl = db.query(m.BadgeTemplate).filter_by(event_id=new.id).one()
+    assert tpl.background_value == f"/api/badge-assets/{t}/fondo.png" and st.get(badge_asset_key(t, "fondo.png")) == b"PNG-FONDO"
+
+
+def test_a_different_image_with_the_same_name_gets_a_new_name_and_the_design_follows(db, factory):
+    from app.storage import badge_asset_key, get_storage
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    st = get_storage()
+    st.put(badge_asset_key(ev.tenant_id, "fondo.png"), b"OTRA-IMAGEN-DISTINTA")                 # en el destino ya hay OTRA con ese nombre
+    rep = et.import_package(db, data, new_event_code="F2-2", new_name="Nombre choca", dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="F2-2").one()
+    tpl = db.query(m.BadgeTemplate).filter_by(event_id=new.id).one()
+    assert tpl.background_value != f"/api/badge-assets/{ev.tenant_id}/fondo.png" and tpl.background_value.startswith(f"/api/badge-assets/{ev.tenant_id}/fondo-")
+    assert st.get(badge_asset_key(ev.tenant_id, "fondo.png")) == b"OTRA-IMAGEN-DISTINTA"        # la del destino NO se pisa
+    assert st.get(badge_asset_key(ev.tenant_id, tpl.background_value.rsplit("/", 1)[-1])) == b"PNG-FONDO"
+    assert any("otro nombre" in w for w in rep["warnings"])
+
+
+def test_a_failure_while_writing_files_leaves_no_event_and_no_orphan_files(db, factory, monkeypatch):
+    from app import storage as storage_mod
+    from app.storage import get_storage, key_of
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    st = get_storage()
+    real_put, calls = st.put, {"n": 0}
+
+    def flaky(key, content):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("disco lleno")
+        return real_put(key, content)
+    monkeypatch.setattr(st, "put", flaky)
+    with pytest.raises(RuntimeError):
+        et.import_package(db, data, new_event_code="F2-FALLA", new_name="Falla", dry_run=False)
+    assert db.query(m.Event).filter_by(event_code="F2-FALLA").count() == 0
+    new_prefix = key_of(ev.tenant_id, "event_docs")
+    assert [k for k in st.list(new_prefix) if k.rsplit("/", 2)[-2] != str(ev.id)] == []        # nada huérfano de la importación fallida
+    assert storage_mod is not None
+
+
+def test_import_into_another_client_moves_everything_to_that_client(db, factory):
+    from app.storage import get_storage, key_of
+    ev = _files_event(db, factory)
+    data, _ = et.export_event(db, ev)
+    other = factory.tenant("otro")
+    rep = et.import_package(db, data, new_event_code="OTRO-1", new_name="En otro cliente", target_tenant_id=other.id, dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="OTRO-1").one()
+    assert rep["ok"] and new.tenant_id == "otro"
+    assert db.query(m.User).filter_by(tenant_id="otro").count() == 3 and db.query(m.EventAttendee).filter_by(event_id=new.id, tenant_id="otro").count() == 3
+    assert db.query(m.AccessLog).filter_by(event_id=new.id, tenant_id="otro").count() == 2
+    assert get_storage().get(key_of("otro", "signatures", new.id, "1001__firma.png")) == b"FIRMA"
+    bad = et.import_package(db, data, new_event_code="OTRO-2", new_name="Cliente inexistente", target_tenant_id="no-existe", dry_run=True)
+    assert not bad["ok"] and "cliente elegido no existe" in bad["conflicts"][0]
+
+
+# ------------------------------------------------------------------------------------------------ F3: biometría opcional cifrada
+def _bio_event(db, factory):
+    from app import crypto
+    from app.storage import get_storage, photo_key
+    ev = _build(db, factory)
+    st = get_storage()
+    for cid in ("1001", "1002", "1003"):
+        st.put(photo_key(ev.tenant_id, cid), crypto.encrypt_bytes(f"JPEG-{cid}".encode()))
+    u3 = db.query(m.User).filter_by(id="1003", tenant_id=ev.tenant_id).one()
+    u3.birth_date = datetime(2015, 3, 1).date()                                              # menor de edad
+    db.commit()
+    consent.record(db, tenant_id=ev.tenant_id, user_id="1003", event_id=ev.id, version="v1.1_test", legal_text_hash="b" * 64, accepted=True, adult=True, reason="consent")
+    db.commit()
+    return ev
+
+
+def _wipe_event_data(db):
+    from sqlalchemy import text as _t
+    for t in reversed(m.Base.metadata.sorted_tables):
+        if t.name not in ("tenants", "event_transfer_log"):
+            if t.name == "audit_consent_logs":
+                db.execute(_t("ALTER TABLE audit_consent_logs DISABLE TRIGGER USER"))
+                db.execute(t.delete())
+                db.execute(_t("ALTER TABLE audit_consent_logs ENABLE TRIGGER USER"))
+            else:
+                db.execute(t.delete())
+    db.commit()
+
+
+def test_biometrics_need_a_passphrase_travel_encrypted_and_never_in_clear(db, factory, monkeypatch):
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+    ev = _bio_event(db, factory)
+    with pytest.raises(et.TransferError, match="al menos"):
+        et.export_event(db, ev, include_biometrics=True, passphrase="corta")
+    data, manifest = et.export_event(db, ev, include_biometrics=True, passphrase="frase de transporte 123")
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    blob = b"".join(zf.read(n) for n in zf.namelist())
+    assert manifest["options"]["include_biometrics"] is True and manifest["tables"]["biometrics"]["count"] == 3 and "biometric_photo" in {f["role"] for f in manifest["files"]}
+    assert b"JPEG-1001" not in blob and b"VECTOR-SECRETO" not in blob and b"frase de transporte" not in blob       # ni foto, ni vector, ni la frase viajan en claro
+    plain, _ = et.export_event(db, ev)                                                                           # sin la opción: nada biométrico
+    assert "biometrics" not in json.loads(zipfile.ZipFile(io.BytesIO(plain)).read("manifest.json"))["tables"]
+    with pytest.raises(et.TransferError, match="frase de transporte"):
+        et.import_package(db, data, new_event_code="B-0", new_name="Sin frase")
+    with pytest.raises(et.TransferError, match="no es la correcta"):
+        et.import_package(db, data, new_event_code="B-0", new_name="Frase mala", transport_passphrase="otra frase distinta")
+    assert db.query(m.Event).count() == 1
+
+
+def test_import_with_biometrics_only_for_adults_with_accepted_consent_and_reencrypts_with_the_destination_key(db, factory, monkeypatch):
+    from cryptography.fernet import Fernet
+    from app import crypto
+    from app.storage import get_storage, photo_key
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+    key_a, key_b = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", key_a)
+    ev = _bio_event(db, factory)
+    data, _ = et.export_event(db, ev, include_biometrics=True, passphrase="frase de transporte 123")
+    st = get_storage()
+    _wipe_event_data(db)
+    for k in list(st.list("")):
+        st.delete(k)
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", key_b)                                                             # el destino tiene OTRA llave
+    rep = et.import_package(db, data, new_event_code="B-1", new_name="Con biometría", transport_passphrase="frase de transporte 123", dry_run=False)
+    assert rep["ok"] and rep["biometrics"]["in_package"] == 3 and rep["biometrics"]["imported"] == 1
+    assert rep["biometrics"]["skipped"] == {"sin consentimiento aceptado registrado": 1, "menor de 18 años": 1}   # 1002 sin consentimiento; 1003 menor
+    new = db.query(m.Event).filter_by(event_code="B-1").one()
+    u1 = db.query(m.User).filter_by(id="1001", tenant_id=new.tenant_id).one()
+    assert u1.face_encoding == "VECTOR-SECRETO" and u1.is_biometric_enabled is True and u1.face_captured_at == datetime(2026, 10, 19, 8, 0, 0)        # fechas ORIGINALES (retención)
+    for cid in ("1002", "1003"):
+        u = db.query(m.User).filter_by(id=cid, tenant_id=new.tenant_id).one()
+        assert u.face_encoding is None and u.is_biometric_enabled is False and not st.exists(photo_key(new.tenant_id, cid))
+    raw = st.get(photo_key(new.tenant_id, "1001"))
+    assert raw != b"JPEG-1001" and raw.startswith(crypto.FILE_MAGIC) and crypto.decrypt_bytes(raw) == b"JPEG-1001"       # cifrada con la llave del destino
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", key_a)
+    assert crypto.decrypt_bytes(raw) is None                                                                       # y NO con la del origen
+    assert db.query(m.EventTransferLog).filter_by(kind="import").count() == 1
+
+
+def test_import_can_skip_the_biometrics_of_a_package_that_carries_them(db, factory, monkeypatch):
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+    ev = _bio_event(db, factory)
+    data, _ = et.export_event(db, ev, include_biometrics=True, passphrase="frase de transporte 123")
+    _wipe_event_data(db)
+    rep = et.import_package(db, data, new_event_code="B-2", new_name="Sin biometría", import_biometrics=False, dry_run=False)
+    assert rep["ok"] and rep["biometrics"]["imported"] == 0
+    assert db.query(m.User).filter(m.User.face_encoding.isnot(None)).count() == 0
+
+
+# ------------------------------------------------------------------------------------------------ F4: trabajos en segundo plano, descarga firmada, bitácora y purga
+@pytest.fixture()
+def inline_jobs(monkeypatch):
+    monkeypatch.setenv("EVENT_TRANSFER_INLINE", "1")
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+
+
+def _upload(client, pkg: bytes) -> str:
+    r = client.post("/api/event-transfer/upload-url", json={"filename": "evento.zip", "size": len(pkg)})
+    assert r.status_code == 200, r.text
+    up = r.json()
+    put = client.put(up["url"], content=pkg, headers={"Content-Type": "application/zip"})
+    assert put.status_code in (200, 201, 204), put.text
+    return up["token"]
+
+
+def test_export_job_download_is_signed_short_lived_and_purged_after_24_hours(client, db, factory, inline_jobs):
+    from datetime import timedelta
+    from app import event_transfer_jobs as jobs
+    from app.storage import get_storage
+    from app.timeutil import utcnow
+    factory.staff("super_admin", "root")
+    ev = _files_event(db, factory)
+    login(client, "root")
+    r = client.post("/api/event-transfer/export/start", json={"event_id": ev.id})
+    assert r.status_code == 200
+    job = r.json()
+    assert job["status"] == "done" and job["ready"] and job["progress"] == 100 and job["result"]["counts"]["access_logs"] == 2 and "download_url" in job
+    dl = client.get(job["download_url"])
+    assert dl.status_code == 200 and dl.headers["content-type"] == "application/zip" and dl.headers["cache-control"] == "no-store" and zipfile.ZipFile(io.BytesIO(dl.content)).testzip() is None
+    assert client.get(f"/api/event-transfer/download/{job['id']}?t=falso").status_code == 400                   # sin firma válida no hay descarga
+    token = job["download_url"].split("t=")[1]
+    assert client.get(f"/api/event-transfer/download/{job['id'] + 1}?t={token}").status_code in (403, 404)        # el enlace es de ESE trabajo
+    row = db.get(m.EventTransferLog, job["id"])
+    key = row.file_key
+    assert get_storage().exists(key) and jobs.purge_expired(db) == 0
+    row.finished_at = utcnow() - timedelta(hours=25)
+    db.commit()
+    assert jobs.purge_expired(db) == 1 and not get_storage().exists(key)                                        # la purga de las 24 h borra el .zip del almacenamiento
+    again = client.get(f"/api/event-transfer/jobs/{job['id']}").json()
+    assert again["ready"] is False and "download_url" not in again
+
+
+def test_biometric_export_through_the_api_needs_a_long_enough_passphrase_and_never_stores_it(client, db, factory, inline_jobs):
+    factory.staff("super_admin", "root")
+    ev = _bio_event(db, factory)
+    login(client, "root")
+    assert client.post("/api/event-transfer/export/start", json={"event_id": ev.id, "include_biometrics": True, "passphrase": "corta"}).status_code == 400
+    ok = client.post("/api/event-transfer/export/start", json={"event_id": ev.id, "include_biometrics": True, "passphrase": "frase de transporte 123"}).json()
+    assert ok["status"] == "done" and ok["result"]["biometrics"] is True
+    assert all("frase de transporte" not in (r.options_json or "") + (r.result_json or "") for r in db.query(m.EventTransferLog))      # la frase no se guarda en ninguna parte
+    assert client.get(f"/api/event-transfer/export/{ev.id}?include_biometrics=true").status_code == 400                              # el atajo de un paso no lleva biometría
+
+
+def test_import_wizard_flow_upload_inspect_dry_run_import_confirm_and_fidelity(client, db, factory, inline_jobs):
+    factory.staff("super_admin", "root")
+    ev = _files_event(db, factory)
+    ev.status = "en_proceso"
+    db.commit()
+    login(client, "root")
+    pkg = client.get(f"/api/event-transfer/export/{ev.id}").content
+    token = _upload(client, pkg)
+    info = client.post("/api/event-transfer/import/inspect", json={"token": token}).json()
+    assert info["event_code"] == ev.event_code and info["counts"]["access_logs"] == 2 and info["files"] == 8 and info["has_biometrics"] is False
+    dry = client.post("/api/event-transfer/import/start", json={"token": token, "dry_run": True, "new_event_code": "W-1", "new_name": "Asistente"}).json()
+    assert dry["status"] == "done" and dry["result"]["dry_run"] is True and dry["result"]["tables"]["access_logs"]["imported"] == 2 and db.query(m.Event).count() == 1
+    conflict = client.post("/api/event-transfer/import/start", json={"token": token, "dry_run": False}).json()           # mismo código y nombre
+    assert conflict["status"] == "error" and len(conflict["result"]["conflicts"]) == 2
+    real = client.post("/api/event-transfer/import/start", json={"token": token, "dry_run": False, "new_event_code": "W-1", "new_name": "Asistente"}).json()
+    assert real["status"] == "done" and real["event_id"] and real["result"]["pending_confirm"] is True
+    fid = real["result"]["fidelity"]
+    # misma base que el origen: el pago (referencia única), su reembolso y el consentimiento (mismo id) YA existen aquí y se omiten; todo lo demás queda IGUAL
+    assert sorted(fid["different_tables"]) == ["audit_consent_logs", "form_payments", "form_refunds"] and fid["all_equal"] is False
+    assert "ya existe" in fid["tables"]["form_payments"]["note"] and "ya estaba registrado" in fid["tables"]["audit_consent_logs"]["note"]
+    assert fid["tables"]["access_logs"] == {"source": 2, "destination": 2, "equal": True, "note": ""} and fid["tables"]["users"]["equal"] is True
+    assert db.get(m.Event, real["event_id"]).status == "creado"
+    c = client.post(f"/api/event-transfer/imports/{real['result']['import_id']}/confirm")
+    assert c.status_code == 200 and c.json()["status"] == "en_proceso"
+    assert client.post(f"/api/event-transfer/imports/{real['result']['import_id']}/confirm").status_code == 400
+    log = client.get("/api/event-transfer/log").json()
+    assert {r["kind"] for r in log} == {"export", "import"} and all(set(r) <= {"id", "at", "kind", "by", "event_id", "event_code", "status", "rows", "pending_confirm"} for r in log)   # sin datos personales
+    assert client.post("/api/event-transfer/import/start", json={"token": "token-falso", "dry_run": True}).status_code == 400
+
+
+def test_upload_is_bound_to_the_staff_who_asked_for_it(client, db, factory, inline_jobs):
+    factory.staff("super_admin", "root")
+    factory.staff("super_admin", "root2")
+    ev = _build(db, factory)
+    login(client, "root")
+    token = _upload(client, client.get(f"/api/event-transfer/export/{ev.id}").content)
+    client.get("/logout")
+    login(client, "root2")
+    assert client.post("/api/event-transfer/import/inspect", json={"token": token}).status_code == 400                 # el token es de OTRA persona
+
+
+def test_gold_test_export_import_export_gives_equivalent_packages(db, factory, inline_jobs):
+    """La prueba de oro (docs/18 §2.8): exportar un evento sintético completo, importarlo en una base VACÍA, volver a exportarlo y comprobar que los dos paquetes son equivalentes salvo ids y metadatos."""
+    from app.storage import get_storage
+    ev = _files_event(db, factory)
+    ev.status = "finalizado"
+    db.commit()
+    code = ev.event_code
+    a, manifest_a = et.export_event(db, ev)
+    _wipe_event_data(db)
+    for k in list(get_storage().list("")):
+        get_storage().delete(k)
+    rep = et.import_package(db, a, dry_run=False, keep_original_state=True)                               # mismo código y nombre: la base está vacía
+    et.confirm_import(db, rep["import_id"])                                                              # el estado original de los formularios se aplica al confirmar
+    new = db.query(m.Event).filter_by(event_code=code).one()
+    b, manifest_b = et.export_event(db, new)
+    _, rows_a, _ = et.read_package(a)
+    _, rows_b, _ = et.read_package(b)
+    assert et.normalized_digests(rows_a) == et.normalized_digests(rows_b)
+    assert {k: v["count"] for k, v in manifest_a["tables"].items()} == {k: v["count"] for k, v in manifest_b["tables"].items()}
+    assert sorted((f["role"], f["sha256"]) for f in manifest_a["files"]) == sorted((f["role"], f["sha256"]) for f in manifest_b["files"])      # los archivos son byte a byte los mismos
+    assert rep["ok"] and et.fidelity_report(db, new.id, a, rep)["all_equal"] is True
+
+
+def test_fidelity_report_flags_what_did_not_travel(db, factory, inline_jobs):
+    ev = _build(db, factory)
+    a, _ = et.export_event(db, ev)
+    db.add(m.SuppressedPerson(tenant_id=ev.tenant_id, cedula_hash=consent.cedula_hash("1003"), suppressed_at=datetime(2026, 10, 1)))
+    db.commit()
+    rep = et.import_package(db, a, new_event_code="FID-1", new_name="Fidelidad", dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="FID-1").one()
+    fid = et.fidelity_report(db, new.id, a, rep)
+    assert fid["all_equal"] is False and "event_attendees" in fid["different_tables"]
+    assert "persona suprimida" in fid["tables"]["event_attendees"]["note"] and fid["tables"]["event_attendees"]["source"] == 3 and fid["tables"]["event_attendees"]["destination"] == 2
+
+
+
+
+# ------------------------------------------------------------------------------------------------ F4: interfaz (botones y asistente)
+def test_buttons_are_painted_only_for_super_admin_and_the_wizard_script_is_valid_js(client, db, factory):
+    import subprocess
+    factory.staff("super_admin", "root")
+    factory.staff("admin", "adm")
+    for page in ("/clientes", "/eventos"):
+        login(client, "root")
+        html = client.get(page).text
+        assert "js/event-transfer.js" in html, page
+        client.get("/logout")
+        login(client, "adm")
+        assert "js/event-transfer.js" not in client.get(page).text, page                         # un admin no ve nada de esto
+        client.get("/logout")
+    login(client, "root")
+    clientes, eventos = client.get("/clientes").text, client.get("/eventos").text
+    assert 'data-import-event data-tenant-id="${esc(t.id)}"' in clientes and 'data-export-event="${e.id}"' in clientes                       # por cliente: importar; por evento: exportar
+    assert 'data-export-event="${e.id}"' in eventos and "data-import-event" in eventos
+    js = client.get("/static/js/event-transfer.js")
+    assert js.status_code == 200 and "/api/event-transfer/export/start" in js.text and "onclick" not in js.text                              # sin onclick inline
+    r = subprocess.run(["node", "--check", "static/js/event-transfer.js"], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
