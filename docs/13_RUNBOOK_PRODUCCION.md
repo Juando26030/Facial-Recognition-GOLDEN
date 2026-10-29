@@ -134,9 +134,9 @@ El repositorio es **público**: los runners de GitHub no consumen el presupuesto
 
 ---
 
-# Paso del 29-oct-2026 — exportar/importar eventos y arreglo de impresión (staging `821f929` → producción)
+# Paso del 29-oct-2026 — exportar/importar eventos y arreglo de impresión (staging `d53498e` → producción)
 
-Lo ejecuta **Juan David**; Claude no corre nada en la nube. Producción queda **igual que staging el 29-oct-2026**: el código de `821f929` (rama `migra/fase1-2`, probado en staging: CI y Cloud Run en verde, `/health` 200). El candidato es `candidato/produccion-29oct` (solo agrega documentación y scripts). Paquete: [`deploy/produccion_29oct/`](../deploy/produccion_29oct/). Parámetros de impresión inamovibles: [`IMPRESION_PARAMETROS_INAMOVIBLES.md`](IMPRESION_PARAMETROS_INAMOVIBLES.md).
+Lo ejecuta **Juan David**; Claude no corre nada en la nube. Producción queda **igual que staging el 29-oct-2026**: el código de `d53498e` (rama `migra/fase1-2`, probado en staging: CI y Cloud Run en verde, `/health` 200). El candidato es `candidato/produccion-29oct` (solo agrega documentación y scripts). Paquete: [`deploy/produccion_29oct/`](../deploy/produccion_29oct/). Parámetros de impresión inamovibles: [`IMPRESION_PARAMETROS_INAMOVIBLES.md`](IMPRESION_PARAMETROS_INAMOVIBLES.md).
 
 > **Nada de esto se ejecuta hasta que Juan David escriba exactamente «DESPLIEGA PRODUCCIÓN».** Armar el paquete no despliega nada.
 
@@ -145,7 +145,7 @@ Lo ejecuta **Juan David**; Claude no corre nada en la nube. Producción queda **
 | Pieza | Hoy | Después |
 |---|---|---|
 | `main` | `6c71cc3` (PR #2: producción del 28-oct) | el candidato `candidato/produccion-29oct` (avance directo: `6c71cc3` es su ancestro) |
-| Código de los 3 servicios y los Jobs | el de `6c71cc3` | el de `821f929` |
+| Código de los 3 servicios y los Jobs | el de `6c71cc3` | el de `d53498e` |
 | Base de datos | `0073_attendee_origin` | `0075_transfer_jobs` (migraciones 0074 y 0075, solo aditivas) |
 | `CONTINGENCY_ENABLED` | `1` | `1` (sin cambios) |
 | Configuración staging ↔ producción | ver §4 de este runbook | **sin diferencias nuevas** |
