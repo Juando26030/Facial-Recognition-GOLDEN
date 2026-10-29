@@ -87,6 +87,14 @@ for (const [name, w, h, ink] of CASES) {
   assert.ok(Math.abs(wr - LC.USB_SCALE) < 0.02 && Math.abs(hr - LC.USB_SCALE) < 0.02 && Math.abs(small.height / full.height - LC.USB_SCALE) < 0.01, "la tinta y el largo del USB miden USB_SCALE: " + wr + " " + hr);
   assert.ok(Math.abs((b.left) - (out.tapeDots - 1 - b.right)) <= (Math.abs(a.left - (out.tapeDots - 1 - a.right)) + 2), "sigue centrada a lo ancho");
 }
+// avance de la QL (29-oct-2026): se descuenta del blanco del bitmap, así bitmap + avance = largo y márgenes del bitmap de Chrome; nunca se come tinta
+for (const [name, w, h, ink] of CASES.slice(0, 2)) {
+  const p = prefs(), out = LC.composeBitmap(shotOf(w, h, ink), w, h, p), f = LC.fitToPaper(out, LC.USB_SCALE), feed = QL.mmToDots(p.feedMm), t = LC.trimBlankEnds(f, feed, feed);
+  const a = bbox(f.bitmap, out.tapeDots, f.height), b = bbox(t.bitmap, out.tapeDots, t.height);
+  assert.strictEqual(t.height, f.height - Math.min(feed, a.top) - Math.min(feed, f.height - 1 - a.bottom), name + ": se quitó el avance al inicio y al final");
+  assert.strictEqual(b.top, a.top - Math.min(feed, a.top), name + ": la tinta no se tocó (misma tinta, menos blanco)");
+  assert.strictEqual(b.bottom - b.top, a.bottom - a.top, name + ": mismo alto de tinta");
+}
 // una etiqueta de hasta 96 mm NO cambia con el tope (las de 100 mm de plantilla miden 95,08): el trabajo USB es byte a byte el de siempre
 {
   const p = prefs(), out = LC.composeBitmap(shotOf(100, 62, { x: 30, y: 10, w: 40, h: 30 }), 100, 62, p), f = LC.fitToPaper(out);

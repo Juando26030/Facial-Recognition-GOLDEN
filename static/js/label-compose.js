@@ -66,6 +66,18 @@
     return { bitmap: dst, width: W, height: nh, scale: scale };
   }
 
+  /* El margen de avance (feedMm) lo agrega la impresora arriba y abajo SOLO por USB; en la ventana de Chrome no existe. Para que la etiqueta mida lo mismo por los dos caminos se le quita al bitmap
+     esa cantidad de blanco al inicio y al final (nunca tinta): bitmap recortado + avance = el bitmap original. 29-oct-2026: el celular salía con más margen arriba (vertical) y más largo (horizontal). */
+  function trimBlankEnds(out, leadDots, tailDots) {
+    var W = out.width || out.tapeDots, H = out.height, bm = out.bitmap, first = -1, last = -1, y, x;
+    for (y = 0; y < H && first < 0; y++) for (x = 0; x < W; x++) if (bm[y * W + x]) { first = y; break; }
+    if (first < 0) return { bitmap: bm, height: H };
+    for (y = H - 1; y > first && last < 0; y--) for (x = 0; x < W; x++) if (bm[y * W + x]) { last = y; break; }
+    if (last < 0) last = first;
+    var from = Math.min(Math.max(0, Math.round(leadDots)), first), to = H - Math.min(Math.max(0, Math.round(tailDots)), H - 1 - last);
+    return from === 0 && to === H ? { bitmap: bm, height: H } : { bitmap: bm.subarray(from * W, to * W), height: to - from };
+  }
+
   function round2(n) { return Math.round(n * 100) / 100; }
   function pageSpec(out) {
     var w = round2(out.tapeDots / DPM), h = round2(out.height / DPM);
@@ -87,5 +99,5 @@
     return canvas.toDataURL("image/png");
   }
 
-  return { DPM: DPM, MAX_IMG_MM: MAX_IMG_MM, USB_SCALE: USB_SCALE, renderShot: renderShot, composeBitmap: composeBitmap, fitToPaper: fitToPaper, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
+  return { DPM: DPM, MAX_IMG_MM: MAX_IMG_MM, USB_SCALE: USB_SCALE, renderShot: renderShot, composeBitmap: composeBitmap, fitToPaper: fitToPaper, trimBlankEnds: trimBlankEnds, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
 });
