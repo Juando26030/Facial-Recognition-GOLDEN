@@ -6,6 +6,7 @@
     <title>Clientes - Cuentas | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <style>
@@ -81,6 +82,7 @@
 
 <script>
 const isAdmin = "{{ staff_role }}" === "admin" || "{{ staff_role }}" === "super_admin";
+const isSuper = "{{ staff_role }}" === "super_admin";
 // Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes/eventos pasó a ser comercial+ — un
 // coordinador ya NO puede (sí puede seguir editando/gestionando los que ya existen).
 const canCreate = "{{ staff_role }}" !== "coordinador";
@@ -114,6 +116,7 @@ function renderTenants(tenantsData) {
       </div>
       <div class="tenant-body" data-tenant-body>
         ${canCreate ? `<a href="/clientes/${t.id}/nuevo-evento" class="small-btn primary" style="display:inline-block; margin:1rem 0; text-decoration:none;">+ Nuevo evento</a>` : ''}
+        ${isSuper ? `<button type="button" class="small-btn" style="margin:1rem 0 1rem 6px;" data-import-event data-tenant-id="${esc(t.id)}" data-tenant-name="${esc(t.name)}" title="Crear un evento nuevo de este cliente a partir de un paquete exportado de otro entorno">📥 Importar evento</button>` : ''}
         <input type="text" data-events-search placeholder="🔎 Buscar evento de este cliente/cuenta..." style="width:100%; padding:0.6rem 1rem; border:1px solid #ddd; border-radius:20px; font-size:0.85rem; margin-bottom:0.8rem;">
         <div data-events-container></div>
       </div>
@@ -141,6 +144,7 @@ function renderEventRows(events, el) {
       </div>
       <div style="display:flex; gap:6px; align-items:center;">
         <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
+        ${isSuper ? `<button type="button" class="small-btn" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">📦 Exportar</button>` : ""}
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
         <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
           ${Object.entries(STATUS_LABELS).map(([value, label]) =>

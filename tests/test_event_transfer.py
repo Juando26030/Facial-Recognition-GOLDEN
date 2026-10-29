@@ -673,3 +673,26 @@ def test_fidelity_report_flags_what_did_not_travel(db, factory, inline_jobs):
     assert "persona suprimida" in fid["tables"]["event_attendees"]["note"] and fid["tables"]["event_attendees"]["source"] == 3 and fid["tables"]["event_attendees"]["destination"] == 2
 
 
+
+
+# ------------------------------------------------------------------------------------------------ F4: interfaz (botones y asistente)
+def test_buttons_are_painted_only_for_super_admin_and_the_wizard_script_is_valid_js(client, db, factory):
+    import subprocess
+    factory.staff("super_admin", "root")
+    factory.staff("admin", "adm")
+    for page in ("/clientes", "/eventos"):
+        login(client, "root")
+        html = client.get(page).text
+        assert "js/event-transfer.js" in html, page
+        client.get("/logout")
+        login(client, "adm")
+        assert "js/event-transfer.js" not in client.get(page).text, page                         # un admin no ve nada de esto
+        client.get("/logout")
+    login(client, "root")
+    clientes, eventos = client.get("/clientes").text, client.get("/eventos").text
+    assert 'data-import-event data-tenant-id="${esc(t.id)}"' in clientes and 'data-export-event="${e.id}"' in clientes                       # por cliente: importar; por evento: exportar
+    assert 'data-export-event="${e.id}"' in eventos and "data-import-event" in eventos
+    js = client.get("/static/js/event-transfer.js")
+    assert js.status_code == 200 and "/api/event-transfer/export/start" in js.text and "onclick" not in js.text                              # sin onclick inline
+    r = subprocess.run(["node", "--check", "static/js/event-transfer.js"], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
