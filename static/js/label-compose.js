@@ -51,8 +51,11 @@
      del celular más larga y con otro margen que del computador. `fitToPaper` aplica al camino USB la MISMA cuenta (misma fórmula: escala = min(1, 96 mm / alto), centrado a lo ancho); la prueba
      tests/js/label_paths_check.js comprueba que la constante coincida con la de la ventana de impresión. Etiquetas de hasta 96 mm (las de 100 mm de plantilla miden 95,08) no cambian. */
   var MAX_IMG_MM = 96;
-  function fitToPaper(out) {
-    var scale = Math.min(1, (MAX_IMG_MM * DPM) / out.height);
+  /* Tamaño relativo del USB (29-oct-2026): medido con la MISMA escarapela impresa por los dos caminos, la del USB sale ~8 % más grande que la de la ventana de Chrome en la Brother (el controlador
+     de Windows no la imprime a 1:1). Se reduce el bitmap del USB por este factor para que las dos salgan del mismo tamaño; es la perilla de calibración (con la regla: nuevo = actual × medida Chrome / medida USB). */
+  var USB_SCALE = 0.92;
+  function fitToPaper(out, factor) {
+    var scale = Math.min(factor || 1, (MAX_IMG_MM * DPM) / out.height);
     if (scale >= 1) return { bitmap: out.bitmap, width: out.tapeDots, height: out.height, scale: 1 };
     var W = out.tapeDots, H = out.height, nw = Math.max(1, Math.round(W * scale)), nh = Math.max(1, Math.round(H * scale));
     var dst = new Uint8Array(W * nh), off = Math.floor((W - nw) / 2);
@@ -84,5 +87,5 @@
     return canvas.toDataURL("image/png");
   }
 
-  return { DPM: DPM, MAX_IMG_MM: MAX_IMG_MM, renderShot: renderShot, composeBitmap: composeBitmap, fitToPaper: fitToPaper, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
+  return { DPM: DPM, MAX_IMG_MM: MAX_IMG_MM, USB_SCALE: USB_SCALE, renderShot: renderShot, composeBitmap: composeBitmap, fitToPaper: fitToPaper, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
 });

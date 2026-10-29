@@ -19,6 +19,7 @@
   'use strict';
   const EID = window.EVENT_ID;
   const HEARTBEAT_MS = 10000;
+  const HOST_HEARTBEAT_MS = 2000;       // anfitrión: la cola (y «Imprimir pendientes») se refresca casi al instante
   const POLL_MS = 1500;
   const FOLLOW_MS = 1000;
   const BUSY_RETRY_MS = 4000;            // impresora tomada por otra pestaña de este equipo: se reintenta sola cada 4 s
@@ -48,11 +49,11 @@
   let pending = 0;                       // trabajos de este equipo pendientes de confirmar
   /* Cómo imprime este equipo (29-oct-2026): «usb» (impresora abierta por WebUSB), «dialog» (con la ventana de Chrome: lo DECLARA la persona con el control de la barra, recordado por equipo) o «none».
      Solo usb y dialog pueden atender a otros equipos; con «none» la barra avisa en vez de decir que la impresora está desconectada. */
-  let dialogDeclared = store.get('gw_print_dialog', '0') === '1';
+  const MOBILE = platform === 'Android' || platform === 'iOS';
+  let dialogDeclared = !MOBILE;                                 // un computador SIEMPRE imprime con la ventana de Chrome (no hay nada que marcar); un celular solo atiende con USB
   let printingPending = false;
   /* «Impresión compartida» (interruptor del evento): solo con ella se usa la impresión directa por USB, el latido, los trabajos y la Cola. Apagada, la impresión es la de siempre. */
   const SHARED = window.SHARED_PRINT_ENABLED !== false;
-  const MOBILE = platform === 'Android' || platform === 'iOS';
   /* PUESTO (Parámetros): «Puesto de impresión», «solo lector» y «Mostrar/Esconder la configuración». Lo demás que haya guardado (modo, calibración, ancho, giro, recorte…) se IGNORA:
      la etiqueta sale con los valores del evento y lo de ⚙️ de este equipo, como el domingo. */
   let isAdmin = false, isStation = false, stationCfg = null, recoveredUntil = 0;
@@ -67,7 +68,6 @@
   bar.innerHTML = '<span class="sp-dot" aria-hidden="true"></span><span class="sp-text">Impresión: comprobando…</span>' +
     '<button type="button" class="sp-btn" id="spConnect">🔌 Conectar impresora</button>' +
     '<button type="button" class="sp-btn" id="spPending" hidden>🖨️ Imprimir pendientes</button>' +
-    '<button type="button" class="sp-btn" id="spDialog" hidden aria-pressed="false">🖥️ Este equipo imprime con la ventana de Chrome</button>' +
     '<button type="button" class="sp-btn" id="spQueue">🧾 Cola</button>' +
     '<button type="button" class="sp-btn" id="spPrefs">⚙️ Impresión</button>' +
     '<button type="button" class="sp-btn" id="spTouch" aria-pressed="false">📱 Registro touch</button>' +
@@ -152,11 +152,11 @@
       msg = 'Este equipo imprime con la ventana de Chrome.' + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
       if (waitingCount()) { kind = 'warn'; msg = `Este equipo imprime con la ventana de Chrome; ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».`; }
     } else if (usb.denied) {
-      kind = 'warn'; msg = 'Este computador no puede abrir la impresora directamente (Windows usa su propio controlador): se imprime con la ventana de Chrome. Si este equipo va a imprimir para otros, marca «Este equipo imprime con la ventana de Chrome».';
-      if (route.serving) { kind = 'bad'; msg = `${route.serving} equipo(s) imprimen aquí y no tienes impresora: marca «Este equipo imprime con la ventana de Chrome» o conecta una por USB.`; }
+      kind = 'warn'; msg = 'Este computador no puede abrir la impresora directamente (Windows usa su propio controlador): se imprime con la ventana de Chrome.';
+      if (route.serving) { kind = 'bad'; msg = `${route.serving} equipo(s) imprimen aquí y no tienes impresora: conéctala por USB.`; }
     } else {
       kind = route.serving ? 'bad' : 'warn';
-      msg = route.serving ? `${route.serving} equipo(s) imprimen aquí y no tienes impresora: conéctala por USB o marca «Este equipo imprime con la ventana de Chrome».`
+      msg = route.serving ? `${route.serving} equipo(s) imprimen aquí y no tienes impresora: conéctala por USB.`
         : 'Sin impresora USB: se usará la impresión normal del navegador.';
     }
     if (pending) msg += ` · ${pending} por confirmar`;
@@ -170,10 +170,6 @@
     bar.querySelector('#spQueue').hidden = !(SHARED && shown);
     bar.querySelector('#spPrefs').hidden = !shown;
     bar.querySelector('#spPending').hidden = !(SHARED && !usb.ok && waitingCount());            // la acción del puesto: se ve también con el menú escondido
-    const dlg = bar.querySelector('#spDialog');
-    dlg.hidden = !(SHARED && shown && !usb.ok && !usb.busy && route.mode !== 'shared');          // el control de «este equipo imprime con la ventana de Chrome»
-    dlg.textContent = dialogDeclared ? '✅ Este equipo imprime con la ventana de Chrome (quitar)' : '🖥️ Este equipo imprime con la ventana de Chrome';
-    dlg.setAttribute('aria-pressed', dialogDeclared ? 'true' : 'false');
     bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${waitingCount()})`;
   }
   function stationLine() {
@@ -247,7 +243,7 @@
       if (res.ok) { route = await res.json(); startPolling(); }
     } catch (e) { online = false; }
     render();
-    hbTimer = setTimeout(heartbeat, HEARTBEAT_MS);
+    hbTimer = setTimeout(heartbeat, route.serving && !usb.ok && dialogDeclared ? HOST_HEARTBEAT_MS : HEARTBEAT_MS);
   }
 
   /* ------------------------------------------------------------------ dibujar e imprimir por USB */
@@ -280,7 +276,10 @@
   /* De la plantilla ya dibujada (canvas a 300 dpi) al trabajo para la cinta: la composición vive en static/js/label-compose.js (la MISMA que usa la ventana de impresión del navegador). */
   function composeJob(shot, tplW, tplH, p) {
     const composed = LabelCompose.composeBitmap(shot, tplW, tplH, p);
-    const fit = p.tapeType === 'diecut' ? { bitmap: composed.bitmap, height: composed.height } : LabelCompose.fitToPaper(composed);      // el mismo largo máximo (96 mm) que la ventana de impresión del navegador
+    const fit = p.tapeType === 'diecut' ? { bitmap: composed.bitmap, height: composed.height } : LabelCompose.fitToPaper(composed, LabelCompose.USB_SCALE);      // el mismo largo máximo (96 mm) que la ventana de impresión del navegador
+    if (p.lengthMm && fit.height < composed.height) {                // alto fijo manual: la etiqueta conserva su largo (el sobrante queda en blanco)
+      const padded = new Uint8Array(composed.tapeDots * composed.height); padded.set(fit.bitmap); fit.bitmap = padded; fit.height = composed.height;
+    }
     const out = Object.assign({}, composed, { bitmap: fit.bitmap, height: fit.height });
     const job = QLUsb.buildJob({ bitmap: out.bitmap, height: out.height, mediaWidthMm: p.tapeWidth, mirror: p.mirror, autoCut: p.cut, feedDots: QLUsb.mmToDots(p.feedMm),
       lengthMm: p.tapeType === 'diecut' ? p.lengthMm : undefined });
@@ -813,12 +812,6 @@
   }
 
   bar.querySelector('#spConnect').addEventListener('click', () => connectUsb(true));
-  bar.querySelector('#spDialog').addEventListener('click', () => {
-    dialogDeclared = !dialogDeclared;
-    store.set('gw_print_dialog', dialogDeclared ? '1' : '0');
-    toast(dialogDeclared ? '🖥️ Este equipo imprimirá con la ventana de Chrome: ya puede atender a otros equipos (con «Imprimir pendientes»).' : 'Este equipo ya no se anuncia como impresora.', 'info');
-    heartbeat(); render();
-  });
   bar.querySelector('#spPending').addEventListener('click', () => printPending());
   bar.querySelector('#spPrefs').addEventListener('click', showPrefs);
   bar.querySelector('#spQueue').addEventListener('click', showQueue);
@@ -837,8 +830,8 @@
   window.addEventListener('offline', () => { online = false; render(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
   window.GoldenSharedPrint = { printFor, testJob, cleanCedula, prefsForJob, printPending, connectForTest: (ask) => connectUsb(!!ask), disconnectForTest: () => { usb = { ok: false, name: '', lastError: '', busy: false }; }, applyStationForTest: (me) => { applyStation(me); applyTouch(); render(); },
-    barState: () => ({ text: bar.querySelector('.sp-text').textContent, kind: bar.className, dialogHidden: bar.querySelector('#spDialog').hidden, dialogText: bar.querySelector('#spDialog').textContent, pendingHidden: bar.querySelector('#spPending').hidden }),
-    declareDialogForTest: (on) => { dialogDeclared = !!on; store.set('gw_print_dialog', on ? '1' : '0'); render(); },
+    barState: () => ({ text: bar.querySelector('.sp-text').textContent, kind: bar.className, pendingHidden: bar.querySelector('#spPending').hidden }),
+    declareDialogForTest: (on) => { dialogDeclared = !!on; render(); },
     stationState: () => ({ isAdmin, isStation, cfg: stationCfg, shown: configShown(), line: stationLine().msg, bar: { prefs: bar.querySelector('#spPrefs').hidden, queue: bar.querySelector('#spQueue').hidden, connect: bar.querySelector('#spConnect').hidden, pending: bar.querySelector('#spPending').hidden } }),
     state: () => ({ route, usb, online, pending, deviceId, touch, pendingJobs: waitingCount(), shared: SHARED }) };
 })();

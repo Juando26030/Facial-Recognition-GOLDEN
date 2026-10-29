@@ -43,3 +43,6 @@ python -m pytest -q tests/test_impresion_compartida.py tests/test_puestos_sesion
 for f in tests/js/*check*.js; do node $f; done
 ```
 Base de demostración con 0076: `golden_comp_demo` (copia de `golden_ux_demo` migrada); servidor de prueba: `uvicorn app.main:app --port 5095` con `DATABASE_URL` apuntando a esa base y `STORAGE_LOCAL_DIR` propio. Usuario de demostración local: `demo` (super_admin). Script de la medición D/E: `comp_de_check.py` (en la carpeta temporal de la sesión; si se perdió, reescribirlo: abre la página de impresión con `?users=` y mide páginas con `page.pdf`, y cuenta `context.pages` tras 10 `BadgePrint.printNow` en emulación móvil).
+
+## 2.ª ronda (29-oct, tras probar en staging)
+Quitado el botón de «ventana de Chrome» (computador = `dialog` por defecto), latido de 2 s del anfitrión (cola al instante) y `USB_SCALE = 0.92` (USB ~8 % más grande que Chrome en la foto de Juan). Medir de nuevo con regla: si el celular sigue distinto, ajustar `USB_SCALE` en `static/js/label-compose.js`.

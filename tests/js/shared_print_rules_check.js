@@ -136,17 +136,20 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   if (process.env.HOSTMODE) {                                           // 29-oct-2026, problema B: estado explícito de impresión (usb / dialog / none) y los avisos que dependen de él
     await new Promise((r) => setTimeout(r, 200));
     const beat = async (hb) => { global.__hb = hb; beats.length = 0; await GoldenSharedPrint.connectForTest(false); await settle(); return { b: beats[beats.length - 1] || {}, bar: GoldenSharedPrint.barState() }; };
-    // 1) sin impresora ni declaración, atendiendo a 2 equipos: «none»; el aviso dice lo que pasa y NO que la impresora está «DESCONECTADA»
-    let r = await beat({ serving: 2, waiting: 0, my_mode: 'none' });
+    // 0) un computador (Windows) SIN tocar nada ya imprime con la ventana de Chrome: print_mode dialog y no existe ningún control que marcar
+    let r = await beat({ serving: 2, waiting: 0, my_mode: 'dialog' });
+    assert.strictEqual(r.b.print_mode, 'dialog', 'computador: dialog por defecto (' + JSON.stringify(r.b) + ')');
+    assert.ok(/imprime con la ventana de Chrome/.test(r.bar.text) && !/DESCONECTADA|marca/.test(r.bar.text) && r.bar.kind === 'ok', r.bar.text);
+    // 1) (celular sin impresora) sin impresora ni ventana de Chrome, atendiendo a 2 equipos: «none»; el aviso dice lo que pasa y NO que la impresora está «DESCONECTADA»
+    GoldenSharedPrint.declareDialogForTest(false);
+    r = await beat({ serving: 2, waiting: 0, my_mode: 'none' });
     assert.strictEqual(r.b.print_mode, 'none', 'sin impresora: print_mode none (' + JSON.stringify(r.b) + ')');
     assert.ok(/2 equipo\(s\) imprimen aquí y no tienes impresora/.test(r.bar.text) && !/DESCONECTADA/.test(r.bar.text) && r.bar.kind === 'bad', r.bar.text);
-    assert.ok(!r.bar.dialogHidden && /Este equipo imprime con la ventana de Chrome/.test(r.bar.dialogText), 'el control para declararlo está a la vista');
     // 2) la persona lo declara: el latido manda dialog, el aviso desaparece y con pendientes dice qué hacer
     GoldenSharedPrint.declareDialogForTest(true);
     r = await beat({ serving: 2, waiting: 0, my_mode: 'dialog' });
     assert.strictEqual(r.b.print_mode, 'dialog', 'declarado: print_mode dialog');
     assert.ok(/imprime con la ventana de Chrome/.test(r.bar.text) && !/no tienes impresora|DESCONECTADA/.test(r.bar.text) && r.bar.kind === 'ok', r.bar.text);
-    assert.ok(/quitar/.test(r.bar.dialogText), 'el control muestra que está activo');
     r = await beat({ serving: 2, waiting: 3, my_mode: 'dialog' });
     assert.ok(/3 escarapela\(s\) de otros equipos esperan: toca «Imprimir pendientes»/.test(r.bar.text) && !/DESCONECTADA/.test(r.bar.text), r.bar.text);
     assert.ok(!r.bar.pendingHidden, '«Imprimir pendientes» visible');
@@ -165,7 +168,7 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
     await GoldenSharedPrint.connectForTest(true);
     r = await beat({ serving: 2, my_mode: 'usb' });
     assert.strictEqual(r.b.print_mode, 'usb');
-    assert.ok(/Impresora conectada \(QL-800\)\. Imprime también para 2 equipo\(s\)\./.test(r.bar.text) && r.bar.kind === 'ok' && r.bar.dialogHidden, r.bar.text);
+    assert.ok(/Impresora conectada \(QL-800\)\. Imprime también para 2 equipo\(s\)\./.test(r.bar.text) && r.bar.kind === 'ok', r.bar.text);
     console.log('host_mode OK'); process.exit(0);
   }
   if (process.env.DENIED) {                                             // Windows: «Access denied» → aviso claro UNA vez, sin reintentos en bucle ni «dueño de la impresora»

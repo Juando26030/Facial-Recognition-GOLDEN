@@ -78,6 +78,15 @@ for (const [name, w, h, ink] of CASES) {
   assert.ok(Math.abs(usb.tintaIzqMm - chrome.tintaIzqMm) < 0.2 && Math.abs(usb.tintaDerMm - chrome.tintaDerMm) < 0.2, `${name}: mismos márgenes laterales de la trama`);
   assert.strictEqual(usb.giro, chrome.giro, `${name}: mismo giro`);
 }
+// tamaño relativo (29-oct-2026): medida en la Brother, la escarapela del USB salía ~8 % más grande que la de Chrome; el USB aplica USB_SCALE al bitmap y la tinta mide exactamente esa fracción
+{
+  assert.ok(LC.USB_SCALE > 0.85 && LC.USB_SCALE < 1, "USB_SCALE es la perilla de calibración: " + LC.USB_SCALE);
+  const p = prefs(), out = LC.composeBitmap(shotOf(62, 100, { x: 8, y: 30, w: 40, h: 25 }), 62, 100, p), full = LC.fitToPaper(out), small = LC.fitToPaper(out, LC.USB_SCALE);
+  const a = bbox(full.bitmap, out.tapeDots, full.height), b = bbox(small.bitmap, out.tapeDots, small.height);
+  const wr = (b.right - b.left + 1) / (a.right - a.left + 1), hr = (b.bottom - b.top + 1) / (a.bottom - a.top + 1);
+  assert.ok(Math.abs(wr - LC.USB_SCALE) < 0.02 && Math.abs(hr - LC.USB_SCALE) < 0.02 && Math.abs(small.height / full.height - LC.USB_SCALE) < 0.01, "la tinta y el largo del USB miden USB_SCALE: " + wr + " " + hr);
+  assert.ok(Math.abs((b.left) - (out.tapeDots - 1 - b.right)) <= (Math.abs(a.left - (out.tapeDots - 1 - a.right)) + 2), "sigue centrada a lo ancho");
+}
 // una etiqueta de hasta 96 mm NO cambia con el tope (las de 100 mm de plantilla miden 95,08): el trabajo USB es byte a byte el de siempre
 {
   const p = prefs(), out = LC.composeBitmap(shotOf(100, 62, { x: 30, y: 10, w: 40, h: 30 }), 100, 62, p), f = LC.fitToPaper(out);
