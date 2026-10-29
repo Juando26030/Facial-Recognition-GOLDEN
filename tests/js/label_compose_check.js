@@ -42,7 +42,9 @@ for (const [name, w, h, ink] of PLANTILLAS) {
     return { out, job };
   };
   const heights = {};
-  for (const [label, o] of [["con recorte, margen 3 mm", { crop: true, cropMarginMm: 3 }], ["con recorte, margen 8 mm", { crop: true, cropMarginMm: 8 }], ["sin recorte", { crop: false }]]) {
+  const sideways = w > h;                                          // horizontal: el blanco del final iguala al del inicio (28-oct-2026), así que el margen solo cuenta si pasa de ese blanco
+  const bigMargin = sideways ? 20 : 8;
+  for (const [label, o] of [["con recorte, margen 3 mm", { crop: true, cropMarginMm: 3 }], ["con recorte, margen 8 mm", { crop: true, cropMarginMm: bigMargin }], ["sin recorte", { crop: false }]]) {
     const p = prefs(o);
     const usb = bytesOf(p), page = LC.composeBitmap(shot, w, h, p), again = LC.composeBitmap(shot, w, h, p);
     assert.deepStrictEqual(Array.from(page.bitmap), Array.from(usb.out.bitmap), `${name} (${label}): mismos píxeles`);
@@ -58,7 +60,7 @@ for (const [name, w, h, ink] of PLANTILLAS) {
   assert.ok(heights["con recorte, margen 8 mm"] > heights["con recorte, margen 3 mm"], `${name}: cambiar el margen cambia la salida`);
   assert.ok(heights["sin recorte"] >= heights["con recorte, margen 3 mm"], `${name}: sin recorte nunca es más corta`);
   // el margen cambia las DOS salidas igual: la altura del trabajo USB y la de la hoja crecen lo mismo
-  const a = bytesOf(prefs({ crop: true, cropMarginMm: 3 })), b2 = bytesOf(prefs({ crop: true, cropMarginMm: 8 }));
+  const a = bytesOf(prefs({ crop: true, cropMarginMm: 3 })), b2 = bytesOf(prefs({ crop: true, cropMarginMm: bigMargin }));
   assert.ok(Math.abs((LC.pageSpec(b2.out).pageHeightMm - LC.pageSpec(a.out).pageHeightMm) - (b2.out.height - a.out.height) / DPM) < 0.02, `${name}: la hoja y el trabajo USB crecen lo mismo con el margen`);
   assert.ok(b2.job.length > a.job.length, `${name}: el trabajo USB también crece con el margen`);
 }
@@ -71,3 +73,21 @@ for (const [name, w, h, ink] of PLANTILLAS) {
   assert.ok(Math.abs(LC.pageSpec(out).pageHeightMm - 100 * out.layout.scale) < 0.5, "el largo es el lado largo de la plantilla (con la escala por ser la plantilla de 62 mm y la cinta de 58,9 mm)");
 }
 console.log("label_compose_check OK");
+
+// HORIZONTAL con recorte: el texto queda CENTRADO a lo largo de la tira (blanco al final = blanco al inicio); la VERTICAL no cambia (el final lleva solo el margen). Bug de producción 28-oct-2026.
+{
+  const blankRows = (out) => { let top = 0, bottom = 0, W = out.tapeDots, H = out.height; const row = (y) => { for (let x = 0; x < W; x++) if (out.bitmap[y * W + x]) return true; return false; };
+    while (top < H && !row(top)) top++; while (bottom < H && !row(H - 1 - bottom)) bottom++; return { top, bottom, H }; };
+  const hz = LC.composeBitmap(shotOf(100, 62, { x: 30, y: 10, w: 40, h: 30 }), 100, 62, prefs({ crop: true, cropMarginMm: 3 }));     // texto en el medio de los 100 mm
+  const b = blankRows(hz);
+  assert.ok(Math.abs(b.top - b.bottom) <= 1, "horizontal: el blanco del final iguala al del inicio (" + JSON.stringify(b) + ")");
+  assert.ok(b.top > 3 * DPM + 5, "horizontal: el blanco inicial (el diseño) se conserva");
+  const vt = LC.composeBitmap(shotOf(62, 100, { x: 8, y: 30, w: 40, h: 20 }), 62, 100, prefs({ crop: true, cropMarginMm: 3 }));
+  const v = blankRows(vt);
+  assert.ok(Math.abs(v.bottom - Math.round(3 * DPM)) <= 1 && v.top > v.bottom + 20, "vertical: sin cambios (final = solo el margen) " + JSON.stringify(v));
+  const small = LC.composeBitmap(shotOf(100, 62, { x: 2, y: 10, w: 40, h: 30 }), 100, 62, prefs({ crop: true, cropMarginMm: 3 }));     // blanco inicial menor que el margen: manda el margen
+  assert.ok(Math.abs(blankRows(small).bottom - Math.round(3 * DPM)) <= 1 || blankRows(small).bottom >= Math.round(3 * DPM) - 1, "horizontal con poco blanco inicial: al menos el margen");
+  const big = LC.composeBitmap(shotOf(100, 62, { x: 70, y: 10, w: 30, h: 30 }), 100, 62, prefs({ crop: true, cropMarginMm: 3 }));       // tinta al final de la plantilla: nunca más larga que la plantilla
+  assert.ok(big.height <= Math.round(100 * DPM * 0.95) + 2, "horizontal: nunca más larga que la plantilla");
+}
+console.log("label_compose_horizontal_centrada OK");

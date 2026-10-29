@@ -5,10 +5,10 @@ HTML = Path("templates/badge_print.html").read_text(encoding="utf-8")
 COMPOSE = Path("static/js/label-compose.js").read_text(encoding="utf-8")
 
 
-def test_normal_window_page_is_62mm_wide_at_least_99_8mm_tall_and_margin_zero():
-    assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_MIN_H = 99.8;" in HTML
-    assert "const pageH = Math.max(spec.pageHeightMm, PAGE_MIN_H);" in HTML
-    assert "@page { size: ${PAGE_W}mm ${pageH}mm; margin: 0 }" in HTML and "margin-left:${PAGE_LEFT_MM}mm" in HTML
+def test_normal_window_page_is_always_62_by_99_8mm_with_margin_zero():
+    assert "const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;" in HTML
+    assert "const pageH = PAGE_H;" in HTML and "Math.min(1, MAX_IMG_H / spec.imageHeightMm)" in HTML      # página SIEMPRE 99,8 mm; la imagen mide como máximo 96 mm (la impresora no imprime los últimos mm) y una más alta se reduce
+    assert "@page { size: ${PAGE_W}mm ${pageH}mm; margin: 0 }" in HTML and "margin-left:${imgLeft}mm" in HTML and "PAGE_LEFT_MM + (spec.imageWidthMm - imgW) / 2" in HTML
 
 
 def test_end_mark_keeps_the_label_length_and_is_painted_over_the_image():

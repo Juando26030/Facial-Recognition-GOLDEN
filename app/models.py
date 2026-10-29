@@ -542,6 +542,7 @@ class FormPayment(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     confirmed_at = Column(DateTime, nullable=True)
     refunded_cents = Column(Integer, nullable=False, default=0, server_default='0')   # suma de reembolsos HECHOS (done)
+    origin = Column(String(16), nullable=True)   # 0074: 'importado' = registro histórico traído de otro entorno (no es un pago de este)
 
 
 class FormRefund(Base):
@@ -996,3 +997,35 @@ class SessionAudit(Base):
     device = Column(String(20), nullable=True)
     browser = Column(String(40), nullable=True)
     result = Column(String(20), nullable=False)
+
+
+class EventTransferLog(Base):
+    """0074: bitácora de exportar/importar eventos (docs/18_EXPORTAR_EVENTOS.md). Quién, cuándo, qué evento, conteos y huella del paquete; NUNCA datos personales ni el contenido."""
+    __tablename__ = 'event_transfer_log'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    kind = Column(String(12), nullable=False)               # export | import
+    staff_username = Column(String(80), nullable=True)
+    event_id = Column(Integer, nullable=True)               # export: el evento de origen; import: el evento NUEVO
+    event_code = Column(String(80), nullable=True)
+    package_sha256 = Column(String(64), nullable=True)
+    status = Column(String(16), nullable=False, default='done', server_default='done')   # done | pending_confirm | confirmed | error
+    counts_json = Column(Text, nullable=True)
+    options_json = Column(Text, nullable=True)
+    state_json = Column(Text, nullable=True)                # importación en espera: el estado original que se aplica al confirmar
+    stage = Column(String(60), nullable=True)               # 0075: etapa del trabajo en segundo plano
+    progress = Column(Integer, nullable=False, default=0, server_default='0')
+    result_json = Column(Text, nullable=True)               # informe final (conteos y avisos, sin datos personales) o el mensaje de error
+    file_key = Column(String(300), nullable=True)           # el .zip generado en el almacenamiento (se borra a las 24 h)
+    finished_at = Column(DateTime, nullable=True)
+
+
+class EventImportActor(Base):
+    """0074: nombre de usuario (texto) de quien hizo un registro en el entorno de ORIGEN cuando esa cuenta no existe aquí: el enlace queda vacío y el texto se conserva."""
+    __tablename__ = 'event_import_actors'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    import_id = Column(Integer, ForeignKey('event_transfer_log.id', ondelete='CASCADE'), nullable=False, index=True)
+    table_name = Column(String(40), nullable=False)
+    row_ref = Column(String(160), nullable=False)
+    column_name = Column(String(40), nullable=False)
+    username = Column(String(80), nullable=False)
