@@ -11,6 +11,7 @@ con los ids de ORIGEN) y `LEEME.txt`. Importar:
   - todo en UNA transacción (el simulacro corre lo mismo y la deshace); las personas suprimidas en el destino no se vuelven a crear; una persona que ya existe NO se sobrescribe;
   - un evento «en proceso» queda en espera (estado «creado») hasta confirmarlo, para no activar el congelamiento de despliegues; los formularios entran en «pruebas».
 Nada de datos personales en logs: aquí solo se loguean conteos."""
+import base64
 import hashlib
 import io
 import json
@@ -24,12 +25,15 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from sqlalchemy import Date, DateTime, Float, Numeric, select, text
 from sqlalchemy.orm import Session
 
-from app import consent
+from app import consent, crypto, minors
 from app import models as m
-from app.storage import badge_asset_key, form_file_key, get_storage, key_of, normalize_key
+from app.storage import badge_asset_key, form_file_key, get_storage, key_of, normalize_key, photo_key
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.event_transfer")
@@ -43,6 +47,9 @@ MAX_ENTRIES_WITH_FILES = int(os.getenv("EVENT_TRANSFER_MAX_ENTRIES", "20000"))
 CHUNK = 500
 ASSET_EXT = r"(?:png|jpe?g|webp|gif|svg)"
 FILE_NAME_RE = re.compile(r"^files/[0-9a-f]{64}$")
+KDF_ITERATIONS = int(os.getenv("EVENT_TRANSFER_KDF_ITERATIONS", "600000"))
+BIO_CHECK = b"goldenweb-biometria"
+MIN_PASSPHRASE = 8
 OPTIONAL_TABLES = ("event_documents", "event_expenses")          # los paquetes de la fase F1 no las traen
 BIOMETRIC_USER_COLUMNS = ("face_encoding", "face_captured_at", "biometric_consent_at", "biometric_consent_source", "is_biometric_enabled")
 
@@ -135,6 +142,59 @@ def _known_revisions() -> list:
     cfg = Config()
     cfg.set_main_option("script_location", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic"))
     return [r.revision for r in reversed(list(ScriptDirectory.from_config(cfg).walk_revisions()))]
+
+
+# ------------------------------------------------------------------------------------------------ biometría (F3)
+def _transport_fernet(passphrase: str, salt: bytes, iterations: int) -> Fernet:
+    """Clave de transporte derivada de la frase (PBKDF2-HMAC-SHA256 + Fernet, como app/crypto.py). La frase NO se guarda en ninguna parte."""
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations)
+    return Fernet(base64.urlsafe_b64encode(kdf.derive(passphrase.encode("utf-8"))))
+
+
+def _export_biometrics(db: Session, event, people: set, zf, manifest: dict, passphrase: str) -> None:
+    """Vectores y fotos de registro del evento, TODO cifrado con la clave de transporte (nada biométrico viaja en claro). Las fotos van por huella como el resto de archivos."""
+    salt = os.urandom(16)
+    kf = _transport_fernet(passphrase, salt, KDF_ITERATIONS)
+    manifest["biometrics"] = {"kdf": "pbkdf2-sha256", "iterations": KDF_ITERATIONS, "salt": base64.b64encode(salt).decode(), "check": kf.encrypt(BIO_CHECK).decode()}
+    st, h, n, pending_photos = get_storage(), hashlib.sha256(), 0, []
+    written = {f["sha256"] for f in manifest["files"]}
+    with zf.open("data/biometrics.jsonl", "w") as out:
+        users = db.execute(select(m.User).where(m.User.tenant_id == event.tenant_id, m.User.id.in_(sorted(people) or [""])).order_by(m.User.id)).scalars().all()
+        for u in users:
+            key = photo_key(u.tenant_id, u.id)
+            photo = crypto.read_bytes(key) if st.exists(key) else None
+            if not (u.face_encoding or photo):
+                continue
+            rec = {"face_encoding": u.face_encoding, "face_captured_at": _ser(u.face_captured_at), "biometric_consent_at": _ser(u.biometric_consent_at),
+                   "biometric_consent_source": u.biometric_consent_source, "is_biometric_enabled": bool(u.is_biometric_enabled), "has_photo": photo is not None}
+            line = _line({"id": u.id, "token": kf.encrypt(json.dumps(rec, ensure_ascii=False).encode("utf-8")).decode()})
+            out.write(line)
+            h.update(line)
+            n += 1
+            if photo is not None:
+                enc = kf.encrypt(photo)
+                sha = hashlib.sha256(enc).hexdigest()
+                if sha not in written:
+                    pending_photos.append((sha, enc))                  # zipfile no deja escribir otra entrada con una abierta: se escriben al cerrar la de los vectores
+                    written.add(sha)
+                manifest["files"].append({"role": "biometric_photo", "ref": {"name": u.id}, "sha256": sha, "size": len(enc)})
+    for sha, enc in pending_photos:
+        zf.writestr(f"files/{sha}", enc)
+    manifest["tables"]["biometrics"] = {"count": n, "sha256": h.hexdigest()}
+    manifest["options"]["include_biometrics"] = True
+
+
+def _open_biometrics(manifest: dict, passphrase: Optional[str]) -> Fernet:
+    info = manifest.get("biometrics") or {}
+    if not passphrase:
+        raise TransferError("El paquete lleva biometría: escribe la frase de transporte con la que se exportó.")
+    try:
+        kf = _transport_fernet(passphrase, base64.b64decode(info["salt"]), int(info["iterations"]))
+        if kf.decrypt(info["check"].encode()) != BIO_CHECK:
+            raise InvalidToken()
+    except (InvalidToken, KeyError, ValueError):
+        raise TransferError("La frase de transporte no es la correcta.")
+    return kf
 
 
 # ------------------------------------------------------------------------------------------------ archivos del storage (F2)
@@ -240,10 +300,11 @@ def _person_ids(db: Session, event) -> set:
     return ids
 
 
-def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False) -> tuple:
-    """Arma el paquete de un evento. Devuelve (bytes del .zip, manifest). Escribe una fila en la bitácora (sin datos personales). `include_biometrics` llega en F3."""
-    if include_biometrics:
-        raise TransferError("Exportar con biometría todavía no está disponible (fase F3).")
+def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False, passphrase: Optional[str] = None) -> tuple:
+    """Arma el paquete de un evento. Devuelve (bytes del .zip, manifest). Escribe una fila en la bitácora (sin datos personales). `include_biometrics` (solo super_admin: lo exige el
+    endpoint) lleva vectores y fotos CIFRADOS con la frase de transporte `passphrase`, que no se guarda."""
+    if include_biometrics and len(passphrase or "") < MIN_PASSPHRASE:
+        raise TransferError(f"La frase de transporte debe tener al menos {MIN_PASSPHRASE} caracteres.")
     names = _staff_names(db)
     states = {sid: n for sid, n in db.execute(select(m.EventState.id, m.EventState.name)).all()}
     supers = {sid: n for sid, n in db.execute(select(m.SuperEvent.id, m.SuperEvent.name)).all()}
@@ -296,6 +357,8 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                 zf.writestr(f"files/{sha}", raw)
                 written.add(sha)
             manifest["files"].append({"role": role, "ref": ref, "sha256": sha, "size": len(raw)})
+        if include_biometrics:
+            _export_biometrics(db, event, ctx["people"], zf, manifest, passphrase)
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=1))
         zf.writestr("LEEME.txt", "Paquete de evento de GoldenWeb (docs/18_EXPORTAR_EVENTOS.md).\nContiene DATOS PERSONALES: guárdalo y envíalo con cuidado, bórralo al terminar.\n"
                                  "Se importa desde «Importar evento» (solo super_admin); siempre crea un evento NUEVO.\n")
@@ -322,7 +385,7 @@ def read_package(data: bytes) -> tuple:
     except zipfile.BadZipFile:
         raise TransferError("El archivo no es un paquete de evento válido (.zip).")
     infos = zf.infolist()
-    allowed = {"manifest.json", "LEEME.txt"} | {f"data/{n}.jsonl" for n in TABLE_NAMES}
+    allowed = {"manifest.json", "LEEME.txt", "data/biometrics.jsonl"} | {f"data/{n}.jsonl" for n in TABLE_NAMES}
     if len(infos) > MAX_ENTRIES_WITH_FILES or any(i.filename not in allowed and not FILE_NAME_RE.fullmatch(i.filename) for i in infos):
         raise TransferError("El paquete trae archivos que no corresponden a un evento exportado.")
     total = 0
@@ -374,6 +437,14 @@ def read_package(data: bytes) -> tuple:
     if len(rows["events"]) != 1:
         raise TransferError("El paquete debe traer exactamente un evento.")
     names = set(zf.namelist())
+    bio = manifest.get("tables", {}).get("biometrics")
+    if bio is not None:
+        raw = _read("data/biometrics.jsonl")
+        if hashlib.sha256(raw).hexdigest() != bio["sha256"]:
+            raise TransferError("La tabla «biometrics» del paquete no coincide con su suma de control: el archivo está dañado o fue modificado.")
+        rows["biometrics"] = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line.strip()]
+        if len(rows["biometrics"]) != bio["count"]:
+            raise TransferError("La tabla «biometrics» no trae las filas que dice el manifest.")
     for f in manifest.get("files", []):
         if f.get("sha256") is None or f"files/{f['sha256']}" not in names:
             raise TransferError("Al paquete le falta un archivo que el manifest declara.")
@@ -423,7 +494,8 @@ def _clean_user_row(row: dict) -> dict:
 
 
 def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = None, new_event_code: Optional[str] = None, new_name: Optional[str] = None,
-                   keep_original_state: bool = False, dry_run: bool = True, target_tenant_id: Optional[str] = None) -> dict:
+                   keep_original_state: bool = False, dry_run: bool = True, target_tenant_id: Optional[str] = None, transport_passphrase: Optional[str] = None,
+                   import_biometrics: bool = True) -> dict:
     """Importa un paquete creando un evento NUEVO. `dry_run=True` (por defecto) hace TODO y lo deshace (sin escribir archivos): lista qué entraría y qué conflictos hay.
     `target_tenant_id`: el cliente del destino (por defecto el mismo del paquete; si es otro, todo lo del evento pasa a ese cliente). Devuelve el informe."""
     from app.routers.events import EVENT_CODE_RE                     # el mismo formato de código que al crear un evento a mano
@@ -432,7 +504,8 @@ def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = 
     tenant_dst = target_tenant_id or src_event["tenant_id"]
     report = {"dry_run": dry_run, "event_code": None, "name": None, "event_id": None, "source_env": manifest.get("source_env"), "tables": {}, "skipped": {}, "warnings": list(manifest.get("warnings", [])),
               "conflicts": [], "persons": {"new": 0, "existing_kept": 0, "existing_different": 0, "suppressed_skipped": 0}, "staff_without_link": [], "pending_confirm": False,
-              "package_sha256": _package_hash(manifest), "files": {"planned": 0, "written": 0, "by_role": {}}, "tenant": tenant_dst}
+              "package_sha256": _package_hash(manifest), "files": {"planned": 0, "written": 0, "by_role": {}}, "tenant": tenant_dst,
+              "biometrics": {"in_package": 0, "imported": 0, "skipped": {}}}
 
     def skip(table, why, n=1):
         report["skipped"].setdefault(table, {})
@@ -451,6 +524,9 @@ def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = 
         report["conflicts"].append(f"Ya existe un evento con el nombre «{name}» en ese cliente: escribe un nombre nuevo.")
     if tenant_dst != src_event["tenant_id"] and not db.get(m.Tenant, tenant_dst):
         report["conflicts"].append("El cliente elegido no existe en este sistema.")
+    bio_key = None
+    if "biometrics" in rows and import_biometrics:
+        bio_key = _open_biometrics(manifest, transport_passphrase)                  # frase equivocada o ausente: se rechaza ANTES de tocar nada
     if report["conflicts"]:
         db.rollback()
         report["ok"] = False
@@ -459,7 +535,7 @@ def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = 
     written = []
     try:
         written = _do_import(db, manifest, rows, opener, report, skip, code=code, name=name, staff_username=staff_username, keep_original_state=keep_original_state,
-                             tenant_dst=tenant_dst, dry_run=dry_run)
+                             tenant_dst=tenant_dst, dry_run=dry_run, bio_key=bio_key)
         report["ok"] = True
         if dry_run:
             db.rollback()
@@ -478,7 +554,7 @@ def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = 
 
 
 def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, skip, *, code: str, name: str, staff_username: Optional[str], keep_original_state: bool,
-               tenant_dst: str, dry_run: bool) -> list:
+               tenant_dst: str, dry_run: bool, bio_key: Optional[Fernet] = None) -> list:
     ev_src = rows["events"][0]
     tenant_src = ev_src.get("tenant_id")
     tenant_info = manifest.get("tenant") or {}
@@ -503,7 +579,7 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     new_ids = {}                                                  # tabla → {id origen: id nuevo}
     pending = {"forms": []}
     files = manifest.get("files", []) if manifest.get("includes_files") else []
-    file_by_ref = {(f["role"], f["ref"].get("path") or f["ref"].get("name")): f for f in files}
+    file_by_ref = {(f["role"], f["ref"].get("path") or f["ref"].get("name")): f for f in files if f["role"] != "biometric_photo"}
     writes = []                                                   # (clave de destino, sha256, rol)
     st = get_storage()
 
@@ -535,11 +611,34 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
                     report["staff_without_link"].append(un)
 
     # ---- personas suprimidas (se omiten ellas y todo lo que las menciona)
-    banned = set()
+    banned, biometric_new = set(), set()
     for r in rows["users"]:
         if consent.cedula_hash(r["id"]) in suppressed:
             banned.add(r["id"])
     report["persons"]["suppressed_skipped"] = len(banned)
+
+    # ---- biometría (F3): solo para personas NUEVAS en el destino, mayores de edad y con consentimiento aceptado registrado en el paquete (sin él no hay reconocimiento facial)
+    bio = {}
+    if bio_key is not None:
+        report["biometrics"]["in_package"] = len(rows.get("biometrics", []))
+        accepted = {c["user_id"] for c in rows["audit_consent_logs"] if c.get("accepted_biometric") and c.get("confirmed_adult")}
+        birth = {u["id"]: u.get("birth_date") for u in rows["users"]}
+
+        def bskip(why):
+            report["biometrics"]["skipped"][why] = report["biometrics"]["skipped"].get(why, 0) + 1
+        for b in rows.get("biometrics", []):
+            uid = b["id"]
+            if uid in banned:
+                bskip("persona suprimida en el destino")
+            elif birth.get(uid) and minors.is_minor(date.fromisoformat(birth[uid])):
+                bskip("menor de 18 años")
+            elif uid not in accepted:
+                bskip("sin consentimiento aceptado registrado")
+            else:
+                try:
+                    bio[uid] = json.loads(bio_key.decrypt(b["token"].encode()))
+                except InvalidToken:
+                    raise TransferError("Un registro biométrico del paquete no se pudo descifrar: el archivo está dañado o fue modificado.")
 
     for spec in TABLES:
         tname = spec["name"]
@@ -625,6 +724,17 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
                 d = {k: _parse(t.c[k], v) for k, v in _clean_user_row(r).items() if k in t.c}
                 d["is_biometric_enabled"] = False
                 d["tenant_id"] = tenant_id
+                b = bio.get(r["id"])
+                if b:                                                   # la clave de este entorno vuelve a cifrar el vector al insertarlo (EncryptedText)
+                    d["face_encoding"] = b.get("face_encoding")
+                    d["face_captured_at"] = _parse(t.c["face_captured_at"], b.get("face_captured_at"))
+                    d["biometric_consent_at"] = _parse(t.c["biometric_consent_at"], b.get("biometric_consent_at"))
+                    d["biometric_consent_source"] = b.get("biometric_consent_source")
+                    d["is_biometric_enabled"] = bool(b.get("is_biometric_enabled"))
+                    report["biometrics"]["imported"] += 1
+                    biometric_new.add(r["id"])
+                for c in ("face_encoding", "face_captured_at", "biometric_consent_at", "biometric_consent_source"):
+                    d.setdefault(c, None)                          # executemany pide las mismas columnas en todas las filas
                 report["persons"]["new"] += 1
                 out.append(d)
                 continue
@@ -700,8 +810,11 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
         rep["imported"] = len(out)
         _insert(db, tname, out)
 
-    # ---- archivos que dependen de los ids nuevos: respuestas de formularios y firmas
+    # ---- archivos que dependen de los ids nuevos: respuestas de formularios y firmas (y las fotos biométricas de las personas que entraron con biometría)
     for f in files:
+        if f["role"] == "biometric_photo" and bio_key is not None and f["ref"]["name"] in biometric_new:
+            writes.append((photo_key(tenant_id, f["ref"]["name"]), f["sha256"], "biometric_photo"))
+            continue
         if f["role"] == "form_file":
             new_form = new_ids.get("web_forms", {}).get(f["ref"]["form_id"])
             if new_form is not None:
@@ -727,8 +840,14 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     report["files"]["planned"] = len(writes)
     written = []
     if not dry_run:
-        for key, sha, _role in writes:
-            st.put(key, opener(sha))
+        for key, sha, role in writes:
+            raw = opener(sha)
+            if role == "biometric_photo":
+                try:
+                    raw = crypto.encrypt_bytes(bio_key.decrypt(raw))      # sale de la clave de transporte y entra con la de este entorno
+                except InvalidToken:
+                    raise TransferError("Una foto del paquete no se pudo descifrar: el archivo está dañado o fue modificado.")
+            st.put(key, raw)
             written.append(key)
         report["files"]["written"] = len(written)
     return written

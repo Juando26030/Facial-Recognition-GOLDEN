@@ -453,3 +453,91 @@ def test_import_into_another_client_moves_everything_to_that_client(db, factory)
     assert get_storage().get(key_of("otro", "signatures", new.id, "1001__firma.png")) == b"FIRMA"
     bad = et.import_package(db, data, new_event_code="OTRO-2", new_name="Cliente inexistente", target_tenant_id="no-existe", dry_run=True)
     assert not bad["ok"] and "cliente elegido no existe" in bad["conflicts"][0]
+
+
+# ------------------------------------------------------------------------------------------------ F3: biometría opcional cifrada
+def _bio_event(db, factory):
+    from app import crypto
+    from app.storage import get_storage, photo_key
+    ev = _build(db, factory)
+    st = get_storage()
+    for cid in ("1001", "1002", "1003"):
+        st.put(photo_key(ev.tenant_id, cid), crypto.encrypt_bytes(f"JPEG-{cid}".encode()))
+    u3 = db.query(m.User).filter_by(id="1003", tenant_id=ev.tenant_id).one()
+    u3.birth_date = datetime(2015, 3, 1).date()                                              # menor de edad
+    db.commit()
+    consent.record(db, tenant_id=ev.tenant_id, user_id="1003", event_id=ev.id, version="v1.1_test", legal_text_hash="b" * 64, accepted=True, adult=True, reason="consent")
+    db.commit()
+    return ev
+
+
+def _wipe_event_data(db):
+    from sqlalchemy import text as _t
+    for t in reversed(m.Base.metadata.sorted_tables):
+        if t.name not in ("tenants", "event_transfer_log"):
+            if t.name == "audit_consent_logs":
+                db.execute(_t("ALTER TABLE audit_consent_logs DISABLE TRIGGER USER"))
+                db.execute(t.delete())
+                db.execute(_t("ALTER TABLE audit_consent_logs ENABLE TRIGGER USER"))
+            else:
+                db.execute(t.delete())
+    db.commit()
+
+
+def test_biometrics_need_a_passphrase_travel_encrypted_and_never_in_clear(db, factory, monkeypatch):
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+    ev = _bio_event(db, factory)
+    with pytest.raises(et.TransferError, match="al menos"):
+        et.export_event(db, ev, include_biometrics=True, passphrase="corta")
+    data, manifest = et.export_event(db, ev, include_biometrics=True, passphrase="frase de transporte 123")
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    blob = b"".join(zf.read(n) for n in zf.namelist())
+    assert manifest["options"]["include_biometrics"] is True and manifest["tables"]["biometrics"]["count"] == 3 and "biometric_photo" in {f["role"] for f in manifest["files"]}
+    assert b"JPEG-1001" not in blob and b"VECTOR-SECRETO" not in blob and b"frase de transporte" not in blob       # ni foto, ni vector, ni la frase viajan en claro
+    plain, _ = et.export_event(db, ev)                                                                           # sin la opción: nada biométrico
+    assert "biometrics" not in json.loads(zipfile.ZipFile(io.BytesIO(plain)).read("manifest.json"))["tables"]
+    with pytest.raises(et.TransferError, match="frase de transporte"):
+        et.import_package(db, data, new_event_code="B-0", new_name="Sin frase")
+    with pytest.raises(et.TransferError, match="no es la correcta"):
+        et.import_package(db, data, new_event_code="B-0", new_name="Frase mala", transport_passphrase="otra frase distinta")
+    assert db.query(m.Event).count() == 1
+
+
+def test_import_with_biometrics_only_for_adults_with_accepted_consent_and_reencrypts_with_the_destination_key(db, factory, monkeypatch):
+    from cryptography.fernet import Fernet
+    from app import crypto
+    from app.storage import get_storage, photo_key
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+    key_a, key_b = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", key_a)
+    ev = _bio_event(db, factory)
+    data, _ = et.export_event(db, ev, include_biometrics=True, passphrase="frase de transporte 123")
+    st = get_storage()
+    _wipe_event_data(db)
+    for k in list(st.list("")):
+        st.delete(k)
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", key_b)                                                             # el destino tiene OTRA llave
+    rep = et.import_package(db, data, new_event_code="B-1", new_name="Con biometría", transport_passphrase="frase de transporte 123", dry_run=False)
+    assert rep["ok"] and rep["biometrics"]["in_package"] == 3 and rep["biometrics"]["imported"] == 1
+    assert rep["biometrics"]["skipped"] == {"sin consentimiento aceptado registrado": 1, "menor de 18 años": 1}   # 1002 sin consentimiento; 1003 menor
+    new = db.query(m.Event).filter_by(event_code="B-1").one()
+    u1 = db.query(m.User).filter_by(id="1001", tenant_id=new.tenant_id).one()
+    assert u1.face_encoding == "VECTOR-SECRETO" and u1.is_biometric_enabled is True and u1.face_captured_at == datetime(2026, 10, 19, 8, 0, 0)        # fechas ORIGINALES (retención)
+    for cid in ("1002", "1003"):
+        u = db.query(m.User).filter_by(id=cid, tenant_id=new.tenant_id).one()
+        assert u.face_encoding is None and u.is_biometric_enabled is False and not st.exists(photo_key(new.tenant_id, cid))
+    raw = st.get(photo_key(new.tenant_id, "1001"))
+    assert raw != b"JPEG-1001" and raw.startswith(crypto.FILE_MAGIC) and crypto.decrypt_bytes(raw) == b"JPEG-1001"       # cifrada con la llave del destino
+    monkeypatch.setenv("FACE_ENCRYPTION_KEY", key_a)
+    assert crypto.decrypt_bytes(raw) is None                                                                       # y NO con la del origen
+    assert db.query(m.EventTransferLog).filter_by(kind="import").count() == 1
+
+
+def test_import_can_skip_the_biometrics_of_a_package_that_carries_them(db, factory, monkeypatch):
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+    ev = _bio_event(db, factory)
+    data, _ = et.export_event(db, ev, include_biometrics=True, passphrase="frase de transporte 123")
+    _wipe_event_data(db)
+    rep = et.import_package(db, data, new_event_code="B-2", new_name="Sin biometría", import_biometrics=False, dry_run=False)
+    assert rep["ok"] and rep["biometrics"]["imported"] == 0
+    assert db.query(m.User).filter(m.User.face_encoding.isnot(None)).count() == 0
