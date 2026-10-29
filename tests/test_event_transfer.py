@@ -541,3 +541,135 @@ def test_import_can_skip_the_biometrics_of_a_package_that_carries_them(db, facto
     rep = et.import_package(db, data, new_event_code="B-2", new_name="Sin biometría", import_biometrics=False, dry_run=False)
     assert rep["ok"] and rep["biometrics"]["imported"] == 0
     assert db.query(m.User).filter(m.User.face_encoding.isnot(None)).count() == 0
+
+
+# ------------------------------------------------------------------------------------------------ F4: trabajos en segundo plano, descarga firmada, bitácora y purga
+@pytest.fixture()
+def inline_jobs(monkeypatch):
+    monkeypatch.setenv("EVENT_TRANSFER_INLINE", "1")
+    monkeypatch.setattr(et, "KDF_ITERATIONS", 1000)
+
+
+def _upload(client, pkg: bytes) -> str:
+    r = client.post("/api/event-transfer/upload-url", json={"filename": "evento.zip", "size": len(pkg)})
+    assert r.status_code == 200, r.text
+    up = r.json()
+    put = client.put(up["url"], content=pkg, headers={"Content-Type": "application/zip"})
+    assert put.status_code in (200, 201, 204), put.text
+    return up["token"]
+
+
+def test_export_job_download_is_signed_short_lived_and_purged_after_24_hours(client, db, factory, inline_jobs):
+    from datetime import timedelta
+    from app import event_transfer_jobs as jobs
+    from app.storage import get_storage
+    from app.timeutil import utcnow
+    factory.staff("super_admin", "root")
+    ev = _files_event(db, factory)
+    login(client, "root")
+    r = client.post("/api/event-transfer/export/start", json={"event_id": ev.id})
+    assert r.status_code == 200
+    job = r.json()
+    assert job["status"] == "done" and job["ready"] and job["progress"] == 100 and job["result"]["counts"]["access_logs"] == 2 and "download_url" in job
+    dl = client.get(job["download_url"])
+    assert dl.status_code == 200 and dl.headers["content-type"] == "application/zip" and dl.headers["cache-control"] == "no-store" and zipfile.ZipFile(io.BytesIO(dl.content)).testzip() is None
+    assert client.get(f"/api/event-transfer/download/{job['id']}?t=falso").status_code == 400                   # sin firma válida no hay descarga
+    token = job["download_url"].split("t=")[1]
+    assert client.get(f"/api/event-transfer/download/{job['id'] + 1}?t={token}").status_code in (403, 404)        # el enlace es de ESE trabajo
+    row = db.get(m.EventTransferLog, job["id"])
+    key = row.file_key
+    assert get_storage().exists(key) and jobs.purge_expired(db) == 0
+    row.finished_at = utcnow() - timedelta(hours=25)
+    db.commit()
+    assert jobs.purge_expired(db) == 1 and not get_storage().exists(key)                                        # la purga de las 24 h borra el .zip del almacenamiento
+    again = client.get(f"/api/event-transfer/jobs/{job['id']}").json()
+    assert again["ready"] is False and "download_url" not in again
+
+
+def test_biometric_export_through_the_api_needs_a_long_enough_passphrase_and_never_stores_it(client, db, factory, inline_jobs):
+    factory.staff("super_admin", "root")
+    ev = _bio_event(db, factory)
+    login(client, "root")
+    assert client.post("/api/event-transfer/export/start", json={"event_id": ev.id, "include_biometrics": True, "passphrase": "corta"}).status_code == 400
+    ok = client.post("/api/event-transfer/export/start", json={"event_id": ev.id, "include_biometrics": True, "passphrase": "frase de transporte 123"}).json()
+    assert ok["status"] == "done" and ok["result"]["biometrics"] is True
+    assert all("frase de transporte" not in (r.options_json or "") + (r.result_json or "") for r in db.query(m.EventTransferLog))      # la frase no se guarda en ninguna parte
+    assert client.get(f"/api/event-transfer/export/{ev.id}?include_biometrics=true").status_code == 400                              # el atajo de un paso no lleva biometría
+
+
+def test_import_wizard_flow_upload_inspect_dry_run_import_confirm_and_fidelity(client, db, factory, inline_jobs):
+    factory.staff("super_admin", "root")
+    ev = _files_event(db, factory)
+    ev.status = "en_proceso"
+    db.commit()
+    login(client, "root")
+    pkg = client.get(f"/api/event-transfer/export/{ev.id}").content
+    token = _upload(client, pkg)
+    info = client.post("/api/event-transfer/import/inspect", json={"token": token}).json()
+    assert info["event_code"] == ev.event_code and info["counts"]["access_logs"] == 2 and info["files"] == 8 and info["has_biometrics"] is False
+    dry = client.post("/api/event-transfer/import/start", json={"token": token, "dry_run": True, "new_event_code": "W-1", "new_name": "Asistente"}).json()
+    assert dry["status"] == "done" and dry["result"]["dry_run"] is True and dry["result"]["tables"]["access_logs"]["imported"] == 2 and db.query(m.Event).count() == 1
+    conflict = client.post("/api/event-transfer/import/start", json={"token": token, "dry_run": False}).json()           # mismo código y nombre
+    assert conflict["status"] == "error" and len(conflict["result"]["conflicts"]) == 2
+    real = client.post("/api/event-transfer/import/start", json={"token": token, "dry_run": False, "new_event_code": "W-1", "new_name": "Asistente"}).json()
+    assert real["status"] == "done" and real["event_id"] and real["result"]["pending_confirm"] is True
+    fid = real["result"]["fidelity"]
+    # misma base que el origen: el pago (referencia única), su reembolso y el consentimiento (mismo id) YA existen aquí y se omiten; todo lo demás queda IGUAL
+    assert sorted(fid["different_tables"]) == ["audit_consent_logs", "form_payments", "form_refunds"] and fid["all_equal"] is False
+    assert "ya existe" in fid["tables"]["form_payments"]["note"] and "ya estaba registrado" in fid["tables"]["audit_consent_logs"]["note"]
+    assert fid["tables"]["access_logs"] == {"source": 2, "destination": 2, "equal": True, "note": ""} and fid["tables"]["users"]["equal"] is True
+    assert db.get(m.Event, real["event_id"]).status == "creado"
+    c = client.post(f"/api/event-transfer/imports/{real['result']['import_id']}/confirm")
+    assert c.status_code == 200 and c.json()["status"] == "en_proceso"
+    assert client.post(f"/api/event-transfer/imports/{real['result']['import_id']}/confirm").status_code == 400
+    log = client.get("/api/event-transfer/log").json()
+    assert {r["kind"] for r in log} == {"export", "import"} and all(set(r) <= {"id", "at", "kind", "by", "event_id", "event_code", "status", "rows", "pending_confirm"} for r in log)   # sin datos personales
+    assert client.post("/api/event-transfer/import/start", json={"token": "token-falso", "dry_run": True}).status_code == 400
+
+
+def test_upload_is_bound_to_the_staff_who_asked_for_it(client, db, factory, inline_jobs):
+    factory.staff("super_admin", "root")
+    factory.staff("super_admin", "root2")
+    ev = _build(db, factory)
+    login(client, "root")
+    token = _upload(client, client.get(f"/api/event-transfer/export/{ev.id}").content)
+    client.get("/logout")
+    login(client, "root2")
+    assert client.post("/api/event-transfer/import/inspect", json={"token": token}).status_code == 400                 # el token es de OTRA persona
+
+
+def test_gold_test_export_import_export_gives_equivalent_packages(db, factory, inline_jobs):
+    """La prueba de oro (docs/18 §2.8): exportar un evento sintético completo, importarlo en una base VACÍA, volver a exportarlo y comprobar que los dos paquetes son equivalentes salvo ids y metadatos."""
+    from app.storage import get_storage
+    ev = _files_event(db, factory)
+    ev.status = "finalizado"
+    db.commit()
+    code = ev.event_code
+    a, manifest_a = et.export_event(db, ev)
+    _wipe_event_data(db)
+    for k in list(get_storage().list("")):
+        get_storage().delete(k)
+    rep = et.import_package(db, a, dry_run=False, keep_original_state=True)                               # mismo código y nombre: la base está vacía
+    et.confirm_import(db, rep["import_id"])                                                              # el estado original de los formularios se aplica al confirmar
+    new = db.query(m.Event).filter_by(event_code=code).one()
+    b, manifest_b = et.export_event(db, new)
+    _, rows_a, _ = et.read_package(a)
+    _, rows_b, _ = et.read_package(b)
+    assert et.normalized_digests(rows_a) == et.normalized_digests(rows_b)
+    assert {k: v["count"] for k, v in manifest_a["tables"].items()} == {k: v["count"] for k, v in manifest_b["tables"].items()}
+    assert sorted((f["role"], f["sha256"]) for f in manifest_a["files"]) == sorted((f["role"], f["sha256"]) for f in manifest_b["files"])      # los archivos son byte a byte los mismos
+    assert rep["ok"] and et.fidelity_report(db, new.id, a, rep)["all_equal"] is True
+
+
+def test_fidelity_report_flags_what_did_not_travel(db, factory, inline_jobs):
+    ev = _build(db, factory)
+    a, _ = et.export_event(db, ev)
+    db.add(m.SuppressedPerson(tenant_id=ev.tenant_id, cedula_hash=consent.cedula_hash("1003"), suppressed_at=datetime(2026, 10, 1)))
+    db.commit()
+    rep = et.import_package(db, a, new_event_code="FID-1", new_name="Fidelidad", dry_run=False)
+    new = db.query(m.Event).filter_by(event_code="FID-1").one()
+    fid = et.fidelity_report(db, new.id, a, rep)
+    assert fid["all_equal"] is False and "event_attendees" in fid["different_tables"]
+    assert "persona suprimida" in fid["tables"]["event_attendees"]["note"] and fid["tables"]["event_attendees"]["source"] == 3 and fid["tables"]["event_attendees"]["destination"] == 2
+
+

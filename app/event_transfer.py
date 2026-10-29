@@ -300,7 +300,7 @@ def _person_ids(db: Session, event) -> set:
     return ids
 
 
-def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False, passphrase: Optional[str] = None) -> tuple:
+def export_event(db: Session, event, *, staff_username: Optional[str] = None, include_biometrics: bool = False, passphrase: Optional[str] = None, progress=None, record: bool = True) -> tuple:
     """Arma el paquete de un evento. Devuelve (bytes del .zip, manifest). Escribe una fila en la bitácora (sin datos personales). `include_biometrics` (solo super_admin: lo exige el
     endpoint) lleva vectores y fotos CIFRADOS con la frase de transporte `passphrase`, que no se guarda."""
     if include_biometrics and len(passphrase or "") < MIN_PASSPHRASE:
@@ -316,14 +316,20 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                 "event": {"event_code": event.event_code, "name": event.name, "status": event.status}, "options": {"include_biometrics": False}, "includes_files": True,
                 "tables": {}, "files": [], "staff_usernames": [], "warnings": []}
     used_staff = set()
+    # nombres de usuario que una importación anterior de ESTE evento no pudo enlazar (la cuenta no existía aquí): al re-exportar siguen viajando como texto
+    carried = {(a.table_name, a.row_ref, a.column_name): a.username for a in db.query(m.EventImportActor).join(m.EventTransferLog, m.EventTransferLog.id == m.EventImportActor.import_id)
+               .filter(m.EventTransferLog.event_id == event.id, m.EventTransferLog.kind == "import")}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for spec in TABLES:
+        for idx, spec in enumerate(TABLES):
+            if progress:
+                progress(f"Tabla {spec['name']}", int(75 * idx / len(TABLES)))
             n, h = 0, hashlib.sha256()
             with zf.open(f"data/{spec['name']}.jsonl", "w") as out:
                 for row in _select_rows(db, spec, event, ctx):
                     d = {k: _ser(v) for k, v in row.items()}
                     extra = {}
+                    ref = str(d["id"]) if isinstance(d.get("id"), int) else f"{d.get('tenant_id')}|{d.get('user_id')}|{d.get('event_id')}"
                     for col in tuple(spec.get("staff", ())) + (STAFF_EVENT_COLUMNS if spec["name"] == "events" else ()):
                         if d.get(col) is not None:
                             un = names.get(d[col])
@@ -331,6 +337,9 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                                 extra[col] = un
                                 used_staff.add(un)
                             d[col] = None
+                        elif (spec["name"], ref, col) in carried:
+                            extra[col] = carried[(spec["name"], ref, col)]
+                            used_staff.add(extra[col])
                     if spec["name"] == "events":
                         if d.get("state_id") is not None:
                             extra["state_id"] = states.get(d["state_id"])
@@ -347,6 +356,8 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
         manifest["staff_usernames"] = sorted(used_staff)
         written = set()
         st = get_storage()
+        if progress:
+            progress("Archivos del evento", 80)
         for role, ref, key in _collect_files(db, event, ctx["form_ids"], manifest["warnings"]):
             raw = st.get(key)
             if len(raw) > MAX_FILE_BYTES:
@@ -364,9 +375,10 @@ def export_event(db: Session, event, *, staff_username: Optional[str] = None, in
                                  "Se importa desde «Importar evento» (solo super_admin); siempre crea un evento NUEVO.\n")
     data = buf.getvalue()
     counts = {k: v["count"] for k, v in manifest["tables"].items()}
-    db.add(m.EventTransferLog(kind="export", staff_username=staff_username, event_id=event.id, event_code=event.event_code, package_sha256=_package_hash(manifest),
-                              status="done", counts_json=json.dumps(counts), options_json=json.dumps(manifest["options"])))
-    db.commit()
+    if record:
+        db.add(m.EventTransferLog(kind="export", staff_username=staff_username, event_id=event.id, event_code=event.event_code, package_sha256=_package_hash(manifest),
+                                  status="done", counts_json=json.dumps(counts), options_json=json.dumps(manifest["options"])))
+        db.commit()
     log.info("event_export event_id=%s tables=%s rows=%s", event.id, len(counts), sum(counts.values()))
     return data, manifest
 
@@ -495,7 +507,7 @@ def _clean_user_row(row: dict) -> dict:
 
 def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = None, new_event_code: Optional[str] = None, new_name: Optional[str] = None,
                    keep_original_state: bool = False, dry_run: bool = True, target_tenant_id: Optional[str] = None, transport_passphrase: Optional[str] = None,
-                   import_biometrics: bool = True) -> dict:
+                   import_biometrics: bool = True, progress=None) -> dict:
     """Importa un paquete creando un evento NUEVO. `dry_run=True` (por defecto) hace TODO y lo deshace (sin escribir archivos): lista qué entraría y qué conflictos hay.
     `target_tenant_id`: el cliente del destino (por defecto el mismo del paquete; si es otro, todo lo del evento pasa a ese cliente). Devuelve el informe."""
     from app.routers.events import EVENT_CODE_RE                     # el mismo formato de código que al crear un evento a mano
@@ -535,7 +547,7 @@ def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = 
     written = []
     try:
         written = _do_import(db, manifest, rows, opener, report, skip, code=code, name=name, staff_username=staff_username, keep_original_state=keep_original_state,
-                             tenant_dst=tenant_dst, dry_run=dry_run, bio_key=bio_key)
+                             tenant_dst=tenant_dst, dry_run=dry_run, bio_key=bio_key, progress=progress)
         report["ok"] = True
         if dry_run:
             db.rollback()
@@ -554,7 +566,7 @@ def import_package(db: Session, data: bytes, *, staff_username: Optional[str] = 
 
 
 def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, skip, *, code: str, name: str, staff_username: Optional[str], keep_original_state: bool,
-               tenant_dst: str, dry_run: bool, bio_key: Optional[Fernet] = None) -> list:
+               tenant_dst: str, dry_run: bool, bio_key: Optional[Fernet] = None, progress=None) -> list:
     ev_src = rows["events"][0]
     tenant_src = ev_src.get("tenant_id")
     tenant_info = manifest.get("tenant") or {}
@@ -640,8 +652,10 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
                 except InvalidToken:
                     raise TransferError("Un registro biométrico del paquete no se pudo descifrar: el archivo está dañado o fue modificado.")
 
-    for spec in TABLES:
+    for idx, spec in enumerate(TABLES):
         tname = spec["name"]
+        if progress:
+            progress(f"Tabla {tname}", int(80 * idx / len(TABLES)))
         t = _table(tname)
         src = rows[tname]
         rep = {"source": len(src), "imported": 0}
@@ -834,6 +848,8 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     report["import_id"] = log_row.id
     db.flush()
 
+    if progress:
+        progress("Archivos del evento", 90)
     # ---- escribir los archivos (solo en la importación de verdad; el simulacro solo los cuenta)
     for _, _, role in writes:
         report["files"]["by_role"][role] = report["files"]["by_role"].get(role, 0) + 1
@@ -853,6 +869,64 @@ def _do_import(db: Session, manifest: dict, rows: dict, opener, report: dict, sk
     return written
 
 
+# ------------------------------------------------------------------------------------------------ fidelidad «Origen vs Destino» (F5)
+# Columnas que CAMBIAN a propósito al importar (ids nuevos, código y nombre, tokens, estado en espera, rutas de archivos…): no cuentan para comparar. Lo demás debe quedar IGUAL.
+_VOLATILE = {
+    "events": {"id", "event_code", "name", "status", "faces_version", "certificates_token", "logo_path", "report_pdf_path", "tenant_id", "state_id", "super_event_id"},
+    "event_attendees": {"digital_token", "accept_token"}, "form_invites": {"token"}, "roulette_configs": {"display_token", "authorized_json"},
+    "web_forms": {"manual_status", "use_schedule", "test_key"}, "form_submissions": {"source"}, "form_payments": {"origin"}, "badge_templates": {"imported_from_saved_template_id"},
+    "event_documents": {"stored_path"}, "event_expenses": {"evidence_path"},
+}
+
+
+def normalized_digests(rows: dict) -> dict:
+    """Huella por tabla de las filas ya NORMALIZADAS: sin ids (cada FK pasa a la posición de la fila que referencia) ni lo que cambia a propósito. Dos paquetes del mismo evento
+    (origen y re-exportación del destino) deben dar las MISMAS huellas."""
+    ordinals = {t: {r["id"]: i for i, r in enumerate(rows[t])} for t in TABLE_NAMES if rows.get(t) and isinstance(rows[t][0].get("id"), int)}
+    out = {}
+    for spec in TABLES:
+        name = spec["name"]
+        h = hashlib.sha256()
+        for r in rows.get(name, []):
+            d = {k: v for k, v in r.items() if k not in _VOLATILE.get(name, ())}
+            if isinstance(d.get("id"), int):
+                d.pop("id")
+            for col, target in spec.get("remap", {}).items():
+                if d.get(col) is not None:
+                    d[col] = ordinals.get(target.rstrip("?"), {}).get(d[col], -1)
+            if "event_id" in d:
+                d["event_id"] = 0
+            if "tenant_id" in d:
+                d["tenant_id"] = ""
+            for col in ("stored_path", "evidence_path", "logo_path", "report_pdf_path"):
+                if col in r:
+                    d[col] = bool(r[col])
+            h.update(_line(d))
+        out[name] = h.hexdigest()
+    return out
+
+
+def fidelity_report(db: Session, new_event_id: int, source_package: bytes, import_report: Optional[dict] = None) -> dict:
+    """Informe «Origen vs Destino»: vuelve a exportar el evento NUEVO (sin bitácora) y compara, tabla por tabla, conteos y huellas normalizadas con las del paquete de origen."""
+    _, src_rows, _ = read_package(source_package)
+    event = db.get(m.Event, new_event_id)
+    data, _ = export_event(db, event, record=False)
+    _, dst_rows, _ = read_package(data)
+    src_h, dst_h = normalized_digests(src_rows), normalized_digests(dst_rows)
+    skipped = (import_report or {}).get("skipped", {})
+    tables, diffs = {}, []
+    for spec in TABLES:
+        n = spec["name"]
+        same = len(src_rows[n]) == len(dst_rows[n]) and src_h[n] == dst_h[n]
+        note = "; ".join(f"{k}: {v}" for k, v in skipped.get(n, {}).items())
+        if n == "users" and import_report and import_report.get("persons", {}).get("existing_kept"):
+            note = (note + "; " if note else "") + f"{import_report['persons']['existing_kept']} persona(s) ya existían en el destino y se conservaron como estaban"
+        tables[n] = {"source": len(src_rows[n]), "destination": len(dst_rows[n]), "equal": same, "note": note}
+        if not same:
+            diffs.append(n)
+    return {"tables": tables, "all_equal": not diffs, "different_tables": diffs}
+
+
 def confirm_import(db: Session, import_id: int, staff_username: Optional[str] = None) -> dict:
     """Aplica el estado ORIGINAL que quedó en espera al importar (evento «en proceso» y, si se pidió conservarlo, el de los formularios). Es el único paso que puede activar el congelamiento."""
     row = db.get(m.EventTransferLog, import_id)
@@ -864,10 +938,9 @@ def confirm_import(db: Session, import_id: int, staff_username: Optional[str] = 
         raise TransferError("El evento importado ya no existe.")
     if state.get("event_status"):
         event.status = state["event_status"]
-    for f in state.get("forms") or []:
-        form = db.get(m.WebForm, f["id"])
-        if form:
-            form.manual_status, form.use_schedule = f.get("manual_status") or "pruebas", bool(f.get("use_schedule"))
+    for f in state.get("forms") or []:                              # `updated_at` se queda como estaba: confirmar no es una edición del formulario
+        db.execute(m.WebForm.__table__.update().where(m.WebForm.__table__.c.id == f["id"]).values(manual_status=f.get("manual_status") or "pruebas", use_schedule=bool(f.get("use_schedule")),
+                                                                                                    updated_at=m.WebForm.__table__.c.updated_at))
     row.status = "confirmed"
     db.commit()
     log.info("event_import_confirm import_id=%s by=%s", import_id, bool(staff_username))
