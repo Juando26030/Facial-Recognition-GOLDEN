@@ -83,7 +83,7 @@ global.fetch = async (url, init = {}) => {
   if (u.pathname.endsWith('/print-station/me')) return json(200, global.__me || { admin: false, station: false, settings: null });
   if (process.env.SHARED_OFF && /print-devices|print-jobs|print-check/.test(u.pathname)) { sharedCalls.push(u.pathname); return json(409, { detail: 'La impresión compartida está desactivada' }); }
   if (u.pathname.endsWith('/print-devices/heartbeat')) { try { beats.push(JSON.parse(init.body)); } catch (e) { /* sin cuerpo */ } }
-  if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode, printer_name: mode === 'shared' ? 'dig1' : '', printer_ready: true, serving: 0, poll: false });
+  if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, Object.assign({ enabled: true, mode, printer_name: mode === 'shared' ? 'dig1' : '', printer_ready: true, serving: 0, poll: false }, global.__hb || {}));
   let m = u.pathname.match(/\/print-check\/(.+)$/);
   if (m) return json(200, REGISTERED.has(m[1]) ? { registered: true } : { registered: false, detail: `No se puede imprimir: Persona ${m[1]} aún no está registrado. Acredítalo o guarda su registro primero.` });
   if (u.pathname.endsWith('/print-jobs') && init.method === 'POST') { const b = JSON.parse(init.body); reqIds.push(b.request_id); if (flaky && reqIds.length === 1) throw new TypeError('Failed to fetch'); jobs.push(b.user_id); return json(200, { id: jobs.length, status: 'queued', printer_name: 'dig1', printer_ready: true }); }
@@ -132,6 +132,41 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
     QLUsb.connect = async () => null; QLUsb.info = () => null; await GoldenSharedPrint.disconnectForTest(); await GoldenSharedPrint.connectForTest(false);   // sin impresora: cae a la ventana normal
     await BP.openPrintWindow('1002'); await settle(); assert.deepStrictEqual(original.open, ['1002'], 'sin impresora, cae a la ventana normal');
     console.log('shared_print_off_usb OK'); process.exit(0);
+  }
+  if (process.env.HOSTMODE) {                                           // 29-oct-2026, problema B: estado explícito de impresión (usb / dialog / none) y los avisos que dependen de él
+    await new Promise((r) => setTimeout(r, 200));
+    const beat = async (hb) => { global.__hb = hb; beats.length = 0; await GoldenSharedPrint.connectForTest(false); await settle(); return { b: beats[beats.length - 1] || {}, bar: GoldenSharedPrint.barState() }; };
+    // 1) sin impresora ni declaración, atendiendo a 2 equipos: «none»; el aviso dice lo que pasa y NO que la impresora está «DESCONECTADA»
+    let r = await beat({ serving: 2, waiting: 0, my_mode: 'none' });
+    assert.strictEqual(r.b.print_mode, 'none', 'sin impresora: print_mode none (' + JSON.stringify(r.b) + ')');
+    assert.ok(/2 equipo\(s\) imprimen aquí y no tienes impresora/.test(r.bar.text) && !/DESCONECTADA/.test(r.bar.text) && r.bar.kind === 'bad', r.bar.text);
+    assert.ok(!r.bar.dialogHidden && /Este equipo imprime con la ventana de Chrome/.test(r.bar.dialogText), 'el control para declararlo está a la vista');
+    // 2) la persona lo declara: el latido manda dialog, el aviso desaparece y con pendientes dice qué hacer
+    GoldenSharedPrint.declareDialogForTest(true);
+    r = await beat({ serving: 2, waiting: 0, my_mode: 'dialog' });
+    assert.strictEqual(r.b.print_mode, 'dialog', 'declarado: print_mode dialog');
+    assert.ok(/imprime con la ventana de Chrome/.test(r.bar.text) && !/no tienes impresora|DESCONECTADA/.test(r.bar.text) && r.bar.kind === 'ok', r.bar.text);
+    assert.ok(/quitar/.test(r.bar.dialogText), 'el control muestra que está activo');
+    r = await beat({ serving: 2, waiting: 3, my_mode: 'dialog' });
+    assert.ok(/3 escarapela\(s\) de otros equipos esperan: toca «Imprimir pendientes»/.test(r.bar.text) && !/DESCONECTADA/.test(r.bar.text), r.bar.text);
+    assert.ok(!r.bar.pendingHidden, '«Imprimir pendientes» visible');
+    // 3) quien pide: el aviso depende del modo del anfitrión
+    mode = 'shared';
+    GoldenSharedPrint.declareDialogForTest(false);
+    r = await beat({ printer_ready: false, printer_mode: 'dialog', printer_online: true, printer_name: 'Ana' });
+    assert.ok(/Imprime en el equipo de Ana con la ventana de Chrome: sale cuando ese equipo toque «Imprimir pendientes»/.test(r.bar.text) && r.bar.kind === 'ok', r.bar.text);
+    r = await beat({ printer_ready: false, printer_mode: 'none', printer_online: true, printer_name: 'Ana' });
+    assert.ok(/El equipo de Ana no tiene impresora ahora: tus escarapelas quedan en cola/.test(r.bar.text) && r.bar.kind === 'bad', r.bar.text);
+    r = await beat({ printer_ready: true, printer_mode: 'usb', printer_online: true, printer_name: 'Ana' });
+    assert.ok(/^Imprime en el equipo de Ana\.$/.test(r.bar.text), r.bar.text);
+    // 4) conectar la impresora USB: el aviso desaparece y el latido manda usb
+    mode = 'self';
+    QLUsb.connect = async () => ({ productName: 'QL-800' }); QLUsb.info = () => ({ name: 'QL-800' });
+    await GoldenSharedPrint.connectForTest(true);
+    r = await beat({ serving: 2, my_mode: 'usb' });
+    assert.strictEqual(r.b.print_mode, 'usb');
+    assert.ok(/Impresora conectada \(QL-800\)\. Imprime también para 2 equipo\(s\)\./.test(r.bar.text) && r.bar.kind === 'ok' && r.bar.dialogHidden, r.bar.text);
+    console.log('host_mode OK'); process.exit(0);
   }
   if (process.env.DENIED) {                                             // Windows: «Access denied» → aviso claro UNA vez, sin reintentos en bucle ni «dueño de la impresora»
     await new Promise((r) => setTimeout(r, 200));

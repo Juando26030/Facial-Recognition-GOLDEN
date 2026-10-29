@@ -46,6 +46,10 @@
   let usb = { ok: false, name: '', lastError: '', busy: false };
   let online = true;
   let pending = 0;                       // trabajos de este equipo pendientes de confirmar
+  /* Cómo imprime este equipo (29-oct-2026): «usb» (impresora abierta por WebUSB), «dialog» (con la ventana de Chrome: lo DECLARA la persona con el control de la barra, recordado por equipo) o «none».
+     Solo usb y dialog pueden atender a otros equipos; con «none» la barra avisa en vez de decir que la impresora está desconectada. */
+  let dialogDeclared = store.get('gw_print_dialog', '0') === '1';
+  let printingPending = false;
   /* «Impresión compartida» (interruptor del evento): solo con ella se usa la impresión directa por USB, el latido, los trabajos y la Cola. Apagada, la impresión es la de siempre. */
   const SHARED = window.SHARED_PRINT_ENABLED !== false;
   const MOBILE = platform === 'Android' || platform === 'iOS';
@@ -63,6 +67,7 @@
   bar.innerHTML = '<span class="sp-dot" aria-hidden="true"></span><span class="sp-text">Impresión: comprobando…</span>' +
     '<button type="button" class="sp-btn" id="spConnect">🔌 Conectar impresora</button>' +
     '<button type="button" class="sp-btn" id="spPending" hidden>🖨️ Imprimir pendientes</button>' +
+    '<button type="button" class="sp-btn" id="spDialog" hidden aria-pressed="false">🖥️ Este equipo imprime con la ventana de Chrome</button>' +
     '<button type="button" class="sp-btn" id="spQueue">🧾 Cola</button>' +
     '<button type="button" class="sp-btn" id="spPrefs">⚙️ Impresión</button>' +
     '<button type="button" class="sp-btn" id="spTouch" aria-pressed="false">📱 Registro touch</button>' +
@@ -132,20 +137,27 @@
       else { kind = 'warn'; msg = 'Sin impresora: se usa la ventana de impresión del navegador.'; }
     } else if (!online) { kind = 'bad'; msg = 'Sin conexión con el servidor: la impresión compartida no funciona hasta que vuelva la red.'; }
     else if (route.mode === 'shared') {
-      msg = route.printer_ready ? `Imprime en el equipo de ${route.printer_name}.` : `Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme.`;
+      if (route.printer_ready) msg = `Imprime en el equipo de ${route.printer_name}.`;
+      else if (route.printer_mode === 'dialog' && route.printer_online) msg = `Imprime en el equipo de ${route.printer_name} con la ventana de Chrome: sale cuando ese equipo toque «Imprimir pendientes».`;
+      else if (route.printer_mode === 'none' || route.printer_online === false) { kind = 'bad'; msg = `El equipo de ${route.printer_name} no tiene impresora ahora: tus escarapelas quedan en cola.`; }
+      else msg = `Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme.`;
+    } else if (printingPending) {
+      msg = 'Imprimiendo las escarapelas de otros equipos…';
     } else if (usb.busy) {
       kind = 'warn';
       msg = `${QLUsb.BUSY_MSG} Se vuelve a intentar sola cada pocos segundos.`;
     } else if (usb.ok) {
       msg = `Impresora conectada (${usb.name}).` + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
+    } else if (dialogDeclared) {
+      msg = 'Este equipo imprime con la ventana de Chrome.' + (route.serving ? ` Imprime también para ${route.serving} equipo(s).` : '');
+      if (waitingCount()) { kind = 'warn'; msg = `Este equipo imprime con la ventana de Chrome; ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».`; }
     } else if (usb.denied) {
-      kind = 'warn'; msg = 'Este computador no puede abrir la impresora directamente (Windows usa su propio controlador): se imprime con la ventana de Chrome. Para compartir la impresora usa un celular o tablet Android.';
-      if (waitingCount()) msg += ` ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».`;
+      kind = 'warn'; msg = 'Este computador no puede abrir la impresora directamente (Windows usa su propio controlador): se imprime con la ventana de Chrome. Si este equipo va a imprimir para otros, marca «Este equipo imprime con la ventana de Chrome».';
+      if (route.serving) { kind = 'bad'; msg = `${route.serving} equipo(s) imprimen aquí y no tienes impresora: marca «Este equipo imprime con la ventana de Chrome» o conecta una por USB.`; }
     } else {
       kind = route.serving ? 'bad' : 'warn';
-      msg = route.serving ? `Impresora DESCONECTADA: ${route.serving} equipo(s) imprimen aquí y sus escarapelas quedan en cola. Conéctela.`
+      msg = route.serving ? `${route.serving} equipo(s) imprimen aquí y no tienes impresora: conéctala por USB o marca «Este equipo imprime con la ventana de Chrome».`
         : 'Sin impresora USB: se usará la impresión normal del navegador.';
-      if (SHARED && waitingCount()) msg += ` ${waitingCount()} escarapela(s) de otros equipos esperan: toca «Imprimir pendientes».`;
     }
     if (pending) msg += ` · ${pending} por confirmar`;
     const shown = configShown();
@@ -158,13 +170,17 @@
     bar.querySelector('#spQueue').hidden = !(SHARED && shown);
     bar.querySelector('#spPrefs').hidden = !shown;
     bar.querySelector('#spPending').hidden = !(SHARED && !usb.ok && waitingCount());            // la acción del puesto: se ve también con el menú escondido
+    const dlg = bar.querySelector('#spDialog');
+    dlg.hidden = !(SHARED && shown && !usb.ok && !usb.busy && route.mode !== 'shared');          // el control de «este equipo imprime con la ventana de Chrome»
+    dlg.textContent = dialogDeclared ? '✅ Este equipo imprime con la ventana de Chrome (quitar)' : '🖥️ Este equipo imprime con la ventana de Chrome';
+    dlg.setAttribute('aria-pressed', dialogDeclared ? 'true' : 'false');
     bar.querySelector('#spPending').textContent = `🖨️ Imprimir pendientes (${waitingCount()})`;
   }
   function stationLine() {
     const names = route.serving_names && route.serving_names.length ? route.serving_names.join(', ') : '';
     if (!SHARED) return usb.ok ? { kind: 'ok', msg: `Impresora conectada (${usb.name || 'Brother'}).` } : { kind: 'warn', msg: 'Sin impresora: se usa la ventana de impresión del navegador.' };
     if (route.mode === 'shared') return route.printer_ready ? { kind: 'ok', msg: `Imprime en: ${route.printer_name} (lista)` } : { kind: 'ok', msg: `Enviada al puesto ${route.printer_name}: se imprime cuando el puesto la confirme.` };
-    if (route.serving) return { kind: usb.ok ? 'ok' : 'warn', msg: `Comparte impresora con: ${names || route.serving + ' equipo(s)'} (${usb.ok ? 'lista' : 'sin impresora'})` + (waitingCount() && !usb.ok ? ` · ${waitingCount()} esperan: toca «Imprimir pendientes».` : '') };
+    if (route.serving) return { kind: usb.ok || dialogDeclared ? 'ok' : 'warn', msg: `Comparte impresora con: ${names || route.serving + ' equipo(s)'} (${usb.ok ? 'lista' : dialogDeclared ? 'imprime con la ventana de Chrome' : 'sin impresora'})` + (waitingCount() && !usb.ok ? ` · ${waitingCount()} esperan: toca «Imprimir pendientes».` : '') };
     if (MOBILE && !usb.ok) return { kind: 'warn', msg: 'Sin impresora: se usa la ventana de impresión del navegador.' };
     return { kind: 'ok', msg: `Imprime en: este puesto (${usb.ok ? 'lista' : 'ventana de impresión del navegador'})` };
   }
@@ -225,7 +241,7 @@
     if (sessionDead || !SHARED) { render(); return; }                // sin impresión compartida no se llama a ninguna ruta compartida
     try {
       const res = await fetchT(`/api/events/${EID}/print-devices/heartbeat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy ? null : usb.ok, printer_name: usb.name || null }) });      // null: otra pestaña es la dueña, no se pisa su estado
+        body: JSON.stringify({ device_id: deviceId, platform, browser, printer_connected: usb.busy ? null : usb.ok, printer_name: usb.name || null, print_mode: usb.ok ? 'usb' : (dialogDeclared ? 'dialog' : 'none') }) });      // null: otra pestaña es la dueña, no se pisa su estado
       if (!online) recoveredUntil = Date.now() + 20000;                  // volvió la red: lo dice la barra y se reanudan sondeo y latido sin que nadie toque nada
       online = true;
       if (res.ok) { route = await res.json(); startPolling(); }
@@ -349,7 +365,6 @@
     }
     polling = false;
   }
-  let printingPending = false;
   async function printPending() {                  // un toque de la persona: reclama e imprime, UNO A UNO, lo que espera en el servidor
     if (printingPending) return;
     printingPending = true;
@@ -743,6 +758,12 @@
   }
 
   bar.querySelector('#spConnect').addEventListener('click', () => connectUsb(true));
+  bar.querySelector('#spDialog').addEventListener('click', () => {
+    dialogDeclared = !dialogDeclared;
+    store.set('gw_print_dialog', dialogDeclared ? '1' : '0');
+    toast(dialogDeclared ? '🖥️ Este equipo imprimirá con la ventana de Chrome: ya puede atender a otros equipos (con «Imprimir pendientes»).' : 'Este equipo ya no se anuncia como impresora.', 'info');
+    heartbeat(); render();
+  });
   bar.querySelector('#spPending').addEventListener('click', () => printPending());
   bar.querySelector('#spPrefs').addEventListener('click', showPrefs);
   bar.querySelector('#spQueue').addEventListener('click', showQueue);
@@ -761,6 +782,8 @@
   window.addEventListener('offline', () => { online = false; render(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
   window.GoldenSharedPrint = { printFor, testJob, cleanCedula, prefsForJob, printPending, connectForTest: (ask) => connectUsb(!!ask), disconnectForTest: () => { usb = { ok: false, name: '', lastError: '', busy: false }; }, applyStationForTest: (me) => { applyStation(me); applyTouch(); render(); },
+    barState: () => ({ text: bar.querySelector('.sp-text').textContent, kind: bar.className, dialogHidden: bar.querySelector('#spDialog').hidden, dialogText: bar.querySelector('#spDialog').textContent, pendingHidden: bar.querySelector('#spPending').hidden }),
+    declareDialogForTest: (on) => { dialogDeclared = !!on; store.set('gw_print_dialog', on ? '1' : '0'); render(); },
     stationState: () => ({ isAdmin, isStation, cfg: stationCfg, shown: configShown(), line: stationLine().msg, bar: { prefs: bar.querySelector('#spPrefs').hidden, queue: bar.querySelector('#spQueue').hidden, connect: bar.querySelector('#spConnect').hidden, pending: bar.querySelector('#spPending').hidden } }),
     state: () => ({ route, usb, online, pending, deviceId, touch, pendingJobs: waitingCount(), shared: SHARED }) };
 })();

@@ -34,12 +34,12 @@ def setup(client, factory, db):
     db.commit()
     login(client, "y1")
     client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json={"device_id": "y", "platform": "Android", "browser": "Chrome", "printer_connected": True, "printer_name": "QL-800"})
-    client.cookies.clear()
+    client.post("/logout"); client.cookies.clear()
     login(client, "adm")
     for x in ("x1", "x2"):
         r = client.put(f"/api/events/{ev.id}/shared-print/route", json={"staff_user_id": users[x].id, "printer_staff_id": users["y1"].id})
         assert r.status_code == 200, r.text
-    client.cookies.clear()
+    client.post("/logout"); client.cookies.clear()
     login(client, "x1")
     return ev, users
 
@@ -127,7 +127,7 @@ def test_the_claimed_job_is_delivered_once_even_if_two_tabs_of_the_printer_poll(
     """El equipo Y con dos pestañas abiertas pregunta por trabajos en las dos: el trabajo reservado solo llega a UNA."""
     ev, users = setup
     _job(client, ev, "1001")
-    client.cookies.clear()
+    client.post("/logout"); client.cookies.clear()
     login(client, "y1")
     got = [client.get(f"/api/events/{ev.id}/print-jobs-next").json()["job"] for _ in range(3)]
     assert [g is not None for g in got].count(True) == 1
@@ -179,13 +179,13 @@ def test_only_coordinators_and_up_can_read_or_change_print_settings_and_only_for
     for role, name in (("digitador", "dig"), ("cliente", "cli")):
         u = factory.staff(role, name)
         factory.authorize(ev, u)
-        client.cookies.clear()
+        client.post("/logout"); client.cookies.clear()
         login(client, name)
         assert client.get(f"/api/events/{ev.id}/print-settings").status_code == 403, role
         assert client.put(f"/api/events/{ev.id}/print-settings", json={"settings": {"cut": False}}).status_code == 403, role
     outsider = factory.staff("digitador", "otro", tenant_id="otra")                              # de otro cliente (y sin rol para esto): ni leer ni cambiar
     factory.authorize(other, outsider)
-    client.cookies.clear()
+    client.post("/logout"); client.cookies.clear()
     login(client, "otro")
     assert client.get(f"/api/events/{other.id}/print-settings").status_code == 403
     assert client.put(f"/api/events/{other.id}/print-settings", json={"settings": {"cut": False}}).status_code == 403

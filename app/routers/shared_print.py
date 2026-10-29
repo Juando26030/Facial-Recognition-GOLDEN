@@ -43,6 +43,7 @@ class HeartbeatIn(BaseModel):
     browser: Optional[str] = None
     printer_connected: Optional[bool] = None    # None = esta pestaña no es la dueña de la impresora (otra pestaña del mismo equipo la tiene): no cambia lo que hay
     printer_name: Optional[str] = None
+    print_mode: Optional[str] = None            # «dialog»: este equipo imprime con la ventana de Chrome (lo declara la persona en la barra); sin impresora ni esto = «none»
 
 
 class JobIn(BaseModel):
@@ -76,9 +77,30 @@ def _printer_ready(device: Optional[PrintDevice], now=None) -> bool:
     return bool(_online(device, now) and device.printer_connected)
 
 
+def _mode(device: Optional[PrintDevice]) -> str:
+    """Cómo imprime este equipo: «usb» (impresora abierta por WebUSB), «dialog» (con la ventana de Chrome; lo declara la persona) o «none». Un latido viejo (sin print_mode) con la impresora conectada cuenta como usb."""
+    if device is None:
+        return "none"
+    if device.printer_connected:
+        return "usb"
+    return "dialog" if device.print_mode == "dialog" else "none"
+
+
 def _can_host(device: Optional[PrintDevice], now=None) -> bool:
-    """¿Puede elegirse como puesto? Que esté activo (abierto en el Registro): con la impresora USB conectada imprime solo; sin ella, los trabajos esperan su «Imprimir pendientes»."""
-    return _online(device, now)
+    """¿Puede elegirse como anfitrión de otros equipos? Que esté activo (abierto en el Registro) Y que sepa imprimir: con la impresora USB lista, o declarando que imprime con la ventana de Chrome
+    (atiende con «Imprimir pendientes»). Un equipo sin impresora («none») NO puede ser anfitrión (29-oct-2026)."""
+    return _online(device, now) and _mode(device) in ("usb", "dialog")
+
+
+def _ineligible_reason(device: Optional[PrintDevice], now=None) -> Optional[str]:
+    """Por qué un equipo NO se puede elegir como anfitrión (para mostrarlo en Parámetros); None si sí se puede."""
+    if device is None:
+        return "Todavía no abrió el Registro con la impresión compartida."
+    if not _online(device, now):
+        return "Está desconectado (sin señal)."
+    if _mode(device) == "none":
+        return "No tiene impresora: conéctala por USB o marca «Este equipo imprime con la ventana de Chrome» en su barra de impresión."
+    return None
 
 
 def _enabled_event(event_id: int, db: Session, staff: StaffUser) -> Event:
@@ -151,7 +173,8 @@ def heartbeat(event_id: int, data: HeartbeatIn, db: Session = Depends(get_db), s
     dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff.id).first()
     device_id = _clip(data.device_id, 64) or "?"
     # Un equipo por cuenta (sin columnas nuevas): el que PUEDE IMPRIMIR SOLO manda. Otra sesión de la misma cuenta (p. ej. el celular del admin) que no tiene impresora NO pisa su estado ni su señal.
-    held = dev is not None and dev.device_id != device_id and _printer_ready(dev, now) and not data.printer_connected
+    mode_in = "usb" if data.printer_connected else ("dialog" if data.print_mode == "dialog" else "none")
+    held = dev is not None and dev.device_id != device_id and _online(dev, now) and _mode(dev) in ("usb", "dialog") and mode_in == "none" and not data.printer_connected
     if not held:
         if dev is None:
             dev = PrintDevice(event_id=event.id, staff_user_id=staff.id, device_id=device_id, last_seen_at=now)
@@ -160,6 +183,7 @@ def heartbeat(event_id: int, data: HeartbeatIn, db: Session = Depends(get_db), s
         dev.platform, dev.browser = _clip(data.platform, 40), _clip(data.browser, 40)
         if data.printer_connected is not None or dev.printer_connected is None:
             dev.printer_connected, dev.printer_name = bool(data.printer_connected), _clip(data.printer_name, 80)
+            dev.print_mode = mode_in
         dev.last_seen_at = now
     db.commit()
     printer_id = _route(db, event.id, staff.id)
@@ -167,6 +191,7 @@ def heartbeat(event_id: int, data: HeartbeatIn, db: Session = Depends(get_db), s
     printer_dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=printer_id).first() if printer_id else None
     serving = db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == staff.id).count()
     return {"enabled": True, "mode": "shared" if printer_id else "self", "printer_name": _name(printer), "printer_ready": _printer_ready(printer_dev, now),
+            "printer_mode": _mode(printer_dev) if printer_id else None, "printer_online": _online(printer_dev, now) if printer_id else None, "my_mode": _mode(dev),
             "serving": serving, "poll": bool(serving and dev.printer_connected and dev.device_id == device_id and not held),
             "holder": bool(dev.device_id == device_id and not held), **_station_counts(db, event.id, staff.id),
             "serving_names": [_name(db.get(StaffUser, r.staff_user_id)) for r in db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == staff.id).limit(12)]}
@@ -212,10 +237,14 @@ def create_job(event_id: int, data: JobIn, db: Session = Depends(get_db), staff:
     dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=printer_id).first()
     ready = _printer_ready(dev)
     log.info("impresión compartida: trabajo %s en cola (evento %s)", job.id, event.id)
-    out = {**_job_out(db, job), "duplicate": False, "printer_ready": ready}
+    out = {**_job_out(db, job), "duplicate": False, "printer_ready": ready, "printer_mode": _mode(dev)}
     if not ready:
-        out["warning"] = (f"El equipo de {out['printer_name']} no está conectado o no tiene la impresora: la escarapela quedó en cola "
-                          f"({int(PRINT_JOB_TTL.total_seconds() // 60)} min) y podrás reimprimirla.")
+        mins = int(PRINT_JOB_TTL.total_seconds() // 60)
+        if _online(dev) and _mode(dev) == "dialog":
+            out["warning"] = f"La escarapela quedó en cola: sale cuando el equipo de {out['printer_name']} toque «Imprimir pendientes» ({mins} min) y podrás reimprimirla."
+        else:
+            out["warning"] = (f"El equipo de {out['printer_name']} no está conectado o no tiene la impresora: la escarapela quedó en cola "
+                              f"({mins} min) y podrás reimprimirla.")
     return out
 
 
@@ -341,9 +370,9 @@ def config(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depe
         d = devices.get(u.id)
         out.append({"staff_id": u.id, "name": _name(u), "username": u.username, "role": u.role,
                     "device": None if d is None else {"platform": d.platform, "browser": d.browser, "printer_connected": d.printer_connected,
-                                                      "printer_name": d.printer_name, "online": _online(d, now),
+                                                      "printer_name": d.printer_name, "online": _online(d, now), "print_mode": _mode(d),
                                                       "seconds_ago": int((now - d.last_seen_at).total_seconds())},
-                    "printer_staff_id": routes.get(u.id), "eligible_printer": _can_host(d, now), "serving": serving.get(u.id, 0),
+                    "printer_staff_id": routes.get(u.id), "eligible_printer": _can_host(d, now), "ineligible_reason": _ineligible_reason(d, now), "serving": serving.get(u.id, 0),
                     "print_station": bool(u.print_station), "station": read_station(db, event.id, u.id)})
     return {"enabled": bool(event.shared_print_enabled), "warn_per_printer": WARN_PER_PRINTER, "users": out}
 
@@ -375,8 +404,9 @@ def set_route(event_id: int, data: RouteIn, db: Session = Depends(get_db), staff
     if y is None or not y.is_active:
         raise HTTPException(status_code=404, detail="El equipo elegido no existe.")
     get_event_for_staff(event.id, db, y)                       # Y también debe ser de este evento
-    if not _can_host(db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=y.id).first()):     # con impresora lista, o un computador con cuadro de diálogo (atiende con «Imprimir pendientes»)
-        raise HTTPException(status_code=409, detail="Ese equipo no está conectado con la impresora en este momento: no se puede elegir.")
+    ydev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=y.id).first()
+    if not _can_host(ydev):                                    # solo con impresora USB lista, o un equipo que declara imprimir con la ventana de Chrome (atiende con «Imprimir pendientes»)
+        raise HTTPException(status_code=409, detail="Ese equipo no se puede elegir como anfitrión. " + (_ineligible_reason(ydev) or "No está disponible."))
     if _route(db, event.id, y.id):
         raise HTTPException(status_code=409, detail="Ese usuario imprime en otro equipo: no puede atender a otros.")
     if db.query(PrintRoute).filter(PrintRoute.event_id == event.id, PrintRoute.printer_staff_id == x.id).first():

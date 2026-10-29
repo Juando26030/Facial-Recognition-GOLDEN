@@ -935,6 +935,7 @@ class PrintDevice(Base):
     browser = Column(String(40), nullable=True)
     printer_connected = Column(Boolean, default=False, server_default='false', nullable=False)
     printer_name = Column(String(80), nullable=True)
+    print_mode = Column(String(10), nullable=True)      # 0076: usb | dialog (imprime con la ventana de Chrome, lo declara la persona) | none/NULL (sin impresora); solo usb y dialog pueden ser anfitrión
     last_seen_at = Column(DateTime, nullable=False, default=utcnow)
     __table_args__ = (UniqueConstraint('event_id', 'staff_user_id', name='uq_print_device_event_staff'),)
 

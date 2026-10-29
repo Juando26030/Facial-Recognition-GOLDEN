@@ -33,7 +33,7 @@ def setup(client, factory, db):
 
 
 def _as(client, username):
-    client.cookies.clear()
+    client.post("/logout"); client.cookies.clear()
     login(client, username)
 
 
@@ -92,14 +92,16 @@ def test_devices_report_and_appear_with_last_signal_and_printer(client, setup):
     ev, u = setup
     _as(client, "y1")
     r = _beat(client, ev, printer=True)
-    assert r.json() == {"enabled": True, "mode": "self", "printer_name": "", "printer_ready": False, "serving": 0, "poll": False, "holder": True, "waiting": 0, "claimed": 0, "serving_names": []}
+    assert r.json() == {"enabled": True, "mode": "self", "printer_name": "", "printer_ready": False, "printer_mode": None, "printer_online": None, "my_mode": "usb", "serving": 0, "poll": False,
+                        "holder": True, "waiting": 0, "claimed": 0, "serving_names": []}
     _as(client, "x1")
     _beat(client, ev, printer=False)
     _as(client, "adm")
     users = {x["username"]: x for x in client.get(f"/api/events/{ev.id}/shared-print").json()["users"]}
     assert users["y1"]["eligible_printer"] is True and users["y1"]["device"]["printer_connected"] is True and users["y1"]["device"]["online"] is True
     assert users["y1"]["device"]["platform"] == "Android" and users["y1"]["device"]["browser"] == "Chrome"
-    assert users["x1"]["eligible_printer"] is True and users["x2"]["device"] is None                 # activo sin USB: puede atender con «Imprimir pendientes»; x2 sin señal todavía
+    assert users["x1"]["eligible_printer"] is False and users["x1"]["device"]["print_mode"] == "none" and "No tiene impresora" in users["x1"]["ineligible_reason"]      # activo SIN impresora ni «ventana de Chrome»: no puede ser anfitrión
+    assert users["x2"]["device"] is None and users["x2"]["ineligible_reason"] and users["y1"]["ineligible_reason"] is None                                              # x2 sin señal todavía
 
 
 def test_a_printer_must_be_connected_reporting_and_has_no_hard_limit_only_a_soft_warning_over_six(client, factory, setup, db):
@@ -270,7 +272,7 @@ def test_a_tab_that_does_not_own_the_printer_reports_null_and_does_not_overwrite
     client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json={"device_id": "x", "printer_connected": None})
     _as(client, "adm")
     x1 = {x["username"]: x for x in client.get(f"/api/events/{ev.id}/shared-print").json()["users"]}["x1"]
-    assert x1["device"]["printer_connected"] is False and x1["eligible_printer"] is True
+    assert x1["device"]["printer_connected"] is False and x1["eligible_printer"] is False       # sin impresora declarada: no es anfitrión posible
 
 
 def test_the_registration_label_uses_the_same_calibration_as_the_usb_test_page_and_the_test_page_lets_the_printer_go():
@@ -385,8 +387,11 @@ def test_the_last_resort_print_page_declares_the_rotated_page_so_nothing_is_cut(
 
 
 # ---------------------------------------------------------------------------------------------------- reclamo: solo quien imprime sola (25-oct-2026, bloque 1.1)
-def _beat_as(client, ev, device, printer, name=None):
-    return client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json={"device_id": device, "platform": "x", "browser": "Chrome", "printer_connected": printer, "printer_name": name}).json()
+def _beat_as(client, ev, device, printer, name=None, dialog=False):
+    body = {"device_id": device, "platform": "x", "browser": "Chrome", "printer_connected": printer, "printer_name": name}
+    if dialog:
+        body["print_mode"] = "dialog"                                                                # el equipo declara que imprime con la ventana de Chrome
+    return client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json=body).json()
 
 
 def test_another_session_of_the_station_account_never_overwrites_the_station_or_claims_its_jobs(client, setup, db):
@@ -410,13 +415,13 @@ def test_another_session_of_the_station_account_never_overwrites_the_station_or_
 def test_a_window_with_a_print_dialog_never_claims_by_polling_but_the_click_claims(client, setup):
     ev, u = setup
     _as(client, "y1")
-    _beat_as(client, ev, "pc", False, "QL-800 (sin USB)")        # imprime por controlador pero Chrome pide confirmar cada hoja
+    _beat_as(client, ev, "pc", False, "QL-800 (sin USB)", dialog=True)        # imprime por controlador pero Chrome pide confirmar cada hoja: lo declara (print_mode dialog)
     assert _route(client, ev, u["x1"], u["y1"]).status_code == 200
     _as(client, "x1")
     job = _job(client, ev, "1002").json()
     _as(client, "y1")
     assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc").json()["job"] is None     # el sondeo no reclama: el trabajo sigue en el servidor
-    hb = _beat_as(client, ev, "pc", False, "QL-800 (sin USB)")
+    hb = _beat_as(client, ev, "pc", False, "QL-800 (sin USB)", dialog=True)
     assert hb["waiting"] == 1 and hb["claimed"] == 0 and hb["poll"] is False
     assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=pc&manual=1").json()["job"]["id"] == job["id"]      # «Imprimir pendientes»: la persona está ahí
     assert _beat_as(client, ev, "pc", False)["claimed"] == 1
@@ -486,3 +491,71 @@ def test_denied_bar_explains_and_hides_the_useless_connect_button():
     from pathlib import Path
     sp = Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert sp.count("Este computador no puede abrir la impresora directamente") == 2 and "usb.busy || usb.denied ||" in sp
+
+
+# ------------------------------------------------------------------------------------------------ 29-oct-2026, problema B: estado explícito de impresión de cada equipo
+def _beat_mode(client, ev, mode, device="dev"):
+    body = {"device_id": device, "platform": "Windows", "browser": "Chrome", "printer_connected": mode == "usb", "printer_name": "QL-800" if mode == "usb" else None}
+    if mode == "dialog":
+        body["print_mode"] = "dialog"
+    return client.post(f"/api/events/{ev.id}/print-devices/heartbeat", json=body)
+
+
+def test_only_usb_or_dialog_computers_can_host_and_none_is_refused_with_the_reason(client, setup):
+    ev, u = setup
+    for name, mode in (("y1", "usb"), ("x2", "dialog"), ("x3", "none")):
+        _as(client, name)
+        assert _beat_mode(client, ev, mode).json()["my_mode"] == mode
+    assert _route(client, ev, u["x1"], u["y1"]).status_code == 200                              # usb: sí
+    assert _route(client, ev, u["x4"], u["x2"]).status_code == 200                              # dialog (computador que imprime con la ventana de Chrome): sí
+    r = _route(client, ev, u["x4"], u["x3"])                                                    # none: no, y dice por qué
+    assert r.status_code == 409 and "No tiene impresora" in r.json()["detail"] and "ventana de Chrome" in r.json()["detail"]
+    _as(client, "adm")
+    users = {x["username"]: x for x in client.get(f"/api/events/{ev.id}/shared-print").json()["users"]}
+    assert [users[n]["eligible_printer"] for n in ("y1", "x2", "x3")] == [True, True, False] and users["x3"]["ineligible_reason"] and users["y1"]["ineligible_reason"] is None
+    assert [users[n]["device"]["print_mode"] for n in ("y1", "x2", "x3")] == ["usb", "dialog", "none"]
+
+
+def test_a_host_that_loses_its_printer_tells_it_and_the_requester_sees_the_mode_of_the_host(client, setup):
+    ev, u = setup
+    _as(client, "x2")
+    _beat_mode(client, ev, "dialog")
+    assert _route(client, ev, u["x1"], u["x2"]).status_code == 200
+    _as(client, "x1")
+    r = _beat_mode(client, ev, "none", "x1dev").json()
+    assert r["mode"] == "shared" and r["printer_mode"] == "dialog" and r["printer_ready"] is False and r["printer_online"] is True          # quien pide ve que el anfitrión imprime con la ventana
+    _as(client, "x2")
+    r = _beat_mode(client, ev, "none").json()                                                    # el anfitrión declara que ya no imprime: se entera (serving > 0 y my_mode none)
+    assert r["serving"] == 1 and r["my_mode"] == "none"
+    _as(client, "x1")
+    r = _beat_mode(client, ev, "none", "x1dev").json()
+    assert r["printer_mode"] == "none" and r["printer_online"] is True                           # y quien pide también se entera
+
+
+def test_a_dialog_host_job_warns_that_it_prints_when_the_host_taps_print_pending(client, setup):
+    ev, u = setup
+    _as(client, "x2")
+    _beat_mode(client, ev, "dialog")
+    assert _route(client, ev, u["x1"], u["x2"]).status_code == 200
+    _as(client, "x1")
+    out = _job(client, ev, "1001", str(uuid.uuid4())).json()
+    assert out["printer_ready"] is False and out["printer_mode"] == "dialog" and "Imprimir pendientes" in out["warning"]
+
+
+def test_a_none_beat_from_another_session_does_not_overwrite_a_dialog_or_usb_host(client, setup, db):
+    ev, u = setup
+    _as(client, "x2")
+    _beat_mode(client, ev, "dialog", "pc")
+    r = _beat_mode(client, ev, "none", "celular").json()                                         # el celular de la misma cuenta, sin impresora, no pisa al computador
+    assert r["holder"] is False and r["my_mode"] == "dialog"
+    from app.models import PrintDevice
+    assert db.query(PrintDevice).filter_by(staff_user_id=u["x2"].id).one().device_id == "pc"
+
+
+def test_the_bar_messages_depend_on_the_explicit_print_mode_without_the_false_disconnected_notice():
+    import pathlib
+    import subprocess
+    r = subprocess.run(["node", "tests/js/shared_print_host_mode_check.js"], capture_output=True, text=True, encoding="utf8", timeout=60)
+    assert r.returncode == 0 and "host_mode OK" in r.stdout, r.stdout + r.stderr
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert "DESCONECTADA" not in sp and "print_mode: usb.ok ? 'usb' : (dialogDeclared ? 'dialog' : 'none')" in sp and "gw_print_dialog" in sp
