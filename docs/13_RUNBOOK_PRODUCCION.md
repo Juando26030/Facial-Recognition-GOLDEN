@@ -130,3 +130,66 @@ El repositorio es **público**: los runners de GitHub no consumen el presupuesto
 ## 8. Archivos de este paquete
 
 `deploy/produccion_28oct/`: `comun.sh`, `verificar_antes.sh`, `anotar_estado_previo.sh` (genera `vuelta_atras.sh`), `verificar_despues.sh`, `NOTAS_DE_LA_VERSION.md`, `PR_CANDIDATO.md`, `PRUEBAS_DE_HUMO.md`.
+
+
+---
+
+# Paso del 29-oct-2026 — exportar/importar eventos y arreglo de impresión (staging `821f929` → producción)
+
+Lo ejecuta **Juan David**; Claude no corre nada en la nube. Producción queda **igual que staging el 29-oct-2026**: el código de `821f929` (rama `migra/fase1-2`, probado en staging: CI y Cloud Run en verde, `/health` 200). El candidato es `candidato/produccion-29oct` (solo agrega documentación y scripts). Paquete: [`deploy/produccion_29oct/`](../deploy/produccion_29oct/). Parámetros de impresión inamovibles: [`IMPRESION_PARAMETROS_INAMOVIBLES.md`](IMPRESION_PARAMETROS_INAMOVIBLES.md).
+
+> **Nada de esto se ejecuta hasta que Juan David escriba exactamente «DESPLIEGA PRODUCCIÓN».** Armar el paquete no despliega nada.
+
+## A. Qué hay hoy en producción y qué cambia
+
+| Pieza | Hoy | Después |
+|---|---|---|
+| `main` | `6c71cc3` (PR #2: producción del 28-oct) | el candidato `candidato/produccion-29oct` (avance directo: `6c71cc3` es su ancestro) |
+| Código de los 3 servicios y los Jobs | el de `6c71cc3` | el de `821f929` |
+| Base de datos | `0073_attendee_origin` | `0075_transfer_jobs` (migraciones 0074 y 0075, solo aditivas) |
+| `CONTINGENCY_ENABLED` | `1` | `1` (sin cambios) |
+| Configuración staging ↔ producción | ver §4 de este runbook | **sin diferencias nuevas** |
+
+**Qué trae (para el operador):** exportar e importar eventos (solo super_admin) y el arreglo de impresión (página fija de 62 × 99,8 mm, imagen de máximo 96 mm, horizontal centrada). Notas completas: `deploy/produccion_29oct/NOTAS_DE_LA_VERSION.md`.
+
+**Comprobar el estado real de producción antes de tocar nada** (solo lectura, Cloud Shell, proyecto `goldenweb-prod`, región `us-east4`): `bash deploy/produccion_29oct/anotar_estado_previo.sh` (anota revisiones de `golden-web`, `golden-publico` y `golden-biometria`, imagen de los Jobs y versión de Firebase Hosting, y escribe `vuelta_atras.sh`). `git ls-remote origin refs/heads/main` debe dar `6c71cc3…`; en la consola SQL de Neon, `SELECT version_num FROM alembic_version;` debe dar `0073_attendee_origin`.
+
+## B. Migraciones 0074 y 0075 (ensayo local, datos sintéticos)
+
+Ensayo: copia de la base de demostración (9 037 personas, evento de 8 000), subida desde `0073_attendee_origin` a `0075_transfer_jobs`.
+
+| Verificación | Resultado |
+|---|---|
+| `upgrade head` desde 0073 | sin errores |
+| Conteos de todas las tablas que ya existían, antes vs. después | **idénticos** |
+| Tablas nuevas | `event_transfer_log`, `event_import_actors` (vacías) |
+| Columnas nuevas | `form_payments.origin` (NULL) y, en `event_transfer_log`: `stage`, `progress`, `result_json`, `file_key`, `finished_at` |
+| Segunda subida | sin cambios |
+| Bajar a 0073 y volver a subir | limpio; conteos iguales |
+
+Ninguna toca datos existentes ni tablas de sesión; `ADD COLUMN` sobre `form_payments` es de metadato (bloqueo de milisegundos). El código anterior (`6c71cc3`) ignora lo nuevo: **volver a las revisiones anteriores de Cloud Run NO exige bajar la base.**
+
+## C. Pasos (en este orden)
+
+1. `bash deploy/produccion_29oct/verificar_antes.sh` — todo en ✅. Si hay ❌, no sigas.
+2. **Sin eventos en curso ni por abrir** en las próximas 3 h (el despliegue se congela solo).
+3. **Respaldo: rama de Neon `antes-produccion-29oct`** (Neon → Branches → *Create branch* → «Current point in time»).
+4. **PR candidato → `main`** (texto y `[skip ci]` en `deploy/produccion_29oct/PR_CANDIDATO.md`). Fusionar NO despliega.
+5. Actions → **«Cloud Run (staging y producción)»** → *Run workflow* → rama **`main`** → `confirm` = `DESPLEGAR`; `force` **sin marcar**. Corre las pruebas, migra (Job), despliega los 3 servicios y los Jobs y publica Firebase Hosting.
+6. `bash deploy/produccion_29oct/verificar_despues.sh <hash de main>` y las pruebas de humo (`deploy/produccion_29oct/PRUEBAS_DE_HUMO.md`, incluye exportar e importar con un evento ficticio).
+
+## D. Vuelta atrás (por revisiones; no se borra la anterior)
+
+1. `bash deploy/produccion_29oct/vuelta_atras.sh` (pide escribir `VOLVER ATRAS`): tráfico de los 3 servicios a las revisiones anotadas; opcionalmente los Jobs a su imagen anterior.
+2. Firebase Hosting: consola → Hosting → «Historial de versiones» → versión anotada → ⋮ → *Revertir*.
+3. La base **se queda en 0075** (el código anterior la ignora). Solo si hubiera datos dañados: restaurar desde la rama de Neon `antes-produccion-29oct` (decisión aparte).
+4. `bash deploy/produccion_29oct/verificar_despues.sh 6c71cc3`.
+
+**Criterio para volver atrás:** no se puede iniciar sesión, falla el registro o la impresión, errores 5xx sostenidos, o `/health` distinto de 200.
+
+## E. Riesgos
+
+- Es un cambio grande (≈ 2 700 líneas, 24 archivos) y **exportar/importar no se probó en staging por una persona** antes de este paso (sí con 28 pruebas automáticas, la prueba de oro y el asistente en un navegador con 8 000 personas sintéticas). Recomendación: probarlo en staging con un evento de prueba antes de la frase de despliegue.
+- Hoy es la **víspera del piloto del 29-oct**: decide el momento (antes o después del piloto).
+- El paquete exportado contiene datos personales (descarga de 5 min y borrado a las 24 h); la biometría es opcional, solo super_admin y cifrada.
+- Tu Chrome de impresión debe ser el normal (sin `--kiosk-printing`).
