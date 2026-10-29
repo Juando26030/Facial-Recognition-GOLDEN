@@ -845,3 +845,6 @@ quedar consumo en la región vieja. Lo que sí queda a propósito: secretos, cue
   (`app.entrypoints.publico|web|biometria:app`); un Job cambia el comando (`alembic upgrade head`). Sin cliente de Postgres
   (`pg_dump`): los respaldos van en la sesión 2 (imagen o paso aparte con Postgres 18). `deploy/docker-compose.yml` levanta los
   tres servicios en local con límites parecidos a Cloud Run (publico/web 1 vCPU 1 GB, biometria 2 vCPU 2 GB).
+
+### 29-oct-2026 — Migración 0076 (impresión compartida: estado de impresión por equipo)
+`0076_print_mode` (aditiva): `print_devices.print_mode` (usb | dialog | none). El código anterior la ignora; bajar la migración quita solo la columna. Ver `docs/historial.md` (29-oct-2026, problema B). Producción (hasta `0075_transfer_jobs`) la recibe en el próximo despliegue autorizado.

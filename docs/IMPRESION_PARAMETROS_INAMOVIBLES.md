@@ -22,6 +22,9 @@ Definidos y probados el **28-oct-2026** por Juan David con una Brother QL-800 en
 - Con compartida APAGADA: USB directo si hay impresora; si no, la ventana normal (misma etiqueta). Ninguna ruta compartida se llama.
 - Dinámica del reclamo (lease de 60 s, Cola, «Imprimir pendientes») no se toca.
 
+## USB (celular) — mismo largo máximo (29-oct-2026)
+El camino USB aplica el MISMO largo máximo de 96 mm que la ventana de Chrome (`LabelCompose.fitToPaper`, constante `MAX_IMG_MM` = `MAX_IMG_H`); `tests/js/label_paths_check.js` lo vigila. Las etiquetas de hasta 96 mm (las de 100 mm de plantilla miden 95,08) no cambian en ningún camino.
+
 ## Qué debe cumplir cualquier cambio futuro
 1. La ventana normal y el USB imprimen **la misma etiqueta compuesta** (recorte, giro y margen iguales).
 2. Nunca más textos de Chrome (fecha, ruta, título, «1/1») en la ventana normal: página SIEMPRE de 62 × 99,8 mm.

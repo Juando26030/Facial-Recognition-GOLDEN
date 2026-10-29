@@ -46,6 +46,23 @@
     return { bitmap: prep.bitmap, tapeDots: tapeDots, height: prep.height, layout: lay, cropped: prep.cropped, widthMm: tplW, heightMm: tplH };
   }
 
+  /* Largo máximo de la etiqueta (29-oct-2026, problema C): la ventana de impresión del navegador (templates/badge_print.html, parámetro INAMOVIBLE MAX_IMG_H = 96) reduce proporcionalmente una
+     etiqueta más larga y la deja centrada a lo ancho porque la impresora no imprime los últimos milímetros. El USB hacía otra cosa (mandaba todo el largo): una plantilla horizontal de 105 mm salía
+     del celular más larga y con otro margen que del computador. `fitToPaper` aplica al camino USB la MISMA cuenta (misma fórmula: escala = min(1, 96 mm / alto), centrado a lo ancho); la prueba
+     tests/js/label_paths_check.js comprueba que la constante coincida con la de la ventana de impresión. Etiquetas de hasta 96 mm (las de 100 mm de plantilla miden 95,08) no cambian. */
+  var MAX_IMG_MM = 96;
+  function fitToPaper(out) {
+    var scale = Math.min(1, (MAX_IMG_MM * DPM) / out.height);
+    if (scale >= 1) return { bitmap: out.bitmap, width: out.tapeDots, height: out.height, scale: 1 };
+    var W = out.tapeDots, H = out.height, nw = Math.max(1, Math.round(W * scale)), nh = Math.max(1, Math.round(H * scale));
+    var dst = new Uint8Array(W * nh), off = Math.floor((W - nw) / 2);
+    for (var y = 0; y < nh; y++) {
+      var sy = Math.min(H - 1, Math.floor(y / scale));
+      for (var x = 0; x < nw; x++) dst[y * W + off + x] = out.bitmap[sy * W + Math.min(W - 1, Math.floor(x / scale))];
+    }
+    return { bitmap: dst, width: W, height: nh, scale: scale };
+  }
+
   function round2(n) { return Math.round(n * 100) / 100; }
   function pageSpec(out) {
     var w = round2(out.tapeDots / DPM), h = round2(out.height / DPM);
@@ -67,5 +84,5 @@
     return canvas.toDataURL("image/png");
   }
 
-  return { DPM: DPM, renderShot: renderShot, composeBitmap: composeBitmap, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
+  return { DPM: DPM, MAX_IMG_MM: MAX_IMG_MM, renderShot: renderShot, composeBitmap: composeBitmap, fitToPaper: fitToPaper, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
 });

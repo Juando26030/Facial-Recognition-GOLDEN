@@ -664,3 +664,12 @@ def test_print_windows_have_a_fixed_name_close_the_previous_one_and_never_use_no
     assert "'goldenweb_print'" in rostro and "noopener" not in rostro.split("goldenweb_print")[1][:120]
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "claimBatch" in sp and "batch=50" in sp and "print-jobs/release" in sp and "print-jobs/result-batch" in sp
+
+
+def test_both_print_paths_give_the_same_label_geometry_vertical_and_horizontal_and_the_usb_uses_the_same_96mm_cap():
+    import pathlib
+    import subprocess
+    r = subprocess.run(["node", "tests/js/label_paths_check.js"], capture_output=True, text=True, encoding="utf8", timeout=60)
+    assert r.returncode == 0 and "label_paths_check OK" in r.stdout, r.stdout[-1500:] + r.stderr[-1500:]
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert "LabelCompose.fitToPaper(composed)" in sp                                         # el USB aplica el mismo largo máximo que la ventana de impresión (parámetro inamovible)

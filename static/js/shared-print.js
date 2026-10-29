@@ -279,7 +279,9 @@
 
   /* De la plantilla ya dibujada (canvas a 300 dpi) al trabajo para la cinta: la composición vive en static/js/label-compose.js (la MISMA que usa la ventana de impresión del navegador). */
   function composeJob(shot, tplW, tplH, p) {
-    const out = LabelCompose.composeBitmap(shot, tplW, tplH, p);
+    const composed = LabelCompose.composeBitmap(shot, tplW, tplH, p);
+    const fit = p.tapeType === 'diecut' ? { bitmap: composed.bitmap, height: composed.height } : LabelCompose.fitToPaper(composed);      // el mismo largo máximo (96 mm) que la ventana de impresión del navegador
+    const out = Object.assign({}, composed, { bitmap: fit.bitmap, height: fit.height });
     const job = QLUsb.buildJob({ bitmap: out.bitmap, height: out.height, mediaWidthMm: p.tapeWidth, mirror: p.mirror, autoCut: p.cut, feedDots: QLUsb.mmToDots(p.feedMm),
       lengthMm: p.tapeType === 'diecut' ? p.lengthMm : undefined });
     return Object.assign({ job }, out);
