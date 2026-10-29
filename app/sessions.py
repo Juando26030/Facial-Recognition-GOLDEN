@@ -3,6 +3,8 @@
   - admin y super_admin: SESIONES MÚLTIPLES SIN LÍMITE. Entrar desde otro dispositivo nunca cierra otra sesión.
   - cuenta marcada «Puesto de impresión» (`print_station`): PROTEGIDA. Si está en uso (un equipo suyo dio señal en el último minuto), un inicio de sesión desde otro dispositivo se RECHAZA;
     solo un admin puede liberarla (`force_release`, queda en auditoría).
+  - cuenta que ATIENDE a otros equipos (alguien tiene su ruta de impresión apuntando a ella, `PrintRoute.printer_staff_id`) y cuyo equipo dio señal en el último minuto: también PROTEGIDA
+    (29-oct-2026): un segundo inicio de sesión en OTRO dispositivo se RECHAZA con un mensaje claro; el mismo navegador (mismo `sid`) puede volver a entrar, sin señal en 60 s se libera sola y un admin puede liberarla.
   - los demás roles (digitador, coordinador, comercial, cliente): SESIÓN ÚNICA. Al iniciar sesión se invalida la anterior de esa cuenta; sus peticiones reciben 401 `session_replaced`.
   - Una sesión SIN `sid` (creada antes del cambio) o una cuenta sin `session_token` sigue válida: desplegar no expulsa a nadie.
   - Interruptor «Sesión única» (Configuración → `app_settings.single_session`; la variable de entorno SINGLE_SESSION=0/1 manda sobre él). Apagado = comportamiento anterior: no se guarda ni se compara nada.
@@ -16,7 +18,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models import AppSetting, PrintDevice, SessionAudit, StaffUser
+from app.models import AppSetting, PrintDevice, PrintRoute, SessionAudit, StaffUser
 from app.timeutil import utcnow
 
 log = logging.getLogger("golden.sessions")
@@ -27,6 +29,7 @@ STATION_ACTIVE_WINDOW = timedelta(seconds=60)
 MULTI_ROLES = ("admin", "super_admin")
 FREE_PREFIX = "free:"                      # token de una cuenta liberada por un admin: ya no coincide con ninguna sesión y no cuenta como «en uso»
 STATION_BUSY_MSG = "Esta cuenta es un puesto de impresión y ya está en uso. Pídele a un administrador que la libere."
+HOST_BUSY_MSG = "Esta cuenta está imprimiendo para otros equipos en otro dispositivo; ciérrala allí o pide a un administrador que la libere."
 _seen_closed: set = set()                  # (cuenta, sid) ya auditados como «cerrada» en este proceso (una fila por sesión cerrada, no una por petición)
 
 
@@ -75,6 +78,11 @@ def _station_in_use(db: Session, staff: StaffUser) -> bool:
     return db.query(PrintDevice.id).filter(PrintDevice.staff_user_id == staff.id, PrintDevice.last_seen_at >= utcnow() - STATION_ACTIVE_WINDOW).first() is not None
 
 
+def _hosts_others(db: Session, staff: StaffUser) -> bool:
+    """¿Esta cuenta es el anfitrión de la impresora de OTROS usuarios (alguien eligió su equipo en Parámetros)? Imprimirse a sí misma no cuenta."""
+    return db.query(PrintRoute.id).filter(PrintRoute.printer_staff_id == staff.id, PrintRoute.staff_user_id != staff.id).first() is not None
+
+
 def login_gate(db: Session, request, staff: StaffUser, prev_sid=None):
     """Se llama con la contraseña ya verificada. Devuelve un texto de error si el inicio de sesión se RECHAZA (cuenta de puesto en uso); si no, deja en `request.session['sid']` el
     identificador de esta sesión (cuando la política lo usa) y devuelve None. `prev_sid`: el `sid` que traía este navegador (un mismo navegador puede volver a entrar a su puesto)."""
@@ -83,11 +91,12 @@ def login_gate(db: Session, request, staff: StaffUser, prev_sid=None):
     pol = policy(staff)
     if pol == "multi":
         return None
-    if pol == "station" and prev_sid and prev_sid == staff.session_token:
-        return _issue(db, request, staff, replaced=False)                 # el mismo navegador de siempre
-    if pol == "station" and _station_in_use(db, staff):
+    protected = pol == "station" or _hosts_others(db, staff)               # puesto de impresión, o cuenta que atiende a otros equipos
+    if protected and prev_sid and prev_sid == staff.session_token:
+        return _issue(db, request, staff, replaced=False)                 # el mismo navegador de siempre (reinicio de pestaña, volver a entrar)
+    if protected and _station_in_use(db, staff):
         audit(db, staff.id, request, "rechazada")
-        return STATION_BUSY_MSG
+        return STATION_BUSY_MSG if pol == "station" else HOST_BUSY_MSG
     return _issue(db, request, staff, replaced=bool(staff.session_token) and not staff.session_token.startswith(FREE_PREFIX) and prev_sid != staff.session_token)
 
 

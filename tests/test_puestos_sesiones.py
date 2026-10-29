@@ -205,3 +205,51 @@ def test_no_print_menu_visibility_rule_depends_on_the_role():
     assert "isAdmin" not in body and "role" not in body.lower().replace("rol de", "")             # ninguna regla de visibilidad depende del rol
     assert "const configShown = () => !(stationCfg && stationCfg.showConfig === false);" in sp    # por defecto: Mostrar
     assert "bar.querySelector('#spConnect').hidden = !shown ||" in body and "bar.querySelector('#spQueue').hidden = !(SHARED && shown)" in body and "bar.querySelector('#spPrefs').hidden = !shown" in body
+
+
+# ---------------------------------------------------------------------------------------------------- 29-oct-2026: la cuenta que ATIENDE a otros equipos también se protege
+def _host_env(env, db):
+    from app.models import PrintRoute
+    ev, u = env
+    host = u["puesto"]
+    db.add(PrintRoute(event_id=ev.id, staff_user_id=u["dig1"].id, printer_staff_id=host.id)); db.commit()       # dig1 imprime en el equipo de «puesto»
+    return ev, u, host
+
+
+def test_an_account_that_serves_other_computers_rejects_a_login_from_another_device_while_it_prints(client, second, env, db):
+    ev, u, host = _host_env(env, db)
+    login(client, "puesto")
+    db.add(PrintDevice(event_id=ev.id, staff_user_id=host.id, device_id="pc", last_seen_at=utcnow(), printer_connected=True)); db.commit()        # imprime ahora
+    r = login(second, "puesto")
+    assert r.status_code == 403 and "imprimiendo para otros equipos" in r.text and "en otro dispositivo" in r.text and "libere" in r.text
+    assert _api_ok(client).status_code == 200                                                      # la sesión del anfitrión no se cierra
+    assert "rechazada" in [a.result for a in db.query(SessionAudit)]
+    assert login(client, "puesto").status_code == 302 and _api_ok(client).status_code == 200      # el MISMO navegador puede volver a entrar (reinicio de pestaña)
+
+
+def test_the_host_is_released_by_itself_after_60_seconds_without_signal_and_an_admin_can_release_it(client, second, env, db):
+    ev, u, host = _host_env(env, db)
+    login(client, "puesto")
+    dev = PrintDevice(event_id=ev.id, staff_user_id=host.id, device_id="pc", last_seen_at=utcnow(), printer_connected=True)
+    db.add(dev); db.commit()
+    assert login(second, "puesto").status_code == 403
+    adm = TestClient(client.app, follow_redirects=False)
+    with adm:
+        login(adm, "adm")
+        assert adm.post(f"/api/print-stations/{host.id}/release").status_code == 200              # un admin la libera
+    assert login(second, "puesto").status_code == 302                                              # y el otro dispositivo entra
+    second.post("/logout")
+    login(client, "puesto")
+    db.refresh(dev); dev.last_seen_at = utcnow() - timedelta(seconds=61); db.commit()
+    assert login(second, "puesto").status_code == 302                                              # sin señal hace 61 s: se libera sola
+
+
+def test_accounts_that_do_not_serve_anyone_and_admins_keep_the_old_behaviour(client, second, env, db):
+    ev, u, host = _host_env(env, db)
+    login(client, "dig2")
+    db.add(PrintDevice(event_id=ev.id, staff_user_id=u["dig2"].id, device_id="pc2", last_seen_at=utcnow(), printer_connected=True)); db.commit()        # con impresora, pero NO atiende a nadie
+    assert login(second, "dig2").status_code == 302 and _api_ok(client).status_code == 401        # sesión única de siempre: la primera se reemplaza
+    c1, c2 = TestClient(client.app, follow_redirects=False), TestClient(client.app, follow_redirects=False)
+    with c1, c2:
+        login(c1, "adm"); login(c2, "adm")
+        assert _api_ok(c1).status_code == 200 and _api_ok(c2).status_code == 200                  # admin: sesiones múltiples sin límite
