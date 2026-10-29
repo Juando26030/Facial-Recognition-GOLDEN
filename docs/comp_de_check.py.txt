@@ -1,0 +1,63 @@
+"""Problemas D y E en Chrome real (headless, datos ficticios de la base de demostración):
+D) una ventana con varias escarapelas = una página (62 × 99,8 mm) por persona, la primera idéntica pixel a pixel a la de una sola persona;
+E) 10 impresiones seguidas desde el celular (emulación móvil) dejan como máximo 1 ventana abierta."""
+import os, sys, json
+import numpy as np, pypdfium2 as pdfium
+from playwright.sync_api import sync_playwright
+
+BASE = os.environ.get("BASE", "http://127.0.0.1:5095")
+T = lambda id, var, x, y, w, h, pt: {"id": id, "type": "text_variable", "variable": var, "x": x, "y": y, "width": w, "height": h, "font_family": "Roboto", "font_size": pt, "font_color": "#000000", "font_weight": "bold", "align": "center", "rotation": 0, "z_index": 1}
+VERT = {"name": "Vertical", "width_mm": 62, "height_mm": 100, "orientation": "vertical", "background_type": "color", "background_value": "#ffffff", "elements": [T("n", "first_name", 4, 20, 54, 12, 20), T("a", "last_name", 4, 36, 54, 12, 20), T("e", "entity", 4, 56, 54, 10, 12)]}
+STUB = "window.print = () => { window.__printed = (window.__printed || 0) + 1; setTimeout(() => window.dispatchEvent(new Event('afterprint')), 50); };"
+NOSTUB_AFTERPRINT = "window.print = () => { window.__printed = (window.__printed || 0) + 1; };"      # el navegador NUNCA manda afterprint: solo el cierre de la ventana anterior evita acumular
+
+
+def login(pg):
+    pg.goto(BASE + "/login")
+    if pg.locator('input[name="username"]').count():
+        pg.fill('input[name="username"]', "demo"); pg.fill('input[name="password"]', "Demo#2026ux"); pg.click('button[type="submit"]'); pg.wait_for_load_state("networkidle")
+
+
+def pdf_pages(pg, name):
+    path = os.environ["TEMP"] + f"/{name}.pdf"
+    pg.pdf(path=path, prefer_css_page_size=True, print_background=True)
+    d = pdfium.PdfDocument(path)
+    sizes = [tuple(round(v / 72 * 25.4, 1) for v in p.get_size()) for p in d]
+    imgs = [np.array(p.render(scale=3).to_pil().convert("L")) for p in d]
+    return sizes, imgs
+
+
+out = {}
+with sync_playwright() as p:
+    b = p.chromium.launch(channel="chrome", headless=True)
+    # ---------------------------------------------------------------- D: varias hojas
+    ctx = b.new_context(viewport={"width": 700, "height": 900}); ctx.add_init_script("window.print = () => {}")
+    pg = ctx.new_page(); login(pg)
+    uids = pg.evaluate("() => fetch('/api/users?event_id=2').then(r => r.json()).then(l => l.slice(0, 3).map(u => u.id))")
+    pg.evaluate("(t) => fetch('/api/events/2/badge-template', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(t)})", VERT)
+    one = ctx.new_page(); one.goto(f"{BASE}/kiosk/2/escarapela/imprimir/{uids[0]}"); one.wait_for_timeout(4500)
+    s1, i1 = pdf_pages(one, "una")
+    many = ctx.new_page(); many.goto(f"{BASE}/kiosk/2/escarapela/imprimir/{uids[0]}?users={','.join(uids)}"); many.wait_for_timeout(9000)
+    s3, i3 = pdf_pages(many, "varias")
+    ink = lambda im: int((im < 160).sum())
+    out["D_una_persona"] = {"paginas": len(s1), "tamano_mm": s1[0]}
+    out["D_tres_personas"] = {"paginas": len(s3), "tamanos_mm": s3, "tinta_por_pagina": [ink(x) for x in i3],
+                              "pagina1_identica_a_la_de_una_sola": bool(i3[0].shape == i1[0].shape and np.array_equal(i3[0], i1[0]))}
+    # ---------------------------------------------------------------- E: ventanas acumuladas (celular)
+    mobile = p.devices["Pixel 7"]
+    for etiqueta, init in (("con_afterprint", STUB), ("sin_afterprint_nunca_cierra_sola", NOSTUB_AFTERPRINT)):
+        mctx = b.new_context(**mobile); mctx.add_init_script(init)
+        mp = mctx.new_page(); login(mp)
+        mp.goto(f"{BASE}/kiosk/2/registro"); mp.wait_for_timeout(2500)
+        maximo = 0; serie = []
+        for i in range(10):
+            mp.evaluate("(u) => { window.EVENT_ID = 2; return BadgePrint.printNow(u); }", uids[i % 3])
+            mp.wait_for_timeout(900)
+            abiertas = [x for x in mctx.pages if x != mp and not x.is_closed()]
+            serie.append(len(abiertas)); maximo = max(maximo, len(abiertas))
+        mp.wait_for_timeout(5000)
+        final = [x for x in mctx.pages if x != mp and not x.is_closed()]
+        out["E_" + etiqueta] = {"ventanas_abiertas_tras_cada_impresion": serie, "maximo": maximo, "al_final": len(final)}
+        mctx.close()
+    b.close()
+print(json.dumps(out, ensure_ascii=False, indent=1))

@@ -31,6 +31,8 @@ router = APIRouter()
 PRINT_JOB_TTL = timedelta(minutes=5)
 CLAIM_LEASE = timedelta(seconds=int(os.getenv("PRINT_CLAIM_LEASE_SECONDS", "60")))    # un trabajo reclamado que no termina en este tiempo vuelve a la cola
 DEDUPE_WINDOW = timedelta(seconds=int(os.getenv("PRINT_DEDUPE_SECONDS", "30")))      # una persona = una impresión por ventana (salvo reimpresión explícita)
+BATCH_MAX = 50                                 # «Imprimir pendientes»: hasta 50 escarapelas por tanda (una sola ventana de impresión); si hay más, una segunda tanda
+BATCH_LEASE = timedelta(minutes=4)             # un lote reclamado tiene más tiempo que uno solo (la persona está frente al cuadro de impresión de varias hojas); si no confirma, vuelve a la cola
 ONLINE_WINDOW = timedelta(seconds=30)          # sin señal en 30 s = desconectado
 WARN_PER_PRINTER = 6                           # orden del 22-oct-2026: sin tope duro; con más de 6 usuarios en una impresora, aviso suave en Parámetros
 OPERATOR = require_role_excluding("digitador", ("comercial",))       # quien registra (mismo mínimo que imprimir hoy)
@@ -57,6 +59,14 @@ class ResultIn(BaseModel):
     ok: bool
     error: Optional[str] = None
     applied: Optional[str] = None   # parámetros con los que el equipo que imprime armó la etiqueta (se muestran en la Cola)
+
+
+class BatchResultIn(BaseModel):
+    results: list                  # [{"id": n, "ok": true|false, "error": "...", "applied": "..."}]: el resultado de cada trabajo de la tanda, después de que la ventana terminó
+
+
+class ReleaseIn(BaseModel):
+    ids: list                      # trabajos reclamados que NO se imprimieron (la persona cerró o canceló la ventana): vuelven a la cola, nunca se pierden ni se reimprimen solos
 
 
 class RouteIn(BaseModel):
@@ -291,10 +301,13 @@ def my_jobs(event_id: int, scope: str = "mine", db: Session = Depends(get_db), s
 
 # ------------------------------------------------------------------------------------------------ Y: recibir e imprimir
 @router.get("/events/{event_id}/print-jobs-next")
-def next_job(event_id: int, device_id: Optional[str] = None, manual: bool = False, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
-    """El siguiente trabajo para el equipo de este usuario: se RESERVA de forma atómica (queued → sent). Un trabajo reservado no se vuelve a entregar."""
+def next_job(event_id: int, device_id: Optional[str] = None, manual: bool = False, batch: int = 0, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+    """El siguiente trabajo para el equipo de este usuario: se RESERVA de forma atómica (queued → sent). Un trabajo reservado no se vuelve a entregar.
+    `batch` (solo con `manual`, el toque de «Imprimir pendientes»): reserva hasta BATCH_MAX trabajos de una vez, con el mismo arrendamiento largo, para imprimirlos en UNA ventana."""
     event = _enabled_event(event_id, db, staff)
     now = utcnow()
+    if batch:
+        return _claim_batch(db, event, staff, device_id, manual, batch, now)
     dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff.id).first()
     # Solo reclama por sondeo la ventana que PUEDE IMPRIMIR SOLA (la dueña de la impresora USB, que el servidor tiene como su equipo). Una ventana sin impresora, o la sesión
     # del celular de la misma cuenta, NUNCA reclaman por sondeo: `manual` es el toque de «Imprimir pendientes» (la persona está ahí para confirmar la ventana de impresión).
@@ -323,20 +336,42 @@ def next_job(event_id: int, device_id: Optional[str] = None, manual: bool = Fals
     return {"job": {"id": job.id, "user_id": attendee.user_id if attendee else None, "requested_by": _name(requester), "prefs": prefs}}
 
 
-@router.post("/events/{event_id}/print-jobs/{job_id}/result")
-def job_result(event_id: int, job_id: int, data: ResultIn, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
-    event = _enabled_event(event_id, db, staff)
-    job = db.query(PrintJob).filter(PrintJob.id == job_id, PrintJob.event_id == event.id).with_for_update().first()
-    if job is None or job.printer_staff_id != staff.id:
-        raise HTTPException(status_code=404, detail="Trabajo no encontrado.")
-    if job.status not in ("sent", "queued"):                   # ya confirmado (o caducado): no cambia, idempotente. «queued» = el arrendamiento venció pero el equipo sí terminó: se acepta
-        db.commit()
-        return _job_out(db, job)
+def _claim_batch(db: Session, event: Event, staff: StaffUser, device_id: Optional[str], manual: bool, batch: int, now) -> dict:
+    """Reclamo por lote: los mismos trabajos «queued» de este puesto, en orden, reservados de forma atómica (FOR UPDATE SKIP LOCKED) y entregados UNA sola vez. Solo con el toque de la persona."""
+    if not manual:
+        return {"jobs": []}                                        # el sondeo automático sigue reclamando de a uno (solo la dueña de la impresora USB)
+    dev = db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff.id).first()
+    if dev is not None and (not device_id or dev.device_id == _clip(device_id, 64)):
+        dev.last_seen_at = now
+    _expire(db, event.id)
+    n = max(1, min(int(batch), BATCH_MAX))
+    jobs = (db.query(PrintJob).filter(PrintJob.event_id == event.id, PrintJob.printer_staff_id == staff.id, PrintJob.status == "queued", PrintJob.created_at >= now - PRINT_JOB_TTL)
+            .order_by(PrintJob.id).with_for_update(skip_locked=True).limit(n).all())
+    out = []
+    for job in jobs:
+        job.status, job.sent_at = "sent", now + (BATCH_LEASE - CLAIM_LEASE)       # vence a los BATCH_LEASE (el chequeo de _expire compara contra CLAIM_LEASE)
+        attendee = db.get(EventAttendee, job.attendee_id)
+        requester = db.get(StaffUser, job.requested_by_staff_id) if job.requested_by_staff_id else None
+        try:
+            prefs = json.loads(job.prefs_json) if job.prefs_json else None
+        except ValueError:
+            prefs = None
+        out.append({"id": job.id, "user_id": attendee.user_id if attendee else None, "requested_by": _name(requester), "prefs": prefs})
+    db.commit()
+    if out:
+        log.info("impresión compartida: lote de %s trabajo(s) reclamado (evento %s)", len(out), event.id)
+    return {"jobs": out}
+
+
+def _apply_result(db: Session, event: Event, job: PrintJob, data: ResultIn) -> None:
+    """El resultado de UN trabajo (lo usan el endpoint de uno y el de la tanda); idempotente: un trabajo ya confirmado no cambia."""
+    if job.status not in ("sent", "queued"):                   # ya confirmado (o caducado)
+        return
     job.status = "printed" if data.ok else "failed"
     job.error = None if data.ok else _clip(data.error or "La impresora no respondió.", 200)
     job.done_at = utcnow()
     applied = _clip(data.applied, 300)
-    if applied:                                                # sin columna nueva: va junto a lo pedido en prefs_json (el pedido ya se entregó; no se vuelve a leer para imprimir)
+    if applied:
         try:
             asked = json.loads(job.prefs_json) if job.prefs_json else {}
         except ValueError:
@@ -346,6 +381,53 @@ def job_result(event_id: int, job_id: int, data: ResultIn, db: Session = Depends
         attendee = db.get(EventAttendee, job.attendee_id)
         if attendee is not None:                               # el conteo de impresiones de siempre (aviso de reimpresión), a nombre de quien lo pidió
             db.add(PrintLog(tenant_id=attendee.tenant_id, user_id=attendee.user_id, event_id=event.id, printed_by_staff_id=job.requested_by_staff_id))
+
+
+@router.post("/events/{event_id}/print-jobs/result-batch")
+def job_result_batch(event_id: int, data: BatchResultIn, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+    """Los resultados de una tanda, DESPUÉS de que la ventana de impresión terminó. Cada trabajo se confirma por separado (uno que no es de este puesto se ignora)."""
+    event = _enabled_event(event_id, db, staff)
+    done = 0
+    for item in (data.results or [])[:BATCH_MAX]:
+        try:
+            jid, res = int(item.get("id")), ResultIn(ok=bool(item.get("ok")), error=item.get("error"), applied=item.get("applied"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        job = db.query(PrintJob).filter(PrintJob.id == jid, PrintJob.event_id == event.id, PrintJob.printer_staff_id == staff.id).with_for_update().first()
+        if job is not None:
+            _apply_result(db, event, job, res)
+            done += 1
+    db.commit()
+    log.info("impresión compartida: resultado de una tanda de %s trabajo(s) (evento %s)", done, event.id)
+    return {"confirmed": done}
+
+
+@router.post("/events/{event_id}/print-jobs/release")
+def job_release(event_id: int, data: ReleaseIn, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+    """La persona cerró o canceló la ventana: los trabajos que seguían «enviados» a este puesto vuelven a la cola (nunca se pierden ni se reimprimen solos)."""
+    event = _enabled_event(event_id, db, staff)
+    ids = []
+    for x in (data.ids or [])[:BATCH_MAX]:
+        try:
+            ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    n = 0
+    if ids:
+        n = (db.query(PrintJob).filter(PrintJob.id.in_(ids), PrintJob.event_id == event.id, PrintJob.printer_staff_id == staff.id, PrintJob.status == "sent")
+             .update({PrintJob.status: "queued", PrintJob.sent_at: None}, synchronize_session=False))
+        db.commit()
+    log.info("impresión compartida: %s trabajo(s) devueltos a la cola por una ventana cerrada (evento %s)", n, event.id)
+    return {"released": n}
+
+
+@router.post("/events/{event_id}/print-jobs/{job_id}/result")
+def job_result(event_id: int, job_id: int, data: ResultIn, db: Session = Depends(get_db), staff: StaffUser = Depends(OPERATOR)):
+    event = _enabled_event(event_id, db, staff)
+    job = db.query(PrintJob).filter(PrintJob.id == job_id, PrintJob.event_id == event.id).with_for_update().first()
+    if job is None or job.printer_staff_id != staff.id:
+        raise HTTPException(status_code=404, detail="Trabajo no encontrado.")
+    _apply_result(db, event, job, data)                        # ya confirmado (o caducado): no cambia, idempotente. «queued» = el arrendamiento venció pero el equipo sí terminó: se acepta
     db.commit()
     log.info("impresión compartida: trabajo %s %s (evento %s)", job.id, job.status, event.id)
     return _job_out(db, job)

@@ -559,3 +559,108 @@ def test_the_bar_messages_depend_on_the_explicit_print_mode_without_the_false_di
     assert r.returncode == 0 and "host_mode OK" in r.stdout, r.stdout + r.stderr
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
     assert "DESCONECTADA" not in sp and "print_mode: usb.ok ? 'usb' : (dialogDeclared ? 'dialog' : 'none')" in sp and "gw_print_dialog" in sp
+
+
+# ------------------------------------------------------------------------------------------------ 29-oct-2026, problema D: «Imprimir pendientes» reclama por TANDA (una sola ventana)
+def _dialog_host_with_jobs(client, ev, u, db, n, factory):
+    """y1 imprime con la ventana de Chrome (dialog) y x1 le pidió n escarapelas de n personas registradas."""
+    from app.models import AccessLog
+    _as(client, "y1")
+    _beat_mode(client, ev, "dialog")
+    assert _route(client, ev, u["x1"], u["y1"]).status_code == 200
+    for i in range(n):
+        uid = f"7{i:03d}"
+        factory.person(ev, uid, first_name=f"P{i}")
+        db.add(AccessLog(tenant_id=ev.tenant_id, user_id=uid, event_id=ev.id, record_type="Existente", registration_method="tradicional"))
+    db.commit()
+    _as(client, "x1")
+    for i in range(n):
+        assert _job(client, ev, f"7{i:03d}").status_code == 200
+    _as(client, "y1")
+
+
+def test_a_batch_claim_returns_the_pending_jobs_once_in_order_and_polling_never_claims_a_batch(client, setup, db, factory):
+    ev, u = setup
+    _dialog_host_with_jobs(client, ev, u, db, 5, factory)
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&batch=50").json() == {"jobs": []}                     # sin toque de la persona (manual) no reclama
+    got = client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=50").json()["jobs"]
+    assert [j["user_id"] for j in got] == [f"7{i:03d}" for i in range(5)] and all(j["requested_by"] and "prefs" in j for j in got)
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=50").json()["jobs"] == []                # entregados UNA vez: no se duplican
+    assert {j.status for j in db.query(PrintJob).filter(PrintJob.printer_staff_id == u["y1"].id)} == {"sent"}
+
+
+def test_more_than_fifty_pending_come_in_a_second_batch_and_a_single_claim_still_works(client, setup, db, factory):
+    ev, u = setup
+    _dialog_host_with_jobs(client, ev, u, db, 55, factory)
+    first = client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=200").json()["jobs"]                # el servidor nunca entrega más de 50
+    second = client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=50").json()["jobs"]
+    assert len(first) == 50 and len(second) == 5 and not {j["id"] for j in first} & {j["id"] for j in second}
+    assert client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1").json()["job"] is None                      # y el reclamo de a uno sigue igual
+
+
+def test_batch_results_confirm_each_job_after_the_window_and_the_count_is_kept(client, setup, db, factory):
+    ev, u = setup
+    _dialog_host_with_jobs(client, ev, u, db, 3, factory)
+    jobs = client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=50").json()["jobs"]
+    r = client.post(f"/api/events/{ev.id}/print-jobs/result-batch", json={"results": [{"id": jobs[0]["id"], "ok": True}, {"id": jobs[1]["id"], "ok": True}, {"id": jobs[2]["id"], "ok": False, "error": "sin papel"}, {"id": 99999, "ok": True}]})
+    assert r.status_code == 200 and r.json() == {"confirmed": 3}                                                                 # el id ajeno se ignora
+    st = {j.id: j.status for j in db.query(PrintJob)}
+    assert [st[jobs[0]["id"]], st[jobs[1]["id"]], st[jobs[2]["id"]]] == ["printed", "printed", "failed"]
+    from app.models import PrintLog
+    assert db.query(PrintLog).count() == 2                                                                                       # el conteo de impresiones de siempre: solo los que salieron
+    again = client.post(f"/api/events/{ev.id}/print-jobs/result-batch", json={"results": [{"id": jobs[0]["id"], "ok": False}]}).json()
+    assert again == {"confirmed": 1} and db.get(PrintJob, jobs[0]["id"]).status == "printed"                                     # idempotente: no cambia lo ya confirmado
+
+
+def test_a_closed_window_returns_the_claimed_jobs_to_the_queue_and_nothing_is_lost_or_reprinted(client, setup, db, factory):
+    ev, u = setup
+    _dialog_host_with_jobs(client, ev, u, db, 4, factory)
+    jobs = client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=50").json()["jobs"]
+    client.post(f"/api/events/{ev.id}/print-jobs/result-batch", json={"results": [{"id": jobs[0]["id"], "ok": True}]})           # una sí salió
+    rel = client.post(f"/api/events/{ev.id}/print-jobs/release", json={"ids": [j["id"] for j in jobs]}).json()                     # cerró la ventana: devolver todo lo que seguía enviado
+    assert rel == {"released": 3} and db.get(PrintJob, jobs[0]["id"]).status == "printed"                                      # la que salió NO vuelve a la cola
+    again = client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=50").json()["jobs"]
+    assert [j["id"] for j in again] == [j["id"] for j in jobs[1:]]                                                                # las otras 3 siguen pendientes, en orden
+    _as(client, "y2")
+    assert client.post(f"/api/events/{ev.id}/print-jobs/release", json={"ids": [j["id"] for j in jobs]}).json() == {"released": 0}   # otro puesto no puede soltar trabajos ajenos
+
+
+def test_a_claimed_batch_keeps_its_lease_longer_than_a_single_job_and_then_returns_to_the_queue(client, setup, db, factory):
+    from datetime import timedelta
+    from app.timeutil import utcnow
+    ev, u = setup
+    _dialog_host_with_jobs(client, ev, u, db, 2, factory)
+    jobs = client.get(f"/api/events/{ev.id}/print-jobs-next?device_id=dev&manual=1&batch=50").json()["jobs"]
+    rows = db.query(PrintJob).filter(PrintJob.id.in_([j["id"] for j in jobs])).all()
+    assert all(r.sent_at > utcnow() + timedelta(minutes=2) for r in rows)                                                         # el lote tiene 4 min de arrendamiento (uno solo, 60 s)
+    client.get(f"/api/events/{ev.id}/print-jobs?scope=station")                                                                   # el barrido de vencidos no lo toca mientras la ventana está abierta
+    assert {r.status for r in db.query(PrintJob).filter(PrintJob.id.in_([j["id"] for j in jobs]))} == {"sent"}
+    for r in db.query(PrintJob).filter(PrintJob.id.in_([j["id"] for j in jobs])):
+        r.sent_at = utcnow() - timedelta(seconds=61)                                                                              # nunca confirmó: vence
+    db.commit()
+    client.get(f"/api/events/{ev.id}/print-jobs?scope=station")
+    assert {r.status for r in db.query(PrintJob).filter(PrintJob.id.in_([j["id"] for j in jobs]))} == {"queued"}
+
+
+# ------------------------------------------------------------------------------------------------ 29-oct-2026, problemas D y E: una ventana por tanda y ventanas que no se acumulan
+def test_the_print_page_accepts_several_people_one_sheet_each_with_the_same_fixed_parameters(client, setup):
+    import pathlib
+    ev, u = setup
+    _as(client, "x1")
+    html = client.get(f"/kiosk/{ev.id}/escarapela/imprimir/1001?users=1001,1002,1003").text
+    assert 'const USER_IDS = ["1001", "1002", "1003"];' in html and "labelPage" in html and "break-after:page" in html
+    assert 'const USER_IDS = ["1001"];' in client.get(f"/kiosk/{ev.id}/escarapela/imprimir/1001").text                      # una sola persona: como siempre
+    src = pathlib.Path("templates/badge_print.html").read_text(encoding="utf-8")
+    assert src.count("const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;") == 1                           # los parámetros inamovibles siguen en UN solo lugar (las hojas los reutilizan)
+    assert "addEventListener('afterprint', finish)" in src and "window.close()" in src                                       # la ventana se cierra sola al terminar (y por tiempo de respaldo)
+
+
+def test_print_windows_have_a_fixed_name_close_the_previous_one_and_never_use_noopener():
+    import pathlib
+    br = pathlib.Path("static/js/badge-render.js").read_text(encoding="utf-8")
+    assert "const PRINT_WINDOW = 'goldenweb_print';" in br and "window.open(url, PRINT_WINDOW, 'width=480,height=720')" in br and "printWin.close()" in br
+    assert "noopener" not in br.replace("SIN `noopener`", "").replace("con él el navegador", "")                              # con noopener el nombre se ignora y no se puede cerrar la anterior
+    rostro = pathlib.Path("templates/kiosk_rostro.html").read_text(encoding="utf-8")
+    assert "'goldenweb_print'" in rostro and "noopener" not in rostro.split("goldenweb_print")[1][:120]
+    sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
+    assert "claimBatch" in sp and "batch=50" in sp and "print-jobs/release" in sp and "print-jobs/result-batch" in sp

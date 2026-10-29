@@ -272,6 +272,22 @@
   function printWindowUrl(userId) {
     return `/kiosk/${window.EVENT_ID}/escarapela/imprimir/${encodeURIComponent(userId)}`;
   }
+  function printBatchUrl(userIds) {                       // UNA ventana con una hoja por escarapela (hasta 50)
+    const ids = userIds.map(String);
+    return `/kiosk/${window.EVENT_ID}/escarapela/imprimir/${encodeURIComponent(ids[0])}?users=${ids.map(encodeURIComponent).join(',')}`;
+  }
+  /* Ventana de impresión con NOMBRE FIJO (29-oct-2026, celular: cada impresión dejaba una ventana abierta y se acumulaban). `window.open(url, 'goldenweb_print', …)` reutiliza la misma ventana
+     y, si el navegador abre otra, se cierra la anterior antes. SIN `noopener`: con él el navegador ignora el nombre (siempre una nueva) y no se puede cerrar la anterior; la página de impresión
+     es nuestra (mismo origen). La propia página se cierra al terminar (afterprint) y por tiempo máximo (templates/badge_print.html). */
+  const PRINT_WINDOW = 'goldenweb_print';
+  let printWin = null;
+  function openPrintTab(url) {
+    try { if (printWin && !printWin.closed) printWin.close(); } catch (e) { /* otra referencia: se sigue */ }
+    let w = null;
+    try { w = window.open(url, PRINT_WINDOW, 'width=480,height=720'); } catch (e) { w = null; }
+    printWin = w;
+    return w;
+  }
 
   async function logPrint(userId) {
     try {
@@ -306,7 +322,7 @@
       }
     } catch (e) { /* si falla la consulta del conteo, no bloquea la impresión */ }
     await logPrint(userId);
-    window.open(printWindowUrl(userId), '_blank', 'width=480,height=720,noopener');
+    openPrintTab(printWindowUrl(userId));
   }
 
   /* Bug real corregido (2026-09-17, "el módulo de autoimpresión no está sirviendo"): maybeAutoPrint
@@ -352,7 +368,7 @@
   }
   function printNow(userId) {
     return logPrint(userId).then(() => {
-      window.open(printWindowUrl(userId), '_blank', 'width=480,height=720,noopener');
+      openPrintTab(printWindowUrl(userId));
     });
   }
   function maybeAutoPrint(userId) {
@@ -360,6 +376,6 @@
     claim(userId).then((ok) => { if (ok) printNow(userId); });
   }
 
-  window.BadgePrint = { printWindowUrl, openPrintWindow, openNow, maybeAutoPrint, claim, beginManual, printNow };
+  window.BadgePrint = { printWindowUrl, printBatchUrl, openPrintTab, openPrintWindow, openNow, maybeAutoPrint, claim, beginManual, printNow };
   if (typeof module === 'object' && module.exports) module.exports = window.BadgeRender;           // node: tests/js/badge_text_fit_check.js
 })(typeof window !== 'undefined' ? window : globalThis);

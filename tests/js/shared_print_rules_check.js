@@ -331,12 +331,26 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
   // ---- 6) trabajos de OTROS equipos (4797531): SOLO reclama por sondeo la dueña de la impresora USB; sin USB esperan en el servidor y «Imprimir pendientes» los reclama al tocarlo,
   //         los imprime con la ventana de siempre y los confirma. Ninguno se pierde ni se reimprime solo.
   {
-    const results = [], claims = []; let queue = [{ id: 71, user_id: '1001', requested_by: 'x1' }, { id: 72, user_id: '1002', requested_by: 'x1' }];
+    const results = [], claims = [], batches = [], releases = [], opens = []; let queue = [{ id: 71, user_id: '1001', requested_by: 'x1' }, { id: 72, user_id: '1002', requested_by: 'x1' }];
     const f2 = global.fetch;
+    global.location = { origin: 'http://x' };
+    global.removeEventListener = (k, f) => { pageListeners[k] = (pageListeners[k] || []).filter((x) => x !== f); };
+    let windowBehaviour = 'done';                                      // 'done' = termina el cuadro y avisa; 'closed' = la persona la cierra sin imprimir
+    global.open = (url, name) => {                                     // la ventana de impresión (UNA por tanda)
+      const w = { closed: false, close() { this.closed = true; } }; opens.push({ url, name, w });
+      setTimeout(() => { if (windowBehaviour === 'done') global.dispatchEvent({ type: 'message', origin: 'http://x', data: { gwPrint: 'done', batch: { rendered: queue.length ? [] : ['1001', '1002'], failed: [] } } }); else w.closed = true; }, 60);
+      return w;
+    };
     global.fetch = async (url, init = {}) => {
       const u = new URL(url, 'http://x');
       if (u.pathname.endsWith('/print-devices/heartbeat')) return json(200, { enabled: true, mode: 'self', printer_name: '', printer_ready: false, serving: 2, poll: true, waiting: queue.length, claimed: 0, holder: true });
-      if (u.pathname.endsWith('/print-jobs-next')) { claims.push({ manual: u.searchParams.get('manual') === '1', device: u.searchParams.get('device_id') }); return json(200, { job: queue.shift() || null }); }
+      if (u.pathname.endsWith('/print-jobs-next')) {
+        claims.push({ manual: u.searchParams.get('manual') === '1', device: u.searchParams.get('device_id'), batch: u.searchParams.get('batch') });
+        if (u.searchParams.get('batch')) { const got = queue.splice(0, 50); return json(200, { jobs: got }); }
+        return json(200, { job: queue.shift() || null });
+      }
+      if (u.pathname.endsWith('/print-jobs/result-batch')) { batches.push(JSON.parse(init.body).results); return json(200, { confirmed: 1 }); }
+      if (u.pathname.endsWith('/print-jobs/release')) { releases.push(JSON.parse(init.body).ids); return json(200, { released: 1 }); }
       if (/\/print-jobs\/\d+\/result$/.test(u.pathname)) { results.push(Object.assign({ id: Number(u.pathname.match(/(\d+)\/result/)[1]) }, JSON.parse(init.body))); return json(200, {}); }
       return f2(url, init);
     };
@@ -344,10 +358,26 @@ const lastToast = () => (toasts[toasts.length - 1] || {});
     QLUsb.connect = async () => null; await GoldenSharedPrint.connectForTest(); await new Promise((r) => setTimeout(r, 200));
     assert.strictEqual(claims.length, 0, 'sin impresora USB nadie reclama por sondeo: el trabajo no desaparece del servidor');
     assert.strictEqual(GoldenSharedPrint.state().pendingJobs, 2, 'se ven los 2 que esperan');
+    // D) «Imprimir pendientes»: UNA tanda, UNA ventana con las dos escarapelas, y el resultado de cada una se confirma DESPUÉS de que la ventana termina
     await GoldenSharedPrint.printPending();
-    assert.ok(claims.slice(0, 2).every((c) => c.manual && c.device === GoldenSharedPrint.state().deviceId), '«Imprimir pendientes» reclama al tocarlo');
-    assert.deepStrictEqual(original.open, ['1001', '1002'], 'cada uno con la ventana de impresión de siempre');
-    assert.deepStrictEqual(results.map((r) => [r.id, r.ok]), [[71, true], [72, true]], 'y se confirman');
+    assert.ok(claims.slice(0, 1).every((c) => c.manual && c.device === GoldenSharedPrint.state().deviceId && c.batch === '50'), '«Imprimir pendientes» reclama por tanda al tocarlo');
+    assert.strictEqual(opens.length, 1, 'UNA sola ventana para todas las pendientes (no una por escarapela)');
+    assert.ok(/\/escarapela\/imprimir\/1001\?users=1001,1002$/.test(opens[0].url) && opens[0].name === 'goldenweb_print', 'una ventana con las dos personas y nombre fijo: ' + opens[0].url + ' ' + opens[0].name);
+    assert.deepStrictEqual(original.open, [], 'ninguna ventana por escarapela');
+    assert.deepStrictEqual(batches, [[{ id: 71, ok: true, error: '' }, { id: 72, ok: true, error: '' }]], 'cada una se confirma por trabajo, después de la ventana');
+    assert.deepStrictEqual(releases, [], 'nada vuelve a la cola');
+    // D) si la persona cierra la ventana sin imprimir: los trabajos vuelven a la cola (no se pierden ni se reimprimen solos)
+    queue = [{ id: 73, user_id: '1001', requested_by: 'x1' }, { id: 74, user_id: '1002', requested_by: 'x1' }]; opens.length = 0; batches.length = 0; windowBehaviour = 'closed';
+    await GoldenSharedPrint.printPending();
+    assert.strictEqual(opens.length, 1, 'otra ventana');
+    assert.deepStrictEqual(releases, [[73, 74]], 'la ventana se cerró sin imprimir: vuelven a la cola');
+    assert.deepStrictEqual(batches, [], 'y no se confirma nada como impreso');
+    // D) si dice que no salieron (canceló el cuadro de Chrome): también vuelven a la cola
+    queue = [{ id: 75, user_id: '1001', requested_by: 'x1' }]; opens.length = 0; releases.length = 0; windowBehaviour = 'done';
+    const confirm0 = global.showConfirm; global.showConfirm = async () => false;
+    await GoldenSharedPrint.printPending();
+    global.showConfirm = confirm0;
+    assert.deepStrictEqual(releases, [[75]], 'dijo que no salió: vuelve a la cola'); assert.deepStrictEqual(batches, []);
     // con la impresora USB conectada en ESTA ventana: reclama por sondeo, sin que nadie toque nada
     queue = [{ id: 81, user_id: '1001', requested_by: 'x2' }]; claims.length = 0;
     QLUsb.connect = async () => ({ productName: 'QL-800' }); QLUsb.info = () => ({ name: 'QL-800' }); QLUsb.sendJob = async () => {};

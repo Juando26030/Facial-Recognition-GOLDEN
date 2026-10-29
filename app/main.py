@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 from urllib.parse import urlsplit
 
 import anyio.to_thread
@@ -663,15 +664,18 @@ def kiosk_certificates(event_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
-def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: Session = Depends(get_db)):
+def kiosk_badge_print(event_id: int, user_id: str, request: Request, users: Optional[str] = None, db: Session = Depends(get_db)):
     """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en
     una pestaña/ventana aparte desde el botón "Imprimir Escarapela" (o sola, si el evento tiene
     auto_print_badge activo) sin sacar al digitador de la pantalla de Registro. 'comercial'
     excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito: "la comercial no debe poder
     imprimir")."""
+    # `?users=a,b,c` (29-oct-2026, «Imprimir pendientes»): UNA sola ventana con una página por escarapela (hasta 50); sin él, una sola persona como siempre.
+    many = [u.strip() for u in (users or "").split(",") if u.strip()][:50]
     return _resolve_kiosk_page(event_id, request, db, "badge_print.html", exclude_roles=["comercial"], extra_context={
         "print_user_id": user_id,
         "print_user_id_json": json.dumps(user_id).replace("</", "<\\/"),
+        "print_users_json": json.dumps(many if len(many) > 1 else [user_id]).replace("</", "<\\/"),
     })
 
 

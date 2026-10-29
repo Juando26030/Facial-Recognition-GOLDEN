@@ -365,16 +365,69 @@
     }
     polling = false;
   }
-  async function printPending() {                  // un toque de la persona: reclama e imprime, UNO A UNO, lo que espera en el servidor
+  /* «Imprimir pendientes» (29-oct-2026): ANTES cada escarapela abría su propia ventana de impresión (5 pendientes = 5 ventanas). Ahora se reclaman por TANDA (hasta 50, mismo arrendamiento) y,
+     sin impresora USB, se abre UNA sola ventana con una hoja por escarapela. El resultado de cada trabajo se confirma DESPUÉS de que la ventana termina y la persona lo confirma; si cierra o
+     cancela, los trabajos vuelven a la cola (nunca se pierden ni se reimprimen solos). Con impresora USB se imprime una tras otra sin ventana, como siempre. */
+  async function claimBatch() {
+    const res = await fetchT(`/api/events/${EID}/print-jobs-next?device_id=${encodeURIComponent(deviceId)}&manual=1&batch=50`, { cache: 'no-store' }, 10000);
+    return res.ok ? ((await res.json()).jobs || []) : [];
+  }
+  async function postJson(url, body) {
+    for (let i = 0; i < 3; i++) {
+      try { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (r.ok) return true; } catch (e) { await sleep(1000); }
+    }
+    return false;
+  }
+  /* Abre UNA ventana con todas las escarapelas y espera a que termine: 'done' (terminó el cuadro de impresión; trae qué hojas se armaron) o 'closed' (la cerraron antes). */
+  function openBatchWindow(userIds) {
+    return new Promise((resolve) => {
+      const url = original.printBatchUrl ? original.printBatchUrl(userIds) : `/kiosk/${EID}/escarapela/imprimir/${encodeURIComponent(userIds[0])}?users=${userIds.map(encodeURIComponent).join(',')}`;
+      const w = original.openPrintTab ? original.openPrintTab(url) : window.open(url, 'goldenweb_print', 'width=480,height=720');
+      if (!w) { resolve({ state: 'blocked' }); return; }
+      let finished = false;
+      const end = (r) => { if (finished) return; finished = true; window.removeEventListener('message', onMsg); clearInterval(timer); resolve(r); };
+      const onMsg = (ev) => { if (ev.origin === location.origin && ev.data && ev.data.gwPrint === 'done') end({ state: 'done', batch: ev.data.batch }); };
+      window.addEventListener('message', onMsg);
+      const timer = setInterval(() => { try { if (w.closed) end({ state: 'closed' }); } catch (e) { /* sigue */ } }, 700);
+      setTimeout(() => end({ state: 'closed' }), 10 * 60 * 1000);          // respaldo: nunca queda esperando para siempre
+    });
+  }
+  async function runBatchWindow(jobs) {
+    const r = await openBatchWindow(jobs.map((j) => j.user_id));
+    const ids = jobs.map((j) => j.id);
+    if (r.state !== 'done') {                     // la cerraron (o el navegador la bloqueó) sin llegar a imprimir: todo vuelve a la cola
+      await postJson(`/api/events/${EID}/print-jobs/release`, { ids });
+      toast(r.state === 'blocked' ? '⚠️ El navegador bloqueó la ventana de impresión: las escarapelas siguen pendientes. Permite las ventanas emergentes y toca «Imprimir pendientes».'
+        : 'Cerraste la ventana de impresión: las escarapelas siguen pendientes.', 'warning');
+      return false;
+    }
+    const failed = new Set(((r.batch && r.batch.failed) || []).map(String));
+    const printable = jobs.filter((j) => !failed.has(String(j.user_id)));
+    const said = await window.showConfirm(`¿Salieron las ${printable.length} escarapela(s)?<br><br>Si se canceló o no salieron, elige «No» y siguen pendientes.`, { confirmLabel: 'Sí, salieron' });
+    const results = jobs.map((j) => (failed.has(String(j.user_id)) ? { id: j.id, ok: false, error: 'No se pudo armar la escarapela.' } : { id: j.id, ok: !!said, error: said ? '' : 'No salió.' }));
+    if (said) await postJson(`/api/events/${EID}/print-jobs/result-batch`, { results });
+    else {                                        // no salieron: vuelven a la cola; las que no se pudieron armar quedan como fallidas (visibles en la Cola de quien las pidió)
+      await postJson(`/api/events/${EID}/print-jobs/release`, { ids: printable.map((j) => j.id) });
+      const bad = results.filter((x) => !x.ok && failed.size && failed.has(String((jobs.find((j) => j.id === x.id) || {}).user_id)));
+      if (bad.length) await postJson(`/api/events/${EID}/print-jobs/result-batch`, { results: bad });
+    }
+    if (failed.size) toast(`⚠️ No se pudieron armar ${failed.size} escarapela(s): quedan fallidas en la Cola de quien las pidió.`, 'error');
+    return !!said;
+  }
+  async function printPending() {                  // un toque de la persona: reclama por tanda e imprime lo que espera en el servidor
     if (printingPending) return;
     printingPending = true;
+    render();
     try {
-      for (let guard = 0; guard < 50; guard++) {
-        let job = null;
-        try { job = await claimNext(true); } catch (e) { online = false; break; }
-        if (!job) break;
-        await runJob(job, !usb.ok);
-        route.waiting = Math.max(0, waitingCount() - 1); render();
+      for (let round = 0; round < 10; round++) {   // tandas de 50 (si hay más, una segunda tanda)
+        let jobs = [];
+        try { jobs = await claimBatch(); } catch (e) { online = false; break; }
+        if (!jobs.length) break;
+        let ok = true;
+        if (usb.ok) { for (const job of jobs) await runJob(job, false); }                   // impresora USB: una tras otra, sin ventanas
+        else ok = await runBatchWindow(jobs);
+        route.waiting = Math.max(0, waitingCount() - jobs.length); render();
+        if (!ok || jobs.length < 50) break;                                                  // cancelado: no insistir con la siguiente tanda
       }
     } finally { printingPending = false; heartbeat(); render(); }
   }
