@@ -276,8 +276,8 @@
   /* De la plantilla ya dibujada (canvas a 300 dpi) al trabajo para la cinta: la composición vive en static/js/label-compose.js (la MISMA que usa la ventana de impresión del navegador). */
   function composeJob(shot, tplW, tplH, p) {
     const composed = LabelCompose.composeBitmap(shot, tplW, tplH, p);
-    const fit = p.tapeType === 'diecut' ? { bitmap: composed.bitmap, height: composed.height } : LabelCompose.fitToPaper(composed, LabelCompose.USB_SCALE);      // el mismo largo máximo (96 mm) que la ventana de impresión del navegador
-    if (!p.lengthMm && p.tapeType !== 'diecut') { const t = LabelCompose.trimBlankEnds(fit, QLUsb.mmToDots(p.feedMm), QLUsb.mmToDots(p.feedMm)); fit.bitmap = t.bitmap; fit.height = t.height; }      // la impresora ya agrega ese avance: no se suma al blanco de la etiqueta
+    const fit = p.tapeType === 'diecut' ? { bitmap: composed.bitmap, height: composed.height } : LabelCompose.usbFit(composed);      // el mismo largo máximo (96 mm) que la ventana de impresión del navegador
+    if (!p.lengthMm && p.tapeType !== 'diecut') { const landscape = composed.layout.rotation === 90 || composed.layout.rotation === 270, t = LabelCompose.trimBlankEnds(fit, QLUsb.mmToDots(p.feedMm + (landscape ? 0 : LabelCompose.USB_LEAD_TRIM_MM)), QLUsb.mmToDots(p.feedMm)); fit.bitmap = t.bitmap; fit.height = t.height; }      // la impresora ya agrega ese avance: no se suma al blanco de la etiqueta
     if (p.lengthMm && fit.height < composed.height) {                // alto fijo manual: la etiqueta conserva su largo (el sobrante queda en blanco)
       const padded = new Uint8Array(composed.tapeDots * composed.height); padded.set(fit.bitmap); fit.bitmap = padded; fit.height = composed.height;
     }

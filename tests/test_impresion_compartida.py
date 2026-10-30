@@ -562,7 +562,7 @@ def test_the_bar_messages_depend_on_the_explicit_print_mode_without_the_false_di
     assert "id=\"spDialog\"" not in sp and "let dialogDeclared = !MOBILE" in sp           # un computador imprime con la ventana de Chrome por defecto: ya no hay botón
     assert "HOST_HEARTBEAT_MS" in sp and "route.serving && !usb.ok && dialogDeclared ? HOST_HEARTBEAT_MS" in sp      # el anfitrión refresca la cola casi al instante
     cm = pathlib.Path("static/js/label-compose.js").read_text(encoding="utf-8")
-    assert "var USB_SCALE = 0.92" in cm and "LabelCompose.fitToPaper(composed, LabelCompose.USB_SCALE)" in sp
+    assert "var USB_SCALE = 0.92" in cm and "LabelCompose.usbFit(composed)" in sp
 
 
 # ------------------------------------------------------------------------------------------------ 29-oct-2026, problema D: «Imprimir pendientes» reclama por TANDA (una sola ventana)
@@ -676,4 +676,4 @@ def test_both_print_paths_give_the_same_label_geometry_vertical_and_horizontal_a
     r = subprocess.run(["node", "tests/js/label_paths_check.js"], capture_output=True, text=True, encoding="utf8", timeout=60)
     assert r.returncode == 0 and "label_paths_check OK" in r.stdout, r.stdout[-1500:] + r.stderr[-1500:]
     sp = pathlib.Path("static/js/shared-print.js").read_text(encoding="utf-8")
-    assert "LabelCompose.fitToPaper(composed, LabelCompose.USB_SCALE)" in sp                                         # el USB aplica el mismo largo máximo que la ventana de impresión (parámetro inamovible)
+    assert "LabelCompose.usbFit(composed)" in sp                                         # el USB aplica el mismo largo máximo que la ventana de impresión (parámetro inamovible)

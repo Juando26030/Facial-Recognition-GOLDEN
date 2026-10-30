@@ -68,6 +68,16 @@
 
   /* El margen de avance (feedMm) lo agrega la impresora arriba y abajo SOLO por USB; en la ventana de Chrome no existe. Para que la etiqueta mida lo mismo por los dos caminos se le quita al bitmap
      esa cantidad de blanco al inicio y al final (nunca tinta): bitmap recortado + avance = el bitmap original. 29-oct-2026: el celular salía con más margen arriba (vertical) y más largo (horizontal). */
+  /* Medido por Juan en la Brother (29-oct-2026, 3.ª ronda): VERTICAL el USB salía 1 mm más largo que Chrome y ese milímetro estaba en el margen de arriba → USB_LEAD_TRIM_MM;
+     HORIZONTAL el USB salía de 9,5-9,6 cm y Chrome de 9,0 cm (más grande en proporción): el controlador de Windows encoge lo de Chrome (tope de 96 mm × ~0,935) → USB_SCALE_LANDSCAPE aplicado
+     después del tope de 96 mm. Perillas de calibración: nuevo = actual × medida Chrome / medida USB. */
+  var USB_LEAD_TRIM_MM = 1, USB_SCALE_LANDSCAPE = 0.935;
+  function usbFit(out) {
+    var landscape = out.layout && (out.layout.rotation === 90 || out.layout.rotation === 270);
+    if (!landscape) return fitToPaper(out, USB_SCALE);
+    var f = fitToPaper(out, 1), s = fitToPaper({ bitmap: f.bitmap, tapeDots: out.tapeDots, height: f.height }, USB_SCALE_LANDSCAPE);
+    return { bitmap: s.bitmap, width: s.width, height: s.height, scale: f.scale * s.scale };
+  }
   function trimBlankEnds(out, leadDots, tailDots) {
     var W = out.width || out.tapeDots, H = out.height, bm = out.bitmap, first = -1, last = -1, y, x;
     for (y = 0; y < H && first < 0; y++) for (x = 0; x < W; x++) if (bm[y * W + x]) { first = y; break; }
@@ -99,5 +109,5 @@
     return canvas.toDataURL("image/png");
   }
 
-  return { DPM: DPM, MAX_IMG_MM: MAX_IMG_MM, USB_SCALE: USB_SCALE, renderShot: renderShot, composeBitmap: composeBitmap, fitToPaper: fitToPaper, trimBlankEnds: trimBlankEnds, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
+  return { DPM: DPM, MAX_IMG_MM: MAX_IMG_MM, USB_SCALE: USB_SCALE, USB_SCALE_LANDSCAPE: USB_SCALE_LANDSCAPE, USB_LEAD_TRIM_MM: USB_LEAD_TRIM_MM, usbFit: usbFit, renderShot: renderShot, composeBitmap: composeBitmap, fitToPaper: fitToPaper, trimBlankEnds: trimBlankEnds, pageSpec: pageSpec, bitmapToDataUrl: bitmapToDataUrl };
 });

@@ -95,6 +95,14 @@ for (const [name, w, h, ink] of CASES.slice(0, 2)) {
   assert.strictEqual(b.top, a.top - Math.min(feed, a.top), name + ": la tinta no se tocó (misma tinta, menos blanco)");
   assert.strictEqual(b.bottom - b.top, a.bottom - a.top, name + ": mismo alto de tinta");
 }
+// medido por Juan (29-oct, 3.ª ronda): horizontal de 105 mm → Chrome 9,0 cm, el USB debe quedar en 9,0 cm (antes 9,5-9,6); vertical → el USB conserva USB_SCALE
+{
+  const p = prefs(), land = LC.composeBitmap(shotOf(105.4, 62, { x: 33, y: 10, w: 40, h: 30 }), 105.4, 62, p), u = LC.usbFit(land);
+  assert.ok(Math.abs(u.height / DPM - 96 * LC.USB_SCALE_LANDSCAPE) < 0.3 && u.height / DPM > 89 && u.height / DPM < 90.6, "horizontal: el USB mide ~9,0 cm: " + (u.height / DPM));
+  const vert = LC.composeBitmap(shotOf(62, 100, { x: 8, y: 30, w: 40, h: 25 }), 62, 100, p), v = LC.usbFit(vert);
+  assert.ok(Math.abs(v.height / vert.height - LC.USB_SCALE) < 0.01, "vertical: escala USB_SCALE");
+  assert.ok(LC.USB_LEAD_TRIM_MM > 0 && LC.USB_LEAD_TRIM_MM <= 2, "vertical: ~1 mm menos de margen arriba");
+}
 // una etiqueta de hasta 96 mm NO cambia con el tope (las de 100 mm de plantilla miden 95,08): el trabajo USB es byte a byte el de siempre
 {
   const p = prefs(), out = LC.composeBitmap(shotOf(100, 62, { x: 30, y: 10, w: 40, h: 30 }), 100, 62, p), f = LC.fitToPaper(out);
