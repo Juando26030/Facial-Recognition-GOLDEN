@@ -39,7 +39,7 @@ Cada fila agrupa las 3 formas de ingresar porque **dieron siempre el mismo resul
 | Sin red | Registrar nuevo | **FALLA: el modal no abre** | **FALLA: el modal no abre** | **FALLA: el modal no abre** |
 
 Notas de la matriz:
-- «Sin red / FALLA: no imprime»: la persona sí queda registrada (en la cola local; el estado en pantalla dice «Registrado»), pero **no se pide ninguna impresión**, ni sin red ni al volver la red. Diseño actual: ninguno de los caminos sin red llama a `maybeAutoPrint` (ver §4). 2 de las 18 celdas «sin red con autoimpresión» (Editar, Enter manual, autoimpresión, digitador y coordinador) quedaron además **sin llegar al servidor** al mirar la base minutos después: **NO DETERMINADO**, no investigué la causa (puede ser el arnés cerrando la pantalla durante la sincronización).
+- «Sin red / FALLA: no imprime»: la persona sí queda registrada (en la cola local; el estado en pantalla dice «Registrado»), pero **no se pide ninguna impresión**, ni sin red ni al volver la red. Diseño actual: ninguno de los caminos sin red llama a `maybeAutoPrint` (ver §4). 2 de las 18 celdas «sin red con autoimpresión» (Editar, Enter manual, autoimpresión; digitador y coordinador) aparecían sin llegar al servidor: **investigado el 30-oct, era un problema de la prueba (tiempo), no pérdida de datos** (§9.1). Mi comprobación de «minutos después» de la primera entrega era inválida (§9.1) y queda retirada.
 - «Sin red / Registrar nuevo / FALLA: el modal no abre»: ver §5-F. 9/9 celdas.
 - Con **latencia simulada de 2,8 s por llamada** se repitieron 5 celdas con ambos interruptores activos y lector: todas registraron y pidieron 1 impresión, pero **en 2 de las 4 aperturas de ventana medidas el navegador ya no tenía activación de usuario** (`userActivation.isActive = false`): con las ventanas emergentes bloqueadas (valor por defecto de Chrome) esas dos impresiones se habrían perdido en silencio. En red de laboratorio siempre fue `true`.
 - Facial, USB y dispositivos físicos: **NO SE PUDO PROBAR** (ver §2 y §6).
@@ -108,8 +108,62 @@ Preferir lo que pidió el plan: **una sola cola de acciones por persona** antes 
 
 **Pruebas que deja:** convertir este arnés en prueba automatizada (Playwright contra una base de pruebas) que corra la matriz de §3, más los escenarios T1, T2, T4 y T5, antes de cada despliegue a staging. Hoy ninguna prueba cubre «pantalla abierta antes de encender el interruptor».
 
-## 8. Dudas
+## 8. Dudas (primera entrega; respondidas el 30-oct en §9.2)
 
 - ¿Qué versión corrió el piloto y a qué hora se encendieron los interruptores respecto de la apertura de las pantallas de los digitadores? Con eso se confirmaría A como causa del piloto.
 - ¿Los equipos del piloto tenían las ventanas emergentes permitidas para el sitio?
 - ¿Sin red debe imprimirse (cuando la impresora es local) o basta con dejar la impresión pendiente? Define el alcance de D.
+
+## 9. Seguimiento del 30-oct (solo lectura; nada se corrigió)
+
+### 9.1 Las 2 celdas sin red que «no llegaron al servidor»
+
+**Veredicto: problema de la prueba (tiempo de espera), NO pérdida de datos. Llegan solos a los pocos segundos.**
+
+- **Qué eran:** *sin red · Editar · Enter manual · solo autoimpresión*, con digitador (persona 91000014) y con coordinador (91000023). En la primera corrida la persona quedó «Registrado» en pantalla y en la cola local («1 en cola»), pero a los ~9,5 s de volver la red aún no había ninguna petición de sincronización (`reqs_tras_volver_red` vacío) y el arnés cerró la pantalla y leyó la base.
+- **Causa:** la sincronización no arranca al instante de volver la red: la contingencia solo sale a «normal» tras 2 sondas buenas de `/health` seguidas (cada 5 s) más una petición autenticada (`contingency.js:14`, `:274`), así que el envío sale entre ~5 y ~10 s después. Esas dos celdas cayeron justo del lado de los 9,5 s del arnés.
+- **Evidencia (reproducción aislada, mismo flujo, digitador y coordinador, `probe_sync.py` de uso único):** cola = 1 y servidor = 0 a los 5 s; **cola = 0 y servidor = 1 a los 9,5 s**; una sola petición `POST /api/events/1/access-logs/sync` → 200; sin duplicados (servidor = 1 a los 20, 35 y 60 s).
+- **Corrección de mi primera entrega:** escribí que a esas celdas «en servidor ahora: 0». Esa lectura no valía nada: los guiones que corrieron después (escenarios y latencia) vacían la base de pruebas al empezar, así que cualquier lectura posterior daba 0. Debí verificarlo antes de afirmarlo; por eso el reporte decía «no determinado».
+- **¿Hay riesgo de pérdida de datos sin red? No observé ninguno en este flujo.** Pruebas: (a) cerrar la pantalla con la cola pendiente (cola = 1, antes de que la bandeja vuelva a «normal»): una pantalla nueva del mismo equipo la sincroniza (cola = 0, servidor = 1, sin duplicado); (b) cierre en pleno vuelo de la petición: **no logré provocarlo** (la petición terminó antes de cerrar); lo cubre por diseño el reenvío idempotente por `client_id` (`replayed`, `tests/test_contingency_sync.py:36` y `:97`), no por mi prueba. Riesgos que SÍ existen y ya estaban documentados (no los probé): lo no sincronizado a los **7 días se elimina** del dispositivo con aviso desde el día 3 (`contingency.js` `pruneOld`); si el navegador borra los datos del sitio (modo privado, iOS tras ~7 días sin uso, «borrar datos») se pierde la cola; el cierre de sesión avisa de lo pendiente pero no lo borra. La **autoimpresión sin red sí se pierde hoy** (D): la persona queda registrada pero no queda nada pendiente de imprimir.
+
+### 9.2 Respuestas de Juan David (30-oct) y su efecto
+
+| Tema | Respuesta | Efecto en este reporte |
+|---|---|---|
+| Versión del piloto | Corrió en staging con `b36bf92` y luego se exportó a producción. Producción corre hoy `bc4a19d` (confirmado en `/sistema`), igual que `main`. Producción solo tiene datos reales y staging solo de prueba. | `b36bf92` ya contenía el defecto A (`EVENT_AUTO_PRINT` fijo al cargar; no cambió en los 6 commits posteriores). Pruebas siempre en staging o local con datos ficticios. |
+| Cuándo se encendieron los interruptores | No se sabe. | La causa A sigue siendo la hipótesis más probable, **no confirmada**. |
+| Ventanas emergentes | Chrome pide permiso la primera vez; hasta donde se sabe no estaban bloqueadas. | Causa C: **poco probable en el piloto**; se conserva como riesgo (§9.3). |
+| Sin red | Con impresora local (USB o ventana de Chrome): imprimir igual. Si depende de otro equipo (compartida) o no hay impresora: dejar **pendiente en una cola visible, nunca perderlo, y sincronizar al volver la red.** | Requisito para el arreglo (§9.4). |
+| VM antigua | Todavía no está cerrada: no borrar nada de `deploy/`, solo marcarlo como heredado. | Marcado en `0A_pendientes_docs_15_y_16.md` (sección D); no se tocó `deploy/`. |
+
+### 9.3 Flujos que abren una ventana DESPUÉS de una llamada de red (riesgo del navegador)
+
+`window.open` solo está permitido ~5 s después del último gesto del usuario (clic o tecla). Estos caminos lo llaman tras una o más llamadas de red (medido: 2 de 4 aperturas con 2,8 s por llamada ya sin activación):
+
+| Flujo | Llamadas de red antes de abrir la ventana | Dónde |
+|---|---|---|
+| Autoimpresión local tras escanear/Enter/clic en «Acreditar» | 1) `POST /api/checkin-cedula` 2) `POST …/print-log` | `directory.js:1087` → `badge-render.js:369` `printNow` → `openPrintTab` (`:284`) |
+| Autoimpresión local tras «Editar → Guardar» (coordinador) | `PATCH /users/{id}`, `PATCH …/status`, `POST print-log` (3) | `directory.js:317-394` |
+| Autoimpresión local tras «Editar → Guardar» (digitador) | `PATCH /users/{id}`, `PATCH …/status`, `POST print-log` (3) | `directory.js:439-444` |
+| Autoimpresión local tras «Registrar nuevo» | `POST /api/register` (+ firmas), `POST print-log` | `app.js:432-441` |
+| Autoimpresión con compartida encendida y ruta propia (sin USB) | + `GET print-check` antes del `print-log` (3-4) | `shared-print.js:532-566` |
+| Botón manual «Imprimir escarapela» (local) | `GET print-count`, [confirmación «¿imprimir de nuevo?» si ya se imprimió: el tiempo humano cuenta], `POST print-log` | `badge-render.js:304-326` `openNow` |
+| Botón manual con compartida y ruta propia | + `GET print-check` | `shared-print.js:532-566` |
+| Reimprimir desde la Cola (ruta propia) | consultas previas + `print-log` | `shared-print.js` (`reprint`) |
+| «Imprimir pendientes» del anfitrión | los trabajos ya vienen reclamados; abre desde el clic del botón, pero reclama (`print-jobs-next`) antes de abrir | `shared-print.js` (no revisé el orden exacto: **no verificado**) |
+| USB directo | no abre ventana | — |
+| Ruta compartida del que pide | no abre ventana (crea un trabajo) | — |
+
+La corrección barata es abrir la ventana al inicio del flujo, dentro del gesto, y navegarla al terminar (§7).
+
+### 9.4 Ajuste a la propuesta de arreglo por lo decidido para «sin red»
+
+La cola de acciones por persona (§7, «Estructural») debe cumplir:
+1. **Equipo con impresora local** (USB directo o ventana de Chrome): sin red se imprime igual, sin esperar la comprobación del servidor. Hay que resolver dos cosas que hoy lo impiden: la página `badge_print.html` la renderiza el servidor (no está en la copia local; se necesita una versión que se dibuje en el navegador, como ya hace el camino USB con `BadgeRender`) y `registeredOrSay`/`print-check` pregunta al servidor (sin red se usa el estado de la copia local).
+2. **Impresión compartida (depende de otro equipo) o equipo sin impresora:** la acción «imprimir» queda **pendiente en una cola visible** (franja con contador y lista por persona: «pendiente · motivo»), persistente en IndexedDB, nunca se descarta en silencio, y se envía sola al volver la red; si sigue sin impresora, queda en la lista para «Imprimir pendientes».
+3. Estados visibles por persona: *Registrado · Imprimiendo / Impreso / Pendiente (sin red, sin impresora, anfitrión desconectado) / Falló: motivo.*
+4. Caducidad: la misma de la bandeja (7 días, con avisos desde el día 3) y nunca borrar sin avisar.
+
+### 9.5 Dudas que siguen abiertas
+- La lista original de los 41 puntos **no llegó** (ver `0A_estado_41_puntos.md`): hay que reenviarla para corregir la numeración.
+- Cuándo se encendieron los interruptores en el piloto (no hay registro; ayudaría la fecha de modificación del evento en staging, si existe).

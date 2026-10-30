@@ -8,14 +8,14 @@ buckets, Secret Manager, Firebase o Cloudflare está marcado **«no verificado (
 - **Los dos documentos están desactualizados en sus marcas.** `docs/15` es una bitácora cronológica, no una lista de tareas: su única casilla `[ ] 3. Staging en Cloud Run` (línea 66) describe un
   estado de septiembre que ya pasó (staging se desplegó el 29-sep, sección «Staging desplegado»), y `docs/16` sigue marcando como `☐` cosas que ya están en `main` (B1, B1b, N4, 7a, R1 de B8).
   Por eso cada fila de abajo dice qué dice el documento **y** qué muestra el código (ver también `0A_estado_41_puntos.md`).
-- Estado de producción tomado del plan maestro (§1): corre `b36bf92`, migraciones hasta `0075`, modo sin conexión encendido. No pude comprobarlo.
+- Estado de producción (actualizado el 30-oct por Juan David): corre **`bc4a19d`**, igual que `main` (visto en `/sistema`); producción tiene solo datos reales y staging solo datos de prueba. Yo no pude comprobarlo (nube).
 
 ## A. `docs/15_MIGRACION.md`
 
 | # | Pendiente (ubicación) | Qué dice el documento | Estado hoy | Quién |
 |---|---|---|---|---|
-| 15-1 | **Migración `0076` y los 6 commits de impresión del 29-oct no están en producción** (línea 850: «la recibe en el próximo despliegue autorizado») | Producción llega hasta `0075_transfer_jobs` | **ABIERTO.** `main` = `bc4a19d` ya los contiene; producción corre `b36bf92` (según el plan). Falta el despliegue con la receta de siempre (copia de Neon, PR con «Create a merge commit» + `[skip ci]`, orden «DESPLIEGA PRODUCCIÓN»). | Juan David |
-| 15-2 | **Neutralizar la VM antigua** (D2.5, líneas 620–643): quitar `push` de `deploy.yml`, «Disable workflow» en Actions, detener el runner de la VM | «Tres cinturones, todos antes de fusionar» | **No verificado (nube/GitHub).** El plan 0B dice que `deploy/`, Gunicorn, Nginx y `deploy.yml` se marcan como heredados hasta que Juan David confirme que la VM está cerrada: **pregunta abierta de la Fase 0B**. | Juan David |
+| 15-1 | **Migración `0076` y los 6 commits de impresión del 29-oct** (línea 850: «la recibe en el próximo despliegue autorizado») | Producción llega hasta `0075_transfer_jobs` | **CERRADO según Juan David (30-oct):** producción corre `bc4a19d` = `main`, que contiene esos commits y la migración `0076`. Yo no lo pude comprobar. | — |
+| 15-2 | **Neutralizar la VM antigua** (D2.5, líneas 620–643): quitar `push` de `deploy.yml`, «Disable workflow» en Actions, detener el runner de la VM | «Tres cinturones, todos antes de fusionar» | **La VM NO está cerrada (Juan David, 30-oct).** Se marca como heredada y no se borra nada (sección D). El estado de «Disable workflow» y del runner: no verificado (nube/GitHub). | Juan David |
 | 15-3 | **Renombre de la rama de staging** (`migra/fase1-2` → `staging`, paso aparte después del corte, líneas 625–631) | «Paso aparte, DESPUÉS del corte» | **ABIERTO** (`migra/fase1-2` sigue existiendo en `origin`, ver `git branch -r`). Tocaría `cloudrun.yml` y `bootstrap.sh staging`. | Juan David + Claude |
 | 15-4 | **Lista de la «Sesión 3»** (líneas 788–793): `[~] 2. XFF_CLIENT_INDEX`, `[~] 3. Prueba de carga y simulacros 1 y 2`, `[ ] 5. Revisión final de pruebas y ruff` | Marcadas a medias o sin hacer | **Marcas viejas.** El hallazgo de la IP real se corrigió el 29-sep («D2.2 · Hallazgo… opción D, implementada») y las corridas de carga 1–10 están documentadas (D2.3). Lo que sigue **no verificado (nube)**: confirmar `XFF_CLIENT_INDEX` con tráfico real en producción y los simulacros 1 y 2. Revisión final de ruff: el CI hoy solo revisa archivos tocados (el plan 0B lo cambia a todo el repo). | Juan David / 0B |
 | 15-5 | **Tabla de costos por componente** (líneas 728 y 792) | «Pendiente (no se pidió en esta sesión)» | **ABIERTO**, sin dueño ni fecha. | por definir |
@@ -57,6 +57,22 @@ buckets, Secret Manager, Firebase o Cloudflare está marcado **«no verificado (
 
 ## C. Dudas
 
-- ¿La VM antigua ya se puede dar por cerrada (afecta 15-2, 15-13 y el borrado de `deploy/` en la Fase 0B)?
+- ~~¿La VM antigua ya se puede dar por cerrada?~~ Respondido el 30-oct: **no**; sigue marcada como heredada (sección D).
 - ¿Quién es el dueño de 15-5 (tabla de costos) y 15-7 (decisiones de formularios masivos)? Hoy no tienen dueño ni fecha.
 - Estado real en la nube de 15-4, 15-8, 15-9, 15-10 y 15-13: solo Juan David puede comprobarlo.
+
+## D. Código heredado de la VM antigua (marcado, NO borrado)
+
+La VM `golden-biometrics-prod` **no está cerrada** (Juan David, 30-oct-2026). Hasta que él lo confirme por escrito **no se borra ni se mueve nada**; en la Fase 0B solo se agrupa y se documenta como heredado. No se agregó ningún archivo dentro de `deploy/` ni se tocó `.github/` (esta rama es solo de documentación); la marca vive aquí.
+
+| Elemento | Qué es | Marca |
+|---|---|---|
+| `deploy/gunicorn.conf.py` | Gunicorn de 3 procesos de la VM | HEREDADO (VM) |
+| `deploy/facial-recognition.service` | unidad systemd de la VM | HEREDADO (VM) |
+| `deploy/nginx-golden.conf` | Nginx de la VM (+ Cloudflare) | HEREDADO (VM) |
+| `deploy/gcs-lifecycle.json` | ciclo de vida del bucket de datos de la VM (los de la nube nueva son `gcs-app-*.json`) | HEREDADO (VM) |
+| `.github/workflows/deploy.yml` («Deploy to production») | despliegue por runner self-hosted en la VM | HEREDADO (VM); `docs/15` D2.5 describe cómo neutralizarlo (quitar `push`, deshabilitar, detener el runner): estado real no verificado |
+| `docs/recuperacion_desastre.md` (partes de la VM) | respaldos por cron de la VM | revisar en 0B |
+| **Vigentes, NO heredados** | `deploy/gcp/`, `deploy/firebase/`, `deploy/loadtest/`, `deploy/docker-compose.yml`, `deploy/gcs-app-*.json`, `deploy/produccion_28oct/`, `deploy/produccion_29oct/`, `.github/workflows/ci.yml`, `cloudrun*.yml` | — |
+
+Duda para 0B: `deploy/produccion_28oct` y `deploy/produccion_29oct` son paquetes de despliegue por fecha: ¿se conservan como histórico o se archivan?

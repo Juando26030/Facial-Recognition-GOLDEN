@@ -3,6 +3,10 @@
 Fecha de la revisión: 2026-10-29 (noche). `main` revisado: `bc4a19d` (`origin/main`). **Ojo:** el plan y el encargo hablan de `b36bf92`; `main` ya lo contiene y tiene 6 commits más, todos de impresión
 compartida (A–E de `fix/impresion-compartida-29oct`, migración `0076`). Verificado con `git ls-remote`: `main` = `bc4a19d`, `corte/main` = `3a6207b`.
 
+> **PENDIENTE (30-oct):** Juan David pidió reconciliar de nuevo con la numeración real de su lista, pero **la lista no llegó adjunta** (revisé el mensaje, `Downloads` y el repo). Esta versión sigue usando la numeración inferida del Anexo A. En cuanto se reenvíe, se rehace la columna «Texto del punto» y se corrigen los números que no coincidan; el estado de cada tema ya está verificado y no debería cambiar.
+>
+> **Cambios por las respuestas del 30-oct (ya aplicados):** producción corre `bc4a19d` = `main` (confirmado por Juan David en `/sistema`; yo no pude comprobarlo): los puntos 13–16 pasan de «hecho en main» a **también en producción** según esa confirmación; el punto 25 sigue sin poder verificarse más allá de eso.
+
 ## Cómo leer este reporte (y qué NO está verificado)
 
 1. **La lista original de 41 puntos de Juan David no vino adjunta** (solo el plan maestro). El único mapa disponible es el **Anexo A** del plan (rangos por tema) más `docs/16_BACKLOG_PRODUCTO.md` y
@@ -81,6 +85,6 @@ compartida (A–E de `fix/impresion-compartida-29oct`, migración `0076`). Verif
 
 ## Dudas para Juan David
 
-- La lista exacta de los 41 puntos (para fijar la numeración de 1–12, 13–16, 17–21 y 33–38).
+- **La lista exacta de los 41 puntos: reenviarla** (no llegó el 30-oct) para fijar la numeración de 1–12, 13–16, 17–21 y 33–38.
 - ¿El «Registro touch» actual (punto 23) cumple lo que pidió, o falta la versión de `docs/18 §7`?
 - ¿Existe en algún lugar el «marcador de proveedores» del punto 40? No lo encontré en `main`.
