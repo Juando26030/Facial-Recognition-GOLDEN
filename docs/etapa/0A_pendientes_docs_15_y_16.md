@@ -75,4 +75,6 @@ La VM `golden-biometrics-prod` **no está cerrada** (Juan David, 30-oct-2026). H
 | `docs/recuperacion_desastre.md` (partes de la VM) | respaldos por cron de la VM | revisar en 0B |
 | **Vigentes, NO heredados** | `deploy/gcp/`, `deploy/firebase/`, `deploy/loadtest/`, `deploy/docker-compose.yml`, `deploy/gcs-app-*.json`, `deploy/produccion_28oct/`, `deploy/produccion_29oct/`, `.github/workflows/ci.yml`, `cloudrun*.yml` | — |
 
-Duda para 0B: `deploy/produccion_28oct` y `deploy/produccion_29oct` son paquetes de despliegue por fecha: ¿se conservan como histórico o se archivan?
+~~Duda para 0B sobre `deploy/produccion_28oct` y `deploy/produccion_29oct`~~: resuelta abajo.
+
+**Decisión de Juan David (30-oct):** `deploy/produccion_28oct` y `deploy/produccion_29oct` **se conservan como histórico**, movidos a una carpeta de histórico (no se borran), y en la Fase 0B se extrae **una plantilla única parametrizada** para despliegues futuros. Nada de esto se movió en la Fase 0A (solo lectura): queda para la 0B.
