@@ -1,11 +1,11 @@
 # Fase 0A · Estado de los 41 puntos pendientes contra `main`
 
 Revisión del 30-oct-2026 sobre `origin/main` = `bc4a19d` (producción corre lo mismo, según Juan David en `/sistema`). `main` ya contiene `b36bf92` y 6 commits más, todos de impresión compartida (migración `0076`).
-Esta versión **reemplaza** a la del 29-oct, que usaba una numeración inferida.
+Esta versión **reemplaza** a las del 29-oct (numeración inferida) y del 30-oct (puntos 31–41 aún inferidos): **ya están los 41 textos reales** y no queda ninguna fila «inferida».
 
 ## Cómo leer este reporte (y qué NO está verificado)
 
-1. **Numeración real y textos: puntos 1–30.** Son los de la lista que Juan David pegó el 30-oct. **La lista llegó cortada en el punto 30** («…solo quien acreditó puede deshacer, hasta ~15 s, verificado en el»): **faltan los textos de los puntos 31–41**. Esas 11 filas conservan la numeración **inferida** del Anexo A del plan (marcadas «(inferido)») y hay que confirmarlas cuando llegue el resto de la lista.
+1. **Numeración y textos reales de los 41 puntos**, según la lista de Juan David (antes del piloto): los puntos 31–41 los pegó en un segundo mensaje porque el primero llegó cortado en el 30.
 2. «Verificado» = leí el código en `origin/main` (archivo y línea o prueba). La columna «Según Juan David» es lo que decía su lista (antes del piloto); «Hoy en `main`» es lo que encontré. Lo que vive en la nube (Neon, Cloud Run, Scheduler, buckets, Secret Manager) **no se pudo verificar**.
 3. «Hecho y en main» no significa «probado en hardware».
 4. Estados: **HECHO Y EN MAIN** · **HECHO PERO SIN INTEGRAR** (rama y commit) · **PARCIAL** (qué falta) · **POR HACER**.
@@ -40,7 +40,7 @@ Esta versión **reemplaza** a la del 29-oct, que usaba una numeración inferida.
 |---|---|---|---|---|
 | 13 | Imprimir en la QL-800 desde el celular por cable (WebUSB, Android + Chrome, rollo 62 mm), detectada sola al enchufar | Prototipo en `/impresion-usb`; no integrado al directorio ni al registro | **HECHO Y EN MAIN** | `static/js/ql-usb.js` (`getDevices()` reconoce la impresora sin preguntar de nuevo, `:301`), `templates/impresion_usb.html`; **integrado al directorio y al registro**: `shared-print.js` (`printUsb`, `usb.ok`) y detección al enchufar (`navigator.usb.addEventListener('connect', …)`, `shared-print.js:215`); `tests/js/ql_usb_check.js`, `tests/test_usb_print_page.py`. Hardware: la memoria del proyecto registra la QL-800 confirmada, **pendiente el giro horizontal y los textos de `739da4e`** (no verificado hoy). |
 | 14 | Impresora compartida entre equipos | Solo diseño | **HECHO Y EN MAIN** | `app/routers/shared_print.py` (`print-jobs`, `print-devices/heartbeat`, `print-check`), `static/js/shared-print.js`, migraciones `0069`, `0071`, `0076`; pruebas `tests/js/shared_print_*_check.js`. Los 6 commits posteriores a `b36bf92` están en `main` y en producción (según Juan David). |
-| 15 | Multiimpresión en Parámetros: el admin la activa y los usuarios activos eligen con qué equipo comparten; más de 2 pueden compartir | Solo diseño | **HECHO Y EN MAIN** (con una diferencia a confirmar) | Interruptor `PUT /events/{id}/shared-print` y tabla en Parámetros (`kiosk_parametros.html:148-150,848-869`, opción «En su propio equipo» o el equipo elegido); sin tope por impresora (`WARN_PER_PRINTER`, aviso con más de 6). **Diferencia:** quien asigna es **coordinador o más** (`CONFIG = require_role_excluding("coordinador", …)`, `shared_print.py:39`), no cada usuario eligiendo el suyo. ¿Es lo pedido? |
+| 15 | Multiimpresión en Parámetros: el admin la activa y los usuarios activos eligen con qué equipo comparten; más de 2 pueden compartir | Solo diseño | **HECHO Y EN MAIN** (confirmado por Juan David el 30-oct) | Interruptor `PUT /events/{id}/shared-print` y tabla en Parámetros (`kiosk_parametros.html:148-150,848-869`, opción «En su propio equipo» o el equipo elegido); sin tope por impresora (`WARN_PER_PRINTER`, aviso con más de 6). Quien asigna a cada usuario su equipo es **coordinador o más** (`CONFIG = require_role_excluding("coordinador", …)`, `shared_print.py:39`); **Juan David confirmó (30-oct) que eso es lo correcto: los operadores no configuran nada.** |
 | 16 | iPad imprime vía un celular Android «estación» con la impresora conectada | Solo diseño | **HECHO Y EN MAIN** (no probado en iPad físico) | El iPad usa la ruta `shared` del punto 14 hacia un equipo anfitrión con USB o «ventana de Chrome» (`_can_host`, `print_stations.py`, `print-jobs-next`, `tests/js/shared_print_station_check.js`). No hay prueba con un iPad real: **no verificado**. |
 
 ### 4. Personas nuevas
@@ -58,7 +58,7 @@ Esta versión **reemplaza** a la del 29-oct, que usaba una numeración inferida.
 | # | Punto | Según Juan David | Estado hoy en `main` | Evidencia y qué falta |
 |---|---|---|---|---|
 | 22 | Informe del cliente con encuesta (5 preguntas, recomendar 0–10, «¿próximo evento? 2 %»); lo descarga solo si la comercial lo habilita y respondió; alerta por correo a la comercial | No hecho | **PARCIAL** | El informe final existe (`app/routers/event_report.py`, `Event.report_pdf_path`); no hay encuesta, ni habilitación por la comercial, ni alerta (grep `encuesta`/`survey` = 0). |
-| 23 | Registro touch: sección nueva al lado de Registro y Ruleta, para pantallas táctiles, 16:9 y responsive | No hecho | **PARCIAL** *(el 29-oct puse «hecho»: corregido)* | Existe un modo «📱 Registro touch» **dentro de la pantalla de Registro** (interruptor por equipo, tres buscadores, «solo lector», tarjetas): `shared-print.js`, `directory.js:544`, commit `97c8509`, `tests/test_directorio_touch.py`. **No es una sección nueva** junto a Registro y Ruleta y no verifiqué 16:9. |
+| 23 | Registro touch: sección nueva al lado de Registro y Ruleta, para pantallas táctiles, 16:9 y responsive | No hecho | **PARCIAL** *(confirmado por Juan David el 30-oct: el modo touch dentro del Registro cuenta como parcial; el pedido original se mantiene: sección aparte junto a Registro y Ruleta)* | Existe un modo «📱 Registro touch» **dentro de la pantalla de Registro** (interruptor por equipo, tres buscadores, «solo lector», tarjetas): `shared-print.js`, `directory.js:544`, commit `97c8509`, `tests/test_directorio_touch.py`. **No es una sección nueva** junto a Registro y Ruleta y no verifiqué 16:9. |
 
 ### 6. Sin internet y lista local
 
@@ -71,40 +71,44 @@ Esta versión **reemplaza** a la del 29-oct, que usaba una numeración inferida.
 | 28 | Lista local completa (todas las personas, buscables por cédula y nombre, 8.000 y 16.000, contador «LISTA LOCAL: N de N») | Hecho, sin integrar (`producto/piloto`); cédula solo por coincidencia exacta | **HECHO Y EN MAIN** *(la lista decía «sin integrar»: ya está)* | `directory.js:778-802` (modo `localMode`, contador «LISTA LOCAL: N de N», visto en pantalla en las pruebas), `contingency.js`, `tests/test_local_roster.py`, `tests/js/contingency_list_check.js`. Las pruebas de escala de 8.000/16.000 están en `fix/offline-recarga` (`7169907`, diagnóstico, no CI): no en `main`. |
 | 29 | Filas por página por evento (10, 20, 50, 100, 200) en la tabla en vivo y la local; propuse 50 por defecto | Hecho, sin integrar (`producto/piloto`) | **HECHO Y EN MAIN** *(ya integrado)* | `Event.directory_page_size` con valor por defecto **50** (`models.py:263`), `app/routers/parametros.py:207`, selector en `kiosk_parametros.html:62`, `PAGE_SIZES = [10, 20, 50, 100, 200]` (`directory.js:665`), `tests/test_directory_page_size.py`, `tests/js/directory_paging_check.js`. |
 
-### 7. Operación del evento (la lista llegó cortada en el 30; del 31 al 41, numeración inferida)
+### 7. Operación del evento
 
 | # | Punto | Según Juan David | Estado hoy en `main` | Evidencia y qué falta |
 |---|---|---|---|---|
 | 30 | «✅ Acreditar» en todas las filas con «Deshacer» (~8 s en pantalla; solo quien acreditó puede deshacer, hasta ~15 s, verificado en el servidor) | (texto cortado) | **HECHO Y EN MAIN** | `directory.js:977` `acreditarFila`, `offerUndo` (`UNDO_MS = 8000`), `undoAccredit`; `POST /api/events/{id}/accreditations/undo` con `ACCREDIT_UNDO_WINDOW = 15 s` (`api.py:822,825`); `tests/test_accreditation_undo.py`, `tests/js/row_accredit_check.js`. |
-| 31 (inferido) | Logo por defecto cambiable desde Configuración | — | **POR HACER** | No existe `/branding/logo` ni la sección en `configuracion.html`; el logo sigue en `static/img/logo-golden.png`. |
-| 32 (inferido) | URL limpia para las inscripciones públicas | — | **POR HACER** | grep `public_slug` = 0; el formulario público sigue en `/f/{event_id}/{slug}`. |
-| 33 (inferido) | Copias de la base a las 3 a. m. activas | — | **PARCIAL** | Código en `main`: `app/ops_runner.py`, `deploy/gcp/scheduler.sh`. Que estén ACTIVAS en producción: **no verificado** (nube). |
-| 34 (inferido) | Alerta de borrado masivo en el bucket | — | **POR HACER** | `docs/15 D2.5j (c)(i)`: «Faltan… alerta de borrado masivo». |
-| 35 (inferido) | Copia semanal fuera del proyecto | — | **POR HACER** | Sin código ni script (grep `semanal`/`offsite` = 0). |
-| 36 (inferido) | Copia fuera de línea de la llave `FACE_ENCRYPTION_KEY` | — | **POR HACER** (acción de Juan David) | `docs/15 D2.5j (d)`; no verificable desde el repo. |
-| 37 (inferido) | `--version-destroy-ttl=7d` en la llave (Secret Manager) | — | **POR HACER** (acción de Juan David, nube) | No se puede comprobar desde el repo. |
-| 38 (inferido) | Restore-test de un respaldo real / historial de Neon a 1 día | — | **POR HACER** | `docs/15 D2.5j (b)`: solo se restauró uno de 17 KB contra el emulador. |
-| 39 (inferido) | Política de privacidad v1.1 con el apartado 5-bis (registro sin red) | — | **PARCIAL** | v1.1 ratificada y activa (`docs/legal/POLITICA_v1.1.md`, `RATIFICACION_v1.1.md`); el 5-bis es un borrador sin integrar en `fix/legal-1-1-borrador` (`175e7b7`); el siguiente paso es `docs/legal/BORRADOR_POLITICA_v1.2.md` (no activo). |
-| 40 (inferido) | Marcador de proveedores (confirmar Google, Neon, Microsoft) | — | **POR HACER** | `legal_privacidad_v11.html` no nombra a Neon/Microsoft/Google y no encontré el marcador en `main`: **no verificado**. |
-| 41 (inferido) | Runbook y guía de producción | — | **HECHO Y EN MAIN** | `docs/19_GUIA_PRODUCCION.md`, `docs/runbook_evento.md`, `docs/13_RUNBOOK_PRODUCCION.md`, `docs/legal/RUNBOOK_CLOUD_SHELL.md`. |
+| 31 | Logo por defecto cambiable desde Configuración (subir, previsualizar, restaurar; PNG/JPEG/WebP hasta 2 MB; ~512 px; ruta `/branding/logo?v=<hash>`; el logo del evento manda) | No hecho; aprobado | **POR HACER** | No existe `/branding/logo` ni la sección «Logo por defecto» en `templates/configuracion.html` (grep `branding` en `app`, `templates`, `static`, `scripts`, `deploy` sin resultados); el logo por defecto sigue fijo en `static/img/logo-golden.png` (`app/main.py:186` solo usa la altura del logo del evento). El diseño está en `docs/16` (pedido 7b). |
+| 32 | URL limpia de inscripciones: `inscripciones.golden-eventos…/<nombre-del-evento>`, un solo host y certificado, nombres únicos, redirección al renombrar, palabras reservadas | Solo diseño; después del piloto | **POR HACER** | grep `public_slug` e `inscripciones.golden` = 0; el formulario público sigue en `/f/{event_id}/{slug}` (slug único solo por evento). Diseño en `docs/15 D2.5k` y `docs/16 N6`. |
+| 33 | Copias de la base a las 3 a. m. y su alarma | Scripts y alerta hechos; falta activarlos en producción y crear la tarea en staging | **PARCIAL** | **En `main`:** `app/ops_runner.py` (`hourly` cada hora al minuto 05; a las `OPS_DAILY_HOUR` = 3 el diario; paso `check-backups`, con alerta por correo si falta o está viejo), `deploy/gcp/scheduler.sh` (`ensure`/`--resume` crea la tarea `golden-ops-hourly`). **Falta (nube, no verificable desde el repo):** que la tarea del Scheduler exista y esté reanudada en producción y en staging. |
+| 34 | Prueba de restauración del último respaldo diario | Script hecho; la restauración real la corre Juan David | **PARCIAL** | **En `main`:** `scripts/restore_test.sh` y `scripts/restore_db.sh`. **Falta:** correrlo contra un respaldo real del bucket (`docs/15 D2.5j (b)`: hasta ahora solo se restauró uno de 17 KB contra el emulador). Lo ejecuta Juan David. |
+| 35 | Llave de cifrado: copia fuera de línea y `--version-destroy-ttl=7d` | Aceptado, no hecho | **POR HACER** | grep `version-destroy-ttl` = 0 en `scripts`, `deploy`, `app` y `docs`; la copia fuera de línea es una acción de Juan David (`docs/15 D2.5j (d)`). |
+| 36 | Alerta de borrado masivo de archivos | Aceptado, no hecho | **POR HACER** | No hay métrica ni política de alerta de borrados en `deploy/gcp/bootstrap.sh` (solo uptime, ejecuciones de Jobs y conteo de peticiones, líneas 292–306); `docs/15 D2.5j (c)(i)`: «faltan». |
+| 37 | Copia semanal fuera del proyecto | Aceptado, para después del piloto | **POR HACER** | Sin código ni script (grep `semanal`/`weekly`/`offsite` = 0 fuera de `calendar.py`, que no tiene relación). |
+| 38 | Bucket de respaldos accesible solo por la cuenta de operaciones | Corregido en `bootstrap.sh` en un commit local sin empujar | **HECHO Y EN MAIN** *(ya no es un commit local)* | `deploy/gcp/bootstrap.sh:185-201` en `main`: sobre el bucket de respaldos, la cuenta de operaciones tiene solo `objectCreator` y el rol propio `goldenBackupLister`; **ninguna cuenta puede descargar ni borrar**; a quien tuviera `objectViewer` de una versión anterior se lo quita (idempotente). **Matiz:** la cuenta de la app conserva el rol de *solo listar* (nombre, tamaño, fecha) para «Último respaldo» en `/sistema`; y en staging el bucket es uno solo con los archivos de la app. Que `bootstrap.sh` se haya vuelto a correr en la nube con esa corrección: **no verificado**. |
+| 39 | Política de privacidad v1.0 con constancia de la auditora y borrador v1.1 del apartado 5-bis para el registro sin red | v1.0 hecha e integrada; borrador en `fix/legal-1-1-borrador` | **PARCIAL** | **En `main`:** v1.0 con constancia (`app/legal.py:14`), y además la v1.1 ratificada y activa (`docs/legal/POLITICA_v1.1.md`, `RATIFICACION_v1.1.md`, `POLICY_VERSION=1.1`). **Sin integrar:** el borrador del 5-bis (registro sin red) está en `fix/legal-1-1-borrador`, commit `175e7b7`; el paso siguiente es `docs/legal/BORRADOR_POLITICA_v1.2.md` (no activo). |
+| 40 | Marcador de acuerdos con proveedores; se reduce a solo Wompi cuando Juan David confirme Google, Neon y Microsoft | Pendiente de confirmación | **PARCIAL** *(el 29-oct dije que no lo encontraba: sí existe, lo busqué mal)* | `templates/legal_privacidad.html:67` en `main`: `<span class="pending">[pendiente: confirmar los acuerdos de tratamiento de datos con cada proveedor]</span>` bajo la tabla de terceros (Wompi, Microsoft, Google Cloud, Neon, Cloudflare, Google traducción/fuentes, Organizador). **Falta:** la confirmación de Juan David y reducir el marcador a solo Wompi; el marcador no cuenta para la huella (`legal.py:15,26`). |
+| 41 | Runbook de evento y guía de producción, con criterio para pasar al software de respaldo e iPad como PWA instalada | Hecho | **HECHO Y EN MAIN** | `docs/runbook_evento.md` (criterio concreto «P1. Cuándo se pasa al software de respaldo», línea 61; «los iPad se usan SIEMPRE como PWA», línea 83; «Añadir a pantalla de inicio», línea 52), `docs/19_GUIA_PRODUCCION.md`, `docs/13_RUNBOOK_PRODUCCION.md`, `docs/legal/RUNBOOK_CLOUD_SHELL.md`. Es un borrador del 5-oct en esa sección (el propio documento lo dice). |
 
-## Conteos
+## Conteos definitivos de los 41
 
-| Estado | Puntos 1–30 (numeración real) | Puntos 31–41 (inferidos) | Total 41 |
-|---|---|---|---|
-| HECHO Y EN MAIN | 8 (13, 14, 15, 16, 25, 28, 29, 30) | 1 (41) | **9** |
-| HECHO PERO SIN INTEGRAR | 1 (27) | 0 | **1** |
-| PARCIAL | 6 (3, 6, 17, 22, 23, 26) | 2 (33, 39) | **8** |
-| POR HACER | 15 (1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 18, 19, 20, 21, 24) | 8 (31, 32, 34, 35, 36, 37, 38, 40) | **23** |
-| **Total** | **30** | **11** | **41** |
+| Estado | Puntos | Cantidad |
+|---|---|---|
+| **HECHO Y EN MAIN** | 13, 14, 15, 16, 25, 28, 29, 30, 38, 41 | **10** |
+| **HECHO PERO SIN INTEGRAR** | 27 | **1** |
+| **PARCIAL** | 3, 6, 17, 22, 23, 26, 33, 34, 39, 40 | **10** |
+| **POR HACER** | 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 18, 19, 20, 21, 24, 31, 32, 35, 36, 37 | **20** |
+| **Total** | | **41** |
 
-## Qué cambió respecto a la versión del 29-oct
+Por bloque de la lista: 1–8 ficha y estados: 0 hechos, 2 parciales, 6 por hacer · 9–12 correos e inventario: 4 por hacer · 13–16 impresión: 4 hechos · 17–21 personas nuevas: 1 parcial, 4 por hacer · 22–23 cliente: 2 parciales · 24–29 sin internet y lista local: 3 hechos, 1 sin integrar, 1 parcial, 1 por hacer · 30–41 operación: 3 hechos (30, 38, 41), 4 parciales (33, 34, 39, 40), 5 por hacer (31, 32, 35, 36, 37).
 
-- **Antes** 10 hechos / 1 sin integrar / 10 parciales / 20 por hacer. **Ahora** 9 / 1 / 8 / 23.
-- Con la lista real: **23 (Registro touch) pasa de «hecho» a «parcial»** (existe el modo touch dentro del Registro, no la sección nueva 16:9); **8 (calendario) y 10 (inventario inteligente) pasan de «parcial» a «por hacer»** (lo existente no es lo pedido); 4 y 5 quedan «por hacer» (el campo «tipo de impresión» no existe en el código actual y «campos a capturar en registro» a nivel de evento tampoco). 3 y 6 quedan «parcial». El 15 queda «hecho» con una diferencia que debe confirmar Juan David.
-- **Estados que se mantienen:** 13, 14, 16, 25, 28, 29, 30, 41 (hechos y en `main`), 27 (sin integrar), 17, 22, 26, 33, 39 (parciales) y 24, 18–21, 31, 32, 34–38, 40 (por hacer).
-- **Lo que la lista de Juan David daba por «sin integrar» y ya está en `main`:** 13 (integrado al directorio y al registro), 26-R1, 28 y 29 (`producto/piloto`), 6 (backend, `producto/estados-evento`). **Lo que sigue sin integrar:** solo 27 (`fix/offline-recarga`).
-- Los puntos 31–41 siguen inferidos hasta que llegue el resto de la lista.
+*«Hecho y en main» no es «verificado en hardware» ni «activo en la nube»: lo que depende de la nube (33, 34, 38 y el valor de 25) no se pudo comprobar.*
+
+## Qué cambió respecto a las versiones anteriores
+
+- **29-oct → 30-oct (puntos 1–30 reales):** 23 pasó de «hecho» a «parcial»; 8 y 10 de «parcial» a «por hacer»; 4 y 5 «por hacer»; 3 y 6 «parcial»; 15 «hecho». Conteo 9 / 1 / 8 / 23 con 31–41 aún inferidos.
+- **30-oct → hoy (puntos 31–41 reales):** **38 pasa a «hecho y en main»** (la corrección de `bootstrap.sh` ya está en `main`, no es un commit local); **34 pasa a «parcial»** (existe `scripts/restore_test.sh`); **40 pasa de «por hacer» a «parcial»** (el marcador sí existe en `legal_privacidad.html:67`; lo busqué mal el 29-oct); **35 y 36 quedan «por hacer»** (grep de `version-destroy-ttl` y de alertas de borrado en cero); 31, 32, 37 «por hacer»; 33 y 39 «parcial»; 41 «hecho».
+- **Conteo definitivo: 10 / 1 / 10 / 20** (hecho y en main / sin integrar / parcial / por hacer). El conteo del 30-oct era 9 / 1 / 8 / 23.
+- **Respuestas de Juan David (30-oct):** 15 confirmado (coordinador o más asigna); 23 sigue parcial (el pedido original es una sección aparte).
+- **Lo que la lista (pre-piloto) daba por no integrado o por hacer y hoy ya está en `main`:** 13, 14, 15, 16 (impresión USB y compartida), 26-R1, 28, 29, 6 (backend), 38. **Lo único «hecho pero sin integrar» que queda:** 27 (`fix/offline-recarga`).
 
 ## Hallazgos que cambian el plan
 
@@ -116,7 +120,6 @@ Esta versión **reemplaza** a la del 29-oct, que usaba una numeración inferida.
 
 ## Dudas para Juan David
 
-- Reenviar el resto de la lista (puntos **31–41**), que llegó cortada.
-- Punto 15: ¿basta con que coordinador o más asigne a cada usuario su equipo de impresión, o debe elegir cada usuario?
-- Punto 23: ¿el modo touch dentro del Registro cumple o quiere la sección aparte (16:9)?
-- Punto 40: ¿existe el «marcador de proveedores» en algún lado? No lo encontré en `main`.
+- Punto 40: ¿cuándo confirma Google, Neon y Microsoft para reducir el marcador a solo Wompi? Es un cambio de texto de la política: según `app/legal.py` el texto marcado «pendiente» no cambia la huella, pero cualquier otro cambio sí exige nueva constancia de la auditora.
+- Puntos 33, 34 y 38: ¿se pueden confirmar desde la nube (tarea del Scheduler reanudada, restore-test corrido, `bootstrap.sh` reaplicado)? No los puedo comprobar desde el repo.
+- Punto 27 sigue sin integrar: ¿entra a la Fase 1A o se saca antes como parche aparte?

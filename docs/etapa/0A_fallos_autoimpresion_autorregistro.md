@@ -165,5 +165,5 @@ La cola de acciones por persona (§7, «Estructural») debe cumplir:
 4. Caducidad: la misma de la bandeja (7 días, con avisos desde el día 3) y nunca borrar sin avisar.
 
 ### 9.5 Dudas que siguen abiertas
-- La lista original de los 41 puntos **no llegó** (ver `0A_estado_41_puntos.md`): hay que reenviarla para corregir la numeración.
+- ~~La lista original de los 41 puntos no llegó~~: resuelto el 30-oct; `0A_estado_41_puntos.md` ya usa la numeración real de los 41.
 - Cuándo se encendieron los interruptores en el piloto (no hay registro; ayudaría la fecha de modificación del evento en staging, si existe).
