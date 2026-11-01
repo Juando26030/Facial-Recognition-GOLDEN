@@ -44,6 +44,29 @@
     return HIDEABLE.includes(prop) ? null : f[prop] || '';
   }
 
+  // Qué campos se ven: su regla, la regla de su HOJA (una hoja oculta oculta todos sus campos) y, en títulos/textos/imágenes con variantes, que alguna aplique.
+  // Misma lógica que app/formlib.py::visible_ids (casos comunes en tests/sheet_vectors.json y tests/cond_vectors.json).
+  function computeVisible(design, values, fids) {
+    const fields = design.fields, memo = {}, sheetMemo = {}, sheetAt = {}, sheetCond = {};
+    (design.rows || []).forEach((row) => { if (row.sheet) (row.items || []).forEach((fid) => { sheetAt[fid] = row.sheet; }); });
+    (design.sheets || []).forEach((sh) => { sheetCond[sh.id] = sh.show_if; });
+    const known = (id) => !!fields[id];
+    const sheetVisible = (sid) => {
+      if (!(sid in sheetMemo)) { const c = sheetCond[sid]; sheetMemo[sid] = !c || condTree(c, (id) => known(id) && vis(id), values); }
+      return sheetMemo[sid];
+    };
+    const vis = (fid) => {
+      if (fid in memo) return memo[fid];
+      const f = fields[fid];
+      let r = fid in sheetAt ? sheetVisible(sheetAt[fid]) : true;
+      if (r && f.show_if) r = condTree(f.show_if, (id) => known(id) && vis(id), values);
+      if (r) for (const prop of HIDEABLE) { if (variantsOf(f)[prop] && !pickVariant(f, prop, values, (id) => known(id) && vis(id))) { r = false; break; } }   // sin variante que aplique: no ocupa espacio
+      memo[fid] = r;
+      return r;
+    };
+    return new Set((fids || Object.keys(fields)).filter(vis));
+  }
+
   function conditionMet(cond, values) {
     if (!cond) return true;
     const cur = values[cond.field];
@@ -96,6 +119,9 @@
       .fr-item .fr-ro { background:#eef0f4 !important; color:#555 !important; }
       .fr-opts label { display:flex; gap:8px; align-items:center; font-weight:400; margin:4px 0; cursor:pointer; }
       .fr-err { color:#c0392b; font-size:.76rem; margin-top:3px; } .fr-item.has-err input, .fr-item.has-err select, .fr-item.has-err textarea { border-color:#c0392b; }
+      .fr-prog { margin:0 0 14px; } .fr-prog-t { font-size:.8rem; font-weight:700; margin-bottom:4px; } .fr-prog-b { height:6px; border-radius:6px; background:rgba(0,0,0,.1); overflow:hidden; } .fr-prog-b i { display:block; height:100%; background:${accent}; transition:width .2s; }
+      .fr-sheet .fr-st:focus { outline:none; } .fr-sheet .fr-st:focus-visible { outline:3px solid #111; outline-offset:3px; }
+      .fr-nav { display:flex; gap:10px; justify-content:space-between; margin:6px 0; } .fr-navbtn { flex:1; padding:11px; border:2px solid ${accent}; border-radius:26px; background:#fff; color:#111; font:inherit; font-weight:800; cursor:pointer; } .fr-navnext { background:${accent}; color:${onAccent}; } .fr-navbtn:focus-visible { outline:3px solid #111; outline-offset:2px; }
       .fr-btn { width:100%; padding:13px; border:none; border-radius:26px; background:${accent}; color:${onAccent}; font:inherit; font-weight:800; font-size:1rem; cursor:pointer; margin-top:6px; }
       .fr-btn:disabled { opacity:.6; cursor:default; }
       .fr-pay { border:2px dashed ${accent}; border-radius:14px; padding:14px 16px; background:rgba(0,0,0,.03); }
@@ -118,6 +144,29 @@
     card.appendChild(form);
     const els = {};   // fid -> {wrap, input(s)}
     const rowEls = [];   // filas, para ocultar la fila entera (y su margen) cuando todos sus campos están ocultos
+
+    // ---- Hojas (P12): con 2 o más, cada una es una sección del mismo formulario y se ve una a la vez; con una sola, todo es como siempre.
+    const sheets = (design.sheets || []).length > 1 ? design.sheets : null;
+    const sheetSec = {}, fieldSheet = {};
+    if (sheets) {
+      const live = document.createElement('div');   // anuncios para lectores de pantalla (cambio de hoja, campos que faltan)
+      live.className = 'fr-live'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+      live.style.cssText = 'position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden;';
+      form.appendChild(live);
+      const prog = document.createElement('div');
+      prog.className = 'fr-prog'; prog.innerHTML = '<div class="fr-prog-t" data-prog-text></div><div class="fr-prog-b" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Avance del formulario"><i data-prog-bar></i></div>';
+      form.appendChild(prog);
+      sheets.forEach((sh, i) => {
+        const sec = document.createElement('section');
+        sec.className = 'fr-sheet'; sec.dataset.sheet = sh.id; sec.style.display = i === 0 ? '' : 'none'; sec.setAttribute('aria-labelledby', 'frs_' + sh.id);
+        const d = sh.description ? rich(sh.description) : null;
+        sec.innerHTML = `<h3 class="fr-st" id="frs_${esc(sh.id)}" tabindex="-1" style="margin:0 0 6px;">${sh.title ? rich(sh.title, true).html : 'Hoja ' + (i + 1)}</h3>` +
+          (d ? (d.rich ? `<div class="rt" style="margin:0 0 12px; opacity:.85;">${d.html}</div>` : `<p style="margin:0 0 12px; white-space:pre-wrap; opacity:.85;">${d.html}</p>`) : '');
+        form.appendChild(sec);
+        sheetSec[sh.id] = sec;
+      });
+      (design.rows || []).forEach((row) => (row.items || []).forEach((fid) => { fieldSheet[fid] = row.sheet || sheets[0].id; }));
+    }
 
     (design.rows || []).forEach((row) => {
       const r = document.createElement('div');
@@ -143,13 +192,84 @@
         r.appendChild(wrap);
         els[fid] = { wrap, f };
       });
-      form.appendChild(r);
+      (sheets ? sheetSec[row.sheet] || sheetSec[sheets[0].id] : form).appendChild(r);
       rowEls.push(r);
     });
     const btn = document.createElement('button');
     btn.type = 'submit'; btn.className = 'fr-btn'; btn.textContent = theme.button_text || 'Enviar';
     if (opts.previewOnly) btn.type = 'button';
     form.appendChild(btn);
+
+    // ---- Navegación entre hojas
+    let curIdx = 0, histDepth = 0, prevBtn = null, nextBtn = null;
+    const sheetIdx = (sid) => (sheets ? sheets.findIndex((sh) => sh.id === sid) : -1);
+    const announce = (text) => { const l = form.querySelector('.fr-live'); if (l) { l.textContent = ''; setTimeout(() => { l.textContent = text; }, 30); } };
+    function effectiveSheets(vis) {   // hojas con al menos un campo visible: una hoja cuyos campos se ocultaron todos se salta sola
+      vis = vis || visibleSet();
+      const has = new Set();
+      (design.rows || []).forEach((row) => (row.items || []).forEach((fid) => { if (vis.has(fid)) has.add(sheetIdx(row.sheet || sheets[0].id)); }));
+      return sheets.map((_, i) => i).filter((i) => has.has(i));
+    }
+    function updateNav(vis) {
+      if (!sheets) return;
+      const list = effectiveSheets(vis);
+      if (!list.length) list.push(0);
+      if (!list.includes(curIdx)) { curIdx = [...list].reverse().find((i) => i <= curIdx) ?? list[0]; sheets.forEach((sh, i) => { sheetSec[sh.id].style.display = i === curIdx ? '' : 'none'; }); }
+      const pos = list.indexOf(curIdx) + 1, total = list.length;
+      form.querySelector('[data-prog-text]').textContent = `Hoja ${pos} de ${total}`;
+      form.querySelector('[data-prog-bar]').style.width = Math.round((pos / total) * 100) + '%';
+      form.querySelector('[role=progressbar]').setAttribute('aria-valuenow', Math.round((pos / total) * 100));
+      prevBtn.style.display = pos <= 1 ? 'none' : ''; nextBtn.style.display = pos >= total ? 'none' : ''; btn.style.display = pos >= total ? '' : 'none';
+    }
+    function showSheet(i, o) {
+      o = o || {};
+      curIdx = i;
+      sheets.forEach((sh, k) => { sheetSec[sh.id].style.display = k === i ? '' : 'none'; });
+      updateNav();
+      if (o.push) { histDepth += 1; try { history.pushState({ frSheet: i, d: histDepth }, ''); } catch (e) { /* sin historial: solo no hay «atrás» */ } }   // en el historial va SOLO el número de hoja
+      const list = effectiveSheets(), t = sheetSec[sheets[i].id].querySelector('.fr-st');
+      if (o.focus !== false && t) { t.focus(); }
+      if (o.focus !== false && t) announce(`Hoja ${list.indexOf(i) + 1} de ${list.length}: ${window.RichText ? RichText.toPlain(sheets[i].title) || 'Hoja ' + (i + 1) : sheets[i].title}`);
+    }
+    function goNext() {
+      const vis = visibleSet(), raw = rawValues();
+      const errs = computeErrors(vis, raw, (fid) => fieldSheet[fid] === sheets[curIdx].id);
+      setErrors(errs);
+      const keys = Object.keys(errs);
+      if (keys.length) {
+        announce(`Faltan por completar o corregir ${keys.length} ${keys.length === 1 ? 'campo' : 'campos'} en esta hoja. Empieza por «${els[keys[0]].f.label}».`);
+        return;
+      }
+      const list = effectiveSheets(vis), pos = list.indexOf(curIdx);
+      if (pos < list.length - 1) showSheet(list[pos + 1], { push: true });
+    }
+    function goPrev() {
+      if (histDepth > 0) { history.back(); return; }   // el «atrás» del navegador y el botón hacen lo mismo
+      const list = effectiveSheets(), pos = list.indexOf(curIdx);
+      if (pos > 0) showSheet(list[pos - 1]);
+    }
+    if (sheets) {
+      const nav = document.createElement('div');
+      nav.className = 'fr-nav';
+      nav.innerHTML = '<button type="button" class="fr-navbtn" data-nav="prev">Anterior</button><button type="button" class="fr-navbtn fr-navnext" data-nav="next">Siguiente</button>';
+      form.insertBefore(nav, btn);
+      prevBtn = nav.querySelector('[data-nav=prev]'); nextBtn = nav.querySelector('[data-nav=next]');
+      prevBtn.addEventListener('click', goPrev); nextBtn.addEventListener('click', goNext);
+      try { history.replaceState({ ...(history.state || {}), frSheet: 0, d: 0 }, ''); } catch (e) { /* sin historial */ }
+      const onPop = (e) => {
+        if (!form.isConnected) { window.removeEventListener('popstate', onPop); return; }
+        const st = e.state;
+        if (st && typeof st.frSheet === 'number' && sheets[st.frSheet]) { histDepth = st.d || 0; showSheet(st.frSheet); }
+      };
+      window.addEventListener('popstate', onPop);
+      // Enter avanza de hoja SOLO en campos de una línea (input); en textarea, listas y casillas no. En la última hoja envía, como siempre.
+      form.addEventListener('keydown', (e) => {
+        const t = e.target;
+        if (e.key !== 'Enter' || e.isComposing || !t || t.tagName !== 'INPUT' || ['checkbox', 'radio', 'file', 'button', 'submit', 'reset'].includes(t.type) || t.matches('[data-code]')) return;
+        const list = effectiveSheets();
+        if (list.indexOf(curIdx) < list.length - 1) { e.preventDefault(); goNext(); }
+      });
+    }
 
     let started = false;
     form.addEventListener('input', (e) => { syncComp(e.target); paintQuotaWarn(); if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); if (opts.onChange) opts.onChange(); });
@@ -288,25 +408,7 @@
       return out;
     }
 
-    const variantVals = {};   // fid -> {content, src} elegidos para los títulos/textos/imágenes con variantes
-    function visibleSet() {
-      const values = rawValues();
-      const memo = {};
-      const vis = (fid) => {
-        if (fid in memo) return memo[fid];
-        const cond = design.fields[fid].show_if;
-        memo[fid] = !cond || condTree(cond, (id) => !!design.fields[id] && vis(id), values);
-        if (memo[fid]) {   // título/texto/imagen con variantes: sin variante que aplique (ni por defecto) no ocupa espacio
-          for (const prop of HIDEABLE) {
-            if (!variantsOf(design.fields[fid])[prop]) continue;
-            const t = pickVariant(design.fields[fid], prop, values, (id) => !!design.fields[id] && vis(id));
-            if (t) (variantVals[fid] = variantVals[fid] || {})[prop] = t; else memo[fid] = false;
-          }
-        }
-        return memo[fid];
-      };
-      return new Set(Object.keys(els).filter(vis));
-    }
+    function visibleSet() { return computeVisible(design, rawValues(), Object.keys(els)); }
 
     // Cupos por combinación de variables: si lo que la persona lleva escrito cae en un cupo YA lleno, se avisa antes de enviar.
     function fullQuota() {
@@ -357,6 +459,7 @@
         if (f.variants && vis.has(fid)) paintVariants(wrap, f, values, isVis);
       });
       rowEls.forEach((r) => { r.style.display = Array.from(r.children).every((w) => w.style.display === 'none') ? 'none' : ''; });
+      if (sheets) updateNav(vis);
       return vis;
     }
     Object.values(els).forEach(({ f }) => { if (f.type === 'companions') renderGroups(f); });
@@ -371,6 +474,12 @@
         wrap.querySelectorAll('input:not([type=hidden]), select, textarea').forEach((c) => { if (msg) { c.setAttribute('aria-invalid', 'true'); if (box) c.setAttribute('aria-describedby', box.id); } else { c.removeAttribute('aria-invalid'); c.removeAttribute('aria-describedby'); } });
       });
       const first = errors && Object.keys(errors)[0];
+      if (sheets && first && els[first]) {   // el error está en otra hoja: se salta a ella
+        const k = sheetIdx(fieldSheet[first]);
+        if (k !== curIdx) showSheet(k, { focus: false });
+        const c = els[first].wrap.querySelector('input:not([type=hidden]), select, textarea');
+        if (c) { try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); } }
+      }
       if (first && els[first]) els[first].wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -388,12 +497,10 @@
       return { values, files };
     }
 
-    function validate() {
-      const vis = visibleSet();
-      const raw = rawValues();
+    function computeErrors(vis, raw, only) {   // errores de los campos visibles (de una hoja, si se da `only`)
       const errors = {};
       Object.entries(els).forEach(([fid, { f }]) => {
-        if (!vis.has(fid) || !(fid in raw)) return;
+        if (!vis.has(fid) || !(fid in raw) || (only && !only(fid))) return;
         if (f.type === 'companions') { const msg = checkComp(f, raw[fid]); if (msg) errors[fid] = msg; return; }
         const v = raw[fid];
         const empty = f.type === 'multiselect' ? v.length === 0 : (f.type === 'checkbox' ? v !== 'true' : v === '');
@@ -412,6 +519,12 @@
           else if (file.size > (f.max_mb || 10) * 1048576) errors[fid] = `El archivo pesa más de ${f.max_mb || 10} MB`;
         }
       });
+      return errors;
+    }
+
+    function validate() {   // al enviar: TODAS las hojas visibles (con su código, nunca la validación nativa del navegador); si falla algo, salta a esa hoja
+      const vis = visibleSet();
+      const errors = computeErrors(vis, rawValues());
       setErrors(errors);
       return Object.keys(errors).length === 0 && !paintQuotaWarn();
     }
@@ -468,9 +581,9 @@
     if (opts.previewOnly) { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) lastQuote = { has_payment: true, amount: Math.round(((pf.pay && pf.pay.amount) || 0) * (pf.pay && pf.pay.tax === 'add' ? 1.19 : 1)), applied: [] }; }
     paintPay();
 
-    return { collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
+    return { sheets: sheets ? { next: goNext, prev: goPrev, show: showSheet, current: () => curIdx, effective: () => effectiveSheets() } : null, collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
   }
 
-  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax, variantsOf };
-  if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant, condTree, variantsOf };
+  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax, variantsOf, computeVisible };
+  if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant, condTree, variantsOf, computeVisible };
 })();
