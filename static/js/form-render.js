@@ -471,6 +471,6 @@
     return { collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
   }
 
-  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax };
+  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax, variantsOf };
   if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant, condTree, variantsOf };
 })();

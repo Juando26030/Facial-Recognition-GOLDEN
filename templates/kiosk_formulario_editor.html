@@ -12,6 +12,7 @@
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-sync.js') }}"></script>
     <script src="{{ url_for('static', path='js/rich-text.js') }}"></script>
+    <script src="{{ url_for('static', path='js/cond-tree.js') }}"></script>
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
@@ -222,9 +223,6 @@ const markDirty = () => { dirty = true; $('saveBtn').textContent = '💾 Guardar
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------------------------------------------------------------- utilidades del diseño
-const rulesOf = (c) => (!c ? [] : (c.rules || [c]));
-const matchOf = (c) => (c && c.rules && c.match) || 'all';
-const setRules = (f, rs, match) => { f.show_if = !rs.length ? null : (rs.length === 1 ? rs[0] : { match: match || 'all', rules: rs }); };
 function locate(id) { for (let r = 0; r < design.rows.length; r++) { const i = design.rows[r].items.indexOf(id); if (i >= 0) return [r, i]; } return null; }
 function detach(id) { const at = locate(id); if (!at) return; design.rows[at[0]].items.splice(at[1], 1); if (!design.rows[at[0]].items.length) design.rows.splice(at[0], 1); }
 const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 });
@@ -250,51 +248,123 @@ function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
 }
 function usedKeys() { return new Set(Object.values(design.fields).map((f) => f.key).filter(Boolean)); }
 
-// ---------------------------------------------------------------- texto con variantes (títulos y textos informativos)
-const choiceFields = () => Object.values(design.fields).filter((x) => !STATIC.includes(x.type) && !NOCOND.includes(x.type) && (FormSync.optionsOf(x, eventFields) || x.type === 'checkbox'));
+// ---------------------------------------------------------------- condiciones en árbol y variantes (P9)
+const OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
+const VARIANT_WARNING = 'No escribas aquí información confidencial: todo el contenido de las variantes es visible para quien abra el formulario, aunque no se le muestre.';
+const VPROPS = { content: 'Texto', src: 'Imagen', display_label: 'Nombre de presentación', help: 'Ayuda', placeholder: 'Texto de ejemplo' };
+const variantProps = (f) => (f.type === 'heading' || f.type === 'paragraph' ? ['content'] : f.type === 'image' ? ['src'] : f.type === 'payment' || f.type === 'companions' ? ['display_label', 'help'] : ['display_label', 'help', 'placeholder']);
+const normDesign = () => Object.values(design.fields).forEach((f) => { if (f.variants) f.variants = FormRender.variantsOf(f); });   // formato de P2 → el nuevo
+let condOwners = {}, condSeq = 0;
+const regOwner = (fid, get, set) => { const id = 'co' + (++condSeq); condOwners[id] = { fid, get, set }; return id; };
+const condOthers = (fid) => Object.values(design.fields).filter((x) => x.id !== fid && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
+const defaultLeaf = (others) => ({ field: others[0].id, op: 'equals', value: '' });
+const canvasText = (f) => (f.variants && f.variants.content ? '↔ Según respuesta: ' + (f.variants.content.default || (f.variants.content.items[0] || {}).value || '') : f.content || '');
+
+function leafHtml(oid, ps, r, others) {
+  const parent = design.fields[r.field], opts = FormSync.optionsOf(parent, eventFields) || (parent && parent.type === 'checkbox' ? ['true', 'false'] : null);
+  const at = `data-co="${oid}" data-cp="${ps}"`;
+  let val = '';
+  if (r.op !== 'filled') {
+    if (opts) {   // con opciones (propias o del campo del evento) el valor SIEMPRE se elige de la lista; un valor guardado que no coincide ni con tildes/mayúsculas se conserva visible
+      const cur = Array.isArray(r.value) ? r.value : [r.value];
+      const extra = cur.filter((v) => v !== '' && !FormSync.findOption(opts, v));
+      if (r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" ${at} data-cx="valin" value="${esc(o)}" ${cur.some((v) => FormSync.norm(v) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}${extra.map((v) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" ${at} data-cx="valin" value="${esc(v)}" checked> ${esc(v)} (no está en la lista)</label>`).join('')}</div>`;
+      else val = `<select ${at} data-cx="valsel"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(r.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}${extra.map((v) => `<option selected>${esc(v)}</option>`).join('')}</select>${extra.length ? '<div class="hint">El valor guardado no está en la lista de opciones.</div>' : ''}`;
+    } else val = `<input type="text" ${at} data-cx="val" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
+  }
+  return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin:4px 0; display:grid; gap:4px;">
+    <select ${at} data-cx="field">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select>
+    <select ${at} data-cx="op">${OPS_ALL.map(([v, l]) => `<option value="${v}" ${r.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${val}
+    <button type="button" class="small-btn danger" ${at} data-cx="delnode" style="justify-self:end;">Quitar regla</button></div>`;
+}
+function condNodeHtml(oid, node, path, others) {
+  const ps = path.join('.'), at = `data-co="${oid}" data-cp="${ps}"`;
+  if (!CondTree.isGroup(node)) return leafHtml(oid, ps, node, others);
+  const kids = node.rules.map((c, i) => condNodeHtml(oid, c, path.concat(i), others)).join('') || '<div class="hint">Sin reglas todavía.</div>';
+  return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0;"><div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><span class="hint">Se cumplen</span><select ${at} data-cx="match"><option value="all" ${node.match !== 'any' ? 'selected' : ''}>TODAS (Y)</option><option value="any" ${node.match === 'any' ? 'selected' : ''}>ALGUNA (O)</option></select>${path.length ? `<button type="button" class="small-btn danger" ${at} data-cx="delnode">Quitar grupo</button>` : ''}</div>${kids}
+    <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" ${at} data-cx="addleaf" ${CondTree.canAddLeaf(CondTree.group(condOwners[oid].get()), path) ? '' : 'disabled'}>+ Regla</button>${path.length + 2 <= CondTree.MAX_DEPTH ? `<button type="button" class="small-btn" ${at} data-cx="addgroup" ${CondTree.canAddGroup(CondTree.group(condOwners[oid].get()), path) ? '' : 'disabled'}>+ Grupo (Y/O)</button>` : ''}</div></div>`;
+}
+const condEditorHtml = (oid) => condNodeHtml(oid, CondTree.group(condOwners[oid].get()), [], condOthers(condOwners[oid].fid));
+
+// Clics y cambios dentro de un editor de condiciones (delegados en el panel, que se repinta: se enlazan UNA vez)
+function onCx(e) {
+  const el = e.target.closest('[data-cx]');
+  if (!el || !el.dataset.co || !condOwners[el.dataset.co]) return;
+  const tag = el.tagName, act = el.dataset.cx;
+  if (e.type === 'click' && (tag === 'SELECT' || tag === 'INPUT')) return;
+  if (e.type === 'change' && !(tag === 'SELECT' || el.type === 'checkbox')) return;
+  if (e.type === 'input' && !(tag === 'INPUT' && el.type === 'text')) return;
+  const o = condOwners[el.dataset.co], path = el.dataset.cp ? el.dataset.cp.split('.').map(Number) : [], others = condOthers(o.fid);
+  let root = CondTree.group(o.get()), structural = true;
+  if (act === 'match') root = CondTree.update(root, path, (g) => ({ ...g, match: el.value }));
+  else if (act === 'addleaf') { if (!others.length) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); return; } root = CondTree.addLeaf(root, path, defaultLeaf(others)); }
+  else if (act === 'addgroup') { if (!others.length) return; root = CondTree.addGroup(root, path, defaultLeaf(others)); }
+  else if (act === 'delnode') root = CondTree.remove(root, path);
+  else if (act === 'field') root = CondTree.update(root, path, (r) => ({ ...r, field: el.value, value: r.op === 'in' ? [] : '' }));
+  else if (act === 'op') root = CondTree.update(root, path, (r) => { const wasIn = r.op === 'in', op = el.value; let value = r.value; if (op === 'in' && !Array.isArray(value)) value = value ? [value] : []; else if (wasIn && op !== 'in') value = Array.isArray(value) ? (value[0] || '') : value; return { ...r, op, value }; });
+  else if (act === 'valsel') { root = CondTree.update(root, path, (r) => ({ ...r, value: el.value })); structural = false; }
+  else if (act === 'valin') { const boxes = el.closest('[data-leaf]').querySelectorAll('[data-cx="valin"]:checked'); root = CondTree.update(root, path, (r) => ({ ...r, value: Array.from(boxes).map((x) => x.value) })); structural = false; }
+  else if (act === 'val') { root = CondTree.update(root, path, (r) => ({ ...r, value: r.op === 'in' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value })); structural = false; }
+  else if (act === 'startroot') { if (!others.length) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); return; } root = CondTree.group(defaultLeaf(others)); }
+  else if (act === 'clearroot') root = CondTree.group(null);
+  else return;
+  o.set(root);
+  if (structural) renderProps();
+}
+
+function valueEditorHtml(prop, key, val) {
+  if (prop === 'placeholder') return `<input type="text" data-vtxt="${key}" maxlength="120" value="${esc(val)}">`;
+  if (prop === 'src') return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${val ? `<img src="${esc(assetUrl(val))}" alt="" style="max-height:56px; max-width:120px; border-radius:6px;">` : '<span class="hint">sin imagen</span>'}<input type="file" data-vimg="${key}" accept="image/*"> ${val ? `<button type="button" class="small-btn" data-vact="clearimg" data-vk="${key}">Quitar</button>` : ''}</div>`;
+  return `<div data-vrt="${key}"></div>`;
+}
 function variantsHtml(f) {
-  const v = f.variants;
-  const modeSel = `<div class="fld"><label>Texto</label><select id="vMode"><option value="">Un solo texto</option><option value="1" ${v ? 'selected' : ''}>Cambia según una respuesta (variantes)</option></select></div>`;
-  if (!v) return modeSel + '<div class="fld"><div id="pContentRt"></div></div>';
-  const cands = choiceFields();
-  if (!cands.length) return modeSel + '<div class="hint">Para usar variantes agrega antes un campo con opciones (por ejemplo Ciudad).</div>';
-  const by = design.fields[v.by] && cands.some((c) => c.id === v.by) ? v.by : cands[0].id, opts = FormSync.optionsOf(design.fields[by], eventFields) || ['true', 'false'];
-  const rows = v.items.map((it, i) => {
-    const cur = Array.isArray(it.rule.value) ? it.rule.value : [it.rule.value];
-    const val = it.rule.op === 'in'
-      ? `<div style="max-height:110px; overflow:auto;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-vin="${i}" value="${esc(o)}" ${cur.some((x) => FormSync.norm(x) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div>`
-      : `<select data-vval="${i}"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(it.rule.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-    return `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px; display:grid; gap:4px;">
-      <div style="display:flex; gap:4px; align-items:center;"><span class="hint">Si es</span><select data-vop="${i}"><option value="equals" ${it.rule.op === 'equals' ? 'selected' : ''}>igual a</option><option value="in" ${it.rule.op === 'in' ? 'selected' : ''}>alguno de</option></select></div>${val}
-      <div data-vrt="${i}"></div>
-      <div style="display:flex; gap:4px; justify-content:flex-end;"><button type="button" class="small-btn" data-vmv="${i}:-1" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="small-btn" data-vmv="${i}:1" ${i === v.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="small-btn danger" data-vdel="${i}">Quitar</button></div></div>`;
-  }).join('');
-  return modeSel + `<div class="fld"><label>Campo que decide</label><select id="vBy">${cands.map((c) => `<option value="${c.id}" ${c.id === by ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
-    <div class="hint" style="margin-bottom:4px;">Se muestra la primera variante que se cumpla, de arriba hacia abajo.</div>${rows}
-    <button type="button" class="small-btn" id="vAdd">+ Agregar variante</button>
-    <div class="fld" style="margin-top:6px;"><label>Texto por defecto (si ninguna aplica; vacío = no se muestra nada)</label><div id="vDefRt"></div></div>`;
+  const props = variantProps(f);
+  let html = `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="hint" style="background:#fff8e1; border:1px solid #f0ad4e; color:#7a5b00; border-radius:8px; padding:6px 8px;"><b>Variantes.</b> ${VARIANT_WARNING}</div>`;
+  props.forEach((prop) => {
+    const v = (f.variants || {})[prop], hide = prop === 'content' || prop === 'src';
+    if (!v) { html += `<div class="fld" style="margin-top:6px;"><span class="hint"><b>${VPROPS[prop]}</b>: igual para todos.</span> <button type="button" class="small-btn" data-vact="enable" data-vp="${prop}">Cambiar según respuestas…</button></div>`; return; }
+    html += `<div style="border:1px solid #cfd4e8; border-radius:10px; padding:6px; margin-top:8px;"><div style="display:flex; justify-content:space-between; align-items:center;"><b>${VPROPS[prop]} — variantes</b><button type="button" class="small-btn danger" data-vact="disable" data-vp="${prop}">Quitar variantes</button></div>
+      <div class="hint">Se muestra la primera variante que se cumpla, de arriba hacia abajo; si ninguna, el texto por defecto${hide ? '; si tampoco hay, el elemento no ocupa espacio' : '; si tampoco hay, se usa el valor del campo'}.</div>`;
+    v.items.forEach((it, i) => {
+      const oid = regOwner(f.id, () => it.when, (n) => { it.when = n; markDirty(); renderCanvas(); });
+      html += `<div style="border:1px solid #d9dcea; border-radius:10px; padding:6px; margin:6px 0;"><div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;"><b>Variante ${i + 1}</b><input type="text" data-vname="${prop}:${i}" maxlength="40" placeholder="Nombre (opcional)" value="${esc(it.name || '')}" style="width:140px;">
+        <button type="button" class="small-btn" data-vact="up" data-vp="${prop}" data-vi="${i}" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="small-btn" data-vact="down" data-vp="${prop}" data-vi="${i}" ${i === v.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="small-btn danger" data-vact="del" data-vp="${prop}" data-vi="${i}">Quitar</button></div>
+        <div class="hint">Se aplica cuando:</div>${condEditorHtml(oid)}<div class="hint">Muestra:</div>${valueEditorHtml(prop, `${prop}:${i}`, it.value)}</div>`;
+    });
+    html += `<button type="button" class="small-btn" data-vact="add" data-vp="${prop}" ${v.items.length >= 200 ? 'disabled' : ''}>+ Agregar variante</button>
+      <div style="border:1px dashed #cfd4e8; border-radius:10px; padding:6px; margin-top:6px;"><b>Por defecto</b> <span class="hint">(${hide ? 'vacío = no se muestra nada' : 'vacío = se usa el valor del campo'})</span>${valueEditorHtml(prop, `${prop}:def`, v.default || '')}</div></div>`;
+  });
+  return html;
 }
 function bindVariants(box, f) {
-  const v = f.variants, ch = (fn) => (...a) => { fn(...a); markDirty(); renderCanvas(); };
-  const again = (fn) => () => { fn(); markDirty(); renderCanvas(); renderProps(); };
-  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
-  on('vMode', 'change', again(() => {
-    if ($('vMode').value) { const c = choiceFields()[0]; f.variants = { by: c ? c.id : null, items: [], default: f.content || '' }; }
-    else { f.content = (f.variants && f.variants.default) || ''; delete f.variants; }
+  const getV = (key) => { const [prop, idx] = key.split(':'); return { prop, idx, v: (f.variants || {})[prop] }; };
+  const setVal = (key, val) => { const { idx, v } = getV(key); if (idx === 'def') v.default = val; else v.items[+idx].value = val; markDirty(); renderCanvas(); };
+  const redo = () => { markDirty(); renderCanvas(); renderProps(); };
+  box.querySelectorAll('[data-vact]').forEach((b) => b.addEventListener('click', async () => {
+    const act = b.dataset.vact, prop = b.dataset.vp, i = +b.dataset.vi;
+    if (act === 'enable') { f.variants = f.variants || {}; f.variants[prop] = { items: [], default: prop === 'content' || prop === 'src' ? (f[prop] || '') : '' }; redo(); }
+    else if (act === 'disable') {
+      if (!(await showConfirm(`¿Quitar todas las variantes de «${VPROPS[prop]}»? ${prop === 'content' || prop === 'src' ? 'Queda el valor por defecto.' : 'Queda el valor del campo.'}`, { confirmLabel: 'Quitar' }))) return;
+      const v = f.variants[prop]; if (prop === 'content' || prop === 'src') f[prop] = v.default || ''; delete f.variants[prop]; if (!Object.keys(f.variants).length) delete f.variants; redo();
+    } else if (act === 'add') {
+      const others = condOthers(f.id); if (!others.length) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); return; }
+      f.variants[prop].items.push({ when: { match: 'all', rules: [defaultLeaf(others)] }, value: '' }); redo();
+    } else if (act === 'del') { f.variants[prop].items.splice(i, 1); redo(); }
+    else if (act === 'up' || act === 'down') { const it = f.variants[prop].items, j = act === 'up' ? i - 1 : i + 1; [it[i], it[j]] = [it[j], it[i]]; redo(); }
+    else if (act === 'clearimg') { setVal(b.dataset.vk, ''); renderProps(); }
   }));
-  if (!v) return;
-  const by = () => ($('vBy') ? $('vBy').value : v.by);
-  v.by = by();
-  on('vBy', 'change', again(() => { v.by = by(); v.items.forEach((it) => { it.rule = { field: v.by, op: it.rule.op, value: it.rule.op === 'in' ? [] : '' }; }); }));
-  on('vAdd', 'click', again(() => { v.by = by(); v.items.push({ rule: { field: v.by, op: 'equals', value: '' }, content: '' }); }));
-  if ($('vDefRt')) mountRt($('vDefRt'), { value: v.default, label: 'Texto por defecto', onChange: ch((x) => { v.default = x; }) });
-  box.querySelectorAll('[data-vrt]').forEach((h) => { const it = v.items[+h.dataset.vrt]; mountRt(h, { value: it.content, label: 'Texto de la variante', onChange: (x) => { it.content = x; markDirty(); renderCanvas(); } }); });
-  box.querySelectorAll('[data-vop]').forEach((el) => el.addEventListener('change', again(() => { const r = v.items[+el.dataset.vop].rule; r.op = el.value; r.value = r.op === 'in' ? (r.value ? [r.value] : []) : (Array.isArray(r.value) ? (r.value[0] || '') : r.value); })));
-  box.querySelectorAll('[data-vval]').forEach((el) => el.addEventListener('change', ch(() => { v.items[+el.dataset.vval].rule.value = el.value; })));
-  box.querySelectorAll('[data-vin]').forEach((el) => el.addEventListener('change', ch(() => { const i = +el.dataset.vin; v.items[i].rule.value = Array.from(box.querySelectorAll(`[data-vin="${i}"]:checked`)).map((x) => x.value); })));
-  box.querySelectorAll('[data-vdel]').forEach((el) => el.addEventListener('click', again(() => { v.items.splice(+el.dataset.vdel, 1); })));
-  box.querySelectorAll('[data-vmv]').forEach((el) => el.addEventListener('click', again(() => { const [i, d] = el.dataset.vmv.split(':').map(Number); [v.items[i], v.items[i + d]] = [v.items[i + d], v.items[i]]; })));
+  box.querySelectorAll('[data-vname]').forEach((el) => el.addEventListener('input', () => { const { idx, v } = getV(el.dataset.vname); if (el.value) v.items[+idx].name = el.value; else delete v.items[+idx].name; markDirty(); }));
+  box.querySelectorAll('[data-vtxt]').forEach((el) => el.addEventListener('input', () => setVal(el.dataset.vtxt, el.value)));
+  box.querySelectorAll('[data-vimg]').forEach((el) => el.addEventListener('change', async () => {
+    const fd = new FormData(); fd.append('file', el.files[0]);
+    try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); setVal(el.dataset.vimg, d.storage_path); renderProps(); } catch (e) { showToast(e.message, 'error'); }
+  }));
+  box.querySelectorAll('[data-vrt]').forEach((h) => {   // editor de texto con formato (el valor de la variante o del texto por defecto)
+    const key = h.dataset.vrt, { prop, idx, v } = getV(key);
+    mountRt(h, { value: idx === 'def' ? v.default : v.items[+idx].value, label: `${VPROPS[prop]}${idx === 'def' ? ' por defecto' : ' de la variante ' + (+idx + 1)}`, onChange: (x) => setVal(key, x) });
+  });
 }
+['click', 'change', 'input'].forEach((t) => $('propsBox').addEventListener(t, onCx));
 
 // ---------------------------------------------------------------- paleta
 async function syncWithParams() {
@@ -386,7 +456,7 @@ function renderCanvas() {
 }
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
-  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : RichText.toPlain(f.variants ? '↔ Según respuesta: ' + (f.variants.default || (f.variants.items[0] || {}).content || '') : f.content || '').replace(/\s+/g, ' ').slice(0, 40)) : f.label;
+  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : RichText.toPlain(canvasText(f)).replace(/\s+/g, ' ').slice(0, 40)) : f.label;
   return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (label || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
@@ -400,6 +470,7 @@ function clearRt() { rtMounts.forEach((m) => m.destroy()); rtMounts = []; }
 function fieldInput(id, lbl, value, extra) { return `<div class="fld"><label>${lbl}</label><input type="text" id="${id}" value="${esc(value)}" ${extra || ''}></div>`; }
 function renderProps() {
   clearRt();
+  condOwners = {};
   const box = $('propsBox');
   const f = selected && design.fields[selected];
   if (!f) { box.innerHTML = '<p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p>'; return; }
@@ -412,7 +483,7 @@ function renderProps() {
   if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + dispRtHtml() + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + dispRtHtml() + helpRtHtml() + compHtml(f);
-  if (f.type === 'heading' || f.type === 'paragraph') html += variantsHtml(f);
+  if ((f.type === 'heading' || f.type === 'paragraph') && !(f.variants && f.variants.content)) html += '<div class="fld"><label>Texto</label><div id="pContentRt"></div></div>';
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
     <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
     <div class="fld"><label for="pImgAlt">Texto alternativo (describe la imagen para personas que no la ven)</label><input type="text" id="pImgAlt" value="${esc(f.alt || '')}" placeholder="Ej. Banner del Congreso Cundi 2026"><div class="hint">Déjalo vacío solo si la imagen es decorativa.</div></div>`;
@@ -435,29 +506,10 @@ function renderProps() {
       <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
       <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
   }
-  // regla de visibilidad: una o VARIAS reglas, combinadas con «todas» (y) o «alguna» (o)
-  const rules = rulesOf(f.show_if), OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
-  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label><select id="cOn"><option value="">Siempre visible</option><option value="1" ${rules.length ? 'selected' : ''}>Mostrar solo si…</option></select></div>`;
-  if (rules.length) {
-    if (rules.length > 1) html += `<div class="fld"><label>Se muestra cuando se cumplan</label><select id="cMatch"><option value="all" ${matchOf(f.show_if) === 'all' ? 'selected' : ''}>TODAS las reglas (y)</option><option value="any" ${matchOf(f.show_if) === 'any' ? 'selected' : ''}>ALGUNA de las reglas (o)</option></select></div>`;
-    rules.forEach((r, i) => {
-      const parent = design.fields[r.field], opts = FormSync.optionsOf(parent, eventFields) || (parent && parent.type === 'checkbox' ? ['true', 'false'] : null);
-      let val = '';
-      if (r.op !== 'filled') {
-        if (opts) {   // con opciones (propias o del campo del evento) el valor SIEMPRE se elige de la lista; un valor guardado que no coincide ni con tildes/mayúsculas se conserva visible
-          const cur = Array.isArray(r.value) ? r.value : [r.value];
-          const extra = cur.filter((v) => v !== '' && !FormSync.findOption(opts, v));
-          if (r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-rvin="${i}" value="${esc(o)}" ${cur.some((v) => FormSync.norm(v) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}${extra.map((v) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-rvin="${i}" value="${esc(v)}" checked> ${esc(v)} (no está en la lista)</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
-          else val = `<select data-rv="${i}"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(r.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}${extra.map((v) => `<option selected>${esc(v)}</option>`).join('')}</select>${extra.length ? '<div class="hint">El valor guardado no está en la lista de opciones.</div>' : ''}`;
-        } else val = `<input type="text" data-rv="${i}" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
-      }
-      html += `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px; display:grid; gap:4px;"><div class="hint">Regla ${i + 1}</div>
-        <select data-rf="${i}">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select>
-        <select data-ro="${i}">${OPS_ALL.map(([v, l]) => `<option value="${v}" ${r.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${val}
-        ${rules.length > 1 ? `<button type="button" class="small-btn danger" data-rdel="${i}" style="justify-self:end;">Quitar regla</button>` : ''}</div>`;
-    });
-    if (rules.length < 6) html += '<button type="button" class="small-btn" id="cAdd">+ Agregar otra regla</button>';
-  }
+  // variantes (cualquier elemento) y regla de visibilidad en árbol (Y/O anidados)
+  html += variantsHtml(f);
+  const showOid = regOwner(f.id, () => f.show_if, (n) => { f.show_if = CondTree.compact(n); markDirty(); renderCanvas(); });
+  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label>${f.show_if ? `${condEditorHtml(showOid)}<button type="button" class="small-btn danger" data-co="${showOid}" data-cx="clearroot">Siempre visible (quitar la regla)</button>` : `<span class="hint">Siempre visible.</span> <button type="button" class="small-btn" data-co="${showOid}" data-cx="startroot">Mostrar solo si…</button>`}</div>`;
   html += `<div style="display:flex; gap:6px; margin-top:0.8rem; flex-wrap:wrap;"><button class="small-btn" id="pUp">← Antes</button><button class="small-btn" id="pDown">Después →</button><button class="small-btn danger" id="pDel">Eliminar</button></div>`;
   box.innerHTML = html;
 
@@ -470,7 +522,6 @@ function renderProps() {
   if (isComp) bindComp(box, f);
   on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
   if ($('pContentRt')) mountRt($('pContentRt'), { value: f.content, label: f.type === 'heading' ? 'Título' : 'Texto informativo', onChange: (v) => { f.content = v; markDirty(); renderCanvas(); } });
-  if (f.type === 'heading' || f.type === 'paragraph') bindVariants(box, f);
   on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
   box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
@@ -491,23 +542,10 @@ function renderProps() {
   on('pImgAlt', 'input', () => { f.alt = $('pImgAlt').value; markDirty(); });
   on('pImgW', 'input', () => { f.width = +$('pImgW').value; $('pImgWv').textContent = f.width; markDirty(); });
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
-  const saveRules = (rs, match) => { setRules(f, rs, match); markDirty(); renderCanvas(); };
-  on('cOn', 'change', () => {
-    if (!$('cOn').value) { f.show_if = null; markDirty(); renderCanvas(); renderProps(); return; }
-    if (!others[0]) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); renderProps(); return; }
-    setRules(f, [{ field: others[0].id, op: 'equals', value: '' }]); markDirty(); renderCanvas(); renderProps();
-  });
-  const cur = () => rulesOf(f.show_if).map((r) => ({ ...r })), match = matchOf(f.show_if);
-  on('cMatch', 'change', () => { f.show_if.match = $('cMatch').value; markDirty(); });
-  on('cAdd', 'click', () => { const rs = cur(); rs.push({ field: others[0].id, op: 'equals', value: '' }); saveRules(rs, match); renderProps(); });
-  box.querySelectorAll('[data-rdel]').forEach((b) => b.addEventListener('click', () => { const rs = cur(); rs.splice(+b.dataset.rdel, 1); saveRules(rs, match); renderProps(); }));
-  box.querySelectorAll('[data-rf]').forEach((el) => el.addEventListener('change', () => { const rs = cur(), r = rs[+el.dataset.rf]; r.field = el.value; r.value = r.op === 'in' ? [] : ''; saveRules(rs, match); renderProps(); }));
-  box.querySelectorAll('[data-ro]').forEach((el) => el.addEventListener('change', () => { const rs = cur(), r = rs[+el.dataset.ro]; const wasIn = r.op === 'in'; r.op = el.value; if (r.op === 'in' && !Array.isArray(r.value)) r.value = r.value ? [r.value] : []; else if (wasIn && r.op !== 'in') r.value = Array.isArray(r.value) ? (r.value[0] || '') : r.value; saveRules(rs, match); renderProps(); }));
-  box.querySelectorAll('[data-rv]').forEach((el) => { const i = +el.dataset.rv, h = () => { const rs = cur(), r = rs[i]; r.value = r.op === 'in' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value; saveRules(rs, match); }; el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', h); });
-  box.querySelectorAll('[data-rvin]').forEach((el) => el.addEventListener('change', () => { const i = +el.dataset.rvin, rs = cur(); rs[i].value = Array.from(box.querySelectorAll(`[data-rvin="${i}"]:checked`)).map((x) => x.value); saveRules(rs, match); }));
+  bindVariants(box, f);
   const shift = (d) => { const at = locate(f.id); const row = design.rows[at[0]]; const n = at[1] + d; if (n < 0 || n >= row.items.length) return; [row.items[at[1]], row.items[n]] = [row.items[n], row.items[at[1]]]; markDirty(); renderCanvas(); };
   on('pUp', 'click', () => shift(-1)); on('pDown', 'click', () => shift(1));
-  on('pDel', 'click', () => { Object.values(design.fields).forEach((x) => { if (x.show_if) setRules(x, rulesOf(x.show_if).filter((r) => r.field !== f.id), matchOf(x.show_if)); if (x.variants) { x.variants.items = x.variants.items.filter((it) => it.rule.field !== f.id); if (x.variants.by === f.id) { x.variants.by = null; if (!x.variants.items.length) { x.content = x.variants.default || ''; delete x.variants; } } } }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+  on('pDel', 'click', () => { Object.values(design.fields).forEach((x) => { if (x.show_if) x.show_if = CondTree.prune(x.show_if, f.id); Object.entries(x.variants || {}).forEach(([prop, v]) => { v.items = v.items.filter((it) => { it.when = CondTree.prune(it.when, f.id); return !!it.when; }); if (!v.items.length && !v.default) delete x.variants[prop]; }); if (x.variants && !Object.keys(x.variants).length) delete x.variants; }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
 }
 
 // ---------------------------------------------------------------- campo Pago: monto, reglas y descuentos
@@ -711,9 +749,15 @@ function renderAll() { renderPalette(); renderCanvas(); renderProps(); $('payTab
 
 // ---------------------------------------------------------------- guardar / previsualizar / plantilla
 async function saveDesign() {
+  for (const f of Object.values(design.fields)) {
+    for (const [prop, v] of Object.entries(f.variants || {})) {
+      const bad = v.items.findIndex((it) => !CondTree.leaves(it.when).length);
+      if (bad >= 0) { selected = f.id; renderAll(); showToast(`«${f.label || RichText.toPlain(f.content || '') || TYPES[f.type][0]}»: la variante ${bad + 1} de «${VPROPS[prop]}» no tiene condiciones. Agrégale una regla o quítala.`, 'error'); return false; }
+    }
+  }
   try {
     form = await jput(api, { name: $('fname').value, slug: $('fslug').value, design });
-    design = form.design; dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
+    design = form.design; normDesign(); dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
     eventFields = await j(`/api/events/${EV}/form-event-fields`);
     showToast('Diseño guardado', 'success'); paintHeader(); renderTheme(); renderAll();
     return true;
@@ -1000,7 +1044,7 @@ $('invSend').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- inicio
 (async function init() {
-  form = await j(api); design = form.design; settings = form.settings;
+  form = await j(api); design = form.design; normDesign(); settings = form.settings;
   eventFields = await j(`/api/events/${EV}/form-event-fields`);
   try { ID_DOCS = await j("/api/form-id-docs"); } catch (e) { ID_DOCS = []; }
   paintHeader(); renderTheme(); renderAll(); paintConfig();
