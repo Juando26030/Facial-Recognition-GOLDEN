@@ -6,6 +6,7 @@
     <title>Parámetros del Evento | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
@@ -745,6 +746,7 @@
         tr.addEventListener('dragstart', (e) => { tr.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', cfg.key); });
         const typeSelect = tr.querySelector('.cfg-field-type');
         const optionsBox = tr.querySelector('.cfg-options');
+        if (optionsBox && !cfg.locked) OptionTools.attach(optionsBox, { eventId: window.EVENT_ID, key: cfg.key });
         const helpBox = tr.querySelector('.cfg-help');
         const tplBox = tr.querySelector('.cfg-tpl');
         if (tplBox) tplBox.addEventListener('change', async () => {
@@ -755,6 +757,7 @@
         });
         typeSelect.addEventListener('change', () => {
             optionsBox.style.display = typeSelect.value === 'select' ? 'block' : 'none';
+            if (optionsBox._otWrap) optionsBox._otWrap.style.display = typeSelect.value === 'select' ? '' : 'none';
             helpBox.style.display = ['consent', 'signature'].includes(typeSelect.value) ? 'block' : 'none';
             if (tplBox) tplBox.style.display = typeSelect.value === 'consent' ? 'block' : 'none';
         });

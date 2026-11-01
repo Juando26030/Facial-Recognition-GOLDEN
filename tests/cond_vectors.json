@@ -1,0 +1,23 @@
+{
+ "eval": [
+  {"name": "hoja igual", "tree": {"field": "c", "op": "equals", "value": "Bogotá"}, "values": {"c": "Bogota"}, "expected": true},
+  {"name": "hoja distinta", "tree": {"field": "c", "op": "equals", "value": "Bogotá"}, "values": {"c": "Cali"}, "expected": false},
+  {"name": "hoja sobre campo oculto no cuenta", "tree": {"field": "c", "op": "equals", "value": "Bogotá"}, "values": {"c": "Bogotá"}, "visible": ["t"], "expected": false},
+  {"name": "todas (Y)", "tree": {"match": "all", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "t", "op": "equals", "value": "Empleado"}]}, "values": {"c": "bogota", "t": "empleado"}, "expected": true},
+  {"name": "todas (Y) falla una", "tree": {"match": "all", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "t", "op": "equals", "value": "Empleado"}]}, "values": {"c": "Bogotá", "t": "Invitado"}, "expected": false},
+  {"name": "alguna (O)", "tree": {"match": "any", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "c", "op": "equals", "value": "Cali"}]}, "values": {"c": "Cali"}, "expected": true},
+  {"name": "alguna (O) ninguna", "tree": {"match": "any", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "c", "op": "equals", "value": "Cali"}]}, "values": {"c": "Pasto"}, "expected": false},
+  {"name": "Y con O dentro", "tree": {"match": "all", "rules": [{"field": "t", "op": "equals", "value": "Empleado"}, {"match": "any", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "c", "op": "equals", "value": "Cali"}]}]}, "values": {"t": "Empleado", "c": "Cali"}, "expected": true},
+  {"name": "Y con O dentro, falla el O", "tree": {"match": "all", "rules": [{"field": "t", "op": "equals", "value": "Empleado"}, {"match": "any", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "c", "op": "equals", "value": "Cali"}]}]}, "values": {"t": "Empleado", "c": "Pasto"}, "expected": false},
+  {"name": "O con Y dentro", "tree": {"match": "any", "rules": [{"match": "all", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "t", "op": "equals", "value": "Empleado"}]}, {"field": "e", "op": "filled", "value": ""}]}, "values": {"c": "Cali", "t": "x", "e": "ACME"}, "expected": true},
+  {"name": "tres niveles", "tree": {"match": "all", "rules": [{"match": "any", "rules": [{"match": "all", "rules": [{"field": "c", "op": "in", "value": ["Bogotá", "Cali"]}, {"field": "t", "op": "not_equals", "value": "Invitado"}]}, {"field": "e", "op": "contains", "value": "acm"}]}]}, "values": {"c": "cali", "t": "Empleado", "e": ""}, "expected": true},
+  {"name": "tres niveles, nada se cumple", "tree": {"match": "all", "rules": [{"match": "any", "rules": [{"match": "all", "rules": [{"field": "c", "op": "in", "value": ["Bogotá", "Cali"]}, {"field": "t", "op": "not_equals", "value": "Invitado"}]}, {"field": "e", "op": "contains", "value": "acm"}]}]}, "values": {"c": "Pasto", "t": "Invitado", "e": "Globex"}, "expected": false},
+  {"name": "formato antiguo de un nivel", "tree": {"match": "any", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "t", "op": "filled", "value": ""}]}, "values": {"t": "x"}, "expected": true}
+ ],
+ "sanitize_same": [
+  {"field": "c", "op": "equals", "value": "Bogotá"},
+  {"match": "all", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "t", "op": "in", "value": ["A", "B"]}]},
+  {"match": "any", "rules": [{"field": "c", "op": "filled", "value": ""}, {"field": "t", "op": "contains", "value": "x"}]},
+  {"match": "all", "rules": [{"field": "t", "op": "equals", "value": "Empleado"}, {"match": "any", "rules": [{"field": "c", "op": "equals", "value": "Bogotá"}, {"field": "c", "op": "equals", "value": "Cali"}], "name": "Costa"}]}
+ ]
+}

@@ -20,6 +20,8 @@ import uuid
 from datetime import date, datetime
 from typing import Callable, Optional
 
+from app import richtext
+
 INPUT_TYPES = ("text_short", "text_long", "email", "phone", "number", "date", "checkbox", "select", "radio", "multiselect", "file")
 STATIC_TYPES = ("heading", "paragraph", "image")
 PAYMENT_TYPE = "payment"      # «Pago» (Wompi): máximo uno por formulario; no guarda un valor, cobra un monto
@@ -54,6 +56,7 @@ DEFAULT_SETTINGS = {
     "prefill": {"mode": "none", "source": "event"},                  # mode: none | cedula | invite ; source: event | event:<id> | upload
     "closed_template": {"title": "Este formulario ya cerró", "text": "Lo sentimos, ya no estamos recibiendo inscripciones.", "image": ""},
     "thanks": {"mode": "template", "title": "¡Gracias por inscribirte!", "text": "Recibimos tus datos correctamente.", "image": "", "url": ""},
+    "identify": {"title": "", "text": "", "image": "", "button": ""},   # paso «Identifícate» (cédula): vacío = los textos de siempre (title «Identifícate», text según sea obligatorio o no, button «Continuar»)
     "refunds": {"days": None, "note": ""},                           # condiciones de reembolso de ESTE formulario: plazo para pedirlo (días) y una nota (ej. quién asume la comisión)
     "quotas": {"rules": []},                                         # cupos: [{id, label, match: all|any, conds: [{field, op, value}], limit}]
     "feed": "manual",                                                # realtime | on_close | manual
@@ -176,6 +179,22 @@ def validate_id_doc(code: str, raw: str):
     return True, value, ""
 
 
+WIDTH_MIN, WIDTH_MAX = 480, 1100       # px; en pantallas más angostas la tarjeta siempre ocupa el 100 %
+
+
+def _card_width(value):
+    """«full» (completo), un entero de WIDTH_MIN a WIDTH_MAX px, o None (no se guarda: queda el ancho de siempre)."""
+    if value == "full":
+        return "full"
+    if isinstance(value, bool):
+        return None
+    try:
+        px = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return px if WIDTH_MIN <= px <= WIDTH_MAX else None
+
+
 def _percent(value, default: int) -> int:
     """Porcentaje 10–100 (o 0 = automático cuando `default` es 0); lo demás cae al valor por defecto."""
     try:
@@ -208,19 +227,22 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         theme[key] = _text(theme_in.get(key), 200)
     theme["logo_width"] = _percent(theme_in.get("logo_width"), 0)      # % del ancho de la tarjeta; 0 = automático (como antes)
     theme["logo_full"] = bool(theme_in.get("logo_full"))               # el logo/banner ocupa la tarjeta de lado a lado, sin márgenes
+    width = _card_width(theme_in.get("width"))                          # ancho máximo de la tarjeta; sin llave = 760 px como siempre
+    if width is not None:
+        theme["width"] = width
 
     fields_in = design.get("fields") or {}
     if not isinstance(fields_in, dict) or len(fields_in) > MAX_FIELDS:
         raise ValueError(f"Un formulario admite hasta {MAX_FIELDS} elementos")
     allowed_keys = set(IDENTITY_KEYS) | set(optional_keys)
-    fields, used_keys = {}, set()
+    fields, used_keys, total_variants = {}, set(), 0
     for fid, f in fields_in.items():
         if not isinstance(f, dict) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", str(fid)):
             raise ValueError("Elemento con identificador inválido")
         kind = f.get("type")
         if kind not in ALL_TYPES:
             raise ValueError(f"Tipo de campo no válido: {kind}")
-        clean = {"id": fid, "type": kind, "label": _text(f.get("label"), 200), "help": _text(f.get("help"), 300)}
+        clean = {"id": fid, "type": kind, "label": _text(f.get("label"), 200), "help": richtext.clean_text(f.get("help"), 300)}      # la etiqueta (label) es texto plano: es el nombre de la columna en reportes. La ayuda y el nombre de presentación admiten formato completo
         if kind in INPUT_TYPES:
             if not clean["label"]:
                 raise ValueError("Todos los campos necesitan un nombre (etiqueta)")
@@ -258,7 +280,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                 except (TypeError, ValueError):
                     raise ValueError(f"«{clean['label']}»: el tamaño máximo debe ser un número de MB")
         elif kind in ("heading", "paragraph"):
-            clean["content"] = _text(f.get("content"), 2000)
+            clean["content"] = richtext.clean_text(f.get("content"), 2000)
         elif kind == PAYMENT_TYPE:
             clean["label"] = clean["label"] or "Pago"
             clean["pay"] = sanitize_payment(f.get("pay"), fields_in, fid)
@@ -268,9 +290,22 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
             clean["src"] = _text(f.get("src"), 200)
             clean["width"] = _percent(f.get("width"), 100)             # % del ancho disponible
             clean["alt"] = _text(f.get("alt"), 200)                    # texto alternativo (accesibilidad); vacío = imagen decorativa
+        internal = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(f.get("internal_name") or "")).split())[:60]
+        if internal:                        # «Nombre interno» (P11b): solo para el diseñador (listas, lienzo, encabezados del Excel); texto plano y nunca llega a la página pública
+            clean["internal_name"] = internal
+        if kind not in STATIC_TYPES:        # nombre de PRESENTACIÓN con formato: solo se pinta en el formulario público y la vista previa; todo lo demás usa `label`
+            shown = richtext.clean_text(f.get("display_label"), 300)
+            if shown:                       # sin llave si está vacío: los formularios existentes no cambian
+                clean["display_label"] = shown
+        variants, n_variants = _sanitize_variants(f.get("variants"), fields_in, fid, kind)
+        if variants:                        # solo si el elemento las usa: los formularios existentes no ganan ninguna llave nueva
+            clean["variants"] = variants
+            total_variants += n_variants
         clean["show_if"] = _sanitize_condition(f.get("show_if"), fields_in, fid)
         fields[fid] = clean
 
+    if total_variants > MAX_VARIANTS_PER_FORM:
+        raise ValueError(f"El formulario admite hasta {MAX_VARIANTS_PER_FORM} variantes en total")
     if sum(1 for f in fields.values() if f["type"] == PAYMENT_TYPE) > 1:
         raise ValueError("Un formulario admite un solo campo de pago")
     if sum(1 for f in fields.values() if f["type"] == COMPANIONS_TYPE) > 1:
@@ -278,6 +313,8 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
     for f in fields.values():
         if f["type"] == PAYMENT_TYPE and f["pay"].get("companions_charge") and not any(x["type"] == COMPANIONS_TYPE for x in fields.values()):
             raise ValueError("Para cobrar por los acompañantes agrega también el campo «Acompañantes»")
+    sheets = _sanitize_sheets(design.get("sheets"), fields_in)
+    sheet_ids = [s["id"] for s in sheets]
     rows, placed = [], set()
     for row in design.get("rows") or []:
         items = [i for i in (row.get("items") or []) if i in fields and i not in placed]
@@ -286,12 +323,78 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         if len(items) > 4:
             raise ValueError("Una fila admite hasta 4 elementos uno al lado del otro")
         placed.update(items)
-        rows.append({"align": row.get("align") if row.get("align") in ("left", "center", "right") else "left", "items": items})
-    for fid in fields:                       # cualquier elemento que no quedó en una fila va al final, en su propia fila
+        clean_row = {"align": row.get("align") if row.get("align") in ("left", "center", "right") else "left", "items": items}
+        if sheets:
+            clean_row["sheet"] = row.get("sheet") if row.get("sheet") in sheet_ids else sheet_ids[0]       # sin hoja (o inexistente) = la primera
+        rows.append(clean_row)
+    for fid in fields:                       # cualquier elemento que no quedó en una fila va al final (en la última hoja), en su propia fila
         if fid not in placed:
-            rows.append({"align": "left", "items": [fid]})
+            rows.append({"align": "left", "items": [fid], **({"sheet": sheet_ids[-1]} if sheets else {})})
+    if sheets:
+        rows.sort(key=lambda r: sheet_ids.index(r["sheet"]))              # estable: dentro de cada hoja se conserva el orden
+        _check_sheets(sheets, rows, fields)
     _check_condition_cycles(fields)
-    return {"theme": theme, "rows": rows, "fields": fields}
+    out = {"theme": theme, "rows": rows, "fields": fields}
+    if sheets:
+        out["sheets"] = sheets
+    return out
+
+
+# ------------------------------------------------------------------ hojas (P12)
+MAX_SHEETS = 20
+
+
+def _sanitize_sheets(sheets_in, fields_in: dict) -> list:
+    """Hojas del formulario [{id, title, description, show_if?}]. Con menos de 2 no hay hojas: es el formulario de una sola hoja de siempre (sin llave `sheets`).
+    La primera y la última hoja son siempre visibles (no admiten `show_if`)."""
+    if not isinstance(sheets_in, list) or len(sheets_in) < 2:
+        return []
+    if len(sheets_in) > MAX_SHEETS:
+        raise ValueError(f"Un formulario admite hasta {MAX_SHEETS} hojas")
+    sheets, seen = [], set()
+    for i, s in enumerate(sheets_in):
+        if not isinstance(s, dict) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", str(s.get("id") or "")) or s["id"] in seen:
+            raise ValueError("Hoja con identificador inválido o repetido")
+        seen.add(s["id"])
+        sheet = {"id": s["id"], "title": richtext.clean_text(s.get("title"), 120, basic=True), "description": richtext.clean_text(s.get("description"), 600)}
+        cond = _sanitize_condition(s.get("show_if"), fields_in, "") if 0 < i < len(sheets_in) - 1 else None
+        if cond:
+            sheet["show_if"] = cond
+        sheets.append(sheet)
+    return sheets
+
+
+def sheet_of_field(design: dict) -> dict:
+    """{id del campo: id de su hoja}; vacío si el formulario es de una sola hoja."""
+    return {fid: row["sheet"] for row in design.get("rows") or [] if row.get("sheet") for fid in row["items"]}
+
+
+def _check_sheets(sheets: list, rows: list, fields: dict) -> None:
+    index = {s["id"]: i for i, s in enumerate(sheets)}
+    at = {fid: index[row["sheet"]] for row in rows for fid in row["items"]}
+    last = len(sheets) - 1
+    for fid, f in fields.items():
+        if f["type"] in (PAYMENT_TYPE, COMPANIONS_TYPE) and at[fid] != last:
+            raise ValueError("El pago y los acompañantes van en la última hoja")
+        trees = [f.get("show_if")] + [it["when"] for v in variants_of(f).values() for it in v.get("items") or []]
+        for tree in trees:                                                  # reglas y variantes: campos de la misma hoja o de una anterior
+            if any(at[leaf["field"]] > at[fid] for leaf in cond_leaves(tree)):
+                raise ValueError(f"«{f.get('label') or fid}»: una regla usa un campo de una hoja posterior")
+    for i, s in enumerate(sheets):                                          # la condición de una hoja, solo con campos de hojas anteriores
+        if any(at[leaf["field"]] >= i for leaf in cond_leaves(s.get("show_if"))):
+            raise ValueError(f"La condición de la hoja «{_sheet_name(s)}» solo puede usar campos de hojas anteriores")
+
+
+def _sheet_name(sheet: dict) -> str:       
+    return richtext.to_plain(sheet.get("title") or "") or f"Hoja {sheet['id']}"
+
+
+def first_error_sheet(design: dict, errors: dict) -> Optional[str]:
+    """Id de la primera hoja (en su orden) que tiene un campo con error, para que el navegador salte a ella; None si el formulario es de una sola hoja."""
+    at = sheet_of_field(design)
+    order = [s["id"] for s in design.get("sheets") or []]
+    hits = {at[fid.split("__")[0]] for fid in errors if fid.split("__")[0] in at}
+    return next((sid for sid in order if sid in hits), None)
 
 
 def _sanitize_rule(cond, fields_in: dict, own_id: str) -> dict:
@@ -304,20 +407,155 @@ def _sanitize_rule(cond, fields_in: dict, own_id: str) -> dict:
     return {"field": cond["field"], "op": op, "value": [str(v) for v in value] if isinstance(value, list) else _text(value, 200)}
 
 
+# ------------------------------------------------------------------ condiciones en árbol y variantes por propiedad (P9)
+# Condición = una HOJA {field, op, value} o un GRUPO {match: all|any, rules: [hojas o grupos], name?}. Las dos formas antiguas de `show_if`
+# ({field,op,value} y {match,rules[]} de un nivel) son casos particulares: valen tal cual, sin migración.
+MAX_COND_DEPTH = 3             # niveles de grupos (el grupo raíz cuenta como 1)
+MAX_COND_LEAVES = 30           # hojas (reglas sueltas) por árbol
+MAX_GROUP_RULES = 12           # hijos directos de un grupo
+MAX_VARIANTS_PER_PROP = 200    # variantes de una propiedad de un elemento
+MAX_VARIANTS_PER_FORM = 3000   # variantes en todo el formulario (P11 las genera desde una tabla)
+# Propiedades con variantes por tipo de elemento. Sin variante que aplique: content y src → el elemento no ocupa espacio; las demás → su valor propio.
+VARIANT_TARGETS = {"heading": ("content",), "paragraph": ("content",), "image": ("src",), PAYMENT_TYPE: ("display_label", "help"), COMPANIONS_TYPE: ("display_label", "help")}
+INPUT_VARIANT_TARGETS = ("display_label", "help", "placeholder")
+HIDEABLE_PROPS = ("content", "src")
+# Ruta de una imagen subida desde el editor: «cliente/archivo.ext» (nada de URLs, «..» ni otras extensiones).
+IMAGE_PATH_RE = re.compile(r"[A-Za-z0-9_-][\w.-]*/[A-Za-z0-9_-][\w.-]*\.(?:png|jpe?g|webp|gif)")
+
+
+def _variant_targets(kind: str) -> tuple:
+    return VARIANT_TARGETS.get(kind) or (INPUT_VARIANT_TARGETS if kind in INPUT_TYPES else ())
+
+
+def variants_of(field: dict) -> dict:
+    """{propiedad: {"items": [{"when", "value", "name"?}], "default"?}} del elemento. Normaliza el formato de P2 ({by, items:[{rule, content}], default}; nunca llegó a
+    producción, este normalizador se quita en una versión posterior): era solo `content` y se reescribe al formato nuevo en el siguiente guardado."""
+    v = field.get("variants")
+    if not isinstance(v, dict):
+        return {}
+    if "items" in v:
+        out = {"items": [{"when": it.get("rule"), "value": it.get("content", "")} for it in (v.get("items") or []) if isinstance(it, dict)]}
+        if v.get("default"):
+            out["default"] = v["default"]
+        return {"content": out}
+    return {k: x for k, x in v.items() if isinstance(x, dict)}
+
+
+def _variant_value(prop: str, raw) -> str:
+    if prop == "content":
+        return richtext.clean_text(raw, 2000)
+    if prop in ("display_label", "help"):
+        return richtext.clean_text(raw, 300)
+    if prop == "placeholder":
+        return _text(raw, 120)
+    text = _text(raw, 200)                                    # src: una ruta que no sea de una imagen subida NO es válida (None); vacío = «no mostrar imagen»
+    return text if not text or IMAGE_PATH_RE.fullmatch(text) else None
+
+
+def _sanitize_variants(v, fields_in: dict, own_id: str, kind: str):
+    """Variantes de un elemento: {propiedad: {"items": [{"when": condición, "value", "name"?}], "default"?}}. Gana la primera cuya condición se cumple;
+    si ninguna, `default`; si no hay (o es vacío): content/src no ocupan espacio y las demás propiedades usan su valor propio."""
+    given = variants_of({"variants": v})
+    out, total = {}, 0
+    for prop in _variant_targets(kind):
+        data = given.get(prop)
+        if not data:
+            continue
+        raw_items = [it for it in (data.get("items") or []) if isinstance(it, dict)]
+        if len(raw_items) > MAX_VARIANTS_PER_PROP:
+            raise ValueError(f"Una propiedad admite hasta {MAX_VARIANTS_PER_PROP} variantes")
+        items = []
+        for it in raw_items:
+            when = _sanitize_condition(it.get("when"), fields_in, own_id)
+            if not when:
+                continue                                      # una variante sin condición nunca se aplicaría
+            value = _variant_value(prop, it.get("value"))
+            if value is None:
+                continue                                      # imagen con una ruta inválida: la variante se descarta
+            item = {"when": when, "value": value}
+            for extra in ("name", "group"):                # nombre de la variante y grupo (P10: el editor agrupa y pliega; no cambia qué se muestra)
+                label = _text(it.get(extra), 40)
+                if label:
+                    item[extra] = label
+            items.append(item)
+        default = _variant_value(prop, data.get("default")) or ""
+        if items or default:
+            out[prop] = {"items": items, **({"default": default} if default else {})}
+            total += len(items)
+    return out or None, total
+
+
+def pick_variant(field: dict, prop: str, values: dict, visible: Optional[set] = None) -> Optional[str]:
+    """Valor que se muestra de `prop`: sin variantes, el propio; con variantes, el de la primera cuya condición se cumple, o el `default`. `visible`: ids de los campos
+    visibles (una hoja sobre un campo oculto no cuenta; None = todos). Sin variante que aplique: None si la propiedad es ocultable (content, src), si no su valor propio.
+    Igual que `pickVariant` de static/js/form-render.js."""
+    v = variants_of(field).get(prop)
+    if not v:
+        return field.get(prop) or ""
+    for it in v["items"]:
+        if cond_tree_met(it["when"], values, lambda f: visible is None or f in visible):
+            return it["value"] or (None if prop in HIDEABLE_PROPS else field.get(prop) or "")
+    if v.get("default"):
+        return v["default"]
+    return None if prop in HIDEABLE_PROPS else field.get(prop) or ""
+
+
+def image_refs(design: dict):
+    """(dueño, clave) de cada ruta de imagen del diseño: la de los elementos imagen y las de sus variantes. Exportar/importar las lleva en el zip y cualquier barrido
+    de archivos sin uso debe contarlas como referencias vivas."""
+    for f in design["fields"].values():
+        if f.get("type") == "image":
+            yield f, "src"
+        for prop, data in variants_of(f).items():
+            if prop == "src":
+                for it in data.get("items") or []:
+                    yield it, "value"
+                if data.get("default"):
+                    yield data, "default"
+
+
+def _sanitize_cond_node(node, fields_in: dict, own_id: str, depth: int, leaves: list):
+    if isinstance(node, dict) and "rules" in node:
+        if depth > MAX_COND_DEPTH:
+            raise ValueError(f"Las condiciones admiten hasta {MAX_COND_DEPTH} niveles de grupos")
+        kids = [k for k in (_sanitize_cond_node(r, fields_in, own_id, depth + 1, leaves) for r in (node.get("rules") or [])[:MAX_GROUP_RULES]) if k]
+        if not kids:
+            return None
+        name = _text(node.get("name"), 40)
+        if len(kids) == 1 and not name:
+            return kids[0]
+        out = {"match": "any" if node.get("match") == "any" else "all", "rules": kids}
+        if name:
+            out["name"] = name
+        return out
+    leaves[0] += 1
+    if leaves[0] > MAX_COND_LEAVES:
+        raise ValueError(f"Una condición admite hasta {MAX_COND_LEAVES} reglas")
+    return _sanitize_rule(node, fields_in, own_id)
+
+
 def _sanitize_condition(cond, fields_in: dict, own_id: str):
-    """Regla de visibilidad: una sola regla {field, op, value} o un GRUPO {match: all|any, rules: [...]} (hasta 6 reglas; «all» = todas, «any» = alguna)."""
+    """Condición (regla de visibilidad o de una variante): hoja o árbol de grupos Y/O, ver arriba."""
     if not cond:
         return None
-    if isinstance(cond, dict) and "rules" in cond:
-        rules = [_sanitize_rule(r, fields_in, own_id) for r in (cond.get("rules") or [])[:6]]
-        if not rules:
-            return None
-        return rules[0] if len(rules) == 1 else {"match": "any" if cond.get("match") == "any" else "all", "rules": rules}
-    return _sanitize_rule(cond, fields_in, own_id)
+    return _sanitize_cond_node(cond, fields_in, own_id, 1, [0])
 
 
-def cond_rules(cond) -> list:
-    return [] if not cond else (cond["rules"] if "rules" in cond else [cond])
+def cond_leaves(cond) -> list:
+    """Todas las hojas {field, op, value} de una condición, en cualquier nivel."""
+    if not cond:
+        return []
+    if "rules" in cond:
+        return [leaf for r in cond["rules"] for leaf in cond_leaves(r)]
+    return [cond]
+
+
+def cond_tree_met(node: dict, values: dict, is_visible: Callable) -> bool:
+    """¿Se cumple la condición? Una hoja cuenta solo si su campo está visible (`is_visible(id)`) y se cumple con la normalización de P6; un grupo «all» pide todas, «any» alguna."""
+    if "rules" in node:
+        met = [cond_tree_met(r, values, is_visible) for r in node["rules"]]
+        return any(met) if node.get("match") == "any" else bool(met) and all(met)
+    return bool(is_visible(node["field"])) and condition_met(node, values)
 
 
 def _check_condition_cycles(fields: dict) -> None:
@@ -329,7 +567,7 @@ def _check_condition_cycles(fields: dict) -> None:
         if state.get(fid) == 2:
             return
         state[fid] = 1
-        for r in cond_rules(fields[fid].get("show_if")):
+        for r in cond_leaves(fields[fid].get("show_if")):
             walk(r["field"])
         state[fid] = 2
 
@@ -430,6 +668,7 @@ def public_design(design: dict) -> dict:
     para que se muestre la casilla del código."""
     out = json.loads(json.dumps(design))
     for f in out["fields"].values():
+        f.pop("internal_name", None)                       # el nombre interno es del diseñador: no se publica
         if f.get("type") == PAYMENT_TYPE and isinstance(f.get("pay"), dict):
             f["pay"]["codes"] = any(d.get("how") == "code" for d in f["pay"].get("discounts", []))
             for item in f["pay"].get("rules", []) + f["pay"].get("discounts", []):
@@ -574,12 +813,14 @@ def sanitize_settings(settings: dict) -> dict:
     if source not in ("event", "upload") and not re.fullmatch(r"event:\d+", source):
         raise ValueError("Fuente de datos para el pre-llenado no válida")
     out["prefill"] = {"mode": mode, "source": source}
-    for key in ("closed_template", "thanks"):
+    for key in ("closed_template", "thanks", "identify"):
         base = out[key]
-        given = s_in.get(key) or {}
+        given = s_in.get(key) if isinstance(s_in.get(key), dict) else {}
         for k in base:
             if k in given:
-                base[k] = _text(given[k], 600 if k == "text" else 200)
+                base[k] = richtext.clean_text(given[k], 600) if k == "text" else _text(given[k], 200)      # el texto admite formato; el título sigue siendo texto plano
+    if not IMAGE_PATH_RE.fullmatch(out["identify"]["image"]):      # la imagen del paso de cédula es SIEMPRE una ruta «cliente/archivo.ext» de las que sube el editor
+        out["identify"]["image"] = ""
     if out["thanks"]["mode"] not in ("template", "redirect"):
         out["thanks"]["mode"] = "template"
     if out["thanks"]["mode"] == "redirect" and not re.match(r"^https?://[^\s]+$", out["thanks"]["url"] or ""):
@@ -611,6 +852,13 @@ def _as_list(value) -> list:
     return [str(value)]
 
 
+def norm_value(x) -> str:
+    """Valor de una regla listo para comparar: sin tildes, sin mayúsculas y con los espacios colapsados («Bogota» = « bogotá »).
+    Debe coincidir con `norm` de static/js/form-render.js y static/js/form-sync.js."""
+    text = unicodedata.normalize("NFD", str(x))
+    return " ".join("".join(c for c in text if not unicodedata.combining(c)).split()).lower()
+
+
 def condition_met(cond: Optional[dict], values: dict) -> bool:
     if not cond:
         return True
@@ -618,7 +866,7 @@ def condition_met(cond: Optional[dict], values: dict) -> bool:
     have = _as_list(current)
     want = cond.get("value")
     op = cond.get("op", "equals")
-    norm = lambda x: str(x).strip().lower()
+    norm = norm_value
     if op == "filled":
         return bool(have) and (current is not False)
     if op == "equals":
@@ -636,16 +884,23 @@ def condition_met(cond: Optional[dict], values: dict) -> bool:
 def visible_ids(design: dict, values: dict) -> set:
     """Elementos que se muestran según las reglas. Un elemento cuyo «padre» está oculto también queda oculto."""
     fields = design["fields"]
-    memo = {}
+    memo, sheet_memo = {}, {}
+    sheet_at = sheet_of_field(design)
+    sheet_cond = {s["id"]: s.get("show_if") for s in design.get("sheets") or []}
+
+    def sheet_visible(sid):             # una hoja oculta por su condición oculta todos sus campos
+        if sid not in sheet_memo:
+            cond = sheet_cond.get(sid)
+            sheet_memo[sid] = True if not cond else cond_tree_met(cond, values, lambda f: f in fields and visible(f))
+        return sheet_memo[sid]
 
     def visible(fid):
         if fid in memo:
             return memo[fid]
         cond = fields[fid].get("show_if")
-        result = True
-        if cond:
-            met = [r["field"] in fields and visible(r["field"]) and condition_met(r, values) for r in cond_rules(cond)]
-            result = any(met) if cond.get("match") == "any" else all(met)
+        result = sheet_visible(sheet_at[fid]) if fid in sheet_at else True
+        if result and cond:
+            result = cond_tree_met(cond, values, lambda f: f in fields and visible(f))
         memo[fid] = result
         return result
 

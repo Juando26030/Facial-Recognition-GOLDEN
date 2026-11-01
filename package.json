@@ -1,0 +1,8 @@
+{
+  "name": "goldenweb-pruebas-js",
+  "private": true,
+  "description": "Solo dependencias de las pruebas de tests/js (la app no usa Node en ejecución).",
+  "devDependencies": {
+    "jsdom": "24.1.3"
+  }
+}
