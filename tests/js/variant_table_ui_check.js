@@ -33,7 +33,7 @@ const ctx = {
   },
 };
 w.fetch = async (url, o) => { log.fetches.push([url, o]); return w.__fetchAnswer(url, o); };
-w.URL.createObjectURL = () => 'blob:x'; w.URL.revokeObjectURL = () => {};
+log.blobs = []; w.URL.createObjectURL = (blob) => { log.blobs.push(blob); return 'blob:x'; }; w.URL.revokeObjectURL = () => {};
 log.downloads = []; w.HTMLAnchorElement.prototype.click = function () { log.downloads.push(this.download); };
 const host = w.document.getElementById('host');
 const t0 = process.hrtime.bigint();
@@ -151,6 +151,36 @@ const paste = (text, target) => { const ev = new w.Event('paste', { bubbles: tru
   click(q('[data-vt-act="undo"]')); await tick();
   assert.ok(!design.fields.p.variants, 'deshacer devuelve el diseño anterior');
   confirmAnswer = false; click(q('[data-vt-act="apply"]')); await tick(10); assert.strictEqual(log.applied.length, 1, 'sin confirmar no se aplica nada'); confirmAnswer = true;
+
+  // ---- plantillas de tabla (.json): se guardan las columnas y se reusan en otro formulario
+  const readBlob = (blob) => new Promise((res) => { const r = new w.FileReader(); r.onload = () => res(String(r.result)); r.readAsText(blob); });
+  log.blobs.length = 0; click(q('[data-vt-act="savetpl"]')); await tick(10);
+  const tplText = await readBlob(log.blobs[log.blobs.length - 1]);
+  const parsed = w.VariantTable.parseTemplate(tplText);
+  assert.ok(!parsed.error, parsed.error); assert.strictEqual(parsed.columns.length, 3); assert.deepStrictEqual(J(parsed.variables), ['Ciudad', 'Tipo']);
+  assert.ok(!/"field"|"id"|"late"/.test(tplText), 'la plantilla no lleva ids de campos');
+  assert.ok(log.downloads.includes('plantilla-de-tabla.json'));
+  const host2 = w.document.createElement('div'); w.document.body.appendChild(host2);
+  const ui2 = w.VariantTableUI.mount(host2, ctx);
+  const upTpl = async (h, text, name) => { const inp = h.querySelector('[data-vt-tpl]'); Object.defineProperty(inp, 'files', { value: [new w.File([text], name || 'plantilla.json')], configurable: true }); inp.dispatchEvent(new w.Event('change', { bubbles: true })); await tick(40); };
+  await upTpl(host2, tplText);
+  assert.deepStrictEqual(J(ui2.state.columns.map((c) => [c.name, c.field, c.prop, c.type])), [['Lugar', 'p', 'content', 'text'], ['Fecha', 'p2', 'content', 'date'], ['Foto', 'img', 'src', 'image']], 'cada columna se asigna al elemento con el mismo nombre');
+  assert.deepStrictEqual(J(ui2.state.varFields), ['c', 't']); assert.strictEqual(ui2.state.rows.length, 124);
+  assert.ok(/Se cargaron 3 columnas\./.test(host2.querySelector('.vt-status').textContent));
+  const other = tplText.replace('"Texto informativo"', '"Un elemento que no existe aquí"');
+  const nconf = log.confirms.length;
+  confirmAnswer = false; await upTpl(host2, other); assert.strictEqual(log.confirms.length, nconf + 1, 'con columnas ya puestas pide confirmación'); assert.strictEqual(ui2.state.columns[0].field, 'p', 'sin confirmar no cambia nada');
+  confirmAnswer = true; await upTpl(host2, other);
+  assert.strictEqual(ui2.state.columns[0].field, ''); assert.ok(/1 sin elemento/.test(host2.querySelector('.vt-status').textContent));
+  host2.querySelector('[data-vt-act="apply"]').click(); await tick(10);
+  assert.ok(log.toasts.some(([m]) => /«Lugar» no tiene elemento/.test(m)), 'una columna sin elemento no se aplica');
+  const f0 = host2.querySelector('[data-vt-colfield="0"]'); f0.value = 'p'; f0.dispatchEvent(new w.Event('change', { bubbles: true })); assert.strictEqual(ui2.state.columns[0].field, 'p'); assert.strictEqual(ui2.state.columns[0].prop, 'content');
+  for (const [text, name] of [['{"no es": "una plantilla"}', 'x.json'], ['no es json', 'x.json'], ['x'.repeat(100001), 'x.json'], [tplText, 'x.txt'], [tplText, 'x.json.exe']]) {
+    const before = log.toasts.length; await upTpl(host2, text, name);
+    assert.ok(log.toasts.length > before && log.toasts[log.toasts.length - 1][1] === 'error', name + ' -> ' + (log.toasts[log.toasts.length - 1] || [])[0]);
+  }
+  assert.strictEqual(ui2.state.columns.length, 3, 'lo hostil no cambia nada');
+  ui2.destroy();
 
   // ---- hojas (P12): una variante no puede usar un campo de una hoja posterior
   pickVar(0, 'late'); pickVar(1, ''); addCol('p', 'content', 'text', 'Otro');

@@ -236,7 +236,47 @@
     return { matches, unmatched, duplicated, rowsWithout };
   }
 
-  const api = { MAX_ROWS, MAX_COLS, MAX_VARS, MAX_PER_FORM, norm, parseCell, rowsFromVariables, build, applyTo, fromDesign, parsePaste, pasteInto, matchImages };
+  // ------------------------------------------------------------------ plantillas de tabla (.json, sin base de datos): solo las COLUMNAS (nombre, tipo, propiedad, opciones), nunca ids de campos
+  const TEMPLATE_FORMAT = 'goldenweb-plantilla-tabla', PROPS = ['content', 'src', 'display_label', 'help', 'placeholder'], TYPES = ['text', 'image', 'date', 'number', 'options'];
+  const clean = (x, max) => String(x == null ? '' : x).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  function exportTemplate(columns, variableLabels, labelOfField) {
+    return JSON.stringify({
+      formato: TEMPLATE_FORMAT, version: 1,
+      variables: (variableLabels || []).slice(0, MAX_VARS).map((l) => clean(l, 200)),
+      columnas: columns.slice(0, MAX_COLS).map((c) => ({ nombre: clean(c.name, 60), elemento: clean(labelOfField ? labelOfField(c.field) : '', 200), propiedad: c.prop, tipo: c.type, opciones: c.type === 'options' ? (c.options || []).slice(0, 200).map((o) => clean(o, 120)).filter(Boolean) : [] })),
+    }, null, 2);
+  }
+  // Lee una plantilla subida: valida TODO (forma, tipos, topes) y se queda solo con campos conocidos; el texto es texto (la pantalla lo escapa al pintarlo).
+  function parseTemplate(text) {
+    const fail = (error) => ({ error });
+    if (typeof text !== 'string' || text.length > 100000) return fail('La plantilla es demasiado grande (máximo 100 KB)');
+    let d;
+    try { d = JSON.parse(text); } catch (e) { return fail('El archivo no es una plantilla válida (no es JSON)'); }
+    if (!d || typeof d !== 'object' || Array.isArray(d) || d.formato !== TEMPLATE_FORMAT) return fail('El archivo no es una plantilla de tabla de variantes');
+    if (d.version !== 1) return fail('La versión de la plantilla no es compatible');
+    if (!Array.isArray(d.columnas) || !d.columnas.length || d.columnas.length > MAX_COLS) return fail(`La plantilla debe tener de 1 a ${MAX_COLS} columnas`);
+    const columns = [];
+    for (const c of d.columnas) {
+      if (!c || typeof c !== 'object' || Array.isArray(c)) return fail('Una columna de la plantilla no es válida');
+      const name = clean(c.nombre, 60);
+      if (!name) return fail('Una columna de la plantilla no tiene nombre');
+      if (!PROPS.includes(c.propiedad)) return fail(`La columna «${name}» tiene una propiedad desconocida`);
+      if (!TYPES.includes(c.tipo)) return fail(`La columna «${name}» tiene un tipo desconocido`);
+      if ((c.propiedad === 'src') !== (c.tipo === 'image')) return fail(`La columna «${name}»: la imagen solo va con la propiedad Imagen`);
+      let options = [];
+      if (c.tipo === 'options') {
+        if (!Array.isArray(c.opciones) || c.opciones.length > 200) return fail(`La columna «${name}» tiene demasiadas opciones (máximo 200)`);
+        const seen = new Set();
+        options = c.opciones.filter((o) => typeof o === 'string').map((o) => clean(o, 120)).filter((o) => o && !seen.has(norm(o)) && seen.add(norm(o)));
+        if (!options.length) return fail(`La columna «${name}» necesita al menos una opción`);
+      }
+      columns.push({ name, element: clean(c.elemento, 200), prop: c.propiedad, type: c.tipo, options });
+    }
+    const variables = Array.isArray(d.variables) ? d.variables.filter((v) => typeof v === 'string').map((v) => clean(v, 200)).filter(Boolean).slice(0, MAX_VARS) : [];
+    return { columns, variables };
+  }
+
+  const api = { exportTemplate, parseTemplate, MAX_ROWS, MAX_COLS, MAX_VARS, MAX_PER_FORM, norm, parseCell, rowsFromVariables, build, applyTo, fromDesign, parsePaste, pasteInto, matchImages };
   if (typeof window !== 'undefined') window.VariantTable = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();

@@ -56,7 +56,7 @@
           ${st.tooMany ? `<div class="vt-err" role="alert" style="color:#a1261b; font-size:.8rem;">${esc(st.tooMany)}</div>` : ''}</div>
         <div class="vt-sec" style="margin-top:8px;"><b>2. Qué cambia</b> <span class="hint">(1 a ${VT.MAX_COLS} columnas)</span>
           ${st.columns.map((c, i) => colHtml(c, i, flds)).join('')}${sheetProblem() ? `<div class="vt-err" role="alert" style="color:#a1261b; font-size:.8rem;">${esc(sheetProblem())}</div>` : ''}
-          <button type="button" class="small-btn" data-vt-act="addcol" ${st.columns.length >= VT.MAX_COLS ? 'disabled' : ''}>+ Agregar columna</button> <button type="button" class="small-btn" data-vt-act="load" ${st.columns.length && st.rows.length ? '' : 'disabled'} title="Trae a la tabla las variantes que el formulario ya tiene en estas columnas">Cargar lo que ya tiene el formulario</button></div>
+          <button type="button" class="small-btn" data-vt-act="addcol" ${st.columns.length >= VT.MAX_COLS ? 'disabled' : ''}>+ Agregar columna</button> <button type="button" class="small-btn" data-vt-act="savetpl" ${st.columns.length ? '' : 'disabled'} title="Guarda el nombre, el tipo y las opciones de las columnas en un archivo .json para reusarlas en otro formulario">Guardar columnas como plantilla (.json)</button> <label class="small-btn" style="cursor:pointer;">Usar una plantilla (.json)…<input type="file" data-vt-tpl accept=".json,application/json" style="display:none;"></label> <button type="button" class="small-btn" data-vt-act="load" ${st.columns.length && st.rows.length ? '' : 'disabled'} title="Trae a la tabla las variantes que el formulario ya tiene en estas columnas">Cargar lo que ya tiene el formulario</button></div>
         <div class="vt-sec" style="margin-top:8px;"><b>3. La tabla</b> <span class="hint">Haz clic en una celda para escribir, o pega un bloque copiado de Excel.</span>
           <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0;"><button type="button" class="small-btn" data-vt-act="download" ${st.rows.length && st.columns.length ? '' : 'disabled'}>Descargar Excel (.xlsx)</button><label class="small-btn" style="cursor:pointer;">Subir Excel…<input type="file" data-vt-upload accept=".xlsx" style="display:none;"></label>${st.columns.some((c) => c.type === 'image') ? '<label class="small-btn" style="cursor:pointer;" title="Se empareja por el nombre del archivo ANTES de subir nada; solo se suben las que emparejan">Imágenes…<input type="file" data-vt-images accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none;"></label>' : ''}</div>
           <div class="vt-gridwrap" tabindex="0" aria-label="Tabla de variantes" style="max-height:340px; overflow:auto; border:1px solid #ddd; border-radius:8px;">${gridHtml()}</div>
@@ -183,6 +183,35 @@
       } catch (e) { ctx.toast('No se pudo leer el Excel', 'error'); }
     }
 
+    // ---------------------------------------------------------------- plantillas de columnas (.json): solo nombre, tipo, propiedad y opciones; nada de ids de campos
+    function saveTemplate() {
+      const json = VT.exportTemplate(st.columns, st.varFields.map(ctx.fieldLabel), (id) => (id ? ctx.fieldLabel(id) : ''));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = 'plantilla-de-tabla.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+    function loadTemplate(file) {
+      if (!file) return;
+      if (!/\.json$/i.test(file.name) || file.size > 100000) { ctx.toast('Sube una plantilla .json (máximo 100 KB)', 'error'); return; }
+      const rd = new FileReader();
+      rd.onload = async () => {
+        const t = VT.parseTemplate(String(rd.result));
+        if (t.error) { ctx.toast(t.error, 'error'); return; }
+        if (st.columns.length && !(await ctx.confirm('La plantilla reemplaza las columnas actuales de la tabla (lo escrito en ellas se pierde). ¿Continuar?', { confirmLabel: 'Usar la plantilla' }))) return;
+        const flds = ctx.fields();
+        const pick = (c) => { const f = flds.find((x) => VT.norm(x.label) === VT.norm(c.element) && ctx.propsOf(x.id).includes(c.prop)); return f ? f.id : ''; };
+        st.columns = t.columns.map((c) => ({ id: uidCol(), name: c.name, field: pick(c), prop: c.prop, type: c.type, options: c.options }));
+        if (!st.varFields.length && t.variables.length) {   // si la plantilla recuerda qué decidía, se proponen los campos con ese nombre
+          st.varFields = t.variables.map((l) => choice().find((f) => VT.norm(f.label) === VT.norm(l))).filter(Boolean).map((f) => f.id).filter((id, i, a) => a.indexOf(id) === i); st.subsets = []; regen();
+        }
+        st.rows.forEach((r) => { r.cells = {}; });
+        paint();
+        const loose = st.columns.filter((c) => !c.field).length;
+        status(`Se cargaron ${st.columns.length} columnas${loose ? `; ${loose} sin elemento: elige a qué elemento apunta cada una` : ''}.`);
+      };
+      rd.onerror = () => ctx.toast('No se pudo leer la plantilla', 'error');
+      rd.readAsText(file);
+    }
+
     // ---------------------------------------------------------------- imágenes: se empareja por nombre EN EL NAVEGADOR y solo lo que empareja se sube (lo subido nunca se borra)
     const MAX_IMG_BYTES = 8000000, MAX_IMG_FILES = 200;
     async function pickImages(fileList) {
@@ -224,6 +253,8 @@
     async function apply() {
       endEdit();
       const s = spec();
+      const loose = st.columns.find((c) => !c.field || !c.prop);
+      if (loose) { ctx.toast(`La columna «${loose.name || 'sin nombre'}» no tiene elemento: elige a cuál se aplica`, 'error'); return; }
       if (sheetProblem()) { ctx.toast(sheetProblem(), 'error'); return; }
       const built = VT.build(s, ctx.design().fields, { otherVariants: outsideCount() });
       if (built.error) { ctx.toast(built.error, 'error'); return; }
@@ -249,11 +280,12 @@
         const picked = Array.from(host.querySelectorAll(`[data-vt-subset="${i}"]:checked`)).map((x) => x.value);
         st.subsets[i] = picked.length === all.length ? null : picked; regen(); paint();
       } else if (t.dataset.vtColfield !== undefined) {
-        const c = st.columns[+t.dataset.vtColfield]; c.field = t.value; const props = c.field ? ctx.propsOf(c.field) : []; c.prop = props[0] || ''; c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); if (!c.name && c.field) c.name = ctx.propLabel(c.prop); paint();
+        const c = st.columns[+t.dataset.vtColfield]; c.field = t.value; const props = c.field ? ctx.propsOf(c.field) : []; c.prop = props.includes(c.prop) ? c.prop : (props[0] || ''); c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); if (!c.name && c.field) c.name = ctx.propLabel(c.prop); paint();
       } else if (t.dataset.vtColprop !== undefined) {
         const c = st.columns[+t.dataset.vtColprop]; c.prop = t.value; c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); paint();
       } else if (t.dataset.vtColtype !== undefined) { st.columns[+t.dataset.vtColtype].type = t.value; paint(); }
       else if (t.dataset.vtColopts !== undefined) { st.columns[+t.dataset.vtColopts].options = t.value.split('\n').map((x) => x.trim()).filter(Boolean); host.querySelector('.vt-gridwrap').innerHTML = gridHtml(); validateAll(); }
+      else if (t.dataset.vtTpl !== undefined) { const f = t.files[0]; t.value = ''; loadTemplate(f); }
       else if (t.dataset.vtImages !== undefined) { const fl = Array.from(t.files || []); t.value = ''; pickImages(fl); }
       else if (t.dataset.vtUpload !== undefined) { const f = t.files[0]; t.value = ''; upload(f); }
     };
@@ -271,6 +303,7 @@
         host.querySelector('.vt-gridwrap').innerHTML = gridHtml(); validateAll();
         status(r.skipped ? `Se cargó lo que tiene forma de tabla. ${r.skipped} ${r.skipped === 1 ? 'variante' : 'variantes'} de estas columnas (por ejemplo con «alguno de» o varios grupos) no se pueden mostrar aquí y se reemplazarán al aplicar.` : 'Se cargó lo que ya tiene el formulario.');
       } else if (act === 'download') download();
+      else if (act === 'savetpl') saveTemplate();
       else if (act === 'apply') apply();
       else if (act === 'undo') { if (st.undo) { const ok = st.undo(); st.undo = null; ctx.toast(ok === false ? 'El diseño ya se guardó: la tabla no se puede deshacer' : 'Se deshizo la tabla aplicada', ok === false ? 'error' : 'success'); paint(); } }
     };
