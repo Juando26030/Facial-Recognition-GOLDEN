@@ -53,7 +53,9 @@ def _collect(session: Session, flush_context, instances) -> None:
             tenants.add(obj.tenant_id)
     # Una persona con rostro que entra o sale de un evento sube la versión de ESE evento. Antes: una consulta a la base POR inscripción («¿tiene rostro?»); con 8.000 inscripciones eran 8.000
     # viajes. Ahora: lo pendiente en la sesión se resuelve en memoria y lo demás con UNA consulta por cada 2.000 cédulas (misma regla: tiene `face_encoding`).
-    attendees = [o for o in list(session.new) + list(session.deleted) if isinstance(o, EventAttendee) and o.tenant_id not in tenants and o.event_id is not None]
+    skip = session.info.get("faces_no_bump", ())          # «solo agregar»: personas que se inscriben sin aceptación en el evento (no entran a la matriz): la versión no sube, el quiosco no la reconstruye
+    attendees = [o for o in list(session.new) + list(session.deleted) if isinstance(o, EventAttendee) and o.tenant_id not in tenants and o.event_id is not None
+                 and (o.tenant_id, o.user_id) not in skip]
     if attendees:
         pending = {(u.tenant_id, u.id): u for u in session.new if isinstance(u, User)}
         to_ask: dict = {}

@@ -27,7 +27,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -1635,20 +1635,20 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 @router.post("/bulk_roster")
 def bulk_roster(
     event_id: int = Form(...), roster_file: UploadFile = File(None), field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(True),
-    roster_upload: str = Form(None), overwrite_birth: str = Form(None),
+    roster_upload: str = Form(None), overwrite_birth: str = Form(None), append_only: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga de SOLO la base (Excel/CSV, sin fotos). Es la misma carga que `bulk_register`, pero esta ruta la sirve el servicio WEB (sin dlib): `bulk_register` vive en el servicio de BIOMETRÍA (ver
     app/appmode.py), que se apaga cuando no se usa y al arrancar carga el modelo facial: ese arranque en frío (~15 s) lo pagaba hasta una carga de una sola persona."""
     return bulk_register(event_id=event_id, roster_file=roster_file, zip_file=None, field_labels=field_labels, source_event_id=source_event_id, background=background, photos_authorized=None,
-                         roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, db=db, staff=staff)
+                         roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, append_only=append_only, db=db, staff=staff)
 
 
 @router.post("/bulk_register")
 def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
     field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
-    roster_upload: str = Form(None), zip_upload: str = Form(None), overwrite_birth: str = Form(None),
+    roster_upload: str = Form(None), zip_upload: str = Form(None), overwrite_birth: str = Form(None), append_only: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
@@ -1656,6 +1656,15 @@ def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    append = _truthy(append_only)          # «solo agregar personas nuevas» (app/roster_append.py): se valida ANTES de leer nada
+    if append and (zip_upload or (zip_file is not None and bool(zip_file.filename))):
+        raise HTTPException(status_code=400, detail=roster_append.ZIP_REJECTED)
+    if append and source_event_id:
+        raise HTTPException(status_code=400, detail=roster_append.SOURCE_REJECTED)
+    if append and not (roster_upload or (roster_file is not None and bool(roster_file.filename))):
+        raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
+    if append and not background:
+        raise HTTPException(status_code=400, detail="«Solo agregar personas nuevas» se ejecuta por pasos (background=true).")
     has_zip = bool(zip_upload) or (zip_file is not None and bool(zip_file.filename))
     zip_ignored = bool(event.biometrics_locked and has_zip)
     if zip_ignored:          # candado «sin biometría»: las fotos NO se leen, no se guardan y no encienden el rostro (el aviso sale en el resultado)
@@ -1667,6 +1676,10 @@ def bulk_register(
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     has_roster = bool(roster_upload) or (roster_file is not None and bool(roster_file.filename))
     use_steps, why = bulk_steps.decide(event, has_zip, has_roster)
+    if append and not use_steps:
+        raise HTTPException(status_code=400, detail=f"«Solo agregar personas nuevas» no está disponible en este servidor ({why}).")
+    if append and (blocked := event_rules.roster_block_reason(event, append_only=True)):
+        raise HTTPException(status_code=400, detail=blocked)
     if background:      # por qué camino va CADA carga (sin datos personales): así se ve en el log si una carga solo de Excel cae al Job y por qué
         log.info("carga masiva: camino=%s motivo=%s backend=%s evento=%s", "pasos" if use_steps else ("job" if bulk_jobs.uses_cloud_run() else "hilo"), why,
                  os.getenv("BULK_BACKEND", "thread"), event.id)
@@ -1679,7 +1692,7 @@ def bulk_register(
     roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
     zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
     args = dict(event_id=event_id, roster_filename=roster_filename,
-                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth))
+                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth), append_only=append)
 
     def cleanup(result):
         # NEEDS_LABELS: el navegador reenvía la MISMA carga con los nombres de las columnas; los archivos temporales tienen que seguir ahí.
@@ -1795,7 +1808,7 @@ def bulk_job_status(
 
 
 def _bulk_register_impl(
-    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False, step: Optional[dict] = None,
+    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False, step: Optional[dict] = None, append_only: bool = False,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -1822,10 +1835,18 @@ def _bulk_register_impl(
     event = get_event_for_staff(event_id, db, staff)
     # Una sola regla (app/event_rules.py `roster_block_reason`), la misma que usa la pantalla para avisar ANTES: finalizado nunca; en proceso solo si todavía no tuvo una carga exitosa
     # (volver a cargar pisaría o duplicaría registros hechos en vivo, 2026-09-22). En los pasos siguientes al primero no se repite: el primero ya la aplicó.
-    blocked = None if resume else event_rules.roster_block_reason(event)
+    blocked = None if resume else event_rules.roster_block_reason(event, append_only=append_only)
     if blocked:
         raise HTTPException(status_code=400, detail=blocked)
 
+    if append_only and not resume:          # «solo agregar» (app/roster_append.py): solo por pasos, solo con el archivo de la base, sin fotos ni eventos de origen, sin crear campos
+        if zip_bytes:
+            raise HTTPException(status_code=400, detail=roster_append.ZIP_REJECTED)
+        if source_event_id:
+            raise HTTPException(status_code=400, detail=roster_append.SOURCE_REJECTED)
+        if content is None or not step or step.get("phase") != "prepare":
+            raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
+        field_labels = None
     if not resume:
         # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
         # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
@@ -1847,7 +1868,7 @@ def _bulk_register_impl(
         if len(rows) > ROSTER_MAX_ROWS:
             raise HTTPException(status_code=400, detail=f"El archivo tiene {len(rows):,} filas y el máximo es {ROSTER_MAX_ROWS:,} por carga. Divídelo en varios archivos y cárgalos uno tras otro.".replace(",", "."))
         # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
-        header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
+        header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels(), create_fields=not append_only)
         phases.mark("columnas")
         # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
         birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
@@ -1986,7 +2007,7 @@ def _bulk_register_impl(
 
         id_col = next((header_columns[k] for k in _ID_KEYS if k in header_columns), None)
         for id_val, row_nums in seen_rows_by_id.items():
-            if len(row_nums) > 1:
+            if len(row_nums) > 1 and not append_only:
                 cells = ", ".join(f"{id_col}{n}" if id_col else f"fila {n}" for n in row_nums)
                 errors.append(
                     f"⚠️ La cédula '{id_val}' aparece repetida en {len(row_nums)} filas ({cells}) — "
@@ -1997,8 +2018,9 @@ def _bulk_register_impl(
         if step and step.get("phase") == "prepare":      # solo la preparación: se devuelve lo que los pasos necesitan (la persistencia la hace app/bulk_steps.py)
             phases.mark("prescan")
             phases.emit(len(rows))
-            return {"prepared": {"header_columns": header_columns, "rows": rows, "columns_report": columns_report, "birth_used": birth_used, "birth_ignored_rows": birth_ignored_rows},
-                    "state": {"pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
+            return {"prepared": {"header_columns": header_columns, "rows": rows, "columns_report": columns_report, "birth_used": birth_used, "birth_ignored_rows": birth_ignored_rows,
+                                 **({"dup_rows": roster_append.duplicate_rows(row_infos)} if append_only else {})},
+                    "state": {**({"append_only": True, "append": roster_append.new_state()} if append_only else {}), "pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
                               "carried_ids": sorted(carried_ids), "source_name": source_name, "overwrite_birth": bool(overwrite_birth)}}
     else:
         # Reanudación: lo preparado y el avance vienen del paso anterior (guardados cifrados); aquí solo se arman las filas de ESTE paso.
@@ -2006,6 +2028,7 @@ def _bulk_register_impl(
         header_columns, rows, columns_report = prepared["header_columns"], prepared["rows"], prepared["columns_report"]
         birth_used, birth_ignored_rows = prepared["birth_used"], prepared["birth_ignored_rows"]
         errors, carried_ids, source_name = state["errors"], set(state["carried_ids"]), state["source_name"]
+        append_only = bool(state.get("append_only"))
         zip_encodings, zip_photos, precalc = {}, set(), False        # los pasos solo atienden cargas SIN fotos ni pre-cálculo (el resto va por el camino de siempre)
         progress = progress or (lambda *a, **k: None)
         total_units, done_units = len(rows), state["pos"]
@@ -2016,6 +2039,8 @@ def _bulk_register_impl(
             identificador, id_cell, id_note = _extract_identificador(clean_row, header_columns, row_num)
             row_infos.append({"row_num": row_num, "clean_row": clean_row, "identificador": identificador, "id_cell": id_cell, "notes": [id_note] if id_note else []})
         phases.mark("armar_filas")
+    if append_only:          # el resto de esta función es la carga normal (pisa a los existentes); «solo agregar» tiene su propio recorrido de filas
+        return roster_append.run_step(db, event, staff, step, row_infos, header_columns, columns_report, birth_used, prepared, state, step_pos, step_end, len(rows), progress)
     if not resume:
         count = 0
         birth_bad_rows, birth_kept_rows, birth_completed, birth_replaced = [], [], 0, 0

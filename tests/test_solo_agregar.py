@@ -13,3 +13,112 @@ def test_append_only_is_allowed_in_progress_but_never_finalized(status, uploaded
     ev = Event(status=status, roster_uploaded=uploaded)
     assert bool(event_rules.roster_block_reason(ev)) is normal_blocked
     assert bool(event_rules.roster_block_reason(ev, append_only=True)) is append_blocked
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ carga
+import json
+
+from fastapi.testclient import TestClient  # noqa: E402,F401
+
+from app import roster_append  # noqa: E402
+from app.models import AuditConsentLog, EventAttendee, User  # noqa: E402
+from tests.conftest import login  # noqa: E402
+
+SHEET = ("id,nombres,apellidos,cargo,entidad,correo,Talla de camiseta,opcional_5,categoria\n"
+         "1001,Ana,Nueva,Jefa,Acme,ana@example.com,M,x,General\n"
+         "1002,Beto,Nuevo,,,beto@example.com,L,y,VIP-inexistente\n"
+         "1001,Ana,Repetida,Otra,Otra,otra@example.com,S,z,General\n"          # repetida en la hoja: gana la primera
+         "2001,Pisado,Pisado,Pisado,Pisado,pisado@example.com,XL,w,\n"          # ya está en el evento: NO se toca
+         "3001,Cliente,Pisado,Pisado,Pisado,otro@example.com,XL,w,\n"           # existe en el cliente, no en el evento: solo se inscribe
+         ",SinCedula,X,,,,,,\n")
+
+
+def _post_append(client, ev, data=SHEET, **extra):
+    body = data.encode("utf-8") if isinstance(data, str) else data
+    return client.post("/api/bulk_register", data={"event_id": str(ev.id), "background": "true", "append_only": "true", **extra}, files={"roster_file": ("n.csv", body, "text/csv")})
+
+
+def _drive(client, first, limit=200):
+    st, calls = first, 0
+    while st["status"] not in ("done", "error") and calls < limit:
+        st = client.post(f"/api/bulk_jobs/{first['job_id']}/step").json()
+        calls += 1
+    return st
+
+
+@pytest.fixture()
+def live(client, factory, db):
+    """Evento EN PROCESO con la base ya cargada y gente que se registró en vivo."""
+    factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso", roster_uploaded=True, event_categories=json.dumps(["General"])) if False else factory.event("en_proceso", roster_uploaded=True)
+    ev.set_categories(["General"])
+    db.commit()
+    for uid in ("2001",):
+        factory.person(ev, uid, first_name="Original", last_name="Original")
+    factory.person(ev, "3001", first_name="Cliente", last_name="Original", attend=False)          # existe en el cliente (otro evento), no en este
+    other = db.query(User).filter_by(id="2001", tenant_id=ev.tenant_id).first()
+    other.role, other.email, other.face_encoding = "Cargo original", "original@example.com", "[[0.1]]"
+    db.commit()
+    login(client, "coord1")
+    return ev
+
+
+def _snapshot_user(db, ev, uid):
+    db.expire_all()
+    u = db.query(User).filter_by(id=uid, tenant_id=ev.tenant_id).first()
+    return (u.first_name, u.last_name, u.role, u.entity, u.email, u.phone, u.face_encoding, u.birth_date, u.get_extras() if hasattr(u, "get_extras") else None)
+
+
+def test_append_creates_only_new_people_and_touches_nobody_else(client, live, db):
+    ev = live
+    before = {uid: _snapshot_user(db, ev, uid) for uid in ("2001", "3001")}
+    labels_before, cats_before = dict(ev.get_optional_labels()), list(ev.get_categories())
+    first = _post_append(client, ev)
+    assert first.status_code == 200, first.text
+    st = _drive(client, first.json())
+    assert st["status"] == "done", st
+    rep = st["result"]["append"]
+    assert (rep["created"], rep["enrolled_existing"], rep["existing"], rep["duplicates"], rep["errors"]) == (2, 1, 1, 1, 1)
+    assert rep["columns_ignored"] == 2 and rep["unknown_categories"] == ["VIP-inexistente"]
+    db.expire_all()
+    assert {uid: _snapshot_user(db, ev, uid) for uid in ("2001", "3001")} == before            # NADA de las existentes cambió
+    assert db.query(EventAttendee).filter_by(event_id=ev.id, user_id="3001").count() == 1      # pero la del cliente quedó inscrita en el evento
+    ana = db.query(User).filter_by(id="1001", tenant_id=ev.tenant_id).first()
+    assert (ana.first_name, ana.last_name, ana.role, ana.email) == ("Ana", "Nueva", "Jefa", "ana@example.com")          # la primera fila, no la repetida
+    beto = db.query(User).filter_by(id="1002", tenant_id=ev.tenant_id).first()
+    assert beto.role == "" and beto.entity == "" and db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1002").first().get_categories() == []   # vacío donde la hoja no trae; categoría inexistente ignorada
+    assert db.query(EventAttendee).filter_by(event_id=ev.id, user_id="1001").first().get_categories() == ["General"]
+    ev2 = db.get(type(ev), ev.id)
+    assert dict(ev2.get_optional_labels()) == labels_before and list(ev2.get_categories()) == cats_before          # no se crearon campos ni categorías
+    assert "@" not in json.dumps(st) and "1001" not in json.dumps(st) and "Ana" not in json.dumps(st)             # ni cédulas ni nombres ni correos en el informe
+
+
+def test_uploading_the_same_file_twice_creates_nothing_the_second_time(client, live, db):
+    ev = live
+    _drive(client, _post_append(client, ev).json())
+    n_users, n_att = db.query(User).count(), db.query(EventAttendee).filter_by(event_id=ev.id).count()
+    again = _drive(client, _post_append(client, ev).json())["result"]["append"]
+    assert again["created"] == 0 and again["enrolled_existing"] == 0 and again["existing"] >= 4
+    db.expire_all()
+    assert db.query(User).count() == n_users and db.query(EventAttendee).filter_by(event_id=ev.id).count() == n_att
+
+
+def test_zip_and_source_events_are_rejected_and_finalized_events_refuse(client, live, db):
+    ev = live
+    r = client.post("/api/bulk_register", data={"event_id": str(ev.id), "background": "true", "append_only": "true"},
+                    files={"roster_file": ("n.csv", SHEET.encode(), "text/csv"), "zip_file": ("f.zip", b"PK", "application/zip")})
+    assert r.status_code == 400 and r.json()["detail"] == roster_append.ZIP_REJECTED
+    assert _post_append(client, ev, source_event_id="5").status_code == 400
+    ev.status = "finalizado"
+    db.commit()
+    assert _post_append(client, ev).status_code == 400
+
+
+def test_the_normal_load_stays_blocked_in_progress_and_is_not_changed(client, live):
+    r = client.post("/api/bulk_register", data={"event_id": str(live.id), "background": "true"}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")})
+    assert r.json()["status"] == "error" and "EN PROCESO" in r.json()["error"]["detail"]          # por pasos el rechazo viaja en la tarea
+
+
+def test_append_does_not_need_labels_for_unknown_columns_and_ignores_field_labels(client, live, db):
+    st = _drive(client, _post_append(client, live, field_labels=json.dumps({"opcional_5": "Intento"})).json())
+    assert st["status"] == "done" and "opcional_5" not in live.get_optional_labels()

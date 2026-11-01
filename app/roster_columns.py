@@ -52,10 +52,11 @@ def _pretty(title: str) -> str:
     return t[:1].upper() + t[1:]
 
 
-def canonicalize(header_columns: dict, rows: list, event_labels: dict):
+def canonicalize(header_columns: dict, rows: list, event_labels: dict, create_fields: bool = True):
     """(header_columns, rows) tal como salen de la lectura (títulos en minúscula) → (header_columns, rows, informe, etiquetas_nuevas) con los títulos conocidos renombrados a su nombre canónico y los
     títulos propios reasignados a un campo opcional libre. `event_labels` = {opcional_N: etiqueta} que el evento ya tiene (un título igual a una etiqueta existente REUTILIZA ese campo).
-    `etiquetas_nuevas` = {opcional_N: título} solo de los campos que hay que crear. Informe: {"recognized": [{title, field}], "created": [{title, field}], "unused": [{title, reason}]}."""
+    `etiquetas_nuevas` = {opcional_N: título} solo de los campos que hay que crear. Con `create_fields=False` («solo agregar») NUNCA se crea un campo: la columna que no corresponde a un campo que el
+    evento ya tiene queda como «no usada» en el informe. Informe: {"recognized": [{title, field}], "created": [{title, field}], "unused": [{title, reason}]}."""
     rename, report = {}, {"recognized": [], "created": [], "unused": []}
     taken = set()                                                   # nombres canónicos ya asignados (una segunda columna del mismo campo no se usa)
     explicit = {optional_key(h) for h in header_columns} - {None}
@@ -66,6 +67,9 @@ def canonicalize(header_columns: dict, rows: list, event_labels: dict):
     for h in header_columns:
         key = optional_key(h)
         if key:
+            if not create_fields and key not in event_labels:
+                report["unused"].append({"title": h, "reason": "este evento no tiene ese campo opcional: no se crean campos nuevos"})
+                continue
             rename[h] = key
             report["recognized" if has_data[h] else "unused"].append({"title": h, "field": event_labels.get(key) or f"Opcional {key.split('_')[1]}"} if has_data[h]
                                                                     else {"title": h, "reason": "columna opcional vacía"})
@@ -84,6 +88,9 @@ def canonicalize(header_columns: dict, rows: list, event_labels: dict):
             continue
         slot = by_label.get(norm(h)) or next((k for k, v in new_labels.items() if norm(v) == norm(h)), None)
         created = False
+        if slot is None and not create_fields:
+            report["unused"].append({"title": h, "reason": "no corresponde a ningún campo de este evento: no se crean campos nuevos"})
+            continue
         if slot is None:
             slot = next((f"opcional_{n}" for n in range(1, MAX_OPTIONAL_FIELDS + 1) if f"opcional_{n}" not in used_slots), None)
             if slot is None:

@@ -22,7 +22,7 @@ from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, crypto
+from app import bulk_jobs, crypto, roster_append
 from app.auth import get_event_for_staff
 from app.models import BulkJob, Event, StaffUser
 from app.storage import get_storage, key_of
@@ -149,6 +149,8 @@ def start(db: Session, event: Event, staff: StaffUser, args: dict, cleanup) -> d
     job.total, job.done, job.stage, job.updated_at = total, 0, "Listo para guardar", utcnow()
     db.commit()
     # El PRIMER paso corre en esta misma petición (sin esperar otro viaje del navegador): con hasta 500 filas la carga termina aquí; con más, la primera respuesta ya trae el avance.
+    if res["state"].get("append_only"):               # «solo agregar»: lotes pequeños (un commit cada uno) para no estorbar al registro en vivo, también el primero
+        return run_step(db, job_id, staff, limit=roster_append.APPEND_ROWS)
     return run_step(db, job_id, staff, limit=total if total <= SYNC_ROWS else STEP_ROWS)
 
 
@@ -174,7 +176,7 @@ def run_step(db: Session, job_id: str, staff: StaffUser, limit: Optional[int] = 
         return serialize_job(job)
     try:
         res = api._bulk_register_impl(db, staff, event_id=job.event_id, roster_filename=None, content=None, zip_bytes=None, field_labels=None, source_event_id=None,
-                                      step={"phase": "rows", "prepared": prepared, "state": state, "limit": limit or STEP_ROWS})
+                                      step={"phase": "rows", "prepared": prepared, "state": state, "limit": roster_append.APPEND_ROWS if state.get("append_only") else (limit or STEP_ROWS)})
         if res.get("done") is False:
             job.done, job.updated_at = res["state"]["pos"], utcnow()
             job.stage = f"Guardando personas ({job.done} de {job.total})"
