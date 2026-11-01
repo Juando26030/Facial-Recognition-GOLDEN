@@ -47,3 +47,22 @@ assert.strictEqual(T.prune(L('a'), 'a'), null);
 assert.strictEqual(T.prune({ match: 'all', rules: [L('a'), L('a')] }, 'a'), null);
 assert.deepStrictEqual(T.prune(L('a'), 'zzz'), L('a'));
 console.log('cond_tree_check OK');
+
+// P10: resumen de una línea y tandas de filas con la misma condición
+const label = (id) => ({ c: 'Ciudad', t: 'Tipo', e: 'Entidad' }[id] || id);
+assert.strictEqual(T.summary(null, label), '');
+assert.strictEqual(T.summary({ field: 'c', op: 'equals', value: 'Bogotá' }, label), 'Ciudad = Bogotá');
+assert.strictEqual(T.summary({ field: 'c', op: 'in', value: ['Bogotá', 'Cali'] }, label), 'Ciudad es Bogotá / Cali');
+assert.strictEqual(T.summary({ field: 'e', op: 'filled', value: '' }, label), 'Entidad tiene respuesta');
+assert.strictEqual(T.summary({ field: 'c', op: 'equals', value: '' }, label), 'Ciudad = …');
+assert.strictEqual(T.summary({ match: 'all', rules: [{ field: 'c', op: 'equals', value: 'Bogotá' }, { field: 't', op: 'equals', value: 'Empleado' }] }, label), 'Ciudad = Bogotá y Tipo = Empleado');
+assert.strictEqual(T.summary({ match: 'all', rules: [{ field: 't', op: 'equals', value: 'Empleado' }, { match: 'any', rules: [{ field: 'c', op: 'equals', value: 'Bogotá' }, { field: 'c', op: 'equals', value: 'Cali' }] }] }, label), 'Tipo = Empleado y (Ciudad = Bogotá o Ciudad = Cali)');
+assert.strictEqual(T.summary({ match: 'any', name: 'Costa', rules: [{ field: 'c', op: 'equals', value: 'Santa Marta' }, { field: 'c', op: 'equals', value: 'Cartagena' }] }, label), 'Costa: Ciudad = Santa Marta o Ciudad = Cartagena');
+const cnd = { field: 'c', op: 'equals', value: 'Bogotá' }, other = { field: 'c', op: 'equals', value: 'Cali' };
+const fields = { a: { show_if: cnd }, b: { show_if: cnd }, d: { show_if: cnd }, e: { show_if: other }, f: {}, g: { show_if: other }, h: { show_if: other } };
+const rows = [{ items: ['a'] }, { items: ['b', 'd'] }, { items: ['f'] }, { items: ['e'] }, { items: ['g'] }, { items: ['h'] }, { items: ['a', 'e'] }];
+const bs = T.bands(rows, fields).map((b) => [b.start, b.end]);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(bs)), [[0, 2], [3, 6]], 'a+b/d comparten condición; la fila mixta y la sin condición no cuentan');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(T.bands([{ items: ['a'] }, { items: ['f'] }, { items: ['a'] }], fields))), [], 'una fila sola no forma tanda');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(T.bands([{ items: ['a'], sheet: 's1' }, { items: ['b'], sheet: 's2' }], fields))), [], 'una tanda no cruza hojas');
+console.log('cond_tree_check (P10) OK');

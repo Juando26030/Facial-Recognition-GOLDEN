@@ -45,7 +45,37 @@
     return compact({ ...n, rules: n.rules.map((r) => prune(r, fieldId)).filter(Boolean) });
   }
 
-  const api = { MAX_DEPTH, MAX_GROUP_RULES, MAX_LEAVES, isGroup, group, leaves, depth, at, update, remove, canAddLeaf, canAddGroup, addLeaf, addGroup, compact, prune };
+  // Resumen de una línea (P10): «Ciudad = Bogotá y Tipo = Empleado»; los subgrupos van entre paréntesis y un grupo con nombre empieza por «Nombre: ».
+  const OPS = { equals: '=', not_equals: '≠', contains: 'contiene', in: 'es', filled: 'tiene respuesta' };
+  function summary(n, labelOf) {
+    if (!n) return '';
+    if (!isGroup(n)) {
+      const v = Array.isArray(n.value) ? n.value.join(' / ') : n.value;
+      return `${labelOf(n.field)} ${OPS[n.op] || n.op}${n.op === 'filled' ? '' : ' ' + (v === '' || v == null ? '…' : v)}`;
+    }
+    const parts = n.rules.map((r) => (isGroup(r) && r.rules.length > 1 && !r.name ? '(' + summary(r, labelOf) + ')' : summary(r, labelOf))).filter(Boolean);
+    const joined = parts.join(n.match === 'any' ? ' o ' : ' y ');
+    return n.name ? `${n.name}: ${joined}` : joined;
+  }
+  // Tandas de 2 o más filas seguidas con la MISMA condición (para plegarlas en el lienzo): [{start, end, key, cond}] con `end` exclusivo. Una fila solo cuenta si todos sus elementos tienen la misma condición.
+  function bands(rows, fields) {
+    const keyOf = (row) => {
+      const ks = row.items.map((id) => { const c = fields[id] && fields[id].show_if; return c ? JSON.stringify(c) : ''; });
+      return ks.length && ks[0] && ks.every((k) => k === ks[0]) ? ks[0] : '';
+    };
+    const out = [];
+    let i = 0;
+    while (i < rows.length) {
+      const k = keyOf(rows[i]);
+      let j = i + 1;
+      while (k && j < rows.length && keyOf(rows[j]) === k && (rows[j].sheet || '') === (rows[i].sheet || '')) j++;
+      if (k && j - i >= 2) out.push({ start: i, end: j, key: k, cond: JSON.parse(k) });
+      i = j;
+    }
+    return out;
+  }
+
+  const api = { summary, bands, MAX_DEPTH, MAX_GROUP_RULES, MAX_LEAVES, isGroup, group, leaves, depth, at, update, remove, canAddLeaf, canAddGroup, addLeaf, addGroup, compact, prune };
   if (typeof window !== 'undefined') window.CondTree = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();
