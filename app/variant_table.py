@@ -305,9 +305,11 @@ def _read_meta(wb) -> dict:
     return out
 
 
-def read_table(data: bytes, filename: str, spec: dict) -> dict:
+def read_table(data: bytes, filename: str, spec: dict, mapping: Optional[dict] = None, ask: bool = False) -> dict:
     """Lee la hoja «Tabla» (o la primera) y la empareja con la definición. No guarda nada. Devuelve
-    {rows: [{keys, cells}], problems: [{row, col, message}], unmatched_rows, duplicated_rows, ignored_columns, missing_rows}."""
+    {rows: [{keys, cells}], problems: [{row, col, message}], unmatched_rows, duplicated_rows, ignored_columns, missing_rows}.
+    `mapping` ({encabezado: "ignore" | "v<i>" | "c:<id de columna>"}) lo manda el paso «Asignar columnas» y vale solo para esta lectura. Con `ask`, si algún encabezado no coincide con una columna
+    (por id de la hoja oculta ni por nombre) NO se lee nada y se devuelve {needs_mapping: True, headers: [{header, suggested}]} para que la persona asigne."""
     spec = validate_spec(spec)
     if not getattr(openpyxl.xml, "DEFUSEDXML", False):
         raise ExcelRejected("El servidor no puede leer archivos de Excel de forma segura (falta defusedxml)")
@@ -344,6 +346,7 @@ def read_table(data: bytes, filename: str, spec: dict) -> dict:
         raise ExcelRejected(f"La hoja tiene más de {MAX_READ_ROWS} filas de datos")
     variables, columns = spec["variables"], spec["columns"]
     heads = [norm_value(v) if v is not None else "" for v, _ in lines[0]]
+    texts = [("" if v is None else str(v)) for v, _ in lines[0]]
     # Cada encabezado se reconoce primero por la identidad que trae la hoja oculta (id del campo / de la columna) y, si no, por su nombre.
     def find_var(v):
         by_id = [j for j, h in enumerate(heads) if v.get("field") and meta["vars"].get(h) == v["field"]]
@@ -354,12 +357,38 @@ def read_table(data: bytes, filename: str, spec: dict) -> dict:
         by_id = [j for j, h in enumerate(heads) if h and meta["cols"].get(h) == c["id"]]
         by_name = [j for j, h in enumerate(heads) if h == norm_value(c["name"])]
         return (by_id or by_name or [None])[0]
-    key_at = [find_var(v) for v in variables]
-    if any(j is None for j in key_at):
-        raise ExcelRejected("Falta en la primera fila una columna de los campos que deciden: usa la plantilla")
-    col_at = {c["id"]: j for c in columns if (j := find_col(c)) is not None}
-    used = set(key_at) | set(col_at.values())
-    ignored = [str(lines[0][j][0])[:60] for j, h in enumerate(heads) if h and j not in used][:20]
+    if mapping is None:
+        key_at = [find_var(v) for v in variables]
+        col_at = {c["id"]: j for c in columns if (j := find_col(c)) is not None}
+        used = set(j for j in key_at if j is not None) | set(col_at.values())
+        unresolved = [j for j, h in enumerate(heads) if h and j not in used]
+        if ask and (unresolved or any(j is None for j in key_at)):
+            targets = {j: f"v{i}" for i, j in enumerate(key_at) if j is not None}
+            targets.update({j: f"c:{cid}" for cid, j in col_at.items()})
+            return {"needs_mapping": True, "headers": [{"header": texts[j][:80], "suggested": targets.get(j)} for j, h in enumerate(heads) if h][:60]}
+        if any(j is None for j in key_at):
+            raise ExcelRejected("Falta en la primera fila una columna de los campos que deciden: usa la plantilla")
+    else:                                          # asignación explícita de la persona: solo vale para esta lectura
+        if not isinstance(mapping, dict) or len(mapping) > 200:
+            raise ExcelRejected("La asignación de columnas no es válida")
+        valid = {f"v{i}" for i in range(len(variables))} | {f"c:{c['id']}" for c in columns} | {"ignore"}
+        chosen = {}
+        for j, text in enumerate(texts):
+            if not heads[j]:
+                continue
+            target = mapping.get(text, "ignore")
+            if not isinstance(target, str) or target not in valid:
+                raise ExcelRejected("La asignación de columnas no es válida")
+            if target != "ignore":
+                if target in chosen:
+                    raise ExcelRejected("Dos columnas del Excel se asignaron al mismo destino")
+                chosen[target] = j
+        key_at = [chosen.get(f"v{i}") for i in range(len(variables))]
+        if any(j is None for j in key_at):
+            raise ExcelRejected("Asigna también las columnas de los campos que deciden (son las que identifican cada fila)")
+        col_at = {c["id"]: chosen[f"c:{c['id']}"] for c in columns if f"c:{c['id']}" in chosen}
+        used = set(key_at) | set(col_at.values())
+    ignored = [texts[j][:60] for j, h in enumerate(heads) if h and j not in used][:20]
     index = {tuple(norm_value(k) for k in r["keys"]): i for i, r in enumerate(spec["rows"])}
     out_rows = [{"keys": list(r["keys"]), "cells": {}} for r in spec["rows"]]
     problems, unmatched, duplicated, seen = [], [], [], set()

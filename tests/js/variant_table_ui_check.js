@@ -200,6 +200,34 @@ const paste = (text, target) => { const ev = new w.Event('paste', { bubbles: tru
   assert.ok(/«Tardío» está en una hoja posterior a «Texto informativo»/.test(q('.vt-err').textContent));
   click(q('[data-vt-act="apply"]')); await tick(10); assert.ok(log.toasts.some(([m]) => /hoja posterior/.test(m)));
 
+  // ---- «Asignar columnas» (P11b): encabezados que no coinciden → la persona asigna; vale solo para esa subida
+  pickVar(0, 'c'); pickVar(1, 't');
+  const lugarId = ui.state.columns[0].id, nFetch0 = log.fetches.length;
+  const need = { needs_mapping: true, headers: [{ header: 'Ciudad (x)', suggested: null }, { header: 'Tipo', suggested: 'v1' }, { header: 'Lugar del evento', suggested: null }, { header: 'Comentario', suggested: null }] };
+  w.__fetchAnswer = async (u, o) => ({ ok: true, json: async () => (o.body.get('mapping') ? { rows: ui.state.rows.map((r, i) => ({ keys: r.keys, cells: i === 5 ? { [lugarId]: 'Asignado' } : {} })), matched_rows: [5], unmatched_rows: [], duplicated_rows: [], ignored_columns: ['Comentario'], missing_rows: 123, problems: [] } : need) });
+  const sendFile = async (name) => { const inp = q('[data-vt-upload]'); Object.defineProperty(inp, 'files', { value: [new w.File([new Uint8Array(10)], name || 'otro.xlsx')], configurable: true }); inp.dispatchEvent(new w.Event('change', { bubbles: true })); await tick(30); };
+  await sendFile();
+  const panel = q('.vt-assign'); assert.ok(panel && /Asignar columnas/.test(panel.textContent) && /vale solo para esta subida/.test(panel.textContent), 'aparece el paso Asignar columnas');
+  assert.deepStrictEqual(J(qa('[data-vt-assign]').map((el) => el.closest('tr').textContent.trim().split('Ignorar')[0].trim())).length, 4, 'una fila por cada columna del Excel');
+  const selects = () => qa('[data-vt-assign]'), setSel = (i, v) => { const el = selects()[i]; el.value = v; el.dispatchEvent(new w.Event('change', { bubbles: true })); };
+  assert.strictEqual(selects()[1].value, 'v1', 'respeta la sugerencia del servidor'); assert.strictEqual(selects()[0].value, 'ignore');
+  assert.ok(/Falta asignar la columna de «Ciudad»/.test(q('.vt-assign .vt-err').textContent) && q('[data-vt-act="assigngo"]').disabled, 'sin la columna que dice a qué fila va cada dato no se puede continuar');
+  setSel(0, 'v0'); setSel(2, 'c:' + lugarId); setSel(3, 'c:' + lugarId);
+  assert.ok(/mismo destino/.test(q('.vt-assign .vt-err').textContent) && q('[data-vt-act="assigngo"]').disabled, 'dos columnas al mismo destino');
+  setSel(3, 'ignore'); assert.ok(!q('.vt-assign .vt-err') && !q('[data-vt-act="assigngo"]').disabled);
+  const optionTexts = Array.from(selects()[2].options).map((o) => o.textContent);
+  assert.ok(optionTexts.some((t) => /^Lugar — .*· Texto$/.test(t)) && optionTexts.some((t) => /^Decide: Ciudad$/.test(t)) && optionTexts[0] === 'Ignorar esta columna', optionTexts.join(' | '));
+  click(q('[data-vt-act="assigncancel"]')); assert.ok(!q('.vt-assign'), 'cancelar no cambia nada'); assert.strictEqual(log.fetches.length, nFetch0 + 1);
+  await sendFile(); assert.strictEqual(selects()[0].value, 'ignore', 'la asignación anterior NO se recuerda');
+  setSel(0, 'v0'); setSel(2, 'c:' + lugarId);
+  click(q('[data-vt-act="assigngo"]')); await tick(40);
+  const second = log.fetches[log.fetches.length - 1][1].body;
+  assert.deepStrictEqual(J(JSON.parse(second.get('mapping'))), { 'Ciudad (x)': 'v0', Tipo: 'v1', 'Lugar del evento': 'c:' + lugarId, Comentario: 'ignore' }, 'se manda la asignación con el mismo archivo');
+  assert.ok(second.get('file') && second.get('spec'), 'el archivo se vuelve a mandar (el servidor no lo guardó)');
+  assert.ok(!q('.vt-assign'), 'el paso se cierra'); assert.strictEqual(ui.state.rows[5].cells[lugarId], 'Asignado');
+  assert.ok(/Se leyeron 1 filas.*Comentario/.test(q('.vt-status').textContent), q('.vt-status').textContent);
+  const nAfter = log.fetches.length; await sendFile('malo.xlsm'); assert.strictEqual(log.fetches.length, nAfter, 'las comprobaciones del navegador siguen: un .xlsm ni se manda');
+
   // ---- nombres de elementos (P11b): se distinguen en las listas, el nombre interno manda y la tabla va por id
   const d3 = { fields: {
     c: { id: 'c', type: 'select', label: 'Ciudad', options: ['Bogotá', 'Cali'] },

@@ -419,3 +419,93 @@ def test_empty_template_has_one_row_per_value_and_no_data_while_the_other_carrie
     assert [ws2.cell(row=2, column=2).value, ws2.cell(row=3, column=2).value] == ["Chapinero", "Sur"]
     assert vt.read_table(vt.build_template(empty), "t.xlsx", filled)["rows"][0]["cells"] == {}            # subir la vacía no cambia nada
     assert vt.read_table(vt.build_template(filled), "t.xlsx", empty)["rows"][1]["cells"] == {"k1": "Sur"}       # y la llena, de ida y vuelta
+
+
+# ------------------------------------------------------------------ P11b: «Asignar columnas» cuando los encabezados no coinciden
+def _foreign_xlsx(headers, rows):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tabla"
+    ws.append(headers)
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+FOREIGN = _foreign_xlsx(["Ciudad", "Lugar del evento", "Cuándo", "Comentario"], [["Bogotá", "Chapinero", "5/3/26", SECRET], ["cali", "Sur", "31/02/2026", ""], ["Medellín", "x", "", ""]])
+
+
+def test_headers_that_do_not_match_ask_for_an_assignment_and_nothing_is_read():
+    got = vt.read_table(FOREIGN, "t.xlsx", _spec_ids(), ask=True)
+    assert got["needs_mapping"] is True and "rows" not in got
+    assert [h["header"] for h in got["headers"]] == ["Ciudad", "Lugar del evento", "Cuándo", "Comentario"]
+    assert got["headers"][0]["suggested"] == "v0" and all(h["suggested"] is None for h in got["headers"][1:])        # «Ciudad» sí coincide por nombre
+    assert SECRET not in json.dumps(got), "solo viajan los encabezados, nunca el contenido de las celdas"
+
+
+def test_a_file_whose_headers_all_match_is_read_without_asking():
+    spec = _spec_ids()
+    got = vt.read_table(_xlsx(lambda ws: ws.__setitem__("B2", "x"), spec), "t.xlsx", spec, ask=True)
+    assert "needs_mapping" not in got and got["rows"][0]["cells"] == {"k1": "x"}
+
+
+def test_an_explicit_assignment_reads_the_file_with_other_headers():
+    mapping = {"Ciudad": "v0", "Lugar del evento": "c:k1", "Cuándo": "c:k2", "Comentario": "ignore"}
+    got = vt.read_table(FOREIGN, "t.xlsx", _spec_ids(), mapping=mapping)
+    assert got["rows"][0]["cells"] == {"k1": "Chapinero", "k2": "05/03/2026"} and got["rows"][1]["cells"] == {"k1": "Sur"}
+    assert [(p["row"], p["col"]) for p in got["problems"]] == [(1, "k2")] and got["unmatched_rows"] == [4] and got["ignored_columns"] == ["Comentario"]
+    again = vt.read_table(FOREIGN, "t.xlsx", _spec_ids(), mapping={"Ciudad": "v0", "Cuándo": "c:k1"})              # lo no asignado se ignora
+    assert again["rows"][0]["cells"] == {"k1": "5/3/26"} and again["ignored_columns"] == ["Lugar del evento", "Comentario"]
+
+
+def test_assignment_can_send_one_excel_column_to_a_different_table_column():
+    spec = _spec_ids()
+    got = vt.read_table(_foreign_xlsx(["Ciudad", "Nivel raro"], [["Bogotá", "alto"]]), "t.xlsx", spec, mapping={"Ciudad": "v0", "Nivel raro": "c:k4"})
+    assert got["rows"][0]["cells"] == {"k4": "Alto"}                                                       # los tipos y las listas de la columna destino se aplican igual
+
+
+@pytest.mark.parametrize("mapping", [
+    {"Lugar del evento": "c:k1"},                                  # falta la variable: no se sabe a qué fila va cada dato
+    {"Ciudad": "v0", "Lugar del evento": "c:k1", "Cuándo": "c:k1"},   # dos columnas del Excel al mismo destino
+    {"Ciudad": "v0", "Lugar del evento": "c:no_existe"},
+    {"Ciudad": "v7"}, {"Ciudad": "v0", "Lugar del evento": "formula"}, {"Ciudad": "v0", "Lugar del evento": ["c:k1"]},
+    ["Ciudad", "v0"], "Ciudad=v0", 5, {f"h{i}": "ignore" for i in range(201)},
+])
+def test_bad_assignments_are_rejected(mapping):
+    with pytest.raises(vt.ExcelRejected):
+        vt.read_table(FOREIGN, "t.xlsx", _spec_ids(), mapping=mapping)
+
+
+def test_security_checks_still_apply_when_the_person_assigns_columns():
+    mapping = {"Ciudad": "v0", "Lugar del evento": "c:k1"}
+    bad = _rebuild(FOREIGN, add={"xl/vbaProject.bin": b"x"})
+    with pytest.raises(vt.ExcelRejected, match="macros"):
+        vt.read_table(bad, "t.xlsx", _spec_ids(), mapping=mapping)
+    with pytest.raises(vt.ExcelRejected, match="fórmulas"):
+        wb = openpyxl.load_workbook(io.BytesIO(FOREIGN)); wb["Tabla"]["B2"].value = "=1+1"; wb["Tabla"]["B2"].data_type = "f"; buf = io.BytesIO(); wb.save(buf)
+        vt.read_table(buf.getvalue(), "t.xlsx", _spec_ids(), mapping=mapping)
+    with pytest.raises(vt.ExcelRejected, match="2 MB"):
+        vt.read_table(FOREIGN + b"\0" * (vt.MAX_FILE_BYTES + 1), "t.xlsx", _spec_ids(), mapping=mapping)
+
+
+def test_a_deleted_column_id_goes_to_the_assignment_step_with_no_guess():
+    spec = _spec_ids()
+    spec["rows"] = [{"keys": ["Bogotá"], "cells": {"k2": "05/03/2026"}}, {"keys": ["Cali"], "cells": {}}, {"keys": ["Pasto"], "cells": {}}]
+    data = vt.build_template(spec)
+    gone = _spec_ids(); gone["columns"] = [c for c in gone["columns"] if c["id"] != "k2"]
+    got = vt.read_table(data, "t.xlsx", gone, ask=True)
+    assert got["needs_mapping"] and [h["header"] for h in got["headers"] if h["suggested"] is None] == ["Fecha"]
+    assert [h["suggested"] for h in got["headers"] if h["header"] == "Lugar"] == ["c:k1"]
+
+
+def test_endpoint_asks_for_the_assignment_then_reads_with_it(client, factory):
+    ev, f = _client_setup(client, factory)
+    url = f"/api/events/{ev.id}/forms/{f['id']}/variant-table/parse"
+    r = client.post(url, files={"file": ("t.xlsx", FOREIGN, "application/octet-stream")}, data={"spec": json.dumps(_spec_ids())})
+    assert r.status_code == 200 and r.json()["needs_mapping"] is True and SECRET not in r.text
+    ok = client.post(url, files={"file": ("t.xlsx", FOREIGN, "application/octet-stream")}, data={"spec": json.dumps(_spec_ids()), "mapping": json.dumps({"Ciudad": "v0", "Lugar del evento": "c:k1"})})
+    assert ok.status_code == 200 and ok.json()["rows"][0]["cells"] == {"k1": "Chapinero"}
+    for bad in ("{no es json", json.dumps({"Ciudad": "c:no_existe"}), json.dumps({"Lugar del evento": "c:k1"}), "x" * 60000):
+        assert client.post(url, files={"file": ("t.xlsx", FOREIGN, "application/octet-stream")}, data={"spec": json.dumps(_spec_ids()), "mapping": bad}).status_code == 400

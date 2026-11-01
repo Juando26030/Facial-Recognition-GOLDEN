@@ -348,7 +348,7 @@ def variant_table_template(event_id: int, form_id: int, data: dict, db: Session 
 
 
 @router.post("/events/{event_id}/forms/{form_id}/variant-table/parse")
-def variant_table_parse(event_id: int, form_id: int, file: UploadFile = File(...), spec: str = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def variant_table_parse(event_id: int, form_id: int, file: UploadFile = File(...), spec: str = Form(...), mapping: str = Form(""), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
     """Lee un .xlsx subido y lo empareja con la tabla; devuelve las celdas y los problemas SIN guardar nada (el archivo se procesa en memoria: ni disco ni almacenamiento) y sin escribir su contenido en los logs."""
     event = get_event_for_staff(event_id, db, staff)
     _get_form(db, event, form_id)
@@ -358,9 +358,16 @@ def variant_table_parse(event_id: int, form_id: int, file: UploadFile = File(...
         spec_obj = json.loads(spec)
     except ValueError:
         raise HTTPException(status_code=400, detail="La definición de la tabla no es válida")
+    if len(mapping) > 50_000:
+        raise HTTPException(status_code=400, detail="La asignación de columnas es demasiado grande")
+    try:
+        mapping_obj = json.loads(mapping) if mapping else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="La asignación de columnas no es válida")
     raw = file.file.read(variant_table.MAX_FILE_BYTES + 1)
     try:
-        return variant_table.read_table(raw, file.filename or "", spec_obj)
+        # sin asignación: si algún encabezado no coincide, se devuelve el paso «Asignar columnas» (no se lee nada); con asignación, vale solo para esta lectura
+        return variant_table.read_table(raw, file.filename or "", spec_obj, mapping=mapping_obj, ask=mapping_obj is None)
     except variant_table.ExcelRejected as e:
         raise HTTPException(status_code=400, detail=str(e))
 

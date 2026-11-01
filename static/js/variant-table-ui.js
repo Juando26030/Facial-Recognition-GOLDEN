@@ -68,10 +68,11 @@
         <div class="vt-sec" style="margin-top:8px;"><b>3. La tabla</b> <span class="hint">Haz clic en una celda para escribir, o pega un bloque copiado de Excel.</span>
           <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0;"><button type="button" class="small-btn" data-vt-act="dlempty" ${st.rows.length && st.columns.length ? '' : 'disabled'} title="Las columnas y una fila por cada valor, sin datos">Descargar plantilla vacía</button><button type="button" class="small-btn" data-vt-act="dlform" ${st.rows.length && st.columns.length ? '' : 'disabled'} title="Las variantes que ya están guardadas en el formulario">Descargar lo que tiene el formulario</button><label class="small-btn" style="cursor:pointer;">Subir Excel…<input type="file" data-vt-upload accept=".xlsx" style="display:none;"></label>${st.columns.some((c) => c.type === 'image') ? '<label class="small-btn" style="cursor:pointer;" title="Se empareja por el nombre del archivo ANTES de subir nada; solo se suben las que emparejan">Imágenes…<input type="file" data-vt-images accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none;"></label>' : ''}</div>
           <div class="hint" style="margin:2px 0 6px;"><b>Plantilla vacía</b>: las columnas y una fila por cada valor, sin datos (con hojas «Instrucciones» y «Valores válidos»). <b>Lo que tiene el formulario</b>: las variantes ya guardadas en el diseño (lo que apenas escribiste en esta pantalla no va hasta que lo apliques). <b>Subir Excel</b>: se revisa todo y ves una vista previa antes de cambiar nada.</div>
+          <div class="vt-assignbox"></div>
           <div class="vt-gridwrap" tabindex="0" aria-label="Tabla de variantes" style="max-height:340px; overflow:auto; border:1px solid #ddd; border-radius:8px;">${gridHtml()}</div>
           <div class="vt-status hint" role="status" aria-live="polite" style="margin-top:4px;"></div></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; justify-content:flex-end;"><button type="button" class="small-btn" data-vt-act="undo" ${st.undo ? '' : 'disabled'}>Deshacer la tabla aplicada</button><button type="button" class="small-btn primary" data-vt-act="apply" ${st.rows.length && st.columns.length ? '' : 'disabled'}>Vista previa y aplicar…</button></div>`;
-      validateAll();
+      validateAll(); paintAssign();
     }
     function colHtml(c, i, flds) {
       const f = flds.find((x) => x.id === c.field), props = f ? ctx.propsOf(f.id) : (c.prop ? [c.prop] : []);
@@ -172,15 +173,18 @@
         a.href = URL.createObjectURL(blob); a.download = kind === 'empty' ? 'plantilla-vacia-tabla-de-variantes.xlsx' : 'tabla-de-variantes-actual.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       } catch (e) { ctx.toast('No se pudo descargar el Excel', 'error'); }
     }
-    async function upload(file) {
+    async function upload(file, mapping) {   // `mapping`: la asignación de columnas de ESTA subida (no se recuerda)
       if (!file) return;
       if (!/\.xlsx$/i.test(file.name)) { ctx.toast('Sube un archivo .xlsx', 'error'); return; }
       if (file.size > 2 * 1024 * 1024) { ctx.toast('El archivo pesa más de 2 MB', 'error'); return; }
       const fd = new FormData(); fd.append('file', file); fd.append('spec', JSON.stringify(baseSpec()));
+      if (mapping) fd.append('mapping', JSON.stringify(mapping));
       try {
         const r = await fetch(ctx.url + '/parse', { method: 'POST', credentials: 'same-origin', body: fd });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) { ctx.toast(d.detail || 'No se pudo leer el Excel', 'error'); return; }
+        if (d.needs_mapping) { startAssign(file, d.headers); return; }       // los encabezados no coinciden con las columnas: la persona decide a qué corresponde cada uno
+        st.assign = null; paintAssign();
         d.matched_rows.forEach((i) => { st.rows[i].cells = d.rows[i].cells; });
         st.notInTable += d.unmatched_rows.length;
         host.querySelector('.vt-gridwrap').innerHTML = gridHtml(); validateAll();
@@ -193,6 +197,38 @@
         status(parts.join('; ') + '.');
         d.problems.forEach((p) => { const td = host.querySelector(`td[data-vt-r="${p.row}"][data-vt-c="${st.columns.findIndex((c) => c.id === p.col)}"]`); if (td) { td.style.background = '#fdecea'; td.title = p.message; } });
       } catch (e) { ctx.toast('No se pudo leer el Excel', 'error'); }
+    }
+
+    // ---------------------------------------------------------------- «Asignar columnas»: encabezados del Excel → variables / columnas de la tabla (vale solo para esta subida)
+    function guess(header) {
+      const h = VT.norm(header);
+      const vi = st.varFields.findIndex((id) => [ctx.fieldLabel(id), ctx.shortName ? ctx.shortName(id) : ''].some((n) => n && VT.norm(n) === h));
+      if (vi >= 0) return 'v' + vi;
+      const c = st.columns.find((x) => x.field && !missing(x) && [x.name, ctx.shortName ? ctx.shortName(x.field) : '', ctx.fieldLabel(x.field)].some((n) => n && VT.norm(n) === h));
+      return c ? 'c:' + c.id : 'ignore';
+    }
+    function startAssign(file, headers) {
+      st.assign = { file, headers, choice: Object.fromEntries(headers.map((x) => [x.header, x.suggested || guess(x.header)])) };
+      paintAssign();
+    }
+    function assignProblem() {
+      const a = st.assign, picked = Object.values(a.choice).filter((t) => t !== 'ignore'), seen = new Set();
+      for (const t of picked) { if (seen.has(t)) return 'Dos columnas del Excel están asignadas al mismo destino.'; seen.add(t); }
+      const lost = st.varFields.findIndex((_, i) => !seen.has('v' + i));
+      return lost >= 0 ? `Falta asignar la columna de «${ctx.fieldLabel(st.varFields[lost])}»: es la que dice a qué fila va cada dato.` : '';
+    }
+    function paintAssign() {
+      const box = host.querySelector('.vt-assignbox'); if (!box) return;
+      const a = st.assign;
+      if (!a) { box.innerHTML = ''; return; }
+      const opt = (v, label, cur) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(label)}</option>`;
+      const problem = assignProblem();
+      box.innerHTML = `<div class="vt-assign" role="region" aria-label="Asignar columnas" style="border:2px solid #9fb0ff; border-radius:10px; padding:8px; margin:6px 0; background:#f7f8ff;">
+        <b>Asignar columnas</b> <span class="hint">Las cabeceras del Excel no coinciden con las columnas de la tabla. Elige a qué corresponde cada una, o «Ignorar». Esta asignación vale solo para esta subida.</span>
+        <table style="font-size:.8rem; margin-top:4px;"><tbody>${a.headers.map((x, i) => `<tr><td style="padding:2px 8px 2px 0;"><b>${esc(x.header)}</b></td><td><select data-vt-assign="${i}" aria-label="Destino de la columna ${esc(x.header)} del Excel">
+          ${opt('ignore', 'Ignorar esta columna', a.choice[x.header])}${st.varFields.map((id, k) => opt('v' + k, `Decide: ${ctx.fieldLabel(id)}`, a.choice[x.header])).join('')}${st.columns.map((c) => opt('c:' + c.id, `${c.name || ctx.propLabel(c.prop)} — ${c.field && !missing(c) ? ctx.fieldLabel(c.field) : 'sin elemento'} · ${ctx.propLabel(c.prop)}`, a.choice[x.header])).join('')}</select></td></tr>`).join('')}</tbody></table>
+        ${problem ? `<div class="vt-err" role="alert" style="color:#a1261b; font-size:.8rem;">${esc(problem)}</div>` : ''}
+        <div style="display:flex; gap:6px; justify-content:flex-end; margin-top:6px;"><button type="button" class="small-btn" data-vt-act="assigncancel">Cancelar</button><button type="button" class="small-btn primary" data-vt-act="assigngo" ${problem ? 'disabled' : ''}>Continuar</button></div></div>`;
     }
 
     // ---------------------------------------------------------------- plantillas de columnas (.json): solo nombre, tipo, propiedad y opciones; nada de ids de campos
@@ -288,7 +324,8 @@
     // ---------------------------------------------------------------- eventos (delegados: el contenedor se repinta)
     const onChange = (e) => {
       const t = e.target;
-      if (t.dataset.vtVar !== undefined) {
+      if (t.dataset.vtAssign !== undefined) { const x = st.assign.headers[+t.dataset.vtAssign]; st.assign.choice[x.header] = t.value; paintAssign(); }
+      else if (t.dataset.vtVar !== undefined) {
         st.varFields = [0, 1, 2].map((i) => (host.querySelector(`[data-vt-var="${i}"]`) || {}).value).filter(Boolean);
         st.varFields = st.varFields.filter((id, i, a) => a.indexOf(id) === i); st.subsets = []; regen(); paint();
       } else if (t.dataset.vtSubset !== undefined) {
@@ -321,6 +358,8 @@
       } else if (act === 'dlempty') download('empty');
       else if (act === 'dlform') download('form');
       else if (act === 'savetpl') saveTemplate();
+      else if (act === 'assigncancel') { st.assign = null; paintAssign(); }
+      else if (act === 'assigngo') { const a = st.assign; if (a && !assignProblem()) { const mapping = Object.fromEntries(Object.entries(a.choice)); st.assign = null; paintAssign(); upload(a.file, mapping); } }
       else if (act === 'apply') apply();
       else if (act === 'undo') { if (st.undo) { const ok = st.undo(); st.undo = null; ctx.toast(ok === false ? 'El diseño ya se guardó: la tabla no se puede deshacer' : 'Se deshizo la tabla aplicada', ok === false ? 'error' : 'success'); paint(); } }
     };
