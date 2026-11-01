@@ -216,3 +216,29 @@ def run_step(db, event, staff, step: dict, row_infos: list, header_columns: dict
               "errors": c["errors"], "warnings": c["warnings"], "columns_ignored": len(columns_report.get("unused", [])), "unknown_categories": ap["unknown_categories"]}
     return {"message": message, "count": c["created"] + c["enrolled_existing"], "errors": ap["messages"] + notes, "optional_labels": event.get_optional_labels(),
             "columns": columns_report, "append": report}
+
+
+def preview(db, event, prepared: dict) -> dict:
+    """Vista previa SIN escribir nada (solo consultas de lectura): qué haría «solo agregar» con esta hoja. Solo conteos y los títulos de las columnas ignoradas (nunca cédulas, nombres ni correos)."""
+    from app.routers.api import _LOOKUP_CHUNK, _extract_identificador
+    infos = []
+    for row_num, clean_row in enumerate(prepared["rows"], start=2):
+        ident, _, _ = _extract_identificador(clean_row, prepared["header_columns"], row_num)
+        infos.append({"row_num": row_num, "identificador": ident})
+    dup_rows = set(duplicate_rows(infos))
+    first = [i["identificador"] for i in infos if i["identificador"] and i["row_num"] not in dup_rows]
+    suppressed, known, enrolled = _lookups(db, event, first, _LOOKUP_CHUNK)
+    out = {"rows": len(infos), "without_id": sum(1 for i in infos if not i["identificador"]), "duplicates": len(dup_rows), "suppressed": 0, "existing": 0, "enroll_existing": 0, "new": 0}
+    for ident in first:
+        if ident in suppressed:
+            out["suppressed"] += 1
+        elif ident in enrolled:
+            out["existing"] += 1
+        elif ident in known:
+            out["enroll_existing"] += 1
+        else:
+            out["new"] += 1
+    unused = prepared["columns_report"].get("unused", [])
+    out["columns_ignored"] = len(unused)
+    out["ignored_columns"] = [{"title": u["title"], "reason": u["reason"]} for u in unused]
+    return out

@@ -1644,6 +1644,26 @@ def bulk_roster(
                          roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, append_only=append_only, db=db, staff=staff)
 
 
+@router.post("/bulk_roster/preview")
+def bulk_roster_preview(
+    event_id: int = Form(...), roster_file: UploadFile = File(None), roster_upload: str = Form(None),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y cuenta qué pasaría, SIN escribir nada. Mismos permisos que la carga. No borra el archivo subido:
+    la carga real lo vuelve a usar."""
+    event = get_event_for_staff(event_id, db, staff)
+    if blocked := event_rules.roster_block_reason(event, append_only=True):
+        raise HTTPException(status_code=400, detail=blocked)
+    roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
+    content = roster_up.content if roster_up else (roster_file.file.read() if (roster_file is not None and roster_file.filename) else None)
+    if content is None:
+        raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
+    name = roster_up.filename if roster_up else roster_file.filename
+    res = _bulk_register_impl(db, staff, event_id=event_id, roster_filename=name, content=content, zip_bytes=None, field_labels=None, source_event_id=None, step={"phase": "prepare"}, append_only=True)
+    db.rollback()          # nada se escribe; si algo quedó abierto, se descarta
+    return roster_append.preview(db, event, res["prepared"])
+
+
 @router.post("/bulk_register")
 def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),

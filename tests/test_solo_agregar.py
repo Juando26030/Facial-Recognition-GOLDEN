@@ -122,3 +122,40 @@ def test_the_normal_load_stays_blocked_in_progress_and_is_not_changed(client, li
 def test_append_does_not_need_labels_for_unknown_columns_and_ignores_field_labels(client, live, db):
     st = _drive(client, _post_append(client, live, field_labels=json.dumps({"opcional_5": "Intento"})).json())
     assert st["status"] == "done" and "opcional_5" not in live.get_optional_labels()
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ vista previa
+def test_preview_counts_and_writes_nothing(client, live, db):
+    ev = live
+    n_users, n_att, ev_row = db.query(User).count(), db.query(EventAttendee).count(), (ev.roster_uploaded, str(ev.get_optional_labels()), str(ev.get_categories()))
+    r = client.post("/api/bulk_roster/preview", data={"event_id": str(ev.id)}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")})
+    assert r.status_code == 200, r.text
+    p = r.json()
+    assert (p["new"], p["enroll_existing"], p["existing"], p["duplicates"], p["without_id"], p["columns_ignored"], p["rows"]) == (2, 1, 1, 1, 1, 2, 6)
+    db.expire_all()
+    assert (db.query(User).count(), db.query(EventAttendee).count()) == (n_users, n_att)
+    ev2 = db.get(type(ev), ev.id)
+    assert (ev2.roster_uploaded, str(ev2.get_optional_labels()), str(ev2.get_categories())) == ev_row
+    assert "@" not in json.dumps(p) and "1001" not in json.dumps(p)
+    assert client.get("/api/bulk_jobs/x").status_code in (404, 403, 401)          # (no dejó ninguna tarea abierta que consultar)
+
+
+def test_preview_has_the_same_permissions_as_the_load(client, factory, live):
+    for role, expected in (("digitador", 403), ("comercial", 403)):
+        factory.staff(role, f"u_{role}")
+        client.post("/logout")
+        login(client, f"u_{role}")
+        r = client.post("/api/bulk_roster/preview", data={"event_id": str(live.id)}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")})
+        assert r.status_code == expected, (role, r.status_code)
+    for role in ("coordinador", "admin", "super_admin"):
+        factory.staff(role, f"v_{role}")
+        client.post("/logout")
+        login(client, f"v_{role}")
+        assert client.post("/api/bulk_roster/preview", data={"event_id": str(live.id)}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")}).status_code == 200
+
+
+def test_preview_refuses_finalized_and_missing_file(client, live, db):
+    assert client.post("/api/bulk_roster/preview", data={"event_id": str(live.id)}).status_code == 400
+    live.status = "finalizado"
+    db.commit()
+    assert client.post("/api/bulk_roster/preview", data={"event_id": str(live.id)}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")}).status_code == 400
