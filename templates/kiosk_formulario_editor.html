@@ -10,6 +10,7 @@
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
+    <script src="{{ url_for('static', path='js/form-sync.js') }}"></script>
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
@@ -72,7 +73,7 @@
     <div class="pane active" id="pane-design"><div class="grid3">
       <div>
         <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Elementos nuevos</h4><p class="hint" style="margin:0 0 8px;">Arrástralos al lienzo (o haz clic para agregarlos al final).</p><div class="pal" id="palNew"></div></div>
-        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Campos del evento</h4><p class="hint" style="margin:0 0 8px;">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div></div>
+        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Campos del evento</h4><p class="hint" style="margin:0 0 8px;">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div><button type="button" class="small-btn" id="palSync" style="margin-top:8px;" title="Pone en los campos ya enlazados el tipo y las opciones que hoy tienen en Parámetros; antes te muestra qué cambia">Sincronizar con Parámetros</button></div>
         <div class="card"><details><summary style="cursor:pointer; font-weight:700; font-size:0.9rem;">Apariencia del formulario</summary><div id="themeBox" class="props" style="margin-top:0.7rem;"></div></details></div>
       </div>
       <div><div class="card" style="padding:0.8rem;"><div id="canvas"></div><p class="hint" style="margin:8px 4px 0;">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></div></div>
@@ -243,6 +244,14 @@ function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
 function usedKeys() { return new Set(Object.values(design.fields).map((f) => f.key).filter(Boolean)); }
 
 // ---------------------------------------------------------------- paleta
+async function syncWithParams() {
+  try { eventFields = await j(`/api/events/${EV}/form-event-fields`); } catch (e) { showToast(e.message, 'error'); return; }
+  const ch = FormSync.plan(design, eventFields);
+  if (!ch.length) { showToast('Los campos enlazados ya están al día con Parámetros', 'success'); return; }
+  const list = ch.map((p) => `<li><b>${esc(p.label)}</b>: ${p.changes.map(esc).join('; ')}</li>`).join('');
+  if (!(await showConfirm(`Esto va a cambiar en el formulario:<ul style="margin:8px 0 0 18px; text-align:left;">${list}</ul>`, { confirmLabel: 'Sincronizar' }))) return;
+  FormSync.apply(design, ch); markDirty(); renderAll();
+}
 function renderPalette() {
   $('palNew').innerHTML = Object.entries(TYPES).map(([t, [l, ic]]) => `<button type="button" draggable="true" data-new="${t}">${ic} ${l}</button>`).join('');
   const used = usedKeys();
@@ -372,12 +381,15 @@ function renderProps() {
   if (rules.length) {
     if (rules.length > 1) html += `<div class="fld"><label>Se muestra cuando se cumplan</label><select id="cMatch"><option value="all" ${matchOf(f.show_if) === 'all' ? 'selected' : ''}>TODAS las reglas (y)</option><option value="any" ${matchOf(f.show_if) === 'any' ? 'selected' : ''}>ALGUNA de las reglas (o)</option></select></div>`;
     rules.forEach((r, i) => {
-      const parent = design.fields[r.field], opts = parent && (parent.options || (parent.type === 'checkbox' ? ['true', 'false'] : null));
+      const parent = design.fields[r.field], opts = FormSync.optionsOf(parent, eventFields) || (parent && parent.type === 'checkbox' ? ['true', 'false'] : null);
       let val = '';
       if (r.op !== 'filled') {
-        if (opts && r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-rvin="${i}" value="${esc(o)}" ${(Array.isArray(r.value) ? r.value : [r.value]).includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
-        else if (opts) val = `<select data-rv="${i}"><option value=""></option>${opts.map((o) => `<option ${r.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-        else val = `<input type="text" data-rv="${i}" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
+        if (opts) {   // con opciones (propias o del campo del evento) el valor SIEMPRE se elige de la lista; un valor guardado que no coincide ni con tildes/mayúsculas se conserva visible
+          const cur = Array.isArray(r.value) ? r.value : [r.value];
+          const extra = cur.filter((v) => v !== '' && !FormSync.findOption(opts, v));
+          if (r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-rvin="${i}" value="${esc(o)}" ${cur.some((v) => FormSync.norm(v) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}${extra.map((v) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-rvin="${i}" value="${esc(v)}" checked> ${esc(v)} (no está en la lista)</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
+          else val = `<select data-rv="${i}"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(r.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}${extra.map((v) => `<option selected>${esc(v)}</option>`).join('')}</select>${extra.length ? '<div class="hint">El valor guardado no está en la lista de opciones.</div>' : ''}`;
+        } else val = `<input type="text" data-rv="${i}" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
       }
       html += `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px; display:grid; gap:4px;"><div class="hint">Regla ${i + 1}</div>
         <select data-rf="${i}">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select>
@@ -398,7 +410,13 @@ function renderProps() {
   on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
   box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
-  on('pKey', 'change', () => { f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false; markDirty(); renderAll(); });
+  on('pKey', 'change', async () => {
+    f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false;
+    markDirty();
+    const ch = f.key ? FormSync.plan({ fields: { [f.id]: f } }, eventFields) : [];   // al enlazar un campo a Parámetros se ofrece heredar su tipo y opciones (nunca solo)
+    if (ch.length && await showConfirm(`El campo del evento tiene otro tipo u opciones (${ch[0].changes.map(esc).join('; ')}). ¿Usar los de Parámetros?`, { confirmLabel: 'Sí, usarlos' })) FormSync.apply(design, ch);
+    renderAll();
+  });
   on('pDocOn', 'change', () => { if ($('pDocOn').value) f.doc_types = ['CC']; else delete f.doc_types; markDirty(); renderCanvas(); renderProps(); });
   box.querySelectorAll('[data-doc]').forEach((c) => c.addEventListener('change', () => {
     const picked = Array.from(box.querySelectorAll('[data-doc]:checked')).map((x) => x.dataset.doc);
@@ -628,6 +646,7 @@ async function saveDesign() {
   } catch (e) { showToast(e.message, 'error'); return false; }
 }
 $('saveBtn').addEventListener('click', saveDesign);
+$('palSync').addEventListener('click', syncWithParams);
 $('testBtn').addEventListener('click', async (e) => {
   if (form.public_state === 'pruebas') return;          // el enlace de pruebas es seguro
   e.preventDefault();

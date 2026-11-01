@@ -10,7 +10,7 @@
                                         con lo que responde /quote; el precio lo calcula SIEMPRE el servidor)                    */
 (function () {
   const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const norm = (x) => String(x == null ? '' : x).trim().toLowerCase();
+  const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
   const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 }) + ' COP';
@@ -402,5 +402,5 @@
   }
 
   if (typeof window !== 'undefined') window.FormRender = { render, conditionMet };
-  if (typeof module !== 'undefined') module.exports = { conditionMet };
+  if (typeof module !== 'undefined') module.exports = { conditionMet, norm };
 })();

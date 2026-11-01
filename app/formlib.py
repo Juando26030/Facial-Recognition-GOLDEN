@@ -611,6 +611,13 @@ def _as_list(value) -> list:
     return [str(value)]
 
 
+def norm_value(x) -> str:
+    """Valor de una regla listo para comparar: sin tildes, sin mayúsculas y con los espacios colapsados («Bogota» = « bogotá »).
+    Debe coincidir con `norm` de static/js/form-render.js y static/js/form-sync.js."""
+    text = unicodedata.normalize("NFD", str(x))
+    return " ".join("".join(c for c in text if not unicodedata.combining(c)).split()).lower()
+
+
 def condition_met(cond: Optional[dict], values: dict) -> bool:
     if not cond:
         return True
@@ -618,7 +625,7 @@ def condition_met(cond: Optional[dict], values: dict) -> bool:
     have = _as_list(current)
     want = cond.get("value")
     op = cond.get("op", "equals")
-    norm = lambda x: str(x).strip().lower()
+    norm = norm_value
     if op == "filled":
         return bool(have) and (current is not False)
     if op == "equals":
