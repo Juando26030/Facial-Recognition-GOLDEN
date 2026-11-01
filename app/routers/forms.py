@@ -16,7 +16,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, heavy, ops, publicurl, warmup, wompi
+from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -298,6 +298,38 @@ def event_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
             kind = "phone"
         out.append({"key": key, "label": cfg["label"], "type": kind if kind in formlib.INPUT_TYPES else "text_short", "options": cfg.get("options") or [], "required": bool(cfg.get("required")), "help": cfg.get("help_text") or ""})
     return out
+
+
+@router.get("/events/{event_id}/field-values")
+def field_values(event_id: int, key: str, scope: str = "event", db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Valores DISTINTOS que ya hay en la base para un campo NO identificante del evento (para armar opciones de lista). `scope`: «event» (las
+    personas de este evento) o «client» (las de todos los eventos del mismo cliente). Solo valores con su conteo, nunca registros de personas."""
+    event = get_event_for_staff(event_id, db, staff)
+    label = next((c["label"] for c in parametros.field_configs_for_event(db, event) if c["key"] == key), None)
+    if label is None:
+        raise HTTPException(status_code=404, detail="Ese campo no existe en este evento")
+    try:
+        optionvalues.check_key(key, label)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    q = db.query(EventAttendee, User).join(User, (User.id == EventAttendee.user_id) & (User.tenant_id == EventAttendee.tenant_id))
+    if scope == "client":
+        q = q.filter(EventAttendee.event_id.in_([e for (e,) in db.query(Event.id).filter(Event.tenant_id == event.tenant_id)]))
+    else:
+        q = q.filter(EventAttendee.event_id == event.id)
+    counts: dict = {}
+    seen: set = set()
+    for att, user in q.limit(200000):
+        if key != "categories":
+            if user.id in seen:
+                continue
+            seen.add(user.id)
+        found = att.get_categories() if key == "categories" else [user.get_extras().get(key) if key.startswith("opcional_") else getattr(user, key, None)]
+        for v in found:
+            v = str(v or "").strip()
+            if v:
+                counts[v] = counts.get(v, 0) + 1
+    return {"key": key, "label": label, "scope": "client" if scope == "client" else "event", **optionvalues.group_values(counts)}
 
 
 # ------------------------------------------------------------------ descuentos: sugerencias de valores y códigos

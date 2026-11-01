@@ -11,6 +11,7 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-sync.js') }}"></script>
+    <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
@@ -448,6 +449,7 @@ function renderProps() {
   box.innerHTML = html;
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  if (CHOICE.includes(f.type) && $('pOpts')) OptionTools.attach($('pOpts'), { eventId: EV, key: f.key, fromDb: !!f.options_from_db, onImported: () => { f.options_from_db = true; } });
   const upd = (fn) => () => { fn(); markDirty(); renderCanvas(); };
   if (isPay) bindPay(box, f);
   if (isComp) bindComp(box, f);
