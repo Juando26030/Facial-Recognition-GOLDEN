@@ -15,7 +15,7 @@ from app.timeutil import utcnow
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.routers.api import SYNC_HASH_RE, _event_for_sync, _roster_map
-from app.models import StaffUser, User
+from app.models import StaffUser, SystemEvent, User
 
 router = APIRouter()
 DIGITADOR = require_role("digitador")
@@ -87,6 +87,8 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
         if ok and reverted_at is not None:
             verdict = status_changes.classify(e.get("at"), utcnow(), reverted_at)[0]
             doubtful, after_revert = doubtful + (verdict == "no_hour"), after_revert + (verdict == "after")
+            if verdict != "ok":          # `audit_consent_logs` es solo INSERT (no se le puede agregar una marca): el aviso queda aparte, por entrada, sin datos personales (solo el UUID del dispositivo)
+                db.add(SystemEvent(kind=status_changes.CONSENT_FLAGS[verdict], ref=str(event.id), detail=entry_id, at=utcnow()))
         if ok and accepted:
             consent_receipt.enqueue(db, entry_id, event.tenant_id, event.id, uid, consent_receipt.channel_of(str(e.get("device") or "")))      # constancia por correo (si tiene correo); en segundo plano
         if ok and accepted:                                     # volvió a aceptar tras una revocación: el reconocimiento vuelve a estar habilitado para esta persona (adulta)

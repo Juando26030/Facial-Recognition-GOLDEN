@@ -15,7 +15,7 @@ from app import status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_rules
-from app.models import EventStatusChange, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
+from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app.routers.areas_inventory import delete_event_modules
@@ -614,5 +614,8 @@ def list_status_changes(event_id: int, db: Session = Depends(get_db), staff: Sta
     """Historial de retrocesos del evento y cuántos ingresos se sincronizaron sin hora válida (`doubtful`) para poder revisarlos. Sin datos personales."""
     rows = db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).order_by(EventStatusChange.at.desc(), EventStatusChange.id.desc()).all()
     doubtful = db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.doubtful_reason.isnot(None)).scalar() or 0
+    flagged = db.query(SystemEvent.kind, SystemEvent.detail).filter(SystemEvent.ref == str(event_id), SystemEvent.kind.in_(list(status_changes.CONSENT_FLAGS.values()))).order_by(SystemEvent.id).all()
+    consents = {"sin_hora_valida": sum(k == status_changes.CONSENT_FLAGS["no_hour"] for k, _ in flagged), "after_revert": sum(k == status_changes.CONSENT_FLAGS["after"] for k, _ in flagged),
+                "entry_ids": [d for _, d in flagged][:200]}          # consentimientos guardados dentro de la ventana y marcados para revisar (UUID del dispositivo; sin datos personales)
     return {"changes": [{"at": r.at.isoformat() + "Z", "by": r.staff_username, "from": r.from_status, "to": r.to_status, "reason": r.reason, "attendees": r.attendees_count, "access_logs": r.access_logs_count}
-                        for r in rows], "doubtful": doubtful}
+                        for r in rows], "doubtful": doubtful, "consents": consents}

@@ -11,6 +11,7 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
     <style>
+        .event-actions .small-btn { white-space:nowrap; }
         .tenant-card { background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06); margin-bottom: 1.2rem; overflow: hidden; border: 1px solid #eee; }
         .tenant-head { display:flex; justify-content:space-between; align-items:center; padding: 1.2rem 1.5rem; cursor:pointer; }
         .tenant-head h3 { font-family: var(--font-heading-secondary); color: var(--golden-dark); }
@@ -143,7 +144,7 @@ function renderEventRows(events, el) {
         <div class="event-name">${reportBulbHtml(e)} ${esc(e.name)} ${e.event_code ? `<span style="color:#aaa; font-weight:400;">(${esc(e.event_code)})</span>` : ""}</div>
         <div class="event-meta">${esc(e.location) || ""} ${e.city ? "· " + esc(e.city) : ""} · ${fmtDate(e.start_date)} · Coordinador: ${esc(e.coordinator_name) || "-"} <span class="status-pill status-${e.status}">${STATUS_LABELS[e.status] || e.status}</span></div>
       </div>
-      <div style="display:flex; gap:6px; align-items:center;">
+      <div class="event-actions" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
         <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
         ${isAdmin && e.status === "en_proceso" ? `<button type="button" class="small-btn" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">↩ Devolver a Creado</button>` : ""}
         ${isSuper ? `<button type="button" class="small-btn" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">📦 Exportar</button>` : ""}

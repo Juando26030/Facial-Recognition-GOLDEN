@@ -244,6 +244,15 @@ def test_consents_are_always_kept_inside_the_window_and_only_counted(client, fac
     assert (r.json()["inserted"], r.json()["doubtful"], r.json()["after_revert"]) == (3, 1, 1)         # los tres se guardan (prueba legal de la persona)
     db.expire_all()
     assert db.query(AuditConsentLog).filter_by(event_id=ev.id).count() == 1 + 3                        # la aceptación del arranque + estas tres
+    login(client, "root")                                                                              # y quedan marcados aparte, para revisarlos (GET /status-changes)
+    c = client.get(f"/api/events/{ev.id}/status-changes").json()["consents"]
+    assert (c["sin_hora_valida"], c["after_revert"]) == (1, 1) and len(c["entry_ids"]) == 2 and all(len(x) == 36 for x in c["entry_ids"])
+    ids = [e["id"] for e in body["entries"]]
+    assert set(c["entry_ids"]) == {ids[1], ids[2]}                                                      # la posterior y la sin hora; la anterior al retroceso no se marca
+    login(client, "dig1")
+    assert client.post(f"/api/events/{ev.id}/consents", json=body).json()["duplicated"] == 3            # reenviar no marca dos veces
+    login(client, "root")
+    assert client.get(f"/api/events/{ev.id}/status-changes").json()["consents"]["entry_ids"] == c["entry_ids"]
 
 
 def test_sync_is_unchanged_for_an_event_in_progress(client, factory, db):

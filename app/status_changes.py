@@ -21,6 +21,7 @@ SYNC_AFTER_REVERT = timedelta(days=int(os.getenv("SYNC_AFTER_REVERT_DAYS", "7"))
 CLOCK_SKEW_S = 300
 SYNC_MAX_AGE_S = 30 * 24 * 3600          # igual que `SYNC_MAX_AGE` de api.py: una hora de más de 30 días atrás no es creíble
 DOUBTFUL = "sin_hora_valida"
+CONSENT_FLAGS = {"no_hour": "consent_sin_hora_valida", "after": "consent_after_revert"}      # `system_events.kind` de los consentimientos guardados dentro de la ventana que hay que revisar
 AFTER_REVERT_DETAIL = "Este registro se hizo después de que el evento volvió a «Creado»: no se guardó. Revísalo con quien administra el evento."
 
 
