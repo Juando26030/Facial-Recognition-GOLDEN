@@ -242,7 +242,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         kind = f.get("type")
         if kind not in ALL_TYPES:
             raise ValueError(f"Tipo de campo no válido: {kind}")
-        clean = {"id": fid, "type": kind, "label": _text(f.get("label"), 200), "help": richtext.clean_text(f.get("help"), 300, basic=True)}      # la etiqueta es texto plano (es el nombre de la columna en reportes); la ayuda admite formato básico
+        clean = {"id": fid, "type": kind, "label": _text(f.get("label"), 200), "help": richtext.clean_text(f.get("help"), 300)}      # la etiqueta (label) es texto plano: es el nombre de la columna en reportes. La ayuda y el nombre de presentación admiten formato completo
         if kind in INPUT_TYPES:
             if not clean["label"]:
                 raise ValueError("Todos los campos necesitan un nombre (etiqueta)")
@@ -293,6 +293,10 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
             clean["src"] = _text(f.get("src"), 200)
             clean["width"] = _percent(f.get("width"), 100)             # % del ancho disponible
             clean["alt"] = _text(f.get("alt"), 200)                    # texto alternativo (accesibilidad); vacío = imagen decorativa
+        if kind not in STATIC_TYPES:        # nombre de PRESENTACIÓN con formato: solo se pinta en el formulario público y la vista previa; todo lo demás usa `label`
+            shown = richtext.clean_text(f.get("display_label"), 300)
+            if shown:                       # sin llave si está vacío: los formularios existentes no cambian
+                clean["display_label"] = shown
         clean["show_if"] = _sanitize_condition(f.get("show_if"), fields_in, fid)
         fields[fid] = clean
 

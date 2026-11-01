@@ -69,7 +69,7 @@ def test_design_content_and_help_are_sanitized():
     assert _design({"t": {"id": "t", "type": "paragraph", "content": "<b>Hola</b><script>alert(1)</script>"}})["t"]["content"] == "<b>Hola</b>"
     assert _design({"t": {"id": "t", "type": "paragraph", "content": "menores de <18 años"}})["t"]["content"] == "menores de <18 años"
     n = _design({"n": {"id": "n", "type": "text_short", "label": "Nombre", "help": "<b>ojo</b><p>x</p><img src=x>"}})["n"]
-    assert n["help"] == "<b>ojo</b>x"                             # ayuda: formato básico
+    assert n["help"] == "<b>ojo</b><p>x</p>"                      # ayuda: formato completo (P8), sin la imagen
     assert _design({"n": {"id": "n", "type": "text_short", "label": "Nombre", "help": "Solo texto <18"}})["n"]["help"] == "Solo texto <18"
 
 

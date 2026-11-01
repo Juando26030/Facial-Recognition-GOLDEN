@@ -391,7 +391,8 @@ function cardHtml(f) {
 }
 
 // ---------------------------------------------------------------- propiedades del elemento
-const helpRtHtml = () => '<div class="fld"><label>Texto de ayuda (opcional; formato básico)</label><div id="pHelpRt"></div></div>';
+const helpRtHtml = () => '<div class="fld"><label>Texto de ayuda (opcional, con formato)</label><div id="pHelpRt"></div></div>';
+const dispRtHtml = () => '<div class="fld"><label>Nombre de presentación (opcional, con formato)</label><div id="pDispRt"></div><div class="hint">Es lo que ve la persona en el formulario. Reportes, Excel y estadísticas usan el nombre de arriba. Vacío = se ve el nombre de arriba.</div></div>';
 // editores de texto con formato montados en el panel de propiedades (se desmontan al repintarlo)
 let rtMounts = [];
 const mountRt = (host, opts) => { const m = RichText.mount(host, opts); rtMounts.push(m); return m; };
@@ -408,9 +409,9 @@ function renderProps() {
   const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   const used = usedKeys();
   let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
-  if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
-  if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + payHtml(f);
-  if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + helpRtHtml() + compHtml(f);
+  if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + dispRtHtml() + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
+  if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
+  if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + dispRtHtml() + helpRtHtml() + compHtml(f);
   if (f.type === 'heading' || f.type === 'paragraph') html += variantsHtml(f);
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
     <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
@@ -461,7 +462,8 @@ function renderProps() {
   box.innerHTML = html;
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
-  if ($('pHelpRt')) mountRt($('pHelpRt'), { basic: true, value: f.help, label: 'Texto de ayuda', onChange: (v) => { f.help = v; markDirty(); renderCanvas(); } });
+  if ($('pDispRt')) mountRt($('pDispRt'), { value: f.display_label, label: 'Nombre de presentación', onChange: (v) => { if (v) f.display_label = v; else delete f.display_label; markDirty(); renderCanvas(); } });
+  if ($('pHelpRt')) mountRt($('pHelpRt'), { value: f.help, label: 'Texto de ayuda', onChange: (v) => { f.help = v; markDirty(); renderCanvas(); } });
   if (CHOICE.includes(f.type) && $('pOpts')) OptionTools.attach($('pOpts'), { eventId: EV, key: f.key, fromDb: !!f.options_from_db, onImported: () => { f.options_from_db = true; } });
   const upd = (fn) => () => { fn(); markDirty(); renderCanvas(); };
   if (isPay) bindPay(box, f);
