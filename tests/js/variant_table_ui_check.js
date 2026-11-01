@@ -113,6 +113,33 @@ const paste = (text, target) => { const ev = new w.Event('paste', { bubbles: tru
   assert.ok(log.toasts.some(([m]) => /Sube un archivo \.xlsx/.test(m)), 'solo .xlsx');
   assert.strictEqual(log.fetches.filter(([u]) => u.endsWith('/parse')).length, 1, 'un .xlsm ni siquiera se manda');
 
+  // ---- imágenes: se empareja por nombre ANTES de subir; solo lo que empareja se sube
+  log.uploads = [];
+  ctx.uploadImage = async (f) => { log.uploads.push(f.name); if (/prensa/.test(f.name)) throw new Error('falla'); return 'acme/' + f.name.replace(/[^a-z0-9]/gi, '') + '.jpg'; };
+  const mk = (name, size) => new w.File([new Uint8Array(size || 10)], name);
+  const imgs = [mk('ciudad-01_empleado.jpg'), mk('Ciudad 02 Invitado.png'), mk('ciudad-04_prensa.jpg'), mk('ciudad-05_proveedor.jpg', 8000001), mk('ciudad-01_empleado.png'), mk('logo.png'), mk('doc.pdf')];
+  const imgInput = q('[data-vt-images]'); assert.ok(imgInput, 'con una columna de imagen aparece «Imágenes…»');
+  const choose = async (files) => { Object.defineProperty(imgInput, 'files', { value: files, configurable: true }); imgInput.dispatchEvent(new w.Event('change', { bubbles: true })); await tick(30); };
+  confirmAnswer = false; await choose(imgs);
+  assert.deepStrictEqual(J(log.uploads), [], 'sin confirmar no se sube NADA');
+  const pmsg = log.confirms[log.confirms.length - 1];
+  assert.ok(/3<\/b> de 7 imágenes emparejaron/.test(pmsg) && /2<\/b> no emparejaron y <b>no se subirán<\/b>: logo\.png, doc\.pdf/.test(pmsg) && /1 repetidas/.test(pmsg) && /1 pesan más de 8 MB/.test(pmsg), pmsg);
+  confirmAnswer = true; await choose(imgs);
+  assert.deepStrictEqual(J(log.uploads.slice().sort()), ['Ciudad 02 Invitado.png', 'ciudad-01_empleado.jpg', 'ciudad-04_prensa.jpg'], 'solo se suben las que emparejaron y caben');
+  assert.ok(/Se subieron 2 imágenes; fallaron 1: ciudad-04_prensa\.jpg/.test(q('.vt-status').textContent), q('.vt-status').textContent);
+  assert.ok(log.toasts.some(([m, k]) => /No se pudieron subir 1 imágenes/.test(m) && k === 'error'));
+  const imgCol = ui.state.columns.find((c) => c.type === 'image').id;
+  assert.strictEqual(ui.state.rows[0].cells[imgCol], 'ciudad-01_empleado.jpg'); assert.strictEqual(ui.state.images['ciudad-01_empleado.jpg'], 'acme/ciudad01empleadojpg.jpg');
+  await choose(imgs); assert.strictEqual(log.uploads.filter((n) => n === 'ciudad-01_empleado.jpg').length, 1, 'la misma imagen no se sube dos veces');
+  assert.strictEqual(log.uploads.filter((n) => n === 'ciudad-04_prensa.jpg').length, 2, 'la que falló se reintenta');
+  const built = w.VariantTable.build(ui.spec(), design.fields);
+  assert.deepStrictEqual(J(built.variants.img.src.items.map((i) => i.value)).sort(), ['acme/Ciudad02Invitadopng.jpg', 'acme/ciudad01empleadojpg.jpg'], 'la tabla usa las rutas ya subidas');
+  assert.strictEqual(built.summary.rowsWithoutImage, 122);
+  const none = [mk('x.png'), mk('y.jpg')]; log.uploads = []; await choose(none);
+  assert.deepStrictEqual(J(log.uploads), []); assert.ok(log.toasts.some(([m]) => /Ninguna imagen emparejó/.test(m)));
+  await choose(Array.from({ length: 201 }, (_, i) => mk('f' + i + '.png'))); assert.ok(log.toasts.some(([m]) => /hasta 200 imágenes/.test(m)));
+  ui.state.rows.forEach((r) => { delete r.cells[imgCol]; }); ui.state.images = {}; ui.paint();
+
   // ---- vista previa y aplicar (reemplaza) y deshacer
   ui.state.rows.forEach((r) => { Object.keys(r.cells).forEach((k) => { if (k !== col0) delete r.cells[k]; }); });   // sin la fecha inválida del Excel
   ui.paint();

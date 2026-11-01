@@ -11,7 +11,7 @@
   const WARNING = 'No escribas aquí información confidencial: todo el contenido de las variantes es visible para quien abra el formulario, aunque no se le muestre.';
 
   function mount(host, ctx) {
-    const st = { varFields: [], subsets: [], columns: [], rows: [], images: {}, undo: null, sel: { r: 0, c: 0 }, notInTable: 0, seq: 0, editing: null };
+    const st = { varFields: [], subsets: [], columns: [], rows: [], images: {}, uploaded: {}, undo: null, sel: { r: 0, c: 0 }, notInTable: 0, seq: 0, editing: null };
     const uidCol = () => 'k' + (++st.seq);
 
     // ---------------------------------------------------------------- estado → definición para VariantTable
@@ -58,7 +58,7 @@
           ${st.columns.map((c, i) => colHtml(c, i, flds)).join('')}${sheetProblem() ? `<div class="vt-err" role="alert" style="color:#a1261b; font-size:.8rem;">${esc(sheetProblem())}</div>` : ''}
           <button type="button" class="small-btn" data-vt-act="addcol" ${st.columns.length >= VT.MAX_COLS ? 'disabled' : ''}>+ Agregar columna</button> <button type="button" class="small-btn" data-vt-act="load" ${st.columns.length && st.rows.length ? '' : 'disabled'} title="Trae a la tabla las variantes que el formulario ya tiene en estas columnas">Cargar lo que ya tiene el formulario</button></div>
         <div class="vt-sec" style="margin-top:8px;"><b>3. La tabla</b> <span class="hint">Haz clic en una celda para escribir, o pega un bloque copiado de Excel.</span>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0;"><button type="button" class="small-btn" data-vt-act="download" ${st.rows.length && st.columns.length ? '' : 'disabled'}>Descargar Excel (.xlsx)</button><label class="small-btn" style="cursor:pointer;">Subir Excel…<input type="file" data-vt-upload accept=".xlsx" style="display:none;"></label></div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0;"><button type="button" class="small-btn" data-vt-act="download" ${st.rows.length && st.columns.length ? '' : 'disabled'}>Descargar Excel (.xlsx)</button><label class="small-btn" style="cursor:pointer;">Subir Excel…<input type="file" data-vt-upload accept=".xlsx" style="display:none;"></label>${st.columns.some((c) => c.type === 'image') ? '<label class="small-btn" style="cursor:pointer;" title="Se empareja por el nombre del archivo ANTES de subir nada; solo se suben las que emparejan">Imágenes…<input type="file" data-vt-images accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none;"></label>' : ''}</div>
           <div class="vt-gridwrap" tabindex="0" aria-label="Tabla de variantes" style="max-height:340px; overflow:auto; border:1px solid #ddd; border-radius:8px;">${gridHtml()}</div>
           <div class="vt-status hint" role="status" aria-live="polite" style="margin-top:4px;"></div></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; justify-content:flex-end;"><button type="button" class="small-btn" data-vt-act="undo" ${st.undo ? '' : 'disabled'}>Deshacer la tabla aplicada</button><button type="button" class="small-btn primary" data-vt-act="apply" ${st.rows.length && st.columns.length ? '' : 'disabled'}>Vista previa y aplicar…</button></div>`;
@@ -183,6 +183,43 @@
       } catch (e) { ctx.toast('No se pudo leer el Excel', 'error'); }
     }
 
+    // ---------------------------------------------------------------- imágenes: se empareja por nombre EN EL NAVEGADOR y solo lo que empareja se sube (lo subido nunca se borra)
+    const MAX_IMG_BYTES = 8000000, MAX_IMG_FILES = 200;
+    async function pickImages(fileList) {
+      const files = Array.from(fileList || []);
+      if (!files.length) return;
+      if (files.length > MAX_IMG_FILES) { ctx.toast(`Elige hasta ${MAX_IMG_FILES} imágenes por vez`, 'error'); return; }
+      const m = VT.matchImages(spec(), files.map((f) => f.name));
+      const byName = new Map(files.map((f) => [f.name, f]));
+      const big = m.matches.filter((x) => byName.get(x.file).size > MAX_IMG_BYTES);
+      const ok = m.matches.filter((x) => byName.get(x.file).size <= MAX_IMG_BYTES);
+      const list = (arr) => arr.slice(0, 8).map((x) => esc(typeof x === 'string' ? x : x.file)).join(', ') + (arr.length > 8 ? ` y ${arr.length - 8} más` : '');
+      const lines = [`<b>${ok.length}</b> de ${files.length} imágenes emparejaron con una fila y se subirán.`];
+      if (m.unmatched.length) lines.push(`<b>${m.unmatched.length}</b> no emparejaron y <b>no se subirán</b>: ${list(m.unmatched)}.`);
+      if (m.duplicated.length) lines.push(`${m.duplicated.length} repetidas para la misma fila (no se suben): ${list(m.duplicated)}.`);
+      if (big.length) lines.push(`${big.length} pesan más de 8 MB (no se suben): ${list(big)}.`);
+      lines.push(`${m.rowsWithout} filas quedarán sin imagen.`);
+      if (!ok.length) { ctx.toast('Ninguna imagen emparejó con una fila: no se sube nada', 'error'); status(m.unmatched.slice(0, 5).map((x) => `${x.file}: ${x.reason}`).join('. ')); return; }
+      if (!(await ctx.confirm(lines.join('<br>'), { confirmLabel: `Subir ${ok.length} ${ok.length === 1 ? 'imagen' : 'imágenes'}` }))) return;
+      let done = 0, failed = [];
+      const queue = ok.slice();
+      const worker = async () => {
+        while (queue.length) {
+          const x = queue.shift(), f = byName.get(x.file), prev = st.uploaded[x.file];
+          try {
+            const path = prev && prev.size === f.size && prev.mtime === f.lastModified ? prev.path : await ctx.uploadImage(f);   // la misma imagen no se sube dos veces
+            st.uploaded[x.file] = { size: f.size, mtime: f.lastModified, path }; st.images[x.file] = path;
+            st.rows[x.row].cells[x.col] = x.file; done += 1;
+          } catch (err) { failed.push(x.file); }
+          status(`Subiendo imágenes… ${done + failed.length} de ${ok.length}`);
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      host.querySelector('.vt-gridwrap').innerHTML = gridHtml(); validateAll();
+      status(`Se subieron ${done} ${done === 1 ? 'imagen' : 'imágenes'}${failed.length ? `; fallaron ${failed.length}: ${failed.slice(0, 5).join(', ')}` : ''}.`);
+      if (failed.length) ctx.toast(`No se pudieron subir ${failed.length} imágenes`, 'error');
+    }
+
     // ---------------------------------------------------------------- vista previa y aplicar
     async function apply() {
       endEdit();
@@ -217,6 +254,7 @@
         const c = st.columns[+t.dataset.vtColprop]; c.prop = t.value; c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); paint();
       } else if (t.dataset.vtColtype !== undefined) { st.columns[+t.dataset.vtColtype].type = t.value; paint(); }
       else if (t.dataset.vtColopts !== undefined) { st.columns[+t.dataset.vtColopts].options = t.value.split('\n').map((x) => x.trim()).filter(Boolean); host.querySelector('.vt-gridwrap').innerHTML = gridHtml(); validateAll(); }
+      else if (t.dataset.vtImages !== undefined) { const fl = Array.from(t.files || []); t.value = ''; pickImages(fl); }
       else if (t.dataset.vtUpload !== undefined) { const f = t.files[0]; t.value = ''; upload(f); }
     };
     const onInput = (e) => { const t = e.target; if (t.dataset.vtColname !== undefined) { st.columns[+t.dataset.vtColname].name = t.value; } };

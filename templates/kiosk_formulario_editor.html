@@ -1042,6 +1042,7 @@ function vtCtx() {
     toast: (m, k) => showToast(m, k),
     confirm: (m, o) => showConfirm(m, o),
     richEdit: richPrompt,
+    uploadImage: async (file) => { const fd = new FormData(); fd.append('file', file); const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); return d.storage_path; },   // la subida de siempre: extensión y 8 MB
     apply(built) {   // reemplaza SOLO las propiedades de las columnas; la copia de lo anterior sirve para deshacer hasta que se guarde el diseño
       const snap = Object.keys(built.variants).map((fid) => { const f = design.fields[fid]; return [fid, JSON.stringify({ v: f.variants || null, content: f.content, src: f.src })]; });
       const gen = saveGen;
