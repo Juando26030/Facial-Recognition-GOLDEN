@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import acceptmail, biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy
+from app import acceptmail, biometric_setup, consent, consent_receipt, enroll, faces, jobs, legal_texts, privacy, status_changes
+from app.timeutil import utcnow
 from app.auth import get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.routers.api import SYNC_HASH_RE, _event_for_sync, _roster_map
@@ -60,7 +61,8 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
     if not isinstance(entries, list) or not entries or len(entries) > MAX_BATCH:
         raise HTTPException(status_code=400, detail=f"Envía entre 1 y {MAX_BATCH} registros")
     rmap = _roster_map(db, event) if any(e.get("h") and not e.get("user_id") for e in entries if isinstance(e, dict)) else {}
-    inserted = duplicated = unknown = 0
+    inserted = duplicated = unknown = doubtful = after_revert = 0
+    reverted_at = event.sync_revert[0] if event.sync_revert else None          # devuelto a «Creado»: se guardan SIEMPRE (son la prueba de la PERSONA), solo se cuentan los dudosos y los posteriores
     for e in entries:
         e = e if isinstance(e, dict) else {}
         h = str(e.get("h") or "").strip().lower()
@@ -82,6 +84,9 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
                             legal_text_hash=text_hash, accepted=accepted, adult=bool(e.get("adult")), reason="consent" if accepted else "rejection",
                             device=(str(e.get("device") or f"staff:{staff.id}"))[:120], entry_id=entry_id, at=_when(e.get("at")))
         inserted, duplicated = inserted + ok, duplicated + (not ok)
+        if ok and reverted_at is not None:
+            verdict = status_changes.classify(e.get("at"), utcnow(), reverted_at)[0]
+            doubtful, after_revert = doubtful + (verdict == "no_hour"), after_revert + (verdict == "after")
         if ok and accepted:
             consent_receipt.enqueue(db, entry_id, event.tenant_id, event.id, uid, consent_receipt.channel_of(str(e.get("device") or "")))      # constancia por correo (si tiene correo); en segundo plano
         if ok and accepted:                                     # volvió a aceptar tras una revocación: el reconocimiento vuelve a estar habilitado para esta persona (adulta)
@@ -93,7 +98,7 @@ def record_consents(event_id: int, data: dict, db: Session = Depends(get_db), st
     if inserted:
         jobs.kick(pool="faces")
         jobs.kick()                                             # la constancia por correo (consent_receipt) va por la cola GENERAL: sin este aviso esperaba al barrido horario (igual que aceptar.py)
-    return {"inserted": inserted, "duplicated": duplicated, "unknown": unknown}
+    return {"inserted": inserted, "duplicated": duplicated, "unknown": unknown, **({"doubtful": doubtful, "after_revert": after_revert} if reverted_at is not None else {})}
 
 
 @router.post("/events/{event_id}/consent-click")
@@ -181,7 +186,6 @@ def verify_web_acceptance(event_id: int, user_id: str, db: Session = Depends(get
     """El personal confirma, con el documento físico o el QR de la persona, que quien aceptó desde el celular es ella: desde aquí el reconocimiento facial puede usarla."""
     from app import faces_version
     from app.models import WebAcceptance
-    from app.timeutil import utcnow
     event = get_event_for_staff(event_id, db, staff)
     uid = re.sub(r"[\s.]", "", user_id)
     row = db.get(WebAcceptance, (event.tenant_id, uid, event.id))

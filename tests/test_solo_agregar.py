@@ -325,3 +325,41 @@ def test_preview_and_load_allow_a_coordinator_who_is_also_commercial(client, fac
     login(client, "dual1")
     assert client.post("/api/bulk_roster/preview", data={"event_id": str(live.id)}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")}).status_code == 200
     assert _post_append(client, live).status_code == 200
+
+
+def test_after_the_rollback_nothing_the_request_had_saved_is_lost_and_the_reply_is_the_same_as_for_an_existing_person(client, live, db, monkeypatch):
+    """El arreglo de `/api/register` (IntegrityError → rollback → «ya existía»): lo que la petición ya había confirmado (los rótulos de campos opcionales) sigue ahí, se crea UN ingreso y UNA
+    inscripción, la persona creada por la otra petición no se toca y la respuesta es idéntica a la de una persona que ya existía."""
+    from app.database import SessionLocal
+    from app.models import AccessLog
+    from app.routers import api
+    ev_id = live.id
+    form = {"event_id": ev_id, "first_name": "Kiosko", "last_name": "Vivo", "field_labels": json.dumps({"opcional_1": "Talla"}), "extra_fields": json.dumps({"opcional_1": "M"})}
+    other = SessionLocal()
+    other.add(User(id="6002", tenant_id=live.tenant_id, first_name="Ya", last_name="Existía"))
+    other.commit()
+    other.close()
+    normal = client.post("/api/register", data={**form, "id": "6002"})                 # el camino de siempre: la persona ya existía
+    assert normal.status_code == 200 and "ya existía" in normal.json()["message"]
+
+    real, fired = api.parametros.field_configs_for_event, []
+
+    def configs(db_, event):
+        if not fired:
+            fired.append(1)
+            s = SessionLocal()
+            try:
+                s.add(User(id="6003", tenant_id=event.tenant_id, first_name="De la carga", last_name="Hoja"))
+                s.commit()
+            finally:
+                s.close()
+        return real(db_, event)
+    monkeypatch.setattr(api.parametros, "field_configs_for_event", configs)
+    raced = client.post("/api/register", data={**form, "id": "6003"})                  # el choque: la otra petición crea la cédula entre la consulta y el INSERT
+    assert raced.status_code == 200 and raced.json() == normal.json()                  # respuesta idéntica
+    db.expire_all()
+    assert db.get(type(live), ev_id).get_optional_labels().get("opcional_1") == "Talla"          # lo confirmado antes del choque sigue ahí
+    for uid in ("6002", "6003"):
+        assert db.query(AccessLog).filter_by(event_id=ev_id, user_id=uid).count() == 1 and db.query(EventAttendee).filter_by(event_id=ev_id, user_id=uid).count() == 1
+    u = db.query(User).filter_by(id="6003").first()
+    assert (u.first_name, u.last_name) == ("De la carga", "Hoja")                        # la persona creada por la otra petición no se pisó

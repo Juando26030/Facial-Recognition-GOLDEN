@@ -27,7 +27,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import status_changes, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -883,8 +883,10 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
         if not db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff.id).first():
             raise HTTPException(status_code=403, detail="No estás autorizado para este evento")
         recent = event.status == "finalizado" and event.finalized_at is not None and utcnow() - event.finalized_at <= SYNC_AFTER_FINISH
-        if event.status != "en_proceso" and not recent:
+        reverted = status_changes.revert_info(db, event)          # devuelto a «Creado»: los quioscos sin red sincronizan lo anterior al cambio durante 7 días (app/status_changes.py)
+        if event.status != "en_proceso" and not recent and not (reverted and reverted[1]):
             raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
+    event.sync_revert = status_changes.revert_info(db, event)     # (momento, ventana abierta) o None; atributo de paso, no se guarda
     return event
 
 
@@ -949,6 +951,7 @@ def sync_access_logs(
     checked = {uid for (uid,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id.in_(list(users)))}
     attendees = {uid for (uid,) in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(list(users)))}
     results = []
+    reverted_at = event.sync_revert[0] if event.sync_revert else None
     for (rec, client_id, cedula, h), person_id in zip(clean, resolved):
         if not client_id or not (cedula or h):
             results.append({"client_id": client_id, "result": "invalid"})
@@ -961,17 +964,15 @@ def sync_access_logs(
             results.append({"client_id": client_id, "result": "unknown"})
             continue
         review = user.id in checked
-        when = now
-        try:
-            parsed = datetime.fromisoformat(str(rec.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
-            if now.timestamp() - SYNC_MAX_AGE <= parsed.timestamp() <= now.timestamp() + 300:
-                when = parsed
-        except (TypeError, ValueError):
-            pass
+        verdict, when = status_changes.classify(rec.get("timestamp"), now, reverted_at)
+        if verdict == "after":          # hecho DESPUÉS de devolver el evento a «Creado»: no se guarda; el quiosco lo manda a su cola de revisión (como `unknown`)
+            results.append({"client_id": client_id, "result": "unknown", "reason": "after_revert"})
+            continue
+        doubtful = status_changes.DOUBTFUL if verdict == "no_hour" else None
         try:
             with db.begin_nested():
                 db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
-                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when))
+                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when, doubtful_reason=doubtful))
                 if user.id not in attendees:
                     db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id, origin="manual"))
                 db.flush()
@@ -981,9 +982,10 @@ def sync_access_logs(
         known_ids.add(client_id)
         checked.add(user.id)
         attendees.add(user.id)
-        results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {})})
+        results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {}), **({"doubtful": True} if doubtful else {})})
     db.commit()
-    return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results)}
+    return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results),
+            **({"doubtful": sum(bool(r.get("doubtful")) for r in results), "after_revert": sum(r.get("reason") == "after_revert" for r in results)} if reverted_at else {})}
 
 
 # ----------------------------------------------------------------------------------------------------------------------- bandeja de salida (B8, rebanada R1)
@@ -991,7 +993,7 @@ OUTBOX_MAX_OPS = 50
 OUTBOX_PERSON_KEYS = ("role", "entity", "phone", "email", "opt_1")
 
 
-def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list) -> dict:
+def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, doubtful: Optional[str] = None) -> dict:
     """Una operación `create_person` de la bandeja de salida de un quiosco que estaba sin red (docs/16, B8 R1): crea a la persona como «alta manual» (mismas reglas que `POST /register`, SIN foto).
     Resultados: `ok` (persona nueva creada y registrada), `existente` (la cédula YA existía: NO se pisan sus datos; solo se registra para este evento y el cliente muestra qué había), `duplicado`
     (ya estaba registrada en este evento: no se hace nada) o `error` (con el motivo, para corregirlo en el dispositivo). Idempotente por `op_id` (= `AccessLog.client_id`)."""
@@ -999,7 +1001,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
     first, last = str(f.get("first_name") or "").strip(), str(f.get("last_name") or "").strip()
     if not person_id or not first or not last:
         return {"op_id": op_id, "result": "error", "detail": "Faltan la cédula, los nombres o los apellidos"}
-    if event.status != "en_proceso":                                            # mismo criterio que `require_event_in_progress` (registrar solo con el evento en proceso)
+    if event.status != "en_proceso" and not (event.sync_revert and event.sync_revert[1]):      # `require_event_in_progress`, salvo lo anterior a un retroceso a «Creado» (la hora ya se verificó)
         return {"op_id": op_id, "result": "error", "detail": "El evento ya no está abierto para registrar personas nuevas"}
     extras = f.get("extra_fields") if isinstance(f.get("extra_fields"), dict) else {}
     extras = {str(k): str(v) for k, v in extras.items() if re.fullmatch(r"opcional_\d+", str(k)) and str(v).strip()}
@@ -1039,15 +1041,16 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
                 db.add(user)
                 db.flush()
             db.add(AccessLog(tenant_id=event.tenant_id, user_id=person_id, record_type=kind, event_id=event.id, registered_by_staff_id=staff.id, registration_method="tradicional",
-                             client_id=op_id, timestamp=when))
+                             client_id=op_id, timestamp=when, doubtful_reason=doubtful))
             _upsert_attendee(db, event.id, person_id, event.tenant_id, categories if f.get("categories") else None,
                              certificate=_truthy(f.get("certificate")) if f.get("certificate") else None, digital_contact=contact)
             db.flush()
     except IntegrityError:
         return {"op_id": op_id, "result": "replayed"}
+    flag = {"doubtful": True} if doubtful else {}
     if kind == "Existente":
-        return {"op_id": op_id, "result": "existente", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
-    return {"op_id": op_id, "result": "ok"}
+        return {"op_id": op_id, "result": "existente", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip(), **flag}
+    return {"op_id": op_id, "result": "ok", **flag}
 
 
 @router.post("/events/{event_id}/outbox/sync")
@@ -1065,6 +1068,7 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
     field_configs = parametros.field_configs_for_event(db, event)
     known = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([str((o or {}).get("op_id") or "")[:64] for o in ops if isinstance(o, dict)]))}
     results = []
+    reverted_at = event.sync_revert[0] if event.sync_revert else None
     for op in ops:
         op = op if isinstance(op, dict) else {}
         op_id = str(op.get("op_id") or "").strip()[:64]
@@ -1074,19 +1078,17 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
         if op_id in known:
             results.append({"op_id": op_id, "result": "replayed"})
             continue
-        when = now
-        try:
-            parsed = datetime.fromisoformat(str(op.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
-            if now.timestamp() - SYNC_MAX_AGE <= parsed.timestamp() <= now.timestamp() + 300:
-                when = parsed
-        except (TypeError, ValueError):
-            pass
-        res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs)
+        verdict, when = status_changes.classify(op.get("timestamp"), now, reverted_at)
+        if verdict == "after":          # alta hecha DESPUÉS de devolver el evento a «Creado»: no se crea (el quiosco la deja en su bandeja con este motivo)
+            results.append({"op_id": op_id, "result": "error", "reason": "after_revert", "detail": status_changes.AFTER_REVERT_DETAIL})
+            continue
+        res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs, doubtful=status_changes.DOUBTFUL if verdict == "no_hour" else None)
         if res["result"] in ("ok", "existente", "replayed"):
             known.add(op_id)
         results.append(res)
     db.commit()
-    return {"results": results, "ok": sum(r["result"] in ("ok", "replayed") for r in results)}
+    return {"results": results, "ok": sum(r["result"] in ("ok", "replayed") for r in results),
+            **({"doubtful": sum(bool(r.get("doubtful")) for r in results), "after_revert": sum(r.get("reason") == "after_revert" for r in results)} if reverted_at else {})}
 
 
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
