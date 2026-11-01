@@ -310,6 +310,8 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
     for f in fields.values():
         if f["type"] == PAYMENT_TYPE and f["pay"].get("companions_charge") and not any(x["type"] == COMPANIONS_TYPE for x in fields.values()):
             raise ValueError("Para cobrar por los acompañantes agrega también el campo «Acompañantes»")
+    sheets = _sanitize_sheets(design.get("sheets"), fields_in)
+    sheet_ids = [s["id"] for s in sheets]
     rows, placed = [], set()
     for row in design.get("rows") or []:
         items = [i for i in (row.get("items") or []) if i in fields and i not in placed]
@@ -318,12 +320,78 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         if len(items) > 4:
             raise ValueError("Una fila admite hasta 4 elementos uno al lado del otro")
         placed.update(items)
-        rows.append({"align": row.get("align") if row.get("align") in ("left", "center", "right") else "left", "items": items})
-    for fid in fields:                       # cualquier elemento que no quedó en una fila va al final, en su propia fila
+        clean_row = {"align": row.get("align") if row.get("align") in ("left", "center", "right") else "left", "items": items}
+        if sheets:
+            clean_row["sheet"] = row.get("sheet") if row.get("sheet") in sheet_ids else sheet_ids[0]       # sin hoja (o inexistente) = la primera
+        rows.append(clean_row)
+    for fid in fields:                       # cualquier elemento que no quedó en una fila va al final (en la última hoja), en su propia fila
         if fid not in placed:
-            rows.append({"align": "left", "items": [fid]})
+            rows.append({"align": "left", "items": [fid], **({"sheet": sheet_ids[-1]} if sheets else {})})
+    if sheets:
+        rows.sort(key=lambda r: sheet_ids.index(r["sheet"]))              # estable: dentro de cada hoja se conserva el orden
+        _check_sheets(sheets, rows, fields)
     _check_condition_cycles(fields)
-    return {"theme": theme, "rows": rows, "fields": fields}
+    out = {"theme": theme, "rows": rows, "fields": fields}
+    if sheets:
+        out["sheets"] = sheets
+    return out
+
+
+# ------------------------------------------------------------------ hojas (P12)
+MAX_SHEETS = 20
+
+
+def _sanitize_sheets(sheets_in, fields_in: dict) -> list:
+    """Hojas del formulario [{id, title, description, show_if?}]. Con menos de 2 no hay hojas: es el formulario de una sola hoja de siempre (sin llave `sheets`).
+    La primera y la última hoja son siempre visibles (no admiten `show_if`)."""
+    if not isinstance(sheets_in, list) or len(sheets_in) < 2:
+        return []
+    if len(sheets_in) > MAX_SHEETS:
+        raise ValueError(f"Un formulario admite hasta {MAX_SHEETS} hojas")
+    sheets, seen = [], set()
+    for i, s in enumerate(sheets_in):
+        if not isinstance(s, dict) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", str(s.get("id") or "")) or s["id"] in seen:
+            raise ValueError("Hoja con identificador inválido o repetido")
+        seen.add(s["id"])
+        sheet = {"id": s["id"], "title": richtext.clean_text(s.get("title"), 120, basic=True), "description": richtext.clean_text(s.get("description"), 600)}
+        cond = _sanitize_condition(s.get("show_if"), fields_in, "") if 0 < i < len(sheets_in) - 1 else None
+        if cond:
+            sheet["show_if"] = cond
+        sheets.append(sheet)
+    return sheets
+
+
+def sheet_of_field(design: dict) -> dict:
+    """{id del campo: id de su hoja}; vacío si el formulario es de una sola hoja."""
+    return {fid: row["sheet"] for row in design.get("rows") or [] if row.get("sheet") for fid in row["items"]}
+
+
+def _check_sheets(sheets: list, rows: list, fields: dict) -> None:
+    index = {s["id"]: i for i, s in enumerate(sheets)}
+    at = {fid: index[row["sheet"]] for row in rows for fid in row["items"]}
+    last = len(sheets) - 1
+    for fid, f in fields.items():
+        if f["type"] in (PAYMENT_TYPE, COMPANIONS_TYPE) and at[fid] != last:
+            raise ValueError("El pago y los acompañantes van en la última hoja")
+        trees = [f.get("show_if")] + [it["when"] for v in variants_of(f).values() for it in v.get("items") or []]
+        for tree in trees:                                                  # reglas y variantes: campos de la misma hoja o de una anterior
+            if any(at[leaf["field"]] > at[fid] for leaf in cond_leaves(tree)):
+                raise ValueError(f"«{f.get('label') or fid}»: una regla usa un campo de una hoja posterior")
+    for i, s in enumerate(sheets):                                          # la condición de una hoja, solo con campos de hojas anteriores
+        if any(at[leaf["field"]] >= i for leaf in cond_leaves(s.get("show_if"))):
+            raise ValueError(f"La condición de la hoja «{_sheet_name(s)}» solo puede usar campos de hojas anteriores")
+
+
+def _sheet_name(sheet: dict) -> str:       
+    return richtext.to_plain(sheet.get("title") or "") or f"Hoja {sheet['id']}"
+
+
+def first_error_sheet(design: dict, errors: dict) -> Optional[str]:
+    """Id de la primera hoja (en su orden) que tiene un campo con error, para que el navegador salte a ella; None si el formulario es de una sola hoja."""
+    at = sheet_of_field(design)
+    order = [s["id"] for s in design.get("sheets") or []]
+    hits = {at[fid.split("__")[0]] for fid in errors if fid.split("__")[0] in at}
+    return next((sid for sid in order if sid in hits), None)
 
 
 def _sanitize_rule(cond, fields_in: dict, own_id: str) -> dict:
@@ -811,14 +879,22 @@ def condition_met(cond: Optional[dict], values: dict) -> bool:
 def visible_ids(design: dict, values: dict) -> set:
     """Elementos que se muestran según las reglas. Un elemento cuyo «padre» está oculto también queda oculto."""
     fields = design["fields"]
-    memo = {}
+    memo, sheet_memo = {}, {}
+    sheet_at = sheet_of_field(design)
+    sheet_cond = {s["id"]: s.get("show_if") for s in design.get("sheets") or []}
+
+    def sheet_visible(sid):             # una hoja oculta por su condición oculta todos sus campos
+        if sid not in sheet_memo:
+            cond = sheet_cond.get(sid)
+            sheet_memo[sid] = True if not cond else cond_tree_met(cond, values, lambda f: f in fields and visible(f))
+        return sheet_memo[sid]
 
     def visible(fid):
         if fid in memo:
             return memo[fid]
         cond = fields[fid].get("show_if")
-        result = True
-        if cond:
+        result = sheet_visible(sheet_at[fid]) if fid in sheet_at else True
+        if result and cond:
             result = cond_tree_met(cond, values, lambda f: f in fields and visible(f))
         memo[fid] = result
         return result

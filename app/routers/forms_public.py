@@ -547,7 +547,7 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     clean, errors = formlib.validate_submission(design, values, uploaded, check_email)
     errors.update(file_errors)
     if errors:
-        return JSONResponse({"detail": "Revisa los campos marcados", "errors": errors}, status_code=422)
+        return JSONResponse({"detail": "Revisa los campos marcados", "errors": errors, "error_sheet": formlib.first_error_sheet(design, errors)}, status_code=422)
 
     person_id = None
     for fid, f in fields.items():

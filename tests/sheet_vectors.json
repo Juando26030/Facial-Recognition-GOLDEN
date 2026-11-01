@@ -1,0 +1,33 @@
+{
+ "design": {
+  "theme": {},
+  "sheets": [
+   {"id": "s1", "title": "Tus datos", "description": ""},
+   {"id": "s2", "title": "Sede Bogotá", "description": "", "show_if": {"field": "c", "op": "equals", "value": "Bogotá"}},
+   {"id": "s3", "title": "Para empleados", "description": "", "show_if": {"field": "t", "op": "equals", "value": "Empleado"}},
+   {"id": "s4", "title": "Final", "description": ""}
+  ],
+  "rows": [
+   {"align": "left", "items": ["c"], "sheet": "s1"},
+   {"align": "left", "items": ["t"], "sheet": "s1"},
+   {"align": "left", "items": ["a"], "sheet": "s2"},
+   {"align": "left", "items": ["b", "d"], "sheet": "s3"},
+   {"align": "left", "items": ["z"], "sheet": "s4"}
+  ],
+  "fields": {
+   "c": {"id": "c", "type": "select", "label": "Ciudad", "help": "", "options": ["Bogotá", "Cali"], "key": null, "required": true, "stats": false, "readonly_when_prefilled": false, "placeholder": "", "sync": false, "show_if": null},
+   "t": {"id": "t", "type": "select", "label": "Tipo", "help": "", "options": ["Empleado", "Invitado"], "key": null, "required": true, "stats": false, "readonly_when_prefilled": false, "placeholder": "", "sync": false, "show_if": null},
+   "a": {"id": "a", "type": "text_short", "label": "Barrio", "help": "", "key": null, "required": true, "stats": false, "readonly_when_prefilled": false, "placeholder": "", "sync": false, "show_if": null},
+   "b": {"id": "b", "type": "text_short", "label": "Cargo", "help": "", "key": null, "required": true, "stats": false, "readonly_when_prefilled": false, "placeholder": "", "sync": false, "show_if": null},
+   "d": {"id": "d", "type": "text_short", "label": "Detalle del barrio", "help": "", "key": null, "required": false, "stats": false, "readonly_when_prefilled": false, "placeholder": "", "sync": false, "show_if": {"field": "a", "op": "filled", "value": ""}},
+   "z": {"id": "z", "type": "text_short", "label": "Comentarios", "help": "", "key": null, "required": false, "stats": false, "readonly_when_prefilled": false, "placeholder": "", "sync": false, "show_if": null}
+  }
+ },
+ "cases": [
+  {"name": "todo visible", "values": {"c": "Bogotá", "t": "Empleado", "a": "Chapinero"}, "visible": ["c", "t", "a", "b", "d", "z"]},
+  {"name": "la hoja 2 se oculta y arrastra al campo de otra hoja que dependía de ella", "values": {"c": "Cali", "t": "Empleado", "a": "Chapinero"}, "visible": ["c", "t", "b", "z"]},
+  {"name": "la hoja 3 se oculta", "values": {"c": "Bogotá", "t": "Invitado", "a": "Chapinero"}, "visible": ["c", "t", "a", "z"]},
+  {"name": "sin respuestas: solo la primera y la última", "values": {}, "visible": ["c", "t", "z"]},
+  {"name": "ciudad con otras tildes y mayúsculas", "values": {"c": "bogota", "t": "EMPLEADO", "a": ""}, "visible": ["c", "t", "a", "b", "z"]}
+ ]
+}
