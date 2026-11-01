@@ -6,6 +6,7 @@
     <title>Eventos | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
     {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
@@ -101,6 +102,7 @@ function eventCard(e) {
           ).join("")}
         </select>
         <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
+        ${CAN_REVERT && e.status === "en_proceso" ? `<button type="button" class="small-btn" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">↩ Devolver a Creado</button>` : ""}
         ${STAFF_ROLE === "super_admin" ? `<button type="button" class="small-btn" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">📦 Exportar</button>` : ""}
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
       </div>
@@ -109,6 +111,7 @@ function eventCard(e) {
 }
 
 const STAFF_ROLE = "{{ staff_role }}";
+const CAN_REVERT = STAFF_ROLE === "admin" || STAFF_ROLE === "super_admin";      // devolver «En proceso» a «Creado»: solo admin y super_admin
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
 
 let searchTimer = null;
@@ -174,6 +177,11 @@ document.getElementById("eventsList").addEventListener("change", async (e) => {
   if (!select) return;
   const newStatus = select.value;
   const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
+  if (CAN_REVERT && previousStatus === "en_proceso" && newStatus === "creado") {      // el retroceso tiene su propia ventana y su propio rastro
+    select.value = previousStatus;
+    if (await revertEventToCreated(select.dataset.eventId)) runSearch();
+    return;
+  }
   const confirmed = await confirmStatusChange(newStatus, STATUS_LABELS[newStatus]);
   if (!confirmed) { select.value = previousStatus; return; }
   const res = await fetch(`/api/events/${select.dataset.eventId}`, {
@@ -181,6 +189,11 @@ document.getElementById("eventsList").addEventListener("change", async (e) => {
   });
   showToast(res.ok ? `Evento pasó a "${STATUS_LABELS[newStatus]}"` : "No se pudo actualizar el evento", res.ok ? "success" : "error");
   if (!res.ok) select.value = previousStatus;
+});
+
+document.getElementById("eventsList").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-revert-event]");
+  if (btn && await revertEventToCreated(btn.dataset.revertEvent)) runSearch();
 });
 
 runSearch();

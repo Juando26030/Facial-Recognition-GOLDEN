@@ -6,6 +6,7 @@
     <title>Clientes - Cuentas | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
     {% if staff_role == "super_admin" %}<script src="{{ url_for('static', path='js/event-transfer.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/clockpicker.js') }}"></script>
@@ -144,6 +145,7 @@ function renderEventRows(events, el) {
       </div>
       <div style="display:flex; gap:6px; align-items:center;">
         <button type="button" class="small-btn" data-edit-event="${e.id}">✏️ Editar</button>
+        ${isAdmin && e.status === "en_proceso" ? `<button type="button" class="small-btn" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">↩ Devolver a Creado</button>` : ""}
         ${isSuper ? `<button type="button" class="small-btn" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">📦 Exportar</button>` : ""}
         <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar</a>
         <select class="small-btn" data-status-select data-event-id="${e.id}" style="cursor:pointer;">
@@ -187,11 +189,23 @@ tenantsListEl.addEventListener("input", (e) => {
   renderEventRows(events.filter(ev => stripAccents(`${ev.name} ${ev.event_code || ""}`).toLowerCase().includes(q)), el);
 });
 
+tenantsListEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-revert-event]");
+  if (!btn) return;
+  const card = btn.closest(".tenant-card");
+  if (await revertEventToCreated(btn.dataset.revertEvent)) loadEventsForTenant(card.dataset.tenantId, card);
+});
+
 tenantsListEl.addEventListener("change", async (e) => {
   const select = e.target.closest("[data-status-select]");
   if (!select) return;
   const newStatus = select.value;
   const previousStatus = Array.from(select.options).find(o => o.defaultSelected)?.value;
+  if (isAdmin && previousStatus === "en_proceso" && newStatus === "creado") {      // el retroceso tiene su propia ventana y su propio rastro
+    select.value = previousStatus;
+    if (await revertEventToCreated(select.dataset.eventId)) { const card = select.closest(".tenant-card"); loadEventsForTenant(card.dataset.tenantId, card); }
+    return;
+  }
   const confirmed = await confirmStatusChange(newStatus, STATUS_LABELS[newStatus]);
   if (!confirmed) { select.value = previousStatus; return; }
   await setEventStatus(select.dataset.eventId, newStatus, select);

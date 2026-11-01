@@ -651,7 +651,7 @@ if (appendForm) appendForm.addEventListener("submit", async (e) => {
         const extra = [p.enroll_existing ? `${p.enroll_existing} ya existen en el cliente y solo se inscribirán en este evento` : "", p.duplicates ? `${p.duplicates} repetidas en el archivo (se usa la primera)` : "",
                        p.suppressed ? `${p.suppressed} con supresión de datos (se omiten)` : "", p.without_id ? `${p.without_id} sin cédula (se omiten)` : ""].filter(Boolean);
         const ok = await showConfirm(
-            `Se agregarán <strong>${p.new}</strong> personas nuevas, se ignorarán <strong>${p.existing}</strong> que ya están en el evento y <strong>${p.columns_ignored}</strong> columnas se ignoran.` +
+            `Se agregarán <strong>${p.new}</strong> personas nuevas, se ignorarán <strong>${p.existing}</strong> que ya están en el evento y <strong>${p.columns_ignored}</strong> ${p.columns_ignored === 1 ? "columna se ignora" : "columnas se ignoran"}.` +
             (extra.length ? `<br><br>${extra.join(".<br>")}.` : "") + (cols ? `<br><br>${cols}` : "") +
             `<br><br>No se modifica a nadie que ya esté en el evento y el registro en vivo sigue funcionando. ¿Agregar?`,
             { variant: "warning", confirmLabel: "Sí, agregar personas nuevas" });

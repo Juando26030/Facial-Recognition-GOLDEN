@@ -259,3 +259,17 @@ def test_sync_is_unchanged_for_an_event_in_progress(client, factory, db):
     assert r["results"] == [{"client_id": "k", "result": "created"}] and "doubtful" not in r          # sin retroceso: la respuesta de siempre
     db.expire_all()
     assert db.query(AccessLog).filter_by(client_id="k").one().doubtful_reason is None
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ pantalla
+@pytest.mark.parametrize("role, can", [("admin", True), ("super_admin", True), ("coordinador", False)])
+def test_the_events_screens_offer_the_button_only_to_admin_and_super_admin(client, factory, role, can):
+    factory.staff(role, "quien")
+    login(client, "quien")
+    for path in ("/eventos", "/clientes"):
+        page = client.get(path).text
+        assert "js/revert-event.js" in page and "data-revert-event" in page                       # el código del botón está en la página; quién lo ve lo decide el rol (abajo)
+    page = client.get("/eventos").text
+    assert ('const CAN_REVERT = STAFF_ROLE === "admin" || STAFF_ROLE === "super_admin"' in page) and (f'const STAFF_ROLE = "{role}"' in page)
+    js = open("static/js/revert-event.js", encoding="utf-8").read()
+    assert "showConfirm(" in js and "alert(" not in js and "confirm(" not in js.replace("showConfirm(", "") and "dejará de registrar y reconocer" in js
