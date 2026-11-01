@@ -243,6 +243,52 @@ function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
 }
 function usedKeys() { return new Set(Object.values(design.fields).map((f) => f.key).filter(Boolean)); }
 
+// ---------------------------------------------------------------- texto con variantes (títulos y textos informativos)
+const choiceFields = () => Object.values(design.fields).filter((x) => !STATIC.includes(x.type) && !NOCOND.includes(x.type) && (FormSync.optionsOf(x, eventFields) || x.type === 'checkbox'));
+function variantsHtml(f) {
+  const v = f.variants;
+  const modeSel = `<div class="fld"><label>Texto</label><select id="vMode"><option value="">Un solo texto</option><option value="1" ${v ? 'selected' : ''}>Cambia según una respuesta (variantes)</option></select></div>`;
+  if (!v) return modeSel + `<div class="fld"><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
+  const cands = choiceFields();
+  if (!cands.length) return modeSel + '<div class="hint">Para usar variantes agrega antes un campo con opciones (por ejemplo Ciudad).</div>';
+  const by = design.fields[v.by] && cands.some((c) => c.id === v.by) ? v.by : cands[0].id, opts = FormSync.optionsOf(design.fields[by], eventFields) || ['true', 'false'];
+  const rows = v.items.map((it, i) => {
+    const cur = Array.isArray(it.rule.value) ? it.rule.value : [it.rule.value];
+    const val = it.rule.op === 'in'
+      ? `<div style="max-height:110px; overflow:auto;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-vin="${i}" value="${esc(o)}" ${cur.some((x) => FormSync.norm(x) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div>`
+      : `<select data-vval="${i}"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(it.rule.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    return `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px; display:grid; gap:4px;">
+      <div style="display:flex; gap:4px; align-items:center;"><span class="hint">Si es</span><select data-vop="${i}"><option value="equals" ${it.rule.op === 'equals' ? 'selected' : ''}>igual a</option><option value="in" ${it.rule.op === 'in' ? 'selected' : ''}>alguno de</option></select></div>${val}
+      <textarea data-vtxt="${i}" rows="3" placeholder="Texto que se muestra">${esc(it.content)}</textarea>
+      <div style="display:flex; gap:4px; justify-content:flex-end;"><button type="button" class="small-btn" data-vmv="${i}:-1" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="small-btn" data-vmv="${i}:1" ${i === v.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="small-btn danger" data-vdel="${i}">Quitar</button></div></div>`;
+  }).join('');
+  return modeSel + `<div class="fld"><label>Campo que decide</label><select id="vBy">${cands.map((c) => `<option value="${c.id}" ${c.id === by ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
+    <div class="hint" style="margin-bottom:4px;">Se muestra la primera variante que se cumpla, de arriba hacia abajo.</div>${rows}
+    <button type="button" class="small-btn" id="vAdd">+ Agregar variante</button>
+    <div class="fld" style="margin-top:6px;"><label>Texto por defecto (si ninguna aplica; vacío = no se muestra nada)</label><textarea id="vDef" rows="3">${esc(v.default || '')}</textarea></div>`;
+}
+function bindVariants(box, f) {
+  const v = f.variants, ch = (fn) => () => { fn(); markDirty(); renderCanvas(); };
+  const again = (fn) => () => { fn(); markDirty(); renderCanvas(); renderProps(); };
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('vMode', 'change', again(() => {
+    if ($('vMode').value) { const c = choiceFields()[0]; f.variants = { by: c ? c.id : null, items: [], default: f.content || '' }; }
+    else { f.content = (f.variants && f.variants.default) || ''; delete f.variants; }
+  }));
+  if (!v) return;
+  const by = () => ($('vBy') ? $('vBy').value : v.by);
+  v.by = by();
+  on('vBy', 'change', again(() => { v.by = by(); v.items.forEach((it) => { it.rule = { field: v.by, op: it.rule.op, value: it.rule.op === 'in' ? [] : '' }; }); }));
+  on('vAdd', 'click', again(() => { v.by = by(); v.items.push({ rule: { field: v.by, op: 'equals', value: '' }, content: '' }); }));
+  on('vDef', 'input', ch(() => { v.default = $('vDef').value; }));
+  box.querySelectorAll('[data-vop]').forEach((el) => el.addEventListener('change', again(() => { const r = v.items[+el.dataset.vop].rule; r.op = el.value; r.value = r.op === 'in' ? (r.value ? [r.value] : []) : (Array.isArray(r.value) ? (r.value[0] || '') : r.value); })));
+  box.querySelectorAll('[data-vval]').forEach((el) => el.addEventListener('change', ch(() => { v.items[+el.dataset.vval].rule.value = el.value; })));
+  box.querySelectorAll('[data-vin]').forEach((el) => el.addEventListener('change', ch(() => { const i = +el.dataset.vin; v.items[i].rule.value = Array.from(box.querySelectorAll(`[data-vin="${i}"]:checked`)).map((x) => x.value); })));
+  box.querySelectorAll('[data-vtxt]').forEach((el) => el.addEventListener('input', ch(() => { v.items[+el.dataset.vtxt].content = el.value; })));
+  box.querySelectorAll('[data-vdel]').forEach((el) => el.addEventListener('click', again(() => { v.items.splice(+el.dataset.vdel, 1); })));
+  box.querySelectorAll('[data-vmv]').forEach((el) => el.addEventListener('click', again(() => { const [i, d] = el.dataset.vmv.split(':').map(Number); [v.items[i], v.items[i + d]] = [v.items[i + d], v.items[i]]; })));
+}
+
 // ---------------------------------------------------------------- paleta
 async function syncWithParams() {
   try { eventFields = await j(`/api/events/${EV}/form-event-fields`); } catch (e) { showToast(e.message, 'error'); return; }
@@ -333,7 +379,7 @@ function renderCanvas() {
 }
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
-  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
+  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.variants ? '↔ Según respuesta: ' + (f.variants.default || (f.variants.items[0] || {}).content || '') : f.content || '').slice(0, 40)) : f.label;
   return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (label || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
@@ -352,7 +398,7 @@ function renderProps() {
   if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + payHtml(f);
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + compHtml(f);
-  if (f.type === 'heading' || f.type === 'paragraph') html += `<div class="fld"><label>Texto</label><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
+  if (f.type === 'heading' || f.type === 'paragraph') html += variantsHtml(f);
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
     <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
     <div class="fld"><label for="pImgAlt">Texto alternativo (describe la imagen para personas que no la ven)</label><input type="text" id="pImgAlt" value="${esc(f.alt || '')}" placeholder="Ej. Banner del Congreso Cundi 2026"><div class="hint">Déjalo vacío solo si la imagen es decorativa.</div></div>`;
@@ -407,6 +453,7 @@ function renderProps() {
   if (isComp) bindComp(box, f);
   on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pHelp', 'input', upd(() => { f.help = $('pHelp').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
   on('pContent', 'input', upd(() => { f.content = $('pContent').value; }));
+  if (f.type === 'heading' || f.type === 'paragraph') bindVariants(box, f);
   on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
   box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
@@ -443,7 +490,7 @@ function renderProps() {
   box.querySelectorAll('[data-rvin]').forEach((el) => el.addEventListener('change', () => { const i = +el.dataset.rvin, rs = cur(); rs[i].value = Array.from(box.querySelectorAll(`[data-rvin="${i}"]:checked`)).map((x) => x.value); saveRules(rs, match); }));
   const shift = (d) => { const at = locate(f.id); const row = design.rows[at[0]]; const n = at[1] + d; if (n < 0 || n >= row.items.length) return; [row.items[at[1]], row.items[n]] = [row.items[n], row.items[at[1]]]; markDirty(); renderCanvas(); };
   on('pUp', 'click', () => shift(-1)); on('pDown', 'click', () => shift(1));
-  on('pDel', 'click', () => { Object.values(design.fields).forEach((x) => { if (x.show_if) setRules(x, rulesOf(x.show_if).filter((r) => r.field !== f.id), matchOf(x.show_if)); }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+  on('pDel', 'click', () => { Object.values(design.fields).forEach((x) => { if (x.show_if) setRules(x, rulesOf(x.show_if).filter((r) => r.field !== f.id), matchOf(x.show_if)); if (x.variants) { x.variants.items = x.variants.items.filter((it) => it.rule.field !== f.id); if (x.variants.by === f.id) { x.variants.by = null; if (!x.variants.items.length) { x.content = x.variants.default || ''; delete x.variants; } } } }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
 }
 
 // ---------------------------------------------------------------- campo Pago: monto, reglas y descuentos

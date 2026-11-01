@@ -15,6 +15,14 @@
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
   const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 }) + ' COP';
 
+  // Texto de un título/texto informativo con variantes: la primera cuya regla se cumple, si no la de por defecto (null = no se muestra). Igual que formlib.pick_variant.
+  function pickVariant(f, values, isVisible) {
+    const v = f.variants;
+    if (!v) return f.content || '';
+    const hit = (v.items || []).find((i) => (!isVisible || isVisible(i.rule.field)) && conditionMet(i.rule, values));
+    return hit ? (hit.content || null) : (v.default || null);
+  }
+
   function conditionMet(cond, values) {
     if (!cond) return true;
     const cur = values[cond.field];
@@ -252,6 +260,7 @@
       return out;
     }
 
+    const variantText = {};   // fid -> texto elegido para los títulos/textos con variantes
     function visibleSet() {
       const values = rawValues();
       const memo = {};
@@ -261,6 +270,10 @@
         const rules = !cond ? [] : (cond.rules || [cond]);
         const met = rules.map((r) => design.fields[r.field] && vis(r.field) && conditionMet(r, values));
         memo[fid] = !cond || (cond.match === 'any' ? met.some(Boolean) : met.every(Boolean));
+        if (memo[fid] && design.fields[fid].variants) {   // texto con variantes: sin variante que aplique (ni por defecto) no ocupa espacio
+          const t = pickVariant(design.fields[fid], values, (id) => !!design.fields[id] && vis(id));
+          if (t) variantText[fid] = t; else memo[fid] = false;
+        }
         return memo[fid];
       };
       return new Set(Object.keys(els).filter(vis));
@@ -285,7 +298,10 @@
 
     function applyConditions() {
       const vis = visibleSet();
-      Object.entries(els).forEach(([fid, { wrap }]) => { wrap.style.display = vis.has(fid) ? '' : 'none'; });
+      Object.entries(els).forEach(([fid, { wrap, f }]) => {
+        wrap.style.display = vis.has(fid) ? '' : 'none';
+        if (f.variants && vis.has(fid) && wrap._vt !== variantText[fid]) { wrap._vt = variantText[fid]; wrap.innerHTML = fieldHtml({ ...f, content: variantText[fid] }, null, false, assetUrl); }
+      });
       rowEls.forEach((r) => { r.style.display = Array.from(r.children).every((w) => w.style.display === 'none') ? 'none' : ''; });
       return vis;
     }
@@ -402,5 +418,5 @@
   }
 
   if (typeof window !== 'undefined') window.FormRender = { render, conditionMet };
-  if (typeof module !== 'undefined') module.exports = { conditionMet, norm };
+  if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant };
 })();

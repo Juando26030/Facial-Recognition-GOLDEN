@@ -259,6 +259,9 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                     raise ValueError(f"«{clean['label']}»: el tamaño máximo debe ser un número de MB")
         elif kind in ("heading", "paragraph"):
             clean["content"] = _text(f.get("content"), 2000)
+            variants = _sanitize_variants(f.get("variants"), fields_in, fid)
+            if variants:                       # solo si el elemento las usa: los formularios existentes no ganan ninguna llave nueva
+                clean["variants"] = variants
         elif kind == PAYMENT_TYPE:
             clean["label"] = clean["label"] or "Pago"
             clean["pay"] = sanitize_payment(f.get("pay"), fields_in, fid)
@@ -302,6 +305,40 @@ def _sanitize_rule(cond, fields_in: dict, own_id: str) -> dict:
         raise ValueError("Operador de regla no válido")
     value = cond.get("value")
     return {"field": cond["field"], "op": op, "value": [str(v) for v in value] if isinstance(value, list) else _text(value, 200)}
+
+
+MAX_VARIANTS = 30
+
+
+def _sanitize_variants(v, fields_in: dict, own_id: str):
+    """«Texto con variantes» de un título o texto informativo: {"by": campo que decide, "items": [{"rule": {field, op, value}, "content"}], "default": texto}.
+    Se muestra la primera variante cuya regla se cumple; si ninguna, la de por defecto; si no hay, el elemento no ocupa espacio."""
+    if not isinstance(v, dict):
+        return None
+    items = []
+    for it in (v.get("items") or [])[:MAX_VARIANTS]:
+        if isinstance(it, dict):
+            items.append({"rule": _sanitize_rule(it.get("rule"), fields_in, own_id), "content": _text(it.get("content"), 2000)})
+    default = _text(v.get("default"), 2000)
+    by = v.get("by") if v.get("by") in fields_in and v.get("by") != own_id else None
+    if not items and not default:
+        return None
+    out = {"by": by, "items": items}
+    if default:
+        out["default"] = default
+    return out
+
+
+def pick_variant(field: dict, values: dict, visible: Optional[set] = None) -> Optional[str]:
+    """Texto que muestra un título/texto informativo: su `content`, o (con variantes) el de la primera variante cuya regla se cumple, o el de por defecto.
+    `visible`: ids de los campos visibles (una regla sobre un campo oculto no cuenta). None = no se muestra. Igual que `pick` de static/js/form-render.js."""
+    v = field.get("variants")
+    if not v:
+        return field.get("content") or ""
+    for it in v["items"]:
+        if (visible is None or it["rule"]["field"] in visible) and condition_met(it["rule"], values):
+            return it["content"] or None
+    return v.get("default") or None
 
 
 def _sanitize_condition(cond, fields_in: dict, own_id: str):
