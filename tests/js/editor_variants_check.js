@@ -13,7 +13,7 @@ assert.ok(block.length > 3000, 'bloque encontrado');
 
 const dom = new JSDOM('<!doctype html><body><div id="propsBox"></div><div id="sheetsBar"></div><div id="sheetsPanel"></div><div id="canvas"></div></body>', { runScripts: 'outside-only' });
 const w = dom.window;
-['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/form-sync.js', 'static/js/cond-tree.js', 'static/js/form-render.js'].forEach((f) => w.eval(fs.readFileSync(path.join(root, f), 'utf8')));
+['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/form-sync.js', 'static/js/cond-tree.js', 'static/js/element-names.js', 'static/js/form-render.js'].forEach((f) => w.eval(fs.readFileSync(path.join(root, f), 'utf8')));
 const CITIES = Array.from({ length: 31 }, (_, i) => `Ciudad ${String(i + 1).padStart(2, '0')}`);
 w.eval(`
   var toasts = [], confirms = [], dirtyCount = 0, canvasCount = 0, confirmAnswer = true;
@@ -31,12 +31,13 @@ w.eval(`
     n: { id: 'n', type: 'text_short', label: 'Nombre', help: 'ayuda' },
   }, rows: [] };
   const showToast = (m, k) => toasts.push([m, k]), showConfirm = async (m) => { confirms.push(m); return confirmAnswer; };
-  const markDirty = () => { dirtyCount++; }, renderCanvas = () => { canvasCount++; };
+  let namesCache = null;
+  const markDirty = () => { dirtyCount++; namesCache = null; }, renderCanvas = () => { canvasCount++; };
   let box = document.getElementById('propsBox'), selected = null, rtMounts = [];
   const mountRt = (h, o) => { const m = RichText.mount(h, o); rtMounts.push(m); return m; };
   function renderProps() { Object.keys(condOwners).forEach((k) => { if (!condOwners[k].keep) delete condOwners[k]; }); const f = design.fields[selected]; box.innerHTML = variantsHtml(f) + '<div id="vis">' + (() => { const id = regOwner(f.id, () => f.show_if, (n) => { f.show_if = CondTree.compact(n); markDirty(); }, { key: 'show:' + f.id }); return f.show_if ? condEditorHtml(id) + '<button data-co="' + id + '" data-cx="clearroot">x</button>' : '<button data-co="' + id + '" data-cx="startroot">y</button>'; })() + '</div>'; bindVariants(box, f); }
   ${block}
-  window.T = { setCurrent: (id) => { selected = id; renderProps(); }, f: (id) => design.fields[id], design: () => design, toasts, confirms, dirty: () => dirtyCount, answer: (v) => { confirmAnswer = v; }, ensureUids, foldItem };
+  window.T = { setCurrent: (id) => { selected = id; namesCache = null; renderProps(); }, f: (id) => design.fields[id], design: () => design, toasts, confirms, dirty: () => dirtyCount, answer: (v) => { confirmAnswer = v; }, ensureUids, foldItem };
 `);
 const T = w.T, box = w.document.getElementById('propsBox'), doc = w.document;
 const tick = () => new Promise((r) => setTimeout(r, 0));

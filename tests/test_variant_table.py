@@ -83,7 +83,7 @@ def test_native_excel_types_become_the_same_text():
 # ------------------------------------------------------------------ plantilla y ida y vuelta
 def test_template_has_the_three_sheets_and_the_valid_values():
     wb = openpyxl.load_workbook(io.BytesIO(vt.build_template(_spec())))
-    assert wb.sheetnames == ["Tabla", "Instrucciones", "Valores válidos"]
+    assert wb.sheetnames == ["Tabla", "Instrucciones", "_meta", "Valores válidos"] and wb["_meta"].sheet_state == "veryHidden"
     assert [c.value for c in wb["Tabla"][1]] == ["Ciudad", "Lugar", "Fecha", "Cantidad", "Nivel", "Foto"]
     assert [r[0].value for r in wb["Tabla"].iter_rows(min_row=2)] == ["Bogotá", "Cali", "Pasto"]
     valid = {c.value: [r[i].value for r in wb["Valores válidos"].iter_rows(min_row=2) if r[i].value] for i, c in enumerate(wb["Valores válidos"][1])}
@@ -344,3 +344,63 @@ def test_openpyxl_with_defusedxml_also_refuses_entities_on_its_own():
         wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, keep_links=False)
         list(wb["Tabla"].iter_rows(values_only=True))
     assert "lollol" not in str(exc.value)
+
+
+# ------------------------------------------------------------------ P11b: la identidad de cada columna es su id (hoja oculta `_meta`), no su nombre
+def _spec_ids():
+    spec = _spec()
+    spec["variables"][0]["field"] = "ciudad_f"
+    return spec
+
+
+def test_renaming_and_reordering_do_not_break_an_exported_file():
+    spec = _spec_ids()
+    spec["rows"] = [{"keys": ["Bogotá"], "cells": {"k1": "Chapinero", "k2": "05/03/2026"}}, {"keys": ["Cali"], "cells": {"k1": "Sur"}}, {"keys": ["Pasto"], "cells": {}}]
+    data = vt.build_template(spec)
+    renamed = _spec_ids()                                                   # el diseñador renombró los elementos y reordenó las columnas; los ids son los mismos
+    renamed["variables"][0]["label"] = "Ciudad del evento"
+    renamed["columns"] = [dict(c, name=f"Nuevo {i}") for i, c in enumerate(reversed(renamed["columns"]))]
+    renamed["rows"] = [{"keys": r["keys"], "cells": {}} for r in spec["rows"]]
+    got = vt.read_table(data, "t.xlsx", renamed)
+    assert got["problems"] == [] and got["ignored_columns"] == [] and got["missing_rows"] == 0
+    assert got["rows"][0]["cells"] == {"k1": "Chapinero", "k2": "05/03/2026"} and got["rows"][1]["cells"] == {"k1": "Sur"}
+
+
+def test_reordering_columns_inside_excel_does_not_break_it():
+    def swap(ws):
+        for row in ws.iter_rows(min_row=1, max_row=4):
+            row[1].value, row[2].value = row[2].value, row[1].value        # intercambia las columnas B y C (también los encabezados)
+    spec = _spec_ids()
+    spec["rows"] = [{"keys": ["Bogotá"], "cells": {"k1": "Chapinero", "k2": "05/03/2026"}}, {"keys": ["Cali"], "cells": {}}, {"keys": ["Pasto"], "cells": {}}]
+    got = vt.read_table(_xlsx(swap, spec), "t.xlsx", spec)
+    assert got["rows"][0]["cells"] == {"k1": "Chapinero", "k2": "05/03/2026"}
+
+
+def test_a_column_whose_id_no_longer_exists_is_reported_not_guessed():
+    spec = _spec_ids()
+    spec["rows"] = [{"keys": ["Bogotá"], "cells": {"k1": "Chapinero", "k2": "05/03/2026"}}, {"keys": ["Cali"], "cells": {}}, {"keys": ["Pasto"], "cells": {}}]
+    data = vt.build_template(spec)
+    gone = _spec_ids()
+    gone["columns"] = [c for c in gone["columns"] if c["id"] != "k2"]                  # el elemento de «Fecha» se borró
+    got = vt.read_table(data, "t.xlsx", gone)
+    assert got["ignored_columns"] == ["Fecha"] and "k2" not in got["rows"][0]["cells"] and got["rows"][0]["cells"] == {"k1": "Chapinero"}
+
+
+def test_files_without_the_hidden_sheet_still_match_by_name_and_hostile_meta_is_ignored():
+    spec = _spec_ids()
+    plain = _xlsx(lambda ws: ws.__setitem__("B2", "x"), spec)
+    wb = openpyxl.load_workbook(io.BytesIO(plain)); del wb["_meta"]; buf = io.BytesIO(); wb.save(buf)
+    assert vt.read_table(buf.getvalue(), "t.xlsx", spec)["rows"][0]["cells"] == {"k1": "x"}
+    for junk in ("no es json", "[" * 5000, json.dumps({"cols": [{"h": "Lugar", "id": "no_existe"}], "vars": [{"h": "Ciudad", "field": "otro"}]}), json.dumps({"cols": "x", "vars": 5}), "x" * 25000):
+        wb = openpyxl.load_workbook(io.BytesIO(plain)); wb["_meta"]["A1"].value = junk; buf = io.BytesIO(); wb.save(buf)
+        got = vt.read_table(buf.getvalue(), "t.xlsx", spec)
+        assert got["rows"][0]["cells"] == {"k1": "x"}, junk[:30]                         # cae a los nombres y no pasa nada
+    wb = openpyxl.load_workbook(io.BytesIO(plain)); wb["_meta"]["A1"].value = "=1+1"; wb["_meta"]["A1"].data_type = "f"; buf = io.BytesIO(); wb.save(buf)
+    with pytest.raises(vt.ExcelRejected, match="fórmulas"):
+        vt.read_table(buf.getvalue(), "t.xlsx", spec)
+
+
+def test_spec_variable_field_must_look_like_an_id():
+    bad = _spec(); bad["variables"][0]["field"] = "<script>"
+    with pytest.raises(vt.ExcelRejected):
+        vt.build_template(bad)

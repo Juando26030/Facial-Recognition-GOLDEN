@@ -290,6 +290,9 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
             clean["src"] = _text(f.get("src"), 200)
             clean["width"] = _percent(f.get("width"), 100)             # % del ancho disponible
             clean["alt"] = _text(f.get("alt"), 200)                    # texto alternativo (accesibilidad); vacío = imagen decorativa
+        internal = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(f.get("internal_name") or "")).split())[:60]
+        if internal:                        # «Nombre interno» (P11b): solo para el diseñador (listas, lienzo, encabezados del Excel); texto plano y nunca llega a la página pública
+            clean["internal_name"] = internal
         if kind not in STATIC_TYPES:        # nombre de PRESENTACIÓN con formato: solo se pinta en el formulario público y la vista previa; todo lo demás usa `label`
             shown = richtext.clean_text(f.get("display_label"), 300)
             if shown:                       # sin llave si está vacío: los formularios existentes no cambian
@@ -665,6 +668,7 @@ def public_design(design: dict) -> dict:
     para que se muestre la casilla del código."""
     out = json.loads(json.dumps(design))
     for f in out["fields"].values():
+        f.pop("internal_name", None)                       # el nombre interno es del diseñador: no se publica
         if f.get("type") == PAYMENT_TYPE and isinstance(f.get("pay"), dict):
             f["pay"]["codes"] = any(d.get("how") == "code" for d in f["pay"].get("discounts", []))
             for item in f["pay"].get("rules", []) + f["pay"].get("discounts", []):

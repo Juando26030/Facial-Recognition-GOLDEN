@@ -43,6 +43,14 @@
       }
       return '';
     };
+    const missing = (c) => !!c.field && !!ctx.exists && !ctx.exists(c.field);   // el elemento de la columna se borró desde que se armó (o la plantilla venía de otro formulario)
+    const autoName = (field, prop, skip) => {   // nombre de columna = nombre corto del elemento (y la propiedad si no es la principal); único: el Excel no admite dos iguales
+      let base = (ctx.shortName ? ctx.shortName(field) : '') || ctx.propLabel(prop);
+      if (!['content', 'src'].includes(prop)) base += ' · ' + ctx.propLabel(prop);
+      let name = base, k = 2;
+      while (st.columns.some((c) => c !== skip && VT.norm(c.name) === VT.norm(name))) name = `${base} (${k++})`;
+      return name;
+    };
     const cellInfo = (c, raw) => { const col = spec().columns.find((x) => x.id === c.id); return VT.parseCell(c.type, raw, col); };
 
     // ---------------------------------------------------------------- pintado
@@ -65,19 +73,19 @@
       validateAll();
     }
     function colHtml(c, i, flds) {
-      const f = flds.find((x) => x.id === c.field), props = f ? ctx.propsOf(f.id) : [];
+      const f = flds.find((x) => x.id === c.field), props = f ? ctx.propsOf(f.id) : (c.prop ? [c.prop] : []);
       const types = c.prop === 'src' ? ['image'] : ['text', 'date', 'number', 'options'];
       return `<div class="vt-col" style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin:4px 0; padding:4px; border:1px solid #e3e5ec; border-radius:8px;">
-        <input type="text" data-vt-colname="${i}" maxlength="60" value="${esc(c.name)}" placeholder="Nombre de la columna" aria-label="Nombre de la columna ${i + 1}" style="width:140px;">
+        <input type="text" data-vt-colname="${i}" maxlength="60" value="${esc(c.name)}" placeholder="Nombre de la columna" aria-label="Nombre de la columna ${i + 1}" style="width:170px;">
         <select data-vt-colfield="${i}" aria-label="Elemento de la columna ${i + 1}"><option value="">— elemento —</option>${flds.map((x) => `<option value="${esc(x.id)}" ${c.field === x.id ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
         <select data-vt-colprop="${i}" aria-label="Propiedad de la columna ${i + 1}">${props.map((p) => `<option value="${p}" ${c.prop === p ? 'selected' : ''}>${esc(ctx.propLabel(p))}</option>`).join('')}</select>
         <select data-vt-coltype="${i}" aria-label="Tipo de la columna ${i + 1}">${types.map((t) => `<option value="${t}" ${c.type === t ? 'selected' : ''}>${TYPE_LABEL[t]}</option>`).join('')}</select>
         ${c.type === 'options' ? `<textarea data-vt-colopts="${i}" rows="2" placeholder="Una opción por línea" aria-label="Opciones de la columna ${i + 1}" style="width:150px;">${esc((c.options || []).join('\n'))}</textarea>` : ''}
-        <button type="button" class="small-btn danger" data-vt-act="delcol" data-vt-i="${i}" aria-label="Quitar la columna ${i + 1}">✕</button></div>`;
+        <button type="button" class="small-btn danger" data-vt-act="delcol" data-vt-i="${i}" aria-label="Quitar la columna ${i + 1}">✕</button>${missing(c) ? '<div class="vt-err" role="alert" style="flex-basis:100%; color:#a1261b; font-size:.78rem;">El elemento de esta columna ya no existe: elige otro para volver a usarla.</div>' : ''}</div>`;
     }
     function gridHtml() {
       if (!st.rows.length || !st.columns.length) return '<p class="hint" style="padding:10px;">Elige qué decide y agrega al menos una columna para ver la tabla.</p>';
-      const head = st.varFields.map((id) => `<th scope="col" style="position:sticky; top:0; background:#f3f5ff;">${esc(ctx.fieldLabel(id))}</th>`).join('') + st.columns.map((c) => `<th scope="col" style="position:sticky; top:0; background:#f3f5ff;">${esc(c.name || ctx.propLabel(c.prop))}<div class="hint" style="font-weight:400;">${TYPE_LABEL[c.type]}</div></th>`).join('');
+      const head = st.varFields.map((id) => `<th scope="col" style="position:sticky; top:0; background:#f3f5ff;">${esc(ctx.fieldLabel(id))}</th>`).join('') + st.columns.map((c) => `<th scope="col" style="position:sticky; top:0; background:#f3f5ff;">${esc(c.name || ctx.propLabel(c.prop))}<div class="hint" style="font-weight:400;" title="${esc(c.field && !missing(c) ? ctx.fieldLabel(c.field) : '')}">${TYPE_LABEL[c.type]}${missing(c) ? ' · ⚠ sin elemento' : ''}</div></th>`).join('');
       const body = st.rows.map((r, ri) => `<tr>${r.keys.map((k) => `<th scope="row" style="text-align:left; background:#fafafa; white-space:nowrap;">${esc(k)}</th>`).join('')}${st.columns.map((c, ci) => `<td data-vt-r="${ri}" data-vt-c="${ci}" tabindex="-1" style="min-width:110px; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:1px solid #eee; cursor:text;">${esc(showCell(c, r.cells[c.id]))}</td>`).join('')}</tr>`).join('');
       return `<table class="vt-grid" style="border-collapse:collapse; font-size:.8rem; width:100%;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
     }
@@ -151,7 +159,7 @@
     }
 
     // ---------------------------------------------------------------- Excel: bajar y subir
-    const baseSpec = () => { const s = spec(); return { variables: s.variables.map((v) => ({ label: v.label, options: v.options })), columns: s.columns.map((c) => ({ id: c.id, name: c.name, type: c.type, options: c.options })), rows: st.rows.map((r) => ({ keys: r.keys, cells: r.cells })) }; };
+    const baseSpec = () => { const s = spec(); return { variables: s.variables.map((v) => ({ label: v.label, field: v.field, options: v.options })), columns: s.columns.map((c) => ({ id: c.id, name: c.name, type: c.type, options: c.options })), rows: st.rows.map((r) => ({ keys: r.keys, cells: r.cells })) }; };
     async function download() {
       try {
         const r = await fetch(ctx.url + '/template', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(baseSpec()) });
@@ -198,7 +206,11 @@
         if (t.error) { ctx.toast(t.error, 'error'); return; }
         if (st.columns.length && !(await ctx.confirm('La plantilla reemplaza las columnas actuales de la tabla (lo escrito en ellas se pierde). ¿Continuar?', { confirmLabel: 'Usar la plantilla' }))) return;
         const flds = ctx.fields();
-        const pick = (c) => { const f = flds.find((x) => VT.norm(x.label) === VT.norm(c.element) && ctx.propsOf(x.id).includes(c.prop)); return f ? f.id : ''; };
+        const pick = (c) => {   // por id (el elemento sigue siendo el mismo aunque lo hayan renombrado o movido); si no, por el nombre que tenía; si no, queda para reasignar
+          const byId = flds.find((x) => x.id === c.elementId && ctx.propsOf(x.id).includes(c.prop));
+          const f = byId || flds.find((x) => (VT.norm(x.label) === VT.norm(c.element) || (ctx.shortName && VT.norm(ctx.shortName(x.id)) === VT.norm(c.element))) && ctx.propsOf(x.id).includes(c.prop));
+          return f ? f.id : '';
+        };
         st.columns = t.columns.map((c) => ({ id: uidCol(), name: c.name, field: pick(c), prop: c.prop, type: c.type, options: c.options }));
         if (!st.varFields.length && t.variables.length) {   // si la plantilla recuerda qué decidía, se proponen los campos con ese nombre
           st.varFields = t.variables.map((l) => choice().find((f) => VT.norm(f.label) === VT.norm(l))).filter(Boolean).map((f) => f.id).filter((id, i, a) => a.indexOf(id) === i); st.subsets = []; regen();
@@ -206,7 +218,7 @@
         st.rows.forEach((r) => { r.cells = {}; });
         paint();
         const loose = st.columns.filter((c) => !c.field).length;
-        status(`Se cargaron ${st.columns.length} columnas${loose ? `; ${loose} sin elemento: elige a qué elemento apunta cada una` : ''}.`);
+        status(`Se cargaron ${st.columns.length} columnas${loose ? `; ${loose} sin elemento (ya no existe o es de otro formulario): elige a cuál se aplica cada una` : ''}.`);
       };
       rd.onerror = () => ctx.toast('No se pudo leer la plantilla', 'error');
       rd.readAsText(file);
@@ -253,7 +265,7 @@
     async function apply() {
       endEdit();
       const s = spec();
-      const loose = st.columns.find((c) => !c.field || !c.prop);
+      const loose = st.columns.find((c) => !c.field || !c.prop || missing(c));
       if (loose) { ctx.toast(`La columna «${loose.name || 'sin nombre'}» no tiene elemento: elige a cuál se aplica`, 'error'); return; }
       if (sheetProblem()) { ctx.toast(sheetProblem(), 'error'); return; }
       const built = VT.build(s, ctx.design().fields, { otherVariants: outsideCount() });
@@ -280,16 +292,16 @@
         const picked = Array.from(host.querySelectorAll(`[data-vt-subset="${i}"]:checked`)).map((x) => x.value);
         st.subsets[i] = picked.length === all.length ? null : picked; regen(); paint();
       } else if (t.dataset.vtColfield !== undefined) {
-        const c = st.columns[+t.dataset.vtColfield]; c.field = t.value; const props = c.field ? ctx.propsOf(c.field) : []; c.prop = props.includes(c.prop) ? c.prop : (props[0] || ''); c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); if (!c.name && c.field) c.name = ctx.propLabel(c.prop); paint();
+        const c = st.columns[+t.dataset.vtColfield]; c.field = t.value; const props = c.field ? ctx.propsOf(c.field) : []; c.prop = props.includes(c.prop) ? c.prop : (props[0] || ''); c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); if (c.field && (!c.name || c.nameAuto)) { c.name = autoName(c.field, c.prop, c); c.nameAuto = true; } paint();
       } else if (t.dataset.vtColprop !== undefined) {
-        const c = st.columns[+t.dataset.vtColprop]; c.prop = t.value; c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); paint();
+        const c = st.columns[+t.dataset.vtColprop]; c.prop = t.value; c.type = c.prop === 'src' ? 'image' : (c.type === 'image' ? 'text' : c.type); if (c.nameAuto) c.name = autoName(c.field, c.prop, c); paint();
       } else if (t.dataset.vtColtype !== undefined) { st.columns[+t.dataset.vtColtype].type = t.value; paint(); }
       else if (t.dataset.vtColopts !== undefined) { st.columns[+t.dataset.vtColopts].options = t.value.split('\n').map((x) => x.trim()).filter(Boolean); host.querySelector('.vt-gridwrap').innerHTML = gridHtml(); validateAll(); }
       else if (t.dataset.vtTpl !== undefined) { const f = t.files[0]; t.value = ''; loadTemplate(f); }
       else if (t.dataset.vtImages !== undefined) { const fl = Array.from(t.files || []); t.value = ''; pickImages(fl); }
       else if (t.dataset.vtUpload !== undefined) { const f = t.files[0]; t.value = ''; upload(f); }
     };
-    const onInput = (e) => { const t = e.target; if (t.dataset.vtColname !== undefined) { st.columns[+t.dataset.vtColname].name = t.value; } };
+    const onInput = (e) => { const t = e.target; if (t.dataset.vtColname !== undefined) { const c = st.columns[+t.dataset.vtColname]; c.name = t.value; c.nameAuto = false; } };
     const onClick = (e) => {
       const td = e.target.closest('td[data-vt-r]');
       if (td && !td.querySelector('input,select')) { beginEdit(td); return; }

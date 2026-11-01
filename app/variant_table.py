@@ -9,6 +9,7 @@ SEGURIDAD (el archivo lo sube una persona y no se le puede tener confianza):
 - Al GENERAR el Excel, todo texto que empiece con = + - @ (o tabulador / retorno) se escribe como texto (tipo de celda texto y prefijo de comilla): Excel nunca lo evalúa.
 - Nada del contenido de las celdas se escribe en logs ni en los mensajes de error."""
 import io
+import json
 import re
 import zipfile
 from datetime import date, datetime
@@ -138,6 +139,8 @@ def validate_spec(spec) -> dict:
     for v in variables:
         if not isinstance(v, dict) or not str(v.get("label") or "").strip() or not isinstance(v.get("options", []), list):
             raise ExcelRejected("Cada campo que decide necesita un nombre")
+        if v.get("field") is not None and not re.fullmatch(r"[A-Za-z0-9_]{1,40}", str(v["field"])):
+            raise ExcelRejected("Un campo que decide no es válido")
         names.add(norm_value(v["label"]))
     ids = set()
     for c in columns:
@@ -210,6 +213,10 @@ def build_template(spec: dict) -> bytes:
     for row in info.iter_rows():
         for cell in row:
             cell.alignment = Alignment(wrap_text=True, vertical="top")
+    # Hoja oculta con la identidad de cada columna (por id, no por nombre): renombrar un elemento o reordenar las columnas no rompe la subida del archivo.
+    meta = wb.create_sheet("_meta")
+    _put(meta, 1, 1, json.dumps({"v": 1, "vars": [{"h": str(v["label"]), "field": v.get("field")} for v in variables], "cols": [{"h": str(c["name"]), "id": c["id"]} for c in columns]}, ensure_ascii=False))
+    meta.sheet_state = "veryHidden"
     vals = wb.create_sheet("Valores válidos")
     lists = [(str(v["label"]), v.get("options") or []) for v in variables] + [(c["name"], c.get("options") or []) for c in columns if c["type"] == "options"]
     for j, (title, options) in enumerate(lists, start=1):
@@ -272,6 +279,32 @@ def _cell_text(cell):
     return cell.value, None
 
 
+def _read_meta(wb) -> dict:
+    """La hoja oculta `_meta` del archivo (si la trae): {encabezado normalizado: id de columna / de campo}. Es texto de un archivo ajeno: solo se usa para BUSCAR ids que ya existen en la definición."""
+    out = {"vars": {}, "cols": {}}
+    if "_meta" not in wb.sheetnames:
+        return out
+    try:
+        first = next(wb["_meta"].iter_rows(min_row=1, max_row=1, max_col=1), None)
+        if not first:
+            return out
+        raw, _ = _cell_text(first[0])
+        if not isinstance(raw, str) or len(raw) > 20000:
+            return out
+        d = json.loads(raw)
+        for item in (d.get("vars") or [])[:MAX_VARS]:
+            if isinstance(item, dict) and isinstance(item.get("h"), str) and isinstance(item.get("field"), str):
+                out["vars"][norm_value(item["h"])] = item["field"]
+        for item in (d.get("cols") or [])[:MAX_COLS]:
+            if isinstance(item, dict) and isinstance(item.get("h"), str) and isinstance(item.get("id"), str):
+                out["cols"][norm_value(item["h"])] = item["id"]
+    except ExcelRejected:
+        raise
+    except Exception:
+        return {"vars": {}, "cols": {}}
+    return out
+
+
 def read_table(data: bytes, filename: str, spec: dict) -> dict:
     """Lee la hoja «Tabla» (o la primera) y la empareja con la definición. No guarda nada. Devuelve
     {rows: [{keys, cells}], problems: [{row, col, message}], unmatched_rows, duplicated_rows, ignored_columns, missing_rows}."""
@@ -289,6 +322,7 @@ def read_table(data: bytes, filename: str, spec: dict) -> dict:
         ws = wb["Tabla"] if "Tabla" in wb.sheetnames else wb[wb.sheetnames[0]]
         if (ws.max_row or 0) > DECLARED_ROWS_LIMIT or (ws.max_column or 0) > DECLARED_COLS_LIMIT:
             raise ExcelRejected("La hoja es demasiado grande (el máximo son 500 filas de datos)")
+        meta = _read_meta(wb)
         lines = []
         for r, row in enumerate(ws.iter_rows(min_row=1, max_row=MAX_READ_ROWS + 2, max_col=DECLARED_COLS_LIMIT), start=1):
             vals = []
@@ -310,14 +344,22 @@ def read_table(data: bytes, filename: str, spec: dict) -> dict:
         raise ExcelRejected(f"La hoja tiene más de {MAX_READ_ROWS} filas de datos")
     variables, columns = spec["variables"], spec["columns"]
     heads = [norm_value(v) if v is not None else "" for v, _ in lines[0]]
-    want = [norm_value(v["label"]) for v in variables]
-    cols = {norm_value(c["name"]): c for c in columns}
-    for w in want:
-        if w not in heads:
-            raise ExcelRejected("Falta en la primera fila una columna de los campos que deciden: usa la plantilla")
-    key_at = [heads.index(w) for w in want]
-    col_at = {c["id"]: heads.index(norm_value(c["name"])) for c in columns if norm_value(c["name"]) in heads}
-    ignored = [str(lines[0][j][0])[:60] for j, h in enumerate(heads) if h and h not in want and h not in cols][:20]
+    # Cada encabezado se reconoce primero por la identidad que trae la hoja oculta (id del campo / de la columna) y, si no, por su nombre.
+    def find_var(v):
+        by_id = [j for j, h in enumerate(heads) if v.get("field") and meta["vars"].get(h) == v["field"]]
+        by_name = [j for j, h in enumerate(heads) if h == norm_value(v["label"])]
+        return (by_id or by_name or [None])[0]
+
+    def find_col(c):
+        by_id = [j for j, h in enumerate(heads) if h and meta["cols"].get(h) == c["id"]]
+        by_name = [j for j, h in enumerate(heads) if h == norm_value(c["name"])]
+        return (by_id or by_name or [None])[0]
+    key_at = [find_var(v) for v in variables]
+    if any(j is None for j in key_at):
+        raise ExcelRejected("Falta en la primera fila una columna de los campos que deciden: usa la plantilla")
+    col_at = {c["id"]: j for c in columns if (j := find_col(c)) is not None}
+    used = set(key_at) | set(col_at.values())
+    ignored = [str(lines[0][j][0])[:60] for j, h in enumerate(heads) if h and j not in used][:20]
     index = {tuple(norm_value(k) for k in r["keys"]): i for i, r in enumerate(spec["rows"])}
     out_rows = [{"keys": list(r["keys"]), "cells": {}} for r in spec["rows"]]
     problems, unmatched, duplicated, seen = [], [], [], set()

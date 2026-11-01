@@ -13,7 +13,7 @@ assert.ok(block.includes('function renderSheets') && block.includes('function de
 
 const dom = new JSDOM('<!doctype html><body><div id="sheetsBar"></div><div id="sheetsPanel"></div><div id="propsBox"></div><div id="canvas"></div></body>', { runScripts: 'outside-only' });
 const w = dom.window;
-['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/form-sync.js', 'static/js/cond-tree.js', 'static/js/form-render.js'].forEach((f) => w.eval(fs.readFileSync(path.join(root, f), 'utf8')));
+['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/form-sync.js', 'static/js/cond-tree.js', 'static/js/element-names.js', 'static/js/form-render.js'].forEach((f) => w.eval(fs.readFileSync(path.join(root, f), 'utf8')));
 w.eval(`
   var toasts = [], confirms = [], dirty = 0;
   const $ = (id) => document.getElementById(id);
@@ -29,7 +29,8 @@ w.eval(`
     rows: [{ align: 'left', items: ['a'] }, { align: 'left', items: ['b'] }, { align: 'left', items: ['pay'] }] };
   let confirmAnswer = true;
   const showToast = (m, k) => toasts.push([m, k]), showConfirm = async (m) => { confirms.push(m); return confirmAnswer; };
-  const markDirty = () => { dirty++; }, renderCanvas = () => {}, renderProps = () => {}, renderAll = () => { renderSheets(); };
+  let namesCache = null;
+  const markDirty = () => { dirty++; namesCache = null; }, renderCanvas = () => {}, renderProps = () => {}, renderAll = () => { renderSheets(); };
   let rtMounts = []; const mountRt = () => ({ destroy() {} });
   ${grab('locate')}
   ${grab('detach')}

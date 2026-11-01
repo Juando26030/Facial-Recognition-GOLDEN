@@ -13,6 +13,7 @@
     <script src="{{ url_for('static', path='js/form-sync.js') }}"></script>
     <script src="{{ url_for('static', path='js/rich-text.js') }}"></script>
     <script src="{{ url_for('static', path='js/cond-tree.js') }}"></script>
+    <script src="{{ url_for('static', path='js/element-names.js') }}"></script>
     <script src="{{ url_for('static', path='js/variant-table.js') }}"></script>
     <script src="{{ url_for('static', path='js/variant-table-ui.js') }}"></script>
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
@@ -223,7 +224,8 @@ const STATUS_LABEL = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrad
 
 let ID_DOCS = [];
 let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
-const markDirty = () => { dirty = true; $('saveBtn').textContent = '💾 Guardar diseño *'; };
+let namesCache = null;   // nombres de los elementos para las listas (ElementNames); se recalculan tras cualquier cambio
+const markDirty = () => { dirty = true; namesCache = null; $('saveBtn').textContent = '💾 Guardar diseño *'; };
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------------------------------------------------------------- utilidades del diseño
@@ -273,7 +275,9 @@ const searchQ = {};               // «campo:propiedad» -> texto del buscador
 let uidSeq = 0;
 const newUid = () => 'v' + (++uidSeq);
 const ensureUids = (f) => Object.values(f.variants || {}).forEach((v) => (v.items || []).forEach((it) => { if (!it._uid) it._uid = newUid(); }));   // `_uid` es solo del editor: el servidor lo ignora
-const labelOfField = (id) => { const x = design.fields[id]; return x ? (x.label || RichText.toPlain(x.content || '') || TYPES[x.type][0]) : '?'; };
+const elementNames = () => namesCache || (namesCache = ElementNames.build(design, { typeLabel: (t) => TYPES[t][0], plain: (h) => RichText.toPlain(h || '') }));
+const labelOfField = (id) => { const n = design.fields[id] && elementNames()[id]; return n ? n.full : '(el elemento ya no existe)'; };   // nombre completo para las listas: interno o automático
+const shortNameOf = (id) => { const n = design.fields[id] && elementNames()[id]; return n ? n.short : ''; };
 
 function leafHtml(oid, ps, r, others, ck) {
   const collapsed = foldCond.has(ck), at = `data-co="${oid}" data-cp="${ps}"`;
@@ -291,7 +295,7 @@ function leafHtml(oid, ps, r, others, ck) {
   }
   return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin:4px 0; display:grid; gap:4px;">
     <div>${tog}</div>
-    <select ${at} data-cx="field">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select>
+    <select ${at} data-cx="field">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(labelOfField(o.id))}</option>`).join('')}</select>
     <select ${at} data-cx="op">${OPS_ALL.map(([v, l]) => `<option value="${v}" ${r.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${val}
     <button type="button" class="small-btn danger" ${at} data-cx="delnode" style="justify-self:end;">Quitar regla</button></div>`;
 }
@@ -689,7 +693,8 @@ function renderCanvas() {
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
   const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : RichText.toPlain(canvasText(f)).replace(/\s+/g, ' ').slice(0, 40)) : f.label;
-  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (label || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
+  const shown = f.internal_name || label;     // el «Nombre interno», si existe, es la etiqueta del lienzo
+  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (shown || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(shown) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
 // ---------------------------------------------------------------- propiedades del elemento
@@ -711,7 +716,7 @@ function renderProps() {
   const isInput = !STATIC.includes(f.type) && !isPay && !isComp;
   const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   const used = usedKeys();
-  let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
+  let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4><div class="fld"><label for="pInternal">Nombre interno (opcional)</label><input type="text" id="pInternal" maxlength="60" value="${esc(f.internal_name || '')}" placeholder="${esc(shortNameOf(f.id))}"><div class="hint">Solo lo ves tú: aparece en las listas, en el lienzo y en la tabla de variantes. No se muestra a quien llena el formulario.</div></div>`;
   if (sheetsOn()) { const at = locate(f.id), cur = at ? design.rows[at[0]].sheet : activeSheet; html += `<div class="fld"><label for="pSheet">Hoja</label><select id="pSheet">${design.sheets.map((x, k) => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${k + 1} · ${esc(sheetName(x, k))}</option>`).join('')}</select></div>`; }
   if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + dispRtHtml() + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
@@ -747,6 +752,7 @@ function renderProps() {
   box.innerHTML = html;
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('pInternal', 'input', () => { const v = $('pInternal').value.trim(); if (v) f.internal_name = v.slice(0, 60); else delete f.internal_name; markDirty(); renderCanvas(); });
   on('pSheet', 'change', () => moveToSheet(f.id, $('pSheet').value));
   if ($('pDispRt')) mountRt($('pDispRt'), { value: f.display_label, label: 'Nombre de presentación', onChange: (v) => { if (v) f.display_label = v; else delete f.display_label; markDirty(); renderCanvas(); } });
   if ($('pHelpRt')) mountRt($('pHelpRt'), { value: f.help, label: 'Texto de ayuda', onChange: (v) => { f.help = v; markDirty(); renderCanvas(); } });
@@ -1034,6 +1040,8 @@ function vtCtx() {
     fields: () => Object.values(design.fields).filter((f) => variantProps(f).length).map((f) => ({ id: f.id, label: labelOfField(f.id) })),
     optionsOf: (id) => FormSync.optionsOf(design.fields[id], eventFields),
     fieldLabel: labelOfField,
+    shortName: shortNameOf,
+    exists: (id) => !!design.fields[id],
     propsOf: (id) => variantProps(design.fields[id]),
     propLabel: (p) => VPROPS[p],
     sheetOf: (id) => { if (!sheetsOn()) return 0; const at = locate(id); return at ? sheetIndex(design.rows[at[0]].sheet) : 0; },

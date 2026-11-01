@@ -243,7 +243,7 @@
     return JSON.stringify({
       formato: TEMPLATE_FORMAT, version: 1,
       variables: (variableLabels || []).slice(0, MAX_VARS).map((l) => clean(l, 200)),
-      columnas: columns.slice(0, MAX_COLS).map((c) => ({ nombre: clean(c.name, 60), elemento: clean(labelOfField ? labelOfField(c.field) : '', 200), propiedad: c.prop, tipo: c.type, opciones: c.type === 'options' ? (c.options || []).slice(0, 200).map((o) => clean(o, 120)).filter(Boolean) : [] })),
+      columnas: columns.slice(0, MAX_COLS).map((c) => ({ nombre: clean(c.name, 60), idElemento: /^[A-Za-z0-9_]{1,40}$/.test(c.field || '') ? c.field : '', elemento: clean(labelOfField ? labelOfField(c.field) : '', 200), propiedad: c.prop, tipo: c.type, opciones: c.type === 'options' ? (c.options || []).slice(0, 200).map((o) => clean(o, 120)).filter(Boolean) : [] })),
     }, null, 2);
   }
   // Lee una plantilla subida: valida TODO (forma, tipos, topes) y se queda solo con campos conocidos; el texto es texto (la pantalla lo escapa al pintarlo).
@@ -270,7 +270,7 @@
         options = c.opciones.filter((o) => typeof o === 'string').map((o) => clean(o, 120)).filter((o) => o && !seen.has(norm(o)) && seen.add(norm(o)));
         if (!options.length) return fail(`La columna «${name}» necesita al menos una opción`);
       }
-      columns.push({ name, element: clean(c.elemento, 200), prop: c.propiedad, type: c.tipo, options });
+      columns.push({ name, elementId: typeof c.idElemento === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(c.idElemento) ? c.idElemento : '', element: clean(c.elemento, 200), prop: c.propiedad, type: c.tipo, options });
     }
     const variables = Array.isArray(d.variables) ? d.variables.filter((v) => typeof v === 'string').map((v) => clean(v, 200)).filter(Boolean).slice(0, MAX_VARS) : [];
     return { columns, variables };

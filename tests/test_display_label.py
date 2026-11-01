@@ -1,4 +1,6 @@
 """P8: nombre de presentación con formato en todos los tipos de campo; `label` sigue siendo texto plano (reportes, Excel, estadísticas…)."""
+import json
+
 import pytest
 
 from app import formlib as fl
@@ -54,3 +56,23 @@ def test_help_accepts_full_format_for_every_type_and_is_clean():
 def test_display_label_roundtrips_for_export_import_duplicate():
     d = fl.sanitize_design({"fields": {"c1": _field("select", display_label="<b>Ciudad</b>")}, "rows": []}, set())
     assert fl.sanitize_design(d, set())["fields"]["c1"]["display_label"] == "<b>Ciudad</b>"
+
+
+# ------------------------------------------------------------------ P11b: nombre interno
+def test_internal_name_is_plain_text_up_to_60_chars_for_every_kind():
+    for kind in TYPES:
+        got = _design(_field(kind, internal_name="  Mi\tcampo\n<b>x</b>  "))
+        assert got["internal_name"] == "Mi campo <b>x</b>"          # texto plano: no se interpreta (la pantalla lo escapa) y se limpian espacios y control
+    assert len(_design(_field("text_short", internal_name="x" * 99))["internal_name"]) == 60
+    para = _design({"id": "p", "type": "paragraph", "content": "x", "internal_name": "Texto de Bogotá"})["p"] if False else fl.sanitize_design({"fields": {"p": {"id": "p", "type": "paragraph", "content": "x", "internal_name": "Texto de Bogotá"}}, "rows": []}, set())["fields"]["p"]
+    assert para["internal_name"] == "Texto de Bogotá"
+    pay = _design({"id": "pay", "type": "payment", "label": "Pago", "internal_name": "Cobro", "pay": {"mode": "fixed", "amount": 2000}})
+    assert pay["internal_name"] == "Cobro"
+
+
+def test_fields_without_internal_name_gain_no_key_and_it_never_reaches_the_public():
+    assert "internal_name" not in _design(_field("text_short")) and "internal_name" not in _design(_field("text_short", internal_name="   "))
+    d = fl.sanitize_design({"fields": {"c1": _field("text_short", internal_name="Secreto interno")}, "rows": []}, set())
+    assert d["fields"]["c1"]["internal_name"] == "Secreto interno"
+    assert "internal_name" not in json.dumps(fl.public_design(d)) and d["fields"]["c1"]["internal_name"] == "Secreto interno"      # la copia pública no lo lleva; el diseño no cambia
+    assert fl.sanitize_design(d, set())["fields"]["c1"]["internal_name"] == "Secreto interno"                                         # exportar/importar/duplicar lo conservan

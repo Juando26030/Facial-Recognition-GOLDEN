@@ -8,7 +8,7 @@ const { JSDOM } = require('jsdom');
 const root = path.join(__dirname, '../..');
 const dom = new JSDOM('<!doctype html><body><div id="host"></div></body>', { runScripts: 'outside-only', url: 'https://example.test/' });
 const w = dom.window;
-['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/variant-table.js', 'static/js/variant-table-ui.js'].forEach((f) => w.eval(fs.readFileSync(path.join(root, f), 'utf8')));
+['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/element-names.js', 'static/js/variant-table.js', 'static/js/variant-table-ui.js'].forEach((f) => w.eval(fs.readFileSync(path.join(root, f), 'utf8')));
 const CITIES = Array.from({ length: 31 }, (_, i) => `Ciudad ${String(i + 1).padStart(2, '0')}`), TYPES = ['Empleado', 'Invitado', 'Proveedor', 'Prensa'];
 const J = (x) => JSON.parse(JSON.stringify(x));
 const design = { fields: {
@@ -158,7 +158,7 @@ const paste = (text, target) => { const ev = new w.Event('paste', { bubbles: tru
   const tplText = await readBlob(log.blobs[log.blobs.length - 1]);
   const parsed = w.VariantTable.parseTemplate(tplText);
   assert.ok(!parsed.error, parsed.error); assert.strictEqual(parsed.columns.length, 3); assert.deepStrictEqual(J(parsed.variables), ['Ciudad', 'Tipo']);
-  assert.ok(!/"field"|"id"|"late"/.test(tplText), 'la plantilla no lleva ids de campos');
+  assert.ok(!/"field"|"late"/.test(tplText) && /"idElemento": "p"/.test(tplText), 'la plantilla lleva el id del elemento como pista, pero no los ids de columnas ni campos de las variables');
   assert.ok(log.downloads.includes('plantilla-de-tabla.json'));
   const host2 = w.document.createElement('div'); w.document.body.appendChild(host2);
   const ui2 = w.VariantTableUI.mount(host2, ctx);
@@ -167,7 +167,7 @@ const paste = (text, target) => { const ev = new w.Event('paste', { bubbles: tru
   assert.deepStrictEqual(J(ui2.state.columns.map((c) => [c.name, c.field, c.prop, c.type])), [['Lugar', 'p', 'content', 'text'], ['Fecha', 'p2', 'content', 'date'], ['Foto', 'img', 'src', 'image']], 'cada columna se asigna al elemento con el mismo nombre');
   assert.deepStrictEqual(J(ui2.state.varFields), ['c', 't']); assert.strictEqual(ui2.state.rows.length, 124);
   assert.ok(/Se cargaron 3 columnas\./.test(host2.querySelector('.vt-status').textContent));
-  const other = tplText.replace('"Texto informativo"', '"Un elemento que no existe aquí"');
+  const other = tplText.replace('"Texto informativo"', '"Un elemento que no existe aquí"').replace('"idElemento": "p"', '"idElemento": ""');      // plantilla de OTRO formulario: sin id que valga ni nombre que coincida
   const nconf = log.confirms.length;
   confirmAnswer = false; await upTpl(host2, other); assert.strictEqual(log.confirms.length, nconf + 1, 'con columnas ya puestas pide confirmación'); assert.strictEqual(ui2.state.columns[0].field, 'p', 'sin confirmar no cambia nada');
   confirmAnswer = true; await upTpl(host2, other);
@@ -186,6 +186,47 @@ const paste = (text, target) => { const ev = new w.Event('paste', { bubbles: tru
   pickVar(0, 'late'); pickVar(1, ''); addCol('p', 'content', 'text', 'Otro');
   assert.ok(/«Tardío» está en una hoja posterior a «Texto informativo»/.test(q('.vt-err').textContent));
   click(q('[data-vt-act="apply"]')); await tick(10); assert.ok(log.toasts.some(([m]) => /hoja posterior/.test(m)));
+
+  // ---- nombres de elementos (P11b): se distinguen en las listas, el nombre interno manda y la tabla va por id
+  const d3 = { fields: {
+    c: { id: 'c', type: 'select', label: 'Ciudad', options: ['Bogotá', 'Cali'] },
+    p1: { id: 'p1', type: 'paragraph', content: 'Ciudad: Bogotá. Lugar evento norte' }, p2: { id: 'p2', type: 'paragraph', content: 'Segundo texto del evento' },
+    i1: { id: 'i1', type: 'image', src: '' }, i2: { id: 'i2', type: 'image', src: '', alt: 'Logo' } }, rows: [['c'], ['p1'], ['p2'], ['i1'], ['i2']].map((items) => ({ items })) };
+  const nm = () => w.ElementNames.build(d3, { typeLabel: (t) => ({ select: 'Lista', paragraph: 'Texto informativo', image: 'Imagen' }[t]), plain: (h) => w.RichText.toPlain(h) });
+  const props3 = (id) => (d3.fields[id].type === 'image' ? ['src'] : d3.fields[id].type === 'paragraph' ? ['content'] : ['display_label', 'help']);
+  const ctx3 = { url: '/x', design: () => d3, fields: () => Object.keys(d3.fields).filter((id) => props3(id).length).map((id) => ({ id, label: nm()[id].full })), optionsOf: (id) => d3.fields[id].options || null, fieldLabel: (id) => (d3.fields[id] ? nm()[id].full : '?'), shortName: (id) => (d3.fields[id] ? nm()[id].short : ''), exists: (id) => !!d3.fields[id], propsOf: props3, propLabel: (p) => ({ content: 'Texto', src: 'Imagen' }[p]), assetUrl: (p) => p, toast: ctx.toast, confirm: ctx.confirm, richEdit: ctx.richEdit, apply: ctx.apply };
+  const host3 = w.document.createElement('div'); w.document.body.appendChild(host3);
+  const ui3 = w.VariantTableUI.mount(host3, ctx3);
+  const sel3 = host3.querySelector('[data-vt-var="0"]'); sel3.value = 'c'; sel3.dispatchEvent(new w.Event('change', { bubbles: true }));
+  const add3 = (field) => { host3.querySelector('[data-vt-act="addcol"]').click(); const i = ui3.state.columns.length - 1; const f = host3.querySelector(`[data-vt-colfield="${i}"]`); f.value = field; f.dispatchEvent(new w.Event('change', { bubbles: true })); return ui3.state.columns[i]; };
+  add3('p1');
+  const optLabels = Array.from(host3.querySelector('[data-vt-colfield="0"]').options).map((o) => o.textContent);
+  assert.ok(optLabels.includes('Texto informativo 1 — «Ciudad: Bogotá. Lugar evento norte»') && optLabels.includes('Texto informativo 2 — «Segundo texto del evento»') && optLabels.includes('Imagen 2 — «Logo»'), optLabels.join(' | '));
+  assert.strictEqual(new Set(optLabels).size, optLabels.length, 'ningún nombre del desplegable se repite');
+  assert.strictEqual(ui3.state.columns[0].name, 'Texto informativo 1', 'la columna nace con el nombre corto del elemento');
+  const c2 = add3('p2'); assert.strictEqual(c2.name, 'Texto informativo 2');
+  c2.field = 'p1'; ui3.paint(); const c3 = add3('p1'); assert.notStrictEqual(VT_norm(c3.name), VT_norm(ui3.state.columns[0].name), 'dos columnas no pueden llamarse igual');
+  function VT_norm(x) { return String(x).toLowerCase(); }
+  // nombre interno: manda en las listas; renombrar NO rompe la columna (va por id)
+  ui3.state.columns.splice(2, 1); c2.field = 'p2'; ui3.paint();
+  const colId = ui3.state.columns[0].id;
+  d3.fields.p1.internal_name = 'Texto de Bogotá'; ui3.paint();
+  assert.ok(Array.from(host3.querySelector('[data-vt-colfield="0"]').options).some((o) => o.textContent === 'Texto de Bogotá' && o.selected), 'la lista usa el nombre interno y la columna sigue en su elemento');
+  assert.strictEqual(ui3.state.columns[0].id, colId); assert.strictEqual(ui3.state.columns[0].field, 'p1'); assert.strictEqual(ui3.state.columns[0].name, 'Texto informativo 1', 'el nombre de la columna no cambia solo');
+  d3.rows.reverse(); ui3.paint(); assert.strictEqual(ui3.state.columns[0].field, 'p1', 'reordenar no cambia a qué elemento apunta');
+  // plantilla .json: por id aunque lo hayan renombrado; si el id ya no existe se avisa
+  log.blobs.length = 0; host3.querySelector('[data-vt-act="savetpl"]').click(); await tick(10);
+  const tpl3 = await readBlob(log.blobs[log.blobs.length - 1]);
+  assert.ok(/"idElemento": "p1"/.test(tpl3));
+  d3.fields.p1.internal_name = 'Otro nombre completamente distinto'; d3.fields.p2.internal_name = 'Y otro';
+  ui3.state.columns.length = 0; confirmAnswer = true;
+  const inp3 = host3.querySelector('[data-vt-tpl]'); Object.defineProperty(inp3, 'files', { value: [new w.File([tpl3], 'p.json')], configurable: true }); inp3.dispatchEvent(new w.Event('change', { bubbles: true })); await tick(40);
+  assert.deepStrictEqual(J(ui3.state.columns.map((c) => c.field)), ['p1', 'p2'], 'la plantilla encuentra el elemento por su id aunque tenga otro nombre');
+  delete d3.fields.p2; d3.rows = d3.rows.filter((r) => r.items[0] !== 'p2'); ui3.paint();
+  assert.ok(/El elemento de esta columna ya no existe/.test(host3.textContent) && /sin elemento/.test(host3.querySelector('table').textContent), 'un elemento borrado se avisa');
+  host3.querySelector('[data-vt-act="apply"]').click(); await tick(10);
+  assert.ok(log.toasts.some(([m]) => /no tiene elemento/.test(m)), 'y no se puede aplicar hasta reasignarlo');
+  ui3.destroy();
 
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   console.log(`  pantalla con 124 filas × 3 columnas en jsdom: ${ms.toFixed(0)} ms en total (incluye las pruebas)`);

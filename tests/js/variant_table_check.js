@@ -124,10 +124,11 @@ assert.ok(/no tiene una columna de imagen/.test(VT.matchImages({ ...mini(), colu
 // ---- plantillas de tabla (.json): solo columnas; nada de ids de campos
 const cols = [{ id: 'k1', name: 'Lugar', field: 'p', prop: 'content', type: 'text' }, { id: 'k2', name: 'Nivel', field: 'q', prop: 'help', type: 'options', options: ['Alto', 'Bajo'] }, { id: 'k3', name: 'Foto', field: 'img', prop: 'src', type: 'image' }];
 const json = VT.exportTemplate(cols, ['Ciudad', 'Tipo'], (id) => ({ p: 'Texto informativo', q: 'Nombre', img: 'Imagen' }[id]));
-assert.ok(!/"field"|"id"/.test(json), 'la plantilla no lleva ids de campos');
+assert.ok(!/"field"/.test(json) && /"idElemento": "p"/.test(json), 'la plantilla lleva el id del elemento solo como pista para reencontrarlo');
 const tpl = VT.parseTemplate(json);
 assert.ok(!tpl.error, tpl.error);
-assert.deepStrictEqual(J(tpl.columns), [{ name: 'Lugar', element: 'Texto informativo', prop: 'content', type: 'text', options: [] }, { name: 'Nivel', element: 'Nombre', prop: 'help', type: 'options', options: ['Alto', 'Bajo'] }, { name: 'Foto', element: 'Imagen', prop: 'src', type: 'image', options: [] }]);
+assert.deepStrictEqual(J(tpl.columns), [{ name: 'Lugar', elementId: 'p', element: 'Texto informativo', prop: 'content', type: 'text', options: [] }, { name: 'Nivel', elementId: 'q', element: 'Nombre', prop: 'help', type: 'options', options: ['Alto', 'Bajo'] }, { name: 'Foto', elementId: 'img', element: 'Imagen', prop: 'src', type: 'image', options: [] }]);
+assert.strictEqual(VT.parseTemplate(json.replace('"idElemento": "p"', '"idElemento": "<img onerror=1>"')).columns[0].elementId, '', 'un id que no parece id se descarta');
 assert.deepStrictEqual(J(tpl.variables), ['Ciudad', 'Tipo']);
 const ok = (o) => JSON.stringify({ formato: 'goldenweb-plantilla-tabla', version: 1, columnas: [{ nombre: 'A', propiedad: 'content', tipo: 'text' }], ...o });
 const err = (txt, re) => { const r = VT.parseTemplate(txt); assert.ok(r.error && re.test(r.error), `${txt.slice(0, 60)} -> ${r.error}`); };
