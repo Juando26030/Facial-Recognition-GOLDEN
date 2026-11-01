@@ -20,6 +20,8 @@ import uuid
 from datetime import date, datetime
 from typing import Callable, Optional
 
+from app import richtext
+
 INPUT_TYPES = ("text_short", "text_long", "email", "phone", "number", "date", "checkbox", "select", "radio", "multiselect", "file")
 STATIC_TYPES = ("heading", "paragraph", "image")
 PAYMENT_TYPE = "payment"      # «Pago» (Wompi): máximo uno por formulario; no guarda un valor, cobra un monto
@@ -220,7 +222,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         kind = f.get("type")
         if kind not in ALL_TYPES:
             raise ValueError(f"Tipo de campo no válido: {kind}")
-        clean = {"id": fid, "type": kind, "label": _text(f.get("label"), 200), "help": _text(f.get("help"), 300)}
+        clean = {"id": fid, "type": kind, "label": _text(f.get("label"), 200), "help": richtext.clean_text(f.get("help"), 300, basic=True)}      # la etiqueta es texto plano (es el nombre de la columna en reportes); la ayuda admite formato básico
         if kind in INPUT_TYPES:
             if not clean["label"]:
                 raise ValueError("Todos los campos necesitan un nombre (etiqueta)")
@@ -258,7 +260,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                 except (TypeError, ValueError):
                     raise ValueError(f"«{clean['label']}»: el tamaño máximo debe ser un número de MB")
         elif kind in ("heading", "paragraph"):
-            clean["content"] = _text(f.get("content"), 2000)
+            clean["content"] = richtext.clean_text(f.get("content"), 2000)
             variants = _sanitize_variants(f.get("variants"), fields_in, fid)
             if variants:                       # solo si el elemento las usa: los formularios existentes no ganan ninguna llave nueva
                 clean["variants"] = variants
@@ -318,8 +320,8 @@ def _sanitize_variants(v, fields_in: dict, own_id: str):
     items = []
     for it in (v.get("items") or [])[:MAX_VARIANTS]:
         if isinstance(it, dict):
-            items.append({"rule": _sanitize_rule(it.get("rule"), fields_in, own_id), "content": _text(it.get("content"), 2000)})
-    default = _text(v.get("default"), 2000)
+            items.append({"rule": _sanitize_rule(it.get("rule"), fields_in, own_id), "content": richtext.clean_text(it.get("content"), 2000)})
+    default = richtext.clean_text(v.get("default"), 2000)
     by = v.get("by") if v.get("by") in fields_in and v.get("by") != own_id else None
     if not items and not default:
         return None
@@ -616,7 +618,7 @@ def sanitize_settings(settings: dict) -> dict:
         given = s_in.get(key) or {}
         for k in base:
             if k in given:
-                base[k] = _text(given[k], 600 if k == "text" else 200)
+                base[k] = richtext.clean_text(given[k], 600) if k == "text" else _text(given[k], 200)      # el texto admite formato; el título sigue siendo texto plano
     if out["thanks"]["mode"] not in ("template", "redirect"):
         out["thanks"]["mode"] = "template"
     if out["thanks"]["mode"] == "redirect" and not re.match(r"^https?://[^\s]+$", out["thanks"]["url"] or ""):

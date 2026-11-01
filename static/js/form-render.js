@@ -13,6 +13,8 @@
   const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+  // Texto con formato (P3): sin static/js/rich-text.js (o sin etiquetas permitidas) se pinta como siempre, escapado.
+  const rich = (t, basic) => (window.RichText ? window.RichText.html(t, basic) : { rich: false, html: esc(t) });
   const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 }) + ' COP';
 
   // Texto de un título/texto informativo con variantes: la primera cuya regla se cumple, si no la de por defecto (null = no se muestra). Igual que formlib.pick_variant.
@@ -175,14 +177,14 @@
     function fieldHtml(f, pre, ro, assetUrl) {
       const badgeNote = opts.badgeEmailField && opts.badgeEmailField === f.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
       const label = f.label ? `<label class="fr-l">${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}${badgeNote}</label>` : '';
-      const help = f.help ? `<div class="fr-help">${esc(f.help)}</div>` : '';
+      const help = f.help ? `<div class="fr-help">${rich(f.help, true).html}</div>` : '';
       const val = pre == null ? '' : pre;
       const roAttr = ro ? 'readonly class="fr-ro" tabindex="-1"' : '';
       const name = `name="${esc(f.id)}"`;
       let control = '';
       switch (f.type) {
-        case 'heading': return `<h3 style="margin:8px 0 2px;">${esc(f.content)}</h3>`;
-        case 'paragraph': return `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(f.content)}</p>`;
+        case 'heading': { const r = rich(f.content); return r.rich ? `<div class="rt" style="margin:8px 0 2px; font-size:1.17em; font-weight:700;">${r.html}</div>` : `<h3 style="margin:8px 0 2px;">${r.html}</h3>`; }
+        case 'paragraph': { const r = rich(f.content); return r.rich ? `<div class="rt" style="margin:0; opacity:.85;">${r.html}</div>` : `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${r.html}</p>`; }
         case 'payment': { const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
           return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div>${f.pay && f.pay.codes && !opts.previewOnly ? '<div class="fr-code" style="margin:8px 0 2px;"><div style="display:flex; gap:6px;"><input type="text" data-code placeholder="¿Tienes un código de descuento?" autocomplete="off" style="flex:1; margin:0;"><button type="button" class="fr-chip" data-applycode>Aplicar</button></div><div data-codemsg style="font-size:.78rem; margin-top:3px;"></div></div>' : (f.pay && f.pay.codes ? '<div class="fr-help">🎟️ Aquí la persona podrá escribir un código de descuento.</div>' : '')}<div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div><div class="fr-help" data-taxnote></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span><br>Al pagar aceptas los <a href="/terminos" target="_blank" rel="noopener">Términos y Condiciones</a> y la <a href="${refundHref}" target="_blank" rel="noopener">Política de reembolsos</a>${opts.refund && opts.refund.days ? ` (puedes pedir el reembolso hasta ${opts.refund.days} días después del pago)` : ''}.</div></div>`; }
         case 'companions': {

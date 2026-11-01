@@ -6,6 +6,8 @@
     <meta name="robots" content="noindex, nofollow">
     <title>{{ form_title }}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
+    <script src="{{ url_for('static', path='js/rich-text.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <style>
@@ -125,7 +127,7 @@ document.getElementById("tr-grid").addEventListener("click", (e) => { const b = 
 function box(html) { app.innerHTML = `<div class="box">${html}</div>`; }
 function templateHtml(tpl) {
   return `${tpl.image ? `<img src="${esc(assetUrl(tpl.image))}" alt="" style="max-width:100%; max-height:220px; border-radius:12px; margin-bottom:14px;">` : ""}
-    <h2 style="margin:0 0 8px;">${esc(tpl.title)}</h2><p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(tpl.text)}</p>`;
+    <h2 style="margin:0 0 8px;">${esc(tpl.title)}</h2>${(() => { const r = window.RichText ? RichText.html(tpl.text) : { rich: false, html: esc(tpl.text) }; return r.rich ? `<div class="rt" style="margin:0; opacity:.85;">${r.html}</div>` : `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${r.html}</p>`; })()}`;
 }
 
 async function load() {

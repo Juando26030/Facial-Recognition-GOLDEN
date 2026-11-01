@@ -11,6 +11,7 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-sync.js') }}"></script>
+    <script src="{{ url_for('static', path='js/rich-text.js') }}"></script>
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
@@ -123,10 +124,10 @@
       <div class="card"><h4 style="margin:0 0 8px;">Al terminar el registro</h4>
         <div class="bar"><div class="fld"><label>Qué pasa</label><select id="thMode"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
           <div class="fld" id="thUrlBox" style="display:none;"><label>Dirección (https://…)</label><input type="text" id="thUrl" style="width:320px;"></div></div>
-        <div id="thTplBox" class="bar" style="margin-top:8px;"><div class="fld"><label>Título</label><input type="text" id="thTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="text" id="thText" style="width:340px;"></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="thImgFile" accept="image/*"><span class="hint" id="thImgName"></span></div></div>
+        <div id="thTplBox" class="bar" style="margin-top:8px;"><div class="fld"><label>Título</label><input type="text" id="thTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="hidden" id="thText"><div id="thTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="thImgFile" accept="image/*"><span class="hint" id="thImgName"></span></div></div>
       </div>
       <div class="card"><h4 style="margin:0 0 8px;">Plantilla de «formulario cerrado» / cupo lleno</h4>
-        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="clTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="text" id="clText" style="width:340px;"></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="clImgFile" accept="image/*"><span class="hint" id="clImgName"></span></div></div>
+        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="clTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="hidden" id="clText"><div id="clTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="clImgFile" accept="image/*"><span class="hint" id="clImgName"></span></div></div>
       </div>
       <div class="card"><h4 style="margin:0 0 8px;">Alimentar la base de datos del evento</h4>
         <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="realtime"> En tiempo real: cada inscripción entra de una vez al roster del evento («No registrado»)</label></div>
@@ -249,7 +250,7 @@ const choiceFields = () => Object.values(design.fields).filter((x) => !STATIC.in
 function variantsHtml(f) {
   const v = f.variants;
   const modeSel = `<div class="fld"><label>Texto</label><select id="vMode"><option value="">Un solo texto</option><option value="1" ${v ? 'selected' : ''}>Cambia según una respuesta (variantes)</option></select></div>`;
-  if (!v) return modeSel + `<div class="fld"><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
+  if (!v) return modeSel + '<div class="fld"><div id="pContentRt"></div></div>';
   const cands = choiceFields();
   if (!cands.length) return modeSel + '<div class="hint">Para usar variantes agrega antes un campo con opciones (por ejemplo Ciudad).</div>';
   const by = design.fields[v.by] && cands.some((c) => c.id === v.by) ? v.by : cands[0].id, opts = FormSync.optionsOf(design.fields[by], eventFields) || ['true', 'false'];
@@ -260,16 +261,16 @@ function variantsHtml(f) {
       : `<select data-vval="${i}"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(it.rule.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
     return `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px; display:grid; gap:4px;">
       <div style="display:flex; gap:4px; align-items:center;"><span class="hint">Si es</span><select data-vop="${i}"><option value="equals" ${it.rule.op === 'equals' ? 'selected' : ''}>igual a</option><option value="in" ${it.rule.op === 'in' ? 'selected' : ''}>alguno de</option></select></div>${val}
-      <textarea data-vtxt="${i}" rows="3" placeholder="Texto que se muestra">${esc(it.content)}</textarea>
+      <div data-vrt="${i}"></div>
       <div style="display:flex; gap:4px; justify-content:flex-end;"><button type="button" class="small-btn" data-vmv="${i}:-1" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="small-btn" data-vmv="${i}:1" ${i === v.items.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="small-btn danger" data-vdel="${i}">Quitar</button></div></div>`;
   }).join('');
   return modeSel + `<div class="fld"><label>Campo que decide</label><select id="vBy">${cands.map((c) => `<option value="${c.id}" ${c.id === by ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
     <div class="hint" style="margin-bottom:4px;">Se muestra la primera variante que se cumpla, de arriba hacia abajo.</div>${rows}
     <button type="button" class="small-btn" id="vAdd">+ Agregar variante</button>
-    <div class="fld" style="margin-top:6px;"><label>Texto por defecto (si ninguna aplica; vacío = no se muestra nada)</label><textarea id="vDef" rows="3">${esc(v.default || '')}</textarea></div>`;
+    <div class="fld" style="margin-top:6px;"><label>Texto por defecto (si ninguna aplica; vacío = no se muestra nada)</label><div id="vDefRt"></div></div>`;
 }
 function bindVariants(box, f) {
-  const v = f.variants, ch = (fn) => () => { fn(); markDirty(); renderCanvas(); };
+  const v = f.variants, ch = (fn) => (...a) => { fn(...a); markDirty(); renderCanvas(); };
   const again = (fn) => () => { fn(); markDirty(); renderCanvas(); renderProps(); };
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
   on('vMode', 'change', again(() => {
@@ -281,11 +282,11 @@ function bindVariants(box, f) {
   v.by = by();
   on('vBy', 'change', again(() => { v.by = by(); v.items.forEach((it) => { it.rule = { field: v.by, op: it.rule.op, value: it.rule.op === 'in' ? [] : '' }; }); }));
   on('vAdd', 'click', again(() => { v.by = by(); v.items.push({ rule: { field: v.by, op: 'equals', value: '' }, content: '' }); }));
-  on('vDef', 'input', ch(() => { v.default = $('vDef').value; }));
+  if ($('vDefRt')) mountRt($('vDefRt'), { value: v.default, label: 'Texto por defecto', onChange: ch((x) => { v.default = x; }) });
+  box.querySelectorAll('[data-vrt]').forEach((h) => { const it = v.items[+h.dataset.vrt]; mountRt(h, { value: it.content, label: 'Texto de la variante', onChange: (x) => { it.content = x; markDirty(); renderCanvas(); } }); });
   box.querySelectorAll('[data-vop]').forEach((el) => el.addEventListener('change', again(() => { const r = v.items[+el.dataset.vop].rule; r.op = el.value; r.value = r.op === 'in' ? (r.value ? [r.value] : []) : (Array.isArray(r.value) ? (r.value[0] || '') : r.value); })));
   box.querySelectorAll('[data-vval]').forEach((el) => el.addEventListener('change', ch(() => { v.items[+el.dataset.vval].rule.value = el.value; })));
   box.querySelectorAll('[data-vin]').forEach((el) => el.addEventListener('change', ch(() => { const i = +el.dataset.vin; v.items[i].rule.value = Array.from(box.querySelectorAll(`[data-vin="${i}"]:checked`)).map((x) => x.value); })));
-  box.querySelectorAll('[data-vtxt]').forEach((el) => el.addEventListener('input', ch(() => { v.items[+el.dataset.vtxt].content = el.value; })));
   box.querySelectorAll('[data-vdel]').forEach((el) => el.addEventListener('click', again(() => { v.items.splice(+el.dataset.vdel, 1); })));
   box.querySelectorAll('[data-vmv]').forEach((el) => el.addEventListener('click', again(() => { const [i, d] = el.dataset.vmv.split(':').map(Number); [v.items[i], v.items[i + d]] = [v.items[i + d], v.items[i]]; })));
 }
@@ -380,13 +381,19 @@ function renderCanvas() {
 }
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
-  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.variants ? '↔ Según respuesta: ' + (f.variants.default || (f.variants.items[0] || {}).content || '') : f.content || '').slice(0, 40)) : f.label;
+  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : RichText.toPlain(f.variants ? '↔ Según respuesta: ' + (f.variants.default || (f.variants.items[0] || {}).content || '') : f.content || '').replace(/\s+/g, ' ').slice(0, 40)) : f.label;
   return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (label || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
 // ---------------------------------------------------------------- propiedades del elemento
+const helpRtHtml = () => '<div class="fld"><label>Texto de ayuda (opcional; formato básico)</label><div id="pHelpRt"></div></div>';
+// editores de texto con formato montados en el panel de propiedades (se desmontan al repintarlo)
+let rtMounts = [];
+const mountRt = (host, opts) => { const m = RichText.mount(host, opts); rtMounts.push(m); return m; };
+function clearRt() { rtMounts.forEach((m) => m.destroy()); rtMounts = []; }
 function fieldInput(id, lbl, value, extra) { return `<div class="fld"><label>${lbl}</label><input type="text" id="${id}" value="${esc(value)}" ${extra || ''}></div>`; }
 function renderProps() {
+  clearRt();
   const box = $('propsBox');
   const f = selected && design.fields[selected];
   if (!f) { box.innerHTML = '<p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p>'; return; }
@@ -396,9 +403,9 @@ function renderProps() {
   const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   const used = usedKeys();
   let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
-  if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
+  if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + payHtml(f);
-  if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + compHtml(f);
+  if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + helpRtHtml() + compHtml(f);
   if (f.type === 'heading' || f.type === 'paragraph') html += variantsHtml(f);
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
     <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
@@ -449,12 +456,13 @@ function renderProps() {
   box.innerHTML = html;
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  if ($('pHelpRt')) mountRt($('pHelpRt'), { basic: true, value: f.help, label: 'Texto de ayuda', onChange: (v) => { f.help = v; markDirty(); renderCanvas(); } });
   if (CHOICE.includes(f.type) && $('pOpts')) OptionTools.attach($('pOpts'), { eventId: EV, key: f.key, fromDb: !!f.options_from_db, onImported: () => { f.options_from_db = true; } });
   const upd = (fn) => () => { fn(); markDirty(); renderCanvas(); };
   if (isPay) bindPay(box, f);
   if (isComp) bindComp(box, f);
-  on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pHelp', 'input', upd(() => { f.help = $('pHelp').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
-  on('pContent', 'input', upd(() => { f.content = $('pContent').value; }));
+  on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
+  if ($('pContentRt')) mountRt($('pContentRt'), { value: f.content, label: f.type === 'heading' ? 'Título' : 'Texto informativo', onChange: (v) => { f.content = v; markDirty(); renderCanvas(); } });
   if (f.type === 'heading' || f.type === 'paragraph') bindVariants(box, f);
   on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
@@ -769,7 +777,7 @@ function paintConfig() {
   $('preSrcBox').style.display = s.prefill.mode === 'none' ? 'none' : ''; $('preUpBox').style.display = s.prefill.source === 'upload' ? '' : 'none';
   $('thMode').value = s.thanks.mode; $('thUrl').value = s.thanks.url; $('thTitle').value = s.thanks.title; $('thText').value = s.thanks.text; $('thImgName').textContent = s.thanks.image ? ' (imagen cargada)' : '';
   $('thUrlBox').style.display = s.thanks.mode === 'redirect' ? '' : 'none'; $('thTplBox').style.display = s.thanks.mode === 'redirect' ? 'none' : '';
-  $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
+  $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; thRt.setValue(s.thanks.text); clRt.setValue(s.closed_template.text); $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
@@ -840,6 +848,9 @@ $('preFile').addEventListener('change', async () => {
   const fd = new FormData(); fd.append('file', $('preFile').files[0]);
   try { const d = await j(`${api}/people`, { method: 'POST', body: fd }); showToast(d.message, 'success'); settings.prefill.source = 'upload'; } catch (e) { showToast(e.message, 'error'); }
 });
+// Mensajes de gracias y de «cerrado»: con formato (el valor vive en el campo oculto que lee «Guardar»)
+const thRt = RichText.mount($('thTextRt'), { label: 'Mensaje de gracias', onChange: (v) => { $('thText').value = v; } });
+const clRt = RichText.mount($('clTextRt'), { label: 'Mensaje de formulario cerrado', onChange: (v) => { $('clText').value = v; } });
 $('cfgSave').addEventListener('click', async () => {
   const payload = {
     security: { enabled: $('secOn').checked, type: $('secType').value, code: $('secCode').value },
