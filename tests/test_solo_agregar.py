@@ -159,3 +159,20 @@ def test_preview_refuses_finalized_and_missing_file(client, live, db):
     live.status = "finalizado"
     db.commit()
     assert client.post("/api/bulk_roster/preview", data={"event_id": str(live.id)}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")}).status_code == 400
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ pantalla
+def test_the_screen_offers_append_only_when_the_event_is_live_and_the_normal_load_stays_blocked(client, live, db):
+    page = client.get(f"/kiosk/{live.id}/roster").text
+    assert 'id="appendForm"' in page and "Solo agregar personas nuevas" in page and 'id="rosterBlocked"' in page and "const ROSTER_BLOCKED = true" in page
+    assert "/api/bulk_roster/preview" in page and "showConfirm(" in page and "confirm(" not in page.replace("showConfirm(", "").replace("Confirm(", "")
+    live.status = "finalizado"
+    db.commit()
+    assert 'id="appendForm"' not in client.get(f"/kiosk/{live.id}/roster").text
+
+
+def test_the_screen_does_not_offer_append_in_a_fresh_created_event(client, factory):
+    factory.staff("coordinador", "c9")
+    ev = factory.event("creado")
+    login(client, "c9")
+    assert 'id="appendForm"' not in client.get(f"/kiosk/{ev.id}/roster").text
