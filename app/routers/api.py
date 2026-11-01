@@ -1574,7 +1574,15 @@ def manual_register(
     # técnicamente "no existe todavía" en ese punto. Un flush() explícito aquí garantiza que el
     # INSERT de User ya se mandó antes de crear las filas que dependen de él (reproducido y
     # confirmado con un test end-to-end vía FastAPI TestClient + SQLite con FK activas, 2026-09-23).
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Otra petición creó a esta misma cédula entre la consulta de arriba y este INSERT (otro quiosco o una carga «solo agregar», app/roster_append.py): antes era un 500 para quien registraba.
+        # Ahora se atiende como persona que ya existía (la rama de arriba, que no toca la foto: el archivo ya se leyó).
+        db.rollback()
+        return manual_register(event_id=event_id, id=id, first_name=first_name, last_name=last_name, role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, extra_fields=extra_fields,
+                               categories=categories, certificate=certificate, digital_contact=digital_contact, send_digital_now=send_digital_now, request=request, field_labels=field_labels,
+                               file=file, force=force, biometric_consent=biometric_consent, birth_date=birth_date, db=db, staff=staff)
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",

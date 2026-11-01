@@ -18,10 +18,8 @@ def test_append_only_is_allowed_in_progress_but_never_finalized(status, uploaded
 # ------------------------------------------------------------------------------------------------------------------------------------ carga
 import json
 
-from fastapi.testclient import TestClient  # noqa: E402,F401
-
 from app import roster_append  # noqa: E402
-from app.models import AuditConsentLog, EventAttendee, User  # noqa: E402
+from app.models import EventAttendee, StaffUser, User  # noqa: E402
 from tests.conftest import login  # noqa: E402
 
 SHEET = ("id,nombres,apellidos,cargo,entidad,correo,Talla de camiseta,opcional_5,categoria\n"
@@ -50,7 +48,7 @@ def _drive(client, first, limit=200):
 def live(client, factory, db):
     """Evento EN PROCESO con la base ya cargada y gente que se registró en vivo."""
     factory.staff("coordinador", "coord1")
-    ev = factory.event("en_proceso", roster_uploaded=True, event_categories=json.dumps(["General"])) if False else factory.event("en_proceso", roster_uploaded=True)
+    ev = factory.event("en_proceso", roster_uploaded=True)
     ev.set_categories(["General"])
     db.commit()
     for uid in ("2001",):
@@ -176,3 +174,154 @@ def test_the_screen_does_not_offer_append_in_a_fresh_created_event(client, facto
     ev = factory.event("creado")
     login(client, "c9")
     assert 'id="appendForm"' not in client.get(f"/kiosk/{ev.id}/roster").text
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ choque de la misma cédula
+def _kiosk_creates_between_lookup_and_insert(monkeypatch, ev, uid, with_attendee):
+    """El quiosco crea a `uid` (y su inscripción) EN EL INSTANTE entre la consulta de la carga y su INSERT: la consulta de la carga no lo ve."""
+    from app.database import SessionLocal
+    real, fired = roster_append._lookups, []
+
+    def lookups(db, event, ids, chunk):
+        out = real(db, event, ids, chunk)
+        if not fired:
+            fired.append(1)
+            other = SessionLocal()
+            try:
+                other.add(User(id=uid, tenant_id=ev.tenant_id, first_name="Kiosko", last_name="Vivo"))
+                other.flush()
+                if with_attendee:
+                    other.add(EventAttendee(event_id=ev.id, user_id=uid, tenant_id=ev.tenant_id, origin="manual"))
+                other.commit()
+            finally:
+                other.close()
+        return out
+    monkeypatch.setattr(roster_append, "_lookups", lookups)
+
+
+@pytest.mark.parametrize("with_attendee, expect", [(True, {"existing": 1, "enrolled_existing": 0}), (False, {"existing": 0, "enrolled_existing": 1})])
+def test_a_collision_with_the_live_registration_counts_as_already_existing_not_as_an_error(client, live, db, monkeypatch, with_attendee, expect):
+    sheet = "id,nombres,apellidos\n5555,Desde,Hoja\n5556,Otra,Hoja\n"
+    _kiosk_creates_between_lookup_and_insert(monkeypatch, live, "5555", with_attendee)
+    st = _drive(client, _post_append(client, live, sheet).json())
+    assert st["status"] == "done", st
+    rep = st["result"]["append"]
+    assert rep["errors"] == 0 and rep["created"] == 1 and all(rep[k] == v for k, v in expect.items()), rep
+    db.expire_all()
+    u = db.query(User).filter_by(id="5555", tenant_id=live.tenant_id).first()
+    assert (u.first_name, u.last_name) == ("Kiosko", "Vivo")                                      # lo del quiosco no se pisó
+    assert db.query(EventAttendee).filter_by(event_id=live.id, user_id="5555").count() == 1 and db.query(User).filter_by(id="5556").count() == 1      # el resto del lote sí quedó
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ concurrencia real
+def test_registering_in_the_kiosk_while_the_load_runs_is_never_blocked(client, factory, live, db, capsys):
+    """Un quiosco registra personas (nuevas y que además vienen en la hoja) mientras una hoja de 2.400 personas se carga por pasos de 200: ninguna petición del quiosco falla, nadie se duplica y
+    la carga no marca ningún error. Mide la latencia del quiosco durante la carga y la de cada paso."""
+    import threading
+    from types import SimpleNamespace
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    ev = live
+    ev_id = ev.id          # (la sesión de la prueba no se comparte con el hilo del quiosco)
+    factory.staff("digitador", "kiosko1")
+    factory.authorize(ev, db.query(StaffUser).filter_by(username="kiosko1").first())
+    base, total = 7000000, 2400
+    sheet = "id,nombres,apellidos,cargo\n" + "".join(f"{base + i},N{i},A{i},Cargo\n" for i in range(total))
+    collide = [str(base + 100 + i * 7) for i in range(20)]                  # cédulas que el quiosco registra y la hoja también trae
+    fresh = [str(8000000 + i) for i in range(20)]                            # personas que SOLO registra el quiosco
+    kiosk = TestClient(app, follow_redirects=False)
+    assert login(kiosk, "kiosko1").status_code in (302, 303)
+    stop, lat, bad, codes, why = threading.Event(), [], [], [], []
+
+    def run_kiosk():
+        try:
+            _run_kiosk()
+        except Exception as e:  # noqa: BLE001
+            why.append(("excepción", repr(e)[:300]))
+
+    def _run_kiosk():
+        todo = [(c, "Kiosko") for pair in zip(collide, fresh) for c in pair]
+        i = 0
+        while not stop.is_set() or i < len(todo):
+            c, name = todo[i % len(todo)]
+            t0 = time.perf_counter()
+            r = kiosk.post("/api/register", data={"event_id": ev_id, "id": c, "first_name": name, "last_name": "Vivo", "force": "true"})
+            lat.append(time.perf_counter() - t0)
+            codes.append(r.status_code)
+            if not why and "result" in r.text:
+                why.append(("primera", r.text[:200]))
+            if r.status_code >= 500:
+                bad.append((r.status_code, c[-2:]))
+            elif r.status_code != 200 and len(why) < 3:
+                why.append((r.status_code, r.text[:200]))
+            r = kiosk.post("/api/checkin-cedula", data={"event_id": ev_id, "cedula": "2001"})
+            lat.append(time.perf_counter() - t0)
+            if r.status_code >= 500:
+                bad.append((r.status_code, "checkin"))
+            i += 1
+            if i >= len(todo) and stop.is_set():
+                break
+            time.sleep(0.005)
+
+    th = threading.Thread(target=run_kiosk)
+    th.start()
+    try:
+        first = _post_append(client, SimpleNamespace(id=ev_id), sheet).json()
+        steps, st, t_steps = 0, first, []
+        while st["status"] not in ("done", "error"):
+            t0 = time.perf_counter()
+            st = client.post(f"/api/bulk_jobs/{first['job_id']}/step").json()
+            t_steps.append(time.perf_counter() - t0)
+            steps += 1
+    finally:
+        stop.set()
+        th.join(timeout=120)
+    assert st["status"] == "done", st
+    rep = st["result"]["append"]
+    assert rep["errors"] == 0 and rep["created"] + rep["existing"] + rep["enrolled_existing"] == total, rep
+    assert not bad and codes.count(200) >= 40, (codes[:10], why)                                                      # ni una respuesta 5xx del quiosco durante la carga
+    db.expire_all()
+    assert db.query(User).filter(User.id.like("70%")).count() == total and db.query(EventAttendee).filter(EventAttendee.event_id == ev.id, EventAttendee.user_id.like("70%")).count() == total
+    assert db.query(User).filter(User.id.in_(fresh)).count() == len(fresh)
+    for c in collide:
+        assert db.query(User).filter_by(id=c).count() == 1 and db.query(EventAttendee).filter_by(event_id=ev.id, user_id=c).count() == 1
+    lat.sort()
+    p95 = lat[int(len(lat) * 0.95) - 1]
+    print(f"\n[MEDIDA] pasos={len(t_steps)} (200 filas) paso_max={max(t_steps):.2f}s paso_medio={sum(t_steps)/len(t_steps):.2f}s | quiosco: peticiones={len(lat)} p95={p95:.3f}s max={lat[-1]:.3f}s")
+    with capsys.disabled():
+        print(f"[MEDIDA] pasos={len(t_steps)} (200 filas) paso_max={max(t_steps):.2f}s paso_medio={sum(t_steps)/len(t_steps):.2f}s | quiosco: peticiones={len(lat)} p95={p95:.3f}s max={lat[-1]:.3f}s")
+    assert lat[-1] < 5.0
+
+
+def test_the_kiosk_register_survives_a_cedula_created_by_the_load_a_moment_earlier(client, live, db, monkeypatch):
+    """Antes: el quiosco recibía un 500 si la carga creaba su misma cédula entre su consulta y su INSERT. Ahora se atiende como persona que ya existía."""
+    from app.database import SessionLocal
+    from app.routers import api
+    real, fired = api.parametros.field_configs_for_event, []
+
+    def configs(db_, event):
+        if not fired:
+            fired.append(1)
+            other = SessionLocal()
+            try:
+                other.add(User(id="6001", tenant_id=event.tenant_id, first_name="De la carga", last_name="Hoja"))
+                other.commit()
+            finally:
+                other.close()
+        return real(db_, event)
+    monkeypatch.setattr(api.parametros, "field_configs_for_event", configs)
+    r = client.post("/api/register", data={"event_id": live.id, "id": "6001", "first_name": "Kiosko", "last_name": "Vivo"})
+    assert r.status_code == 200 and "ya existía" in r.json()["message"], r.text
+    db.expire_all()
+    assert db.query(User).filter_by(id="6001").count() == 1 and db.query(EventAttendee).filter_by(event_id=live.id, user_id="6001").count() == 1
+
+
+def test_preview_and_load_allow_a_coordinator_who_is_also_commercial(client, factory, live):
+    factory.staff("coordinador", "dual1", secondary_role="comercial")
+    client.post("/logout")
+    login(client, "dual1")
+    assert client.post("/api/bulk_roster/preview", data={"event_id": str(live.id)}, files={"roster_file": ("n.csv", SHEET.encode(), "text/csv")}).status_code == 200
+    assert _post_append(client, live).status_code == 200
