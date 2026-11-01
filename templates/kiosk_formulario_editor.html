@@ -190,7 +190,7 @@
   </div>
 </div>
 
-<div id="previewOverlay"><div style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
+<div id="previewOverlay"><div id="previewInner" style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
 
 <script>
 const EV = window.EVENT_ID, FID = window.FORM_ID, api = `/api/events/${EV}/forms/${FID}`;
@@ -676,6 +676,9 @@ function renderTheme() {
   $('themeBox').innerHTML = fieldInput('tTitle', 'Título', t.title) + fieldInput('tSub', 'Subtítulo', t.subtitle) + fieldInput('tBtn', 'Texto del botón', t.button_text) +
     ['bg_color', 'card_color', 'text_color', 'accent'].map((k) => `<div class="fld"><label>${COLOR_LABELS[k]}</label><input type="color" data-color="${k}" value="${t[k]}" style="width:100%; height:34px; padding:2px;"></div>`).join('') +
     `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${GoldenFonts.resolve(t.font) === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
+     <div class="fld"><label>Ancho del formulario</label><select id="tWidth">${WIDTHS.map(([v, l]) => `<option value="${v}" ${widthKind(t.width) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+       <input type="number" id="tWidthPx" min="480" max="1100" step="10" value="${typeof t.width === 'number' ? t.width : 800}" style="margin-top:4px; ${widthKind(t.width) === 'custom' ? '' : 'display:none;'}" aria-label="Ancho en píxeles (480 a 1100)">
+       <div class="hint">En celulares y pantallas angostas siempre ocupa todo el ancho. Con 4 campos por fila conviene «Ancho» o más.</div></div>
      <div class="fld"><label>Logo o banner</label><input type="file" id="tLogo" accept="image/*"> <button class="small-btn" id="tLogoX">Quitar</button></div>
      <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" style="width:100%;"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
      <label style="display:flex; gap:6px; font-size:0.82rem; margin-bottom:0.6rem;"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>
@@ -686,6 +689,13 @@ function renderTheme() {
   on('tFont', 'change', () => { t.font = $('tFont').value; markDirty(); });
   const up = (id, key) => on(id, 'change', async () => { const fd = new FormData(); fd.append('file', $(id).files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); t[key] = d.storage_path; markDirty(); showToast('Imagen cargada — guarda el diseño', 'success'); } catch (e) { showToast(e.message, 'error'); } });
   up('tLogo', 'logo'); up('tBg', 'bg_image');
+  const setWidth = () => {   // '' = normal (sin llave), full, un valor de la lista o personalizado (480–1100)
+    const k = $('tWidth').value;
+    $('tWidthPx').style.display = k === 'custom' ? '' : 'none';
+    if (k === '') delete t.width; else if (k === 'full') t.width = 'full'; else if (k === 'custom') t.width = Math.max(480, Math.min(1100, Math.round(+$('tWidthPx').value) || 800)); else t.width = +k;
+    markDirty(); previewWidth();
+  };
+  on('tWidth', 'change', setWidth); on('tWidthPx', 'input', setWidth);
   on('tLogoW', 'input', () => { const v = +$('tLogoW').value; t.logo_width = v >= 10 ? v : 0; $('tLogoWv').textContent = t.logo_width ? t.logo_width + ' %' : 'automático'; markDirty(); });
   on('tLogoFull', 'change', () => { t.logo_full = $('tLogoFull').checked; markDirty(); });
   on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
@@ -711,8 +721,15 @@ $('testBtn').addEventListener('click', async (e) => {
   const msg = `El formulario está en «${STATUS_LABEL[form.public_state] || form.public_state}», no en «Pruebas»: «Probar» abre el enlace PÚBLICO real${pays ? ' y cualquier pago se cobra de verdad' : ''}, y lo que envíes cuenta como inscripción real. ¿Abrirlo de todos modos?`;
   if (await showConfirm(msg, { variant: 'warning', confirmLabel: 'Sí, abrir' })) window.open(form.public_url, '_blank', 'noopener');
 });
+const WIDTHS = [['', 'Normal (760 px)'], ['600', 'Estrecho (600 px)'], ['960', 'Ancho (960 px)'], ['1100', 'Muy ancho (1100 px)'], ['full', 'Completo (todo el ancho)'], ['custom', 'Personalizado…']];
+const widthKind = (w) => (w == null || w === '' ? '' : w === 'full' ? 'full' : [600, 960, 1100].includes(+w) ? String(+w) : +w === 760 ? '' : 'custom');
+function previewWidth() {   // la vista previa tiene el mismo ancho que verá el público (en una pantalla más angosta, el 100 %)
+  const w = design.theme.width;
+  $('previewInner').style.maxWidth = w === 'full' ? 'none' : Math.max(800, +w + 0 || 0) + 'px';
+}
 $('previewBtn').addEventListener('click', () => {
   const host = $('previewHost');
+  previewWidth();
   RenderPreview(host);
   $('previewOverlay').style.display = 'block';
 });

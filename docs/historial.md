@@ -980,3 +980,10 @@ Rama `fix/impresion-compartida-29oct` (de `main` = `b36bf92`). Migración `0076_
 - «Con formato» = contiene una etiqueta de la lista blanca. Un texto viejo («menores de <18 años», «a < b», «if (a<b && c>d)») sigue siendo texto plano y se pinta idéntico.
 - Las etiquetas (label) de los campos y los títulos de gracias/cerrado siguen siendo texto plano: son el nombre de la columna en reportes y estadísticas, y se copian a Parámetros.
 - Destinos de estos textos revisados: solo se pintan en la página pública, la vista previa del editor y el lienzo del editor (este último los convierte a texto plano). No salen en correos, comprobantes, PDF, escarapelas ni reportes. `richtext.to_plain` queda listo para cuando algún destino lo necesite.
+
+### P3 — decisión sobre las etiquetas de los campos (1-nov-2026, Juan David)
+Las etiquetas de los campos se quedan como TEXTO PLANO (son el nombre de la columna en reportes y estadísticas y se copian a Parámetros). Si algún día se quieren con formato, será con un campo aparte de «texto de presentación», no con el nombre del campo.
+
+## 1-nov-2026 — P4 (Formularios): ancho configurable
+- `theme.width` en «Apariencia»: Normal 760 (sin llave, como siempre), Estrecho 600, Ancho 960, Muy ancho 1100, Completo (`"full"`) o un valor propio validado de 480 a 1100 px (`formlib._card_width`; lo demás se descarta). En pantallas angostas la tarjeta siempre ocupa el 100 %.
+- La vista previa del editor, el enlace de prueba (aviso de pruebas incluido) y producción usan el mismo `FormRender.cardMax`. Medido en navegador con 4 campos por fila: 960 y 1100 caben en una línea; 760 los parte en 2 (comportamiento de siempre); a 375 px, una columna.

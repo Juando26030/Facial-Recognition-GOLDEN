@@ -13,6 +13,8 @@
   const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+  // Ancho máximo de la tarjeta (theme.width: «full» o 480–1100 px; sin valor, 760 px como siempre). En pantallas angostas es siempre el 100 %.
+  const cardMax = (th) => { const w = th && th.width; if (w === 'full') return 'none'; const n = Math.round(Number(w)); return Number.isFinite(n) && n >= 480 && n <= 1100 ? n + 'px' : '760px'; };
   // Texto con formato (P3): sin static/js/rich-text.js (o sin etiquetas permitidas) se pinta como siempre, escapado.
   const rich = (t, basic) => (window.RichText ? window.RichText.html(t, basic) : { rich: false, html: esc(t) });
   const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 }) + ' COP';
@@ -51,7 +53,7 @@
     container.style.color = theme.text_color || '#0A0E2E';
 
     const card = document.createElement('div');
-    card.style.cssText = `background:${theme.card_color || '#fff'}; border-radius:20px; padding:28px 30px; box-shadow:0 12px 40px rgba(0,0,0,.12); max-width:760px; margin:0 auto; box-sizing:border-box;`;
+    card.style.cssText = `background:${theme.card_color || '#fff'}; border-radius:20px; padding:28px 30px; box-shadow:0 12px 40px rgba(0,0,0,.12); max-width:${cardMax(theme)}; margin:0 auto; box-sizing:border-box;`;
     container.appendChild(card);
     if (theme.logo) {
       const lw = theme.logo_width || 0;
@@ -419,6 +421,6 @@
     return { collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
   }
 
-  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet };
+  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax };
   if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant };
 })();

@@ -186,6 +186,7 @@ function showForm(st) {
   const host = document.createElement("div"); app.appendChild(host);
   let started = false, quoteTimer = null;
   const label = st.design.theme.button_text || "Enviar";
+  const banner = document.getElementById("test-banner"); if (banner) banner.style.maxWidth = FormRender.cardMax(st.design.theme);   // el aviso de pruebas tiene el mismo ancho que la tarjeta
   const fr = FormRender.render(host, st.design, {
     assetUrl, prefill: st.prefill, readonly: st.readonly, badgeEmailField: st.badge_email_field, idDocs: st.id_docs, quota: st.quota, refund: st.refund,
     onFirstInput: () => { if (!started) { started = true; beacon("start"); } },

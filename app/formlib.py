@@ -178,6 +178,22 @@ def validate_id_doc(code: str, raw: str):
     return True, value, ""
 
 
+WIDTH_MIN, WIDTH_MAX = 480, 1100       # px; en pantallas más angostas la tarjeta siempre ocupa el 100 %
+
+
+def _card_width(value):
+    """«full» (completo), un entero de WIDTH_MIN a WIDTH_MAX px, o None (no se guarda: queda el ancho de siempre)."""
+    if value == "full":
+        return "full"
+    if isinstance(value, bool):
+        return None
+    try:
+        px = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return px if WIDTH_MIN <= px <= WIDTH_MAX else None
+
+
 def _percent(value, default: int) -> int:
     """Porcentaje 10–100 (o 0 = automático cuando `default` es 0); lo demás cae al valor por defecto."""
     try:
@@ -210,6 +226,9 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
         theme[key] = _text(theme_in.get(key), 200)
     theme["logo_width"] = _percent(theme_in.get("logo_width"), 0)      # % del ancho de la tarjeta; 0 = automático (como antes)
     theme["logo_full"] = bool(theme_in.get("logo_full"))               # el logo/banner ocupa la tarjeta de lado a lado, sin márgenes
+    width = _card_width(theme_in.get("width"))                          # ancho máximo de la tarjeta; sin llave = 760 px como siempre
+    if width is not None:
+        theme["width"] = width
 
     fields_in = design.get("fields") or {}
     if not isinstance(fields_in, dict) or len(fields_in) > MAX_FIELDS:
