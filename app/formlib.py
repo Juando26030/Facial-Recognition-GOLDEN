@@ -56,6 +56,7 @@ DEFAULT_SETTINGS = {
     "prefill": {"mode": "none", "source": "event"},                  # mode: none | cedula | invite ; source: event | event:<id> | upload
     "closed_template": {"title": "Este formulario ya cerró", "text": "Lo sentimos, ya no estamos recibiendo inscripciones.", "image": ""},
     "thanks": {"mode": "template", "title": "¡Gracias por inscribirte!", "text": "Recibimos tus datos correctamente.", "image": "", "url": ""},
+    "identify": {"title": "", "text": "", "image": "", "button": ""},   # paso «Identifícate» (cédula): vacío = los textos de siempre (title «Identifícate», text según sea obligatorio o no, button «Continuar»)
     "refunds": {"days": None, "note": ""},                           # condiciones de reembolso de ESTE formulario: plazo para pedirlo (días) y una nota (ej. quién asume la comisión)
     "quotas": {"rules": []},                                         # cupos: [{id, label, match: all|any, conds: [{field, op, value}], limit}]
     "feed": "manual",                                                # realtime | on_close | manual
@@ -632,12 +633,14 @@ def sanitize_settings(settings: dict) -> dict:
     if source not in ("event", "upload") and not re.fullmatch(r"event:\d+", source):
         raise ValueError("Fuente de datos para el pre-llenado no válida")
     out["prefill"] = {"mode": mode, "source": source}
-    for key in ("closed_template", "thanks"):
+    for key in ("closed_template", "thanks", "identify"):
         base = out[key]
-        given = s_in.get(key) or {}
+        given = s_in.get(key) if isinstance(s_in.get(key), dict) else {}
         for k in base:
             if k in given:
                 base[k] = richtext.clean_text(given[k], 600) if k == "text" else _text(given[k], 200)      # el texto admite formato; el título sigue siendo texto plano
+    if not re.fullmatch(r"[A-Za-z0-9_-][\w.-]*/[A-Za-z0-9_-][\w.-]*\.(?:png|jpe?g|webp|gif)", out["identify"]["image"]):      # la imagen del paso de cédula es SIEMPRE una ruta «cliente/archivo.ext» de las que sube el editor
+        out["identify"]["image"] = ""
     if out["thanks"]["mode"] not in ("template", "redirect"):
         out["thanks"]["mode"] = "template"
     if out["thanks"]["mode"] == "redirect" and not re.match(r"^https?://[^\s]+$", out["thanks"]["url"] or ""):

@@ -255,7 +255,7 @@ def _state(db: Session, event_id: int, slug: str, k: Optional[str], i: Optional[
     if needs_code and not claims.get("g"):
         return {**base, "stage": "gate", "kind": "code"}
     if needs_identify and not claims.get("id_ok"):
-        return {**base, "stage": "identify", "required": bool(settings["security"]["enabled"] and settings["security"]["type"] == "cedula"), "token": _issue(form, **claims)}
+        return {**base, "stage": "identify", "required": bool(settings["security"]["enabled"] and settings["security"]["type"] == "cedula"), "identify": settings["identify"], "token": _issue(form, **claims)}
     claims = {**claims, "g": True}
     return {**base, "stage": "form", "token": _issue(form, **claims), "thanks": settings["thanks"], **_payload_form(db, form, claims, held)}
 

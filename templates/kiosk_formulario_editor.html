@@ -121,6 +121,11 @@
           <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="trOn"> Mostrar el botón «Translate» a todos (25 idiomas)</label></div>
         <p class="hint">El botón «🌐 Translate» siempre está visible y ofrece 25 idiomas (inglés, francés, alemán, chino, japonés, árabe, hindi, ruso…). Traduce los textos del formulario con Google Translate; lo que la persona escribe en los campos no se traduce ni se envía. Marca aquí el idioma en que escribiste el formulario para que la traducción parta bien.</p>
       </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Paso de identificación (cédula)</h4>
+        <p class="hint" style="margin:0 0 6px;">Lo que ve la persona antes del formulario cuando se le pide el documento. Vacío = los textos de siempre («Identifícate», la explicación y «Continuar»).</p>
+        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="idTitle" maxlength="120" placeholder="Identifícate" style="width:260px;"></div><div class="fld"><label>Texto del botón</label><input type="text" id="idButton" maxlength="40" placeholder="Continuar" style="width:180px;"></div></div>
+        <div class="bar"><div class="fld"><label>Texto</label><input type="hidden" id="idText"><div id="idTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="idImgFile" accept="image/*"><span class="hint" id="idImgName"></span> <button type="button" class="small-btn" id="idImgX">Quitar</button></div></div>
+      </div>
       <div class="card"><h4 style="margin:0 0 8px;">Al terminar el registro</h4>
         <div class="bar"><div class="fld"><label>Qué pasa</label><select id="thMode"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
           <div class="fld" id="thUrlBox" style="display:none;"><label>Dirección (https://…)</label><input type="text" id="thUrl" style="width:320px;"></div></div>
@@ -794,7 +799,8 @@ function paintConfig() {
   $('preSrcBox').style.display = s.prefill.mode === 'none' ? 'none' : ''; $('preUpBox').style.display = s.prefill.source === 'upload' ? '' : 'none';
   $('thMode').value = s.thanks.mode; $('thUrl').value = s.thanks.url; $('thTitle').value = s.thanks.title; $('thText').value = s.thanks.text; $('thImgName').textContent = s.thanks.image ? ' (imagen cargada)' : '';
   $('thUrlBox').style.display = s.thanks.mode === 'redirect' ? '' : 'none'; $('thTplBox').style.display = s.thanks.mode === 'redirect' ? 'none' : '';
-  $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; thRt.setValue(s.thanks.text); clRt.setValue(s.closed_template.text); $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
+  $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; thRt.setValue(s.thanks.text); clRt.setValue(s.closed_template.text);
+  const idn = s.identify || {}; $('idTitle').value = idn.title || ''; $('idButton').value = idn.button || ''; $('idText').value = idn.text || ''; idRt.setValue(idn.text || ''); $('idImgName').textContent = idn.image ? ' (imagen cargada)' : ''; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
@@ -860,6 +866,8 @@ $('preMode').addEventListener('change', () => { $('preSrcBox').style.display = $
 $('preSrc').addEventListener('change', () => { $('preUpBox').style.display = $('preSrc').value === 'upload' ? '' : 'none'; });
 $('thMode').addEventListener('change', () => { $('thUrlBox').style.display = $('thMode').value === 'redirect' ? '' : 'none'; $('thTplBox').style.display = $('thMode').value === 'redirect' ? 'none' : ''; });
 const cfgUpload = (input, target, label) => input.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', input.files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); target(d.storage_path); label.textContent = ' (imagen cargada — guarda la configuración)'; } catch (e) { showToast(e.message, 'error'); } });
+cfgUpload($('idImgFile'), (p) => { settings.identify = { ...(settings.identify || {}), image: p }; }, $('idImgName'));
+$('idImgX').addEventListener('click', () => { settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; });
 cfgUpload($('thImgFile'), (p) => { settings.thanks.image = p; }, $('thImgName')); cfgUpload($('clImgFile'), (p) => { settings.closed_template.image = p; }, $('clImgName'));
 $('preFile').addEventListener('change', async () => {
   const fd = new FormData(); fd.append('file', $('preFile').files[0]);
@@ -867,6 +875,7 @@ $('preFile').addEventListener('change', async () => {
 });
 // Mensajes de gracias y de «cerrado»: con formato (el valor vive en el campo oculto que lee «Guardar»)
 const thRt = RichText.mount($('thTextRt'), { label: 'Mensaje de gracias', onChange: (v) => { $('thText').value = v; } });
+const idRt = RichText.mount($('idTextRt'), { label: 'Texto del paso de identificación', onChange: (v) => { $('idText').value = v; } });
 const clRt = RichText.mount($('clTextRt'), { label: 'Mensaje de formulario cerrado', onChange: (v) => { $('clText').value = v; } });
 $('cfgSave').addEventListener('click', async () => {
   const payload = {
@@ -874,6 +883,7 @@ $('cfgSave').addEventListener('click', async () => {
     prefill: { mode: $('preMode').value, source: $('preSrc').value },
     thanks: { ...settings.thanks, mode: $('thMode').value, url: $('thUrl').value, title: $('thTitle').value, text: $('thText').value },
     closed_template: { ...settings.closed_template, title: $('clTitle').value, text: $('clText').value },
+    identify: { image: (settings.identify || {}).image || '', title: $('idTitle').value, text: $('idText').value, button: $('idButton').value },
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => r.limit > 0) },

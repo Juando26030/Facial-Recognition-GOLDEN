@@ -987,3 +987,7 @@ Las etiquetas de los campos se quedan como TEXTO PLANO (son el nombre de la colu
 ## 1-nov-2026 — P4 (Formularios): ancho configurable
 - `theme.width` en «Apariencia»: Normal 760 (sin llave, como siempre), Estrecho 600, Ancho 960, Muy ancho 1100, Completo (`"full"`) o un valor propio validado de 480 a 1100 px (`formlib._card_width`; lo demás se descarta). En pantallas angostas la tarjeta siempre ocupa el 100 %.
 - La vista previa del editor, el enlace de prueba (aviso de pruebas incluido) y producción usan el mismo `FormRender.cardMax`. Medido en navegador con 4 campos por fila: 960 y 1100 caben en una línea; 760 los parte en 2 (comportamiento de siempre); a 375 px, una columna.
+
+## 1-nov-2026 — P5 (Formularios): paso de identificación editable
+- `settings.identify` = {title, text, image, button} (`formlib.DEFAULT_SETTINGS`); vacío = los textos de siempre («Identifícate», la explicación según sea obligatorio o no, «Continuar»): `tests/js/form_identify_check.js` fija que el HTML sin configurar es idéntico al anterior. El texto admite el formato de P3; la imagen se sube con el mismo endpoint de las demás imágenes (PNG/JPG/WEBP/GIF, máx. 8 MB) y en el servidor solo se acepta una ruta «cliente/archivo.ext» de las que genera ese endpoint (nada de URLs, `..` ni otras extensiones). Viaja en exportar/importar (su imagen va en el zip) y en duplicar. El estado público (`/state`, etapa identify) incluye `identify`.
+- De paso: `sanitize_settings` ya no se rompe si `thanks`/`closed_template`/`identify` llegan con una forma rara (antes `TypeError`).
