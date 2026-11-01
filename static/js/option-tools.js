@@ -116,7 +116,10 @@
     });
     bar.append(toggle, btn('Ordenar A–Z', () => set(sortAZ(get()))), btn('Quitar repetidas', () => set(dedupe(get())), 'Ignora espacios, mayúsculas y tildes'));
     const key = () => (typeof opts.key === 'function' ? opts.key() : opts.key);
-    if (opts.eventId && key() && !BLOCKED.includes(key())) {
+    if (opts.eventId && key() && BLOCKED.includes(key())) {
+      const note = el('div', { textContent: 'Este campo parece contener datos personales; por seguridad no se puede traer de la base' }); note.style.cssText = 'font-size:.74rem; color:#7a5b00;';
+      bar.append(note);
+    } else if (opts.eventId && key()) {
       const dbBtn = btn(ta.dataset.fromDb ? 'Actualizar desde la base' : 'Usar los valores que ya están en la base de datos', async () => {
         const res = await importDialog(opts.eventId, key(), get(), !!ta.dataset.fromDb);
         if (res) { ta.dataset.fromDb = '1'; if (opts.onImported) opts.onImported(); set(res); dbBtn.textContent = 'Actualizar desde la base'; }

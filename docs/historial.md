@@ -969,3 +969,8 @@ Rama `fix/impresion-compartida-29oct` (de `main` = `b36bf92`). Migración `0076_
 - **Arreglo:** la prueba usa «ahora menos 2 horas» en UTC (commit «test: fecha relativa en sync de contingencia»). No se tocó la aplicación.
 - **Pruebas flojas con la misma fecha fija (no fallan, pero ya no prueban lo que dicen; pendientes):** `tests/test_fase0_ingress_directory.py:37` (marca `2026-09-26`, vencida; su aserción acepta cualquier hora) y `tests/test_grupo_a.py:98` (marca `2026-10-26`, vence el 25-nov; no revisa la hora guardada). Al corregirlas, usar fechas relativas a «ahora».
 - **Regla:** en pruebas, nunca fechas fijas que dependan de «hoy» o de una ventana de días.
+
+## 1-nov-2026 — P7 (Formularios): valores de la base como opciones, y su bloqueo por palabras clave
+- Endpoint `GET /api/events/{id}/field-values` (`app/optionvalues.py`): solo cargo, entidad, tipo de asistente, categoría y los opcionales; coordinador o superior; devuelve valores con su conteo, nunca registros. Cédula, nombres, apellidos, correo, teléfono y fecha de nacimiento se rechazan.
+- **Regla por palabras clave (deliberadamente amplia):** un opcional cuyo NOMBRE contenga palabras como nombre, documento, correo, teléfono, celular, dirección o nacimiento tampoco se consulta. Efecto conocido: un opcional llamado «Nombre del proyecto» queda bloqueado aunque no sea un dato personal. Decisión de Juan David: dejarlo así (más vale bloquear de más). Al bloquearse, la pantalla dice «Este campo parece contener datos personales; por seguridad no se puede traer de la base».
+- Si algún día hace falta, la salida es una lista de excepciones por campo; NO está hecha y solo se hace si Juan David la pide.

@@ -10,6 +10,7 @@ LIMIT = 200                      # tope de opciones distintas que se devuelven
 MAX_VALUE_LEN = 120              # igual que una opción de formulario (formlib: _text(o, 120))
 # Solo estos campos del evento (lista blanca): cargo, entidad, tipo de asistente, categoría y los opcionales.
 ALLOWED_FIXED = ("role", "entity", "opt_1", "categories")
+BLOCKED_MESSAGE = "Este campo parece contener datos personales; por seguridad no se puede traer de la base"
 # Un opcional lo nombra el cliente: si su nombre dice que es un dato personal, tampoco se consulta.
 _IDENTIFYING = re.compile(r"c[eé]dula|documento|identific|nombre|apellido|correo|e-?mail|mail|tel[eé]fono|celular|m[oó]vil|whats|nacimiento|naci[oó]|direcci[oó]n|\bcc\b|\bnit\b|pasaporte", re.I)
 
@@ -17,9 +18,9 @@ _IDENTIFYING = re.compile(r"c[eé]dula|documento|identific|nombre|apellido|corre
 def check_key(key: str, label: str = "") -> None:
     """Lanza ValueError (mensaje en español) si el campo no se puede consultar."""
     if not (key in ALLOWED_FIXED or re.fullmatch(r"opcional_\d{1,2}", key or "")):
-        raise ValueError("Este campo identifica a las personas (cédula, nombres, correo, teléfono, fecha de nacimiento…): sus valores no se pueden traer como opciones.")
+        raise ValueError(BLOCKED_MESSAGE)
     if key.startswith("opcional_") and _IDENTIFYING.search(label or ""):
-        raise ValueError(f"«{label}» parece un dato personal: sus valores no se pueden traer como opciones públicas.")
+        raise ValueError(BLOCKED_MESSAGE)
 
 
 def group_values(counts: dict, limit: int = LIMIT) -> dict:

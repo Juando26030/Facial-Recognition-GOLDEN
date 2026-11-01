@@ -21,6 +21,7 @@ assert.ok(buttons(ta).includes('Usar los valores que ya están en la base de dat
 const blocked = doc.getElementById('b');
 w.OptionTools.attach(blocked, { eventId: 7, key: 'email' });
 assert.ok(!buttons(blocked).some((t) => /base de datos/.test(t)), 'campos que identifican: sin botón');
+assert.ok(blocked._otWrap.textContent.includes('por seguridad no se puede traer de la base'), 'y se avisa por qué');
 
 (async () => {
   const dbBtn = Array.from(ta._otWrap.querySelectorAll('button')).find((b) => /base de datos/.test(b.textContent));

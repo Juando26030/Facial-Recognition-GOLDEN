@@ -46,6 +46,13 @@ def test_optional_fields_that_look_personal_are_blocked(label):
         ov.check_key("opcional_3", label)
 
 
+def test_blocked_message_is_the_one_shown_on_screen():
+    with pytest.raises(ValueError, match="parece contener datos personales; por seguridad no se puede traer de la base"):
+        ov.check_key("opcional_3", "Celular alterno")
+    with pytest.raises(ValueError, match="por seguridad no se puede traer de la base"):
+        ov.check_key("email")
+
+
 def test_allowed_fields():
     for key, label in (("role", "Cargo"), ("entity", "Entidad"), ("opt_1", "Tipo"), ("categories", "Categoría"), ("opcional_1", "Ciudad"), ("opcional_12", "Talla")):
         ov.check_key(key, label)
