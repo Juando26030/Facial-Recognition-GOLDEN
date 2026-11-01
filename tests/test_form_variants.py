@@ -215,3 +215,13 @@ def test_duplicate_keeps_variant_images_because_it_copies_the_design_json():
     d = fl.sanitize_design({"fields": _fields(i={"id": "i", "type": "image", "src": "acme/a.png", "variants": {"src": {"items": [{"when": _rule(), "value": "acme/b.jpg"}]}}}), "rows": []}, set())
     copy = json.loads(json.dumps(d))                                                         # duplicar_form copia design_json tal cual (las rutas se comparten, no se duplican archivos)
     assert copy == d and "acme/b.jpg" in json.dumps(copy)
+
+
+def test_variant_group_names_are_kept_and_do_not_change_the_selection():
+    items = [{"when": _rule("Bogotá"), "value": "uno", "group": "Capitales"}, {"when": _rule("Cali"), "value": "dos", "group": "  Capitales  ", "name": "Valle"}, {"when": _rule("Pasto"), "value": "tres", "group": "x" * 99}]
+    got = _clean(p={"id": "p", "type": "paragraph", "content": "x", "variants": {"content": {"items": items}}})["p"]
+    assert [i.get("group") for i in got["variants"]["content"]["items"]] == ["Capitales", "Capitales", "x" * 40]
+    assert got["variants"]["content"]["items"][1]["name"] == "Valle"
+    assert fl.pick_variant(got, "content", {"c": "Cali"}) == "dos" and fl.pick_variant(got, "content", {"c": "Bogotá"}) == "uno"
+    again = _clean(p={"id": "p", "type": "paragraph", "content": "x", "variants": got["variants"]})["p"]
+    assert again["variants"] == got["variants"]                                          # estable al guardar de nuevo

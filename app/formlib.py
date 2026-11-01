@@ -470,9 +470,10 @@ def _sanitize_variants(v, fields_in: dict, own_id: str, kind: str):
             if value is None:
                 continue                                      # imagen con una ruta inválida: la variante se descarta
             item = {"when": when, "value": value}
-            name = _text(it.get("name"), 40)
-            if name:
-                item["name"] = name
+            for extra in ("name", "group"):                # nombre de la variante y grupo (P10: el editor agrupa y pliega; no cambia qué se muestra)
+                label = _text(it.get(extra), 40)
+                if label:
+                    item[extra] = label
             items.append(item)
         default = _variant_value(prop, data.get("default")) or ""
         if items or default:
