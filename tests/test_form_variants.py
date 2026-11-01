@@ -225,3 +225,13 @@ def test_variant_group_names_are_kept_and_do_not_change_the_selection():
     assert fl.pick_variant(got, "content", {"c": "Cali"}) == "dos" and fl.pick_variant(got, "content", {"c": "Bogotá"}) == "uno"
     again = _clean(p={"id": "p", "type": "paragraph", "content": "x", "variants": got["variants"]})["p"]
     assert again["variants"] == got["variants"]                                          # estable al guardar de nuevo
+
+
+def test_table_shaped_variants_survive_sanitizing():
+    """Lo que genera la tabla de variantes (static/js/variant-table.js) es una variante de P9 normal: hoja o grupo Y de hojas «es igual a», valor, nombre y valor por defecto."""
+    items = [{"when": {"match": "all", "rules": [_rule("Bogotá"), _rule("Empleado", field="t")]}, "value": "<b>Chapinero</b>", "name": "Bogotá · Empleado"},
+             {"when": _rule("Cali"), "value": "05/03/2026", "name": "Cali"}]
+    got = _clean(p={"id": "p", "type": "paragraph", "content": "x", "variants": {"content": {"items": items, "default": "Por defecto"}}})["p"]["variants"]["content"]
+    assert got["items"][0]["when"]["rules"][1] == _rule("Empleado", field="t") and got["items"][0]["name"] == "Bogotá · Empleado"
+    assert got["items"][1]["when"] == _rule("Cali") and got["default"] == "Por defecto"
+    assert fl.pick_variant({"variants": {"content": got}}, "content", {"c": "bogota", "t": "empleado"}) == "<b>Chapinero</b>"
