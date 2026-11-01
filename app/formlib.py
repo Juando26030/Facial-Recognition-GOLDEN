@@ -235,7 +235,7 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
     if not isinstance(fields_in, dict) or len(fields_in) > MAX_FIELDS:
         raise ValueError(f"Un formulario admite hasta {MAX_FIELDS} elementos")
     allowed_keys = set(IDENTITY_KEYS) | set(optional_keys)
-    fields, used_keys = {}, set()
+    fields, used_keys, total_variants = {}, set(), 0
     for fid, f in fields_in.items():
         if not isinstance(f, dict) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", str(fid)):
             raise ValueError("Elemento con identificador inválido")
@@ -281,9 +281,6 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
                     raise ValueError(f"«{clean['label']}»: el tamaño máximo debe ser un número de MB")
         elif kind in ("heading", "paragraph"):
             clean["content"] = richtext.clean_text(f.get("content"), 2000)
-            variants = _sanitize_variants(f.get("variants"), fields_in, fid)
-            if variants:                       # solo si el elemento las usa: los formularios existentes no ganan ninguna llave nueva
-                clean["variants"] = variants
         elif kind == PAYMENT_TYPE:
             clean["label"] = clean["label"] or "Pago"
             clean["pay"] = sanitize_payment(f.get("pay"), fields_in, fid)
@@ -297,9 +294,15 @@ def sanitize_design(design: dict, optional_keys: set) -> dict:
             shown = richtext.clean_text(f.get("display_label"), 300)
             if shown:                       # sin llave si está vacío: los formularios existentes no cambian
                 clean["display_label"] = shown
+        variants, n_variants = _sanitize_variants(f.get("variants"), fields_in, fid, kind)
+        if variants:                        # solo si el elemento las usa: los formularios existentes no ganan ninguna llave nueva
+            clean["variants"] = variants
+            total_variants += n_variants
         clean["show_if"] = _sanitize_condition(f.get("show_if"), fields_in, fid)
         fields[fid] = clean
 
+    if total_variants > MAX_VARIANTS_PER_FORM:
+        raise ValueError(f"El formulario admite hasta {MAX_VARIANTS_PER_FORM} variantes en total")
     if sum(1 for f in fields.values() if f["type"] == PAYMENT_TYPE) > 1:
         raise ValueError("Un formulario admite un solo campo de pago")
     if sum(1 for f in fields.values() if f["type"] == COMPANIONS_TYPE) > 1:
@@ -333,54 +336,154 @@ def _sanitize_rule(cond, fields_in: dict, own_id: str) -> dict:
     return {"field": cond["field"], "op": op, "value": [str(v) for v in value] if isinstance(value, list) else _text(value, 200)}
 
 
-MAX_VARIANTS = 30
+# ------------------------------------------------------------------ condiciones en árbol y variantes por propiedad (P9)
+# Condición = una HOJA {field, op, value} o un GRUPO {match: all|any, rules: [hojas o grupos], name?}. Las dos formas antiguas de `show_if`
+# ({field,op,value} y {match,rules[]} de un nivel) son casos particulares: valen tal cual, sin migración.
+MAX_COND_DEPTH = 3             # niveles de grupos (el grupo raíz cuenta como 1)
+MAX_COND_LEAVES = 30           # hojas (reglas sueltas) por árbol
+MAX_GROUP_RULES = 12           # hijos directos de un grupo
+MAX_VARIANTS_PER_PROP = 200    # variantes de una propiedad de un elemento
+MAX_VARIANTS_PER_FORM = 3000   # variantes en todo el formulario (P11 las genera desde una tabla)
+# Propiedades con variantes por tipo de elemento. Sin variante que aplique: content y src → el elemento no ocupa espacio; las demás → su valor propio.
+VARIANT_TARGETS = {"heading": ("content",), "paragraph": ("content",), "image": ("src",), PAYMENT_TYPE: ("display_label", "help"), COMPANIONS_TYPE: ("display_label", "help")}
+INPUT_VARIANT_TARGETS = ("display_label", "help", "placeholder")
+HIDEABLE_PROPS = ("content", "src")
+# Ruta de una imagen subida desde el editor: «cliente/archivo.ext» (nada de URLs, «..» ni otras extensiones).
+IMAGE_PATH_RE = re.compile(r"[A-Za-z0-9_-][\w.-]*/[A-Za-z0-9_-][\w.-]*\.(?:png|jpe?g|webp|gif)")
 
 
-def _sanitize_variants(v, fields_in: dict, own_id: str):
-    """«Texto con variantes» de un título o texto informativo: {"by": campo que decide, "items": [{"rule": {field, op, value}, "content"}], "default": texto}.
-    Se muestra la primera variante cuya regla se cumple; si ninguna, la de por defecto; si no hay, el elemento no ocupa espacio."""
-    if not isinstance(v, dict):
-        return None
-    items = []
-    for it in (v.get("items") or [])[:MAX_VARIANTS]:
-        if isinstance(it, dict):
-            items.append({"rule": _sanitize_rule(it.get("rule"), fields_in, own_id), "content": richtext.clean_text(it.get("content"), 2000)})
-    default = richtext.clean_text(v.get("default"), 2000)
-    by = v.get("by") if v.get("by") in fields_in and v.get("by") != own_id else None
-    if not items and not default:
-        return None
-    out = {"by": by, "items": items}
-    if default:
-        out["default"] = default
-    return out
+def _variant_targets(kind: str) -> tuple:
+    return VARIANT_TARGETS.get(kind) or (INPUT_VARIANT_TARGETS if kind in INPUT_TYPES else ())
 
 
-def pick_variant(field: dict, values: dict, visible: Optional[set] = None) -> Optional[str]:
-    """Texto que muestra un título/texto informativo: su `content`, o (con variantes) el de la primera variante cuya regla se cumple, o el de por defecto.
-    `visible`: ids de los campos visibles (una regla sobre un campo oculto no cuenta). None = no se muestra. Igual que `pick` de static/js/form-render.js."""
+def variants_of(field: dict) -> dict:
+    """{propiedad: {"items": [{"when", "value", "name"?}], "default"?}} del elemento. Normaliza el formato de P2 ({by, items:[{rule, content}], default}; nunca llegó a
+    producción, este normalizador se quita en una versión posterior): era solo `content` y se reescribe al formato nuevo en el siguiente guardado."""
     v = field.get("variants")
+    if not isinstance(v, dict):
+        return {}
+    if "items" in v:
+        out = {"items": [{"when": it.get("rule"), "value": it.get("content", "")} for it in (v.get("items") or []) if isinstance(it, dict)]}
+        if v.get("default"):
+            out["default"] = v["default"]
+        return {"content": out}
+    return {k: x for k, x in v.items() if isinstance(x, dict)}
+
+
+def _variant_value(prop: str, raw) -> str:
+    if prop == "content":
+        return richtext.clean_text(raw, 2000)
+    if prop in ("display_label", "help"):
+        return richtext.clean_text(raw, 300)
+    if prop == "placeholder":
+        return _text(raw, 120)
+    text = _text(raw, 200)                                    # src: una ruta que no sea de una imagen subida NO es válida (None); vacío = «no mostrar imagen»
+    return text if not text or IMAGE_PATH_RE.fullmatch(text) else None
+
+
+def _sanitize_variants(v, fields_in: dict, own_id: str, kind: str):
+    """Variantes de un elemento: {propiedad: {"items": [{"when": condición, "value", "name"?}], "default"?}}. Gana la primera cuya condición se cumple;
+    si ninguna, `default`; si no hay (o es vacío): content/src no ocupan espacio y las demás propiedades usan su valor propio."""
+    given = variants_of({"variants": v})
+    out, total = {}, 0
+    for prop in _variant_targets(kind):
+        data = given.get(prop)
+        if not data:
+            continue
+        raw_items = [it for it in (data.get("items") or []) if isinstance(it, dict)]
+        if len(raw_items) > MAX_VARIANTS_PER_PROP:
+            raise ValueError(f"Una propiedad admite hasta {MAX_VARIANTS_PER_PROP} variantes")
+        items = []
+        for it in raw_items:
+            when = _sanitize_condition(it.get("when"), fields_in, own_id)
+            if not when:
+                continue                                      # una variante sin condición nunca se aplicaría
+            value = _variant_value(prop, it.get("value"))
+            if value is None:
+                continue                                      # imagen con una ruta inválida: la variante se descarta
+            item = {"when": when, "value": value}
+            name = _text(it.get("name"), 40)
+            if name:
+                item["name"] = name
+            items.append(item)
+        default = _variant_value(prop, data.get("default")) or ""
+        if items or default:
+            out[prop] = {"items": items, **({"default": default} if default else {})}
+            total += len(items)
+    return out or None, total
+
+
+def pick_variant(field: dict, prop: str, values: dict, visible: Optional[set] = None) -> Optional[str]:
+    """Valor que se muestra de `prop`: sin variantes, el propio; con variantes, el de la primera cuya condición se cumple, o el `default`. `visible`: ids de los campos
+    visibles (una hoja sobre un campo oculto no cuenta; None = todos). Sin variante que aplique: None si la propiedad es ocultable (content, src), si no su valor propio.
+    Igual que `pickVariant` de static/js/form-render.js."""
+    v = variants_of(field).get(prop)
     if not v:
-        return field.get("content") or ""
+        return field.get(prop) or ""
     for it in v["items"]:
-        if (visible is None or it["rule"]["field"] in visible) and condition_met(it["rule"], values):
-            return it["content"] or None
-    return v.get("default") or None
+        if cond_tree_met(it["when"], values, lambda f: visible is None or f in visible):
+            return it["value"] or (None if prop in HIDEABLE_PROPS else field.get(prop) or "")
+    if v.get("default"):
+        return v["default"]
+    return None if prop in HIDEABLE_PROPS else field.get(prop) or ""
+
+
+def image_refs(design: dict):
+    """(dueño, clave) de cada ruta de imagen del diseño: la de los elementos imagen y las de sus variantes. Exportar/importar las lleva en el zip y cualquier barrido
+    de archivos sin uso debe contarlas como referencias vivas."""
+    for f in design["fields"].values():
+        if f.get("type") == "image":
+            yield f, "src"
+        for prop, data in variants_of(f).items():
+            if prop == "src":
+                for it in data.get("items") or []:
+                    yield it, "value"
+                if data.get("default"):
+                    yield data, "default"
+
+
+def _sanitize_cond_node(node, fields_in: dict, own_id: str, depth: int, leaves: list):
+    if isinstance(node, dict) and "rules" in node:
+        if depth > MAX_COND_DEPTH:
+            raise ValueError(f"Las condiciones admiten hasta {MAX_COND_DEPTH} niveles de grupos")
+        kids = [k for k in (_sanitize_cond_node(r, fields_in, own_id, depth + 1, leaves) for r in (node.get("rules") or [])[:MAX_GROUP_RULES]) if k]
+        if not kids:
+            return None
+        name = _text(node.get("name"), 40)
+        if len(kids) == 1 and not name:
+            return kids[0]
+        out = {"match": "any" if node.get("match") == "any" else "all", "rules": kids}
+        if name:
+            out["name"] = name
+        return out
+    leaves[0] += 1
+    if leaves[0] > MAX_COND_LEAVES:
+        raise ValueError(f"Una condición admite hasta {MAX_COND_LEAVES} reglas")
+    return _sanitize_rule(node, fields_in, own_id)
 
 
 def _sanitize_condition(cond, fields_in: dict, own_id: str):
-    """Regla de visibilidad: una sola regla {field, op, value} o un GRUPO {match: all|any, rules: [...]} (hasta 6 reglas; «all» = todas, «any» = alguna)."""
+    """Condición (regla de visibilidad o de una variante): hoja o árbol de grupos Y/O, ver arriba."""
     if not cond:
         return None
-    if isinstance(cond, dict) and "rules" in cond:
-        rules = [_sanitize_rule(r, fields_in, own_id) for r in (cond.get("rules") or [])[:6]]
-        if not rules:
-            return None
-        return rules[0] if len(rules) == 1 else {"match": "any" if cond.get("match") == "any" else "all", "rules": rules}
-    return _sanitize_rule(cond, fields_in, own_id)
+    return _sanitize_cond_node(cond, fields_in, own_id, 1, [0])
 
 
-def cond_rules(cond) -> list:
-    return [] if not cond else (cond["rules"] if "rules" in cond else [cond])
+def cond_leaves(cond) -> list:
+    """Todas las hojas {field, op, value} de una condición, en cualquier nivel."""
+    if not cond:
+        return []
+    if "rules" in cond:
+        return [leaf for r in cond["rules"] for leaf in cond_leaves(r)]
+    return [cond]
+
+
+def cond_tree_met(node: dict, values: dict, is_visible: Callable) -> bool:
+    """¿Se cumple la condición? Una hoja cuenta solo si su campo está visible (`is_visible(id)`) y se cumple con la normalización de P6; un grupo «all» pide todas, «any» alguna."""
+    if "rules" in node:
+        met = [cond_tree_met(r, values, is_visible) for r in node["rules"]]
+        return any(met) if node.get("match") == "any" else bool(met) and all(met)
+    return bool(is_visible(node["field"])) and condition_met(node, values)
 
 
 def _check_condition_cycles(fields: dict) -> None:
@@ -392,7 +495,7 @@ def _check_condition_cycles(fields: dict) -> None:
         if state.get(fid) == 2:
             return
         state[fid] = 1
-        for r in cond_rules(fields[fid].get("show_if")):
+        for r in cond_leaves(fields[fid].get("show_if")):
             walk(r["field"])
         state[fid] = 2
 
@@ -643,7 +746,7 @@ def sanitize_settings(settings: dict) -> dict:
         for k in base:
             if k in given:
                 base[k] = richtext.clean_text(given[k], 600) if k == "text" else _text(given[k], 200)      # el texto admite formato; el título sigue siendo texto plano
-    if not re.fullmatch(r"[A-Za-z0-9_-][\w.-]*/[A-Za-z0-9_-][\w.-]*\.(?:png|jpe?g|webp|gif)", out["identify"]["image"]):      # la imagen del paso de cédula es SIEMPRE una ruta «cliente/archivo.ext» de las que sube el editor
+    if not IMAGE_PATH_RE.fullmatch(out["identify"]["image"]):      # la imagen del paso de cédula es SIEMPRE una ruta «cliente/archivo.ext» de las que sube el editor
         out["identify"]["image"] = ""
     if out["thanks"]["mode"] not in ("template", "redirect"):
         out["thanks"]["mode"] = "template"
@@ -716,8 +819,7 @@ def visible_ids(design: dict, values: dict) -> set:
         cond = fields[fid].get("show_if")
         result = True
         if cond:
-            met = [r["field"] in fields and visible(r["field"]) and condition_met(r, values) for r in cond_rules(cond)]
-            result = any(met) if cond.get("match") == "any" else all(met)
+            result = cond_tree_met(cond, values, lambda f: f in fields and visible(f))
         memo[fid] = result
         return result
 

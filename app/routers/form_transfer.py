@@ -73,9 +73,7 @@ def _image_refs(design: dict, settings: dict):
     yield settings["thanks"], "image"
     if settings.get("identify"):
         yield settings["identify"], "image"
-    for f in design["fields"].values():
-        if f.get("type") == "image":
-            yield f, "src"
+    yield from formlib.image_refs(design)          # imágenes de los elementos imagen y de sus variantes
 
 
 def build_export(db: Session, event: Event, form: WebForm, request: Request) -> tuple:

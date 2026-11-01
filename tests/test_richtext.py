@@ -77,7 +77,8 @@ def test_variants_content_is_sanitized():
     c = {"id": "c", "type": "select", "label": "Ciudad", "options": ["Bogotá"]}
     v = {"by": "c", "items": [{"rule": {"field": "c", "op": "equals", "value": "Bogotá"}, "content": "<i>x</i><script>1</script>"}], "default": "<u>d</u><iframe></iframe>"}
     got = _design({"c": c, "t": {"id": "t", "type": "paragraph", "variants": v}})["t"]["variants"]
-    assert got["items"][0]["content"] == "<i>x</i>" and got["default"] == "<u>d</u>"
+    got = got["content"]                                          # formato de P2 → se reescribe al nuevo (propiedad content, items con «when» y «value»)
+    assert got["items"][0]["value"] == "<i>x</i>" and got["default"] == "<u>d</u>"
 
 
 def test_thanks_and_closed_texts_are_sanitized_and_titles_stay_plain():
