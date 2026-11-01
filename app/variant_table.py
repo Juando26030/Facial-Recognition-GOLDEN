@@ -346,4 +346,4 @@ def read_table(data: bytes, filename: str, spec: dict) -> dict:
                 problems.append({"row": at, "col": c["id"], "message": err})
             elif value:
                 out_rows[at]["cells"][c["id"]] = value
-    return {"rows": out_rows, "problems": problems, "unmatched_rows": unmatched, "duplicated_rows": duplicated, "ignored_columns": ignored, "missing_rows": len(spec["rows"]) - len(seen)}
+    return {"rows": out_rows, "matched_rows": sorted(seen), "problems": problems, "unmatched_rows": unmatched, "duplicated_rows": duplicated, "ignored_columns": ignored, "missing_rows": len(spec["rows"]) - len(seen)}

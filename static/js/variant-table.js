@@ -105,7 +105,7 @@
       const items = [];
       spec.rows.forEach((row, ri) => {
         const cell = parseCell(c.type, (row.cells || {})[c.id], c);
-        if (cell.error) { summary.invalid += 1; problems.push({ row: ri, col: c.id, message: cell.error }); return; }
+        if (cell.error) { if (c.type === 'options') summary.notInList += 1; else summary.invalid += 1; problems.push({ row: ri, col: c.id, message: cell.error }); return; }
         let value = cell.value;
         if (!value) { if (c.type === 'image') summary.rowsWithoutImage += 1; return; }
         if (c.type === 'image' && !IMG_PATH.test(value)) {                   // un nombre de archivo: solo cuenta si ya se subió y emparejó

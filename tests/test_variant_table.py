@@ -96,6 +96,7 @@ def test_round_trip_download_then_upload_gives_the_same_table():
     spec = _spec(rows)
     got = vt.read_table(vt.build_template(spec), "tabla.xlsx", spec)
     assert got["problems"] == [] and got["unmatched_rows"] == [] and got["missing_rows"] == 0
+    assert got["matched_rows"] == [0, 1, 2]
     assert [r["cells"] for r in got["rows"]] == [r["cells"] for r in rows]
 
 

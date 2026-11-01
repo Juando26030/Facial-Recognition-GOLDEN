@@ -53,6 +53,10 @@ const bad = mini(); bad.rows[0].cells.k2 = '31/02/2026';
 b = VT.build(bad, {});
 assert.strictEqual(b.summary.invalid, 1); assert.deepStrictEqual(J(b.problems.filter((p) => !p.soft)), [{ row: 0, col: 'k2', message: 'Fecha no válida (escribe dd/mm/aaaa)' }]);
 assert.ok(!b.variants.p2, 'sin ninguna variante válida no se crea la propiedad');
+// una opción que no está en la lista se cuenta aparte
+const opt = { variables: mini().variables, columns: [{ id: 'o', name: 'Nivel', field: 'p', prop: 'help', type: 'options', options: ['Alto', 'Bajo'] }], rows: [{ keys: ['Bogotá'], cells: { o: 'alto' } }, { keys: ['Cali'], cells: { o: 'Medio' } }] };
+b = VT.build(opt, {});
+assert.strictEqual(b.summary.notInList, 1); assert.strictEqual(b.summary.invalid, 0); assert.strictEqual(b.summary.variants, 1);
 // límites
 const huge = mini(); huge.rows = Array.from({ length: 201 }, (_, i) => ({ keys: ['x' + i], cells: { k1: 'a' } }));
 assert.ok(/200 filas/.test(VT.build(huge, {}).error));

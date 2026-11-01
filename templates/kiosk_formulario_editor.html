@@ -13,6 +13,8 @@
     <script src="{{ url_for('static', path='js/form-sync.js') }}"></script>
     <script src="{{ url_for('static', path='js/rich-text.js') }}"></script>
     <script src="{{ url_for('static', path='js/cond-tree.js') }}"></script>
+    <script src="{{ url_for('static', path='js/variant-table.js') }}"></script>
+    <script src="{{ url_for('static', path='js/variant-table-ui.js') }}"></script>
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
@@ -63,6 +65,7 @@
         <span id="statusPill" class="hint"></span>
         <button class="small-btn primary" id="saveBtn">💾 Guardar diseño</button>
         <button class="small-btn" id="previewBtn">👁 Previsualizar</button>
+        <button class="small-btn" id="tableBtn" title="Cargar variantes como una hoja de Excel">📊 Tabla de variantes</button>
         <a class="small-btn" id="testBtn" target="_blank" rel="noopener" title="Abre el enlace real del formulario, respetando su estado actual">🧪 Probar</a>
         <button class="small-btn" id="tplBtn">📚 Guardar como plantilla</button>
       </div>
@@ -196,6 +199,7 @@
   </div>
 </div>
 
+<div id="tableOverlay" role="dialog" aria-modal="true" aria-label="Tabla de variantes" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9990; display:none; overflow:auto; padding:1.5rem 1rem;"><div style="max-width:1100px; margin:0 auto; background:#fff; border-radius:16px; padding:1rem 1.2rem;"><div style="display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0;">Tabla de variantes</h3><button class="small-btn primary" id="closeTable">Cerrar</button></div><div id="tableHost"></div></div></div>
 <div id="previewOverlay"><div id="previewInner" style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
 
 <script>
@@ -989,7 +993,7 @@ async function saveDesign() {
   }
   try {
     form = await jput(api, { name: $('fname').value, slug: $('fslug').value, design });
-    design = form.design; normDesign(); dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
+    design = form.design; normDesign(); saveGen += 1; dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
     eventFields = await j(`/api/events/${EV}/form-event-fields`);
     showToast('Diseño guardado', 'success'); paintHeader(); renderTheme(); renderAll();
     return true;
@@ -1010,6 +1014,55 @@ function previewWidth() {   // la vista previa tiene el mismo ancho que verá el
   const w = design.theme.width;
   $('previewInner').style.maxWidth = w === 'full' ? 'none' : Math.max(800, +w + 0 || 0) + 'px';
 }
+// ---------------------------------------------------------------- tabla de variantes (P11)
+let vtUI = null, saveGen = 0;
+function richPrompt(html) {   // editor de texto con formato (el de P3) para UNA celda de la tabla
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+    ov.innerHTML = '<div style="background:#fff; border-radius:14px; padding:1rem; width:min(640px,94vw);"><div data-vt-richbox></div><div style="text-align:right; margin-top:8px;"><button type="button" class="small-btn" data-no>Cancelar</button> <button type="button" class="small-btn primary" data-ok>Listo</button></div></div>';
+    document.body.appendChild(ov);
+    let val = html;
+    const m = RichText.mount(ov.querySelector('[data-vt-richbox]'), { value: html, label: 'Texto de la celda', onChange: (v) => { val = v; } });
+    const close = (v) => { m.destroy(); ov.remove(); resolve(v); };
+    ov.querySelector('[data-ok]').addEventListener('click', () => close(val)); ov.querySelector('[data-no]').addEventListener('click', () => close(null));
+  });
+}
+function vtCtx() {
+  return {
+    url: `${api}/variant-table`,
+    design: () => design,
+    fields: () => Object.values(design.fields).filter((f) => variantProps(f).length).map((f) => ({ id: f.id, label: labelOfField(f.id) })),
+    optionsOf: (id) => FormSync.optionsOf(design.fields[id], eventFields),
+    fieldLabel: labelOfField,
+    propsOf: (id) => variantProps(design.fields[id]),
+    propLabel: (p) => VPROPS[p],
+    sheetOf: (id) => { if (!sheetsOn()) return 0; const at = locate(id); return at ? sheetIndex(design.rows[at[0]].sheet) : 0; },
+    assetUrl,
+    toast: (m, k) => showToast(m, k),
+    confirm: (m, o) => showConfirm(m, o),
+    richEdit: richPrompt,
+    apply(built) {   // reemplaza SOLO las propiedades de las columnas; la copia de lo anterior sirve para deshacer hasta que se guarde el diseño
+      const snap = Object.keys(built.variants).map((fid) => { const f = design.fields[fid]; return [fid, JSON.stringify({ v: f.variants || null, content: f.content, src: f.src })]; });
+      const gen = saveGen;
+      VariantTable.applyTo(design, built);
+      normDesign(); markDirty(); renderAll();
+      return () => {
+        if (gen !== saveGen) return false;
+        snap.forEach(([fid, js]) => {
+          const o = JSON.parse(js), f = design.fields[fid]; if (!f) return;
+          if (o.v) f.variants = o.v; else delete f.variants;
+          ['content', 'src'].forEach((k) => { if (o[k] === undefined) delete f[k]; else f[k] = o[k]; });
+        });
+        normDesign(); markDirty(); renderAll();
+        return true;
+      };
+    },
+  };
+}
+$('tableBtn').addEventListener('click', () => { $('tableOverlay').style.display = 'block'; if (!vtUI) vtUI = VariantTableUI.mount($('tableHost'), vtCtx()); else vtUI.paint(); });
+$('closeTable').addEventListener('click', () => { $('tableOverlay').style.display = 'none'; });
+
 $('previewBtn').addEventListener('click', () => {
   const host = $('previewHost');
   previewWidth();
