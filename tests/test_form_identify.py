@@ -3,6 +3,7 @@ import pytest
 
 from app import formlib as fl
 from app.routers import form_transfer
+from tests.conftest import login
 from tests.test_forms import _create, _event, _open, _put, _state
 
 
@@ -40,6 +41,7 @@ def test_public_state_carries_the_identify_texts(client, factory):
     _put(client, ev, f, settings={"security": {"enabled": True, "type": "cedula"}, "prefill": {"mode": "cedula", "source": "event"}})
     _open(client, ev, f)
     assert _state(client, ev, f)["identify"] == {"title": "", "text": "", "image": "", "button": ""}          # formularios que nadie editó: vacío = los textos de siempre
+    login(client, "coord1")                                                                   # _open cierra la sesión del cliente: se vuelve a entrar para editar
     assert _put(client, ev, f, settings={"security": {"enabled": True, "type": "cedula"}, "prefill": {"mode": "cedula", "source": "event"},
                                          "identify": {"title": "Hola", "text": "<b>x</b><script>1</script>", "button": "Entrar", "image": ""}}).status_code == 200
     st = _state(client, ev, f)
