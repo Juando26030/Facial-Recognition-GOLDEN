@@ -79,7 +79,7 @@
         <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Campos del evento</h4><p class="hint" style="margin:0 0 8px;">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div><button type="button" class="small-btn" id="palSync" style="margin-top:8px;" title="Pone en los campos ya enlazados el tipo y las opciones que hoy tienen en Parámetros; antes te muestra qué cambia">Sincronizar con Parámetros</button></div>
         <div class="card"><details><summary style="cursor:pointer; font-weight:700; font-size:0.9rem;">Apariencia del formulario</summary><div id="themeBox" class="props" style="margin-top:0.7rem;"></div></details></div>
       </div>
-      <div><div class="card" style="padding:0.8rem;"><div id="canvas"></div><p class="hint" style="margin:8px 4px 0;">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></div></div>
+      <div><div class="card" style="padding:0.8rem;"><div id="sheetsBar" style="margin-bottom:8px;"></div><div id="sheetsPanel"></div><div id="canvas"></div><p class="hint" style="margin:8px 4px 0;">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></div></div>
       <div><div class="card props" id="propsBox"><p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p></div></div>
     </div></div>
 
@@ -242,7 +242,7 @@ function newField(type, evField) {
   return f;
 }
 function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
-  if (target.gap != null) { design.rows.splice(target.gap, 0, { align: 'left', items: [id] }); }
+  if (target.gap != null) { design.rows.splice(target.gap, 0, newRow([id])); }
   else { const row = design.rows[target.row]; if (row.items.length >= 4) { showToast('Una fila admite hasta 4 elementos', 'error'); return false; } row.items.splice(target.pos, 0, id); }
   return true;
 }
@@ -253,9 +253,10 @@ const OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['c
 const VARIANT_WARNING = 'No escribas aquí información confidencial: todo el contenido de las variantes es visible para quien abra el formulario, aunque no se le muestre.';
 const VPROPS = { content: 'Texto', src: 'Imagen', display_label: 'Nombre de presentación', help: 'Ayuda', placeholder: 'Texto de ejemplo' };
 const variantProps = (f) => (f.type === 'heading' || f.type === 'paragraph' ? ['content'] : f.type === 'image' ? ['src'] : f.type === 'payment' || f.type === 'companions' ? ['display_label', 'help'] : ['display_label', 'help', 'placeholder']);
-const normDesign = () => Object.values(design.fields).forEach((f) => { if (f.variants) f.variants = FormRender.variantsOf(f); });   // formato de P2 → el nuevo
+const normDesign = () => { Object.values(design.fields).forEach((f) => { if (f.variants) f.variants = FormRender.variantsOf(f); }); if (typeof normSheets === 'function') { activeSheet = null; normSheets(); } };   // formato de P2 → el nuevo
 let condOwners = {}, condSeq = 0;
-const regOwner = (fid, get, set) => { const id = 'co' + (++condSeq); condOwners[id] = { fid, get, set }; return id; };
+const regOwner = (fid, get, set, extra) => { const id = 'co' + (++condSeq); condOwners[id] = { fid, get, set, ...(extra || {}) }; return id; };
+const ownerOthers = (o) => (o.others ? o.others() : condOthers(o.fid));
 const condOthers = (fid) => Object.values(design.fields).filter((x) => x.id !== fid && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
 const defaultLeaf = (others) => ({ field: others[0].id, op: 'equals', value: '' });
 const canvasText = (f) => (f.variants && f.variants.content ? '↔ Según respuesta: ' + (f.variants.content.default || (f.variants.content.items[0] || {}).value || '') : f.content || '');
@@ -284,7 +285,7 @@ function condNodeHtml(oid, node, path, others) {
   return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0;"><div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><span class="hint">Se cumplen</span><select ${at} data-cx="match"><option value="all" ${node.match !== 'any' ? 'selected' : ''}>TODAS (Y)</option><option value="any" ${node.match === 'any' ? 'selected' : ''}>ALGUNA (O)</option></select>${path.length ? `<button type="button" class="small-btn danger" ${at} data-cx="delnode">Quitar grupo</button>` : ''}</div>${kids}
     <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" ${at} data-cx="addleaf" ${CondTree.canAddLeaf(CondTree.group(condOwners[oid].get()), path) ? '' : 'disabled'}>+ Regla</button>${path.length + 2 <= CondTree.MAX_DEPTH ? `<button type="button" class="small-btn" ${at} data-cx="addgroup" ${CondTree.canAddGroup(CondTree.group(condOwners[oid].get()), path) ? '' : 'disabled'}>+ Grupo (Y/O)</button>` : ''}</div></div>`;
 }
-const condEditorHtml = (oid) => condNodeHtml(oid, CondTree.group(condOwners[oid].get()), [], condOthers(condOwners[oid].fid));
+const condEditorHtml = (oid) => condNodeHtml(oid, CondTree.group(condOwners[oid].get()), [], ownerOthers(condOwners[oid]));
 
 // Clics y cambios dentro de un editor de condiciones (delegados en el panel, que se repinta: se enlazan UNA vez)
 function onCx(e) {
@@ -294,7 +295,7 @@ function onCx(e) {
   if (e.type === 'click' && (tag === 'SELECT' || tag === 'INPUT')) return;
   if (e.type === 'change' && !(tag === 'SELECT' || el.type === 'checkbox')) return;
   if (e.type === 'input' && !(tag === 'INPUT' && el.type === 'text')) return;
-  const o = condOwners[el.dataset.co], path = el.dataset.cp ? el.dataset.cp.split('.').map(Number) : [], others = condOthers(o.fid);
+  const o = condOwners[el.dataset.co], path = el.dataset.cp ? el.dataset.cp.split('.').map(Number) : [], others = ownerOthers(o);
   let root = CondTree.group(o.get()), structural = true;
   if (act === 'match') root = CondTree.update(root, path, (g) => ({ ...g, match: el.value }));
   else if (act === 'addleaf') { if (!others.length) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); return; } root = CondTree.addLeaf(root, path, defaultLeaf(others)); }
@@ -309,7 +310,7 @@ function onCx(e) {
   else if (act === 'clearroot') root = CondTree.group(null);
   else return;
   o.set(root);
-  if (structural) renderProps();
+  if (structural) (o.rerender || renderProps)();
 }
 
 function valueEditorHtml(prop, key, val) {
@@ -366,6 +367,103 @@ function bindVariants(box, f) {
 }
 ['click', 'change', 'input'].forEach((t) => $('propsBox').addEventListener(t, onCx));
 
+// ---------------------------------------------------------------- hojas (P12)
+let activeSheet = null, sheetMounts = [];
+const sheetsOn = () => (design.sheets || []).length > 1;
+const sheetIndex = (sid) => (design.sheets || []).findIndex((x) => x.id === sid);
+const sheetName = (sh, i) => RichText.toPlain(sh.title || '') || `Hoja ${i + 1}`;
+const lastSheetId = () => design.sheets[design.sheets.length - 1].id;
+const newSheetId = () => 'sh_' + Math.random().toString(36).slice(2, 8);
+const newRow = (items, sheet) => ({ align: 'left', items, ...(sheetsOn() ? { sheet: sheet || activeSheet } : {}) });
+const isLastOnly = (fid) => ['payment', 'companions'].includes((design.fields[fid] || {}).type);   // el pago y los acompañantes van en la última hoja
+// Mantiene el diseño coherente: filas con hoja válida, ordenadas por hoja (estable), pago/acompañantes en la última y la primera y la última sin condición.
+function normSheets() {
+  if (!design.sheets || design.sheets.length < 2) { delete design.sheets; design.rows.forEach((r) => { delete r.sheet; }); activeSheet = null; return; }
+  const ids = design.sheets.map((x) => x.id);
+  let prev = ids[0];
+  design.rows.forEach((r) => { if (!ids.includes(r.sheet)) r.sheet = prev; if (r.items.some(isLastOnly)) r.sheet = ids[ids.length - 1]; prev = r.sheet; });
+  design.rows.sort((a, b) => ids.indexOf(a.sheet) - ids.indexOf(b.sheet));
+  design.sheets.forEach((x, i) => { if (i === 0 || i === ids.length - 1) delete x.show_if; });
+  if (!ids.includes(activeSheet)) activeSheet = ids[0];
+}
+const clearSheetRt = () => { sheetMounts.forEach((m) => m.destroy()); sheetMounts = []; };
+const fieldsBeforeSheet = (i) => {   // la condición de una hoja solo puede usar campos de hojas anteriores
+  const before = new Set(design.rows.filter((r) => sheetIndex(r.sheet) < i).flatMap((r) => r.items));
+  return Object.values(design.fields).filter((x) => before.has(x.id) && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
+};
+function splitSheets() {   // de una hoja a dos: todo queda en la primera, salvo el pago y los acompañantes (que van en la última)
+  design.sheets = [{ id: newSheetId(), title: '', description: '' }, { id: newSheetId(), title: '', description: '' }];
+  design.rows.forEach((r) => { r.sheet = design.sheets[0].id; });
+  activeSheet = design.sheets[0].id; normSheets(); markDirty(); renderAll();
+}
+function moveToSheet(fid, sid) {
+  if (isLastOnly(fid) && sid !== lastSheetId()) { showToast('El pago y los acompañantes van en la última hoja', 'error'); renderProps(); return; }
+  detach(fid); design.rows.push(newRow([fid], sid)); activeSheet = sid; normSheets(); markDirty(); renderAll();
+}
+function duplicateSheet(i) {
+  const sh = design.sheets[i], rows = design.rows.filter((r) => r.sheet === sh.id), map = {}, id = newSheetId();
+  rows.forEach((r) => r.items.forEach((fid) => { if (!isLastOnly(fid)) map[fid] = uid(); }));
+  const remap = (n) => (n ? (n.rules ? { ...n, rules: n.rules.map(remap) } : { ...n, field: map[n.field] || n.field }) : n);   // las reglas entre campos copiados apuntan a las copias
+  Object.entries(map).forEach(([old, nid]) => {
+    const c = JSON.parse(JSON.stringify(design.fields[old]));
+    c.id = nid; c.key = null; c.sync = false;
+    if (c.show_if) c.show_if = remap(c.show_if);
+    Object.values(c.variants || {}).forEach((v) => v.items.forEach((it) => { it.when = remap(it.when); }));
+    design.fields[nid] = c;
+  });
+  design.sheets.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(sh)), id, title: (sh.title || '') + ' (copia)' });
+  rows.forEach((r) => { const items = r.items.filter((fid) => map[fid]).map((fid) => map[fid]); if (items.length) design.rows.push({ align: r.align, items, sheet: id }); });
+  if (rows.some((r) => r.items.some(isLastOnly))) showToast('El pago y los acompañantes no se copian: un formulario admite uno solo', 'info');
+  activeSheet = id; normSheets(); markDirty(); renderAll();
+}
+async function deleteSheet(i) {
+  const sh = design.sheets[i], di = i === 0 ? 1 : i - 1, dest = design.sheets[di];
+  const n = design.rows.filter((r) => r.sheet === sh.id).reduce((a, r) => a + r.items.length, 0);
+  const msg = `¿Eliminar la hoja «${esc(sheetName(sh, i))}»? ${n ? `Sus ${n} ${n === 1 ? 'campo pasa' : 'campos pasan'} a la hoja «${esc(sheetName(dest, di))}». No se borra ningún campo.` : 'No tiene campos.'}`;
+  if (!(await showConfirm(msg, { confirmLabel: 'Eliminar la hoja' }))) return;
+  design.rows.forEach((r) => { if (r.sheet === sh.id) r.sheet = dest.id; });
+  design.sheets.splice(i, 1); activeSheet = dest.id; normSheets(); markDirty(); renderAll();
+}
+async function mergeSheets() {
+  const n = design.rows.reduce((a, r) => a + r.items.length, 0);
+  if (!(await showConfirm(`¿Volver a una sola hoja? Los ${n} campos quedan juntos, en el mismo orden. Se pierden los títulos, las descripciones y las condiciones de las hojas.`, { confirmLabel: 'Volver a una hoja' }))) return;
+  delete design.sheets; normSheets(); markDirty(); renderAll();
+}
+function renderSheets() {
+  clearSheetRt();
+  Object.keys(condOwners).forEach((k) => { if (condOwners[k].keep) delete condOwners[k]; });
+  const bar = $('sheetsBar'), panel = $('sheetsPanel');
+  if (!sheetsOn()) { bar.innerHTML = '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><span class="hint">Formulario de una sola hoja.</span><button type="button" class="small-btn" data-shact="split">Dividir en hojas</button></div>'; panel.innerHTML = ''; return; }
+  const i = sheetIndex(activeSheet), sh = design.sheets[i];
+  bar.innerHTML = `<div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;" role="tablist" aria-label="Hojas del formulario">${design.sheets.map((x, k) => `<button type="button" role="tab" aria-selected="${x.id === activeSheet}" class="small-btn ${x.id === activeSheet ? 'primary' : ''}" data-shtab="${x.id}">${k + 1} · ${esc(sheetName(x, k).slice(0, 22))}${x.show_if ? ' ⚙' : ''}</button>`).join('')}<button type="button" class="small-btn" data-shact="add" ${design.sheets.length >= 20 ? 'disabled' : ''}>+ Hoja</button></div>`;
+  const cond = (i > 0 && i < design.sheets.length - 1)
+    ? (() => { const oid = regOwner(null, () => sh.show_if, (n) => { const c = CondTree.compact(n); if (c) sh.show_if = c; else delete sh.show_if; markDirty(); }, { keep: true, others: () => fieldsBeforeSheet(i), rerender: renderSheets });
+        return `<div class="fld"><label>Mostrar esta hoja</label>${sh.show_if ? `${condEditorHtml(oid)}<button type="button" class="small-btn danger" data-co="${oid}" data-cx="clearroot">Siempre (quitar la regla)</button>` : `<span class="hint">Siempre.</span> <button type="button" class="small-btn" data-co="${oid}" data-cx="startroot">Mostrar solo si…</button>`}<div class="hint">Solo puede usar campos de hojas anteriores.</div></div>`; })()
+    : '<div class="hint">La primera y la última hoja siempre se muestran.</div>';
+  panel.innerHTML = `<details style="margin-bottom:8px;"><summary style="cursor:pointer; font-size:.85rem; font-weight:700;">Opciones de la hoja ${i + 1}</summary><div style="padding:6px 2px; display:grid; gap:6px;">
+    <div class="fld"><label>Título de la hoja</label><div id="shTitleRt"></div></div><div class="fld"><label>Descripción (opcional)</label><div id="shDescRt"></div></div>${cond}
+    <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" data-shact="left" ${i === 0 ? 'disabled' : ''}>← Antes</button><button type="button" class="small-btn" data-shact="right" ${i === design.sheets.length - 1 ? 'disabled' : ''}>Después →</button><button type="button" class="small-btn" data-shact="dup" ${design.sheets.length >= 20 ? 'disabled' : ''}>Duplicar</button><button type="button" class="small-btn danger" data-shact="del">Eliminar</button><button type="button" class="small-btn" data-shact="merge">Volver a una sola hoja</button></div>
+    <div class="hint">El pago y los acompañantes siempre van en la última hoja.</div></div></details>`;
+  const mount = (id, opts) => { const m = RichText.mount($(id), opts); sheetMounts.push(m); };
+  mount('shTitleRt', { basic: true, value: sh.title, label: 'Título de la hoja', onChange: (v) => { sh.title = v; markDirty(); const t = bar.querySelector(`[data-shtab="${sh.id}"]`); if (t) t.textContent = `${i + 1} · ${sheetName(sh, i).slice(0, 22)}${sh.show_if ? ' ⚙' : ''}`; } });
+  mount('shDescRt', { value: sh.description, label: 'Descripción de la hoja', onChange: (v) => { sh.description = v; markDirty(); } });
+}
+function onSheetAction(e) {
+  const tab = e.target.closest('[data-shtab]');
+  if (tab) { activeSheet = tab.dataset.shtab; selected = null; renderAll(); return; }
+  const b = e.target.closest('[data-shact]');
+  if (!b || b.disabled) return;
+  const i = sheetIndex(activeSheet), act = b.dataset.shact;
+  if (act === 'split') splitSheets();
+  else if (act === 'add') { design.sheets.splice(i + 1, 0, { id: newSheetId(), title: '', description: '' }); activeSheet = design.sheets[i + 1].id; normSheets(); markDirty(); renderAll(); }
+  else if (act === 'left' || act === 'right') { const j = act === 'left' ? i - 1 : i + 1; [design.sheets[i], design.sheets[j]] = [design.sheets[j], design.sheets[i]]; normSheets(); markDirty(); renderAll(); }
+  else if (act === 'dup') duplicateSheet(i);
+  else if (act === 'del') deleteSheet(i);
+  else if (act === 'merge') mergeSheets();
+}
+['click'].forEach((t) => { $('sheetsBar').addEventListener(t, onSheetAction); $('sheetsPanel').addEventListener(t, (e) => { if (e.target.closest('[data-shact]')) onSheetAction(e); }); });
+['click', 'change', 'input'].forEach((t) => $('sheetsPanel').addEventListener(t, onCx));
+
 // ---------------------------------------------------------------- paleta
 async function syncWithParams() {
   try { eventFields = await j(`/api/events/${EV}/form-event-fields`); } catch (e) { showToast(e.message, 'error'); return; }
@@ -412,11 +510,13 @@ function onDrop(target, raw) {
   selected = id; markDirty(); renderAll();
 }
 function renderCanvas() {
+  normSheets();
   const rows = design.rows;
   const gap = (i) => `<div class="gap" data-gap="${i}"></div>`;
-  $('canvas').innerHTML = rows.map((row, ri) => gap(ri) + `<div class="crow" data-ri="${ri}">${row.items.map((id) => cardHtml(design.fields[id])).join('')}
+  const endGap = !sheetsOn() ? rows.length : (() => { let e = rows.findIndex((r) => r.sheet === activeSheet); if (e < 0) { e = rows.findIndex((r) => sheetIndex(r.sheet) > sheetIndex(activeSheet)); return e < 0 ? rows.length : e; } while (e < rows.length && rows[e].sheet === activeSheet) e++; return e; })();
+  $('canvas').innerHTML = rows.map((row, ri) => (sheetsOn() && row.sheet !== activeSheet ? '' : gap(ri) + `<div class="crow" data-ri="${ri}">${row.items.map((id) => cardHtml(design.fields[id])).join('')}
     <div class="rowtools"><select data-align="${ri}" aria-label="Alineación de la fila" style="font-size:0.7rem; padding:1px;"><option value="left" ${row.align === 'left' ? 'selected' : ''}>◀ izquierda</option><option value="center" ${row.align === 'center' ? 'selected' : ''}>▬ centro</option><option value="right" ${row.align === 'right' ? 'selected' : ''}>▶ derecha</option></select>
-    <button class="small-btn" data-rowup="${ri}" aria-label="Subir esta fila" title="Subir esta fila" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" aria-label="Bajar esta fila" title="Bajar esta fila" style="padding:0 6px;">↓</button></div></div>`).join('') + gap(rows.length) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
+    <button class="small-btn" data-rowup="${ri}" aria-label="Subir esta fila" title="Subir esta fila" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" aria-label="Bajar esta fila" title="Bajar esta fila" style="padding:0 6px;">↓</button></div></div>`)).join('') + gap(endGap) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
   $('canvas').querySelectorAll('.gap').forEach((g) => {
     g.addEventListener('dragover', (e) => { e.preventDefault(); g.classList.add('over'); });
     g.addEventListener('dragleave', () => g.classList.remove('over'));
@@ -438,9 +538,10 @@ function renderCanvas() {
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
         const target = ri + (e.key === 'ArrowUp' ? -1 : 1);
-        if (target < 0 || target >= design.rows.length) { if (row.items.length > 1) { detach(id); design.rows.splice(e.key === 'ArrowUp' ? 0 : design.rows.length, 0, { align: 'left', items: [id] }); } else return; }
+        if (sheetsOn() && (target < 0 || target >= design.rows.length || design.rows[target].sheet !== row.sheet)) return;   // entre hojas se cambia con el selector «Hoja»
+        if (target < 0 || target >= design.rows.length) { if (row.items.length > 1) { detach(id); design.rows.splice(e.key === 'ArrowUp' ? 0 : design.rows.length, 0, newRow([id], row.sheet)); } else return; }
         else if (row.items.length === 1) { const t = design.rows[target]; if (t.items.length >= 4) return; detach(id); const ti = design.rows.indexOf(t); design.rows[ti].items.push(id); }
-        else { const t = design.rows[target]; detach(id); const ti = design.rows.indexOf(t); design.rows.splice(e.key === 'ArrowUp' ? ti + 1 : ti, 0, { align: 'left', items: [id] }); }
+        else { const t = design.rows[target]; detach(id); const ti = design.rows.indexOf(t); design.rows.splice(e.key === 'ArrowUp' ? ti + 1 : ti, 0, newRow([id], row.sheet)); }
       } else return;
       selected = id; markDirty(); renderAll(); focusBack();
     });
@@ -450,7 +551,7 @@ function renderCanvas() {
     c.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); const r = c.getBoundingClientRect(); const left = e.clientX < r.left + r.width / 2; c.classList.remove('dl', 'dr'); onDrop({ row: ri, pos: left ? pos : pos + 1 }, e.dataTransfer.getData('text/plain')); });
   });
   $('canvas').querySelectorAll('[data-align]').forEach((s) => s.addEventListener('change', () => { design.rows[+s.dataset.align].align = s.value; markDirty(); }));
-  const moveRow = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= design.rows.length) return; [design.rows[i], design.rows[j2]] = [design.rows[j2], design.rows[i]]; markDirty(); renderCanvas(); };
+  const moveRow = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= design.rows.length || (sheetsOn() && design.rows[j2].sheet !== design.rows[i].sheet)) return; [design.rows[i], design.rows[j2]] = [design.rows[j2], design.rows[i]]; markDirty(); renderCanvas(); };
   $('canvas').querySelectorAll('[data-rowup]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowup, -1)));
   $('canvas').querySelectorAll('[data-rowdown]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowdown, 1)));
 }
@@ -470,7 +571,7 @@ function clearRt() { rtMounts.forEach((m) => m.destroy()); rtMounts = []; }
 function fieldInput(id, lbl, value, extra) { return `<div class="fld"><label>${lbl}</label><input type="text" id="${id}" value="${esc(value)}" ${extra || ''}></div>`; }
 function renderProps() {
   clearRt();
-  condOwners = {};
+  Object.keys(condOwners).forEach((k) => { if (!condOwners[k].keep) delete condOwners[k]; });   // los de las hojas se conservan
   const box = $('propsBox');
   const f = selected && design.fields[selected];
   if (!f) { box.innerHTML = '<p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p>'; return; }
@@ -480,6 +581,7 @@ function renderProps() {
   const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   const used = usedKeys();
   let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
+  if (sheetsOn()) { const at = locate(f.id), cur = at ? design.rows[at[0]].sheet : activeSheet; html += `<div class="fld"><label for="pSheet">Hoja</label><select id="pSheet">${design.sheets.map((x, k) => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${k + 1} · ${esc(sheetName(x, k))}</option>`).join('')}</select></div>`; }
   if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + dispRtHtml() + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + dispRtHtml() + helpRtHtml() + compHtml(f);
@@ -514,6 +616,7 @@ function renderProps() {
   box.innerHTML = html;
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('pSheet', 'change', () => moveToSheet(f.id, $('pSheet').value));
   if ($('pDispRt')) mountRt($('pDispRt'), { value: f.display_label, label: 'Nombre de presentación', onChange: (v) => { if (v) f.display_label = v; else delete f.display_label; markDirty(); renderCanvas(); } });
   if ($('pHelpRt')) mountRt($('pHelpRt'), { value: f.help, label: 'Texto de ayuda', onChange: (v) => { f.help = v; markDirty(); renderCanvas(); } });
   if (CHOICE.includes(f.type) && $('pOpts')) OptionTools.attach($('pOpts'), { eventId: EV, key: f.key, fromDb: !!f.options_from_db, onImported: () => { f.options_from_db = true; } });
@@ -674,7 +777,7 @@ function bindPay(box, f) {
     f.pay.companions_charge = cc.checked;
     if (cc.checked && !Object.values(design.fields).some((x) => x.type === 'companions')) {   // se crea solo el campo «Acompañantes», justo antes del pago
       const c = newField('companions');
-      const at = locate(f.id); design.rows.splice(at ? at[0] : design.rows.length, 0, { align: 'left', items: [c.id] });
+      const at = locate(f.id); design.rows.splice(at ? at[0] : design.rows.length, 0, newRow([c.id], sheetsOn() ? lastSheetId() : null));
       showToast('Se agregó el campo «Acompañantes» al formulario', 'success');
     }
     markDirty(); renderAll();
@@ -745,10 +848,11 @@ function renderTheme() {
   on('tLogoFull', 'change', () => { t.logo_full = $('tLogoFull').checked; markDirty(); });
   on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
 }
-function renderAll() { renderPalette(); renderCanvas(); renderProps(); $('payTab').style.display = Object.values(design.fields).some((x) => x.type === 'payment') ? '' : 'none'; }
+function renderAll() { renderPalette(); renderSheets(); renderCanvas(); renderProps(); $('payTab').style.display = Object.values(design.fields).some((x) => x.type === 'payment') ? '' : 'none'; }
 
 // ---------------------------------------------------------------- guardar / previsualizar / plantilla
 async function saveDesign() {
+  normSheets();
   for (const f of Object.values(design.fields)) {
     for (const [prop, v] of Object.entries(f.variants || {})) {
       const bad = v.items.findIndex((it) => !CondTree.leaves(it.when).length);

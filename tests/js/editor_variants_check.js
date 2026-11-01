@@ -10,7 +10,7 @@ const tpl = fs.readFileSync(path.join(root, 'templates/kiosk_formulario_editor.h
 const block = tpl.slice(tpl.indexOf('// ---------------------------------------------------------------- condiciones en árbol y variantes (P9)'), tpl.indexOf('// ---------------------------------------------------------------- paleta'));
 assert.ok(block.length > 3000, 'bloque encontrado');
 
-const dom = new JSDOM('<!doctype html><body><div id="propsBox"></div></body>', { runScripts: 'outside-only' });
+const dom = new JSDOM('<!doctype html><body><div id="propsBox"></div><div id="sheetsBar"></div><div id="sheetsPanel"></div></body>', { runScripts: 'outside-only' });
 const w = dom.window;
 ['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/form-sync.js', 'static/js/cond-tree.js', 'static/js/form-render.js'].forEach((f) => w.eval(fs.readFileSync(path.join(root, f), 'utf8')));
 w.eval(`
