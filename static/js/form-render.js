@@ -88,6 +88,7 @@
     form.noValidate = true;
     card.appendChild(form);
     const els = {};   // fid -> {wrap, input(s)}
+    const rowEls = [];   // filas, para ocultar la fila entera (y su margen) cuando todos sus campos están ocultos
 
     (design.rows || []).forEach((row) => {
       const r = document.createElement('div');
@@ -114,6 +115,7 @@
         els[fid] = { wrap, f };
       });
       form.appendChild(r);
+      rowEls.push(r);
     });
     const btn = document.createElement('button');
     btn.type = 'submit'; btn.className = 'fr-btn'; btn.textContent = theme.button_text || 'Enviar';
@@ -284,6 +286,7 @@
     function applyConditions() {
       const vis = visibleSet();
       Object.entries(els).forEach(([fid, { wrap }]) => { wrap.style.display = vis.has(fid) ? '' : 'none'; });
+      rowEls.forEach((r) => { r.style.display = Array.from(r.children).every((w) => w.style.display === 'none') ? 'none' : ''; });
       return vis;
     }
     Object.values(els).forEach(({ f }) => { if (f.type === 'companions') renderGroups(f); });
