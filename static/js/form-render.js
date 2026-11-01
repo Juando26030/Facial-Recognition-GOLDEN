@@ -21,12 +21,27 @@
   const rich = (t, basic) => (window.RichText ? window.RichText.html(t, basic) : { rich: false, html: esc(t) });
   const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 }) + ' COP';
 
-  // Texto de un título/texto informativo con variantes: la primera cuya regla se cumple, si no la de por defecto (null = no se muestra). Igual que formlib.pick_variant.
-  function pickVariant(f, values, isVisible) {
-    const v = f.variants;
-    if (!v) return f.content || '';
-    const hit = (v.items || []).find((i) => (!isVisible || isVisible(i.rule.field)) && conditionMet(i.rule, values));
-    return hit ? (hit.content || null) : (v.default || null);
+  // Variantes por propiedad (P9) y condiciones en árbol: MISMA lógica que app/formlib.py (cond_tree_met, pick_variant, variants_of); los casos comunes
+  // están en tests/cond_vectors.json. Condición = hoja {field,op,value} o grupo {match: all|any, rules: [...]}; los formatos antiguos de show_if son casos particulares.
+  const HIDEABLE = ['content', 'src'];   // sin variante que aplique, el elemento no ocupa espacio; las demás propiedades usan su valor propio
+  function variantsOf(f) {   // normaliza el formato de P2 ({by, items:[{rule, content}], default}; nunca llegó a producción)
+    const v = f && f.variants;
+    if (!v || typeof v !== 'object') return {};
+    if (Array.isArray(v.items)) return { content: { items: v.items.map((i) => ({ when: i.rule, value: i.content || '' })), default: v.default || '' } };
+    return v;
+  }
+  function condTree(node, isVisible, values) {
+    if (!node) return true;
+    if (node.rules) { const m = node.rules.map((r) => condTree(r, isVisible, values)); return node.match === 'any' ? m.some(Boolean) : m.length > 0 && m.every(Boolean); }
+    return !!isVisible(node.field) && conditionMet(node, values);
+  }
+  function pickVariant(f, prop, values, isVisible) {
+    const v = variantsOf(f)[prop];
+    if (!v) return f[prop] || '';
+    const hit = (v.items || []).find((i) => condTree(i.when, isVisible, values));
+    if (hit) return hit.value || (HIDEABLE.includes(prop) ? null : f[prop] || '');
+    if (v.default) return v.default;
+    return HIDEABLE.includes(prop) ? null : f[prop] || '';
   }
 
   function conditionMet(cond, values) {
@@ -178,10 +193,17 @@
       if (box) applyFilter(box);
     });
 
+    // Nombre visible de un elemento (con su asterisco de obligatorio y el aviso de la escarapela virtual); lo usan fieldHtml y el repintado de variantes.
+    function ttlHtml(g) {
+      if (g.type === 'payment') return g.label || g.display_label ? lab(g) : 'Pago';
+      if (g.type === 'companions') return lab(g);
+      const note = opts.badgeEmailField && opts.badgeEmailField === g.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
+      return `${lab(g)}${g.required ? ' <span style="color:#c0392b">*</span>' : ''}${g.type === 'checkbox' ? '' : note}`;
+    }
     function fieldHtml(f, pre, ro, assetUrl) {
-      const badgeNote = opts.badgeEmailField && opts.badgeEmailField === f.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
-      const label = f.label ? `<label class="fr-l">${lab(f)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}${badgeNote}</label>` : '';
-      const help = f.help ? `<div class="fr-help">${rich(f.help).html}</div>` : '';
+      const vv = variantsOf(f), tAttr = vv.display_label ? ' data-ttl' : '';
+      const label = f.label ? `<label class="fr-l"${tAttr}>${ttlHtml(f)}</label>` : '';
+      const help = f.help || vv.help ? `<div class="fr-help"${vv.help ? ` data-hv${f.help ? '' : ' style="display:none"'}` : ''}>${rich(f.help || '').html}</div>` : '';
       const val = pre == null ? '' : pre;
       const roAttr = ro ? 'readonly class="fr-ro" tabindex="-1"' : '';
       const name = `name="${esc(f.id)}"`;
@@ -190,18 +212,18 @@
         case 'heading': { const r = rich(f.content); return r.rich ? `<div class="rt" style="margin:8px 0 2px; font-size:1.17em; font-weight:700;">${r.html}</div>` : `<h3 style="margin:8px 0 2px;">${r.html}</h3>`; }
         case 'paragraph': { const r = rich(f.content); return r.rich ? `<div class="rt" style="margin:0; opacity:.85;">${r.html}</div>` : `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${r.html}</p>`; }
         case 'payment': { const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
-          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${f.label || f.display_label ? lab(f) : 'Pago'}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div>${help}<div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div>${f.pay && f.pay.codes && !opts.previewOnly ? '<div class="fr-code" style="margin:8px 0 2px;"><div style="display:flex; gap:6px;"><input type="text" data-code placeholder="¿Tienes un código de descuento?" autocomplete="off" style="flex:1; margin:0;"><button type="button" class="fr-chip" data-applycode>Aplicar</button></div><div data-codemsg style="font-size:.78rem; margin-top:3px;"></div></div>' : (f.pay && f.pay.codes ? '<div class="fr-help">🎟️ Aquí la persona podrá escribir un código de descuento.</div>' : '')}<div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div><div class="fr-help" data-taxnote></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span><br>Al pagar aceptas los <a href="/terminos" target="_blank" rel="noopener">Términos y Condiciones</a> y la <a href="${refundHref}" target="_blank" rel="noopener">Política de reembolsos</a>${opts.refund && opts.refund.days ? ` (puedes pedir el reembolso hasta ${opts.refund.days} días después del pago)` : ''}.</div></div>`; }
+          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 <span${tAttr}>${ttlHtml(f)}</span>${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div>${help}<div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div>${f.pay && f.pay.codes && !opts.previewOnly ? '<div class="fr-code" style="margin:8px 0 2px;"><div style="display:flex; gap:6px;"><input type="text" data-code placeholder="¿Tienes un código de descuento?" autocomplete="off" style="flex:1; margin:0;"><button type="button" class="fr-chip" data-applycode>Aplicar</button></div><div data-codemsg style="font-size:.78rem; margin-top:3px;"></div></div>' : (f.pay && f.pay.codes ? '<div class="fr-help">🎟️ Aquí la persona podrá escribir un código de descuento.</div>' : '')}<div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div><div class="fr-help" data-taxnote></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span><br>Al pagar aceptas los <a href="/terminos" target="_blank" rel="noopener">Términos y Condiciones</a> y la <a href="${refundHref}" target="_blank" rel="noopener">Política de reembolsos</a>${opts.refund && opts.refund.days ? ` (puedes pedir el reembolso hasta ${opts.refund.days} días después del pago)` : ''}.</div></div>`; }
         case 'companions': {
           const lo = f.min || 0;
           const opts = Array.from({ length: f.max - lo + 1 }, (_, i) => lo + i).map((n) => `<option value="${n}">${n === 0 ? 'Ninguno (voy solo/a)' : n === 1 ? '1 acompañante' : n + ' acompañantes'}</option>`).join('');
-          return `<label class="fr-l">${lab(f)}</label><select data-comp-count="${esc(f.id)}">${opts}</select><div data-comp-list="${esc(f.id)}"></div>${help}<div class="fr-err"></div>`;
+          return `<label class="fr-l"${tAttr}>${ttlHtml(f)}</label><select data-comp-count="${esc(f.id)}">${opts}</select><div data-comp-list="${esc(f.id)}"></div>${help}<div class="fr-err"></div>`;
         }
         case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="${esc(f.alt || '')}" style="width:${f.width || 100}%; max-width:100%; height:auto; border-radius:12px; display:block; margin:0 auto;">` : '';
         case 'text_long': control = `<textarea ${name} rows="4" placeholder="${esc(f.placeholder)}" ${roAttr}>${esc(val)}</textarea>`; break;
         case 'select': control = `<select ${name} ${ro ? 'disabled class="fr-ro"' : ''}><option value="">Selecciona…</option>${(f.options || []).map((o) => `<option value="${esc(o)}" ${String(val) === o ? 'selected' : ''} ${quotaLeft(f, o) === 0 ? 'disabled' : ''}>${esc(o)}${quotaNote(f, o)}</option>`).join('')}</select>${ro ? `<input type="hidden" ${name} value="${esc(val)}">` : ''}`; break;
         case 'radio': control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="radio" ${name} value="${esc(o)}" ${String(val) === o ? 'checked' : ''} ${ro || quotaLeft(f, o) === 0 ? 'disabled' : ''}> ${esc(o)}${quotaNote(f, o)}</label>`).join('')}</div>`; break;
         case 'multiselect': { const sel = asList(val); control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="checkbox" ${name} value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''} ${ro ? 'disabled' : ''}> ${esc(o)}</label>`).join('')}</div>`; break; }
-        case 'checkbox': return `<div class="fr-opts"><label><input type="checkbox" ${name} value="true" ${val === true || String(val) === 'true' ? 'checked' : ''} ${ro ? 'disabled' : ''}> ${lab(f)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}</label></div>${help}<div class="fr-err"></div>`;
+        case 'checkbox': return `<div class="fr-opts"><label><input type="checkbox" ${name} value="true" ${val === true || String(val) === 'true' ? 'checked' : ''} ${ro ? 'disabled' : ''}> <span${tAttr}>${ttlHtml(f)}</span></label></div>${help}<div class="fr-err"></div>`;
         case 'file': control = `<input type="file" ${name} accept="${(f.accept || []).map((a) => '.' + a).join(',')}" style="width:100%;"><div class="fr-help">Formatos: ${esc((f.accept || []).join(', '))} · máximo ${f.max_mb || 10} MB</div>`; break;
         default: {
           const docs = f.type === 'text_short' ? (f.doc_types || []).map((c) => docByCode[c]).filter(Boolean) : [];
@@ -266,19 +288,20 @@
       return out;
     }
 
-    const variantText = {};   // fid -> texto elegido para los títulos/textos con variantes
+    const variantVals = {};   // fid -> {content, src} elegidos para los títulos/textos/imágenes con variantes
     function visibleSet() {
       const values = rawValues();
       const memo = {};
       const vis = (fid) => {
         if (fid in memo) return memo[fid];
         const cond = design.fields[fid].show_if;
-        const rules = !cond ? [] : (cond.rules || [cond]);
-        const met = rules.map((r) => design.fields[r.field] && vis(r.field) && conditionMet(r, values));
-        memo[fid] = !cond || (cond.match === 'any' ? met.some(Boolean) : met.every(Boolean));
-        if (memo[fid] && design.fields[fid].variants) {   // texto con variantes: sin variante que aplique (ni por defecto) no ocupa espacio
-          const t = pickVariant(design.fields[fid], values, (id) => !!design.fields[id] && vis(id));
-          if (t) variantText[fid] = t; else memo[fid] = false;
+        memo[fid] = !cond || condTree(cond, (id) => !!design.fields[id] && vis(id), values);
+        if (memo[fid]) {   // título/texto/imagen con variantes: sin variante que aplique (ni por defecto) no ocupa espacio
+          for (const prop of HIDEABLE) {
+            if (!variantsOf(design.fields[fid])[prop]) continue;
+            const t = pickVariant(design.fields[fid], prop, values, (id) => !!design.fields[id] && vis(id));
+            if (t) (variantVals[fid] = variantVals[fid] || {})[prop] = t; else memo[fid] = false;
+          }
         }
         return memo[fid];
       };
@@ -302,11 +325,36 @@
       return !!r;
     }
 
+    // Variantes de la parte visible de un elemento. Los títulos/textos/imágenes se repintan enteros; en los campos solo se cambia el nombre, la ayuda o el texto de ejemplo
+    // (lo que la persona ya escribió NO se toca).
+    function paintVariants(wrap, f, values, isVis) {
+      const vp = variantsOf(f), last = wrap._vp = wrap._vp || {};
+      if (['heading', 'paragraph', 'image'].includes(f.type)) {
+        const eff = { content: pickVariant(f, 'content', values, isVis), src: pickVariant(f, 'src', values, isVis) };
+        const sig = JSON.stringify(eff);
+        if (last.all !== sig) { last.all = sig; wrap.innerHTML = fieldHtml({ ...f, content: eff.content || '', src: eff.src || '' }, null, false, assetUrl); }
+        return;
+      }
+      if (vp.display_label) {
+        const eff = pickVariant(f, 'display_label', values, isVis);
+        if (last.display_label !== eff) { last.display_label = eff; const t = wrap.querySelector('[data-ttl]'); if (t) t.innerHTML = ttlHtml({ ...f, display_label: eff }); }
+      }
+      if (vp.help) {
+        const eff = pickVariant(f, 'help', values, isVis);
+        if (last.help !== eff) { last.help = eff; const h = wrap.querySelector('[data-hv]'); if (h) { h.innerHTML = eff ? rich(eff).html : ''; h.style.display = eff ? '' : 'none'; } }
+      }
+      if (vp.placeholder) {
+        const eff = pickVariant(f, 'placeholder', values, isVis);
+        if (last.placeholder !== eff) { last.placeholder = eff; const c = wrap.querySelector('input[type=text],input[type=email],input[type=tel],input[type=number],textarea'); if (c) c.placeholder = eff; }
+      }
+    }
+
     function applyConditions() {
       const vis = visibleSet();
+      const values = rawValues(), isVis = (id) => vis.has(id);
       Object.entries(els).forEach(([fid, { wrap, f }]) => {
         wrap.style.display = vis.has(fid) ? '' : 'none';
-        if (f.variants && vis.has(fid) && wrap._vt !== variantText[fid]) { wrap._vt = variantText[fid]; wrap.innerHTML = fieldHtml({ ...f, content: variantText[fid] }, null, false, assetUrl); }
+        if (f.variants && vis.has(fid)) paintVariants(wrap, f, values, isVis);
       });
       rowEls.forEach((r) => { r.style.display = Array.from(r.children).every((w) => w.style.display === 'none') ? 'none' : ''; });
       return vis;
@@ -424,5 +472,5 @@
   }
 
   if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax };
-  if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant };
+  if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant, condTree, variantsOf };
 })();
