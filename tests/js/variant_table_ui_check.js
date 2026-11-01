@@ -96,10 +96,23 @@ const paste = (text, target) => { const ev = new w.Event('paste', { bubbles: tru
 
   // ---- Excel: descargar y subir (el servidor lo hace; aquí se comprueba lo que se manda y cómo se usa la respuesta)
   w.__fetchAnswer = async () => ({ ok: true, blob: async () => new w.Blob(['x']) });
-  click(q('[data-vt-act="download"]')); await tick(10);
-  const dl = log.fetches.find(([u]) => u.endsWith('/template')); assert.ok(dl && dl[1].method === 'POST');
-  assert.deepStrictEqual(log.downloads, ['tabla-de-variantes.xlsx']);
+  assert.ok(!q('[data-vt-act="download"]'), 'ya no hay un solo botón ambiguo');
+  assert.ok(/Descargar plantilla vacía/.test(q('[data-vt-act="dlempty"]').textContent) && /Descargar lo que tiene el formulario/.test(q('[data-vt-act="dlform"]').textContent) && /Subir Excel/.test(host.textContent) && /Plantilla vacía.*Lo que tiene el formulario.*Subir Excel/.test(host.textContent), 'tres acciones claras con su ayuda');
+  const nFetch = log.fetches.length;
+  click(q('[data-vt-act="dlempty"]')); await tick(10);
+  const dl = log.fetches.find(([u], i) => i >= nFetch && u.endsWith('/template')); assert.ok(dl && dl[1].method === 'POST');
+  assert.deepStrictEqual(log.downloads, ['plantilla-vacia-tabla-de-variantes.xlsx']);
   const sent = JSON.parse(dl[1].body);
+  assert.ok(sent.rows.every((r) => Object.keys(r.cells).length === 0), 'la plantilla vacía no lleva NINGÚN dato, aunque la tabla tenga celdas escritas');
+  assert.ok(Object.values(ui.state.rows).some((r) => Object.keys(r.cells).length), 'y la tabla sí tenía datos');
+  // «lo que tiene el formulario»: las variantes guardadas en el diseño, no lo escrito en pantalla
+  design.fields.p.variants = { content: { items: [{ when: { match: 'all', rules: [{ field: 'c', op: 'equals', value: 'Ciudad 02' }, { field: 't', op: 'equals', value: 'Invitado' }] }, value: 'Del formulario', name: 'x' }] } };
+  click(q('[data-vt-act="dlform"]')); await tick(10);
+  const dl2 = log.fetches.filter(([u]) => u.endsWith('/template')).pop();
+  assert.deepStrictEqual(log.downloads.slice(-1), ['tabla-de-variantes-actual.xlsx']);
+  const sent2 = JSON.parse(dl2[1].body), withData = sent2.rows.filter((r) => Object.keys(r.cells).length);
+  assert.strictEqual(withData.length, 1); assert.deepStrictEqual(withData[0].keys, ['Ciudad 02', 'Invitado']); assert.ok(Object.values(withData[0].cells).includes('Del formulario'));
+  delete design.fields.p.variants; log.downloads.length = 0;
   assert.strictEqual(sent.rows.length, 124); assert.deepStrictEqual(J(sent.variables.map((v) => v.label)), ['Ciudad', 'Tipo']); assert.ok(sent.columns.every((c) => c.id && c.name && c.type));
   assert.ok(!('field' in sent.columns[0]), 'al servidor no se le mandan ids de campos del formulario');
   const col0 = ui.state.columns[0].id;

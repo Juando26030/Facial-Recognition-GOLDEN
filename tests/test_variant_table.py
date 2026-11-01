@@ -404,3 +404,18 @@ def test_spec_variable_field_must_look_like_an_id():
     bad = _spec(); bad["variables"][0]["field"] = "<script>"
     with pytest.raises(vt.ExcelRejected):
         vt.build_template(bad)
+
+
+def test_empty_template_has_one_row_per_value_and_no_data_while_the_other_carries_the_current_data():
+    filled = _spec([{"keys": ["Bogotá"], "cells": {"k1": "Chapinero"}}, {"keys": ["Cali"], "cells": {"k1": "Sur"}}, {"keys": ["Pasto"], "cells": {}}])
+    empty = dict(filled, rows=[{"keys": r["keys"], "cells": {}} for r in filled["rows"]])
+    wb_empty = openpyxl.load_workbook(io.BytesIO(vt.build_template(empty)))
+    ws = wb_empty["Tabla"]
+    assert [c.value for c in ws[1]] == ["Ciudad", "Lugar", "Fecha", "Cantidad", "Nivel", "Foto"]
+    assert [r[0].value for r in ws.iter_rows(min_row=2)] == ["Bogotá", "Cali", "Pasto"]
+    assert all(c.value in (None, "") for r in ws.iter_rows(min_row=2) for c in r[1:]), "sin datos"
+    assert {"Instrucciones", "Valores válidos"} <= set(wb_empty.sheetnames)
+    ws2 = openpyxl.load_workbook(io.BytesIO(vt.build_template(filled)))["Tabla"]
+    assert [ws2.cell(row=2, column=2).value, ws2.cell(row=3, column=2).value] == ["Chapinero", "Sur"]
+    assert vt.read_table(vt.build_template(empty), "t.xlsx", filled)["rows"][0]["cells"] == {}            # subir la vacía no cambia nada
+    assert vt.read_table(vt.build_template(filled), "t.xlsx", empty)["rows"][1]["cells"] == {"k1": "Sur"}       # y la llena, de ida y vuelta

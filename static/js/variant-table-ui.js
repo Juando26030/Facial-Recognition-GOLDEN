@@ -66,7 +66,8 @@
           ${st.columns.map((c, i) => colHtml(c, i, flds)).join('')}${sheetProblem() ? `<div class="vt-err" role="alert" style="color:#a1261b; font-size:.8rem;">${esc(sheetProblem())}</div>` : ''}
           <button type="button" class="small-btn" data-vt-act="addcol" ${st.columns.length >= VT.MAX_COLS ? 'disabled' : ''}>+ Agregar columna</button> <button type="button" class="small-btn" data-vt-act="savetpl" ${st.columns.length ? '' : 'disabled'} title="Guarda el nombre, el tipo y las opciones de las columnas en un archivo .json para reusarlas en otro formulario">Guardar columnas como plantilla (.json)</button> <label class="small-btn" style="cursor:pointer;">Usar una plantilla (.json)…<input type="file" data-vt-tpl accept=".json,application/json" style="display:none;"></label> <button type="button" class="small-btn" data-vt-act="load" ${st.columns.length && st.rows.length ? '' : 'disabled'} title="Trae a la tabla las variantes que el formulario ya tiene en estas columnas">Cargar lo que ya tiene el formulario</button></div>
         <div class="vt-sec" style="margin-top:8px;"><b>3. La tabla</b> <span class="hint">Haz clic en una celda para escribir, o pega un bloque copiado de Excel.</span>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0;"><button type="button" class="small-btn" data-vt-act="download" ${st.rows.length && st.columns.length ? '' : 'disabled'}>Descargar Excel (.xlsx)</button><label class="small-btn" style="cursor:pointer;">Subir Excel…<input type="file" data-vt-upload accept=".xlsx" style="display:none;"></label>${st.columns.some((c) => c.type === 'image') ? '<label class="small-btn" style="cursor:pointer;" title="Se empareja por el nombre del archivo ANTES de subir nada; solo se suben las que emparejan">Imágenes…<input type="file" data-vt-images accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none;"></label>' : ''}</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0;"><button type="button" class="small-btn" data-vt-act="dlempty" ${st.rows.length && st.columns.length ? '' : 'disabled'} title="Las columnas y una fila por cada valor, sin datos">Descargar plantilla vacía</button><button type="button" class="small-btn" data-vt-act="dlform" ${st.rows.length && st.columns.length ? '' : 'disabled'} title="Las variantes que ya están guardadas en el formulario">Descargar lo que tiene el formulario</button><label class="small-btn" style="cursor:pointer;">Subir Excel…<input type="file" data-vt-upload accept=".xlsx" style="display:none;"></label>${st.columns.some((c) => c.type === 'image') ? '<label class="small-btn" style="cursor:pointer;" title="Se empareja por el nombre del archivo ANTES de subir nada; solo se suben las que emparejan">Imágenes…<input type="file" data-vt-images accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none;"></label>' : ''}</div>
+          <div class="hint" style="margin:2px 0 6px;"><b>Plantilla vacía</b>: las columnas y una fila por cada valor, sin datos (con hojas «Instrucciones» y «Valores válidos»). <b>Lo que tiene el formulario</b>: las variantes ya guardadas en el diseño (lo que apenas escribiste en esta pantalla no va hasta que lo apliques). <b>Subir Excel</b>: se revisa todo y ves una vista previa antes de cambiar nada.</div>
           <div class="vt-gridwrap" tabindex="0" aria-label="Tabla de variantes" style="max-height:340px; overflow:auto; border:1px solid #ddd; border-radius:8px;">${gridHtml()}</div>
           <div class="vt-status hint" role="status" aria-live="polite" style="margin-top:4px;"></div></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; justify-content:flex-end;"><button type="button" class="small-btn" data-vt-act="undo" ${st.undo ? '' : 'disabled'}>Deshacer la tabla aplicada</button><button type="button" class="small-btn primary" data-vt-act="apply" ${st.rows.length && st.columns.length ? '' : 'disabled'}>Vista previa y aplicar…</button></div>`;
@@ -160,12 +161,15 @@
 
     // ---------------------------------------------------------------- Excel: bajar y subir
     const baseSpec = () => { const s = spec(); return { variables: s.variables.map((v) => ({ label: v.label, field: v.field, options: v.options })), columns: s.columns.map((c) => ({ id: c.id, name: c.name, type: c.type, options: c.options })), rows: st.rows.map((r) => ({ keys: r.keys, cells: r.cells })) }; };
-    async function download() {
+    async function download(kind) {   // 'empty' = sin datos; 'form' = lo que ya tiene el formulario (variantes guardadas en el diseño)
       try {
-        const r = await fetch(ctx.url + '/template', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(baseSpec()) });
+        const body = baseSpec();
+        if (kind === 'empty') body.rows.forEach((r) => { r.cells = {}; });
+        else { const cur = VT.fromDesign(ctx.design(), spec()); body.rows.forEach((r, i) => { r.cells = cur.rows[i].cells; }); }
+        const r = await fetch(ctx.url + '/template', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!r.ok) { const d = await r.json().catch(() => ({})); ctx.toast(d.detail || 'No se pudo generar el Excel', 'error'); return; }
         const blob = await r.blob(), a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'tabla-de-variantes.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        a.href = URL.createObjectURL(blob); a.download = kind === 'empty' ? 'plantilla-vacia-tabla-de-variantes.xlsx' : 'tabla-de-variantes-actual.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       } catch (e) { ctx.toast('No se pudo descargar el Excel', 'error'); }
     }
     async function upload(file) {
@@ -314,7 +318,8 @@
         r.rows.forEach((row, i) => { st.rows[i].cells = row.cells; });
         host.querySelector('.vt-gridwrap').innerHTML = gridHtml(); validateAll();
         status(r.skipped ? `Se cargó lo que tiene forma de tabla. ${r.skipped} ${r.skipped === 1 ? 'variante' : 'variantes'} de estas columnas (por ejemplo con «alguno de» o varios grupos) no se pueden mostrar aquí y se reemplazarán al aplicar.` : 'Se cargó lo que ya tiene el formulario.');
-      } else if (act === 'download') download();
+      } else if (act === 'dlempty') download('empty');
+      else if (act === 'dlform') download('form');
       else if (act === 'savetpl') saveTemplate();
       else if (act === 'apply') apply();
       else if (act === 'undo') { if (st.undo) { const ok = st.undo(); st.undo = null; ctx.toast(ok === false ? 'El diseño ya se guardó: la tabla no se puede deshacer' : 'Se deshizo la tabla aplicada', ok === false ? 'error' : 'success'); paint(); } }
