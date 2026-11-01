@@ -9,14 +9,14 @@ from datetime import datetime
 from app.timeutil import utcnow
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, warmup, wompi
+from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -330,6 +330,39 @@ def field_values(event_id: int, key: str, scope: str = "event", db: Session = De
             if v:
                 counts[v] = counts.get(v, 0) + 1
     return {"key": key, "label": label, "scope": "client" if scope == "client" else "event", **optionvalues.group_values(counts)}
+
+
+# ------------------------------------------------------------------ tabla de variantes en Excel (P11)
+@router.post("/events/{event_id}/forms/{form_id}/variant-table/template")
+def variant_table_template(event_id: int, form_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Genera el .xlsx (hojas «Tabla», «Instrucciones» y «Valores válidos») de la tabla de variantes que define el navegador; con las celdas que ya traiga es la descarga de una tabla armada.
+    Mismos permisos que editar el diseño del formulario. No guarda nada."""
+    event = get_event_for_staff(event_id, db, staff)
+    _get_form(db, event, form_id)
+    try:
+        content = variant_table.build_template(data)
+    except variant_table.ExcelRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="tabla-de-variantes.xlsx"', "Cache-Control": "no-store"})
+
+
+@router.post("/events/{event_id}/forms/{form_id}/variant-table/parse")
+def variant_table_parse(event_id: int, form_id: int, file: UploadFile = File(...), spec: str = Form(...), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Lee un .xlsx subido y lo empareja con la tabla; devuelve las celdas y los problemas SIN guardar nada (el archivo se procesa en memoria: ni disco ni almacenamiento) y sin escribir su contenido en los logs."""
+    event = get_event_for_staff(event_id, db, staff)
+    _get_form(db, event, form_id)
+    if len(spec) > 1_000_000:
+        raise HTTPException(status_code=400, detail="La definición de la tabla es demasiado grande")
+    try:
+        spec_obj = json.loads(spec)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="La definición de la tabla no es válida")
+    raw = file.file.read(variant_table.MAX_FILE_BYTES + 1)
+    try:
+        return variant_table.read_table(raw, file.filename or "", spec_obj)
+    except variant_table.ExcelRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ------------------------------------------------------------------ descuentos: sugerencias de valores y códigos
