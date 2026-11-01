@@ -87,6 +87,7 @@ const editors = () => qa('.rt-ed').length;
   await click(act('toggle'));
   const head = q('.cvs').textContent;
   assert.ok(/^1\. /.test(head) && /→/.test(head), head);
+  assert.strictEqual(q('.cvs').title, head, 'el resumen completo está en el atributo title (el panel es angosto y lo corta)');
   assert.strictEqual(q('.cvb').innerHTML, '', 'plegada: no hay cuerpo ni editores');
   await click(act('dup'));
   assert.strictEqual(T.f('p').variants.content.items.length, 2);
@@ -95,6 +96,18 @@ const editors = () => qa('.rt-ed').length;
   assert.strictEqual(T.f('p').variants.content.items.length, 1);
 
   // ---- «una variante por cada opción de la lista» con 31 ciudades
+  T.f('p').variants.content.items = [];
+  T.setCurrent('p');
+  // ya cubiertas: una «es igual a», una dentro de un grupo O y una «es alguno de»: no se vuelven a crear
+  const cov = (value, op) => ({ when: { match: 'all', rules: [{ field: 'c', op: op || 'equals', value }] }, value: 'ya', _uid: 'pre' + String(value).length + Math.random() });
+  T.f('p').variants.content.items = [cov('Ciudad 05'), { when: { match: 'any', rules: [{ field: 'c', op: 'equals', value: 'ciudad 06' }, { field: 't', op: 'equals', value: 'Empleado' }] }, value: 'ya', _uid: 'preO' }, cov(['Ciudad 07', 'Ciudad 08'], 'in'),
+    { when: { match: 'all', rules: [{ field: 'c', op: 'equals', value: 'Ciudad 09' }, { field: 't', op: 'equals', value: 'Empleado' }] }, value: 'ya', _uid: 'preY' }];
+  T.setCurrent('p');
+  q('[data-vpo="content"]').value = 'c';
+  T.answer(true); await click(act('peropt'));
+  assert.ok(/Se crearán 27 variantes/.test(T.confirms[T.confirms.length - 1]), T.confirms[T.confirms.length - 1]);       // 31 − (05, 06, 07 y 08 ya cubiertas); la 09 solo existe junto con otra condición (Y), así que SÍ se crea
+  const made = T.f('p').variants.content.items.slice(4).map((i) => i.name);
+  assert.strictEqual(made.length, 27); assert.ok(['Ciudad 05', 'Ciudad 06', 'Ciudad 07', 'Ciudad 08'].every((n) => !made.includes(n)) && made.includes('Ciudad 09'), made.join());
   T.f('p').variants.content.items = [];
   T.setCurrent('p');
   q('[data-vpo="content"]').value = 'c';

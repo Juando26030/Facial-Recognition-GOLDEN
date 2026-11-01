@@ -66,3 +66,15 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(bs)), [[0, 2], [3, 6]], 'a+b/d 
 assert.deepStrictEqual(JSON.parse(JSON.stringify(T.bands([{ items: ['a'] }, { items: ['f'] }, { items: ['a'] }], fields))), [], 'una fila sola no forma tanda');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(T.bands([{ items: ['a'], sheet: 's1' }, { items: ['b'], sheet: 's2' }], fields))), [], 'una tanda no cruza hojas');
 console.log('cond_tree_check (P10) OK');
+
+// P10 (ajuste): qué valores de un campo ya están cubiertos por una condición
+const eq = (f, v) => ({ field: f, op: 'equals', value: v });
+const cov = (n, f) => [...T.coveredBy(n, f)].sort();
+assert.deepStrictEqual(cov(eq('c', 'Bogotá'), 'c'), ['bogota']);
+assert.deepStrictEqual(cov(eq('c', 'Bogotá'), 't'), [], 'otro campo no cubre nada');
+assert.deepStrictEqual(cov({ field: 'c', op: 'in', value: ['Cali', 'Pasto'] }, 'c'), ['cali', 'pasto']);
+assert.deepStrictEqual(cov({ match: 'any', rules: [eq('c', 'A'), eq('c', 'B'), eq('t', 'X')] }, 'c'), ['a', 'b'], 'un grupo O une lo que cubre cada regla');
+assert.deepStrictEqual(cov({ match: 'any', rules: [eq('c', 'A'), { match: 'all', rules: [eq('c', 'B'), eq('t', 'X')] }] }, 'c'), ['a'], 'un grupo Y con otra condición no basta por sí solo');
+assert.deepStrictEqual(cov({ match: 'all', rules: [eq('c', 'A'), { field: 'c', op: 'in', value: ['A', 'B'] }] }, 'c'), ['a'], 'un grupo Y de lo mismo cubre la intersección');
+assert.deepStrictEqual(cov({ field: 'c', op: 'not_equals', value: 'A' }, 'c'), []); assert.deepStrictEqual(cov(null, 'c'), []);
+console.log('cond_tree_check (cubiertas) OK');

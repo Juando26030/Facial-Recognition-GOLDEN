@@ -278,7 +278,7 @@ const labelOfField = (id) => { const x = design.fields[id]; return x ? (x.label 
 function leafHtml(oid, ps, r, others, ck) {
   const collapsed = foldCond.has(ck), at = `data-co="${oid}" data-cp="${ps}"`;
   const tog = `<button type="button" class="small-btn" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} la regla" style="padding:0 6px;">${collapsed ? '▸' : '▾'}</button>`;
-  if (collapsed) return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:3px 6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(CondTree.summary(r, labelOfField))}</span><button type="button" class="small-btn danger" ${at} data-cx="delnode" aria-label="Quitar la regla" style="padding:0 6px;">✕</button></div>`;
+  if (collapsed) return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:3px 6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" title="${esc(CondTree.summary(r, labelOfField))}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(CondTree.summary(r, labelOfField))}</span><button type="button" class="small-btn danger" ${at} data-cx="delnode" aria-label="Quitar la regla" style="padding:0 6px;">✕</button></div>`;
   const parent = design.fields[r.field], opts = FormSync.optionsOf(parent, eventFields) || (parent && parent.type === 'checkbox' ? ['true', 'false'] : null);
   let val = '';
   if (r.op !== 'filled') {
@@ -301,7 +301,7 @@ function condNodeHtml(oid, node, path, others) {
   const collapsed = foldCond.has(ck), n = CondTree.leaves(node).length;
   const tog = `<button type="button" class="small-btn" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} el grupo de reglas" style="padding:0 6px;">${collapsed ? '▸' : '▾'}</button>`;
   const del = path.length ? `<button type="button" class="small-btn danger" ${at} data-cx="delnode">Quitar grupo</button>` : '';
-  if (collapsed) return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(node.name ? node.name + ' · ' : '')}${n} ${n === 1 ? 'regla' : 'reglas'}: ${esc(CondTree.summary(node.name ? { ...node, name: '' } : node, labelOfField))}</span>${del}</div>`;
+  if (collapsed) return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" title="${esc(CondTree.summary(node, labelOfField))}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(node.name ? node.name + ' · ' : '')}${n} ${n === 1 ? 'regla' : 'reglas'}: ${esc(CondTree.summary(node.name ? { ...node, name: '' } : node, labelOfField))}</span>${del}</div>`;
   const kids = node.rules.map((c, i) => condNodeHtml(oid, c, path.concat(i), others)).join('') || '<div class="hint">Sin reglas todavía.</div>';
   const root = CondTree.group(condOwners[oid].get());
   return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0;"><div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${tog}<span class="hint">Se cumplen</span><select ${at} data-cx="match"><option value="all" ${node.match !== 'any' ? 'selected' : ''}>TODAS (Y)</option><option value="any" ${node.match === 'any' ? 'selected' : ''}>ALGUNA (O)</option></select><input type="text" ${at} data-cx="gname" maxlength="40" placeholder="Nombre del grupo (opcional)" value="${esc(node.name || '')}" aria-label="Nombre del grupo de reglas" style="width:150px;">${del}</div>${kids}
@@ -358,7 +358,7 @@ function itemHtml(f, prop, v, it, i) {
   const hay = `${sum} ${it.group || ''}`.toLowerCase();
   return `<div class="cv" data-uid="${it._uid}" data-hay="${esc(hay)}" style="border:1px solid #d9dcea; border-radius:10px; padding:4px 6px; margin:4px 0;${q && !hay.includes(q) ? ' display:none;' : ''}">
     <div style="display:flex; gap:4px; align-items:center;"><button type="button" class="small-btn" data-vact="toggle" data-vp="${prop}" data-vu="${it._uid}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} la variante ${i + 1}" style="padding:0 6px;">${open ? '▾' : '▸'}</button>
-      <span class="cvs" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8rem;"><b>${i + 1}.</b> ${esc(sum)}</span>
+      <span class="cvs" title="${esc(`${i + 1}. ${sum}`)}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8rem;"><b>${i + 1}.</b> ${esc(sum)}</span>
       <button type="button" class="small-btn" data-vact="up" data-vp="${prop}" data-vu="${it._uid}" aria-label="Subir la variante ${i + 1}" ${i === 0 ? 'disabled' : ''} style="padding:0 6px;">↑</button><button type="button" class="small-btn" data-vact="down" data-vp="${prop}" data-vu="${it._uid}" aria-label="Bajar la variante ${i + 1}" ${i === v.items.length - 1 ? 'disabled' : ''} style="padding:0 6px;">↓</button><button type="button" class="small-btn" data-vact="dup" data-vp="${prop}" data-vu="${it._uid}" aria-label="Duplicar la variante ${i + 1}" ${v.items.length >= 200 ? 'disabled' : ''} style="padding:0 6px;">⎘</button><button type="button" class="small-btn danger" data-vact="del" data-vp="${prop}" data-vu="${it._uid}" aria-label="Quitar la variante ${i + 1}" style="padding:0 6px;">✕</button></div>
     <div class="cvb" data-vu="${it._uid}">${open ? itemBodyHtml(f, prop, v, it) : ''}</div></div>`;
 }
@@ -396,7 +396,7 @@ function mountBody(root) {   // los editores de texto con formato se montan solo
   root.querySelectorAll('[data-vrt]').forEach((h) => {
     const [prop, k] = h.dataset.vrt.split(':'), v = (f.variants || {})[prop]; if (!v) return;
     const it = k === 'def' ? null : findItem(f, prop, k);
-    const m = RichText.mount(h, { value: it ? it.value : v.default, label: `${VPROPS[prop]}${it ? ' de la variante' : ' por defecto'}`, onChange: (x) => { if (it) { it.value = x; const sp = document.querySelector(`.cv[data-uid="${it._uid}"] .cvs`); if (sp) sp.textContent = `${(v.items.indexOf(it)) + 1}. ${itemSummary(f, prop, it)}`; } else v.default = x; markDirty(); renderCanvas(); } });
+    const m = RichText.mount(h, { value: it ? it.value : v.default, label: `${VPROPS[prop]}${it ? ' de la variante' : ' por defecto'}`, onChange: (x) => { if (it) { it.value = x; const sp = document.querySelector(`.cv[data-uid="${it._uid}"] .cvs`); if (sp) { sp.textContent = `${(v.items.indexOf(it)) + 1}. ${itemSummary(f, prop, it)}`; sp.title = sp.textContent; } } else v.default = x; markDirty(); renderCanvas(); } });
     rtMounts.push(m); (root._mounts = root._mounts || []).push(m);
   });
 }
@@ -437,8 +437,7 @@ async function onVact(e) {
     renderProps();
   } else if (act === 'peropt') {
     const fid = box_.querySelector(`[data-vpo="${prop}"]`).value, src = design.fields[fid], opts = FormSync.optionsOf(src, eventFields) || [];
-    const covered = (it) => { const t = CondTree.compact(it.when); return t && !CondTree.isGroup(t) && t.field === fid && t.op === 'equals' ? FormSync.norm(t.value) : null; };
-    const have = new Set(v.items.map(covered).filter(Boolean)), todo = opts.filter((o) => !have.has(FormSync.norm(o))).slice(0, 200 - v.items.length);
+    const have = new Set(v.items.flatMap((it) => [...CondTree.coveredBy(it.when, fid)])), todo = opts.filter((o) => !have.has(FormSync.norm(o))).slice(0, 200 - v.items.length);
     if (!todo.length) { showToast('Ya hay una variante para cada opción', 'info'); return; }
     if (!(await showConfirm(`Se crearán ${todo.length} variantes, una por cada opción de «${esc(labelOfField(fid))}», con el valor por defecto copiado para que lo edites. ¿Continuar?`, { confirmLabel: 'Crear las variantes' }))) return;
     todo.forEach((o) => { const it = addItem(f, prop, { when: { match: 'all', rules: [{ field: fid, op: 'equals', value: o }] }, value: v.default || '', name: o }); foldItem.set(it._uid, false); });
@@ -457,7 +456,7 @@ function onVinput(e) {
   const key = t.dataset.vname || t.dataset.vgroup || t.dataset.vtxt || t.dataset.vgname || t.dataset.vimg; if (!key) return;
   const [prop, k] = key.split(':'), v = (f.variants || {})[prop]; if (!v) return;
   const it = k === 'def' ? null : findItem(f, prop, k);
-  const sum = () => { const sp = document.querySelector(`.cv[data-uid="${k}"] .cvs`); if (sp && it) sp.textContent = `${v.items.indexOf(it) + 1}. ${itemSummary(f, prop, it)}`; };
+  const sum = () => { const sp = document.querySelector(`.cv[data-uid="${k}"] .cvs`); if (sp && it) { sp.textContent = `${v.items.indexOf(it) + 1}. ${itemSummary(f, prop, it)}`; sp.title = sp.textContent; } };
   if (t.dataset.vname && e.type === 'input') { if (t.value) it.name = t.value; else delete it.name; sum(); markDirty(); }
   else if (t.dataset.vgroup && e.type === 'change') { if (t.value.trim()) it.group = t.value.trim(); else delete it.group; redoProps(); }
   else if (t.dataset.vgname && e.type === 'change') { const g = it.group; let i = v.items.indexOf(it); while (i < v.items.length && v.items[i].group === g) { if (t.value.trim()) v.items[i].group = t.value.trim(); else delete v.items[i].group; i++; } redoProps(); }

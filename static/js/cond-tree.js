@@ -45,6 +45,22 @@
     return compact({ ...n, rules: n.rules.map((r) => prune(r, fieldId)).filter(Boolean) });
   }
 
+  // Valores (normalizados) del campo `fid` que bastan POR SÍ SOLOS para que la condición se cumpla: «es igual a» y «es alguno de» sobre ese campo; un grupo O une los de sus
+  // hijos; un grupo Y solo cuenta si TODOS sus hijos lo son (los demás campos no se cumplen con solo ese valor). Sirve para no crear variantes que ya están cubiertas.
+  const normv = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  function coveredBy(n, fid) {
+    if (!n) return new Set();
+    if (!isGroup(n)) {
+      if (n.field !== fid) return new Set();
+      if (n.op === 'equals' && typeof n.value === 'string') return new Set([normv(n.value)]);
+      if (n.op === 'in' && Array.isArray(n.value)) return new Set(n.value.map(normv));
+      return new Set();
+    }
+    const sets = n.rules.map((r) => coveredBy(r, fid));
+    if (n.match === 'any') return new Set(sets.flatMap((x) => [...x]));
+    return sets.length ? sets.reduce((a, b) => new Set([...a].filter((v) => b.has(v)))) : new Set();
+  }
+
   // Resumen de una línea (P10): «Ciudad = Bogotá y Tipo = Empleado»; los subgrupos van entre paréntesis y un grupo con nombre empieza por «Nombre: ».
   const OPS = { equals: '=', not_equals: '≠', contains: 'contiene', in: 'es', filled: 'tiene respuesta' };
   function summary(n, labelOf) {
@@ -75,7 +91,7 @@
     return out;
   }
 
-  const api = { summary, bands, MAX_DEPTH, MAX_GROUP_RULES, MAX_LEAVES, isGroup, group, leaves, depth, at, update, remove, canAddLeaf, canAddGroup, addLeaf, addGroup, compact, prune };
+  const api = { coveredBy, summary, bands, MAX_DEPTH, MAX_GROUP_RULES, MAX_LEAVES, isGroup, group, leaves, depth, at, update, remove, canAddLeaf, canAddGroup, addLeaf, addGroup, compact, prune };
   if (typeof window !== 'undefined') window.CondTree = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();

@@ -1029,3 +1029,12 @@ Hoy NO se borra nunca ninguna imagen de formularios (logo, fondo, imágenes de c
 - **Plantillas de columnas:** archivo `.json` descargable/subible (formato `goldenweb-plantilla-tabla`, sin ids de campos, máx. 100 KB, validación estricta). Guardarlas por cliente en la base queda como mejora futura (necesitaría una migración).
 - Respeta las hojas (P12): una variante solo puede usar campos de su hoja o de anteriores; la pantalla avisa y no aplica si no.
 - Medido en el navegador: pintar la tabla de 124 filas × 6 columnas ≈ 5 ms (1340 nodos); abrir el editor de una celda ≈ 28 ms.
+
+### P10 — ajustes tras validar en staging (1-nov-2026)
+- El resumen de cada variante (y el de reglas y grupos plegados) lleva el texto completo en el atributo `title`: se ve al pasar el cursor aunque el panel lo corte.
+- «Una variante por cada opción» ya no crea una variante para una opción que otra variante cubre por sí sola: «es igual a», «es alguno de» y un grupo O que la contenga (`CondTree.coveredBy`); una variante con la opción dentro de un grupo Y con otras condiciones NO la cubre, así que esa opción sí se crea.
+
+### P11 — qué NO trae (confirmado el 1-nov-2026, a pedido de Juan David)
+1. **Sin migraciones de base de datos:** `git diff origin/migra/fase1-2..HEAD` no toca `alembic/`; las plantillas de tabla son archivos `.json` (guardarlas por cliente en la base queda como mejora futura).
+2. **`defusedxml==0.7.1` entra en `requirements.txt`** y llega a la imagen: el `Dockerfile` construye las ruedas con `pip wheel -r requirements.txt` y la imagen final instala todas (`pip install --no-index /wheels/*.whl`); la VM lo instala con `pip install -r requirements.txt` (`deploy.yml`) y el CI con `requirements.txt`. El lector de Excel se niega a abrir archivos si `defusedxml` no está.
+3. **Sin variables de entorno nuevas:** el diff de `app/` no agrega `os.getenv`/`os.environ` y no cambia `.env.example`, `.env.staging.example` ni `deploy/gcp/env/`.
