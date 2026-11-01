@@ -1,10 +1,9 @@
 // P1 formularios: una fila cuyos campos están TODOS ocultos por reglas se oculta entera (sin su margen de 14 px).
-// Necesita jsdom (no es dependencia del repo): NODE_PATH=<carpeta con node_modules/jsdom> node tests/js/form_rows_hidden_check.js
+// Necesita jsdom (devDependency fija en package.json): npm ci && node tests/js/form_rows_hidden_check.js
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-let JSDOM;
-try { ({ JSDOM } = require('jsdom')); } catch (e) { console.log('SKIP: jsdom no está instalado'); process.exit(0); }
+const { JSDOM } = require('jsdom');
 
 const dom = new JSDOM('<div id="h"></div>', { runScripts: 'outside-only' });
 dom.window.eval(fs.readFileSync(path.join(__dirname, '../../static/js/form-render.js'), 'utf8'));
