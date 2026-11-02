@@ -777,7 +777,7 @@ def _sanitize_quota_rules(q_in) -> list:
     if rules_in is None and q_in.get("limits"):
         rules_in = [{"label": str(o), "limit": n, "conds": [{"field": q_in.get("field"), "op": "equals", "value": o}]} for o, n in (q_in.get("limits") or {}).items()]
     out, used = [], set()
-    for r in (rules_in or [])[:30]:
+    for r in (rules_in or []):
         if not isinstance(r, dict):
             continue
         try:

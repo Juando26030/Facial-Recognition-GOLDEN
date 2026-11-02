@@ -631,3 +631,18 @@ def test_static_files_carry_a_version_so_a_deploy_is_never_hidden_by_the_cache(c
 def test_login_page_static_files_are_versioned_too(client):
     import re
     assert re.search(r'/static/css/style\.css\?v=\d{9,}', client.get("/login").text)
+
+
+def test_quotas_have_no_cap_on_number_of_rules(client, factory):
+    """Antes se descartaban en silencio los cupos desde el 31 (caso real: un cupo por ciudad, 31 ciudades)."""
+    if not getattr(factory, "_coord", None):
+        factory._coord = factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso")
+    login(client, "coord1")
+    form = _create(client, ev)
+    cat = {"id": "cat", "type": "text_short", "label": "Ciudad"}
+    rules = [{"id": f"r{i:03d}x", "label": f"Ciudad {i}", "match": "all", "conds": [{"field": "cat", "op": "equals", "value": f"C{i}"}], "limit": 10 + i} for i in range(45)]
+    r = _put(client, ev, form, design=_design(_basic_fields() + [cat]), settings={"quotas": {"rules": rules}})
+    assert r.status_code == 200, r.text
+    saved = r.json()["settings"]["quotas"]["rules"]
+    assert len(saved) == 45 and saved[44]["limit"] == 54
