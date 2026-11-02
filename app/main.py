@@ -554,7 +554,9 @@ def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db))
     from app.routers.api import OVERWRITE_BIRTH_LABEL
     event_obj = db.get(Event, event_id)
     return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"],
-                               extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL})
+                               extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL,
+                                              # «Solo agregar personas nuevas»: con el evento en proceso, o con la base ya cargada (nunca finalizado)
+                                              "append_available": event_obj is not None and not event_rules.roster_block_reason(event_obj, append_only=True) and (event_obj.status == "en_proceso" or bool(event_obj.roster_uploaded))})
 
 
 @app.get("/kiosk/{event_id}/usuarios")

@@ -9,10 +9,13 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
 
-from app import warmup
+import logging
+
+from app import status_changes, warmup
+from app.timeutil import utcnow
 from app.database import get_db
 from app import event_rules
-from app.models import AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
+from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app.routers.areas_inventory import delete_event_modules
@@ -20,6 +23,7 @@ from app.auth import effective_roles, get_current_staff, hash_password, require_
 from app.cities_data import COUNTRY_CITIES
 
 router = APIRouter()
+log = logging.getLogger("golden.events")
 
 
 @router.get("/cities")
@@ -391,7 +395,8 @@ def update_event(
         if tiene_asistentes:
             raise HTTPException(
                 status_code=400,
-                detail="Este evento ya tiene personas cargadas/registradas — no se puede devolver a 'Creado'. Si necesitas pausarlo, usa 'Finalizado', o crea un evento nuevo si de verdad necesitas empezar de cero.",
+                detail=("Este evento ya tiene personas cargadas/registradas — no se puede devolver a 'Creado' desde aquí. Un administrador puede hacerlo con «Devolver a Creado» (queda registrado quién y cuándo; "
+                        "no se borra nada). Si necesitas pausarlo, usa 'Finalizado', o crea un evento nuevo si de verdad necesitas empezar de cero."),
             )
     if data.event_code is not None and data.event_code != event.event_code:          # el código es fijo una vez creado (orden del 21-oct-2026)
         raise HTTPException(status_code=400, detail=EVENT_CODE_LOCKED)
@@ -538,6 +543,7 @@ def delete_event(
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
+    db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).delete()
     for _form in db.query(WebForm).filter(WebForm.event_id == event_id).all():
         delete_form_rows(db, _form)
     db.query(RouletteDraw).filter(RouletteDraw.event_id == event_id).delete()
@@ -556,3 +562,60 @@ def delete_event(
     db.delete(event)
     db.commit()
     return {"message": "Evento eliminado permanentemente"}
+
+
+# ------------------------------------------------------------------ devolver un evento «en curso» a «creado» (pedido B, 1-nov-2026)
+def _revert_counts(db: Session, event_id: int) -> dict:
+    return {"attendees": db.query(func.count(EventAttendee.id)).filter(EventAttendee.event_id == event_id).scalar() or 0,
+            "access_logs": db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.record_type != "Actualizado").scalar() or 0}
+
+
+@router.get("/events/{event_id}/revert-to-created")
+def revert_to_created_info(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Lo que la ventana de confirmación muestra ANTES de devolver el evento a «Creado»: nombre, cuántas personas e ingresos tiene y si se puede. Solo lectura."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    return {"name": event.name, "status": event.status, "allowed": event.status == "en_proceso", **_revert_counts(db, event_id),
+            "sync_days": status_changes.SYNC_AFTER_REVERT.days}
+
+
+class RevertIn(BaseModel):
+    reason: Optional[str] = None
+
+
+@router.post("/events/{event_id}/revert-to-created")
+def revert_to_created(event_id: int, data: Optional[RevertIn] = None, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Devuelve un evento «en curso» a «creado» (solo admin y super_admin). NO borra nada (ni personas, ni ingresos, ni consentimientos): solo cambia el estado y deja el rastro (quién, cuándo,
+    motivo opcional y cuántas personas e ingresos tenía en `event_status_changes`). Mientras esté en «creado» el quiosco no registra ni reconoce; los quioscos sin red pueden sincronizar lo
+    que registraron antes del cambio durante 7 días (`app/status_changes.py`). La cuenta de 7 días de la purga biométrica NO corre: solo cuenta desde «finalizado». Es el ÚNICO camino:
+    el PATCH sigue rechazando este retroceso. De «creado» a «en curso» se vuelve con el PATCH de siempre."""
+    event = db.query(Event).filter(Event.id == event_id).with_for_update().first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    if event.status != "en_proceso":
+        raise HTTPException(status_code=409, detail="Solo un evento «En proceso» se puede devolver a «Creado»" + (" (los finalizados no se tocan)." if event.status == "finalizado" else "."))
+    reason = ((data.reason if data else None) or "").strip()[:500] or None
+    counts = _revert_counts(db, event_id)
+    event.status = "creado"
+    new_state = event_rules.default_state(db, "creado")
+    if new_state is not None:
+        event.state_id = new_state.id
+    db.add(EventStatusChange(event_id=event.id, tenant_id=event.tenant_id, staff_user_id=staff.id, staff_username=staff.username, from_status="en_proceso", to_status="creado", reason=reason,
+                             attendees_count=counts["attendees"], access_logs_count=counts["access_logs"], at=utcnow()))
+    db.commit()
+    log.info("evento %s devuelto a «creado» por el usuario %s (%s personas, %s ingresos)", event.id, staff.id, counts["attendees"], counts["access_logs"])
+    warmup.kick()                  # sale de «en proceso»: soltar las instancias precalentadas, como en cualquier cambio de estado
+    return {"message": "El evento volvió a «Creado»: el quiosco no registra ni reconoce hasta que vuelva a estar en curso.", "status": "creado", **counts}
+
+
+@router.get("/events/{event_id}/status-changes")
+def list_status_changes(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
+    """Historial de retrocesos del evento y cuántos ingresos se sincronizaron sin hora válida (`doubtful`) para poder revisarlos. Sin datos personales."""
+    rows = db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).order_by(EventStatusChange.at.desc(), EventStatusChange.id.desc()).all()
+    doubtful = db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.doubtful_reason.isnot(None)).scalar() or 0
+    flagged = db.query(SystemEvent.kind, SystemEvent.detail).filter(SystemEvent.ref == str(event_id), SystemEvent.kind.in_(list(status_changes.CONSENT_FLAGS.values()))).order_by(SystemEvent.id).all()
+    consents = {"sin_hora_valida": sum(k == status_changes.CONSENT_FLAGS["no_hour"] for k, _ in flagged), "after_revert": sum(k == status_changes.CONSENT_FLAGS["after"] for k, _ in flagged),
+                "entry_ids": [d for _, d in flagged][:200]}          # consentimientos guardados dentro de la ventana y marcados para revisar (UUID del dispositivo; sin datos personales)
+    return {"changes": [{"at": r.at.isoformat() + "Z", "by": r.staff_username, "from": r.from_status, "to": r.to_status, "reason": r.reason, "attendees": r.attendees_count, "access_logs": r.access_logs_count}
+                        for r in rows], "doubtful": doubtful, "consents": consents}

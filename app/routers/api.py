@@ -27,7 +27,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import status_changes, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -883,8 +883,10 @@ def _event_for_sync(db: Session, event_id: int, staff: StaffUser) -> Event:
         if not db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff.id).first():
             raise HTTPException(status_code=403, detail="No estás autorizado para este evento")
         recent = event.status == "finalizado" and event.finalized_at is not None and utcnow() - event.finalized_at <= SYNC_AFTER_FINISH
-        if event.status != "en_proceso" and not recent:
+        reverted = status_changes.revert_info(db, event)          # devuelto a «Creado»: los quioscos sin red sincronizan lo anterior al cambio durante 7 días (app/status_changes.py)
+        if event.status != "en_proceso" and not recent and not (reverted and reverted[1]):
             raise HTTPException(status_code=403, detail="Este evento " + ("todavía no ha comenzado" if event.status == "creado" else "finalizó hace más de 7 días"))
+    event.sync_revert = status_changes.revert_info(db, event)     # (momento, ventana abierta) o None; atributo de paso, no se guarda
     return event
 
 
@@ -949,6 +951,7 @@ def sync_access_logs(
     checked = {uid for (uid,) in db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id.in_(list(users)))}
     attendees = {uid for (uid,) in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id, EventAttendee.user_id.in_(list(users)))}
     results = []
+    reverted_at = event.sync_revert[0] if event.sync_revert else None
     for (rec, client_id, cedula, h), person_id in zip(clean, resolved):
         if not client_id or not (cedula or h):
             results.append({"client_id": client_id, "result": "invalid"})
@@ -961,17 +964,15 @@ def sync_access_logs(
             results.append({"client_id": client_id, "result": "unknown"})
             continue
         review = user.id in checked
-        when = now
-        try:
-            parsed = datetime.fromisoformat(str(rec.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
-            if now.timestamp() - SYNC_MAX_AGE <= parsed.timestamp() <= now.timestamp() + 300:
-                when = parsed
-        except (TypeError, ValueError):
-            pass
+        verdict, when = status_changes.classify(rec.get("timestamp"), now, reverted_at)
+        if verdict == "after":          # hecho DESPUÉS de devolver el evento a «Creado»: no se guarda; el quiosco lo manda a su cola de revisión (como `unknown`)
+            results.append({"client_id": client_id, "result": "unknown", "reason": "after_revert"})
+            continue
+        doubtful = status_changes.DOUBTFUL if verdict == "no_hour" else None
         try:
             with db.begin_nested():
                 db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
-                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when))
+                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when, doubtful_reason=doubtful))
                 if user.id not in attendees:
                     db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id, origin="manual"))
                 db.flush()
@@ -981,9 +982,10 @@ def sync_access_logs(
         known_ids.add(client_id)
         checked.add(user.id)
         attendees.add(user.id)
-        results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {})})
+        results.append({"client_id": client_id, "result": "created", **({"review": True} if review else {}), **({"doubtful": True} if doubtful else {})})
     db.commit()
-    return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results)}
+    return {"results": results, "created": sum(r["result"] == "created" for r in results), "review": sum(bool(r.get("review")) for r in results),
+            **({"doubtful": sum(bool(r.get("doubtful")) for r in results), "after_revert": sum(r.get("reason") == "after_revert" for r in results)} if reverted_at else {})}
 
 
 # ----------------------------------------------------------------------------------------------------------------------- bandeja de salida (B8, rebanada R1)
@@ -991,7 +993,7 @@ OUTBOX_MAX_OPS = 50
 OUTBOX_PERSON_KEYS = ("role", "entity", "phone", "email", "opt_1")
 
 
-def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list) -> dict:
+def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, doubtful: Optional[str] = None) -> dict:
     """Una operación `create_person` de la bandeja de salida de un quiosco que estaba sin red (docs/16, B8 R1): crea a la persona como «alta manual» (mismas reglas que `POST /register`, SIN foto).
     Resultados: `ok` (persona nueva creada y registrada), `existente` (la cédula YA existía: NO se pisan sus datos; solo se registra para este evento y el cliente muestra qué había), `duplicado`
     (ya estaba registrada en este evento: no se hace nada) o `error` (con el motivo, para corregirlo en el dispositivo). Idempotente por `op_id` (= `AccessLog.client_id`)."""
@@ -999,7 +1001,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
     first, last = str(f.get("first_name") or "").strip(), str(f.get("last_name") or "").strip()
     if not person_id or not first or not last:
         return {"op_id": op_id, "result": "error", "detail": "Faltan la cédula, los nombres o los apellidos"}
-    if event.status != "en_proceso":                                            # mismo criterio que `require_event_in_progress` (registrar solo con el evento en proceso)
+    if event.status != "en_proceso" and not (event.sync_revert and event.sync_revert[1]):      # `require_event_in_progress`, salvo lo anterior a un retroceso a «Creado» (la hora ya se verificó)
         return {"op_id": op_id, "result": "error", "detail": "El evento ya no está abierto para registrar personas nuevas"}
     extras = f.get("extra_fields") if isinstance(f.get("extra_fields"), dict) else {}
     extras = {str(k): str(v) for k, v in extras.items() if re.fullmatch(r"opcional_\d+", str(k)) and str(v).strip()}
@@ -1039,15 +1041,16 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
                 db.add(user)
                 db.flush()
             db.add(AccessLog(tenant_id=event.tenant_id, user_id=person_id, record_type=kind, event_id=event.id, registered_by_staff_id=staff.id, registration_method="tradicional",
-                             client_id=op_id, timestamp=when))
+                             client_id=op_id, timestamp=when, doubtful_reason=doubtful))
             _upsert_attendee(db, event.id, person_id, event.tenant_id, categories if f.get("categories") else None,
                              certificate=_truthy(f.get("certificate")) if f.get("certificate") else None, digital_contact=contact)
             db.flush()
     except IntegrityError:
         return {"op_id": op_id, "result": "replayed"}
+    flag = {"doubtful": True} if doubtful else {}
     if kind == "Existente":
-        return {"op_id": op_id, "result": "existente", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip()}
-    return {"op_id": op_id, "result": "ok"}
+        return {"op_id": op_id, "result": "existente", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip(), **flag}
+    return {"op_id": op_id, "result": "ok", **flag}
 
 
 @router.post("/events/{event_id}/outbox/sync")
@@ -1065,6 +1068,7 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
     field_configs = parametros.field_configs_for_event(db, event)
     known = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([str((o or {}).get("op_id") or "")[:64] for o in ops if isinstance(o, dict)]))}
     results = []
+    reverted_at = event.sync_revert[0] if event.sync_revert else None
     for op in ops:
         op = op if isinstance(op, dict) else {}
         op_id = str(op.get("op_id") or "").strip()[:64]
@@ -1074,19 +1078,17 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
         if op_id in known:
             results.append({"op_id": op_id, "result": "replayed"})
             continue
-        when = now
-        try:
-            parsed = datetime.fromisoformat(str(op.get("timestamp")).replace("Z", "+00:00")).replace(tzinfo=None)
-            if now.timestamp() - SYNC_MAX_AGE <= parsed.timestamp() <= now.timestamp() + 300:
-                when = parsed
-        except (TypeError, ValueError):
-            pass
-        res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs)
+        verdict, when = status_changes.classify(op.get("timestamp"), now, reverted_at)
+        if verdict == "after":          # alta hecha DESPUÉS de devolver el evento a «Creado»: no se crea (el quiosco la deja en su bandeja con este motivo)
+            results.append({"op_id": op_id, "result": "error", "reason": "after_revert", "detail": status_changes.AFTER_REVERT_DETAIL})
+            continue
+        res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs, doubtful=status_changes.DOUBTFUL if verdict == "no_hour" else None)
         if res["result"] in ("ok", "existente", "replayed"):
             known.add(op_id)
         results.append(res)
     db.commit()
-    return {"results": results, "ok": sum(r["result"] in ("ok", "replayed") for r in results)}
+    return {"results": results, "ok": sum(r["result"] in ("ok", "replayed") for r in results),
+            **({"doubtful": sum(bool(r.get("doubtful")) for r in results), "after_revert": sum(r.get("reason") == "after_revert" for r in results)} if reverted_at else {})}
 
 
 # ----------------------------------------------------------------------------------------------------------------------- roster local (modo contingencia, docs/13 §9)
@@ -1474,6 +1476,13 @@ def manual_register(
     devuelve {"result": "NEEDS_LABELS", "fields": [...]} igual que bulk_register — el frontend
     normalmente ya manda `field_labels` de una vez porque él mismo preguntó el nombre al agregar
     el campo, así que este camino solo se ejerce en casos raros/defensivos."""
+    return _manual_register(**locals())          # a esta altura `locals()` son solo los parámetros del endpoint: se pasan tal cual al cuerpo (sin repetirlos a mano)
+
+
+def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False):
+    """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
+    args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
 
@@ -1574,7 +1583,16 @@ def manual_register(
     # técnicamente "no existe todavía" en ese punto. Un flush() explícito aquí garantiza que el
     # INSERT de User ya se mandó antes de crear las filas que dependen de él (reproducido y
     # confirmado con un test end-to-end vía FastAPI TestClient + SQLite con FK activas, 2026-09-23).
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Otra petición creó a esta misma cédula entre la consulta de arriba y este INSERT (otro quiosco o una carga «solo agregar», app/roster_append.py): antes era un 500 para quien registraba.
+        # UN solo reintento y solo si la persona AHORA existe: se atiende como persona que ya existía (la rama de arriba, que no toca la foto ni el consentimiento). Si no existe (el error es de
+        # OTRA restricción) o ya era el reintento, se propaga el error original: nunca hay bucle.
+        db.rollback()
+        if retry or not db.query(User.id).filter(User.id == id, User.tenant_id == event.tenant_id).first():
+            raise
+        return _manual_register(**args, retry=True)
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",
@@ -1635,20 +1653,40 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 @router.post("/bulk_roster")
 def bulk_roster(
     event_id: int = Form(...), roster_file: UploadFile = File(None), field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(True),
-    roster_upload: str = Form(None), overwrite_birth: str = Form(None),
+    roster_upload: str = Form(None), overwrite_birth: str = Form(None), append_only: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga de SOLO la base (Excel/CSV, sin fotos). Es la misma carga que `bulk_register`, pero esta ruta la sirve el servicio WEB (sin dlib): `bulk_register` vive en el servicio de BIOMETRÍA (ver
     app/appmode.py), que se apaga cuando no se usa y al arrancar carga el modelo facial: ese arranque en frío (~15 s) lo pagaba hasta una carga de una sola persona."""
     return bulk_register(event_id=event_id, roster_file=roster_file, zip_file=None, field_labels=field_labels, source_event_id=source_event_id, background=background, photos_authorized=None,
-                         roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, db=db, staff=staff)
+                         roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, append_only=append_only, db=db, staff=staff)
+
+
+@router.post("/bulk_roster/preview")
+def bulk_roster_preview(
+    event_id: int = Form(...), roster_file: UploadFile = File(None), roster_upload: str = Form(None),
+    db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y cuenta qué pasaría, SIN escribir nada. Mismos permisos que la carga. No borra el archivo subido:
+    la carga real lo vuelve a usar."""
+    event = get_event_for_staff(event_id, db, staff)
+    if blocked := event_rules.roster_block_reason(event, append_only=True):
+        raise HTTPException(status_code=400, detail=blocked)
+    roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
+    content = roster_up.content if roster_up else (roster_file.file.read() if (roster_file is not None and roster_file.filename) else None)
+    if content is None:
+        raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
+    name = roster_up.filename if roster_up else roster_file.filename
+    res = _bulk_register_impl(db, staff, event_id=event_id, roster_filename=name, content=content, zip_bytes=None, field_labels=None, source_event_id=None, step={"phase": "prepare"}, append_only=True)
+    db.rollback()          # nada se escribe; si algo quedó abierto, se descarta
+    return roster_append.preview(db, event, res["prepared"])
 
 
 @router.post("/bulk_register")
 def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
     field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
-    roster_upload: str = Form(None), zip_upload: str = Form(None), overwrite_birth: str = Form(None),
+    roster_upload: str = Form(None), zip_upload: str = Form(None), overwrite_birth: str = Form(None), append_only: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
@@ -1656,6 +1694,15 @@ def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    append = _truthy(append_only)          # «solo agregar personas nuevas» (app/roster_append.py): se valida ANTES de leer nada
+    if append and (zip_upload or (zip_file is not None and bool(zip_file.filename))):
+        raise HTTPException(status_code=400, detail=roster_append.ZIP_REJECTED)
+    if append and source_event_id:
+        raise HTTPException(status_code=400, detail=roster_append.SOURCE_REJECTED)
+    if append and not (roster_upload or (roster_file is not None and bool(roster_file.filename))):
+        raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
+    if append and not background:
+        raise HTTPException(status_code=400, detail="«Solo agregar personas nuevas» se ejecuta por pasos (background=true).")
     has_zip = bool(zip_upload) or (zip_file is not None and bool(zip_file.filename))
     zip_ignored = bool(event.biometrics_locked and has_zip)
     if zip_ignored:          # candado «sin biometría»: las fotos NO se leen, no se guardan y no encienden el rostro (el aviso sale en el resultado)
@@ -1667,6 +1714,10 @@ def bulk_register(
         raise HTTPException(status_code=400, detail="Para cargar fotos debes declarar que cuentas con la autorización expresa de cada persona para tratar su dato biométrico (marca la casilla de autorización).")
     has_roster = bool(roster_upload) or (roster_file is not None and bool(roster_file.filename))
     use_steps, why = bulk_steps.decide(event, has_zip, has_roster)
+    if append and not use_steps:
+        raise HTTPException(status_code=400, detail=f"«Solo agregar personas nuevas» no está disponible en este servidor ({why}).")
+    if append and (blocked := event_rules.roster_block_reason(event, append_only=True)):
+        raise HTTPException(status_code=400, detail=blocked)
     if background:      # por qué camino va CADA carga (sin datos personales): así se ve en el log si una carga solo de Excel cae al Job y por qué
         log.info("carga masiva: camino=%s motivo=%s backend=%s evento=%s", "pasos" if use_steps else ("job" if bulk_jobs.uses_cloud_run() else "hilo"), why,
                  os.getenv("BULK_BACKEND", "thread"), event.id)
@@ -1679,7 +1730,7 @@ def bulk_register(
     roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
     zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
     args = dict(event_id=event_id, roster_filename=roster_filename,
-                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth))
+                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth), append_only=append)
 
     def cleanup(result):
         # NEEDS_LABELS: el navegador reenvía la MISMA carga con los nombres de las columnas; los archivos temporales tienen que seguir ahí.
@@ -1795,7 +1846,7 @@ def bulk_job_status(
 
 
 def _bulk_register_impl(
-    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False, step: Optional[dict] = None,
+    db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False, step: Optional[dict] = None, append_only: bool = False,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -1822,10 +1873,18 @@ def _bulk_register_impl(
     event = get_event_for_staff(event_id, db, staff)
     # Una sola regla (app/event_rules.py `roster_block_reason`), la misma que usa la pantalla para avisar ANTES: finalizado nunca; en proceso solo si todavía no tuvo una carga exitosa
     # (volver a cargar pisaría o duplicaría registros hechos en vivo, 2026-09-22). En los pasos siguientes al primero no se repite: el primero ya la aplicó.
-    blocked = None if resume else event_rules.roster_block_reason(event)
+    blocked = None if resume else event_rules.roster_block_reason(event, append_only=append_only)
     if blocked:
         raise HTTPException(status_code=400, detail=blocked)
 
+    if append_only and not resume:          # «solo agregar» (app/roster_append.py): solo por pasos, solo con el archivo de la base, sin fotos ni eventos de origen, sin crear campos
+        if zip_bytes:
+            raise HTTPException(status_code=400, detail=roster_append.ZIP_REJECTED)
+        if source_event_id:
+            raise HTTPException(status_code=400, detail=roster_append.SOURCE_REJECTED)
+        if content is None or not step or step.get("phase") != "prepare":
+            raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
+        field_labels = None
     if not resume:
         # Ítem 18 (reunión 2026-09-21): además de (o en vez de) un Excel nuevo, se puede traer a todas las
         # personas de OTRO evento del MISMO cliente. Quedan como "No registrado" en este evento.
@@ -1847,7 +1906,7 @@ def _bulk_register_impl(
         if len(rows) > ROSTER_MAX_ROWS:
             raise HTTPException(status_code=400, detail=f"El archivo tiene {len(rows):,} filas y el máximo es {ROSTER_MAX_ROWS:,} por carga. Divídelo en varios archivos y cárgalos uno tras otro.".replace(",", "."))
         # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
-        header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels())
+        header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels(), create_fields=not append_only)
         phases.mark("columnas")
         # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
         birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
@@ -1986,7 +2045,7 @@ def _bulk_register_impl(
 
         id_col = next((header_columns[k] for k in _ID_KEYS if k in header_columns), None)
         for id_val, row_nums in seen_rows_by_id.items():
-            if len(row_nums) > 1:
+            if len(row_nums) > 1 and not append_only:
                 cells = ", ".join(f"{id_col}{n}" if id_col else f"fila {n}" for n in row_nums)
                 errors.append(
                     f"⚠️ La cédula '{id_val}' aparece repetida en {len(row_nums)} filas ({cells}) — "
@@ -1997,8 +2056,9 @@ def _bulk_register_impl(
         if step and step.get("phase") == "prepare":      # solo la preparación: se devuelve lo que los pasos necesitan (la persistencia la hace app/bulk_steps.py)
             phases.mark("prescan")
             phases.emit(len(rows))
-            return {"prepared": {"header_columns": header_columns, "rows": rows, "columns_report": columns_report, "birth_used": birth_used, "birth_ignored_rows": birth_ignored_rows},
-                    "state": {"pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
+            return {"prepared": {"header_columns": header_columns, "rows": rows, "columns_report": columns_report, "birth_used": birth_used, "birth_ignored_rows": birth_ignored_rows,
+                                 **({"dup_rows": roster_append.duplicate_rows(row_infos)} if append_only else {})},
+                    "state": {**({"append_only": True, "append": roster_append.new_state()} if append_only else {}), "pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
                               "carried_ids": sorted(carried_ids), "source_name": source_name, "overwrite_birth": bool(overwrite_birth)}}
     else:
         # Reanudación: lo preparado y el avance vienen del paso anterior (guardados cifrados); aquí solo se arman las filas de ESTE paso.
@@ -2006,6 +2066,7 @@ def _bulk_register_impl(
         header_columns, rows, columns_report = prepared["header_columns"], prepared["rows"], prepared["columns_report"]
         birth_used, birth_ignored_rows = prepared["birth_used"], prepared["birth_ignored_rows"]
         errors, carried_ids, source_name = state["errors"], set(state["carried_ids"]), state["source_name"]
+        append_only = bool(state.get("append_only"))
         zip_encodings, zip_photos, precalc = {}, set(), False        # los pasos solo atienden cargas SIN fotos ni pre-cálculo (el resto va por el camino de siempre)
         progress = progress or (lambda *a, **k: None)
         total_units, done_units = len(rows), state["pos"]
@@ -2016,6 +2077,8 @@ def _bulk_register_impl(
             identificador, id_cell, id_note = _extract_identificador(clean_row, header_columns, row_num)
             row_infos.append({"row_num": row_num, "clean_row": clean_row, "identificador": identificador, "id_cell": id_cell, "notes": [id_note] if id_note else []})
         phases.mark("armar_filas")
+    if append_only:          # el resto de esta función es la carga normal (pisa a los existentes); «solo agregar» tiene su propio recorrido de filas
+        return roster_append.run_step(db, event, staff, step, row_infos, header_columns, columns_report, birth_used, prepared, state, step_pos, step_end, len(rows), progress)
     if not resume:
         count = 0
         birth_bad_rows, birth_kept_rows, birth_completed, birth_replaced = [], [], 0, 0

@@ -115,6 +115,7 @@ class AccessLog(Base):
     event_id = Column(Integer, ForeignKey('events.id'), nullable=True)
     registered_by_staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
     client_id = Column(String, nullable=True)  # identificador generado por el kiosco/navegador: un reintento o una sincronización nunca duplica el ingreso (único por evento, ver 0047)
+    doubtful_reason = Column(String(24), nullable=True)  # 0077: ingreso sincronizado tras devolver el evento a «Creado» SIN hora válida del dispositivo (`sin_hora_valida`): consultable para revisarlo
     registration_method = Column(String, nullable=True)  # Sprint 2.4 Fase 16 (2026-09-17, pedido explícito): 'tradicional' | 'autoregistro' | 'biometrico' | 'qr' — para el reporte, que siempre debe decir CÓMO se registró cada persona (ver reports.py y routers/api.py)
 
     __table_args__ = (
@@ -1030,3 +1031,21 @@ class EventImportActor(Base):
     row_ref = Column(String(160), nullable=False)
     column_name = Column(String(40), nullable=False)
     username = Column(String(80), nullable=False)
+
+
+class EventStatusChange(Base):
+    """0077: bitácora de los retrocesos de estado de un evento («en curso» -> «creado», `POST /events/{id}/revert-to-created`): quién, cuándo, motivo (opcional) y cuántas personas e ingresos
+    tenía en ese momento. Solo INSERT. Sin llaves foráneas (sobrevive al evento y no estorba al borrarlo). Marca además la ventana de 7 días en que los quioscos sin red todavía pueden
+    sincronizar lo que registraron ANTES del cambio (`app/status_changes.py`). Nunca guarda datos personales."""
+    __tablename__ = 'event_status_changes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(DateTime, nullable=False, default=utcnow)
+    event_id = Column(Integer, nullable=False, index=True)
+    tenant_id = Column(String, nullable=True)
+    staff_user_id = Column(Integer, nullable=True)
+    staff_username = Column(String(80), nullable=True)
+    from_status = Column(String(12), nullable=False)
+    to_status = Column(String(12), nullable=False)
+    reason = Column(String(500), nullable=True)
+    attendees_count = Column(Integer, nullable=False, default=0, server_default='0')
+    access_logs_count = Column(Integer, nullable=False, default=0, server_default='0')

@@ -112,6 +112,23 @@
       </fieldset>
     </form>
 
+
+    {% if append_available %}
+    <form id="appendForm" class="golden-badge-builder" style="margin-top:1.5rem;">
+      <div class="badge-form-title">Solo agregar personas nuevas</div>
+      <p style="color:#666; font-size:0.85rem; line-height:1.5; margin-bottom:1rem;">
+        Sirve para sumar gente a un evento que ya está en curso <b>sin afectar el registro en vivo</b>. No se toca a nadie que ya esté en el evento (ni sus datos, ni su foto, ni su autorización,
+        ni sus ingresos); solo se crean las personas nuevas. Si una cédula se repite en el archivo se usa la primera fila. Las columnas que no sean un campo de este evento se ignoran
+        (no se crean campos ni categorías nuevas). No admite fotos (zip). Antes de guardar verás un resumen para confirmar.
+      </p>
+      <div class="badge-input-group">
+        <label>Archivo con las personas nuevas (.xlsx o .csv)</label>
+        <input type="file" name="roster_file" id="appendFileInput" accept=".xlsx,.csv" required>
+      </div>
+      <button type="submit" id="appendSubmit" class="golden-btn golden-btn-primary" style="margin-top:1rem;">Ver resumen y agregar</button>
+    </form>
+    {% endif %}
+
     <div id="rosterResult" style="margin-top: 1.5rem;"></div>
   </div>
 </main>
@@ -547,7 +564,7 @@ rosterForm.addEventListener("submit", async (e) => {
     if (ROSTER_BLOCKED) return;      // no se ofrece «cargar de todas formas»: el botón está deshabilitado y el servidor lo rechazaría igual
     if (EVENT_STATUS === "en_proceso") {      // primera carga de un evento que ya arrancó (permitida): solo se avisa del riesgo de pisar registros hechos en vivo
         const seguro = await showConfirm(
-            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después no podrás volver a cargar otra base sobre este evento. ¿Continuar?",
+            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después esta carga normal quedará bloqueada. Para sumar más personas después, usa «Solo agregar personas nuevas», que no toca a quienes ya están. ¿Continuar?",
             { variant: "warning", confirmLabel: "Sí, cargar la base" }
         );
         if (!seguro) return;
@@ -578,7 +595,7 @@ rosterForm.addEventListener("submit", async (e) => {
                 // se dispara sola apenas el PRIMER lote tenga éxito — el segundo lote quedaría
                 // bloqueado a mitad de camino. Se avisa de una en vez de dejarlo fallar a la mitad.
                 showToast(
-                    "El archivo es grande y la carga automática en lotes solo está disponible con el evento en estado \"Creado\" " +
+                    "El archivo es grande y la carga automática en lotes solo está disponible con el evento en estado \"Creado\". Para sumar personas a un evento en curso usa \"Solo agregar personas nuevas\" " +
                     "(si no, quedaría bloqueado a mitad de camino por la protección contra recargas). Cambia el estado del evento, " +
                     "o divide el archivo tú mismo antes de subirlo.",
                     "error"
@@ -600,6 +617,61 @@ rosterForm.addEventListener("submit", async (e) => {
         showToast("Error de red", "error");
     }
     setButtonLoading(btn, false);
+});
+
+/* ------------------------------------------------------------------------------------------------
+   «Solo agregar personas nuevas» (app/roster_append.py): sube el archivo UNA vez, pide la vista previa (no escribe nada), pide confirmación y recién entonces guarda por pasos de 200 filas.
+   Nada de cédulas, nombres ni correos en pantalla: solo conteos y títulos de columnas. */
+const appendForm = document.getElementById("appendForm");
+function appendSummaryHtml(a) {
+    const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const rows = [["Personas nuevas creadas", a.created], ["Ya existían en el cliente (solo se inscribieron en este evento)", a.enrolled_existing], ["Ignoradas porque ya estaban en el evento", a.existing],
+                  ["Ignoradas por repetidas en el archivo", a.duplicates], ["Omitidas por supresión de datos", a.suppressed], ["Filas con error", a.errors], ["Columnas ignoradas", a.columns_ignored]];
+    return `<div style="background:#eef6ee; border:1px solid #b7dcb7; color:#1e5a1e; padding:1rem 1.2rem; border-radius:12px; font-size:0.9rem; margin-top:0.8rem;"><strong>Resultado de «Solo agregar»</strong>
+        <ul style="margin:0.4rem 0 0; padding-left:1.2rem;">${rows.map(([k, v]) => `<li>${esc(k)}: <b>${esc(v)}</b></li>`).join("")}</ul></div>`;
+}
+if (appendForm) appendForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("appendSubmit");
+    const file = document.getElementById("appendFileInput").files[0];
+    if (!file) return;
+    setButtonLoading(btn, true, "Revisando el archivo...");
+    rosterResult.innerHTML = "";
+    window.__rosterClickAt = performance.now();
+    try {
+        const fd = new FormData();
+        fd.append("event_id", window.EVENT_ID);
+        fd.append("roster_file", file);
+        await DirectUpload.replaceFiles(fd, { roster_file: ["roster_upload", "bulk_roster"] }, { body: { event_id: String(window.EVENT_ID) } });
+        const res = await xhrPost("/api/bulk_roster/preview", fd);
+        let p;
+        try { p = JSON.parse(res.text); } catch (err) { showToast(`El servidor rechazó el archivo (código ${res.status}).`, "error"); return; }
+        if (res.status < 200 || res.status >= 300) { showToast(p.detail || "No se pudo revisar el archivo", "error"); return; }
+        const cols = p.columns_ignored ? ` Se ignorarán ${p.columns_ignored} columna(s): ${p.ignored_columns.map(c => "«" + c.title.replace(/</g, "&lt;") + "»").join(", ")}.` : "";
+        const extra = [p.enroll_existing ? `${p.enroll_existing} ya existen en el cliente y solo se inscribirán en este evento` : "", p.duplicates ? `${p.duplicates} repetidas en el archivo (se usa la primera)` : "",
+                       p.suppressed ? `${p.suppressed} con supresión de datos (se omiten)` : "", p.without_id ? `${p.without_id} sin cédula (se omiten)` : ""].filter(Boolean);
+        const ok = await showConfirm(
+            `Se agregarán <strong>${p.new}</strong> personas nuevas, se ignorarán <strong>${p.existing}</strong> que ya están en el evento y <strong>${p.columns_ignored}</strong> ${p.columns_ignored === 1 ? "columna se ignora" : "columnas se ignoran"}.` +
+            (extra.length ? `<br><br>${extra.join(".<br>")}.` : "") + (cols ? `<br><br>${cols}` : "") +
+            `<br><br>No se modifica a nadie que ya esté en el evento y el registro en vivo sigue funcionando. ¿Agregar?`,
+            { variant: "warning", confirmLabel: "Sí, agregar personas nuevas" });
+        if (!ok) { showToast("No se agregó a nadie", "info"); return; }
+        fd.set("append_only", "true");
+        const bar = ProgressBar.create(rosterResult, { title: "Agregando personas nuevas", stage: "Preparando…" });
+        const data = await postBulkRegister(fd, makeUi(bar, 0, 1));
+        if (!data) { bar.fail("No se pudo completar la carga"); return; }
+        bar.finish(data.message || "Listo");
+        showToast(data.message || "Listo", "success");
+        const keep = bar.element;
+        renderRosterResult(data);
+        rosterResult.prepend(keep);
+        if (data.append) keep.insertAdjacentHTML("afterend", appendSummaryHtml(data.append));
+        appendForm.reset();
+    } catch (err) {
+        showToast(err && err.message && err.message !== "network" ? err.message : "Error de red", "error");
+    } finally {
+        setButtonLoading(btn, false);
+    }
 });
 </script>
 </body>

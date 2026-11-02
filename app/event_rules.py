@@ -36,16 +36,18 @@ BASE_STATUSES = tuple(DEFAULTS_BY_BASE)
 # Mensajes de «Adjuntar Base de Datos» cuando el evento no admite la carga (los usa el servidor Y la pantalla: una sola regla, para que no vuelvan a divergir).
 ROSTER_BLOCKED_FINALIZED = ("Este evento está FINALIZADO: ya no se puede cargar la base de datos. Si de verdad necesitas cargarla, un administrador puede reabrir el evento "
                             "(pasarlo a «Creado» desde la lista de eventos).")
-ROSTER_BLOCKED_IN_PROGRESS = ("Este evento ya tiene una base cargada y está EN PROCESO. Para evitar conflictos con los registros que ya se hicieron en vivo, no se puede volver a cargar otra "
-                              "base sobre este evento. Qué hacer: vuelve el evento a «Creado» desde la lista de eventos (solo si todavía no se acreditó a nadie) o crea un evento nuevo.")
+ROSTER_BLOCKED_IN_PROGRESS = ("Este evento ya tiene una base cargada y está EN PROCESO. La carga normal no se permite porque pisaría los datos de quienes ya se registraron en vivo. "
+                              "Qué hacer: usa «Solo agregar personas nuevas» (no toca a nadie que ya esté en el evento), pide a un administrador que lo devuelva a «Creado» o crea un evento nuevo.")
+APPEND_BLOCKED_FINALIZED = "Este evento está FINALIZADO: ya no se pueden agregar personas."
 
 
-def roster_block_reason(event: Event) -> Optional[str]:
+def roster_block_reason(event: Event, append_only: bool = False) -> Optional[str]:
     """None si el evento admite cargar la base; si no, el motivo en palabras simples (qué pasa y qué hacer). Regla del servidor: finalizado nunca; en proceso solo si todavía no tuvo
-    una carga exitosa (`roster_uploaded`: volver a cargar pisaría o duplicaría registros hechos en vivo)."""
+    una carga exitosa (`roster_uploaded`: volver a cargar pisaría o duplicaría registros hechos en vivo). `append_only` («solo agregar personas nuevas», nunca toca a quien ya existe)
+    se admite en cualquier estado salvo finalizado, también con el evento en proceso y la base ya cargada."""
     if event.status == "finalizado":
-        return ROSTER_BLOCKED_FINALIZED
-    if event.status == "en_proceso" and event.roster_uploaded:
+        return APPEND_BLOCKED_FINALIZED if append_only else ROSTER_BLOCKED_FINALIZED
+    if event.status == "en_proceso" and event.roster_uploaded and not append_only:
         return ROSTER_BLOCKED_IN_PROGRESS
     return None
 
