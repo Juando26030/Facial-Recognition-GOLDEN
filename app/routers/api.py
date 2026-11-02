@@ -1476,6 +1476,13 @@ def manual_register(
     devuelve {"result": "NEEDS_LABELS", "fields": [...]} igual que bulk_register — el frontend
     normalmente ya manda `field_labels` de una vez porque él mismo preguntó el nombre al agregar
     el campo, así que este camino solo se ejerce en casos raros/defensivos."""
+    return _manual_register(**locals())          # a esta altura `locals()` son solo los parámetros del endpoint: se pasan tal cual al cuerpo (sin repetirlos a mano)
+
+
+def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False):
+    """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
+    args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
     require_event_in_progress(event)
 
@@ -1580,11 +1587,12 @@ def manual_register(
         db.flush()
     except IntegrityError:
         # Otra petición creó a esta misma cédula entre la consulta de arriba y este INSERT (otro quiosco o una carga «solo agregar», app/roster_append.py): antes era un 500 para quien registraba.
-        # Ahora se atiende como persona que ya existía (la rama de arriba, que no toca la foto: el archivo ya se leyó).
+        # UN solo reintento y solo si la persona AHORA existe: se atiende como persona que ya existía (la rama de arriba, que no toca la foto ni el consentimiento). Si no existe (el error es de
+        # OTRA restricción) o ya era el reintento, se propaga el error original: nunca hay bucle.
         db.rollback()
-        return manual_register(event_id=event_id, id=id, first_name=first_name, last_name=last_name, role=role, entity=entity, phone=phone, email=email, opt_1=opt_1, extra_fields=extra_fields,
-                               categories=categories, certificate=certificate, digital_contact=digital_contact, send_digital_now=send_digital_now, request=request, field_labels=field_labels,
-                               file=file, force=force, biometric_consent=biometric_consent, birth_date=birth_date, db=db, staff=staff)
+        if retry or not db.query(User.id).filter(User.id == id, User.tenant_id == event.tenant_id).first():
+            raise
+        return _manual_register(**args, retry=True)
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",

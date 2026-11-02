@@ -363,3 +363,136 @@ def test_after_the_rollback_nothing_the_request_had_saved_is_lost_and_the_reply_
         assert db.query(AccessLog).filter_by(event_id=ev_id, user_id=uid).count() == 1 and db.query(EventAttendee).filter_by(event_id=ev_id, user_id=uid).count() == 1
     u = db.query(User).filter_by(id="6003").first()
     assert (u.first_name, u.last_name) == ("De la carga", "Hoja")                        # la persona creada por la otra petición no se pisó
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ el reintento de /register: uno solo, y consentimiento/foto
+def _register_form(ev_id, uid, **extra):
+    return {"event_id": ev_id, "id": uid, "first_name": "Kiosko", "last_name": "Vivo", **extra}
+
+
+def test_an_integrity_error_from_another_constraint_ends_in_one_pass_and_propagates(client, live, db, monkeypatch):
+    """Si el IntegrityError NO es de la cédula (la persona sigue sin existir tras el rollback) no hay bucle: se intenta UNA vez y el error original se propaga."""
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import Session
+
+    from app.models import AccessLog
+    from app.routers import api
+    calls, flushes = [], []
+    real_body, real_flush = api._manual_register, Session.flush
+
+    def counting(*a, **k):
+        calls.append(k.get("retry", False))
+        return real_body(*a, **k)
+
+    def flush(self, *a, **k):
+        if any(isinstance(o, User) and o.id == "6100" for o in self.new):
+            flushes.append(1)
+            raise IntegrityError("INSERT INTO users", {}, Exception("otra restricción distinta de la cédula"))
+        return real_flush(self, *a, **k)
+    monkeypatch.setattr(api, "_manual_register", counting)
+    monkeypatch.setattr(Session, "flush", flush)
+    with pytest.raises(IntegrityError):
+        client.post("/api/register", data=_register_form(live.id, "6100"))
+    assert calls == [False] and len(flushes) == 1                                           # una sola pasada, sin reintento
+    db.expire_all()
+    assert db.query(User).filter_by(id="6100").count() == 0 and db.query(AccessLog).filter_by(user_id="6100").count() == 0
+    monkeypatch.setattr(Session, "flush", real_flush)
+    assert client.post("/api/register", data=_register_form(live.id, "6101")).status_code == 200          # y la petición siguiente sigue sana
+
+
+def test_the_single_retry_never_retries_again(client, live, db, monkeypatch):
+    """El cuerpo llamado YA como reintento (`retry=True`) que vuelve a chocar propaga el error: no hay segundo reintento aunque la persona exista."""
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import Session
+
+    from app.database import SessionLocal
+    from app.routers import api
+    real_flush, fired = Session.flush, []
+
+    def flush(self, *a, **k):
+        if not fired and any(isinstance(o, User) and o.id == "6103" for o in self.new):
+            fired.append(1)                                                                  # (la otra sesión también pasa por este flush: solo la primera vez)
+            other = SessionLocal()
+            other.add(User(id="6103", tenant_id=live.tenant_id, first_name="Otro", last_name="Quiosco"))
+            other.commit()
+            other.close()
+            raise IntegrityError("INSERT INTO users", {}, Exception("llave duplicada"))
+        return real_flush(self, *a, **k)
+    monkeypatch.setattr(Session, "flush", flush)
+    staff = db.query(StaffUser).filter_by(username="coord1").first()
+    kwargs = dict(event_id=live.id, id="6103", first_name="K", last_name="V", role="", entity="", phone="", email="", opt_1="", extra_fields=None, categories=None, certificate=None,
+                  digital_contact=None, send_digital_now=None, request=None, field_labels=None, file=None, force=False, biometric_consent=None, birth_date="", db=db, staff=staff)
+    with pytest.raises(IntegrityError):
+        api._manual_register(**kwargs, retry=True)                                           # ya es el reintento: propaga
+    db.rollback()
+    assert api._manual_register(**kwargs)["message"].startswith("Esta persona ya existía")  # (la primera pasada sí cae en «ya existía» porque ahora la persona existe)
+
+
+def _jpeg():
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (80, 80), (120, 90, 60)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def _race_creating(monkeypatch, uid, tenant):
+    """El quiosco ya pasó su consulta cuando otra petición crea a `uid`."""
+    from app.database import SessionLocal
+    from app.routers import api
+    real, fired = api.parametros.field_configs_for_event, []
+
+    def configs(db_, event):
+        if not fired:
+            fired.append(1)
+            other = SessionLocal()
+            try:
+                other.add(User(id=uid, tenant_id=tenant, first_name="De la carga", last_name="Hoja"))
+                other.commit()
+            finally:
+                other.close()
+        return real(db_, event)
+    monkeypatch.setattr(api.parametros, "field_configs_for_event", configs)
+
+
+def test_a_photo_and_consent_sent_to_an_existing_person_save_no_photo_no_vector_and_touch_no_consent_log(client, live, db, factory, monkeypatch):
+    """Petición con foto y `biometric_consent` aceptado atendida por la rama «persona que ya existía» (la normal Y la de la carrera): no se guarda foto ni vector, el registro de consentimientos
+    (`audit_consent_logs`) queda igual (nada se pierde ni se duplica) y la respuesta es la misma. Contraste: una persona NUEVA con la misma petición guarda la foto cifrada pero sin vector
+    (solo se calcula después de que la persona acepte) y tampoco escribe en `audit_consent_logs`: este endpoint nunca registra consentimientos (los registra la persona en su pantalla)."""
+    from app.models import AccessLog, AuditConsentLog
+    from app.storage import get_storage, photo_key
+    from tests.conftest import accept
+    ev_id, tenant = live.id, live.tenant_id
+    live.facial_enabled = True
+    db.commit()
+    factory.person(live, "6200", "Ya", "Existe", attend=False)                                 # existe en el cliente
+    accept(db, live, "6200")                                                                    # y ya había aceptado en ESTE evento (una fila en audit_consent_logs)
+    form = _register_form(ev_id, "6200", biometric_consent="true", birth_date="1990-01-01")
+
+    def files():
+        return {"file": ("f.jpg", _jpeg(), "image/jpeg")}
+
+    def logs():
+        db.expire_all()
+        return db.query(AuditConsentLog).filter_by(event_id=ev_id).count()
+
+    before = logs()
+    normal = client.post("/api/register", data=form, files=files())
+    assert normal.status_code == 200 and "ya existía" in normal.json()["message"], normal.text
+    _race_creating(monkeypatch, "6201", tenant)
+    raced = client.post("/api/register", data={**form, "id": "6201"}, files=files())
+    assert raced.status_code == 200 and raced.json() == normal.json()                           # misma respuesta
+    db.expire_all()
+    for uid in ("6200", "6201"):
+        u = db.query(User).filter_by(id=uid, tenant_id=tenant).first()
+        assert u.face_encoding is None and u.face_captured_at is None and not get_storage().exists(photo_key(tenant, uid)), uid          # ni vector ni foto
+        assert db.query(AccessLog).filter_by(event_id=ev_id, user_id=uid).count() == 1          # el ingreso sí
+    assert logs() == before == 1                                                                # el registro de consentimientos: ni se pierde ni se duplica
+    new = client.post("/api/register", data=_register_form(ev_id, "6202", biometric_consent="true", birth_date="1990-01-01"), files=files())
+    assert new.status_code == 200 and new.json().get("message") != normal.json()["message"]
+    db.expire_all()
+    u = db.query(User).filter_by(id="6202", tenant_id=tenant).first()
+    assert u.face_encoding is None and get_storage().exists(photo_key(tenant, "6202"))          # contraste: persona nueva = foto cifrada, sin vector
+    assert logs() == before                                                                     # y este endpoint tampoco escribe consentimientos
+    get_storage().delete(photo_key(tenant, "6202"))
