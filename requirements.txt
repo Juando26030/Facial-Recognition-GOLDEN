@@ -40,7 +40,7 @@ pytesseract==0.3.13
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
 python-multipart==0.0.32
-setuptools==84.1.0
+setuptools==69.5.1   # NO subir: desde la 82 desaparece pkg_resources y face_recognition_models no arranca (staging 3-nov-2026). Los avisos de pip-audit de setuptools son de herramienta de compilación, no de la app.
 six==1.17.0
 SQLAlchemy==2.0.52
 starlette==1.6.0
