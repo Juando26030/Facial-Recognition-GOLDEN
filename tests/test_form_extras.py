@@ -630,7 +630,10 @@ def test_static_files_carry_a_version_so_a_deploy_is_never_hidden_by_the_cache(c
 
 def test_login_page_static_files_are_versioned_too(client):
     import re
-    assert re.search(r'/static/css/style\.css\?v=\d{9,}', client.get("/login").text)
+    html = client.get("/login").text
+    # el login ya no carga style.css (usa la base visual): lo que importa es que TODO estático lleve su ?v=
+    assert re.search(r'/static/css/design-system\.css\?v=\d{9,}', html) and re.search(r'/static/js/gw-ui\.js\?v=\d{9,}', html)
+    assert all(re.search(r'\?v=\d{9,}', a) for a in re.findall(r'(?:href|src)="([^"]*/static/[^"]*)"', html))
 
 
 def test_quotas_have_no_cap_on_number_of_rules(client, factory):
