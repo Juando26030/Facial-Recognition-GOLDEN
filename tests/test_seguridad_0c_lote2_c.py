@@ -104,8 +104,8 @@ _EXT = re.compile(r"<(script|link)\b[^>]*?(?:src|href)=[\"'](https?://[^\"']+)[\
 _SIN_INTEGRITY_OK = ("fonts.googleapis.com", "fonts.gstatic.com")
 
 
-# Pendientes documentados en docs/0C_d9_librerias_externas.md: el entorno no pudo descargarlas para calcular el hash (no se inventan hashes).
-PENDIENTES_INTEGRITY = ("xlsx/0.18.5/xlsx.full.min.js", "Chart.js/4.5.1/chart.umd.min.js")
+# Vacía: SheetJS y Chart.js ya llevan integrity (hash sha384 calculado en el navegador de Juan David y contrastado con el sha512 que publica la API de cdnjs).
+PENDIENTES_INTEGRITY = ()
 
 
 def test_jszip_se_aloja_en_static_y_no_en_cdn():
