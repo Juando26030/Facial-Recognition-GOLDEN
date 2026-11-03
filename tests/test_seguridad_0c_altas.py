@@ -109,3 +109,21 @@ def test_tenant_isolation_is_off_by_default(client, factory):
     other = factory.event("en_proceso", tenant_id="otra")
     assert login(client, "coordA").status_code == 302
     assert client.get(f"/api/events/{other.id}/consent-text").status_code != 404
+
+
+def test_excel_cells_never_start_a_formula():
+    from app.xlsafe import safe_cell
+    assert safe_cell("=HYPERLINK(\"http://x\")") == "'=HYPERLINK(\"http://x\")"
+    assert safe_cell("@SUM(1)") == "'@SUM(1)" and safe_cell("-cmd") == "'-cmd"
+    assert safe_cell("+57 300 123 4567") == "+57 300 123 4567" and safe_cell("normal") == "normal" and safe_cell(7) == 7
+
+
+def test_secret_key_has_no_default_in_production(monkeypatch):
+    import pytest
+    from app.secretkey import secret_key
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    with pytest.raises(RuntimeError):
+        secret_key()
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    assert secret_key()

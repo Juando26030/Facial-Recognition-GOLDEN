@@ -326,6 +326,7 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
     db.execute(text("UPDATE users SET is_biometric_enabled = true WHERE id = :u AND tenant_id = :t"), {"u": uid, "t": event.tenant_id})
     if arr is not None:
         crypto.save_image(Image.fromarray(arr), photo_key(event.tenant_id, uid))
+        db.execute(text("UPDATE users SET face_captured_at = COALESCE(face_captured_at, :n) WHERE id = :u AND tenant_id = :t"), {"n": now, "u": uid, "t": event.tenant_id})      # 0C (E5): arranca el reloj de retención aunque el vector aún no exista
         jobs.enqueue(db, "face_enroll", {"tenant_id": event.tenant_id, "user_id": uid, "event_id": event.id}, max_attempts=3)
     else:
         enroll.maybe_enqueue(db, event.tenant_id, uid, event.id)      # fuente A: si el cliente ya entregó su foto, ahora sí se calcula el vector

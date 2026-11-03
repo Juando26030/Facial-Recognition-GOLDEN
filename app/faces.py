@@ -26,6 +26,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
+from app.secretkey import secret_key
 from app import consent, face_worker
 from app.models import Event, EventAttendee, User
 
@@ -263,7 +264,7 @@ def identify(db: Session, event: Event, image_bytes: bytes) -> Tuple[str, Option
 
 # ------------------------------------------------------------------ token de coincidencia (evita reconocer dos veces)
 def _serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="face-match")
+    return URLSafeTimedSerializer(secret_key(), salt="face-match")
 
 
 CLICK_TOKEN_TTL = int(os.getenv("CONSENT_CLICK_TTL", "120"))      # segundos que vale UN clic en «Acepto…» del quiosco (camino 2)
@@ -271,12 +272,12 @@ CLICK_TOKEN_TTL = int(os.getenv("CONSENT_CLICK_TTL", "120"))      # segundos que
 
 def make_click_token(event_id: int, staff_id: int, text_hash: str, version: str, at_iso: str) -> str:
     """Token firmado del clic de UNA persona en la pantalla de autorización del quiosco (solo viaja en cuerpos de petición). Lleva el hash del texto mostrado y la hora del clic."""
-    return URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="consent-click").dumps({"e": event_id, "s": staff_id, "h": text_hash, "v": version, "t": at_iso})
+    return URLSafeTimedSerializer(secret_key(), salt="consent-click").dumps({"e": event_id, "s": staff_id, "h": text_hash, "v": version, "t": at_iso})
 
 
 def read_click_token(token: str, event_id: int, staff_id: int) -> Optional[dict]:
     try:
-        data = URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="consent-click").loads(token, max_age=CLICK_TOKEN_TTL)
+        data = URLSafeTimedSerializer(secret_key(), salt="consent-click").loads(token, max_age=CLICK_TOKEN_TTL)
     except (BadSignature, SignatureExpired):
         return None
     return data if data.get("e") == event_id and data.get("s") == staff_id else None

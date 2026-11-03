@@ -8,6 +8,7 @@ import os
 import uuid
 import zipfile
 from datetime import datetime
+from app import heavy
 from app.timeutil import utcnow
 from decimal import Decimal, InvalidOperation
 
@@ -237,7 +238,7 @@ def expenses_report(event_id: int, db: Session = Depends(get_db), staff: StaffUs
     header_row = 5
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Legalizaciones", startrow=header_row - 1)
+        heavy.safe_frame(df).to_excel(writer, index=False, sheet_name="Legalizaciones", startrow=header_row - 1)
         ws = writer.sheets["Legalizaciones"]
         for i, text in enumerate([
             f"Legalizaciones — {event.name} ({event.event_code})",

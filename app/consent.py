@@ -15,6 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app.secretkey import secret_key
 from app import faces_version
 from app.models import AuditConsentLog
 from app.timeutil import utcnow
@@ -29,7 +30,7 @@ def text_hash(text: str) -> str:
 
 def cedula_hash(cedula: str) -> str:
     """HMAC-SHA256 de la cédula normalizada con SECRET_KEY: permite encontrar a la persona aunque su fila de `users` ya no exista, sin guardar la cédula en claro aparte."""
-    key = (os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production").encode()
+    key = secret_key().encode()
     return hmac.new(key, b"consent-cedula:" + re.sub(r"[\s.]", "", str(cedula or "")).encode(), hashlib.sha256).hexdigest()
 
 
