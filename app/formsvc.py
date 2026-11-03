@@ -61,6 +61,7 @@ def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
 
 
 PENDING = "awaiting_payment"          # FormSubmission.status mientras se espera la confirmación de Wompi
+MARK_SOURCES = ("carga_base", "lista", "lista_cupo")      # origen de las marcas «ya registrado»: carga de la base del evento | lista cargada desde el formulario | esa misma lista con «ocupar cupo» (fila confirmada)
 PREREGISTERED = "preregistered"       # FormSubmission.status de «ya registrado en el formulario» (columna de la carga de la base): bloquea la repetición pero NO ocupa cupo, ni cuenta en listas, reportes ni carga
 ALREADY_MSG = "Ya estás inscrito. No necesitas volver a inscribirte."
 PENDING_HOLD = timedelta(minutes=30)  # una inscripción esperando pago aparta su cupo este tiempo
@@ -235,7 +236,7 @@ def has_confirmed_sid(db: Session, form: WebForm, sid: Optional[str], person_id:
     return q.first() is not None
 
 
-def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool) -> Tuple[bool, bool]:
+def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional[str], is_test: bool, pre: bool = False) -> Tuple[bool, bool]:
     """(reintento, duplicado) con UNA lectura SIN bloqueo, ANTES de pedir el `FOR UPDATE` del formulario. Mismas condiciones que `form_reserve_slot` (migración 0049): reintento =
     ya hay una inscripción confirmada con esta `sid` (y esta persona, si viene); duplicado = ya hay una confirmada real con esta cédula (las pruebas nunca cuentan). Es solo un
     adelanto para no hacer fila por algo que ya se sabe: la reserva bajo bloqueo sigue siendo la autoridad y repite todas sus comprobaciones."""
@@ -249,7 +250,7 @@ def precheck(db: Session, form: WebForm, sid: Optional[str], person_id: Optional
         retry_q = select(fs.id).where(*conds).exists()
     dup_q = false()
     if person_id is not None and not is_test:
-        dup_q = select(fs.id).where(fs.form_id == form.id, fs.is_test == False, fs.status.in_(("confirmed", PREREGISTERED)), fs.person_id == person_id).exists()  # noqa: E712
+        dup_q = select(fs.id).where(fs.form_id == form.id, fs.is_test == False, fs.status.in_(("confirmed", PREREGISTERED) if pre else ("confirmed",)), fs.person_id == person_id).exists()  # noqa: E712
     if not sid and (person_id is None or is_test):
         return False, False
     row = db.execute(select(retry_q, dup_q)).one()
@@ -271,12 +272,14 @@ def repeat_target(settings: dict, design: dict) -> Optional[Tuple[str, str]]:
     return ("cedula", id_fid) if id_fid else None
 
 
-def registered_person(db: Session, form: WebForm, person_id: str, include_confirmed: bool = True) -> bool:
-    """¿Esta cédula ya está inscrita en ESTE formulario? Confirmadas reales (nunca pruebas) y las marcadas «registrado en formulario» en la carga de la base. Sin `include_confirmed`
-    (ajuste apagado) solo cuentan estas últimas."""
+def registered_person(db: Session, form: WebForm, person_id: str, include_confirmed: bool = True, include_pre: bool = True) -> bool:
+    """¿Esta cédula ya está inscrita en ESTE formulario? Confirmadas reales (nunca pruebas; `include_confirmed`) y las marcas «ya registrado» (`include_pre`: solo valen con el interruptor
+    «Bloquear inscripciones repetidas» encendido; el que llama lo decide)."""
     if not person_id:
         return False
-    st = ("confirmed", PREREGISTERED) if include_confirmed else (PREREGISTERED,)
+    st = (("confirmed",) if include_confirmed else ()) + ((PREREGISTERED,) if include_pre else ())
+    if not st:
+        return False
     return db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.person_id == person_id,  # noqa: E712
                                               FormSubmission.status.in_(st)).first() is not None
 
@@ -291,7 +294,7 @@ def repeat_by_value(db: Session, form: WebForm, fid: str, ftype: str, key: Optio
     strip = "[\\s]" if ftype == "email" else "[\\s.\\-]"
     expr = f"regexp_replace({cell}, '\\D', '', 'g')" if ftype == "phone" else f"lower(regexp_replace({cell}, '{strip}', '', 'g'))"
     params = {"form_id": form.id, "fid": fid, "want": want, "pre": PREREGISTERED}
-    sql = f"SELECT 1 FROM form_submissions fs WHERE fs.form_id = :form_id AND fs.is_test = false AND fs.status = 'confirmed' AND {expr} = :want LIMIT 1"
+    sql = f"SELECT 1 FROM form_submissions fs WHERE fs.form_id = :form_id AND fs.is_test = false AND fs.status IN ('confirmed', :pre) AND {expr} = :want LIMIT 1"
     if db.execute(text(sql), params).first():
         return True
     col = {"email": "u.email", "phone": "u.phone"}.get(key or "")
@@ -331,6 +334,72 @@ def mark_preregistered(db: Session, event: Event, person_ids) -> int:
         created += len(rows)
     db.flush()
     return created
+
+
+def clear_marks(db: Session, form: WebForm) -> int:
+    """Quita TODAS las marcas «ya registrado» de este formulario (las de la carga de la base y las de su lista), incluidas las que ocupaban cupo. Nunca toca inscripciones reales."""
+    n = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.source.in_(MARK_SOURCES),
+                                        FormSubmission.status.in_((PREREGISTERED, "confirmed"))).delete(synchronize_session=False)
+    db.flush()
+    return n
+
+
+def mark_counts(db: Session, form: WebForm) -> dict:
+    """{"block": marcas que solo bloquean, "hold": marcas que además ocupan cupo}."""
+    rows = dict(db.query(FormSubmission.status, func.count()).filter(FormSubmission.form_id == form.id, FormSubmission.source.in_(MARK_SOURCES),
+                                                                     FormSubmission.status.in_((PREREGISTERED, "confirmed"))).group_by(FormSubmission.status).all())
+    return {"block": int(rows.get(PREREGISTERED, 0)), "hold": int(rows.get("confirmed", 0))}
+
+
+def apply_list(db: Session, form: WebForm, values: list, kind: str, fid: str, ftype: str, replace: bool, hold: bool) -> dict:
+    """Carga/recarga la lista de «ya registrados» de ESTE formulario. `values` = cédulas (`kind='cedula'`, `fid` = campo de cédula) o valores del campo identificador (`kind='field'`).
+    `replace`: antes quita las marcas previas; si no, solo agrega. `hold`: las filas son inscripciones confirmadas (ocupan cupo, `form_reserve_slot` y `held_count` ya las cuentan);
+    si no, solo bloquean (estado `preregistered`, no ocupan cupo). Todo ocurre con la fila del formulario BLOQUEADA, así que ningún envío simultáneo ve la lista a medias ni vende
+    de más. Idempotente. Devuelve conteos: added, converted, existing, removed, skipped."""
+    db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
+    removed = clear_marks(db, form) if replace else 0
+    status, source = ("confirmed", "lista_cupo") if hold else (PREREGISTERED, "lista")
+    real_or_marked = (PREREGISTERED, "confirmed")
+    added = converted = existing = skipped = 0
+    seen = set()
+    if kind == "cedula":
+        have = {r[0]: r[1] for r in db.query(FormSubmission.person_id, FormSubmission.status).filter(
+            FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.person_id != None, FormSubmission.status.in_(real_or_marked))}  # noqa: E712,E711
+        to_convert = []
+        for raw in values:
+            pid = str(raw or "").strip().replace(".", "").replace(" ", "")
+            if not pid or pid in seen:
+                skipped += 1 if not pid else 0
+                continue
+            seen.add(pid)
+            if pid in have:
+                existing += 1
+                if hold and have[pid] == PREREGISTERED:
+                    to_convert.append(pid)
+                continue
+            db.add(FormSubmission(form_id=form.id, event_id=form.event_id, data_json=json.dumps({fid: pid}), is_test=False, person_id=pid, source=source, status=status, fed=True))
+            added += 1
+        for i in range(0, len(to_convert), 1000):
+            part = to_convert[i:i + 1000]
+            converted += db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == PREREGISTERED,  # noqa: E712
+                                                         FormSubmission.person_id.in_(part)).update({"status": "confirmed", "source": "lista_cupo"}, synchronize_session=False)
+    else:
+        cell = "CAST(data_json AS jsonb) ->> CAST(:fid AS text)"
+        have = {formlib.normalize_identifier(r[0], ftype) for r in db.execute(text(f"SELECT {cell} FROM form_submissions WHERE form_id = :f AND is_test = false AND status IN ('confirmed', 'preregistered')"),
+                                                                                {"f": form.id, "fid": fid})}
+        for raw in values:
+            norm = formlib.normalize_identifier(raw, ftype)
+            if not norm:
+                skipped += 1
+                continue
+            if norm in seen or norm in have:
+                existing += 1
+                continue
+            seen.add(norm)
+            db.add(FormSubmission(form_id=form.id, event_id=form.event_id, data_json=json.dumps({fid: str(raw).strip()}), is_test=False, person_id=None, source=source, status=status, fed=True))
+            added += 1
+    db.flush()
+    return {"added": added, "converted": converted, "existing": existing, "removed": removed, "skipped": skipped}
 
 
 def is_full(db: Session, form: WebForm, held: Optional[int] = None) -> bool:
