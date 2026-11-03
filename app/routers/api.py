@@ -5,6 +5,7 @@ from app.timeutil import utcnow
 import re
 import json
 from typing import List, Optional
+import contextlib
 import zipfile
 import tempfile
 import csv
@@ -2007,7 +2008,7 @@ def _bulk_register_impl(
                     progress(f"Procesando fotos ({photo_i} de {len(photo_entries)})", done_units, total_units)
                     done_units += bulk_jobs.PHOTO_WEIGHT
                     basename = os.path.basename(filename)
-                    with zip_ref.open(filename) as source:
+                    with contextlib.nullcontext():      # la lectura con tope va en safe_limits.read_entry (B3)
                         try:
                             img_array = BiometricEngine.process_image_stream(safe_limits.read_entry(zip_ref, filename))
                         except safe_limits.LimitError as exc:

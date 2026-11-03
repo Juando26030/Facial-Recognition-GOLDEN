@@ -89,10 +89,9 @@ def test_emails_ask_for_agrandir_first_and_a_safe_sans_serif_as_fallback():
 # ------------------------------------------------------------------------------------------------------------------------------------ scripts de terceros
 # Lo único que todavía se pide fuera: pantallas del PERSONAL (decisión del dueño: después del piloto) y el traductor de Google del formulario público (política v1.2).
 EXTERNAL_SCRIPTS_ALLOWED = {
-    "templates/kiosk_certificados.html": {"cdnjs.cloudflare.com"},          # JSZip
     "templates/kiosk_estadisticas.html": {"cdnjs.cloudflare.com"},          # Chart.js
     "templates/kiosk_formulario_editor.html": {"cdnjs.cloudflare.com"},     # Chart.js
-    "templates/kiosk_roster.html": {"cdnjs.cloudflare.com"},                # SheetJS y JSZip
+    "templates/kiosk_roster.html": {"cdnjs.cloudflare.com"},                # SheetJS (JSZip ya se aloja en static/vendor, 0C D9)
     "templates/form_public.html": {"translate.google.com"},                 # botón «Translate»
 }
 SCRIPT_URL = re.compile(r"""(?:<script[^>]+src=|\.src\s*=\s*)["'](https?://([^/"']+)[^"']*)["']""")

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import StaffUser, User
+from app import safe_limits
 from app.storage import get_storage, key_of
 
 router = APIRouter()
@@ -25,7 +26,6 @@ MAX_SIGNATURE_BYTES = 600_000
 def signature_key(tenant_id: str, event_id: int, user_id: str, field_key: str) -> str:
     return key_of(tenant_id, "signatures", event_id, f"{user_id}__{field_key}.png")
 
-, safe_limits
 def delete_signatures(tenant_id: str, event_id: int, user_id: str) -> None:
     for key in get_storage().list(key_of(tenant_id, "signatures", event_id)):
         if key.rsplit("/", 1)[-1].startswith(f"{user_id}__"):
