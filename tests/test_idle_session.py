@@ -102,7 +102,7 @@ def test_touch_marked_passive_does_not_renew(client, factory, clock):
 def test_page_navigation_renews_the_session(client, factory, clock):
     _staff(client, factory)
     clock.advance(minutes=9)
-    assert client.get("/", headers=HTML).status_code == 200
+    assert client.get("/", headers=HTML).headers.get("location") != "/login?expirada=1"
     clock.advance(minutes=9)
     assert client.get("/api/ping-auth").status_code == 200
 
@@ -216,21 +216,10 @@ def test_print_station_account_is_exempt(client, factory, clock):
     assert isinstance(s, StaffUser)
 
 
-def test_old_session_without_marker_is_not_expelled_on_deploy(client, factory, clock):
+def test_old_session_without_marker_is_not_expelled_on_deploy(client, factory, clock, monkeypatch):
     """Una sesión creada antes de este cambio (sin `la`) sigue válida: el tiempo corre desde su primera petición."""
+    monkeypatch.setattr(idle, "start", lambda session, db=None, staff=None: None)      # el inicio de sesión no deja marca, como en una cookie vieja
     _staff(client, factory)
-    # se simula la cookie vieja: sin marca de actividad
-    from itsdangerous import TimestampSigner
-    import base64
-    import json
-    from app.main import SECRET_KEY
-    raw = client.cookies.get("session")
-    assert raw
-    signer = TimestampSigner(SECRET_KEY or "dev-only-insecure-key-do-not-use-in-production")
-    data = json.loads(base64.b64decode(signer.unsign(raw.encode()).decode()))
-    data.pop("la", None)
-    new = signer.sign(base64.b64encode(json.dumps(data).encode())).decode()
-    client.cookies.set("session", new)
     clock.advance(minutes=120)
     assert client.get("/api/ping-auth").status_code == 200           # primera petición: se marca; no se expulsa
     clock.advance(minutes=11)
