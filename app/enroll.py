@@ -29,7 +29,7 @@ def status(db, tenant_id: str, user_id: str) -> str:
 
 @jobs.handler("face_enroll")
 def run_enroll(payload: dict) -> None:
-    tenant, uid, event_id = payload["tenant_id"], str(payload["user_id"]), int(payload["event_id"])
+    tenant, uid, event_id = payload["tenant_id"], jobs.payload_user_id(payload), int(payload["event_id"])
     from app import crypto
     with SessionLocal() as db:
         user = db.query(User).filter(User.id == uid, User.tenant_id == tenant).first()
@@ -55,5 +55,5 @@ def maybe_enqueue(db, tenant_id: str, user_id: str, event_id: int) -> bool:
     """Tras una aceptación: si la persona ya tiene una FOTO guardada (carga masiva o alta) pero aún no vector, se encola el cálculo (el vector nunca se calcula antes de aceptar). No hace commit."""
     if status(db, tenant_id, user_id) != "pending":
         return False
-    jobs.enqueue(db, "face_enroll", {"tenant_id": tenant_id, "user_id": str(user_id), "event_id": int(event_id)}, max_attempts=3)
+    jobs.enqueue(db, "face_enroll", {"tenant_id": tenant_id, "uref": jobs.person_ref(user_id), "event_id": int(event_id)}, max_attempts=3)
     return True

@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg2
@@ -96,5 +97,8 @@ def test_when_the_lock_frees_up_between_attempts_the_migration_completes_and_gra
     c.commit()
     assert _exists(k, "SELECT has_column_privilege('golden_app', 'access_logs', 'doubtful_reason', 'SELECT')")
     k.execute("SELECT version_num FROM alembic_version")
-    assert k.fetchone()[0] == "0077_event_status_changes"
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    head = ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))).get_current_head()
+    assert k.fetchone()[0] == head                                                                    # la base queda en la cabeza actual (no en una revisión fija: se agregan migraciones nuevas)
     c.close()

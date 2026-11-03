@@ -708,6 +708,16 @@ def _auto_partial_possible(p: FormPayment) -> bool:
     return _auto_refund_possible(p)
 
 
+def _review_reason(p: FormPayment, confirmed_people: set) -> str:
+    """C5: motivo visible de por qué un pago aprobado necesita revisión humana ('' si no). Pago aprobado sin inscripción: se conciliaba a mano; si la persona ya
+    quedó inscrita con otro pago es un posible doble cobro (reembolsar uno)."""
+    if p.status != "approved" or p.submission_id or (p.refunded_cents or 0):
+        return ""
+    if p.person_id and p.person_id in confirmed_people:
+        return "Posible doble cobro: la persona ya está inscrita con otro pago. Reembolsa este."
+    return "Aprobado sin inscripción: confirma con la persona o reembolsa."
+
+
 def _pay_label(p: FormPayment) -> str:
     if p.status == "pending" and p.created_at < utcnow() - formsvc.PENDING_HOLD:
         return "abandoned"      # pendiente y ya pasó el tiempo de espera: la persona no terminó de pagar
@@ -726,6 +736,7 @@ def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: 
         q = q.filter(FormPayment.is_test == False)  # noqa: E712
     rows = q.order_by(FormPayment.id.desc()).limit(2000).all()
     paid = [p for p in rows if p.status in ("approved", "refunded")]
+    confirmed_people = {r[0] for r in db.query(FormSubmission.person_id).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed", FormSubmission.person_id != None).all()}  # noqa: E711
     refunds = {}
     for r in db.query(FormRefund).filter(FormRefund.payment_id.in_([p.id for p in rows] or [0])).order_by(FormRefund.id):
         refunds.setdefault(r.payment_id, []).append(r)
@@ -736,6 +747,7 @@ def list_payments(event_id: int, form_id: int, include_tests: bool = False, db: 
         "refunded_cop": sum(p.refunded_cents or 0 for p in paid) // 100,
         "rows": [{"id": p.id, "reference": p.reference, "amount": p.amount_cents // 100, "status": _pay_label(p), "method": p.payment_method or "", "transaction_id": p.transaction_id or "",
                   "person_id": p.person_id or "", "is_test": p.is_test, "submission_id": p.submission_id, "orphan": p.status in ("approved", "refunded") and not p.submission_id and not (p.refunded_cents or 0),
+                  "review": _review_reason(p, confirmed_people),
                   "fee": _fee_cop(p) if p.status in ("approved", "refunded") else 0,
                   "net": _net_cop(p) if p.status in ("approved", "refunded") else 0,
                   "refunded": (p.refunded_cents or 0) // 100, "remaining": (p.amount_cents - (p.refunded_cents or 0)) // 100 if p.status == "approved" else 0,

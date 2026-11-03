@@ -63,7 +63,11 @@ secrets_flag() {   # $1 = lista «nombre:VARIABLE[*]»; los de * son obligatorio
   done
   echo "${out%,}"
 }
-APP_SECRET_FLAGS="$(secrets_flag "$APP_SECRETS")"
+APP_SECRET_FLAGS="$(secrets_flag "$APP_SECRETS")"          # Job de carga masiva (siempre completo) y, sin SPLIT_SERVICE_ACCOUNTS, los 3 servicios
+if [ "$SPLIT_SERVICE_ACCOUNTS" = 1 ]; then               # E8: cada servicio con SU cuenta y SOLO sus secretos (config.sh: service_sa / service_secrets)
+  for short in web publico biometria; do declare "SECRET_FLAGS_${short}=$(secrets_flag "$(service_secrets "$short")")"; done
+  echo "Cuentas por servicio: web=$(service_sa web) publico=$(service_sa publico) biometria=$(service_sa biometria) (carga masiva: $SA_APP)"
+fi
 OPS_SECRET_FLAGS="$(secrets_flag "$APP_SECRETS neon-project-id:NEON_PROJECT_ID neon-endpoint-id:NEON_ENDPOINT_ID $OPS_SECRETS")"
 MIGRATE_SECRET_FLAGS="$(secrets_flag "direct-database-url:DIRECT_DATABASE_URL*")"
 MIGRATE_SECRET_FLAGS="${MIGRATE_SECRET_FLAGS:+${MIGRATE_SECRET_FLAGS},DATABASE_URL=$(secret_name direct-database-url):latest}"
@@ -113,8 +117,10 @@ if [ "$PLACEHOLDER" = 0 ]; then
 fi
 
 # ---------------------------------------------------------------- 2) servicios (misma imagen, APP_MODULE distinto)
-deploy_service() {   # nombre, módulo, cpu, memoria, concurrencia, máx. instancias, procesos, [extra KEY=val...]
-  local svc="$1" module="$2" cpu="$3" mem="$4" conc="$5" max="$6" workers="$7"; shift 7
+deploy_service() {   # nombre corto (web|publico|biometria), nombre, módulo, cpu, memoria, concurrencia, máx. instancias, procesos, [extra KEY=val...]
+  local short="$1" svc="$2" module="$3" cpu="$4" mem="$5" conc="$6" max="$7" workers="$8"; shift 8
+  local flags_var="SECRET_FLAGS_${short}" secret_flags="$APP_SECRET_FLAGS"
+  [ "$SPLIT_SERVICE_ACCOUNTS" != 1 ] || secret_flags="${!flags_var}"
   say "Servicio $svc"
   env_file "$TMP/$svc.yaml" "APP_MODULE=$module" "WEB_CONCURRENCY=$workers" "$@"
   local probes=()
@@ -126,16 +132,16 @@ deploy_service() {   # nombre, módulo, cpu, memoria, concurrencia, máx. instan
   fi
   local public=()
   [ "$PLACEHOLDER" = 1 ] && public=(--allow-unauthenticated)     # solo al crearlo (bootstrap); después la política no se toca
-  gcloud run deploy "$svc" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$SA_APP")" "${public[@]}" \
+  gcloud run deploy "$svc" --image "$IMAGE" --region "$REGION" --service-account "$(sa_email "$(service_sa "$short")")" "${public[@]}" \
     --cpu "$cpu" --memory "$mem" --concurrency "$conc" --max-instances "$max" --timeout 60 --cpu-boost --execution-environment gen2 \
-    --env-vars-file "$TMP/$svc.yaml" ${APP_SECRET_FLAGS:+--set-secrets "$APP_SECRET_FLAGS"} "${probes[@]}" --quiet
+    --env-vars-file "$TMP/$svc.yaml" ${secret_flags:+--set-secrets "$secret_flags"} "${probes[@]}" --quiet
 }
 # `web` (estaciones de cédula): límite alto con jitter grande para que los reciclajes de los procesos no coincidan bajo carga uniforme. Biometría: sin tocar (se mide en una prueba larga).
-deploy_service "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=20000 GUNICORN_MAX_REQUESTS_JITTER=10000
+deploy_service web       "$SVC_WEB"       "$WEB_MODULE"                 1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=20000 GUNICORN_MAX_REQUESTS_JITTER=10000
 # GUNICORN_MAX_REQUESTS=0 SOLO aquí (corrida 9: con el límite por defecto los 20 procesos de las 10 instancias se reciclaron casi a la vez en pleno pico y cortaron conexiones). El público no lleva
 # dlib; `web` y `biometria` conservan el reciclaje. Por ir aquí (y no en common.yaml, que es de los tres servicios) sobrevive a cada despliegue de CI. Vigilar la memoria: docs/15.
-deploy_service "$SVC_PUBLICO"   app.entrypoints.publico:app   1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=0
-deploy_service "$SVC_BIOMETRIA" app.entrypoints.biometria:app 2 2Gi 2  10 1 FACE_PROCESSES=2
+deploy_service publico   "$SVC_PUBLICO"   app.entrypoints.publico:app   1 1Gi 40 10 2 GUNICORN_MAX_REQUESTS=0
+deploy_service biometria "$SVC_BIOMETRIA" app.entrypoints.biometria:app 2 2Gi 2  10 1 FACE_PROCESSES=2
 
 # ---------------------------------------------------------------- 3) Jobs de carga masiva y de operaciones
 say "Job de carga masiva ($JOB_BULK)"

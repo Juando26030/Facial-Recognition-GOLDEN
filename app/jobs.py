@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import Job
+from app.obs import mask_pii
 
 log = logging.getLogger("golden.jobs")
 
@@ -45,6 +46,52 @@ GENERAL_KINDS = frozenset({"accept_mail", "consent_receipt", "form_feed", "payme
 HANDLER_MODULES = {"accept_mail": "app.acceptmail", "consent_receipt": "app.consent_receipt", "form_feed": "app.formsvc",
                    "payments_reconcile": "app.reconcile", "face_enroll": "app.enroll"}
 _wake = threading.Event()
+
+
+# ------------------------------------------------------------------ E2: nada de cédulas en claro en la cola
+# El id de una persona ES su cédula: la cola no la guarda en claro. `person_ref` la sella con una llave derivada de SECRET_KEY (Fernet: solo este sistema la lee) y `payload_user_id` la
+# recupera dentro del manejador. Los trabajos viejos (con `user_id` en claro, encolados antes de este cambio) se siguen entendiendo. Al terminar bien, el trabajo pierde esa referencia
+# (`scrub_payload`); la supresión total de una persona borra los que queden (`app.privacy.erase_person`).
+_REF_PREFIX = "jr1:"
+PERSON_KEYS = ("user_id", "uref")
+
+
+def _ref_fernet():
+    import base64
+    import hashlib
+
+    from cryptography.fernet import Fernet
+    from app.secretkey import secret_key
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(("jobs-person-ref|" + secret_key()).encode()).digest()))
+
+
+def person_ref(user_id) -> str:
+    """Referencia opaca (no la cédula) para guardar en el `payload_json` de un trabajo."""
+    return _REF_PREFIX + _ref_fernet().encrypt(str(user_id).encode()).decode()
+
+
+def payload_user_id(payload: dict) -> str:
+    """La cédula del trabajo: de la referencia sellada (`uref`) o, en trabajos viejos, del `user_id` en claro."""
+    ref = payload.get("uref")
+    if ref:
+        from cryptography.fernet import InvalidToken
+        try:
+            return _ref_fernet().decrypt(str(ref)[len(_REF_PREFIX):].encode()).decode()
+        except InvalidToken:
+            raise ValueError("la referencia de persona del trabajo no se pudo leer (¿cambió SECRET_KEY?)") from None
+    return str(payload["user_id"])
+
+
+def scrub_payload(raw: str) -> str:
+    """El mismo JSON sin la persona (para trabajos terminados: ya no hace falta y no debe quedar la cédula)."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return "{}"
+    if isinstance(data, dict):
+        for k in PERSON_KEYS:
+            data.pop(k, None)
+    return json.dumps(data)
 
 
 def handler(kind: str):
@@ -138,8 +185,11 @@ def _finish(job_id: int, error: Optional[str], attempts: int, max_attempts: int)
             return
         now = utcnow()
         job.locked_until = None
+        if error is not None:
+            error = mask_pii(error)          # E3: el mensaje de una excepción puede traer una cédula, un correo o un token; nunca se guarda sin enmascarar
         if error is None:
             job.status, job.finished_at, job.last_error = "done", now, None
+            job.payload_json = scrub_payload(job.payload_json)      # E2: terminado, ya no necesita a la persona
         elif attempts >= max_attempts:
             job.status, job.finished_at, job.last_error = "failed", now, error[:2000]
         else:

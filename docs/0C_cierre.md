@@ -20,5 +20,8 @@ Lote 2 (miércoles 4-nov a viernes 6-nov): C7 bloqueo de login por (usuario, IP)
 1. Subir `setuptools` ≥ 82 rompió el arranque (`pkg_resources`); lo detectó staging, no producción. Pin 69.5.1 con comentario. Pendiente: prueba de CI que importe el motor facial.
 2. `ENFORCE_STAFF_TENANT` queda en 0 (hoy un solo tenant); encenderlo en staging con datos de dos tenants es requisito antes del SaaS.
 
+## Lote 2, grupo B (rama `fix/0c-lote2-b`, en revisión)
+C5 pago aprobado sin inscripción · E2/E3 cola sin cédulas ni errores sin enmascarar (migración `0078_jobs_sin_cedulas`, solo datos) · E4 directorio enmascarado para `cliente` · E8 cuentas por servicio (apagado por defecto, pasos en [`20_CUENTAS_POR_SERVICIO.md`](20_CUENTAS_POR_SERVICIO.md)) · A2 `PATCH /users` con lista blanca · A6/A7 alcance por pertenencia al evento (`ENFORCE_STAFF_EVENT_SCOPE`, apagado por defecto; encenderlo en staging antes del SaaS) · E-N1 revocación por evento. Pruebas: `tests/test_seguridad_0c_lote2_b.py`.
+
 ## Para producción
 Todo lo anterior está en `main` pero **no desplegado a producción**. Entrega con la receta habitual (copia de Neon, workflow manual, verificación y punto de retorno) solo con la autorización escrita de Juan David.

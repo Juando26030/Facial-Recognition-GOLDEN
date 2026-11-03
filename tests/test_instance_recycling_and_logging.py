@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # ------------------------------------------------------------------ 1) GUNICORN_MAX_REQUESTS=0 solo en el público; sobrevive al CI
 def test_max_requests_zero_is_set_only_on_the_public_service_in_deploy_sh():
     deploy = (ROOT / "deploy" / "gcp" / "deploy.sh").read_text(encoding="utf8")
-    lines = [ln for ln in deploy.splitlines() if ln.startswith("deploy_service \"$SVC_")]
+    lines = [ln for ln in deploy.splitlines() if re.match(r'deploy_service (web|publico|biometria)\s+"\$SVC_', ln)]
     by_service = {re.search(r"SVC_(\w+)", ln).group(1): ln for ln in lines}
     assert set(by_service) == {"WEB", "PUBLICO", "BIOMETRIA"}
     assert "GUNICORN_MAX_REQUESTS=0" in by_service["PUBLICO"]

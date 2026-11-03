@@ -39,6 +39,16 @@ SA_OPS="golden-ops${SUFFIX}"          # Jobs de operaciones y de migraciones (du
 SA_INVOKER="golden-invoker${SUFFIX}"  # identidad de Cloud Tasks y Cloud Scheduler al llamar
 SA_DEPLOYER="golden-deployer${SUFFIX}" # GitHub Actions (Workload Identity Federation, sin llaves)
 sa_email() { echo "$1@${PROJECT_ID}.iam.gserviceaccount.com"; }
+# E8 (0C): cuenta de servicio POR SERVICIO. Hoy los 3 servicios corren con SA_APP y comparten TODOS sus secretos; con SPLIT_SERVICE_ACCOUNTS=1 cada uno usa la suya y solo lee lo que necesita
+# (qué secretos, abajo). Por defecto 0: nada cambia para quien no lo enciende. Es una decisión en DOS pasos y de Juan David (docs/20_CUENTAS_POR_SERVICIO.md): 1) `SPLIT_SERVICE_ACCOUNTS=1 bash deploy/gcp/bootstrap.sh <entorno>`
+# crea las cuentas y sus permisos (los servicios siguen con SA_APP hasta el paso 2); 2) un despliegue con `SPLIT_SERVICE_ACCOUNTS=1` (variable del repositorio en GitHub Actions) pasa cada servicio a su cuenta.
+# SA_APP queda para el Job de carga masiva (necesita fotos, base y llave de rostros). Los nombres llevan «svc» para no chocar con los de los servicios (≤ 30 caracteres).
+SPLIT_SERVICE_ACCOUNTS="${SPLIT_SERVICE_ACCOUNTS:-0}"
+SA_SVC_WEB="golden-svc-web${SUFFIX}"; SA_SVC_PUBLICO="golden-svc-publico${SUFFIX}"; SA_SVC_BIOMETRIA="golden-svc-biometria${SUFFIX}"
+service_sa() {   # nombre corto del servicio (web|publico|biometria) -> cuenta que lo ejecuta
+  if [ "$SPLIT_SERVICE_ACCOUNTS" != 1 ]; then echo "$SA_APP"; return; fi
+  case "$1" in web) echo "$SA_SVC_WEB";; publico) echo "$SA_SVC_PUBLICO";; biometria) echo "$SA_SVC_BIOMETRIA";; *) echo "$SA_APP";; esac
+}
 
 # Cloud Run
 SVC_WEB="golden-web${SUFFIX}"; SVC_PUBLICO="golden-publico${SUFFIX}"; SVC_BIOMETRIA="golden-biometria${SUFFIX}"
@@ -103,5 +113,18 @@ wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET 
 wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET
 wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET wompi-sandbox-private-key:WOMPI_SANDBOX_PRIVATE_KEY
 azure-tenant-id:AZURE_TENANT_ID azure-client-id:AZURE_CLIENT_ID azure-client-secret:AZURE_CLIENT_SECRET graph-sender:GRAPH_SENDER"
+# E8: secretos por servicio (solo cuentan con SPLIT_SERVICE_ACCOUNTS=1; sin él cada servicio recibe APP_SECRETS completo, como hasta hoy). `web` (panel, cobros y reembolsos, correos) los lleva todos.
+# `publico` (abierto a internet: formularios, pagos, aceptación, escarapela digital) NO lleva las credenciales de correo de Microsoft ni la llave PRIVADA de Wompi (reembolsos): solo base, claves de la app,
+# ops-token y las claves públicas/de firma de eventos de Wompi. `biometria` NO lleva Microsoft ni nada de Wompi (el correo y los pagos salen por la cola general, que ejecuta `web`).
+# Los 4 primeros (database-url, secret-key, face-encryption-key, ops-token) se dejan en los tres por prudencia (la app los lee en el arranque y en /api/ops). Si un servicio pierde un secreto que SÍ usa, falla en staging al desplegar: por eso el interruptor se prueba allí primero.
+SECRETS_WEB="$APP_SECRETS"
+SECRETS_PUBLICO="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*
+wompi-public-key:WOMPI_PUBLIC_KEY wompi-integrity-secret:WOMPI_INTEGRITY_SECRET wompi-events-secret:WOMPI_EVENTS_SECRET
+wompi-sandbox-public-key:WOMPI_SANDBOX_PUBLIC_KEY wompi-sandbox-integrity-secret:WOMPI_SANDBOX_INTEGRITY_SECRET wompi-sandbox-events-secret:WOMPI_SANDBOX_EVENTS_SECRET"
+SECRETS_BIOMETRIA="database-url:DATABASE_URL* secret-key:SECRET_KEY* face-encryption-key:FACE_ENCRYPTION_KEY* ops-token:OPS_TOKEN*"
+service_secrets() {   # nombre corto del servicio -> lista «nombre:VARIABLE[*]» que recibe
+  if [ "$SPLIT_SERVICE_ACCOUNTS" != 1 ]; then echo "$APP_SECRETS"; return; fi
+  case "$1" in publico) echo "$SECRETS_PUBLICO";; biometria) echo "$SECRETS_BIOMETRIA";; *) echo "$SECRETS_WEB";; esac
+}
 # El Job de operaciones también manda correos (avisos) y lee lo de la app que necesita la purga (llave de rostros).
 OPS_SECRETS="direct-database-url:DIRECT_DATABASE_URL* neon-api-key:NEON_API_KEY alert-email:ALERT_EMAIL"

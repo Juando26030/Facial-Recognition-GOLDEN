@@ -7,6 +7,7 @@ confirma —por webhook o, como respaldo, consultando la transacción— se conf
 invitación usada, carga a la base). Si el pago se rechaza o se abandona, esa persona no queda inscrita. Aprobado es
 terminal; un rechazo puede pasar a aprobado (Wompi deja reintentar con la misma referencia)."""
 import json
+import logging
 from datetime import datetime
 from types import SimpleNamespace
 from app.timeutil import utcnow
@@ -22,6 +23,7 @@ from app.models import FormPayment, FormSubmission, WebForm
 from app.routers import forms_public as fp
 
 router = APIRouter()
+log = logging.getLogger("golden.form_payments")
 _STATUS = {"APPROVED": "approved", "DECLINED": "declined", "ERROR": "error", "VOIDED": "voided", "PENDING": "pending"}
 
 
@@ -34,6 +36,12 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
         from app.routers.form_refunds import complete_external_void
         complete_external_void(db, pay)
         return pay
+    if pay and pay.status == "approved" and new == "approved":
+        # C5: webhook repetido o conciliación sobre un pago ya aprobado cuya inscripción quedó en espera: se completa (idempotente).
+        sub = db.query(FormSubmission).filter(FormSubmission.id == pay.submission_id).with_for_update().first() if pay.submission_id else None
+        if sub and sub.status == formsvc.PENDING:
+            formsvc.finalize_submission(db, db.query(WebForm).filter(WebForm.id == pay.form_id).first(), sub)
+            return pay
     if not pay or not new or pay.status in ("approved", "refunded"):
         db.rollback()
         return pay
@@ -48,8 +56,10 @@ def apply_result(db: Session, pay_id: int, wompi_status: str, transaction_id: Op
         if sub and sub.status == formsvc.PENDING:
             formsvc.finalize_submission(db, db.query(WebForm).filter(WebForm.id == pay.form_id).first(), sub)   # confirma y hace commit
             return pay
-        # Aprobado pero sin inscripción pendiente (se purgó por abandono antes de que llegara): queda a la vista en la
-        # lista de pagos como «sin inscripción» para conciliarlo a mano.
+        # Aprobado pero sin inscripción pendiente (la persona reintentó y se descartó el intento, o se borró): nunca se pierde. Queda a la vista en la
+        # lista de pagos como «sin inscripción» (con el motivo de la revisión) y se anota en «Estado del sistema» para conciliarlo a mano.
+        log.warning("pago %s aprobado sin inscripción pendiente: queda marcado para revisión", pay.id)
+        ops.record_system_event("payment_without_submission", str(pay.reference)[:80], "aprobado sin inscripción: revisar en la lista de pagos")
     db.commit()
     return pay
 

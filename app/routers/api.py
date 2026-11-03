@@ -425,9 +425,20 @@ def _directory_etag(db: Session, event_id: int, tenant_id: str, extra: str = "")
     return hashlib.md5(f"{tuple(att)}|{tuple(logs)}|{usr}|{extra}".encode()).hexdigest()[:20]
 
 
-def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None, only_ids: Optional[list] = None) -> list:
+def _masked_directory_id(tenant_id: str, user_id: str) -> str:
+    """E4: identificador de fila para el rol `cliente` (solo lectura): últimas 3 cifras + huella HMAC corta. Estable y único (el navegador lo usa para no repetir filas), pero no es la cédula."""
+    import hashlib
+    import hmac
+
+    from app.secretkey import secret_key
+    tag = hmac.new(secret_key().encode(), f"dir|{tenant_id}|{user_id}".encode(), hashlib.sha256).hexdigest()[:8]
+    return f"***{str(user_id)[-3:]}-{tag}"
+
+
+def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offset: int = 0, changed_since: Optional[tuple] = None, only_ids: Optional[list] = None, mask: bool = False) -> list:
     """Filas del directorio (roster precargado + quien se presento). Un asistente no reconocido como registrado queda «No registrado»; «Actualizado» es una
-    edicion de perfil, no una acreditacion (ver update_user). Sin `face_encoding` (columna diferida): no se descifra nada."""
+    edicion de perfil, no una acreditacion (ver update_user). Sin `face_encoding` (columna diferida): no se descifra nada.
+    `mask=True` (rol `cliente`, E4): sin cédula completa, correo, teléfono, fecha de nacimiento, contacto digital ni campos opcionales; solo nombre, entidad, categorías y estado."""
     event_id = event.id
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event_id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event_id)
@@ -459,6 +470,13 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
         att = attendees.get(u.id)
         status = "No registrado" if not real else ("Nuevo" if new else "Registrado")
         origin = (att.origin if att is not None and att.origin else ("manual" if new else "desconocido"))      # B1: origen aparte del estado
+        if mask:
+            result.append({
+                "id": _masked_directory_id(event.tenant_id, u.id), "first_name": u.first_name, "last_name": u.last_name, "role": u.role, "entity": u.entity,
+                "phone": "", "email": "", "opt_1": u.opt_1, "opt_2": None, "status": status, "origin": origin, "birth_date": "", "extra_fields": {},
+                "categories": att.get_categories() if att else [], "certificate": bool(att.certificate) if att else False, "digital_contact": "", "digital_sent_at": None, "masked": True,
+            })
+            continue
         result.append({
             "id": u.id, "first_name": u.first_name, "last_name": u.last_name,
             "role": u.role, "entity": u.entity, "phone": u.phone,
@@ -488,11 +506,12 @@ def get_all_users(
     paginar (sin ellos devuelve todo, como siempre; con ellos, ordenado por cedula y con el total en `X-Total-Count`); (3) la respuesta va comprimida (gzip)."""
     event = get_event_for_staff(event_id, db, staff)
     headers = {"Cache-Control": "private, no-cache"}
-    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}")}"'
+    masked = staff.role == "cliente"          # E4: el cliente recibe otra versión del directorio: no comparte la huella (ni la caché del navegador) con el personal
+    etag = f'"{_directory_etag(db, event.id, event.tenant_id, f"{limit}:{offset}:{int(masked)}")}"'
     headers["ETag"] = etag
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
-    rows = _directory_rows(db, event, limit=limit, offset=max(0, offset))
+    rows = _directory_rows(db, event, limit=limit, offset=max(0, offset), mask=masked)
     if limit is not None:
         headers["X-Total-Count"] = str(_directory_total(db, event))
     return JSONResponse(rows, headers=headers)
@@ -518,7 +537,7 @@ def get_directory_changes(
         raise HTTPException(status_code=400, detail="Cursor invalido")
     last_log = db.query(func.coalesce(func.max(AccessLog.id), 0)).filter(AccessLog.event_id == event.id).scalar()
     last_att = db.query(func.coalesce(func.max(EventAttendee.id), 0)).filter(EventAttendee.event_id == event.id).scalar()
-    rows = _directory_rows(db, event, changed_since=(since_log, since_att))
+    rows = _directory_rows(db, event, changed_since=(since_log, since_att), mask=staff.role == "cliente")
     return {"cursor": f"{last_log}:{last_att}", "total": _directory_total(db, event), "users": rows}
 
 
@@ -1167,6 +1186,27 @@ def local_roster(
                          "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
 
 
+# A2 (0C): único conjunto de columnas de `User` que este endpoint escribe. Antes era `hasattr` + `setattr` sobre cualquier clave del cuerpo (asignación masiva): se podía tocar
+# `face_encoding`, `biometric_consent_at`, `is_biometric_enabled`, `face_captured_at`… Lo biométrico y la cédula tienen sus propios caminos; `birth_date`, `extra_fields`, `categories` y demás se tratan aparte.
+USER_EDITABLE_FIELDS = ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
+
+
+def _clean_user_fields(data: dict) -> dict:
+    """Solo las claves permitidas, con texto simple (o vacío). Lo demás se ignora; un valor que no sea texto/número/vacío es un error 400."""
+    out = {}
+    for key in USER_EDITABLE_FIELDS:
+        if key not in data:
+            continue
+        value = data[key]
+        if value is None:
+            out[key] = None
+        elif isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            out[key] = str(value)[:500]
+        else:
+            raise HTTPException(status_code=400, detail=f"El valor de «{key}» no es válido")
+    return out
+
+
 @router.patch("/users/{user_id}")
 def update_user(
     user_id: str, data: dict, event_id: int, request: Request, db: Session = Depends(get_db),
@@ -1218,9 +1258,8 @@ def update_user(
         # camino válido para cambiar la cédula es ese otro endpoint.
         data.pop("id", None)
         data.pop("tenant_id", None)
-        for key, value in data.items():
-            if hasattr(user, key):
-                setattr(user, key, value)
+        for key, value in _clean_user_fields(data).items():
+            setattr(user, key, value)
         if birth_change:
             was_minor = minors.is_minor(user.birth_date)
             db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id, kind="birth_date",

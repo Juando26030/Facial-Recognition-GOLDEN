@@ -9,3 +9,4 @@ ignore = ["F401"]        # los routers reexportan/importan por efecto lateral en
 
 [lint.per-file-ignores]
 "alembic/versions/0017_staff_phone_unique.py" = ["F841"]   # migración antigua ya aplicada en todos los entornos: no se edita
+"tests/test_seguridad_0c_lote2_b.py" = ["F811"]            # los fixtures (keys, _no_dns) se importan de test_form_payments

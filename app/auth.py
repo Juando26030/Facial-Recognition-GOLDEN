@@ -1,6 +1,7 @@
 import os
 import bcrypt
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app import event_rules, sessions
@@ -122,6 +123,39 @@ def assert_event_tenant(event: Event, staff: StaffUser) -> None:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
 
 
+def event_scope_enforced() -> bool:
+    """A6/A7 (0C): con ENFORCE_STAFF_EVENT_SCOPE=1, el coordinador y el comercial solo operan en los eventos a los que PERTENECEN (los coordina, son su comercial, lo crearon o tienen una autorización
+    explícita). Admin y super_admin siguen viendo todos (dentro de su tenant). Apagado por defecto: hoy los coordinadores de Golden operan en cualquier evento por diseño; se enciende (en staging primero,
+    con la asignación de coordinador/comercial al día) antes de abrir el SaaS."""
+    return os.getenv("ENFORCE_STAFF_EVENT_SCOPE", "0") == "1"
+
+
+def _scope_applies(staff: StaffUser) -> bool:
+    return event_scope_enforced() and staff.role not in ("digitador", "cliente") and not ({"admin", "super_admin"} & effective_roles(staff))
+
+
+def assert_event_scope(event: Event, staff: StaffUser, db: Session) -> None:
+    """Pertenencia al evento (A6/A7) para coordinador/comercial; ver `event_scope_enforced`. 404 (no 403) para no confirmar que el evento existe."""
+    if not _scope_applies(staff):
+        return
+    if staff.id in (event.coordinator_staff_id, event.commercial_staff_id, event.created_by_id):
+        return
+    if db.query(EventStaffAuthorization.id).filter_by(event_id=event.id, staff_user_id=staff.id).first():
+        return
+    raise HTTPException(status_code=404, detail="Evento no encontrado")
+
+
+def scope_events_query(query, staff: StaffUser):
+    """Listas de eventos: el mismo recorte que `assert_event_tenant` + `assert_event_scope`, aplicado a una consulta de `Event` (con ambos interruptores apagados no cambia nada)."""
+    if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None:
+        query = query.filter(Event.tenant_id == staff.tenant_id)
+    if _scope_applies(staff):
+        mine = [Event.coordinator_staff_id == staff.id, Event.commercial_staff_id == staff.id, Event.created_by_id == staff.id,
+                Event.id.in_(select(EventStaffAuthorization.event_id).where(EventStaffAuthorization.staff_user_id == staff.id))]
+        query = query.filter(or_(*mine))
+    return query
+
+
 def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     """Resuelve el evento y valida acceso. coordinador+ tiene alcance de tenant (acceso a
     cualquier evento); digitador/cliente necesitan una EventStaffAuthorization para ESE evento
@@ -130,6 +164,7 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
 
     if staff.role in ("digitador", "cliente"):
         authorized = db.query(EventStaffAuthorization).filter_by(
