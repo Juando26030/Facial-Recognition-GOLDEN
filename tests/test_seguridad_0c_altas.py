@@ -54,3 +54,21 @@ def test_consent_when_discards_future_and_ancient_dates():
     assert _when((now + timedelta(days=400)).isoformat()) is None
     assert _when((now - timedelta(days=30)).isoformat()) is None
     assert _when("no es fecha") is None
+
+
+def test_aceptar_open_path_cannot_set_birth_date_or_purge(client, factory, db):
+    """C1/C-N3: con solo la cédula (sin enlace) y sin fecha registrada, declarar «menor» no borra el rostro ni guarda la fecha."""
+    from app.models import User
+    from datetime import date
+    ev = factory.event("en_proceso", facial_enabled=True, aceptar_enabled=True)
+    factory.person(ev, "9001", "Ana", "Mora")
+    code = getattr(ev, "accept_code", None) or getattr(ev, "aceptar_code", None)
+    if not code:
+        import pytest
+        pytest.skip("el evento de prueba no expone código de aceptación")
+    u = db.query(User).filter_by(id="9001", tenant_id=ev.tenant_id).first()
+    assert u.birth_date is None
+    fake = date.today().replace(year=date.today().year - 5).isoformat()
+    client.post(f"/api/aceptar/{code}/check", data={"cedula": "9001", "birth_date": fake})
+    db.expire_all()
+    assert db.query(User).filter_by(id="9001", tenant_id=ev.tenant_id).first().birth_date is None
