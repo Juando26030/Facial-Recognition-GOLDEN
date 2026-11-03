@@ -36,7 +36,7 @@ def login_submit(
 ):
     ip = security.limit_ip(request)                 # None = IP de Google: solo cuenta el límite por usuario
     username = username.strip()
-    # Bloqueo temporal tras varios fallos (por usuario y por IP). Se aplica igual exista o no la cuenta,
+    # Bloqueo temporal tras varios fallos (0C-C7: por PAR usuario+IP, por IP y un tope global alto por usuario). Se aplica igual exista o no la cuenta,
     # y el mensaje no dice cuál de las dos cosas falló.
     wait = security.login_minutes_locked(db, username, ip)
     if wait:
@@ -51,7 +51,7 @@ def login_submit(
             request=request, name="login.html",
             context={"error": "Usuario o contraseña incorrectos"}, status_code=401,
         )
-    security.clear_events(db, "login_fail", username)
+    security.clear_events(db, "login_fail", username)       # el login correcto limpia TODOS los fallos del usuario (de cualquier IP)
     prev_sid = request.session.get("sid")
     busy = sessions.login_gate(db, request, staff, prev_sid)      # puesto de impresión en uso: se rechaza (sesión única / protegida; ver app/sessions.py)
     if busy:
@@ -131,7 +131,8 @@ def reset_submit(
     row = security.find_valid_reset_token(db, token)
     if not row:
         return _page(request, "invalid", status_code=410)
-    problem = security.password_problem(password) or (None if password == confirm else "Las contraseñas no coinciden")
+    staff_row = db.query(StaffUser).filter(StaffUser.id == row.staff_user_id).first()
+    problem = security.password_problem(password, staff_row.username if staff_row else None) or (None if password == confirm else "Las contraseñas no coinciden")
     if problem:
         return _page(request, "reset", error=problem, token=token, status_code=400)
     staff = db.query(StaffUser).filter(StaffUser.id == row.staff_user_id).first()
@@ -161,7 +162,7 @@ def change_submit(
     staff = db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
     if not staff or not verify_password(current, staff.password_hash):
         return _page(request, "change", error="La contraseña actual no es correcta", status_code=400)
-    problem = security.password_problem(password) or (None if password == confirm else "Las contraseñas no coinciden")
+    problem = security.password_problem(password, staff.username) or (None if password == confirm else "Las contraseñas no coinciden")
     if not problem and verify_password(password, staff.password_hash):
         problem = "La contraseña nueva debe ser distinta a la actual"
     if problem:

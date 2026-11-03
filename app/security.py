@@ -20,8 +20,9 @@ from sqlalchemy.orm import Session
 
 from app.models import PasswordResetToken, RateLimitEvent
 
-LOGIN_MAX_FAILS = 5          # intentos fallidos por usuario dentro de la ventana
+LOGIN_MAX_FAILS = 5          # intentos fallidos por PAR (usuario, IP) dentro de la ventana
 LOGIN_MAX_FAILS_PER_IP = 20  # tope por IP (cubre a quien prueba muchos usuarios distintos)
+LOGIN_MAX_FAILS_PER_USER = 40  # tope global por usuario desde cualquier IP (fuerza bruta distribuida); muy alto para que un tercero no pueda dejar fuera al dueño
 LOGIN_WINDOW = timedelta(minutes=15)
 RESET_MAX_REQUESTS = 5       # solicitudes de "olvidé mi contraseña" por usuario / por IP en la ventana
 RESET_WINDOW = timedelta(hours=1)
@@ -191,8 +192,32 @@ def minutes_locked(db: Session, kind: str, key: Optional[str], ip: Optional[str]
     return max(1, math.ceil(max(locks).total_seconds() / 60))
 
 
-def login_minutes_locked(db: Session, username: str, ip: str) -> int:
-    return minutes_locked(db, "login_fail", username, ip, LOGIN_MAX_FAILS, LOGIN_MAX_FAILS_PER_IP, LOGIN_WINDOW)
+def _window_unlock(db: Session, kind: str, conds: list, limit: int, window: timedelta) -> Optional[timedelta]:
+    """Cuánto falta para que se libere el cubo definido por `conds` (None = no está lleno)."""
+    times = [r.created_at for r in db.query(RateLimitEvent.created_at).filter(
+        RateLimitEvent.kind == kind, RateLimitEvent.created_at > utcnow() - window, *conds,
+    ).order_by(RateLimitEvent.created_at.desc()).limit(limit)]
+    if len(times) < limit:
+        return None
+    return (times[-1] + window) - utcnow()
+
+
+def login_minutes_locked(db: Session, username: str, ip: Optional[str]) -> int:
+    """Minutos de bloqueo del login (0 = libre). 0C (C7): el bloqueo es por PAR (usuario, IP), así un atacante externo no deja fuera al dueño de la cuenta (p. ej. el
+    super_admin) desde otra IP. Tres cubos: el par (LOGIN_MAX_FAILS; si la IP es None —IP de Google, no confiable— el par es solo el usuario), la IP (LOGIN_MAX_FAILS_PER_IP: quien
+    prueba muchos usuarios) y un tope global por usuario MUCHO más alto (LOGIN_MAX_FAILS_PER_USER) contra la fuerza bruta repartida en muchas IPs."""
+    key = (username or "").lower()
+    locks = []
+    pair = [RateLimitEvent.key == key] + ([RateLimitEvent.ip == ip] if ip else [])
+    for conds, limit in ((pair, LOGIN_MAX_FAILS), ([RateLimitEvent.key == key], LOGIN_MAX_FAILS_PER_USER), ([RateLimitEvent.ip == ip] if ip else None, LOGIN_MAX_FAILS_PER_IP)):
+        if conds is None:
+            continue
+        left = _window_unlock(db, "login_fail", conds, limit, LOGIN_WINDOW)
+        if left is not None:
+            locks.append(left)
+    if not locks:
+        return 0
+    return max(1, math.ceil(max(locks).total_seconds() / 60))
 
 
 def enforce_public_limit(db: Session, request: Request, kind: str, key: str, max_hits: int, window: timedelta) -> None:
@@ -212,9 +237,29 @@ def _public_locked(db: Session, kind: str, key: str, ip: str, max_hits: int, win
     return hits >= max_hits
 
 
-def password_problem(password: str) -> Optional[str]:
-    if len(password or "") < MIN_PASSWORD_LENGTH:
-        return f"La contraseña debe tener al menos {MIN_PASSWORD_LENGTH} caracteres"
+MIN_PASSWORD_LENGTH_CREATED = 10   # 0C (C11): contraseñas que fija un administrador (alta de personal, restablecimiento): más largas y con letra y número
+COMMON_PASSWORDS = frozenset({
+    "password", "passw0rd", "contrasena", "contrasenia", "clave", "claves", "admin", "administrador", "administrator", "root", "qwerty", "qwertyuiop", "asdfgh", "abc", "abcdef", "letmein",
+    "welcome", "bienvenido", "bienvenida", "golden", "goldenweb", "goldeneventos", "goldenlogistica", "goldenlogisticas", "colombia", "bogota", "medellin", "usuario", "digitador", "coordinador",
+    "comercial", "cliente", "evento", "eventos", "cambiame", "cambiar", "iloveyou", "monkey", "dragon", "123456", "12345678", "123456789", "1234567890", "0123456789",
+})
+
+
+def password_problem(password: str, username: Optional[str] = None, strict: bool = False) -> Optional[str]:
+    """Política de contraseñas. Siempre: mínimo MIN_PASSWORD_LENGTH, distinta del usuario y fuera de una lista corta de contraseñas comunes (con o sin cifras/símbolos
+    alrededor). `strict=True` (0C-C11: la contraseña la fija un administrador al crear o restablecer una cuenta): mínimo MIN_PASSWORD_LENGTH_CREATED y al menos una letra y un número."""
+    password = password or ""
+    minimum = MIN_PASSWORD_LENGTH_CREATED if strict else MIN_PASSWORD_LENGTH
+    if len(password) < minimum:
+        return f"La contraseña debe tener al menos {minimum} caracteres"
+    if strict and not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        return "La contraseña debe tener al menos una letra y un número"
+    low = password.strip().lower()
+    if username and low == username.strip().lower():
+        return "La contraseña no puede ser igual al usuario"
+    letters = "".join(c for c in low if c.isalpha())
+    if low in COMMON_PASSWORDS or (letters in COMMON_PASSWORDS and len(letters) >= 4) or (low.strip("0123456789") == "" and len(set(low)) <= 2):
+        return "Esa contraseña es demasiado común: elige otra más difícil de adivinar"
     return None
 
 

@@ -20,6 +20,7 @@ load_dotenv()
 from app.database import SessionLocal  # noqa: E402
 from app.models import STAFF_ROLES, StaffUser  # noqa: E402
 from app.auth import hash_password  # noqa: E402
+from app.security import password_problem  # noqa: E402
 
 
 def main():
@@ -43,8 +44,9 @@ def main():
         if password != confirm:
             print("Las contraseñas no coinciden.")
             sys.exit(1)
-        if len(password) < 8:
-            print("La contraseña debe tener al menos 8 caracteres.")
+        problem = password_problem(password, args.username, strict=True)       # 0C (C11): misma política que el alta desde la app
+        if problem:
+            print(problem + ".")
             sys.exit(1)
 
         staff = StaffUser(

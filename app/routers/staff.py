@@ -114,6 +114,9 @@ def create_staff(
         raise HTTPException(status_code=403, detail="Solo el Super Admin puede crear cuentas Admin")
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ese usuario ya existe")
+    problem = security.password_problem(data.password, data.username, strict=True)         # 0C (C11)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
     # Sprint 2.4 Fase 4 (2026-09-16, pedido explícito): el teléfono es obligatorio y único para
     # todas las cuentas que se crean por acá (coordinador/comercial/admin) — digitador/cliente,
     # las dos excepciones, no pasan por este endpoint (ver create_event_staff en events.py).
@@ -239,7 +242,7 @@ def reset_staff_password(
     if target.role not in _manageable_roles(staff):
         raise HTTPException(status_code=403, detail=f"No puedes restablecer la contraseña de una cuenta '{target.role}'")
     new_password = str(data.get("new_password") or "")
-    problem = security.password_problem(new_password)
+    problem = security.password_problem(new_password, target.username, strict=True)         # 0C (C11): la fija un administrador
     if problem:
         raise HTTPException(status_code=400, detail=problem)
     target.password_hash = hash_password(new_password)
