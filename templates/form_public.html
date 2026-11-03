@@ -175,7 +175,7 @@ function showIdentify(st) {
     <input type="text" id="docid" inputmode="numeric" autocomplete="off" placeholder="Número de documento"><div class="msg" id="msg"></div><button id="go">${esc(idc.button || "Continuar")}</button>`);
   const go = async () => {
     const { res, data } = await api("/lookup", { id: document.getElementById("docid").value });
-    if (!res.ok) { document.getElementById("msg").textContent = data.detail || "No se pudo verificar"; return; }
+    if (!res.ok) { const m = document.getElementById("msg"); m.textContent = data.detail || "No se pudo verificar"; m.style.fontWeight = data.already ? "700" : ""; return; }
     token = data.token; load();
   };
   document.getElementById("go").addEventListener("click", go);
@@ -207,6 +207,23 @@ function showForm(st) {
   }
   if (st.capacity_left !== null && st.capacity_left !== undefined && st.capacity_left <= 10 && !st.is_test) {
     host.insertAdjacentHTML("afterbegin", `<p style="text-align:center; font-size:.85rem; color:#b26a00;">Quedan ${st.capacity_left} cupo(s)</p>`);
+  }
+  // «Ya inscrito»: al salir del campo identificador (cédula u otro elegido) se consulta; si ya está inscrito se avisa y el botón de envío queda apagado hasta que cambie el dato.
+  if (st.repeat_check && !st.is_test) {
+    const idInput = fr.form.querySelector(`[name="${st.repeat_check}"]`);
+    let lastChecked = "";
+    if (idInput) {
+      idInput.addEventListener("input", () => { if (fr.button.dataset.alreadyIn) { delete fr.button.dataset.alreadyIn; fr.button.disabled = false; fr.setErrors({}); } });
+      idInput.addEventListener("change", async () => {
+        const v = idInput.value.trim();
+        if (!v || v === lastChecked) return;
+        lastChecked = v;
+        try {
+          const { res, data } = await api("/check", { value: v, t: token });
+          if (res.ok && data.registered && idInput.value.trim() === v) { fr.button.dataset.alreadyIn = "1"; fr.button.disabled = true; fr.setErrors({ [st.repeat_check]: "Ya estás inscrito. No necesitas volver a inscribirte." }); }
+        } catch (err) { /* sin red: el envío lo vuelve a comprobar */ }
+      });
+    }
   }
   const msg = document.createElement("div"); msg.style.cssText = "text-align:center; font-size:.88rem; margin-top:10px;"; msg.setAttribute("aria-live", "polite"); fr.form.appendChild(msg);   // aria-live: los lectores de pantalla leen los avisos de espera
   const reset = (text, isErr) => { fr.button.disabled = false; msg.style.color = isErr ? "#c0392b" : "inherit"; msg.textContent = text || ""; quote(); if (!fr.hasPayment) fr.button.textContent = label; };

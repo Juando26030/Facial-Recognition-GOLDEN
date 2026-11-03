@@ -111,7 +111,7 @@ def _payload_form(db: Session, form: WebForm, claims: dict, held: Optional[int] 
             readonly = [fid for fid in prefill if design["fields"][fid].get("readonly_when_prefilled")]
     quota = formsvc.quota_public(db, form)
     db.commit()          # si hubo que recalcular las llaves de cupo (inscripciones anteriores), quedan guardadas
-    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
+    return {"design": formlib.public_design(design), "id_docs": formlib.id_docs_public(), "quota": quota, "refund": formsvc.get_settings(form)["refunds"], "prefill": prefill, "readonly": readonly, "repeat_check": (formsvc.repeat_target(formsvc.get_settings(form), design) or (None, None))[1], "badge_email_field": formsvc.badge_email_field(design) if formsvc.wants_digital_badge(db, form) else None, "capacity_left": None if form.capacity is None else max(0, form.capacity - (held if held is not None else formsvc.held_count(db, form)))}
 
 
 # ------------------------------------------------------------------ páginas y estado
@@ -279,7 +279,7 @@ def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session =
     """Autoservicio por cédula: si la persona está en la base elegida, se pre-llenan y bloquean sus datos; si no está, el
     formulario se llena de cero — salvo que la seguridad sea «la propia cédula», que exige estar en la base."""
     form = _load(db, event_id, slug)
-    _access(db, form, data.get("k"))
+    access = _access(db, form, data.get("k"))
     _limit(db, request, "form_lookup", form, 60)
     settings = formsvc.get_settings(form)
     claims = _read(data.get("t"), form)
@@ -293,10 +293,36 @@ def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session =
     sec = settings["security"]
     if sec["enabled"] and sec["type"] == "cedula" and not person:
         raise HTTPException(status_code=403, detail="Tu identificación no está autorizada para este formulario")
+    # «Ya inscrito»: con el ajuste activo (por cédula) no avanza quien ya está inscrito en ESTE formulario; quien vino marcado «registrado en formulario» en la carga de la base, siempre.
+    # Las pruebas nunca cuentan. El mensaje no dice nada más que «ya inscrito».
+    if access != "pruebas":
+        target = formsvc.repeat_target(settings, formsvc.get_design(form))
+        if formsvc.registered_person(db, form, pid, include_confirmed=bool(target and target[0] == "cedula")):
+            return JSONResponse({"detail": formsvc.ALREADY_MSG, "already": True, "duplicate": True}, status_code=409)
     new_claims = {**claims, "g": True, "id_ok": True, "typed_id": pid}
     if person:
         new_claims["p"] = pid
     return {"token": _issue(form, **new_claims), "found": bool(person)}
+
+
+@router.post("/f/{event_id}/{slug}/check")
+def check_registered(event_id: int, slug: str, data: dict, request: Request, db: Session = Depends(get_db)):
+    """Aviso temprano «Ya estás inscrito» mientras la persona escribe su identificador (cédula u otro campo elegido), sin esperar al envío. Solo responde {registered: bool}; el envío
+    vuelve a comprobarlo con el formulario bloqueado, así que esto es solo comodidad. Mismo límite por IP que `lookup`."""
+    form = _load(db, event_id, slug)
+    access = _access(db, form, data.get("k"))
+    _limit(db, request, "form_lookup", form, 60)
+    settings = formsvc.get_settings(form)
+    design = formsvc.get_design(form)
+    _check_stage(settings, _read(data.get("t"), form))
+    target = formsvc.repeat_target(settings, design)
+    value = str(data.get("value") or "")[:200]
+    if access == "pruebas" or not target or not value.strip():
+        return {"registered": False}
+    if target[0] == "cedula":
+        return {"registered": formsvc.registered_person(db, form, value.strip().replace(".", "").replace(" ", ""))}
+    f = design["fields"][target[1]]
+    return {"registered": formsvc.repeat_by_value(db, form, target[1], f.get("type"), f.get("key"), value)}
 
 
 @router.post("/f/{event_id}/{slug}/beacon")
@@ -569,7 +595,11 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     if full:
         return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
     if duplicate:
-        return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
+        return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
+    if not is_test and formsvc.repeat_blocked(db, form, settings, design, clean):          # identificador que no es la cédula (correo, teléfono…): adelanto SIN bloqueo; la autoridad es la de abajo
+        db.rollback()
+        return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
+    db.rollback()
 
     # ZONA DEL BLOQUEO: tope por proceso de envíos que esperan (o tienen) el `FOR UPDATE`. Rechazo al instante, sin tocar la base; el contador se libera SIEMPRE (finally).
     if not _enter_lock_zone():
@@ -628,8 +658,11 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             if reason == "quota":
                 return JSONResponse({"detail": f"El cupo «{res['label']}» ya se completó. Cambia tu elección o escribe a los organizadores.", "stage": "quota"}, status_code=409)
             if reason == "duplicate":
-                return JSONResponse({"detail": "Ya existe una inscripción con ese número de documento", "duplicate": True}, status_code=409)
+                return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
             return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
+        if not is_test and formsvc.repeat_blocked(db, form, settings, design, clean):
+            db.rollback()                      # con la fila del formulario BLOQUEADA (reserve_slot): dos envíos simultáneos con el mismo correo/teléfono no pasan los dos
+            return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
         if pay_field:                          # solo los formularios con pago tienen inscripciones en espera que purgar
             formsvc.purge_stale_pending(db, form)
         if code_row and formsvc.code_uses(db, code_row) >= code_row.max_uses:        # otra persona se llevo el ultimo uso mientras esta escribia

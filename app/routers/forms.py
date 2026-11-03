@@ -86,7 +86,8 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
     return {
         "id": form.id, "name": form.name, "slug": form.slug, "manual_status": form.manual_status, "use_schedule": form.use_schedule,
         "status": formsvc.status_of(form), "public_state": formsvc.public_state(db, form), "capacity": form.capacity,
-        "submissions": real, "test_submissions": tests, "created_at": to_local(form.created_at).strftime("%Y-%m-%d %H:%M"),
+        "submissions": real, "test_submissions": tests,
+        "preregistered": db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.status == formsvc.PREREGISTERED).count(),      # «Registrado en formulario» desde la carga de la base: bloquean, no ocupan cupo  # noqa: E712 "created_at": to_local(form.created_at).strftime("%Y-%m-%d %H:%M"),
         "feed": formsvc.get_settings(form)["feed"], **_urls(request, form),
     }
 
@@ -172,6 +173,9 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
             form.settings_json = json.dumps(formlib.sanitize_settings(data["settings"]))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if ("design" in data or "settings" in data) and formsvc.get_settings(form)["block_repeats"]["enabled"] and not formsvc.repeat_target(formsvc.get_settings(form), formsvc.get_design(form)):
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Para bloquear inscripciones repetidas elige el campo identificador (cédula, correo, teléfono u otro) o agrega un campo de cédula al formulario")
     if "design" in data or "settings" in data:
         formsvc.invalidate_quota_keys(db, form)          # los cupos por variables pudieron cambiar: las llaves guardadas se recalculan solas
     db.commit()

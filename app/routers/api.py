@@ -27,7 +27,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
+from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -2140,6 +2140,7 @@ def _bulk_register_impl(
         overwrite_birth = bool(state.get("overwrite_birth"))
     row_total = len(rows)
     row_offset = step_pos if resume else 0
+    form_registered_ids = []          # columna «Registrado en formulario» = sí: esas cédulas quedan como YA INSCRITAS en los formularios del evento (no ocupan cupo; ver formsvc.mark_preregistered)
 
     # --- Rendimiento (23-oct-2026): antes cada persona costaba 9 viajes a la base (≈120 ms con Neon a 12 ms por viaje). Ahora se consulta TODO lo que ya existe de una vez (supresiones,
     # personas, inscripciones del evento: una consulta por cada 2.000 cédulas) y las filas nuevas se escriben por lotes (un INSERT múltiple por tabla y lote). Las reglas por fila no cambian. ---
@@ -2324,6 +2325,8 @@ def _bulk_register_impl(
                                     _clean_categories(event, raw_categories, auto_add=True) if raw_categories else None,
                                     certificate=_truthy(raw_certificate) if raw_certificate else None,
                                 )
+                                if _truthy(clean_row.get('registrado en formulario') or ''):
+                                    form_registered_ids.append(identificador)
                                 if isolate:
                                     db.flush()
 
@@ -2351,6 +2354,13 @@ def _bulk_register_impl(
                 log.warning("carga masiva: un lote fue rechazado por la base; se repite fila por fila")
         phases.lap()
 
+    if form_registered_ids:
+        try:
+            with db.begin_nested():
+                formsvc.mark_preregistered(db, event, form_registered_ids)
+        except SQLAlchemyError:
+            log.warning("carga masiva: no se pudo marcar «registrado en formulario»", exc_info=True)
+            errors.append("⚠️ No se pudo marcar a las personas «Registrado en formulario»: vuelve a cargar el mismo archivo.")
     if resume and step_end < row_total:             # paso intermedio: se devuelve el avance; la persistencia y el commit los hace app/bulk_steps.py
         phases.emit(len(row_infos))
         return {"done": False, "state": {"pos": step_end, "errors": errors, "count": count, "birth_bad_rows": birth_bad_rows, "birth_kept_rows": birth_kept_rows,
