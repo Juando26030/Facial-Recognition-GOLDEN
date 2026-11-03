@@ -497,11 +497,12 @@ def feed_submission(db: Session, form: WebForm, sub: FormSubmission, upsert_atte
     if is_new:
         user = User(id=person_id, tenant_id=event.tenant_id)
         db.add(user)
-    # 0C (A4/C3/C-N2): quien llena el formulario público solo conoce una cédula; lo que ya está en la base (correo, teléfono, fecha de nacimiento) NO se sobrescribe desde ahí:
-    # solo se completan los vacíos. Así nadie redirige el enlace de aceptación a su propio correo ni vuelve «adulto» a un menor registrado.
+    # 0C (A4/C3/C-N2): quien llena el formulario público solo conoce una cédula; el correo, el teléfono y la fecha de nacimiento que ya están en la base NO se sobrescriben desde ahí:
+    # solo se completan los vacíos (el nombre, rol y entidad sí se actualizan, como siempre). Así nadie redirige el enlace de aceptación a su propio correo ni vuelve «adulto» a un menor registrado.
     for key, attr in (("first_name", "first_name"), ("last_name", "last_name"), ("role", "role"), ("entity", "entity"),
                       ("phone", "phone"), ("email", "email"), ("opt_1", "opt_1")):
-        if kv.get(key) and (is_new or not getattr(user, attr)):
+        protected = key in ("email", "phone")      # el correo recibe el enlace de aceptación y el teléfono las notificaciones: nunca se reemplazan desde un formulario público
+        if kv.get(key) and (is_new or not protected or not getattr(user, attr)):
             setattr(user, attr, str(kv[key]))
     birth = minors.parse_birth(kv.get("birth_date"))
     if birth is not None and (is_new or user.birth_date is None):     # menores (L3): menos de 18 años = sin biometría (la inscripción web nunca calcula vectores, pero la bandera y la fecha se guardan)

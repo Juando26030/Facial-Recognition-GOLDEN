@@ -89,6 +89,7 @@ def test_admin_cannot_change_email_of_peer_or_superior(client, factory):
 def test_staff_tenant_isolation_when_enforced(client, factory, monkeypatch):
     """H1/A9: con ENFORCE_STAFF_TENANT=1 un coordinador de un tenant no ve (404) ni edita eventos de otro; el personal global (tenant nulo) sí."""
     monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
+    factory.tenant("acme")
     factory.staff("coordinador", "coordA", tenant_id="acme")
     factory.staff("coordinador", "coordG")                      # global (tenant nulo)
     own = factory.event("en_proceso", tenant_id="acme")
@@ -103,6 +104,7 @@ def test_staff_tenant_isolation_when_enforced(client, factory, monkeypatch):
 
 
 def test_tenant_isolation_is_off_by_default(client, factory):
+    factory.tenant("acme")
     factory.staff("coordinador", "coordA", tenant_id="acme")
     other = factory.event("en_proceso", tenant_id="otra")
     assert login(client, "coordA").status_code == 302
