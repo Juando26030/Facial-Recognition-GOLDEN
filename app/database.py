@@ -4,7 +4,7 @@
                       `SET` de sesión, tablas temporales, LISTEN/NOTIFY ni advisory locks de sesión (los `SELECT ... FOR UPDATE` sí valen: viven
                       dentro de una transacción).
   DIRECT_DATABASE_URL solo para las migraciones de Alembic (conexión directa, sin pooler); si falta se usa DATABASE_URL (ver alembic/env.py).
-  DB_POOL_SIZE / DB_MAX_OVERFLOW / DB_POOL_TIMEOUT / DB_POOL_RECYCLE / DB_CONNECT_TIMEOUT / DB_CONNECT_RETRIES  tamaño del pool por proceso.
+  DB_POOL_SIZE / DB_MAX_OVERFLOW / DB_POOL_TIMEOUT / DB_POOL_RECYCLE / DB_CONNECT_TIMEOUT / DB_CONNECT_RETRIES (5)  tamaño del pool por proceso.
       Regla: PROCESOS x (DB_POOL_SIZE + DB_MAX_OVERFLOW) debe quedar por debajo del máximo de conexiones de la base."""
 import logging
 import os
@@ -27,7 +27,7 @@ if not SQLALCHEMY_DATABASE_URL:
     )
 
 CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))
-CONNECT_RETRIES = max(1, int(os.getenv("DB_CONNECT_RETRIES", "3")))
+CONNECT_RETRIES = max(1, int(os.getenv("DB_CONNECT_RETRIES", "5")))
 
 
 def _dsn() -> str:
@@ -44,7 +44,7 @@ def _connect():
             if attempt == CONNECT_RETRIES:
                 raise
             log.warning("no se pudo conectar a la base (intento %s/%s): %s", attempt, CONNECT_RETRIES, str(exc).splitlines()[0][:120])
-            time.sleep(0.5 * attempt)
+            time.sleep(0.5 * attempt)     # 5 intentos: 0,5+1+1,5+2 = 5 s de espera, suficiente para el arranque en frío de Neon (~1-5 s)
 
 
 engine = create_engine(

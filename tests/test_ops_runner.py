@@ -20,18 +20,81 @@ def test_plan_is_cold_when_nothing_is_happening(db):
     assert p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}
 
 
-def test_plan_warms_for_events_in_progress_and_form_openings(db, factory):
+def test_plan_in_progress_without_activity_stays_cold(db, factory):
     factory.event("en_proceso", facial_enabled=True)
+    p = warmup.plan(db)
+    assert (p["web"], p["publico"], p["biometria"]) == (0, 0, 0)
+    assert p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}
+
+
+def test_plan_warms_with_recent_activity_only(db, factory):
+    from datetime import timezone
+    from app.models import AccessLog
+    ev = factory.event("en_proceso", facial_enabled=True)
+    factory.person(ev)
+    old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=120)
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1001", record_type="Existente", event_id=ev.id, timestamp=old))
+    db.commit()
+    assert warmup.plan(db)["web"] == 0                                    # actividad vieja: frío
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1001", record_type="Existente", event_id=ev.id))
+    db.commit()
+    p = warmup.plan(db)
+    assert (p["web"], p["biometria"]) == (2, 1)
+    assert p["neon"] == {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}
+
+
+def test_note_activity_rate_limited(monkeypatch):
+    calls = []
+    monkeypatch.setenv("OPS_JOB_NAME", "j")
+    monkeypatch.setattr(warmup, "kick", lambda: calls.append(1))
+    monkeypatch.setattr(warmup, "_last_kick", 0.0)
+    warmup.note_activity()
+    warmup.note_activity()
+    import time as _t
+    _t.sleep(0.2)
+    assert calls == [1]
+
+
+def test_connect_retries_cover_neon_cold_start(monkeypatch):
+    import psycopg2
+    from app import database
+    attempts = []
+    sleeps = []
+
+    def fake_connect(dsn, connect_timeout=None):
+        attempts.append(1)
+        if len(attempts) < 5:
+            raise psycopg2.OperationalError("endpoint is starting")
+        return "conn"
+    monkeypatch.setattr(database.psycopg2, "connect", fake_connect)
+    monkeypatch.setattr(database.time, "sleep", lambda s: sleeps.append(s))
+    assert database.CONNECT_RETRIES >= 5
+    assert database._connect() == "conn" and sum(sleeps) >= 5
+
+
+def test_plan_form_openings_and_open_forms_do_not_warm(db, factory):
     ev = factory.event("creado")
     soon = datetime.now().replace(microsecond=0) + timedelta(minutes=30)
-    form = WebForm(event_id=ev.id, name="F", slug="f", manual_status="cerrado", use_schedule=True, design_json="{}", settings_json="{}", test_key="k",
-                   schedule_json=json.dumps([{"from": soon.isoformat(timespec="minutes"), "status": "activo"}]))
-    db.add(form)
+    db.add(WebForm(event_id=ev.id, name="F", slug="f", manual_status="cerrado", use_schedule=True, design_json="{}", settings_json="{}", test_key="k",
+                   schedule_json=json.dumps([{"from": soon.isoformat(timespec="minutes"), "status": "activo"}])))
+    db.add(WebForm(event_id=ev.id, name="G", slug="g", manual_status="activo", use_schedule=False, design_json="{}", settings_json="{}", test_key="k2"))
+    db.add(SystemEvent(kind="form_opened", ref="1"))
     db.commit()
     p = warmup.plan(db, now_local=soon - timedelta(minutes=30))
-    assert (p["web"], p["publico"], p["biometria"]) == (2, 2, 1)
-    assert p["neon"] == {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}
-    assert warmup.plan(db, now_local=soon + timedelta(hours=3))["publico"] == 0                # la apertura ya pasó hace rato
+    assert (p["web"], p["publico"], p["biometria"]) == (0, 0, 0)
+    assert p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}
+
+
+def test_plan_warms_with_recent_form_submissions(db, factory):
+    from app.models import FormSubmission
+    ev = factory.event("creado")
+    form = WebForm(event_id=ev.id, name="F", slug="f", manual_status="activo", use_schedule=False, design_json="{}", settings_json="{}", test_key="k")
+    db.add(form)
+    db.commit()
+    db.add(FormSubmission(form_id=form.id, event_id=ev.id, data_json="{}"))
+    db.commit()
+    p = warmup.plan(db)
+    assert p["publico"] == 2 and p["neon"] == {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}
 
 
 def test_opening_a_form_by_hand_warms_now_and_leaves_a_trace(client, factory, db, monkeypatch):
@@ -43,7 +106,7 @@ def test_opening_a_form_by_hand_warms_now_and_leaves_a_trace(client, factory, db
     f = _create(client, ev)
     assert _status(client, ev, f, manual_status="activo").status_code == 200
     assert kicks == [1] and db.query(SystemEvent).filter_by(kind="form_opened", ref=str(f["id"])).count() == 1
-    assert warmup.plan(db)["publico"] == 2
+    assert warmup.plan(db)["publico"] == 0                                                # abrir no calienta: solo la actividad real
     assert client.patch(f"/api/events/{ev.id}", json={"status": "en_proceso"}).status_code == 200
     assert kicks == [1, 1]                                                                  # evento a «en proceso»: también
 
