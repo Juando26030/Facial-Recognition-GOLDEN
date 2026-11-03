@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
+    <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
 </head>
 <body{% if not embed %} class="has-sidebar"{% endif %}>
@@ -38,11 +40,11 @@
 
     <div class="golden-badge-builder" style="margin-bottom: 2rem;">
       <div class="badge-form-title">Nueva cuenta</div>
-      <form id="newStaffForm">
+      <form id="newStaffForm" data-gw-pwcheck data-gw-strict="1">
         <div class="badge-input-row">
           <div class="badge-input-group">
             <label>Usuario</label>
-            <input type="text" name="username" required>
+            <input type="text" name="username" required data-gw-username-input autocapitalize="none">
           </div>
           <div class="badge-input-group">
             <label>Nombre completo</label>
@@ -52,7 +54,8 @@
         <div class="badge-input-row">
           <div class="badge-input-group">
             <label>Contraseña temporal</label>
-            <input type="text" name="password" required>
+            <input type="password" name="password" required autocomplete="new-password" data-gw-eye data-gw-new>
+            <div data-gw-rules></div>
           </div>
           <div class="badge-input-group">
             <label>Rol</label>
@@ -72,7 +75,7 @@
             <input type="email" name="email" placeholder="nombre@empresa.com">
           </div>
         </div>
-        <button type="submit" class="golden-btn golden-btn-primary">Crear cuenta</button>
+        <button type="submit" data-gw-submit class="golden-btn golden-btn-primary">Crear cuenta</button>
       </form>
     </div>
 
@@ -175,7 +178,7 @@ async function changeRole(id, username, current) {
 }
 
 async function resetPassword(id, username) {
-  const pwd = await showPrompt(`Contraseña temporal para "${username}" (mínimo 8 caracteres). Al ingresar, tendrá que elegir la suya:`, { confirmLabel: "Restablecer" });
+  const pwd = await showPrompt(`Contraseña temporal para "${username}" (mínimo 10 caracteres, con letras y números). Al ingresar, tendrá que elegir la suya:`, { confirmLabel: "Restablecer" });
   if (pwd === null) return;
   const res = await fetch(`/api/staff/${id}/password`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ new_password: pwd, must_change: true }) });
   const data = await res.json().catch(() => ({}));
@@ -197,7 +200,7 @@ document.getElementById("newStaffForm").addEventListener("submit", async (ev) =>
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
   });
   if (res.ok) { ev.target.reset(); loadStaff(); showToast("Cuenta creada", "success"); }
-  else { const err = await res.json(); showToast(err.detail || "No se pudo crear la cuenta", "error"); }
+  else { const err = await res.json(); showToast(typeof err.detail === "string" ? err.detail : "Revisa los datos: falta algún campo o no es válido", "error"); }
 });
 
 async function toggleStaff(id, activate) {

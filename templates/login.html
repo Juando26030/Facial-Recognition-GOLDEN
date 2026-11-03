@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ingresar | GoldenWeb 2.0</title>
     {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
+    <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
     <style>
         /* Solo la composición de esta pantalla; colores, tipografía y componentes salen de static/css/design-system.css */
         .login { min-height: 100vh; display: flex; flex-direction: column; }
@@ -59,7 +61,7 @@
                 </div>
                 <div class="gw-field">
                     <label class="gw-label" for="clave">Contraseña</label>
-                    <input class="gw-input" type="password" id="clave" name="password" required autocomplete="current-password">
+                    <input class="gw-input" type="password" id="clave" name="password" required autocomplete="current-password" data-gw-eye>
                 </div>
                 <button type="submit" class="gw-btn gw-btn--primary gw-btn--block">Ingresar</button>
             </form>

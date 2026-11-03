@@ -85,7 +85,14 @@ def logout(request: Request, db: Session = Depends(get_db)):
 
 def _page(request: Request, mode: str, error: str = None, message: str = None, token: str = None, status_code: int = 200):
     return templates.TemplateResponse(request=request, name="password.html", status_code=status_code,
-                                      context={"mode": mode, "error": error, "message": message, "token": token})
+                                      context={"mode": mode, "error": error, "message": message, "token": token, "policy": security.password_policy(strict=False),
+                                               "username": request.session.get("staff_username") if mode == "change" else None})
+
+
+@router.get("/api/password-policy")
+def password_policy(strict: int = 0):
+    """Requisitos de contraseña (misma lista que aplica el servidor). `strict=1`: contraseñas que fija un administrador (10+ caracteres, letra y número). Sin datos de nadie."""
+    return security.password_policy(strict=bool(strict))
 
 
 @router.get("/olvide-contrasena")
