@@ -792,6 +792,9 @@ quedar consumo en la región vieja. Lo que sí queda a propósito: secretos, cue
 - [x] 4. Runbook del día del cambio (VM apagada, monitores a `/health`, `golden-ops-hourly`, vuelta atrás): «D2.4» (tabla de costos por componente: pendiente)
 - [ ] 5. Revisión final de pruebas y ruff tras las corridas; luego Fase 3 (modo contingencia del kiosco) en otra rama
 
+### Precalentamiento por actividad (2026-11-03)
+`app/warmup.py plan()` calienta SOLO con actividad real en los últimos `NEON_WARM_ACTIVITY_MIN` (30) min: ingresos/registros/reconocimientos (`access_logs`, eventos en proceso) o envíos de formularios (`form_submissions`). No hay lógica de horarios: ni «en proceso», ni formularios abiertos, ni aperturas programadas o manuales (`WARM_LOOKAHEAD_MIN`/`WARM_AFTER_OPENING_MIN` ya no se usan) calientan. Caliente: Neon `suspend_timeout_seconds=-1`, `NEON_WARM_MIN_CU`, instancias mínimas (`web`/`publico`, y `biometria` si hay ingresos en un evento con facial). Sin actividad: Neon con su apagado por defecto (`0` = 5 min; en el plan Launch es fijo), `NEON_IDLE_MIN_CU` (0,25) y mínimos en 0. El primer `AccessLog`/`FormSubmission` insertado tras un periodo inactivo dispara `warmup.kick()` (listener `after_insert`, solo memoria + hilo aparte, máx. 1 vez cada `WARM_KICK_MIN_INTERVAL_MIN`=30 min por proceso; sin consultas nuevas); la evaluación periódica sigue siendo el Job horario golden-ops. Las consultas de la página pública no se registran (salen de caché sin base). `app/database.py`: `DB_CONNECT_RETRIES` sube a 5 (≈5 s de espera) para que el primer envío tras un apagado no falle. Limitación: el primer ingreso tras el apagado paga el arranque en frío de Neon (<1-5 s).
+
 ## Decisiones tomadas
 - `docs/13` se actualizó con la versión completa que Juan David pegó en el chat (§14-§17); no estaba en el disco.
 - Cupo atómico: la función replica `held_count` (confirmadas + pagos en espera dentro de 30 min) y `quota_counts`, igual que
@@ -855,3 +858,5 @@ El quiosco manda `took_ms`/`ui_flow` en el registro por cédula/QR, el alta, el 
 
 ### 3-nov-2026 — Estadísticas de formulario y acceso de cliente por formulario (migración 0080)
 `0080_form_client_users` (aditiva): tabla `form_client_users` (form_id, staff_user_id único, created_by_id, created_at, expires_at). El código anterior la ignora; bajarla la elimina. **Va ANTES que el código** (Job de migraciones primero). Permisos: los `ALTER DEFAULT PRIVILEGES` de `neon_app_role.py` la cubren. Página `/kiosk/{evento}/formularios/{formulario}/estadisticas`, botón «Acceso para cliente (solo estadísticas)» y pantalla `/mi-formulario`; ver `docs/21_ESTADISTICAS_FORMULARIO_Y_CLIENTE.md`. Producción: solo con autorización de Juan David.
+### 3-nov-2026 — Formularios: «Ya estás inscrito» y columna «Registrado en formulario» (sin migración)
+Ajuste `block_repeats` en `settings_json` del formulario (por cédula o por otro campo, atómico bajo el bloqueo del formulario) y estado `preregistered` en `form_submissions` para la columna opcional de la carga de la base (bloquea, no ocupa cupo). Detalle y pasos de prueba: `docs/20_FORM_YA_INSCRITO.md`.
