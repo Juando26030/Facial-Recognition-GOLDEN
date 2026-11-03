@@ -1,3 +1,4 @@
+import os
 import bcrypt
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -114,6 +115,13 @@ def _closed_detail(event: Event, prefix: str) -> str:
     return f"{prefix} {label}"
 
 
+def assert_event_tenant(event: Event, staff: StaffUser) -> None:
+    """Aislamiento por cliente (0C, H1/A9): con ENFORCE_STAFF_TENANT=1, un usuario del personal con `tenant_id` solo ve eventos de ese tenant (nulo = global, p. ej. Golden/super_admin).
+    Apagado por defecto: hoy todo el personal es de Golden; se enciende (en staging primero) antes de dar acceso a personal de otra empresa."""
+    if os.getenv("ENFORCE_STAFF_TENANT", "0") == "1" and staff.tenant_id is not None and event.tenant_id != staff.tenant_id:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+
+
 def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     """Resuelve el evento y valida acceso. coordinador+ tiene alcance de tenant (acceso a
     cualquier evento); digitador/cliente necesitan una EventStaffAuthorization para ESE evento
@@ -121,6 +129,7 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
 
     if staff.role in ("digitador", "cliente"):
         authorized = db.query(EventStaffAuthorization).filter_by(

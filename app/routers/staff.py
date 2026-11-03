@@ -145,8 +145,11 @@ def set_staff_email(
 ):
     """Completa/corrige el correo de una cuenta (las creadas antes de que existiera el campo no lo tienen)."""
     target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
-    if not target:
+    if not target or (staff.tenant_id is not None and target.tenant_id != staff.tenant_id):
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    # 0C (A1): el correo de una cuenta decide quién recibe el enlace de «olvidé mi contraseña»; cambiarlo equivale a tomar la cuenta. Solo sobre cuentas de rango INFERIOR (o la propia).
+    if target.id != staff.id and STAFF_ROLES.index(target.role) >= STAFF_ROLES.index(staff.role):
+        raise HTTPException(status_code=403, detail="No puedes cambiar el correo de una cuenta de tu mismo rango o superior")
     email = str(data.get("email") or "").strip()
     if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         raise HTTPException(status_code=400, detail="Correo con formato inválido")

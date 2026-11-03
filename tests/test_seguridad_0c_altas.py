@@ -72,3 +72,38 @@ def test_aceptar_open_path_cannot_set_birth_date_or_purge(client, factory, db):
     client.post(f"/api/aceptar/{code}/check", data={"cedula": "9001", "birth_date": fake})
     db.expire_all()
     assert db.query(User).filter_by(id="9001", tenant_id=ev.tenant_id).first().birth_date is None
+
+
+def test_admin_cannot_change_email_of_peer_or_superior(client, factory):
+    factory.staff("admin", "adm1")
+    peer = factory.staff("admin", "adm2")
+    low = factory.staff("coordinador", "coord9")
+    boss = factory.staff("super_admin", "root1")
+    assert login(client, "adm1").status_code == 302
+    for victim in (peer, boss):
+        r = client.patch(f"/api/staff/{victim.id}/email", json={"email": "atacante@example.com"})
+        assert r.status_code == 403, victim.role
+    assert client.patch(f"/api/staff/{low.id}/email", json={"email": "ok@example.com"}).status_code == 200
+
+
+def test_staff_tenant_isolation_when_enforced(client, factory, monkeypatch):
+    """H1/A9: con ENFORCE_STAFF_TENANT=1 un coordinador de un tenant no ve (404) ni edita eventos de otro; el personal global (tenant nulo) sí."""
+    monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")
+    factory.staff("coordinador", "coordA", tenant_id="acme")
+    factory.staff("coordinador", "coordG")                      # global (tenant nulo)
+    own = factory.event("en_proceso", tenant_id="acme")
+    other = factory.event("en_proceso", tenant_id="otra")
+    assert login(client, "coordA").status_code == 302
+    assert client.get(f"/api/events/{own.id}/consent-text").status_code != 404
+    assert client.get(f"/api/events/{other.id}/consent-text").status_code == 404
+    assert client.patch(f"/api/events/{other.id}", json={"notes": "x"}).status_code == 404
+    client.post("/logout")
+    assert login(client, "coordG").status_code == 302
+    assert client.get(f"/api/events/{other.id}/consent-text").status_code != 404
+
+
+def test_tenant_isolation_is_off_by_default(client, factory):
+    factory.staff("coordinador", "coordA", tenant_id="acme")
+    other = factory.event("en_proceso", tenant_id="otra")
+    assert login(client, "coordA").status_code == 302
+    assert client.get(f"/api/events/{other.id}/consent-text").status_code != 404
