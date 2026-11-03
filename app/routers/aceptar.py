@@ -63,6 +63,16 @@ LINK_DOC_NOT_FOUND = "No encontramos tu inscripción con ese documento. Acércat
 LINK_BLOCKED = "Demasiados intentos con este enlace. Espera unos 15 minutos o ingresa con tu cédula o QR en la acreditación."
 
 
+CEDULA_KIND, CEDULA_MAX_FAILS, CEDULA_WINDOW = "aceptar_cedula_fail", 5, timedelta(minutes=15)      # 0C (C8): fallos por cédula en el portal/QR, de cualquier IP
+CEDULA_BLOCKED = "Demasiados intentos con ese documento. Espera unos 15 minutos o acércate a la acreditación con tu cédula o QR."
+
+
+def _cedula_key(event: Event, cedula: str) -> Optional[str]:
+    """Clave del contador por cédula: huella de evento+documento (la cédula en claro nunca se guarda en `rate_limit_events` ni en logs)."""
+    uid = re.sub(r"[\s.]", "", cedula or "")
+    return hashlib.sha256(f"{event.tenant_id}|{event.id}|{uid}".encode()).hexdigest()[:32] if uid else None
+
+
 def _link_key(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:32]
 
@@ -82,11 +92,25 @@ def _verify(db: Session, event: Event, cedula: str, token: str, birth_raw: str):
       entonces se pide (NeedBirth) y se bloquea si es menor. Cédula equivocada = el mismo mensaje genérico; tras LINK_MAX_FAILS fallos en LINK_WINDOW el enlace se pausa
       (conteo en `rate_limit_events` con la huella del enlace, sin IP)."""
     if not token:
-        user, att, by_link = _resolve(db, event, cedula, token)
-        return user, att, by_link, _check_birth(user, birth_raw)
+        ckey = _cedula_key(event, cedula)
+        if ckey and security.minutes_locked(db, CEDULA_KIND, ckey, None, CEDULA_MAX_FAILS, 0, CEDULA_WINDOW):
+            raise HTTPException(status_code=429, detail=CEDULA_BLOCKED)
+        try:
+            user, att, by_link = _resolve(db, event, cedula, token)
+            birth = _check_birth(user, birth_raw)
+        except HTTPException as exc:
+            if exc.status_code == 404 and ckey:                      # cédula que no existe en el evento o fecha que no coincide: cuenta contra ESA cédula (venga de la IP que venga)
+                security.record_event(db, CEDULA_KIND, ckey, None)
+            raise
+        if ckey:
+            security.clear_events(db, CEDULA_KIND, ckey)
+        return user, att, by_link, birth
     if _link_failures(db, token) >= LINK_MAX_FAILS:
         raise HTTPException(status_code=429, detail=LINK_BLOCKED)
-    user, att, by_link = _resolve(db, event, "", token)
+    try:
+        user, att, by_link = _resolve(db, event, "", token)
+    except HTTPException:                                           # 0C (C4/C15): enlace inexistente y cédula equivocada responden IGUAL (no revela si el enlace existe)
+        raise HTTPException(status_code=404, detail=LINK_DOC_NOT_FOUND)
     if re.sub(r"[\s.]", "", cedula or "") != user.id:
         security.record_event(db, "aceptar_link_fail", _link_key(token), None)
         raise HTTPException(status_code=404, detail=LINK_DOC_NOT_FOUND)
