@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.models import StaffUser, User
+from app import safe_limits
 from app.storage import get_storage, key_of
 
 router = APIRouter()
@@ -24,7 +25,6 @@ MAX_SIGNATURE_BYTES = 600_000
 
 def signature_key(tenant_id: str, event_id: int, user_id: str, field_key: str) -> str:
     return key_of(tenant_id, "signatures", event_id, f"{user_id}__{field_key}.png")
-
 
 def delete_signatures(tenant_id: str, event_id: int, user_id: str) -> None:
     for key in get_storage().list(key_of(tenant_id, "signatures", event_id)):
@@ -63,6 +63,7 @@ def put_signature(
         blob = base64.b64decode(raw.split(",", 1)[1], validate=True)
         if len(blob) > MAX_SIGNATURE_BYTES:
             raise ValueError("demasiado grande")
+        safe_limits.check_image_dimensions(blob)
         img = Image.open(io.BytesIO(blob))
         img.verify()
     except Exception:

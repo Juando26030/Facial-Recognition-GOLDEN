@@ -459,6 +459,8 @@ def upload_email_image(event_id: int, request: Request, file: UploadFile = File(
         raise HTTPException(status_code=400, detail="La imagen pesa más de 3 MB")
     try:
         from PIL import Image
+        from app import safe_limits
+        safe_limits.check_image_dimensions(content)
         Image.open(io.BytesIO(content)).verify()
     except Exception:
         raise HTTPException(status_code=400, detail="Ese archivo no es una imagen válida")

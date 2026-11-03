@@ -8,7 +8,7 @@ import os
 import uuid
 import zipfile
 from datetime import datetime
-from app import heavy
+from app import heavy, safe_limits
 from app.timeutil import utcnow
 from decimal import Decimal, InvalidOperation
 
@@ -197,7 +197,10 @@ def add_expense(
         if not content or len(content) > MAX_FILE_BYTES:
             raise HTTPException(status_code=400, detail="La imagen está vacía o pesa más de 25 MB")
         try:
+            safe_limits.check_image_dimensions(content)
             Image.open(io.BytesIO(content)).verify()
+        except safe_limits.LimitError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.message)
         except Exception:
             raise HTTPException(status_code=400, detail="La evidencia no es una imagen válida")
         evidence_path = _store(event.tenant_id, "event_expenses", event.id, evidence_filename, content)

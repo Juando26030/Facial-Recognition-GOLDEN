@@ -27,7 +27,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import status_changes, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads
+from app import status_changes, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -1877,6 +1877,11 @@ def _bulk_register_impl(
     if blocked:
         raise HTTPException(status_code=400, detail=blocked)
 
+    if zip_bytes and not resume:            # B3 (0C): topes de entradas / tamaño descomprimido / razón de compresión, antes de abrir nada
+        try:
+            safe_limits.open_checked_zip(zip_bytes).close()
+        except safe_limits.LimitError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.message)
     if append_only and not resume:          # «solo agregar» (app/roster_append.py): solo por pasos, solo con el archivo de la base, sin fotos ni eventos de origen, sin crear campos
         if zip_bytes:
             raise HTTPException(status_code=400, detail=roster_append.ZIP_REJECTED)
@@ -2002,9 +2007,12 @@ def _bulk_register_impl(
                     progress(f"Procesando fotos ({photo_i} de {len(photo_entries)})", done_units, total_units)
                     done_units += bulk_jobs.PHOTO_WEIGHT
                     basename = os.path.basename(filename)
-                    with zip_ref.open(filename) as source:
+                    with contextlib.nullcontext():      # la lectura con tope va en safe_limits.read_entry (B3)
                         try:
-                            img_array = BiometricEngine.process_image_stream(source.read())
+                            img_array = BiometricEngine.process_image_stream(safe_limits.read_entry(zip_ref, filename))
+                        except safe_limits.LimitError as exc:
+                            errors.append(f"⚠️ La foto '{basename}' del zip se omitió: {exc.message}")
+                            continue
                         except Exception:
                             errors.append(f"⚠️ La foto '{basename}' del zip no se pudo leer (formato no soportado o archivo dañado) — no quedó asociada a nadie.")
                             continue

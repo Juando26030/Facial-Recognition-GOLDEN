@@ -25,7 +25,7 @@ from sqlalchemy import or_, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc, jobs, security, timing, uploads, wompi
+from app import formlib, formsvc, jobs, security, timing, uploads, wompi, safe_limits
 from app.database import SessionLocal, get_db
 from app.email_check import check_email
 from app.models import Event, FormEvent, FormInvite, FormPayment, FormSubmission, WebForm
@@ -381,6 +381,7 @@ def _check_upload(f: dict, name: str, content: bytes, settings: dict) -> Optiona
         ok = content.startswith(bytes.fromhex("d0cf11e0"))
     elif ext in ("png", "jpg", "jpeg", "webp", "gif"):
         try:
+            safe_limits.check_image_dimensions(content)
             Image.open(io.BytesIO(content)).verify()
         except Exception:
             ok = False
