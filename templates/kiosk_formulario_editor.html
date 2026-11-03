@@ -70,6 +70,8 @@
         <button class="small-btn" id="tableBtn" title="Cargar variantes como una hoja de Excel">📊 Tabla de variantes</button>
         <a class="small-btn" id="testBtn" target="_blank" rel="noopener" title="Abre el enlace real del formulario, respetando su estado actual">🧪 Probar</a>
         <button class="small-btn" id="tplBtn">📚 Guardar como plantilla</button>
+        <a class="small-btn" id="statsBtn" href="/kiosk/{{ event.id }}/formularios/{{ form_id }}/estadisticas" title="Cupos, inscritos y gráficas de este formulario">📈 Estadísticas</a>
+        <button class="small-btn" id="clientBtn" title="Crea un usuario y una contraseña temporal para que tu cliente vea SOLO las estadísticas de este formulario">🔑 Acceso para cliente (solo estadísticas)</button>
       </div>
     </div>
     <div class="tabs-f" id="tabs">
@@ -172,6 +174,7 @@
     <!-- ===================== ANALÍTICA ===================== -->
     <div class="pane" id="pane-analytics">
       <label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;"><input type="checkbox" id="anTests"> Incluir las inscripciones de prueba</label><label style="display:flex; gap:6px; align-items:center; font-size:0.84rem; margin-bottom:8px;" title="Estimación según tu plan de Wompi (2,65 % + $700 + IVA; QR 1 %)"><input type="checkbox" id="anNet"> Descontar la comisión estimada de Wompi (ver ingresos netos)</label>
+      <p class="hint" style="margin:0 0 8px;"><a href="/kiosk/{{ event.id }}/formularios/{{ form_id }}/estadisticas">📈 Abrir la página de Estadísticas (cupos, inscritos y variables, en grande)</a></p>
       <div id="anHost" style="background:#f6f7fb; padding:1rem; border-radius:16px;"></div>
       <div class="card" style="margin-top:1rem;"><h4 style="margin:0 0 6px;">Enlaces por red social</h4><p class="hint" style="margin-top:0;">Agrega <code>?utm_source=…</code> al enlace y la analítica te dirá de dónde llegó cada inscripción (Instagram, TikTok, WhatsApp…). Es un conteo de origen; no requiere conectar cuentas.</p><div class="bar" id="utmBox"></div></div>
     </div>
@@ -185,6 +188,27 @@
     </div></div>
   </div></section>
 </main>
+
+<div id="clientOverlay" role="dialog" aria-modal="true" aria-labelledby="clTitle" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9996; display:none; align-items:center; justify-content:center; padding:16px;">
+  <div class="card" style="max-width:520px; width:100%; margin:0; max-height:92vh; overflow:auto;">
+    <h4 id="clTitle" style="margin:0 0 4px;">Acceso para cliente (solo estadísticas)</h4>
+    <p class="hint" style="margin-top:0;">Tu cliente entra con su propio usuario y ve SOLO las estadísticas de este formulario (cupos, inscritos y gráficas). No ve nombres, cédulas ni correos, ni ningún otro formulario o evento.</p>
+    <div id="clNew" style="display:none; background:#f6f7fb; border:2px solid #d4af37; border-radius:12px; padding:12px; margin-bottom:12px;">
+      <p style="margin:0 0 6px; font-weight:700;">Entrégale estos datos a tu cliente. La contraseña NO se vuelve a mostrar.</p>
+      <p style="margin:0;">Dirección: <b id="clUrl"></b></p>
+      <p style="margin:0;">Usuario: <b id="clUser" style="user-select:all;"></b></p>
+      <p style="margin:0;">Contraseña: <b id="clPass" style="user-select:all; font-family:monospace; font-size:1.05rem;"></b></p>
+      <p class="hint" style="margin:6px 0 8px;" id="clUntil"></p>
+      <button class="small-btn primary" id="clCopy">Copiar los datos</button>
+    </div>
+    <div class="fld" style="margin-bottom:10px;"><label for="clName">Nombre de quien lo recibe (opcional)</label><input type="text" id="clName" maxlength="120" style="width:100%;" placeholder="Ej. María, de la empresa cliente"></div>
+    <div class="fld" style="margin-bottom:10px;"><label for="clDays">Vigencia del acceso (días)</label><input type="number" id="clDays" min="1" max="180" value="30" style="width:120px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-bottom:12px;"><button class="small-btn primary" id="clCreate">Crear acceso</button></div>
+    <h4 style="margin:0 0 6px; font-size:0.9rem;">Accesos de este formulario</h4>
+    <div id="clList" class="hint">Cargando…</div>
+    <div style="display:flex; justify-content:flex-end; margin-top:10px;"><button class="small-btn" id="clClose">Cerrar</button></div>
+  </div>
+</div>
 
 <div id="refundOverlay" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9995; display:none; align-items:center; justify-content:center; padding:16px;">
   <div class="card" style="max-width:480px; width:100%; margin:0; max-height:92vh; overflow:auto;">
@@ -1304,11 +1328,41 @@ $('rfGo').addEventListener('click', async () => {
   } catch (e) { showToast(e.message, 'error'); }
 });
 
+// ---------------------------------------------------------------- acceso de cliente (solo estadísticas de este formulario)
+const fmtDay = (iso) => new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+async function loadClients() {
+  try {
+    const d = await j(`${api}/client-access`);
+    $('clList').innerHTML = d.users.length ? d.users.map((u) => `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px solid #eee;"><span style="font-size:0.84rem;"><b>${esc(u.username)}</b>${u.full_name ? ' · ' + esc(u.full_name) : ''}<br><span class="hint">${u.expired ? 'Venció el ' : 'Vence el '}${esc(fmtDay(u.expires_at))}${u.is_active ? '' : ' · desactivado'}</span></span><button class="small-btn danger" data-clrevoke="${u.id}" data-cluser="${esc(u.username)}">Quitar acceso</button></div>`).join('') : 'Todavía no hay accesos para este formulario.';
+  } catch (e) { $('clList').textContent = e.message; }
+}
+$('clientBtn').addEventListener('click', () => { $('clNew').style.display = 'none'; $('clientOverlay').style.display = 'flex'; loadClients(); });
+$('clClose').addEventListener('click', () => { $('clientOverlay').style.display = 'none'; $('clPass').textContent = ''; });
+$('clCreate').addEventListener('click', async () => {
+  try {
+    const d = await jpost(`${api}/client-access`, { days: Number($('clDays').value) || 30, full_name: $('clName').value });
+    $('clUrl').textContent = location.origin + '/login'; $('clUser').textContent = d.username; $('clPass').textContent = d.password;
+    $('clUntil').textContent = 'El acceso vence el ' + fmtDay(d.expires_at) + '.';
+    $('clNew').style.display = 'block'; $('clName').value = '';
+    showToast('Acceso creado. Copia los datos ahora.', 'success');
+    loadClients();
+  } catch (e) { showToast(e.message, 'error'); }
+});
+$('clCopy').addEventListener('click', async () => {
+  const text = `Estadísticas de «${$('fname').value}»\nDirección: ${$('clUrl').textContent}\nUsuario: ${$('clUser').textContent}\nContraseña: ${$('clPass').textContent}\n${$('clUntil').textContent}`;
+  try { await navigator.clipboard.writeText(text); showToast('Datos copiados', 'success'); } catch (e) { showToast('No se pudo copiar: selecciónalos y cópialos a mano', 'error'); }
+});
+$('clList').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-clrevoke]'); if (!b) return;
+  if (!(await showConfirm(`¿Quitar el acceso de ${b.dataset.cluser}? Dejará de poder entrar.`, { confirmLabel: 'Quitar acceso' }))) return;
+  try { await j(`${api}/client-access/${b.dataset.clrevoke}`, { method: 'DELETE' }); showToast('Acceso quitado', 'success'); loadClients(); } catch (err) { showToast(err.message, 'error'); }
+});
+
 // ---------------------------------------------------------------- analítica
 let dash = null;
 function mountAnalytics() {
   $('anHost').innerHTML = '';
-  AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}&net_fees=${$('anNet').checked}`, { refreshSeconds: 30 });
+  AnalyticsDashboard.mount($('anHost'), `${api}/analytics?include_tests=${$('anTests').checked}&net_fees=${$('anNet').checked}`, { refreshSeconds: 30, large: true });
   $('utmBox').innerHTML = ['instagram', 'tiktok', 'whatsapp', 'facebook', 'correo'].map((s) => `<button class="small-btn" data-utm="${s}">📋 Copiar enlace para ${s}</button>`).join('');
   $('utmBox').querySelectorAll('[data-utm]').forEach((b) => b.addEventListener('click', async () => { const url = `${form.public_url}?utm_source=${b.dataset.utm}`; try { await navigator.clipboard.writeText(url); } catch (e) {} showToast('Enlace copiado: ' + url, 'success'); }));
 }
