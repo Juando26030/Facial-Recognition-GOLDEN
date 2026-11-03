@@ -17,13 +17,11 @@ assert.strictEqual(cq('1016100329').kind, 'cedula');
 assert.strictEqual(cq('1.016.100.329').cedula, '1016100329');
 assert.strictEqual(cq('1 016 100-329').cedula, '1016100329');
 assert.strictEqual(cq('1234').kind, 'cedula');                                  // 3-4 dígitos: cédula PARCIAL (predictiva con red)
-assert.strictEqual(cq('1234').parcial, true);
 assert.strictEqual(cq('1234').completa, false);
 assert.strictEqual(cq('12').kind, 'texto');                                     // 2 dígitos: texto
-assert.strictEqual(cq('10161').parcial, false);
 assert.strictEqual(cq('10161').completa, true);
 assert.strictEqual(cq('1016100329,A,B,C,D,1').completa, true);
-assert.strictEqual(cq('Juan').parcial, false);
+assert.strictEqual(cq('Juan').completa, false);
 assert.strictEqual(cq('Juan').kind, 'texto');
 assert.strictEqual(cq('1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206').kind, 'lector');
 assert.strictEqual(cq('1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206').cedula, '1016100329');
@@ -104,9 +102,20 @@ con(juan, cq('1016100329'), 'Cédula exacta');
 const local = { __local: true, __h: 'abc123', id: 'abc123', first_name: 'María José', last_name: 'Gómez' };
 con(local, '1016100329', 'Cédula exacta', { hash: 'abc123' });
 sin(local, '1016100329', { hash: 'zzz' });
-sin(local, '101', { hash: 'abc123' });                                          // parcial: NUNCA coincide en filas locales (solo huella exacta)
+sin(local, '101', { hash: 'abc123' });                                          // sin cédula en claro, un parcial no puede coincidir (la huella no admite prefijos)
 sin(local, '1016', { hash: 'abc123' });
-assert.strictEqual(cq('1016').parcial, true);
+// Con la cédula en claro (la entrega el llamador por parámetro) la fila local también es predictiva
+con(local, '101', 'Cédula (empieza por 101…)', { cedulaPlain: '1016100329' });
+con(local, '1016100329', 'Cédula exacta', { cedulaPlain: '1016100329' });
+con(local, '1.016.100', 'Cédula (empieza por 1016100…)', { cedulaPlain: '1016100329' });
+sin(local, '102', { cedulaPlain: '1016100329' });
+sin(local, '16100', { cedulaPlain: '1016100329' });
+con(local, '101', 'Cédula (empieza por 101…)', { cedulaOf: () => '1016100329' });
+assert.strictEqual(local.id_plain, undefined);                                   // el módulo no deja cédulas en la persona
+const pl = ['1016100329', '10161003291', '1016200000'];
+const locales = pl.map((c, i) => ({ __local: true, __h: 'h' + i, first_name: 'L' + i }));
+const orden = SC.search(locales.slice().reverse(), '1016100329', { cedulaOf: (p) => pl[locales.indexOf(p)] });
+assert.deepStrictEqual(orden.map((x) => x.motivo), ['Cédula exacta', 'Cédula (empieza por 1016100329…)']);
 sin(local, '1016100329');                                                        // sin huella calculada todavía: no coincide
 con(local, 'maria', 'Nombre');
 sin(local, 'acme');                                                              // la copia vieja no trae empresa
@@ -115,6 +124,8 @@ sin(local, 'acme');                                                             
 const N = 10000;
 const gente = Array.from({ length: N }, (_, i) => ({ id: String(1000000000 + i), first_name: i === 4321 ? 'María José' : 'Persona' + i, last_name: 'Gómez', entity: i % 2 ? 'Compañía Ñañez' : 'Otra' }));
 SC.prepare(gente);
+const locales10k = gente.map((p, i) => ({ __local: true, __h: 'h' + i, first_name: p.first_name, last_name: p.last_name }));
+SC.prepare(locales10k);
 const qMaria = cq('maria jose'), qCed = cq('1000004321'), qEmp = cq('compania nanez');     // la consulta se clasifica UNA vez por tecla
 let t0 = process.hrtime.bigint();
 const hallados = gente.filter((p) => mp(p, qMaria).coincide);
@@ -127,6 +138,11 @@ const hEmp = gente.filter((p) => mp(p, qEmp).coincide);
 ms = Number(process.hrtime.bigint() - t0) / 1e6;
 assert.strictEqual(hCed.length, 1);
 assert.strictEqual(hEmp.length, N / 2);
+t0 = process.hrtime.bigint();
+const hLoc = SC.search(locales10k, '1000004', { cedulaOf: (p) => gente[Number(p.__h.slice(1))].id });
+ms = Number(process.hrtime.bigint() - t0) / 1e6;
+assert.strictEqual(hLoc.length, 1000);                                           // 1000004000..1000004999
+assert.ok(ms < 50, `10.000 filas locales con cédula en claro: ${ms.toFixed(1)} ms`);
 assert.ok(ms < 50, `dos búsquedas en caliente: ${ms.toFixed(1)} ms`);
 
 console.log('search_core_check OK');

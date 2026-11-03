@@ -4,18 +4,19 @@
    classifyQuery(texto) -> { kind, raw, cedula?, words, ... }
      kind: 'vacio' | 'cedula' | 'lector' | 'qr' | 'texto'
        - 'cedula': solo dígitos (con puntos, espacios o guiones de separador), 3 o más. `cedula` = clave normalizada (sin separadores ni ceros a la izquierda).
-         `completa` = 5 o más dígitos (ya se puede comparar por huella sin red); `parcial` = lo contrario (3-4 dígitos). La interfaz usa `parcial` para avisar
-         «Sin internet: escribe la cédula completa» cuando el equipo solo tiene huellas. Lector y QR siempre son completos.
+         `completa` = 5 o más dígitos: solo importa para el respaldo por huella de una fila local SIN cédula en claro (una huella no admite prefijos). Lector y QR siempre son completos.
        - 'lector': lo que escupe el lector de códigos de barras de la cédula vieja («1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206») o un número con ceros a la izquierda.
        - 'qr': el QR de la escarapela («cédula|nombre|apellido»).
        - 'texto': todo lo demás; se busca como NOMBRE y como EMPRESA a la vez (prefijo de palabra).
    matchPerson(persona, consulta, opts) -> { coincide, motivo }
      motivo (corto, en español, para mostrar POR QUÉ coincidió): «Cédula exacta» | «Cédula (empieza por 123…)» | «Código del lector» | «Nombre» | «Empresa» | «Nombre y empresa»; '' si no coincide.
      orden (para ordenar resultados): 0 = cédula exacta o código del lector, 1 = cédula por prefijo, 2 = nombre/empresa. `search(personas, consulta, opts)` ya devuelve [{persona, motivo, orden}] así ordenado.
-     persona: { id, first_name, last_name, entity } (directorio en línea) o una fila de la copia local (`__local`, `__h` = huella de la cédula, sin entidad).
-     opts.hash: huella (GC.hashFor) de la cédula consultada; solo hace falta con filas locales, que NO guardan la cédula: ahí la comparación es por huella EXACTA.
-   Reglas: con red (fila con la cédula en claro) la búsqueda es PREDICTIVA: desde 3 dígitos coincide toda cédula que EMPIECE por lo escrito (nunca subcadena: «345» no lista a «1234567»);
-   la exacta sale primero. Sin red (fila de la copia local, solo huella) la cédula sigue siendo SOLO exacta: la copia no lleva la cédula. Nombre y empresa, por prefijo de palabra sin tildes ni mayúsculas. */
+     persona: { id, first_name, last_name, entity } (directorio en línea) o una fila de la copia local (`__local`, `__h` = huella de la cédula).
+     opts.cedulaPlain: cédula en claro de ESA fila (la descifra el llamador, en memoria, solo mientras busca); con ella una fila local también se busca por prefijo.
+       Alternativa para recorrer una lista: opts.cedulaOf(persona) -> cédula en claro o ''. Este módulo NUNCA guarda ni cachea una cédula recibida por opts.
+     opts.hash: huella (GC.hashFor) de la cédula consultada; respaldo de una fila local sin cédula en claro (copia vieja): ahí solo cabe la coincidencia EXACTA.
+   Reglas: la búsqueda es PREDICTIVA con y sin red: desde 3 dígitos coincide toda cédula que EMPIECE por lo escrito (nunca subcadena: «345» no lista a «1234567»); la exacta sale primero.
+   Nombre y empresa, por prefijo de palabra sin tildes ni mayúsculas. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -65,22 +66,22 @@
   function classifyQuery(texto) {
     const raw = String(texto == null ? '' : texto);
     const text = raw.replace(/[\r\n\t]+/g, ' ').trim();
-    if (!text) return { kind: 'vacio', raw, words: [], parcial: false, completa: false };
+    if (!text) return { kind: 'vacio', raw, words: [], completa: false };
     const qr = parseQr(text);
-    if (qr !== null) return { kind: 'qr', raw, cedula: cedulaKey(qr), words: [], parcial: false, completa: true };
+    if (qr !== null) return { kind: 'qr', raw, cedula: cedulaKey(qr), words: [], completa: true };
     const barcode = parseBarcode(text);
-    if (barcode !== null) return { kind: 'lector', raw, cedula: cedulaKey(barcode), words: [], parcial: false, completa: true };
+    if (barcode !== null) return { kind: 'lector', raw, cedula: cedulaKey(barcode), words: [], completa: true };
     if (/^[\d.\s-]+$/.test(text)) {
       const digits = text.replace(/\D/g, '');
       if (digits.length >= MIN_CEDULA_DIGITS && /^0\d/.test(digits)) {       // ceros a la izquierda: así rellena el número el lector de códigos
-        return { kind: 'lector', raw, cedula: cedulaKey(digits), words: [], parcial: false, completa: true };
+        return { kind: 'lector', raw, cedula: cedulaKey(digits), words: [], completa: true };
       }
       if (digits.length >= MIN_PREFIX_DIGITS) {
         const completa = digits.length >= MIN_CEDULA_DIGITS;
-        return { kind: 'cedula', raw, cedula: cedulaKey(digits), words: [], parcial: !completa, completa };
+        return { kind: 'cedula', raw, cedula: cedulaKey(digits), words: [], completa };
       }
     }
-    return { kind: 'texto', raw, words: wordsOf(text), normalized: normalize(text), compact: cedulaKey(text), parcial: false, completa: false };
+    return { kind: 'texto', raw, words: wordsOf(text), normalized: normalize(text), compact: cedulaKey(text), completa: false };
   }
 
   /* Lo que se compara de cada persona se calcula UNA vez (con 10.000 personas, una tecla no puede volver a normalizar a todas). */
@@ -116,11 +117,15 @@
     if (q.kind === 'vacio') return NO;
     if (q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr') {
       const motivo = q.kind === 'cedula' ? MOTIVOS.cedula : MOTIVOS.lector;
-      if (persona.__local) {                                    // fila de la copia local: no guarda la cédula, solo su huella (SOLO exacta; un parcial no coincide)
-        const h = opts && opts.hash;
-        return q.completa && h && persona.__h === h ? hit(motivo, 0) : NO;
-      }
-      const id = keysOf(persona).id;
+      let id;
+      if (persona.__local) {
+        const plain = opts && (opts.cedulaPlain || (typeof opts.cedulaOf === 'function' ? opts.cedulaOf(persona) : ''));
+        if (plain) id = cedulaKey(plain);                       // cédula en claro recibida por parámetro: no se guarda en ninguna parte
+        else {                                                  // copia vieja sin cédula en claro: solo la huella, comparación EXACTA
+          const h = opts && opts.hash;
+          return q.completa && h && persona.__h === h ? hit(motivo, 0) : NO;
+        }
+      } else id = keysOf(persona).id;
       if (!q.cedula) return NO;
       if (id === q.cedula) return hit(motivo, 0);
       if (q.kind === 'cedula' && id.startsWith(q.cedula)) return hit(MOTIVOS.prefijo(q.cedula), 1);    // predictivo: solo con la cédula en claro
