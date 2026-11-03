@@ -1,0 +1,244 @@
+"""Base visual común (Fase 1A, pieza 0): contrastes WCAG AA por código, tokens en claro y oscuro, interruptor de tema, ayuda «?» con teclado, animaciones con alternativa de movimiento
+reducido, plantillas con url_for('static', ...) y el sprite de íconos. Pruebas de archivos: no necesitan base de datos ni servidor."""
+import pathlib
+import re
+
+CSS = pathlib.Path("static/css/design-system.css").read_text(encoding="utf-8")
+JS = pathlib.Path("static/js/gw-ui.js").read_text(encoding="utf-8")
+SPRITE = pathlib.Path("static/img/icons.svg").read_text(encoding="utf-8")
+GUIDE = pathlib.Path("docs/ux/guia_visual.html").read_text(encoding="utf-8")
+TEMPLATES = sorted(pathlib.Path("templates").glob("*.html"))
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ colores
+def _block(selector_start):
+    """Cuerpo de la primera regla cuyo selector empieza por `selector_start`."""
+    i = CSS.index(selector_start)
+    return CSS[CSS.index("{", i) + 1:CSS.index("\n}", i)]
+
+
+def _tokens(block):
+    return dict(re.findall(r"(--gw-[\w-]+):\s*([^;]+);", block))
+
+
+LIGHT = _tokens(_block(":root, .gw-no-theme"))
+DARK = {**LIGHT, **_tokens(_block(':root[data-theme="dark"]'))}
+
+
+def _hex(value):
+    v = value.strip().lower()
+    assert re.fullmatch(r"#[0-9a-f]{6}", v), f"se esperaba un #rrggbb, hay: {value}"
+    return tuple(int(v[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _lum(rgb):
+    def ch(c):
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (ch(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def ratio(fg, bg):
+    a, b = sorted((_lum(_hex(fg)), _lum(_hex(bg))), reverse=True)
+    return (a + 0.05) / (b + 0.05)
+
+
+# (primer plano, fondo, mínimo, descripción). 4,5 = texto normal; 3 = texto grande, íconos, bordes de controles y anillo de foco.
+TEXT_PAIRS = [
+    ("--gw-text", "--gw-bg", 4.5), ("--gw-text", "--gw-surface", 4.5), ("--gw-text", "--gw-surface-2", 4.5),
+    ("--gw-text-muted", "--gw-bg", 4.5), ("--gw-text-muted", "--gw-surface", 4.5), ("--gw-text-muted", "--gw-surface-2", 4.5),
+    ("--gw-link", "--gw-bg", 4.5), ("--gw-link", "--gw-surface", 4.5), ("--gw-link", "--gw-surface-2", 4.5),
+    ("--gw-gold-text", "--gw-bg", 4.5), ("--gw-gold-text", "--gw-surface", 4.5), ("--gw-gold-text", "--gw-surface-2", 4.5),
+    ("--gw-on-gold", "--gw-gold-1", 4.5), ("--gw-on-gold", "--gw-gold-2", 4.5),                         # texto de botones y mosaicos sobre los DOS extremos del degradado
+    ("--gw-on-danger", "--gw-danger", 4.5),
+    ("--gw-secondary-text", "--gw-secondary-bg", 4.5),
+    ("--gw-ok-text", "--gw-ok-bg", 4.5), ("--gw-warn-text", "--gw-warn-bg", 4.5), ("--gw-err-text", "--gw-err-bg", 4.5), ("--gw-info-text", "--gw-info-bg", 4.5),
+    ("--gw-err-text", "--gw-surface", 4.5),                                                             # mensaje de error de un campo
+    ("--gw-nav-text", "--gw-nav-bg", 4.5), ("--gw-nav-accent", "--gw-nav-bg", 4.5),
+]
+NON_TEXT_PAIRS = [
+    ("--gw-border-strong", "--gw-surface", 3), ("--gw-border-strong", "--gw-bg", 3),                    # borde de campos y botones secundarios
+    ("--gw-focus", "--gw-surface", 3), ("--gw-focus", "--gw-bg", 3),                                    # anillo de foco
+    ("--gw-ok-line", "--gw-ok-bg", 3), ("--gw-warn-line", "--gw-warn-bg", 3), ("--gw-err-line", "--gw-err-bg", 3), ("--gw-info-line", "--gw-info-bg", 3),   # íconos y bordes de estado
+    ("--gw-err-line", "--gw-surface", 3),                                                               # borde de un campo con error
+    ("--gw-gold-1", "--gw-surface", 3),                                                                 # borde dorado al pasar sobre un mosaico
+    ("--gw-nav-accent", "--gw-nav-bg", 3),
+]
+
+
+def _check(pairs, theme_name, tokens):
+    bad = []
+    for fg, bg, minimum in pairs:
+        got = ratio(tokens[fg], tokens[bg])
+        if got < minimum:
+            bad.append(f"{theme_name}: {fg} {tokens[fg]} sobre {bg} {tokens[bg]} = {got:.2f}:1 (mínimo {minimum}:1)")
+    return bad
+
+
+def test_text_pairs_reach_4_5_to_1_in_light_and_dark():
+    assert _check(TEXT_PAIRS, "claro", LIGHT) + _check(TEXT_PAIRS, "oscuro", DARK) == []
+
+
+def test_icons_borders_and_focus_ring_reach_3_to_1_in_light_and_dark():
+    assert _check(NON_TEXT_PAIRS, "claro", LIGHT) + _check(NON_TEXT_PAIRS, "oscuro", DARK) == []
+
+
+def test_the_contrast_calculator_matches_known_wcag_values():
+    assert round(ratio("#000000", "#ffffff"), 2) == 21.0
+    assert round(ratio("#777777", "#ffffff"), 2) == 4.48            # el gris clásico que NO llega a 4,5 (docs/ux/PLAN_FASE1_UX.md)
+    assert ratio("#ffffff", "#ffffff") == 1.0
+
+
+def test_dark_theme_redefines_every_surface_text_and_state_token():
+    must = ["--gw-bg", "--gw-surface", "--gw-surface-2", "--gw-border", "--gw-border-strong", "--gw-text", "--gw-text-muted", "--gw-link", "--gw-gold-text", "--gw-focus",
+            "--gw-danger", "--gw-on-danger", "--gw-secondary-bg", "--gw-secondary-text"] + [f"--gw-{s}-{p}" for s in ("ok", "warn", "err", "info") for p in ("bg", "text", "line")]
+    own = _tokens(_block(':root[data-theme="dark"]'))
+    assert [t for t in must if t not in own] == []
+    assert "prefers-color-scheme" not in CSS, "el tema oscuro es POR DISPOSITIVO (interruptor), no sigue al sistema operativo"
+
+
+def test_brand_palette_and_scales_are_declared():
+    assert LIGHT["--gw-gold-1"] == "#b8862b" and LIGHT["--gw-gold-2"] == "#e8c25a" and LIGHT["--gw-navy"] == "#1e2a6e" and LIGHT["--gw-navy-deep"] == "#141c4d"
+    assert LIGHT["--gw-tap"] == "44px"
+    assert all(f"--gw-sp-{i}" in LIGHT for i in range(1, 9)) and all(k in LIGHT for k in ("--gw-radius-sm", "--gw-radius-md", "--gw-radius-lg", "--gw-shadow-md", "--gw-ring", "--gw-fs-sm", "--gw-fs-3xl"))
+    assert "Agrandir" in LIGHT["--gw-font"]
+    assert float(LIGHT["--gw-fs-sm"].replace("rem", "")) * 16 >= 14, "ningún tamaño de texto por debajo de 14 px"
+
+
+def test_no_font_size_in_the_base_is_below_14px():
+    for m in re.finditer(r"font-size:\s*([\d.]+)(px|rem)", CSS):
+        px = float(m.group(1)) * (16 if m.group(2) == "rem" else 1)
+        assert px >= 14, m.group(0)
+
+
+def test_touch_targets_use_the_44px_token():
+    for sel in (".gw-btn {", ".gw-input, .gw-select, .gw-textarea {", ".gw-check {", ".gw-help__btn {", ".gw-theme-toggle {", ".gw-nav__link {", ".gw-nav__toggle {"):
+        rule = CSS[CSS.index(sel):CSS.index("}", CSS.index(sel))]
+        assert "min-height: var(--gw-tap)" in rule, sel
+
+
+def test_focus_ring_and_reduced_motion_are_in_the_base():
+    assert ":focus-visible" in CSS and "var(--gw-ring)" in CSS
+    reduced = CSS[CSS.index("@media (prefers-reduced-motion: reduce)"):]
+    assert "animation-duration" in reduced and "transition-duration" in reduced and "scroll-behavior: auto" in reduced
+
+
+def test_everything_in_the_base_is_behind_gw_classes_so_old_screens_do_not_change():
+    """Fuera de :root, .gw-*, la barra lateral compartida y las @media/@keyframes, ninguna regla toca elementos sueltos."""
+    css = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
+    for sel in re.findall(r"(?m)^([^\s@}{][^{]*)\{", css):
+        for part in (p.strip() for p in sel.split(",")):
+            assert part.startswith((":root", ":where(.gw-page)", ".gw-", ".golden-sidebar", ".golden-nav-user", ".golden-header .gw-", "[data-gw-search-slot")) or re.fullmatch(r"(\d+%|from|to)(,\s*\d+%)*", part), part
+        # dentro de una @media los selectores van indentados; los revisa la regla de abajo
+    for sel in re.findall(r"(?m)^\s+([.\[:][^{@]*)\{", css):
+        for part in (p.strip() for p in sel.split(",")):
+            assert part.startswith((".gw-", ":root", ":where(.gw-page)", ".golden-sidebar", ".golden-header .gw-", "[data-gw-search-slot", "0%", "100%")) or re.fullmatch(r"[\d%\s,]+", part), part
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ interruptor de tema
+def test_theme_switch_exists_stores_per_device_with_try_catch_and_applies_before_paint():
+    toggle = pathlib.Path("templates/_gw_theme_toggle.html").read_text(encoding="utf-8")
+    assert "data-gw-theme-toggle" in toggle and 'aria-pressed="false"' in toggle and "onclick" not in toggle
+    head = pathlib.Path("templates/_gw_head.html").read_text(encoding="utf-8")
+    assert "localStorage.getItem('gw_theme')" in head and "try {" in head and "data-theme" in head, "el tema se aplica antes de pintar (sin parpadeo)"
+    assert "url_for('static', path='css/design-system.css')" in head and "url_for('static', path='js/gw-ui.js')" in head
+    assert "gw_theme" in JS and re.search(r"try \{ if \(get\)", JS), "guardar/leer en localStorage va dentro de try/catch"
+    login = pathlib.Path("templates/login.html").read_text(encoding="utf-8")
+    assert '_gw_head.html' in login and '_gw_theme_toggle.html' in login and 'class="gw-page"' in login
+    assert "data-gw-theme-toggle" in GUIDE
+
+
+def test_the_dark_theme_never_reaches_what_is_printed():
+    assert ".gw-no-theme" in CSS and ":root, .gw-no-theme" in CSS
+    assert 'class="gw-no-theme' in GUIDE
+    assert not [t.name for t in TEMPLATES if t.name in ("badge_print.html", "badge_editor.html", "digital_badge.html", "impresion_usb.html") and "_gw_head" in t.read_text(encoding="utf-8")], \
+        "las pantallas de impresión y escarapela no adoptan el tema oscuro"
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ ayuda «?», recorrido, asistente
+def test_help_button_works_with_keyboard_and_screen_readers():
+    for needle in ("data-gw-help-btn", "'aria-expanded'", "trapTab", "'Escape'", "closeHelp(true)", "data-gw-help-close"):
+        assert needle in JS, needle
+    for html in (GUIDE, pathlib.Path("templates/login.html").read_text(encoding="utf-8")):
+        for tag in re.findall(r"<button[^>]*data-gw-help-btn[^>]*>", html):
+            assert "aria-expanded" in tag and "aria-controls" in tag and "aria-label" in tag, tag
+        for pop in re.findall(r'<div class="gw-popover"[^>]*>', html):
+            assert 'role="dialog"' in pop and "aria-labelledby" in pop and "hidden" in pop, pop
+        assert html.count("data-gw-help-close") >= html.count('<div class="gw-popover"') > 0, "cada ayuda trae su botón «Entendido»"
+        assert html.count(">Entendido<") >= html.count('<div class="gw-popover"')
+
+
+def test_animations_have_a_reduced_motion_alternative_and_a_static_final_frame():
+    anims = set(re.findall(r"\.gw-anim--(\w+)", CSS))
+    assert {"search", "print", "theme"} <= anims
+    assert re.search(r"@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.gw-anim \*, \.gw-anim \{ animation: none !important; \}", CSS), "con movimiento reducido el dibujo queda quieto"
+    assert "reducedMotion()" in JS                                         # el recorrido también evita el desplazamiento suave
+    for name in anims:
+        assert f"gw-anim--{name}" in GUIDE, f"la guía muestra la animación «{name}»"
+    # sin vídeo, sin librerías: solo SVG y CSS
+    assert not re.search(r"<video|\.gif|lottie|gsap", GUIDE + CSS + JS, re.I)
+
+
+def test_first_time_tour_is_once_per_device_with_restart_and_no_external_dependencies():
+    for needle in ("'gw_tour_'", "data-gw-tour-restart", "data-gw-tour-skip", "'Paso '", "' de '", "Siguiente", "Atrás", "Omitir", "aria-modal"):
+        assert needle in JS, needle
+    assert "tourSeen(key)" in JS and re.search(r"function store\(get, key, value\) \{[^}]*try \{", JS), "localStorage con try/catch"
+    assert "Ver recorrido de nuevo" in GUIDE and "data-gw-tour-step" in GUIDE
+    assert not re.search(r"https?://", JS), "sin red: nada se pide fuera del servidor"
+    assert not re.search(r"\b(alert|confirm|prompt)\(", JS)
+
+
+def test_wizard_and_state_components_exist_and_leave_the_search_slot_unbuilt():
+    for cls in (".gw-wizard__foot", ".gw-progress", ".gw-state--error", ".gw-spinner", ".gw-tile", ".gw-modal", ".gw-nav", ".gw-badge--ok", ".gw-alert--err", ".gw-table", ".gw-field--error"):
+        assert cls in CSS, cls
+    assert "Paso 1 de 3" in GUIDE and "data-gw-wizard-next" in GUIDE
+    assert "data-gw-search-slot" in GUIDE and "Fase 2" in GUIDE
+    assert "startSearch" not in JS and "search-slot" not in CSS.split("Hueco del futuro")[0], "el buscador se deja como hueco documentado, sin construirlo"
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ íconos y plantillas
+NEEDED_ICONS = {"users", "user-plus", "search", "camera", "face", "printer", "badge", "form", "chart", "calendar", "settings", "help", "check", "error", "alert", "info", "sun", "moon"}
+
+
+def test_sprite_has_the_icons_needed_for_the_tiles_and_the_guide_inlines_the_same_ones():
+    ids = set(re.findall(r'<symbol id="i-([\w-]+)"', SPRITE))
+    assert NEEDED_ICONS <= ids
+    assert not re.search(r"https?://(?!www\.w3\.org)", SPRITE) and "<script" not in SPRITE and "<image" not in SPRITE
+    assert ids == set(re.findall(r'<symbol id="i-([\w-]+)"', GUIDE)), "la guía lleva copiado el mismo sprite (un <use> externo no funciona con file://)"
+
+
+def test_every_template_loads_static_files_only_through_url_for_and_the_base():
+    for t in TEMPLATES:
+        text = t.read_text(encoding="utf-8")
+        if "css/style.css" in text:
+            assert "css/design-system.css" in text, f"{t.name} carga style.css pero no la base visual (el menú lateral compartido la necesita)"
+    for name in ("login.html", "_gw_head.html", "_gw_theme_toggle.html", "_sidebar.html", "_kiosk_top.html"):
+        text = pathlib.Path("templates", name).read_text(encoding="utf-8")
+        assert not re.search(r'(?:href|src)="/static/', text), name
+        assert "url_for('static'" in text, name
+
+
+def test_login_keeps_its_form_contract_and_has_no_inline_handlers():
+    login = pathlib.Path("templates/login.html").read_text(encoding="utf-8")
+    assert 'method="post" action="/login"' in login and 'name="username"' in login and 'name="password"' in login and "/olvide-contrasena" in login
+    assert "onclick" not in login and "_legal_footer.html" in login and "_env_badge.html" in login
+    assert re.search(r"<label[^>]*for=\"usuario\"", login) and re.search(r"<label[^>]*for=\"clave\"", login)
+
+
+def test_shared_nav_uses_svg_icons_not_emoji_and_the_footer_follows_the_theme_tokens():
+    side = pathlib.Path("templates/_sidebar.html").read_text(encoding="utf-8")
+    assert not re.search(r"[\U0001F300-\U0001FAFF⚙☰]", side)
+    assert "gw-icon" in side and "#i-building" in side and "#i-settings" in side
+    assert "var(--gw-text-muted" in pathlib.Path("templates/_legal_footer.html").read_text(encoding="utf-8")
+
+
+def test_the_kiosk_precaches_what_the_pages_load_so_the_base_works_offline():
+    """El service worker del quiosco guarda los /static/* que la página efectivamente cargó (performance.getEntriesByType): la base entra sola si la página la enlaza."""
+    for name in ("kiosk_registro.html", "kiosk_rostro.html"):
+        text = pathlib.Path("templates", name).read_text(encoding="utf-8")
+        assert "css/design-system.css" in text, name
+    reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
+    assert "performance.getEntriesByType('resource')" in reg and "startsWith(location.origin + '/static/')" in reg
+    sw = pathlib.Path("static/js/kiosk-sw.js").read_text(encoding="utf-8")
+    assert "url.pathname.startsWith('/static/')" in sw

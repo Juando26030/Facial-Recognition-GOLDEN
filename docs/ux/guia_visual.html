@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guía visual | GoldenWeb 2.0</title>
+<!-- Guía viva de la base visual (Fase 1A, pieza 0). Estática y autocontenida: se abre con doble clic, sin servidor.
+     Carga la base REAL por ruta relativa (static/css/design-system.css y static/js/gw-ui.js); el sprite de íconos va copiado abajo (un <use> externo no funciona con file://).
+     Si cambias un componente en static/, esta guía lo muestra sola; si agregas uno, documéntalo aquí. -->
+<link rel="stylesheet" href="../../static/css/agrandir.css">
+<link rel="stylesheet" href="../../static/css/fonts-propias.css">
+<link rel="stylesheet" href="../../static/css/design-system.css">
+<script>try { if (localStorage.getItem('gw_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}</script>
+<script src="../../static/js/gw-ui.js" defer></script>
+<style>
+  .g-sec { padding: var(--gw-sp-6) 0; border-bottom: 1px solid var(--gw-border); }
+  .g-sec > .gw-title { margin-bottom: var(--gw-sp-2); }
+  .g-sec > .gw-lead { margin-bottom: var(--gw-sp-5); max-width: 70ch; }
+  .g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: var(--gw-sp-4); }
+  .g-sw { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); overflow: hidden; background: var(--gw-surface); }
+  .g-sw i { display: block; height: 56px; border-bottom: 1px solid var(--gw-border); }
+  .g-sw span { display: block; padding: var(--gw-sp-2) var(--gw-sp-3); font-size: var(--gw-fs-sm); }
+  .g-sw code, .g-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: var(--gw-fs-sm); }
+  pre.g-pre { margin: var(--gw-sp-3) 0 0; padding: var(--gw-sp-4); overflow-x: auto; background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); font-size: var(--gw-fs-sm); line-height: 1.5; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .g-demo { padding: var(--gw-sp-4); border: 1px dashed var(--gw-border-strong); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+  .g-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--gw-sp-3); }
+  .g-icons div { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-1); padding: var(--gw-sp-3) var(--gw-sp-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); font-size: var(--gw-fs-sm); text-align: center; }
+  .g-bar { position: static; }
+  .g-sp { display: flex; align-items: center; gap: var(--gw-sp-3); font-size: var(--gw-fs-sm); }
+  .g-sp i { display: block; height: 16px; background: var(--gw-gold-grad); border-radius: 3px; }
+  .g-badge-demo { width: 220px; padding: var(--gw-sp-4); border: 2px solid #1e2a6e; border-radius: 12px; text-align: center; font-weight: 700; }
+  h3.gw-subtitle { margin: var(--gw-sp-5) 0 var(--gw-sp-3); }
+</style>
+</head>
+<body class="gw-page">
+<svg data-sprite xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.7a3.5 3.5 0 0 1 0 6.6"/><path d="M18 14.3c2.2.7 3.5 2.6 3.5 5.7"/></symbol>
+<symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M19 6.5v6M16 9.5h6"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></symbol>
+<symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7H8l1.5-2.5h5L16 7h3.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+<symbol id="i-face" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 10v1.5M15 10v1.5M9.5 15c1.4 1.2 3.6 1.2 5 0"/></symbol>
+<symbol id="i-printer" viewBox="0 0 24 24"><path d="M7 9V4h10v5"/><path d="M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 5 9h14a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-2"/><rect x="7" y="14" width="10" height="6.5" rx="1"/></symbol>
+<symbol id="i-badge" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M10 5.8h4"/><circle cx="12" cy="10.5" r="2.5"/><path d="M8 17.5c.6-1.7 2-2.5 4-2.5s3.4.8 4 2.5"/></symbol>
+<symbol id="i-form" viewBox="0 0 24 24"><path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h16"/><path d="M8.5 16v-4M12.5 16V8M16.5 16v-6"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8l1.6 2.2 2.7-.6.9 2.6 2.6.9-.6 2.7 2.2 1.6-2.2 1.6.6 2.7-2.6.9-.9 2.6-2.7-.6L12 21.2l-1.6-2.2-2.7.6-.9-2.6-2.6-.9.6-2.7L2.6 12l2.2-1.6-.6-2.7 2.6-.9.9-2.6 2.7.6z"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1 1-1.1 1.8"/><path d="M12 16.8v.2"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></symbol>
+<symbol id="i-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4M12 17v.2"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.2"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5V5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></symbol>
+<symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"/><path d="M14 10h5a1 1 0 0 1 1 1v10M2.5 21h19M8 8h2M8 12h2M8 16h2"/></symbol>
+<symbol id="i-health" viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4"/><path d="M15 8l4 4-4 4M19 12H9"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+<symbol id="i-qr" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="6" height="6" rx="1"/><rect x="14.5" y="3.5" width="6" height="6" rx="1"/><rect x="3.5" y="14.5" width="6" height="6" rx="1"/><path d="M14.5 14.5h2.5v2.5M20.5 14.5v.2M14.5 20.5h.2M17.5 20.5h3M20.5 17.5v3"/></symbol>
+<symbol id="i-roulette" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v6.5M12 14.5V21M3 12h6.5M14.5 12H21M5.6 5.6l4.6 4.6M13.8 13.8l4.6 4.6M18.4 5.6l-4.6 4.6M10.2 13.8l-4.6 4.6"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13l3-8h12l3 8v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h5l1 2.5h6L16 13h5"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5M10 20v-5h4v5"/></symbol>
+</svg>
+<a class="gw-skip" href="#contenido">Ir al contenido</a>
+
+<header class="gw-nav g-bar" id="barraDemo">
+  <div class="gw-nav__inner">
+    <a class="gw-nav__brand" href="#"><img src="../../static/img/logo-golden.png" alt="" width="40" height="40"><span>GoldenWeb 2.0 · Guía visual</span></a>
+    <button type="button" class="gw-nav__toggle" data-gw-nav-toggle aria-expanded="false" aria-controls="enlacesDemo"><svg class="gw-icon" aria-hidden="true"><use href="#i-menu"/></svg> Menú</button>
+    <ul class="gw-nav__links" id="enlacesDemo">
+      <li><a class="gw-nav__link" href="#colores" aria-current="page">Colores</a></li>
+      <li><a class="gw-nav__link" href="#componentes">Componentes</a></li>
+      <li><a class="gw-nav__link" href="#ayuda">Ayuda y recorrido</a></li>
+      <li><a class="gw-nav__link" href="#iconos">Íconos</a></li>
+    </ul>
+    <div class="gw-nav__search" data-gw-search-slot hidden></div>
+    <button type="button" class="gw-theme-toggle" data-gw-theme-toggle aria-pressed="false"><svg class="gw-icon gw-icon--sm gw-icon--moon" aria-hidden="true"><use href="#i-moon"/></svg><svg class="gw-icon gw-icon--sm gw-icon--sun" aria-hidden="true"><use href="#i-sun"/></svg><span data-gw-theme-label>Tema oscuro</span></button>
+  </div>
+</header>
+
+<main class="gw-container" id="contenido">
+
+<section class="g-sec">
+  <p class="gw-eyebrow">Base visual común · Fase 1A</p>
+  <h1 class="gw-display">Guía visual de GoldenWeb 2.0</h1>
+  <hr class="gw-gold-rule">
+  <p class="gw-lead">Una sola base de colores, letras y componentes para toda la plataforma. Tema claro por defecto; el oscuro se elige por dispositivo con el interruptor de arriba. Cada color de texto está comprobado por una prueba (texto 4,5:1 o más; íconos y texto grande 3:1 o más).</p>
+  <div class="gw-alert"><svg class="gw-icon" aria-hidden="true"><use href="#i-info"/></svg><div><div class="gw-alert__title">Cómo usar esta guía</div><div class="gw-alert__body">Cada componente trae su explicación y el HTML para copiar. Todo vive bajo clases <code class="g-code">gw-*</code>; las pantallas viejas no cambian hasta que se rediseñen. Para adoptar la base en una página nueva: <code class="g-code">{% include "_gw_head.html" %}</code> en el <code class="g-code">&lt;head&gt;</code> y <code class="g-code">class="gw-page"</code> en el <code class="g-code">&lt;body&gt;</code>.</div></div></div>
+</section>
+
+<section class="g-sec" id="colores">
+  <h2 class="gw-title">Colores</h2>
+  <p class="gw-lead">Identidad del logo: dorado degradado y azul marino. El dorado va como FONDO con texto azul oscuro; como texto sobre claro se usa su versión oscura (<code class="g-code">--gw-gold-text</code>).</p>
+  <div class="g-grid">
+    <div class="g-sw"><i style="background: var(--gw-gold-grad)"></i><span><b>Dorado</b><br><code>--gw-gold-1 → --gw-gold-2</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-navy)"></i><span><b>Azul marino</b><br><code>--gw-navy</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-bg)"></i><span><b>Fondo</b><br><code>--gw-bg</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-surface)"></i><span><b>Superficie</b><br><code>--gw-surface</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-surface-2)"></i><span><b>Superficie 2</b><br><code>--gw-surface-2</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-border-strong)"></i><span><b>Borde de control</b><br><code>--gw-border-strong</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-text)"></i><span><b>Texto</b><br><code>--gw-text</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-text-muted)"></i><span><b>Texto secundario</b><br><code>--gw-text-muted</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-ok-line)"></i><span><b>Éxito</b><br><code>--gw-ok-*</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-warn-line)"></i><span><b>Aviso</b><br><code>--gw-warn-*</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-err-line)"></i><span><b>Error</b><br><code>--gw-err-*</code></span></div>
+    <div class="g-sw"><i style="background: var(--gw-info-line)"></i><span><b>Información</b><br><code>--gw-info-*</code></span></div>
+  </div>
+
+  <h3 class="gw-subtitle">Tipografía</h3>
+  <p class="gw-lead">Agrandir (la fuente de la app, alojada en el repo) con Montserrat de respaldo. Seis tamaños; nada por debajo de 14 px.</p>
+  <div class="gw-card gw-stack">
+    <p class="gw-display">Título de portada · 36 px</p>
+    <p class="gw-title">Título de pantalla · 28 px</p>
+    <p class="gw-subtitle">Subtítulo · 22 px</p>
+    <p class="gw-lead">Texto destacado · 18 px</p>
+    <p>Texto normal · 16 px. Frases cortas y en español sencillo: «Busca a la persona por su cédula».</p>
+    <p class="gw-text-sm gw-muted">Ayuda y etiquetas · 14 px.</p>
+  </div>
+
+  <h3 class="gw-subtitle">Espaciado, radios, sombras y foco</h3>
+  <div class="g-grid">
+    <div class="g-demo gw-stack"><b>Espaciado (4 px)</b>
+      <div class="g-sp"><i style="width:var(--gw-sp-1)"></i>sp-1 · 4</div><div class="g-sp"><i style="width:var(--gw-sp-2)"></i>sp-2 · 8</div><div class="g-sp"><i style="width:var(--gw-sp-3)"></i>sp-3 · 12</div><div class="g-sp"><i style="width:var(--gw-sp-4)"></i>sp-4 · 16</div><div class="g-sp"><i style="width:var(--gw-sp-5)"></i>sp-5 · 24</div><div class="g-sp"><i style="width:var(--gw-sp-6)"></i>sp-6 · 32</div></div>
+    <div class="g-demo gw-stack"><b>Radios</b>
+      <div class="gw-card" style="border-radius:var(--gw-radius-sm); padding:var(--gw-sp-3)">sm · 8</div><div class="gw-card" style="border-radius:var(--gw-radius-md); padding:var(--gw-sp-3)">md · 12</div><div class="gw-card" style="border-radius:var(--gw-radius-lg); padding:var(--gw-sp-3)">lg · 20</div></div>
+    <div class="g-demo gw-stack"><b>Sombras</b>
+      <div class="gw-card" style="box-shadow:var(--gw-shadow-sm); padding:var(--gw-sp-3)">sm</div><div class="gw-card" style="box-shadow:var(--gw-shadow-md); padding:var(--gw-sp-3)">md</div><div class="gw-card" style="box-shadow:var(--gw-shadow-lg); padding:var(--gw-sp-3)">lg</div></div>
+    <div class="g-demo gw-stack"><b>Anillo de foco</b><p class="gw-text-sm gw-muted">Se ve al navegar con Tab. Pruébalo aquí.</p><a href="#colores" class="gw-btn gw-btn--secondary">Enlace enfocable</a></div>
+  </div>
+</section>
+
+<section class="g-sec" id="componentes">
+  <h2 class="gw-title">Componentes</h2>
+  <p class="gw-lead">Una acción principal por pantalla (botón dorado). Todo mide 44 px o más de alto para dedos y mouse.</p>
+
+  <h3 class="gw-subtitle">Botones</h3>
+  <div class="g-demo gw-row">
+    <button type="button" class="gw-btn gw-btn--primary"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="#i-user-plus"/></svg> Registrar persona</button>
+    <button type="button" class="gw-btn gw-btn--secondary">Cancelar</button>
+    <button type="button" class="gw-btn gw-btn--danger">Borrar</button>
+    <button type="button" class="gw-btn gw-btn--ghost">Ver más</button>
+    <button type="button" class="gw-btn gw-btn--primary" disabled>Desactivado</button>
+    <button type="button" class="gw-btn gw-btn--primary" aria-busy="true">Guardando…</button>
+  </div>
+  <pre class="g-pre">&lt;button type="button" class="gw-btn gw-btn--primary"&gt;Registrar persona&lt;/button&gt;
+&lt;!-- variantes: --secondary · --danger · --ghost · --sm · --block · aria-busy="true" muestra el giro --&gt;</pre>
+
+  <h3 class="gw-subtitle">Mosaicos por tarea (portal)</h3>
+  <p class="gw-lead">Icono + nombre + una línea de ayuda, agrupados por categoría. Cada mosaico es un enlace. <code class="g-code">data-gw-keywords</code> alimentará el buscador «¿qué quieres hacer?» (Fase 2).</p>
+  <div class="gw-tile-group">
+    <h4 class="gw-tile-group__title"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="#i-home"/></svg> En la puerta</h4>
+    <div class="gw-tiles">
+      <a class="gw-tile" href="#componentes" data-gw-keywords="registrar llegada cédula"><span class="gw-tile__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-user-plus"/></svg></span><span class="gw-tile__name">Registrar personas</span><span class="gw-tile__help">Busca por cédula o por QR.</span></a>
+      <a class="gw-tile" href="#componentes" data-gw-keywords="rostro cámara entrar"><span class="gw-tile__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-face"/></svg></span><span class="gw-tile__name">Entrar con el rostro</span><span class="gw-tile__help">Solo si la persona aceptó.</span></a>
+      <a class="gw-tile" href="#componentes" data-gw-keywords="imprimir escarapela"><span class="gw-tile__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-printer"/></svg></span><span class="gw-tile__name">Imprimir escarapelas</span><span class="gw-tile__help">Una por persona.</span></a>
+    </div>
+  </div>
+  <div class="gw-tile-group">
+    <h4 class="gw-tile-group__title"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="#i-chart"/></svg> Después del evento</h4>
+    <div class="gw-tiles">
+      <a class="gw-tile" href="#componentes"><span class="gw-tile__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-chart"/></svg></span><span class="gw-tile__name">Estadísticas</span><span class="gw-tile__help">Cuántos llegaron y cuándo.</span></a>
+      <a class="gw-tile" href="#componentes"><span class="gw-tile__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-form"/></svg></span><span class="gw-tile__name">Formularios</span><span class="gw-tile__help">Inscripciones y pagos.</span></a>
+      <a class="gw-tile" href="#componentes" aria-disabled="true"><span class="gw-tile__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-calendar"/></svg></span><span class="gw-tile__name">Calendario</span><span class="gw-tile__help">Mosaico desactivado.</span></a>
+    </div>
+  </div>
+  <pre class="g-pre">&lt;div class="gw-tile-group"&gt;
+  &lt;h4 class="gw-tile-group__title"&gt;En la puerta&lt;/h4&gt;
+  &lt;div class="gw-tiles"&gt;
+    &lt;a class="gw-tile" href="/..." data-gw-keywords="registrar cédula"&gt;
+      &lt;span class="gw-tile__icon"&gt;&lt;svg class="gw-icon gw-icon--lg" aria-hidden="true"&gt;&lt;use href="…/icons.svg#i-user-plus"/&gt;&lt;/svg&gt;&lt;/span&gt;
+      &lt;span class="gw-tile__name"&gt;Registrar personas&lt;/span&gt;&lt;span class="gw-tile__help"&gt;Busca por cédula o por QR.&lt;/span&gt;
+    &lt;/a&gt; …</pre>
+
+  <h3 class="gw-subtitle">Tarjeta y formulario</h3>
+  <div class="gw-card" style="max-width:560px">
+    <div class="gw-card__head"><h4 class="gw-card__title">Buscar a una persona</h4></div>
+    <form class="gw-stack" onsubmit="return false">
+      <div class="gw-field"><label class="gw-label" for="gCedula">Cédula <span class="gw-req" aria-hidden="true">*</span></label><input class="gw-input" id="gCedula" inputmode="numeric" placeholder="Ej.: 1020304050" aria-describedby="gCedulaAyuda"><span class="gw-hint" id="gCedulaAyuda">Escríbela sin puntos ni espacios.</span></div>
+      <div class="gw-field gw-field--error"><label class="gw-label" for="gCorreo">Correo</label><input class="gw-input" id="gCorreo" value="ana@correo" aria-invalid="true" aria-describedby="gCorreoError"><span class="gw-error-msg" id="gCorreoError"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="#i-error"/></svg>Escribe el correo completo, por ejemplo ana@correo.com.</span></div>
+      <div class="gw-field"><label class="gw-label" for="gArea">Área</label><select class="gw-select" id="gArea"><option>Entrada principal</option><option>Zona VIP</option></select></div>
+      <div class="gw-field"><label class="gw-label" for="gNota">Nota</label><textarea class="gw-textarea" id="gNota"></textarea></div>
+      <label class="gw-check"><input type="checkbox" checked> Ya mostró su documento</label>
+      <div class="gw-row gw-row--end"><button type="button" class="gw-btn gw-btn--secondary">Cancelar</button><button type="submit" class="gw-btn gw-btn--primary">Buscar</button></div>
+    </form>
+  </div>
+  <pre class="g-pre">&lt;div class="gw-field gw-field--error"&gt;
+  &lt;label class="gw-label" for="correo"&gt;Correo&lt;/label&gt;
+  &lt;input class="gw-input" id="correo" aria-invalid="true" aria-describedby="correoError"&gt;
+  &lt;span class="gw-error-msg" id="correoError"&gt;Escribe el correo completo, por ejemplo ana@correo.com.&lt;/span&gt;
+&lt;/div&gt;</pre>
+
+  <h3 class="gw-subtitle">Tabla e insignias de estado</h3>
+  <div class="gw-table-wrap">
+    <table class="gw-table">
+      <caption>Personas del evento</caption>
+      <thead><tr><th scope="col">Nombre</th><th scope="col">Cédula</th><th scope="col">Estado</th><th scope="col">Hora</th></tr></thead>
+      <tbody>
+        <tr><td>Ana Pérez</td><td>1020304050</td><td><span class="gw-badge gw-badge--ok"><svg class="gw-icon" aria-hidden="true"><use href="#i-check"/></svg>Registrada</span></td><td>08:42</td></tr>
+        <tr><td>Luis Gómez</td><td>80123456</td><td><span class="gw-badge gw-badge--warn"><svg class="gw-icon" aria-hidden="true"><use href="#i-alert"/></svg>Por confirmar</span></td><td>—</td></tr>
+        <tr><td>Marta Ruiz</td><td>52987654</td><td><span class="gw-badge gw-badge--err"><svg class="gw-icon" aria-hidden="true"><use href="#i-error"/></svg>Sin cupo</span></td><td>—</td></tr>
+        <tr><td>Camilo Soto</td><td>1098765432</td><td><span class="gw-badge gw-badge--info"><svg class="gw-icon" aria-hidden="true"><use href="#i-info"/></svg>Invitado</span> <span class="gw-badge">En lista</span></td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="gw-subtitle">Avisos</h3>
+  <div class="gw-stack">
+    <div class="gw-alert gw-alert--ok" role="status"><svg class="gw-icon" aria-hidden="true"><use href="#i-check"/></svg><div><div class="gw-alert__title">Persona registrada</div><div class="gw-alert__body">Ya puedes imprimir su escarapela.</div></div></div>
+    <div class="gw-alert gw-alert--warn" role="status"><svg class="gw-icon" aria-hidden="true"><use href="#i-alert"/></svg><div><div class="gw-alert__title">Quedan pocos cupos</div><div class="gw-alert__body">Avisa al coordinador si necesitas más.</div></div></div>
+    <div class="gw-alert gw-alert--err" role="alert"><svg class="gw-icon" aria-hidden="true"><use href="#i-error"/></svg><div><div class="gw-alert__title">No se pudo guardar</div><div class="gw-alert__body">Revisa tu conexión y pulsa «Guardar» otra vez. Tus datos siguen en pantalla.</div></div></div>
+    <div class="gw-alert" role="status"><svg class="gw-icon" aria-hidden="true"><use href="#i-info"/></svg><div><div class="gw-alert__title">Modo sin conexión</div><div class="gw-alert__body">Los registros se enviarán cuando vuelva el internet.</div></div></div>
+  </div>
+
+  <h3 class="gw-subtitle">Estados de pantalla: vacío, cargando, error</h3>
+  <p class="gw-lead">El error dice QUÉ HACER, no qué falló. Siempre hay un botón claro para seguir.</p>
+  <div class="g-grid">
+    <div class="gw-state"><span class="gw-state__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-inbox"/></svg></span><p class="gw-state__title">Aún no hay personas</p><p class="gw-state__text">Carga la lista del evento o registra a la primera persona.</p><a class="gw-btn gw-btn--primary" href="#componentes">Cargar lista</a></div>
+    <div class="gw-state" role="status" aria-live="polite"><div class="gw-spinner" aria-hidden="true"></div><p class="gw-state__title">Cargando personas…</p><p class="gw-state__text">Esto toma unos segundos.</p></div>
+    <div class="gw-state gw-state--error" role="alert"><span class="gw-state__icon"><svg class="gw-icon gw-icon--lg" aria-hidden="true"><use href="#i-error"/></svg></span><p class="gw-state__title">No pudimos cargar la lista</p><p class="gw-state__text">Revisa que tengas internet y vuelve a intentarlo. Si sigue igual, avisa al coordinador.</p><button type="button" class="gw-btn gw-btn--primary">Intentar de nuevo</button></div>
+  </div>
+
+  <h3 class="gw-subtitle">Ventana (modal)</h3>
+  <p class="gw-lead">Se cierra con sus botones o con Esc; un clic afuera NO la cierra (regla del repo para formularios de datos). El foco queda atrapado adentro y vuelve al botón que la abrió.</p>
+  <button type="button" class="gw-btn gw-btn--secondary" data-gw-open="gModal">Abrir ventana</button>
+  <div class="gw-modal-backdrop" id="gModal"><div class="gw-modal" role="dialog" aria-modal="true" aria-labelledby="gModalTitulo">
+    <div class="gw-modal__head"><h4 class="gw-modal__title" id="gModalTitulo">¿Borrar a esta persona?</h4><button type="button" class="gw-help__btn" data-gw-close aria-label="Cerrar"><svg class="gw-icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
+    <div class="gw-modal__body"><p>Se borrarán sus datos del evento. Esta acción no se puede deshacer.</p></div>
+    <div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" data-gw-close>Cancelar</button><button type="button" class="gw-btn gw-btn--danger" data-gw-close>Sí, borrar</button></div>
+  </div></div>
+
+  <h3 class="gw-subtitle">Asistente por pasos</h3>
+  <p class="gw-lead">«Paso 2 de 5», barra de avance y UN botón principal. «Atrás» es secundario y no aparece en el primer paso. Al terminar, el asistente emite el evento <code class="g-code">gw:wizard-finish</code>.</p>
+  <div class="gw-card" style="max-width:560px" data-gw-wizard>
+    <div class="gw-wizard__head"><h4 class="gw-card__title">Crear un evento</h4><span class="gw-wizard__count" data-gw-wizard-count aria-live="polite">Paso 1 de 3</span></div>
+    <div class="gw-progress" role="progressbar" aria-label="Avance" aria-valuemin="1" aria-valuenow="1" aria-valuemax="3"><div class="gw-progress__bar" data-gw-wizard-bar></div></div>
+    <div class="gw-wizard__panel" data-gw-wizard-panel><div class="gw-field"><label class="gw-label" for="wNombre">¿Cómo se llama el evento?</label><input class="gw-input" id="wNombre" placeholder="Ej.: Congreso anual"></div></div>
+    <div class="gw-wizard__panel" data-gw-wizard-panel hidden><div class="gw-field"><label class="gw-label" for="wFecha">¿Qué día es?</label><input class="gw-input" id="wFecha" type="date"></div></div>
+    <div class="gw-wizard__panel" data-gw-wizard-panel hidden><div class="gw-alert gw-alert--ok"><svg class="gw-icon" aria-hidden="true"><use href="#i-check"/></svg><div class="gw-alert__title">Todo listo para crear el evento.</div></div></div>
+    <div class="gw-wizard__foot"><button type="button" class="gw-btn gw-btn--secondary" data-gw-wizard-prev hidden>Atrás</button><button type="button" class="gw-btn gw-btn--primary" data-gw-wizard-next data-label="Siguiente" data-label-last="Crear evento">Siguiente</button></div>
+  </div>
+  <pre class="g-pre">&lt;div data-gw-wizard&gt;
+  &lt;span data-gw-wizard-count&gt;&lt;/span&gt;  &lt;div class="gw-progress"&gt;&lt;div class="gw-progress__bar" data-gw-wizard-bar&gt;&lt;/div&gt;&lt;/div&gt;
+  &lt;div data-gw-wizard-panel&gt;paso 1&lt;/div&gt; &lt;div data-gw-wizard-panel hidden&gt;paso 2&lt;/div&gt;
+  &lt;button data-gw-wizard-prev&gt;Atrás&lt;/button&gt; &lt;button data-gw-wizard-next data-label="Siguiente" data-label-last="Terminar"&gt;&lt;/button&gt;
+&lt;/div&gt;</pre>
+
+  <h3 class="gw-subtitle">Barra de navegación y buscador futuro</h3>
+  <p class="gw-lead">La barra de arriba ES el componente <code class="g-code">.gw-nav</code>: en celular se pliega tras «Menú». Reserva el hueco <code class="g-code">&lt;div class="gw-nav__search" data-gw-search-slot hidden&gt;</code> para el buscador «¿qué quieres hacer?» de la Fase 2 (hoy no existe y está oculto). La barra lateral actual (<code class="g-code">templates/_sidebar.html</code>) ya usa los íconos y el tamaño táctil de la base.</p>
+</section>
+
+<section class="g-sec" id="ayuda">
+  <h2 class="gw-title">Ayuda en contexto y recorrido</h2>
+  <p class="gw-lead">En cada pantalla va un «?» que abre un panel con un dibujo animado, una o dos líneas y «Entendido». Con teclado: Enter/Espacio abre, Tab gira dentro del panel, Esc cierra y el foco vuelve al «?». Si la persona pidió menos movimiento (<code class="g-code">prefers-reduced-motion</code>), el dibujo queda quieto en su último cuadro.</p>
+
+  <div class="g-grid">
+    <div class="g-demo"><div class="gw-row gw-row--between"><b>Buscar por cédula</b>
+      <div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="gAy1" aria-haspopup="dialog" aria-label="Ayuda: buscar por cédula"><svg class="gw-icon" aria-hidden="true"><use href="#i-help"/></svg></button>
+        <div class="gw-popover" id="gAy1" role="dialog" aria-modal="true" aria-labelledby="gAy1t" hidden>
+          <svg class="gw-anim gw-anim--search" viewBox="0 0 160 100" aria-hidden="true" focusable="false"><rect class="a-card" x="14" y="12" width="132" height="76" rx="10"/><rect class="a-line" x="28" y="26" width="64" height="8" rx="4"/><rect class="a-line" x="28" y="40" width="90" height="8" rx="4"/><rect class="a-hit" x="26" y="56" width="108" height="18" rx="6"/><rect class="a-body" x="34" y="62" width="40" height="6" rx="3"/><path class="a-ok" d="M112 65l6 6 11-13"/><g class="a-lens-g"><circle class="a-lens" cx="64" cy="62" r="11"/><path class="a-lens" d="M72 70l12 12"/></g></svg>
+          <p class="gw-popover__title" id="gAy1t">Buscar por cédula</p><p class="gw-popover__text">Escribe la cédula y pulsa «Buscar». La persona aparece en la lista.</p>
+          <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-gw-help-close>Entendido</button></div></div></div>
+      <p class="gw-text-sm gw-muted">Animación: una lupa encuentra la fila y aparece una marca verde.</p></div>
+    <div class="g-demo"><div class="gw-row gw-row--between"><b>Imprimir escarapela</b>
+      <div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="gAy2" aria-haspopup="dialog" aria-label="Ayuda: imprimir escarapela"><svg class="gw-icon" aria-hidden="true"><use href="#i-help"/></svg></button>
+        <div class="gw-popover" id="gAy2" role="dialog" aria-modal="true" aria-labelledby="gAy2t" hidden>
+          <svg class="gw-anim gw-anim--print" viewBox="0 0 160 100" aria-hidden="true" focusable="false"><g class="a-paper-g"><rect class="a-paper" x="56" y="6" width="48" height="56" rx="5"/><circle class="a-paper-ink" cx="80" cy="24" r="7"/><rect class="a-paper-ink" x="66" y="36" width="28" height="5" rx="2"/><rect class="a-paper-ink" x="70" y="46" width="20" height="4" rx="2"/></g><rect class="a-body" x="28" y="56" width="104" height="32" rx="9"/><rect x="44" y="62" width="72" height="5" rx="2.5" fill="#0b0f2b" opacity=".55"/></svg>
+          <p class="gw-popover__title" id="gAy2t">Imprimir escarapela</p><p class="gw-popover__text">Pulsa «Imprimir» y la escarapela sale de la impresora.</p>
+          <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-gw-help-close>Entendido</button></div></div></div>
+      <p class="gw-text-sm gw-muted">Animación: la escarapela sale por la ranura de la impresora.</p></div>
+    <div class="g-demo"><div class="gw-row gw-row--between"><b>Cambiar el tema</b>
+      <div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="gAy3" aria-haspopup="dialog" aria-label="Ayuda: cambiar el tema"><svg class="gw-icon" aria-hidden="true"><use href="#i-help"/></svg></button>
+        <div class="gw-popover" id="gAy3" role="dialog" aria-modal="true" aria-labelledby="gAy3t" hidden>
+          <svg class="gw-anim gw-anim--theme" viewBox="0 0 160 100" aria-hidden="true" focusable="false"><rect class="a-light" x="14" y="12" width="132" height="52" rx="10"/><rect class="a-dark a-shade" x="14" y="12" width="132" height="52" rx="10"/><rect class="a-pill" x="60" y="72" width="40" height="18" rx="9"/><circle class="a-knob" cx="91" cy="81" r="7"/></svg>
+          <p class="gw-popover__title" id="gAy3t">Cambiar el tema</p><p class="gw-popover__text">Pulsa «Tema oscuro» arriba. Solo cambia en este aparato.</p>
+          <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-gw-help-close>Entendido</button></div></div></div>
+      <p class="gw-text-sm gw-muted">Animación: el interruptor se mueve y la pantalla se oscurece.</p></div>
+  </div>
+  <pre class="g-pre">&lt;div class="gw-help"&gt;
+  &lt;button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="ayuda1" aria-haspopup="dialog" aria-label="Ayuda: …"&gt;?&lt;/button&gt;
+  &lt;div class="gw-popover" id="ayuda1" role="dialog" aria-modal="true" aria-labelledby="ayuda1t" hidden&gt;
+    &lt;svg class="gw-anim gw-anim--search" viewBox="0 0 160 100" aria-hidden="true"&gt;…&lt;/svg&gt;   &lt;!-- también --print y --theme: copia sus formas de esta guía --&gt;
+    &lt;p class="gw-popover__title" id="ayuda1t"&gt;Título&lt;/p&gt;&lt;p class="gw-popover__text"&gt;1–2 líneas.&lt;/p&gt;
+    &lt;button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-gw-help-close&gt;Entendido&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+/* Regla de las animaciones: el estado base del CSS es el cuadro FINAL; con movimiento reducido solo se quita la animación. */</pre>
+
+  <h3 class="gw-subtitle">Recorrido de primera vez</h3>
+  <p class="gw-lead">Resalta un elemento y lo explica en pasos («Paso 2 de 5», Atrás / Siguiente / Omitir). Sale UNA vez por dispositivo (se guarda en el navegador) y se repite con «Ver recorrido de nuevo». Funciona sin red.</p>
+  <div class="g-demo" data-gw-tour="guia">
+    <div class="gw-row gw-row--between">
+      <button type="button" class="gw-btn gw-btn--primary" data-gw-tour-step="1" data-gw-tour-title="Aquí registras" data-gw-tour-text="Pulsa este botón para registrar a una persona que llega.">Registrar persona</button>
+      <span class="gw-badge gw-badge--ok" data-gw-tour-step="2" data-gw-tour-title="Así ves el estado" data-gw-tour-text="Verde quiere decir que la persona ya entró."><svg class="gw-icon" aria-hidden="true"><use href="#i-check"/></svg>Registrada</span>
+      <button type="button" class="gw-theme-toggle" data-gw-theme-toggle aria-pressed="false" data-gw-tour-step="3" data-gw-tour-title="Cambia el tema" data-gw-tour-text="Elige claro u oscuro. Solo cambia en este aparato."><svg class="gw-icon gw-icon--sm gw-icon--moon" aria-hidden="true"><use href="#i-moon"/></svg><svg class="gw-icon gw-icon--sm gw-icon--sun" aria-hidden="true"><use href="#i-sun"/></svg><span data-gw-theme-label>Tema oscuro</span></button>
+    </div>
+    <p style="margin-top:var(--gw-sp-3)"><a href="#ayuda" data-gw-tour-restart="guia">Ver recorrido de nuevo</a></p>
+  </div>
+  <pre class="g-pre">&lt;main data-gw-tour="inicio" data-gw-tour-auto&gt;          &lt;!-- data-gw-tour-auto: sale solo la primera vez --&gt;
+  &lt;button data-gw-tour-step="1" data-gw-tour-title="Aquí registras" data-gw-tour-text="Pulsa este botón…"&gt;…&lt;/button&gt;
+  &lt;a href="#" data-gw-tour-restart="inicio"&gt;Ver recorrido de nuevo&lt;/a&gt;
+&lt;/main&gt;
+/* En JS: GW.tour.start('inicio', {force:true}). Guarda 'gw_tour_inicio' en localStorage (con try/catch). */</pre>
+</section>
+
+<section class="g-sec" id="imprimible">
+  <h2 class="gw-title">Lo que se imprime nunca cambia de tema</h2>
+  <p class="gw-lead">Las escarapelas, sus plantillas y vistas previas van dentro de <code class="g-code">.gw-no-theme</code>: aunque la pantalla esté en oscuro, siguen blancas con tinta oscura (se imprimen así). Prueba el interruptor.</p>
+  <div class="gw-no-theme g-badge-demo">Vista previa de escarapela<br><span style="font-weight:400">Ana Pérez · Entrada general</span></div>
+  <pre class="g-pre">&lt;div class="gw-no-theme"&gt; …vista previa de la escarapela… &lt;/div&gt;</pre>
+</section>
+
+<section class="g-sec" id="iconos">
+  <h2 class="gw-title">Íconos</h2>
+  <p class="gw-lead">Sprite propio en <code class="g-code">static/img/icons.svg</code> (sin librerías). Siempre con texto al lado y <code class="g-code">aria-hidden="true"</code>. Uso: <code class="g-code">&lt;svg class="gw-icon" aria-hidden="true"&gt;&lt;use href="{{ url_for('static', path='img/icons.svg') }}#i-users"/&gt;&lt;/svg&gt;</code>.</p>
+  <div class="g-icons" id="gIconos"></div>
+</section>
+
+</main>
+<script>
+  /* Solo para esta guía: dibuja la rejilla de íconos a partir del sprite copiado arriba. */
+  (function () {
+    var grid = document.getElementById('gIconos'), ns = 'http://www.w3.org/2000/svg';
+    Array.prototype.forEach.call(document.querySelectorAll('svg[data-sprite] symbol'), function (s) {
+      var d = document.createElement('div'), svg = document.createElementNS(ns, 'svg'), use = document.createElementNS(ns, 'use'), t = document.createElement('span');
+      svg.setAttribute('class', 'gw-icon gw-icon--lg'); svg.setAttribute('aria-hidden', 'true'); use.setAttribute('href', '#' + s.id); svg.appendChild(use);
+      t.textContent = s.id.replace('i-', ''); d.appendChild(svg); d.appendChild(t); grid.appendChild(d);
+    });
+  })();
+</script>
+</body>
+</html>
