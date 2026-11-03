@@ -5,6 +5,7 @@ from datetime import timedelta
 from app import formsvc, reconcile
 from app.models import FormPayment, FormSubmission, WebForm
 from app.timeutil import utcnow
+from tests.conftest import login
 from tests.test_form_payments import _event, _event_for, _staff, _submit, _values, _with_payment, keys, _no_dns  # noqa: F401,F811
 
 
@@ -145,3 +146,49 @@ def test_e2_total_suppression_removes_queue_rows_and_web_acceptances(db, factory
     assert [w.user_id for w in db.query(WebAcceptance).all()] == ["2002"]
     left = db.query(Job).all()
     assert len(left) == 1 and jobs.payload_user_id(json.loads(left[0].payload_json)) == "2002"
+
+
+# ------------------------------------------------------------------ E4: el directorio para el rol «cliente» no entrega datos personales
+def _people_with_contact(db, factory, ev):
+    from datetime import date
+    for uid, name in (("1016100329", "Ana"), ("1016100429", "Luis")):       # mismas últimas cifras salvo una: la huella debe distinguirlas
+        u = factory.person(ev, uid, first_name=name)
+        u.phone, u.email, u.birth_date, u.entity = "3001234567", f"{name.lower()}@example.com", date(1990, 1, 2), "ACME SAS"
+        u.set_extras({"opcional_1": "dato"})
+    db.commit()
+
+
+def test_e4_cliente_gets_masked_directory_and_staff_gets_full(client, factory, db):
+    ev = factory.event(facial_enabled=True)
+    _people_with_contact(db, factory, ev)
+    cli = factory.staff("cliente", "cli1")
+    factory.staff("coordinador", "coord9")
+    factory.authorize(ev, cli)
+    assert login(client, "cli1").status_code == 302
+    rows = client.get(f"/api/users?event_id={ev.id}").json()
+    blob = str(rows)
+    assert len(rows) == 2 and len({r["id"] for r in rows}) == 2
+    for secret in ("1016100329", "1016100429", "3001234567", "example.com", "1990-01-02"):
+        assert secret not in blob
+    assert all(r["phone"] == "" and r["email"] == "" and r["birth_date"] == "" and r["extra_fields"] == {} for r in rows)
+    assert {r["first_name"] for r in rows} == {"Ana", "Luis"} and all(r["entity"] == "ACME SAS" for r in rows)
+    changes = client.get(f"/api/users/changes?event_id={ev.id}").json()
+    assert "1016100329" not in str(changes) and "example.com" not in str(changes)
+    client.post("/logout")
+    login(client, "coord9")
+    full = client.get(f"/api/users?event_id={ev.id}").json()
+    assert {r["id"] for r in full} == {"1016100329", "1016100429"} and all(r["phone"] == "3001234567" and r["email"] for r in full)
+
+
+def test_e4_masked_and_full_directory_do_not_share_an_etag(client, factory, db):
+    ev = factory.event()
+    _people_with_contact(db, factory, ev)
+    cli = factory.staff("cliente", "cli1")
+    factory.staff("coordinador", "coord9")
+    factory.authorize(ev, cli)
+    login(client, "coord9")
+    full_tag = client.get(f"/api/users?event_id={ev.id}").headers["etag"]
+    client.post("/logout")
+    login(client, "cli1")
+    r = client.get(f"/api/users?event_id={ev.id}", headers={"If-None-Match": full_tag})
+    assert r.status_code == 200 and r.headers["etag"] != full_tag
