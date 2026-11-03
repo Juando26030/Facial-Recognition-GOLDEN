@@ -1522,7 +1522,7 @@ def manual_register(
 
 
 def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
-                     force, biometric_consent, birth_date, took_ms, ui_flow, db, staff, retry: bool = False):
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None):
     """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
     args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
