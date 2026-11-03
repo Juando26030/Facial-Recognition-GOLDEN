@@ -36,7 +36,7 @@ def login_submit(
 ):
     ip = security.limit_ip(request)                 # None = IP de Google: solo cuenta el límite por usuario
     username = username.strip()
-    # Bloqueo temporal tras varios fallos (por usuario y por IP). Se aplica igual exista o no la cuenta,
+    # Bloqueo temporal tras varios fallos (0C-C7: por PAR usuario+IP, por IP y un tope global alto por usuario). Se aplica igual exista o no la cuenta,
     # y el mensaje no dice cuál de las dos cosas falló.
     wait = security.login_minutes_locked(db, username, ip)
     if wait:
@@ -51,7 +51,7 @@ def login_submit(
             request=request, name="login.html",
             context={"error": "Usuario o contraseña incorrectos"}, status_code=401,
         )
-    security.clear_events(db, "login_fail", username)
+    security.clear_events(db, "login_fail", username)       # el login correcto limpia TODOS los fallos del usuario (de cualquier IP)
     prev_sid = request.session.get("sid")
     busy = sessions.login_gate(db, request, staff, prev_sid)      # puesto de impresión en uso: se rechaza (sesión única / protegida; ver app/sessions.py)
     if busy:

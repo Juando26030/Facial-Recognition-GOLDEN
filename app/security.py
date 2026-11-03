@@ -20,8 +20,9 @@ from sqlalchemy.orm import Session
 
 from app.models import PasswordResetToken, RateLimitEvent
 
-LOGIN_MAX_FAILS = 5          # intentos fallidos por usuario dentro de la ventana
+LOGIN_MAX_FAILS = 5          # intentos fallidos por PAR (usuario, IP) dentro de la ventana
 LOGIN_MAX_FAILS_PER_IP = 20  # tope por IP (cubre a quien prueba muchos usuarios distintos)
+LOGIN_MAX_FAILS_PER_USER = 40  # tope global por usuario desde cualquier IP (fuerza bruta distribuida); muy alto para que un tercero no pueda dejar fuera al dueño
 LOGIN_WINDOW = timedelta(minutes=15)
 RESET_MAX_REQUESTS = 5       # solicitudes de "olvidé mi contraseña" por usuario / por IP en la ventana
 RESET_WINDOW = timedelta(hours=1)
@@ -191,8 +192,32 @@ def minutes_locked(db: Session, kind: str, key: Optional[str], ip: Optional[str]
     return max(1, math.ceil(max(locks).total_seconds() / 60))
 
 
-def login_minutes_locked(db: Session, username: str, ip: str) -> int:
-    return minutes_locked(db, "login_fail", username, ip, LOGIN_MAX_FAILS, LOGIN_MAX_FAILS_PER_IP, LOGIN_WINDOW)
+def _window_unlock(db: Session, kind: str, conds: list, limit: int, window: timedelta) -> Optional[timedelta]:
+    """Cuánto falta para que se libere el cubo definido por `conds` (None = no está lleno)."""
+    times = [r.created_at for r in db.query(RateLimitEvent.created_at).filter(
+        RateLimitEvent.kind == kind, RateLimitEvent.created_at > utcnow() - window, *conds,
+    ).order_by(RateLimitEvent.created_at.desc()).limit(limit)]
+    if len(times) < limit:
+        return None
+    return (times[-1] + window) - utcnow()
+
+
+def login_minutes_locked(db: Session, username: str, ip: Optional[str]) -> int:
+    """Minutos de bloqueo del login (0 = libre). 0C (C7): el bloqueo es por PAR (usuario, IP), así un atacante externo no deja fuera al dueño de la cuenta (p. ej. el
+    super_admin) desde otra IP. Tres cubos: el par (LOGIN_MAX_FAILS; si la IP es None —IP de Google, no confiable— el par es solo el usuario), la IP (LOGIN_MAX_FAILS_PER_IP: quien
+    prueba muchos usuarios) y un tope global por usuario MUCHO más alto (LOGIN_MAX_FAILS_PER_USER) contra la fuerza bruta repartida en muchas IPs."""
+    key = (username or "").lower()
+    locks = []
+    pair = [RateLimitEvent.key == key] + ([RateLimitEvent.ip == ip] if ip else [])
+    for conds, limit in ((pair, LOGIN_MAX_FAILS), ([RateLimitEvent.key == key], LOGIN_MAX_FAILS_PER_USER), ([RateLimitEvent.ip == ip] if ip else None, LOGIN_MAX_FAILS_PER_IP)):
+        if conds is None:
+            continue
+        left = _window_unlock(db, "login_fail", conds, limit, LOGIN_WINDOW)
+        if left is not None:
+            locks.append(left)
+    if not locks:
+        return 0
+    return max(1, math.ceil(max(locks).total_seconds() / 60))
 
 
 def enforce_public_limit(db: Session, request: Request, kind: str, key: str, max_hits: int, window: timedelta) -> None:
