@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app import event_rules, sessions
+from app import event_rules, idle, sessions
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, STAFF_ROLES
 
@@ -165,6 +165,7 @@ def get_event_for_staff(event_id: int, db: Session, staff: StaffUser) -> Event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
     assert_event_scope(event, staff, db)
+    idle.note_event(event)                      # tiempo de inactividad propio del evento (solo en proceso); ver app/idle.py
 
     if staff.role in ("digitador", "cliente"):
         authorized = db.query(EventStaffAuthorization).filter_by(

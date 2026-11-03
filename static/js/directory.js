@@ -921,9 +921,8 @@
       if (GC && GC.onChange) GC.onChange((st) => { if (st === 'normal' && localMode) reload(); else if (st === 'contingency' && !allUsers.length) reload(); });      // vuelve la red: la lista del servidor
     }
 
-    setInterval(() => {
-      if (document.visibilityState === 'visible' && tbodyEl && tbodyEl.offsetParent !== null) refresh();
-    }, POLL_MS);
+    const pollRefresh = () => { if (document.visibilityState === 'visible' && tbodyEl && tbodyEl.offsetParent !== null) refresh(); };
+    if (window.GW && window.GW.poll) window.GW.poll(pollRefresh, POLL_MS); else setInterval(pollRefresh, POLL_MS);      // sin uso 60 s no consulta la base (toast.js, GW.idle); al volver se pone al día enseguida
     // Con la pestaña oculta no se consulta (no gasta la base); al volver a ella se ponen al día los cambios de inmediato.
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 

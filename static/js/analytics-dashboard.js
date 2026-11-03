@@ -106,7 +106,10 @@
     }
     q('.ad-refresh').addEventListener('click', load);
     load();
-    if (opts.refreshSeconds) timer = setInterval(() => { if (document.body.contains(container)) load(); else clearInterval(timer); }, opts.refreshSeconds * 1000);
+    if (opts.refreshSeconds) {
+      const again = () => { if (document.body.contains(container)) load(); else clearInterval(timer); };
+      timer = window.GW && window.GW.poll ? window.GW.poll(again, opts.refreshSeconds * 1000) : setInterval(again, opts.refreshSeconds * 1000);      // pausado mientras la pestaña no se usa (GW.idle)
+    }
     return { reload: load };
   }
 

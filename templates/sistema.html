@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <style>
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
@@ -98,7 +99,7 @@
   setInterval(() => { if (last) document.getElementById('updated').textContent = 'Actualizado hace ' + Math.round((Date.now() - last) / 1000) + ' s'; }, 1000);
   document.getElementById('refreshBtn').addEventListener('click', refresh);
   refresh();
-  setInterval(refresh, 15000);
+  if (window.GW && window.GW.poll) window.GW.poll(refresh, 15000); else setInterval(refresh, 15000);      // pausado mientras la pestaña no se usa (GW.idle)
 })();
 </script>
 </body>
