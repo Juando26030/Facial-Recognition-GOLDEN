@@ -546,7 +546,7 @@
   }
   async function dispatch(userId, auto, confirmed, ticket) {         // true = salió (o quedó en manos del servidor); false = no salió
     if (!auto && original.beginManual && !original.beginManual(userId)) return false;       // doble clic / doble toque en «Imprimir»: una sola
-    if (SHARED && !(await registeredOrSay(userId))) return false;            // «solo a quien está Registrado» lo comprueba la ruta compartida; sin ella, la regla de siempre
+    if (SHARED && !(await registeredOrSay(userId))) return;            // «solo a quien está Registrado» lo comprueba la ruta compartida; sin ella, la regla de siempre
     let explicit = !!confirmed;                    // reimpresión EXPLÍCITA: desde la Cola o tras confirmar «¿imprimir de nuevo?»
     if (SHARED && route.mode === 'shared') {
       if (!auto && !confirmed) {                    // el botón manual conserva el aviso de reimpresión de siempre

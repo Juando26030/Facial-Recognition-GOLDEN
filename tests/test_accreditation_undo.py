@@ -27,7 +27,7 @@ def test_the_person_who_accredited_can_undo_within_15_seconds(client, factory, d
     assert _checkin(client, ev, "1001", "c-1").json()["result"] == "SÍ"
     assert db.query(AccessLog).filter_by(event_id=ev.id, user_id="1001").count() == 1
     r = _undo(client, ev, "c-1")
-    assert r.status_code == 200 and r.json() == {"undone": True, "user_id": "1001"}
+    assert r.status_code == 200 and r.json() == {"undone": True, "user_id": "1001", "auto_print": False, "auto_register": False}
     assert db.query(AccessLog).filter_by(event_id=ev.id, user_id="1001").count() == 0          # vuelve a «No registrado»
     assert _undo(client, ev, "c-1").status_code == 404                                         # ya se deshizo
     assert _checkin(client, ev, "1001", "c-2").json()["result"] == "SÍ"                         # y se puede volver a acreditar
