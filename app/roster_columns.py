@@ -25,12 +25,14 @@ KNOWN = {
     "tipo de asistente": {"tipo de asistente", "tipo asistente", "tipo de asistentes"},
     "categoria": {"categoria", "categorias"},
     "certificado": {"certificado", "certificado de asistencia"},
+    "registrado en formulario": {"registrado en formulario", "registrado en el formulario", "registrado formulario", "registrada en formulario", "ya registrado en formulario", "ya inscrito", "inscrito en formulario",
+                                 "inscrito formulario", "ya inscrito en formulario"},
     "fecha de nacimiento": {"fecha de nacimiento", "fecha nacimiento", "nacimiento", "fecha de nac", "fec nacimiento", "fecha nac", "f nacimiento", "birth date", "birthdate", "date of birth", "dob"},
 }
 _LOOKUP = {variant: canonical for canonical, variants in KNOWN.items() for variant in variants}
 
 LABELS = {"id": "Cédula", "nombres": "Nombres", "apellidos": "Apellidos", "cargo": "Cargo", "entidad": "Entidad", "telefono": "Teléfono", "correo": "Correo", "tipo de asistente": "Tipo de asistente",
-          "categoria": "Categoría", "certificado": "Certificado", "fecha de nacimiento": "Fecha de nacimiento"}
+          "categoria": "Categoría", "certificado": "Certificado", "registrado en formulario": "Registrado en formulario", "fecha de nacimiento": "Fecha de nacimiento"}
 
 
 def norm(title) -> str:

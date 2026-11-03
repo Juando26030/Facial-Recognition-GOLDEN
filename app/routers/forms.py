@@ -86,7 +86,8 @@ def _summary(db: Session, form: WebForm, request: Request) -> dict:
     return {
         "id": form.id, "name": form.name, "slug": form.slug, "manual_status": form.manual_status, "use_schedule": form.use_schedule,
         "status": formsvc.status_of(form), "public_state": formsvc.public_state(db, form), "capacity": form.capacity,
-        "submissions": real, "test_submissions": tests, "created_at": to_local(form.created_at).strftime("%Y-%m-%d %H:%M"),
+        "submissions": real, "test_submissions": tests,
+        "preregistered": (marks := formsvc.mark_counts(db, form))["block"], "registered_hold": marks["hold"],      # «ya registradas»: solo bloquean | además ocupan cupo (ya van dentro de `submissions`) "created_at": to_local(form.created_at).strftime("%Y-%m-%d %H:%M"),
         "feed": formsvc.get_settings(form)["feed"], **_urls(request, form),
     }
 
@@ -172,11 +173,86 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
             form.settings_json = json.dumps(formlib.sanitize_settings(data["settings"]))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if ("design" in data or "settings" in data) and formsvc.get_settings(form)["block_repeats"]["enabled"] and not formsvc.repeat_target(formsvc.get_settings(form), formsvc.get_design(form)):
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Para bloquear inscripciones repetidas elige el campo identificador (cédula, correo, teléfono u otro) o agrega un campo de cédula al formulario")
     if "design" in data or "settings" in data:
         formsvc.invalidate_quota_keys(db, form)          # los cupos por variables pudieron cambiar: las llaves guardadas se recalculan solas
     db.commit()
     formsvc.invalidate_public_cache()
     return _detail(db, form, request)
+
+
+@router.post("/events/{event_id}/forms/{form_id}/registered")
+def upload_registered(event_id: int, form_id: int, file: UploadFile = File(...), mode: str = Form("add"), effect: str = Form("block"), enable: str = Form("1"),
+                      db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Carga o recarga la lista de «Personas ya registradas» de ESTE formulario (cédula, o el campo identificador elegido; la columna «Registrado en formulario» es opcional: si viene, solo
+    cuentan las filas con «sí»). `mode`: `add` (no quita nada) | `replace` (quita las marcas previas de este formulario). `effect`: `block` (solo bloquea; por defecto) | `hold` (ocupa cupo
+    como una inscripción y bloquea). `enable` (por defecto sí): si el interruptor «Bloquear inscripciones repetidas» está apagado, lo enciende (las marcas solo bloquean con él encendido)."""
+    from app import roster_columns
+    from app.routers.api import _read_roster_rows, _truthy
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    if mode not in ("add", "replace") or effect not in ("block", "hold"):
+        raise HTTPException(status_code=400, detail="Modo no válido")
+    settings, design = formsvc.get_settings(form), formsvc.get_design(form)
+    probe = {**settings, "block_repeats": {**settings["block_repeats"], "enabled": True}}
+    target = formsvc.repeat_target(probe, design)
+    if not target:
+        raise HTTPException(status_code=400, detail="Elige el campo identificador (cédula, correo, teléfono u otro) o agrega un campo de cédula al formulario antes de cargar la lista")
+    try:
+        header, rows = _read_roster_rows(file.filename, file.file.read())
+    except Exception:  # noqa: BLE001 — archivo ilegible
+        raise HTTPException(status_code=400, detail="No se pudo leer el archivo (usa Excel .xlsx o CSV)")
+    kind_of = {h: roster_columns._LOOKUP.get(roster_columns.norm(h)) for h in header}
+    flag_col = next((h for h, k in kind_of.items() if k == "registrado en formulario"), None)
+    field = design["fields"][target[1]]
+    if target[0] == "cedula":
+        col = next((h for h, k in kind_of.items() if k == "id"), None)
+        if not col:
+            raise HTTPException(status_code=400, detail="El archivo necesita una columna de cédula (id / cédula)")
+    else:
+        want = {"email": "correo", "phone": "telefono"}.get(field.get("key") or "")
+        col = next((h for h in header if roster_columns.norm(h) == roster_columns.norm(field.get("label"))), None) or next((h for h, k in kind_of.items() if want and k == want), None)
+        if not col:
+            others = [h for h in header if h != flag_col]
+            col = others[0] if len(others) == 1 else None
+        if not col:
+            raise HTTPException(status_code=400, detail=f"El archivo necesita una columna llamada «{field.get('label')}»")
+    values = [r.get(col, "") for r in rows if not flag_col or _truthy(r.get(flag_col, ""))]
+    if not values:
+        raise HTTPException(status_code=400, detail="El archivo no trae filas para cargar" + (" (ninguna con «sí» en «Registrado en formulario»)" if flag_col else ""))
+    res = formsvc.apply_list(db, form, values, target[0], target[1], field.get("type"), mode == "replace", effect == "hold")
+    turned_on = False
+    if enable not in ("0", "false", "") and not settings["block_repeats"]["enabled"]:
+        settings["block_repeats"] = {"enabled": True, "field": "" if target[0] == "cedula" else target[1]}
+        form.settings_json = json.dumps(settings)
+        turned_on = True
+    db.commit()
+    formsvc.invalidate_public_cache()
+    formsvc.invalidate_held()
+    msg = f"Lista cargada: {res['added']} nuevas" + (f", {res['converted']} pasaron a ocupar cupo" if res["converted"] else "") + f", {res['existing']} ya estaban"
+    msg += f", {res['removed']} marcas anteriores quitadas." if res["removed"] else "."
+    if effect == "hold" and form.capacity is not None and formsvc.held_count(db, form) > form.capacity:
+        msg += " ATENCIÓN: con esta lista el cupo del formulario quedó superado."
+    if turned_on:
+        msg += " Se activó «Bloquear inscripciones repetidas» en este formulario."
+    elif not settings["block_repeats"]["enabled"]:
+        msg += " OJO: «Bloquear inscripciones repetidas» está apagado: las marcas solo bloquean con ese interruptor encendido."
+    return {**res, "message": msg, **formsvc.mark_counts(db, form), "turned_on": turned_on}
+
+
+@router.delete("/events/{event_id}/forms/{form_id}/registered")
+def clear_registered(event_id: int, form_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """«Quitar todas las marcas»: borra las marcas «ya registrado» de este formulario (liberan el cupo las que lo ocupaban). No toca inscripciones reales."""
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
+    n = formsvc.clear_marks(db, form)
+    db.commit()
+    formsvc.invalidate_public_cache()
+    formsvc.invalidate_held()
+    return {"removed": n, "message": f"Se quitaron {n} marcas de «ya registrado»."}
 
 
 @router.delete("/events/{event_id}/forms/{form_id}")

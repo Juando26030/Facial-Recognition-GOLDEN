@@ -55,7 +55,7 @@ def plan(db: Session, event: Event, run_id: Optional[str] = None, for_export: bo
     """{"eligible": [(asistente, persona, correo)], "omitted": Counter(razón → cuántas)}. Con `for_export=True` (descarga de enlaces) también entran quienes no tienen correo o ya recibieron el enlace."""
     accepted = consent.accepted_user_ids(db, event.tenant_id, event.id)
     denied = consent.denied_user_ids(db, event.tenant_id, event.id)
-    from_form = {r[0] for r in db.query(FormSubmission.person_id).filter(FormSubmission.event_id == event.id, FormSubmission.is_test == False, FormSubmission.person_id.isnot(None)).distinct()}  # noqa: E712
+    from_form = {r[0] for r in db.query(FormSubmission.person_id).filter(FormSubmission.event_id == event.id, FormSubmission.is_test == False, FormSubmission.status != "preregistered", FormSubmission.person_id.isnot(None)).distinct()}  # noqa: E712
     failed = {r[0] for r in db.query(AcceptMailLog.user_id).filter(AcceptMailLog.run_id == run_id, AcceptMailLog.kind == "bulk", AcceptMailLog.result == "failed")} if run_id else set()
     eligible, omitted, minor_ids = [], Counter(), []
     rows = (db.query(EventAttendee, User).join(User, (User.id == EventAttendee.user_id) & (User.tenant_id == EventAttendee.tenant_id))
