@@ -1186,6 +1186,27 @@ def local_roster(
                          "salt": salt, "count": len(rows), "people": rows, "consent": consent_block(event)}, headers=headers)
 
 
+# A2 (0C): único conjunto de columnas de `User` que este endpoint escribe. Antes era `hasattr` + `setattr` sobre cualquier clave del cuerpo (asignación masiva): se podía tocar
+# `face_encoding`, `biometric_consent_at`, `is_biometric_enabled`, `face_captured_at`… Lo biométrico y la cédula tienen sus propios caminos; `birth_date`, `extra_fields`, `categories` y demás se tratan aparte.
+USER_EDITABLE_FIELDS = ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
+
+
+def _clean_user_fields(data: dict) -> dict:
+    """Solo las claves permitidas, con texto simple (o vacío). Lo demás se ignora; un valor que no sea texto/número/vacío es un error 400."""
+    out = {}
+    for key in USER_EDITABLE_FIELDS:
+        if key not in data:
+            continue
+        value = data[key]
+        if value is None:
+            out[key] = None
+        elif isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            out[key] = str(value)[:500]
+        else:
+            raise HTTPException(status_code=400, detail=f"El valor de «{key}» no es válido")
+    return out
+
+
 @router.patch("/users/{user_id}")
 def update_user(
     user_id: str, data: dict, event_id: int, request: Request, db: Session = Depends(get_db),
@@ -1237,9 +1258,8 @@ def update_user(
         # camino válido para cambiar la cédula es ese otro endpoint.
         data.pop("id", None)
         data.pop("tenant_id", None)
-        for key, value in data.items():
-            if hasattr(user, key):
-                setattr(user, key, value)
+        for key, value in _clean_user_fields(data).items():
+            setattr(user, key, value)
         if birth_change:
             was_minor = minors.is_minor(user.birth_date)
             db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=user.id, staff_user_id=staff.id, kind="birth_date",
