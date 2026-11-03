@@ -50,7 +50,7 @@ python scripts/create_staff_user.py --username admin --role super_admin
 uvicorn app.main:app --reload --port 5000
 python -m pytest -q                                            # base propia golden_test (se crea sola; se niega sin «test» en el nombre)
 node tests/js/directory_paging_check.js
-ruff check $(git diff --name-only --diff-filter=AM main...HEAD -- '*.py')   # CI solo revisa archivos nuevos o tocados
+ruff check .                                                    # el CI revisa TODO el repo (desde 0B); opcional: pip install pre-commit && pre-commit install
 docker compose -f deploy/docker-compose.yml build && docker compose -f deploy/docker-compose.yml up publico web biometria   # usa .env.staging
 STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migrate_files.py   # con fsouza/fake-gcs-server corriendo
 ```
