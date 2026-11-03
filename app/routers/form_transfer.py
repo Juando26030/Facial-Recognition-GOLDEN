@@ -25,7 +25,7 @@ from fastapi.responses import Response
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app import formlib, formsvc
+from app import formlib, formsvc, safe_limits
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, require_role
 from app.database import get_db
 from app.models import Event, StaffUser, WebForm
@@ -245,6 +245,7 @@ def read_package(raw: bytes) -> tuple:
             continue
         ext = name.rsplit(".", 1)[-1].lower()
         try:
+            safe_limits.check_image_dimensions(data)
             with Image.open(io.BytesIO(data)) as im:
                 fmt = im.format
                 im.verify()

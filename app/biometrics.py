@@ -8,6 +8,8 @@ from typing import Optional
 import numpy as np
 from PIL import Image, ImageOps
 
+from app import safe_limits
+
 _fr_module = None
 
 
@@ -23,6 +25,7 @@ def _fr():
 class BiometricEngine:
     @staticmethod
     def process_image_stream(file_stream: bytes) -> np.ndarray:
+        safe_limits.check_image_dimensions(file_stream)
         image = Image.open(io.BytesIO(file_stream))
         image = ImageOps.exif_transpose(image)
         image = image.convert('RGB')
