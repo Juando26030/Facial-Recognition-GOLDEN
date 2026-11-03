@@ -148,6 +148,9 @@
         <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem; margin-top:8px;"><input type="checkbox" id="sendBadge"> Enviar la escarapela virtual al correo del inscrito</label>
         <p class="hint" id="sendBadgeWarn" style="margin-top:2px; color:#8a5a00; background:#fff8e1; padding:6px 10px; border-radius:10px; display:none;">⚠️ <b>Este evento no tiene activada la escarapela digital</b> (Parámetros del Evento): mientras tanto no se enviará nada.</p>
         <p class="hint" id="sendBadgeHint" style="margin-top:2px;">Se envía cuando la inscripción entra a la base del evento (según el modo de arriba: en tiempo real, al cerrar o al pulsar «Cargar a la base ahora»). Usa el campo de correo del formulario y le agrega la aclaración «(a este correo se le enviará su escarapela virtual)». Requiere el módulo de escarapela digital activado en Parámetros del Evento.</p>
+        <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem; margin-top:12px;"><input type="checkbox" id="blockRep"> Bloquear inscripciones repetidas («Ya estás inscrito»)</label>
+        <div id="blockRepBox" style="display:none; margin:4px 0 0 26px;"><label style="font-size:0.82rem;">Campo que identifica a la persona <select id="blockRepField"></select></label></div>
+        <p class="hint" style="margin-top:2px;">Si la persona ya está inscrita en ESTE formulario no podrá volver a enviarlo y verá «Ya estás inscrito» (no se muestra nada más de ella). Con cédula avisa en cuanto la escribe. Las pruebas no cuentan. Las personas marcadas «Registrado en formulario» en la carga de la base también quedan bloqueadas.</p>
         <button class="small-btn" id="feedNow">Cargar a la base ahora las que falten</button> <span class="hint" id="feedInfo"></span>
       </div>
       <div style="margin-bottom:2rem;"><button class="small-btn primary" id="cfgSave" style="padding:10px 26px;">💾 Guardar configuración</button></div>
@@ -1144,10 +1147,20 @@ function paintConfig() {
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
+  paintBlockRep(s.block_repeats || {});
   $('rfDays').value = (s.refunds && s.refunds.days) || ''; $('rfNote').value = (s.refunds && s.refunds.note) || '';
   paintQuotas();
   $('sendBadgeWarn').style.display = form.digital_badge_enabled ? 'none' : 'block';
 }
+function paintBlockRep(b) {
+  const sel = $('blockRepField');
+  const opts = ['<option value="">La cédula (campo vinculado a «Cédula»)</option>'].concat(Object.values(design.fields).filter((f) => ['text_short', 'email', 'phone', 'number'].includes(f.type) && f.key !== 'id')
+    .map((f) => `<option value="${esc(f.id)}">${esc(f.label)}</option>`));
+  sel.innerHTML = opts.join('');
+  sel.value = (b.field && design.fields[b.field]) ? b.field : '';
+  $('blockRep').checked = !!b.enabled; $('blockRepBox').style.display = b.enabled ? '' : 'none';
+}
+$('blockRep').addEventListener('change', () => { $('blockRepBox').style.display = $('blockRep').checked ? '' : 'none'; if ($('blockRep').checked) paintBlockRep({ enabled: true, field: $('blockRepField').value }); });
 const QOPS = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
 const qFields = () => Object.values(design.fields).filter((f) => !STATIC.includes(f.type) && !NOCOND.includes(f.type) && f.type !== 'file');
 function qValueHtml(c, ri, ci) {
@@ -1226,6 +1239,7 @@ $('cfgSave').addEventListener('click', async () => {
     identify: { image: (settings.identify || {}).image || '', title: $('idTitle').value, text: $('idText').value, button: $('idButton').value },
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
+    block_repeats: { enabled: $('blockRep').checked, field: $('blockRep').checked ? $('blockRepField').value : '' },
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => r.limit > 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };

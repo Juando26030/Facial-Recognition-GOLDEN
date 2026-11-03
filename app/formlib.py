@@ -64,7 +64,9 @@ DEFAULT_SETTINGS = {
     "language": "es",                                                # idioma en que está escrito (<html lang>): el navegador ofrece traducir desde ahí
     "translate": True,                                               # mostrar el botón «Translate» para quien no habla ese idioma
     "send_digital_badge": False,                                     # enviar la escarapela virtual al correo del inscrito cuando entra a la base del evento
+    "block_repeats": {"enabled": False, "field": ""},                # «Ya inscrito»: bloquear inscripciones repetidas; `field` = id del campo identificador ("" = el campo vinculado a la cédula)
 }
+REPEAT_FIELD_TYPES = ("text_short", "email", "phone", "number")      # campos que pueden servir de identificador para detectar una inscripción repetida
 
 
 def new_id(prefix="f") -> str:
@@ -840,7 +842,18 @@ def sanitize_settings(settings: dict) -> dict:
     out["language"] = s_in.get("language") if s_in.get("language") in LANGUAGES else "es"
     out["translate"] = bool(s_in.get("translate", True))
     out["send_digital_badge"] = bool(s_in.get("send_digital_badge", False))
+    br = s_in.get("block_repeats") if isinstance(s_in.get("block_repeats"), dict) else {}
+    out["block_repeats"] = {"enabled": bool(br.get("enabled")), "field": _text(br.get("field"), 40)}
     return out
+
+
+def normalize_identifier(value, ftype: str = "text_short") -> str:
+    """Valor de un campo identificador listo para comparar «ya inscrito»: teléfono = solo dígitos; los demás (correo, documento, otro) = minúsculas y sin espacios, puntos ni guiones.
+    Debe coincidir con la expresión SQL de `formsvc.repeat_by_value`."""
+    text = str(value if value is not None else "")
+    if ftype == "phone":
+        return re.sub(r"\D", "", text)
+    return re.sub(r"[\s.\-]", "", text.lower())
 
 
 # ------------------------------------------------------------------ condiciones y visibilidad

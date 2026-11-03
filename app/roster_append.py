@@ -20,7 +20,7 @@ import re
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import consent as consent_mod
-from app import minors, roster_columns
+from app import formsvc, minors, roster_columns
 from app.models import AuditConsentLog, EventAttendee, SuppressedPerson, User
 
 log = logging.getLogger("golden.bulk_append")
@@ -155,7 +155,7 @@ def _restore(state: dict, snap: tuple) -> None:
 def run_step(db, event, staff, step: dict, row_infos: list, header_columns: dict, columns_report: dict, birth_used: bool, prepared: dict, state: dict, step_pos: int, step_end: int,
              row_total: int, progress=None) -> dict:
     """Procesa el grupo de filas de ESTE paso (≤ `APPEND_ROWS`). El commit lo hace quien llama (`app/bulk_steps.py`), junto con el avance de la tarea."""
-    from app.routers.api import _LOOKUP_CHUNK
+    from app.routers.api import _LOOKUP_CHUNK, _truthy
     ap = state.get("append") or new_state()
     dup_rows = set(prepared.get("dup_rows") or [])
     ids = list({i["identificador"] for i in row_infos if i["identificador"]})
@@ -197,6 +197,14 @@ def run_step(db, event, staff, step: dict, row_infos: list, header_columns: dict
                 raise
             log.warning("carga «solo agregar»: un lote fue rechazado por la base; se repite fila por fila")
     db.info.pop("faces_no_bump", None)
+    flagged = [i["identificador"] for i in row_infos if i["identificador"] and i["row_num"] not in dup_rows and _truthy(i["clean_row"].get("registrado en formulario") or "")]
+    if flagged:              # «Registrado en formulario» = sí: ya inscritas en los formularios del evento (no ocupan cupo)
+        try:
+            with db.begin_nested():
+                formsvc.mark_preregistered(db, event, flagged)
+        except SQLAlchemyError:
+            log.warning("carga «solo agregar»: no se pudo marcar «registrado en formulario»", exc_info=True)
+            _note(ap, "⚠️ No se pudo marcar a algunas personas «Registrado en formulario»: vuelve a cargar el mismo archivo.")
     if progress:
         progress(f"Agregando personas ({step_end} de {row_total})", step_end, row_total)
     if step_end < row_total:
