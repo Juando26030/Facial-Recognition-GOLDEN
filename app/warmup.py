@@ -52,6 +52,18 @@ def _openings(db: Session, now_local: datetime, before: timedelta, after: timede
     return out
 
 
+def _open_now(db: Session, now_local: datetime) -> list:
+    """Formularios ABIERTOS ahora (activo por calendario o a mano) y con cupo disponible, de eventos no finalizados: mientras exista uno la base no se apaga."""
+    from app import formsvc
+    out = []
+    forms = db.query(WebForm).join(Event, Event.id == WebForm.event_id).filter(
+        Event.status != "finalizado", (WebForm.manual_status == "activo") | (WebForm.use_schedule == True)).all()  # noqa: E712
+    for form in forms:
+        if formsvc.status_of(form, now_local) == "activo" and not formsvc.is_full(db, form):
+            out.append({"form_id": form.id, "open_now": True})
+    return out
+
+
 def plan(db: Session, now_local: datetime = None) -> dict:
     from app import formsvc
     now_local = now_local or formsvc.now_local()
@@ -67,6 +79,7 @@ def plan(db: Session, now_local: datetime = None) -> dict:
     # Formularios abiertos A MANO (sin calendario): la app dejó constancia al abrirlos (routers/forms.py → «form_opened»).
     opening += [{"form_id": int(ref), "manual": True} for (ref,) in
                 db.query(SystemEvent.ref).filter(SystemEvent.kind == "form_opened", SystemEvent.at > utcnow() - after).all()]
+    opening += _open_now(db, now_local)
     busy = bool(running or opening)
     return {
         "web": _int("WARM_WEB_MIN", 2) if running else 0,

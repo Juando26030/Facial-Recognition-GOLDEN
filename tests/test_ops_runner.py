@@ -55,6 +55,39 @@ def test_note_activity_rate_limited(monkeypatch):
     assert calls == [1]
 
 
+def test_plan_open_form_without_calendar_keeps_everything_warm(db, factory):
+    ev = factory.event("creado")
+    form = WebForm(event_id=ev.id, name="F", slug="fm", manual_status="activo", use_schedule=False, design_json="{}", settings_json="{}", test_key="k2")
+    db.add(form)
+    db.commit()
+    p = warmup.plan(db)
+    assert p["publico"] == 2 and p["neon"]["suspend_timeout_seconds"] == -1
+    form.capacity = 0                                                    # sin cupo disponible: ya no cuenta
+    db.commit()
+    assert warmup.plan(db)["publico"] == 0
+    form.capacity, form.manual_status = None, "cerrado"
+    db.commit()
+    p = warmup.plan(db)
+    assert p["publico"] == 0 and p["neon"]["suspend_timeout_seconds"] == 600
+
+
+def test_connect_retries_cover_neon_cold_start(monkeypatch):
+    import psycopg2
+    from app import database
+    attempts = []
+    sleeps = []
+
+    def fake_connect(dsn, connect_timeout=None):
+        attempts.append(1)
+        if len(attempts) < 5:
+            raise psycopg2.OperationalError("endpoint is starting")
+        return "conn"
+    monkeypatch.setattr(database.psycopg2, "connect", fake_connect)
+    monkeypatch.setattr(database.time, "sleep", lambda s: sleeps.append(s))
+    assert database.CONNECT_RETRIES >= 5
+    assert database._connect() == "conn" and sum(sleeps) >= 5
+
+
 def test_plan_warms_for_form_openings(db, factory):
     ev = factory.event("creado")
     soon = datetime.now().replace(microsecond=0) + timedelta(minutes=30)
