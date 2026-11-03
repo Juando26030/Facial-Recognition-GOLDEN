@@ -5,7 +5,7 @@ escarapelas y certificados, control de áreas e inventario, formularios web con 
 Privacidad por diseño (Ley 1581 de 2012): el rostro solo se usa con la **autorización explícita y registrada de la persona** (nunca por casilla del operador), los menores de edad quedan fuera del
 reconocimiento facial, el rostro se **borra 7 días después de finalizado el evento** y cada persona puede revocar o pedir la supresión de sus datos.
 
-> El detalle técnico y las decisiones de diseño viven en [`CLAUDE.md`](CLAUDE.md). Los documentos de producto, en [`docs/`](docs/00_README.md).
+> El detalle técnico y las decisiones de diseño viven en [`CLAUDE.md`](CLAUDE.md). Los documentos de producto, en [`docs/`](docs/00_README.md); el índice completo, en [`docs/INDEX.md`](docs/INDEX.md). Qué es vigente y qué heredado en `deploy/`: [`deploy/LEEME.md`](deploy/LEEME.md).
 
 ## Requisitos
 - Python 3.13+ y PostgreSQL 14+.
