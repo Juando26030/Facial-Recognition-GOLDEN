@@ -4,28 +4,69 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ingresar | GoldenWeb 2.0</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    {% include "_gw_head.html" %}
+    <style>
+        /* Solo la composición de esta pantalla; colores, tipografía y componentes salen de static/css/design-system.css */
+        .login { min-height: 100vh; display: flex; flex-direction: column; }
+        .login__top { display: flex; justify-content: flex-end; padding: var(--gw-sp-3) var(--gw-sp-4); }
+        .login__main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gw-sp-4); padding: var(--gw-sp-4); }
+        .login__card { width: 100%; max-width: 420px; padding: var(--gw-sp-6) var(--gw-sp-5); border-top: 6px solid var(--gw-gold-1); }
+        .login__brand { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-2); text-align: center; margin-bottom: var(--gw-sp-5); }
+        .login__logo { width: 96px; height: 96px; border-radius: 50%; background: #fff; padding: 4px; }
+        .login__brand .gw-title span { color: var(--gw-gold-text); }
+        .login__title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); margin-bottom: var(--gw-sp-3); }
+        .login__links { text-align: center; margin-top: var(--gw-sp-4); }
+        .login__links a { display: inline-flex; align-items: center; min-height: var(--gw-tap); font-weight: 700; }
+    </style>
 </head>
+<body class="gw-page">
 {% include "_env_badge.html" %}
-<body style="background: var(--golden-dark); min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; padding:24px 14px;">
-    <div style="background:white; padding:2.5rem; border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.3); width:100%; max-width:380px;">
-        <h2 style="font-family: var(--font-heading-primary); color: var(--golden-dark); text-align:center; margin-bottom: 1.5rem;">GoldenWeb <span class="gradient-text">2.0</span></h2>
-        {% if error %}
-        <div style="background:#f8d7da; color:#842029; padding:10px 15px; border-radius:8px; margin-bottom:1rem; font-size:0.9rem;">{{ error }}</div>
-        {% endif %}
-        <form method="post" action="/login">
-            <div class="badge-input-group">
-                <label>Usuario</label>
-                <input type="text" name="username" required autofocus>
+<a class="gw-skip" href="#usuario">Ir al formulario</a>
+<div class="login">
+    <div class="login__top">{% include "_gw_theme_toggle.html" %}</div>
+    <main class="login__main">
+        <div class="gw-card gw-card--raised login__card">
+            <div class="login__brand">
+                <img class="login__logo" src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Golden Eventos y Logística" width="96" height="96">
+                <h1 class="gw-title">GoldenWeb <span>2.0</span></h1>
             </div>
-            <div class="badge-input-group">
-                <label>Contraseña</label>
-                <input type="password" name="password" required>
+            <div class="login__title-row">
+                <h2 class="gw-subtitle">Ingresar</h2>
+                <div class="gw-help">
+                    <button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="ayudaLogin" aria-haspopup="dialog" aria-label="Ayuda para ingresar">
+                        <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-help"/></svg>
+                    </button>
+                    <div class="gw-popover" id="ayudaLogin" role="dialog" aria-modal="true" aria-labelledby="ayudaLoginTitulo" hidden>
+                        <p class="gw-popover__title" id="ayudaLoginTitulo">¿Con qué ingreso?</p>
+                        <p class="gw-popover__text">Escribe el usuario y la contraseña que te dio tu coordinador. Si no los tienes, pídelos a Golden.</p>
+                        <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-gw-help-close>Entendido</button>
+                    </div>
+                </div>
             </div>
-            <button type="submit" class="golden-btn golden-btn-primary" style="margin-top:0.5rem;">Ingresar</button>
-        </form>
-        <p style="text-align:center; margin:1rem 0 0; font-size:0.85rem;"><a href="/olvide-contrasena" style="color:var(--golden-primary); font-weight:600;">¿Olvidaste tu contraseña?</a></p>
-    </div>
+            {% if error %}
+            <div class="gw-alert gw-alert--err" role="alert" style="margin-bottom: var(--gw-sp-4);">
+                <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-error"/></svg>
+                <div>
+                    <div class="gw-alert__title">{{ error }}</div>
+                    <div class="gw-alert__body">Revisa que el usuario y la contraseña estén bien escritos e inténtalo otra vez.</div>
+                </div>
+            </div>
+            {% endif %}
+            <form method="post" action="/login" class="gw-stack">
+                <div class="gw-field">
+                    <label class="gw-label" for="usuario">Usuario</label>
+                    <input class="gw-input" type="text" id="usuario" name="username" required autofocus autocomplete="username" autocapitalize="none" spellcheck="false">
+                </div>
+                <div class="gw-field">
+                    <label class="gw-label" for="clave">Contraseña</label>
+                    <input class="gw-input" type="password" id="clave" name="password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="gw-btn gw-btn--primary gw-btn--block">Ingresar</button>
+            </form>
+            <p class="login__links"><a href="/olvide-contrasena">¿Olvidaste tu contraseña?</a></p>
+        </div>
+    </main>
 {% include "_legal_footer.html" %}
+</div>
 </body>
 </html>

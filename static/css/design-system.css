@@ -1,0 +1,376 @@
+/* GoldenWeb 2.0 — BASE VISUAL COMÚN («sistema de diseño», Fase 1A pieza 0, 2026-11-03).
+   Una sola fuente de verdad de colores, tipografía, espaciado, radios y componentes. Guía viva: docs/ux/guia_visual.html.
+
+   Reglas de uso
+   - Tokens `--gw-*` en :root (tema CLARO, por defecto) y en :root[data-theme="dark"] (tema OSCURO, elegido por dispositivo con el interruptor; static/js/gw-ui.js lo guarda
+     en localStorage y templates/_gw_head.html lo aplica ANTES de pintar, sin parpadeo). El tema oscuro NO sigue al sistema operativo: solo se enciende si la persona lo pide.
+   - Los componentes viven bajo `.gw-*` y las páginas que adoptan la base llevan <body class="gw-page">. Las pantallas que aún no se rediseñan cargan este archivo, pero no
+     cambia nada en ellas: nada de aquí toca elementos sueltos (body, h1, input...) fuera de `.gw-page`. El tema oscuro solo existe en páginas que incluyen _gw_head.html.
+   - `.gw-no-theme` en un contenedor lo deja SIEMPRE en tema claro aunque la página esté en oscuro: se pone en escarapelas, plantillas y vistas previas de lo que se imprime (esas nunca cambian de tema).
+   - Cada par texto/fondo declarado en tests/test_design_system.py se verifica por código (WCAG AA: texto >= 4,5:1; grande e íconos >= 3:1). Si cambias un color, corre esa prueba.
+   - Sin CDN ni fuentes externas: Agrandir (la fuente de la app, static/css/agrandir.css) con Montserrat de respaldo (static/css/fonts-propias.css, generado, no se edita). Tamaño mínimo de texto: 14 px. Objetivo táctil mínimo: 44 px. */
+
+:root, .gw-no-theme {
+  color-scheme: light;
+
+  /* --- Marca (la identidad del logo: dorado degradado + azul marino) --- */
+  --gw-gold-1: #b8862b;               /* extremo oscuro del degradado dorado */
+  --gw-gold-2: #e8c25a;               /* extremo claro */
+  --gw-gold-grad: linear-gradient(135deg, var(--gw-gold-2) 0%, #d4a63f 55%, var(--gw-gold-1) 100%);
+  --gw-navy: #1e2a6e;                 /* azul marino del logo */
+  --gw-navy-deep: #141c4d;
+  --gw-on-gold: #141c4d;              /* texto sobre dorado (nunca blanco) */
+
+  /* --- Superficies y texto (claro) --- */
+  --gw-bg: #f5f6fb;
+  --gw-surface: #ffffff;
+  --gw-surface-2: #eceef8;            /* bandas, encabezados de tabla, pistas */
+  --gw-border: #d3d7e8;               /* separadores (decorativos) */
+  --gw-border-strong: #6d7594;        /* borde de campos y controles (>= 3:1) */
+  --gw-text: #12183f;
+  --gw-text-muted: #4a5273;           /* ayudas y textos secundarios (>= 4,5:1 también sobre --gw-surface-2) */
+  --gw-link: #1e2a6e;
+  --gw-gold-text: #7a5510;            /* dorado usable COMO TEXTO sobre superficie clara */
+  --gw-focus: #1e2a6e;                /* anillo de foco */
+  --gw-overlay: rgba(10, 14, 46, 0.55);
+
+  /* --- Botones --- */
+  --gw-danger: #a81f2d;
+  --gw-on-danger: #ffffff;
+  --gw-secondary-bg: #ffffff;
+  --gw-secondary-text: #1e2a6e;
+
+  /* --- Estados: fondo, texto, y color de ícono/borde (>= 3:1 sobre su fondo) --- */
+  --gw-ok-bg: #e5f4ea;       --gw-ok-text: #12602f;       --gw-ok-line: #1f8a4c;
+  --gw-warn-bg: #fff3d4;     --gw-warn-text: #6e4300;     --gw-warn-line: #b36b00;
+  --gw-err-bg: #fdebed;      --gw-err-text: #9a1b29;      --gw-err-line: #c4283a;
+  --gw-info-bg: #e7eeff;     --gw-info-text: #1b3580;     --gw-info-line: #3156c9;
+
+  /* --- Barra lateral / de navegación (azul marino en los dos temas) --- */
+  --gw-nav-bg: #141c4d;
+  --gw-nav-text: #f3f5ff;
+  --gw-nav-accent: #e8c25a;
+  --gw-nav-hover: rgba(255, 255, 255, 0.1);
+
+  /* --- Tipografía: escala de 6 tamaños (mínimo 14 px) --- */
+  --gw-font: 'Agrandir', 'Montserrat', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --gw-fs-sm: 0.875rem;     /* 14 px: etiquetas, ayudas, insignias */
+  --gw-fs-md: 1rem;         /* 16 px: cuerpo */
+  --gw-fs-lg: 1.125rem;     /* 18 px: destacados */
+  --gw-fs-xl: 1.375rem;     /* 22 px: subtítulos */
+  --gw-fs-2xl: 1.75rem;     /* 28 px: títulos de pantalla */
+  --gw-fs-3xl: 2.25rem;     /* 36 px: portada */
+  --gw-lh-tight: 1.25;
+  --gw-lh-body: 1.55;
+  --gw-fw-normal: 600;   /* Agrandir: el peso 400 es la versión «Thin» (muy delgada, ilegible a 14-16 px); desde 600 usa la «Regular» */
+  --gw-fw-bold: 700;
+
+  /* --- Espaciado (4 px), radios, sombras, tamaños --- */
+  --gw-sp-1: 0.25rem; --gw-sp-2: 0.5rem; --gw-sp-3: 0.75rem; --gw-sp-4: 1rem;
+  --gw-sp-5: 1.5rem;  --gw-sp-6: 2rem;   --gw-sp-7: 3rem;    --gw-sp-8: 4rem;
+  --gw-radius-sm: 8px; --gw-radius-md: 12px; --gw-radius-lg: 20px; --gw-radius-pill: 999px;
+  --gw-shadow-sm: 0 1px 2px rgba(20, 28, 77, 0.08), 0 1px 3px rgba(20, 28, 77, 0.06);
+  --gw-shadow-md: 0 4px 14px rgba(20, 28, 77, 0.1);
+  --gw-shadow-lg: 0 18px 50px rgba(20, 28, 77, 0.22);
+  --gw-tap: 44px;                     /* objetivo táctil mínimo */
+  --gw-ring: 0 0 0 3px var(--gw-surface), 0 0 0 6px var(--gw-focus);   /* anillo de foco de dos capas: se ve sobre cualquier fondo */
+  --gw-dur: 160ms;
+  --gw-content-w: 1120px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --gw-bg: #0b0f2b;
+  --gw-surface: #141b45;
+  --gw-surface-2: #1c2559;
+  --gw-border: #36408a;
+  --gw-border-strong: #8f98cc;
+  --gw-text: #f3f5ff;
+  --gw-text-muted: #b9c0e3;
+  --gw-link: #f0cf75;
+  --gw-gold-text: #f0cf75;
+  --gw-focus: #f0cf75;
+  --gw-overlay: rgba(2, 4, 20, 0.72);
+
+  --gw-danger: #ff8f9a;               /* en oscuro el peligro es claro con texto oscuro */
+  --gw-on-danger: #2b0509;
+  --gw-secondary-bg: #1c2559;
+  --gw-secondary-text: #f3f5ff;
+
+  --gw-ok-bg: #0f3322;       --gw-ok-text: #8ae5ae;       --gw-ok-line: #3fbf78;
+  --gw-warn-bg: #3b2a05;     --gw-warn-text: #ffd98a;     --gw-warn-line: #e0a22d;
+  --gw-err-bg: #40111a;      --gw-err-text: #ffb0b9;      --gw-err-line: #ff6f80;
+  --gw-info-bg: #15295e;     --gw-info-text: #b3c9ff;     --gw-info-line: #6f97ff;
+
+  --gw-nav-bg: #080b22;
+
+  --gw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --gw-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --gw-shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+
+/* ============================================================ Base de página (solo con .gw-page) */
+.gw-page { margin: 0; background: var(--gw-bg); color: var(--gw-text); font-family: var(--gw-font); font-size: var(--gw-fs-md); line-height: var(--gw-lh-body); font-weight: var(--gw-fw-normal); -webkit-text-size-adjust: 100%; }
+.gw-page *, .gw-page *::before, .gw-page *::after { box-sizing: border-box; }
+.gw-page h1, .gw-page h2, .gw-page h3, .gw-page h4, .gw-page h5, .gw-page p, .gw-page figure { margin: 0; }
+:where(.gw-page) a { color: var(--gw-link); text-underline-offset: 3px; }   /* :where = especificidad 0: los componentes (.gw-btn, .gw-tile, .gw-nav__link...) deciden su propio color */
+:where(.gw-page) a:hover { text-decoration-thickness: 2px; }
+.gw-page :focus { outline: none; }
+.gw-page :focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-skip:focus { box-shadow: var(--gw-ring); }
+.gw-page img, .gw-page svg { max-width: 100%; }
+
+.gw-container { width: 100%; max-width: var(--gw-content-w); margin: 0 auto; padding: 0 var(--gw-sp-4); }
+.gw-stack > * + * { margin-top: var(--gw-sp-4); }
+.gw-stack-lg > * + * { margin-top: var(--gw-sp-6); }
+.gw-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); }
+.gw-row--end { justify-content: flex-end; }
+.gw-row--between { justify-content: space-between; }
+.gw-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.gw-skip { position: absolute; left: var(--gw-sp-3); top: -100px; z-index: 3000; background: var(--gw-surface); color: var(--gw-link); padding: var(--gw-sp-3) var(--gw-sp-4); border-radius: var(--gw-radius-sm); box-shadow: var(--gw-shadow-md); }
+.gw-skip:focus { top: var(--gw-sp-3); }
+
+/* ============================================================ Tipografía */
+.gw-display { font-size: var(--gw-fs-3xl); line-height: var(--gw-lh-tight); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-title { font-size: var(--gw-fs-2xl); line-height: var(--gw-lh-tight); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-subtitle { font-size: var(--gw-fs-xl); line-height: var(--gw-lh-tight); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-lead { font-size: var(--gw-fs-lg); color: var(--gw-text-muted); }
+.gw-text-sm { font-size: var(--gw-fs-sm); }
+.gw-muted { color: var(--gw-text-muted); }
+.gw-eyebrow { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gw-gold-text); }
+.gw-gold-rule { height: 4px; width: 56px; border: 0; border-radius: var(--gw-radius-pill); background: var(--gw-gold-grad); margin: var(--gw-sp-3) 0; }
+
+/* ============================================================ Íconos (sprite static/img/icons.svg) */
+.gw-icon { width: 1.5rem; height: 1.5rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
+.gw-icon--sm { width: 1.125rem; height: 1.125rem; }
+.gw-icon--lg { width: 2rem; height: 2rem; }
+
+/* ============================================================ Botones: una acción principal por pantalla (dorado); el resto, secundarios */
+.gw-btn, .gw-tile, .gw-nav__link, .gw-nav__brand { text-decoration: none; }
+.gw-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); min-width: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-5);
+  font: inherit; font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); line-height: 1.2; text-align: center; text-decoration: none; cursor: pointer;
+  border: 2px solid transparent; border-radius: var(--gw-radius-md); transition: transform var(--gw-dur), box-shadow var(--gw-dur), background-color var(--gw-dur), filter var(--gw-dur); }
+.gw-btn--primary { background: var(--gw-gold-grad); color: var(--gw-on-gold); box-shadow: var(--gw-shadow-sm); }
+.gw-btn--primary:hover { box-shadow: var(--gw-shadow-md); filter: brightness(1.05); transform: translateY(-1px); }
+.gw-btn--secondary { background: var(--gw-secondary-bg); color: var(--gw-secondary-text); border-color: var(--gw-border-strong); }
+.gw-btn--secondary:hover { background: var(--gw-surface-2); }
+.gw-btn--danger { background: var(--gw-danger); color: var(--gw-on-danger); }
+.gw-btn--danger:hover { filter: brightness(1.08); }
+.gw-btn--ghost { background: transparent; color: var(--gw-link); }
+.gw-btn--ghost:hover { background: var(--gw-surface-2); }
+.gw-btn--block { display: flex; width: 100%; }
+.gw-btn--sm { padding: var(--gw-sp-2) var(--gw-sp-4); font-size: var(--gw-fs-sm); }
+.gw-btn:active { transform: translateY(1px); filter: none; }
+.gw-btn:disabled, .gw-btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
+.gw-btn[aria-busy="true"] { cursor: progress; }
+.gw-btn[aria-busy="true"]::before { content: ""; width: 1em; height: 1em; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: gw-spin 0.8s linear infinite; }
+@keyframes gw-spin { to { transform: rotate(360deg); } }
+
+/* ============================================================ Tarjeta */
+.gw-card { background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm); padding: var(--gw-sp-5); }
+.gw-card--raised { box-shadow: var(--gw-shadow-lg); border-color: transparent; }
+.gw-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); margin-bottom: var(--gw-sp-4); }
+.gw-card__title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+
+/* ============================================================ Mosaicos por tarea (estilo portal): icono + nombre + una línea de ayuda, agrupados por categoría */
+.gw-tile-group + .gw-tile-group { margin-top: var(--gw-sp-6); }
+.gw-tile-group__title { display: flex; align-items: center; gap: var(--gw-sp-2); margin-bottom: var(--gw-sp-3); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gw-gold-text); }
+.gw-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: var(--gw-sp-4); }
+.gw-tile { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gw-sp-2); min-height: 148px; padding: var(--gw-sp-5); color: var(--gw-text); text-decoration: none;
+  background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm);
+  transition: transform var(--gw-dur), box-shadow var(--gw-dur), border-color var(--gw-dur); }
+.gw-tile:hover { transform: translateY(-2px); box-shadow: var(--gw-shadow-md); border-color: var(--gw-gold-1); }
+.gw-tile__icon { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: var(--gw-radius-md); background: var(--gw-gold-grad); color: var(--gw-on-gold); }
+.gw-tile__name { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+.gw-tile__help { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-tile[aria-disabled="true"] { opacity: 0.6; pointer-events: none; }
+
+/* ============================================================ Formularios: etiqueta arriba, ayuda corta, error que dice qué hacer */
+.gw-field { display: flex; flex-direction: column; gap: var(--gw-sp-1); }
+.gw-label { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
+.gw-label .gw-req { color: var(--gw-err-text); }
+.gw-input, .gw-select, .gw-textarea { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-md); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); transition: border-color var(--gw-dur), box-shadow var(--gw-dur); }
+.gw-textarea { min-height: 96px; resize: vertical; }
+.gw-input::placeholder { color: var(--gw-text-muted); opacity: 1; }
+.gw-input:hover, .gw-select:hover, .gw-textarea:hover { border-color: var(--gw-text); }
+.gw-input:disabled, .gw-select:disabled, .gw-textarea:disabled { background: var(--gw-surface-2); color: var(--gw-text-muted); cursor: not-allowed; }
+.gw-hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gw-error-msg { display: flex; gap: var(--gw-sp-2); align-items: flex-start; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-err-text); }
+.gw-field--error .gw-input, .gw-input[aria-invalid="true"], .gw-select[aria-invalid="true"], .gw-textarea[aria-invalid="true"] { border-color: var(--gw-err-line); }
+.gw-check { display: flex; align-items: center; gap: var(--gw-sp-3); min-height: var(--gw-tap); cursor: pointer; }
+.gw-check input { width: 1.5rem; height: 1.5rem; flex: none; accent-color: var(--gw-navy); margin: 0; }
+:root[data-theme="dark"] .gw-check input { accent-color: var(--gw-gold-2); }
+
+/* ============================================================ Tabla (en celular se desplaza dentro de su caja, la página nunca) */
+.gw-table-wrap { overflow-x: auto; border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); background: var(--gw-surface); }
+.gw-table { width: 100%; border-collapse: collapse; font-size: var(--gw-fs-sm); }
+.gw-table th, .gw-table td { padding: var(--gw-sp-3) var(--gw-sp-4); text-align: left; vertical-align: middle; border-bottom: 1px solid var(--gw-border); }
+.gw-table th { position: sticky; top: 0; background: var(--gw-surface-2); color: var(--gw-text); font-weight: var(--gw-fw-bold); white-space: nowrap; }
+.gw-table tbody tr:last-child td { border-bottom: 0; }
+.gw-table tbody tr:hover { background: var(--gw-surface-2); }
+.gw-table caption { text-align: left; padding: var(--gw-sp-3) var(--gw-sp-4); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+
+/* ============================================================ Insignias y avisos (siempre ícono + texto: el color nunca va solo) */
+.gw-badge { display: inline-flex; align-items: center; gap: var(--gw-sp-1); padding: 2px var(--gw-sp-3); min-height: 1.75rem; border-radius: var(--gw-radius-pill); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); }
+.gw-badge--ok { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-badge--warn { background: var(--gw-warn-bg); color: var(--gw-warn-text); border-color: var(--gw-warn-line); }
+.gw-badge--err { background: var(--gw-err-bg); color: var(--gw-err-text); border-color: var(--gw-err-line); }
+.gw-badge--info { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); }
+.gw-badge .gw-icon { width: 1rem; height: 1rem; }
+
+.gw-alert { display: flex; gap: var(--gw-sp-3); align-items: flex-start; padding: var(--gw-sp-4); border-radius: var(--gw-radius-md); border: 1px solid var(--gw-info-line); border-left-width: 6px; background: var(--gw-info-bg); color: var(--gw-info-text); }
+.gw-alert .gw-icon { color: var(--gw-info-line); margin-top: 1px; }
+.gw-alert__title { font-weight: var(--gw-fw-bold); }
+.gw-alert__body { font-size: var(--gw-fs-sm); }
+.gw-alert--ok { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-alert--ok .gw-icon { color: var(--gw-ok-line); }
+.gw-alert--warn { background: var(--gw-warn-bg); color: var(--gw-warn-text); border-color: var(--gw-warn-line); }
+.gw-alert--warn .gw-icon { color: var(--gw-warn-line); }
+.gw-alert--err { background: var(--gw-err-bg); color: var(--gw-err-text); border-color: var(--gw-err-line); }
+.gw-alert--err .gw-icon { color: var(--gw-err-line); }
+
+/* Estados de pantalla: vacío, cargando, error (siempre dicen qué hacer) */
+.gw-state { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-3); text-align: center; padding: var(--gw-sp-7) var(--gw-sp-4); background: var(--gw-surface); border: 2px dashed var(--gw-border); border-radius: var(--gw-radius-lg); }
+.gw-state__icon { display: grid; place-items: center; width: 4rem; height: 4rem; border-radius: 50%; background: var(--gw-surface-2); color: var(--gw-gold-text); }
+.gw-state__title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+.gw-state__text { max-width: 44ch; color: var(--gw-text-muted); }
+.gw-state--error { border-color: var(--gw-err-line); }
+.gw-state--error .gw-state__icon { background: var(--gw-err-bg); color: var(--gw-err-text); }
+.gw-spinner { width: 2.5rem; height: 2.5rem; border-radius: 50%; border: 4px solid var(--gw-border); border-top-color: var(--gw-gold-1); animation: gw-spin 0.9s linear infinite; }
+
+/* ============================================================ Modal (los formularios de datos NO se cierran al hacer clic afuera: solo con sus botones o Esc) */
+.gw-modal-backdrop { position: fixed; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center; padding: var(--gw-sp-4); background: var(--gw-overlay); }
+.gw-modal-backdrop[data-open="true"] { display: flex; }
+.gw-modal { width: 100%; max-width: 520px; max-height: calc(100vh - 2 * var(--gw-sp-4)); overflow: auto; background: var(--gw-surface); color: var(--gw-text); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-lg); border: 1px solid var(--gw-border); }
+.gw-modal__head { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); padding: var(--gw-sp-4) var(--gw-sp-5); border-bottom: 1px solid var(--gw-border); }
+.gw-modal__title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
+.gw-modal__body { padding: var(--gw-sp-5); }
+.gw-modal__foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gw-sp-3); padding: var(--gw-sp-4) var(--gw-sp-5); border-top: 1px solid var(--gw-border); background: var(--gw-surface-2); border-radius: 0 0 var(--gw-radius-lg) var(--gw-radius-lg); }
+
+/* ============================================================ Ayuda «?» con explicación breve (gw-ui.js abre/cierra; sin él, queda visible con :focus-within) */
+.gw-help { position: relative; display: inline-flex; }
+.gw-help__btn { display: inline-grid; place-items: center; min-width: var(--gw-tap); min-height: var(--gw-tap); padding: 0; background: transparent; color: var(--gw-link); border: 0; border-radius: 50%; cursor: pointer; }
+.gw-help__btn:hover { background: var(--gw-surface-2); }
+.gw-popover { position: absolute; z-index: 1500; top: calc(100% + 4px); right: 0; width: min(320px, calc(100vw - 2 * var(--gw-sp-4))); padding: var(--gw-sp-4); font-size: var(--gw-fs-sm); line-height: var(--gw-lh-body); font-weight: var(--gw-fw-normal); text-align: left; color: var(--gw-text); background: var(--gw-surface); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-lg); }
+.gw-popover[hidden] { display: none; }
+.gw-popover__title { font-weight: var(--gw-fw-bold); margin-bottom: var(--gw-sp-1); }
+
+/* Lo que se imprime (escarapelas, plantillas, vistas previas) NUNCA cambia de tema */
+.gw-no-theme { background: #ffffff; color: #12183f; }
+
+/* ============================================================ Ayuda en contexto: «?» + panel con dibujo/animación corta, 1-2 líneas y «Entendido» (static/js/gw-ui.js: foco atrapado, Esc cierra, devuelve el foco) */
+.gw-popover { width: min(340px, calc(100vw - 2 * var(--gw-sp-4))); }
+.gw-popover__text { color: var(--gw-text); }
+.gw-popover .gw-btn { margin-top: var(--gw-sp-3); }
+.gw-anim { display: block; width: 100%; height: auto; margin-bottom: var(--gw-sp-3); border-radius: var(--gw-radius-md); background: var(--gw-surface-2); }
+.gw-anim .a-card { fill: var(--gw-surface); stroke: var(--gw-border-strong); stroke-width: 2; }
+.gw-anim .a-line { fill: var(--gw-border); }
+.gw-anim .a-hit { fill: var(--gw-gold-2); }
+.gw-anim .a-lens { fill: none; stroke: var(--gw-navy); stroke-width: 5; stroke-linecap: round; }
+:root[data-theme="dark"] .gw-anim .a-lens { stroke: var(--gw-gold-2); }
+.gw-anim .a-ok { fill: none; stroke: var(--gw-ok-line); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+.gw-anim .a-body { fill: var(--gw-navy); }
+:root[data-theme="dark"] .gw-anim .a-body { fill: var(--gw-border-strong); }
+.gw-anim .a-paper { fill: #ffffff; stroke: var(--gw-gold-1); stroke-width: 3; }
+.gw-anim .a-paper-ink { fill: var(--gw-navy-deep); }
+.gw-anim .a-light { fill: #f5f6fb; }
+.gw-anim .a-dark { fill: #141b45; }
+.gw-anim .a-pill { fill: var(--gw-surface); stroke: var(--gw-border-strong); stroke-width: 2; }
+.gw-anim .a-knob { fill: var(--gw-gold-1); }
+/* Estado base = fotograma FINAL (es lo que se ve con movimiento reducido); la animación solo recorre el camino hasta él */
+.gw-anim--search .a-lens-g { animation: gw-a-search 3.6s ease-in-out infinite; }
+.gw-anim--search .a-hit { animation: gw-a-hit 3.6s ease-in-out infinite; }
+.gw-anim--search .a-ok { animation: gw-a-ok 3.6s ease-in-out infinite; }
+@keyframes gw-a-search { 0% { transform: translate(-44px, -26px); } 45%, 100% { transform: translate(0, 0); } }
+@keyframes gw-a-hit { 0%, 40% { opacity: 0; } 55%, 100% { opacity: 1; } }
+@keyframes gw-a-ok { 0%, 55% { opacity: 0; } 70%, 100% { opacity: 1; } }
+.gw-anim--print .a-paper-g { animation: gw-a-print 3.2s ease-in-out infinite; }
+@keyframes gw-a-print { 0% { transform: translateY(-34px); opacity: 0; } 20% { opacity: 1; } 70%, 100% { transform: translateY(0); opacity: 1; } }
+.gw-anim--theme .a-knob { animation: gw-a-knob 3.2s ease-in-out infinite; }
+.gw-anim--theme .a-shade { animation: gw-a-shade 3.2s ease-in-out infinite; }
+@keyframes gw-a-knob { 0%, 15% { transform: translateX(-22px); } 50%, 100% { transform: translateX(0); } }
+@keyframes gw-a-shade { 0%, 15% { opacity: 0; } 50%, 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .gw-anim *, .gw-anim { animation: none !important; }
+}
+
+/* ============================================================ Recorrido de primera vez (tour): resalta un elemento y explica en pasos. Una sola vez por dispositivo; «Ver recorrido de nuevo» lo repite. */
+.gw-tour { position: fixed; inset: 0; z-index: 4000; }
+.gw-tour__spot { position: fixed; border-radius: var(--gw-radius-md); box-shadow: 0 0 0 4px var(--gw-gold-2), 0 0 0 9999px var(--gw-overlay); pointer-events: none; transition: top var(--gw-dur), left var(--gw-dur), width var(--gw-dur), height var(--gw-dur); }
+.gw-tour__card { position: fixed; width: min(360px, calc(100vw - 2 * var(--gw-sp-4))); padding: var(--gw-sp-5); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-lg); }
+.gw-tour__count { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-gold-text); }
+.gw-tour__title { font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); margin: var(--gw-sp-1) 0 var(--gw-sp-2); }
+.gw-tour__text { color: var(--gw-text); }
+.gw-tour__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); margin-top: var(--gw-sp-4); }
+.gw-tour__foot .gw-tour__skip { margin-right: auto; }
+@media (max-width: 640px) { .gw-tour__card { left: var(--gw-sp-2) !important; right: var(--gw-sp-2); bottom: var(--gw-sp-2); top: auto !important; width: auto; } }
+@media (prefers-reduced-motion: reduce) { .gw-tour__spot { transition: none; } }
+
+/* ============================================================ Asistente por pasos («Paso 2 de 5»): un botón principal único y claro */
+.gw-wizard__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gw-sp-2); margin-bottom: var(--gw-sp-3); }
+.gw-wizard__count { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-gold-text); }
+.gw-progress { height: 10px; background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-pill); overflow: hidden; margin-bottom: var(--gw-sp-5); }
+.gw-progress__bar { height: 100%; width: 0; background: var(--gw-gold-grad); transition: width var(--gw-dur); }
+.gw-wizard__panel[hidden] { display: none; }
+.gw-wizard__foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); margin-top: var(--gw-sp-5); }
+.gw-wizard__foot .gw-btn--primary { margin-left: auto; }
+@media (max-width: 520px) { .gw-wizard__foot { flex-direction: column-reverse; align-items: stretch; } .gw-wizard__foot .gw-btn--primary { margin-left: 0; } }
+
+/* Hueco del futuro buscador «¿qué quieres hacer?» (Fase 2; no se construye ahora): [data-gw-search-slot] en la barra y data-gw-keywords en cada mosaico/enlace */
+.gw-nav__search[hidden], [data-gw-search-slot][hidden] { display: none; }
+.gw-nav__search { flex: 1 1 220px; max-width: 420px; }
+
+/* ============================================================ Interruptor de tema (claro/oscuro por dispositivo) */
+.gw-theme-toggle { display: inline-flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: 0 var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-pill); cursor: pointer; }
+.gw-theme-toggle:hover { background: var(--gw-surface-2); }
+.gw-theme-toggle .gw-icon--moon { display: inline; }
+.gw-theme-toggle .gw-icon--sun { display: none; }
+:root[data-theme="dark"] .gw-theme-toggle .gw-icon--moon { display: none; }
+:root[data-theme="dark"] .gw-theme-toggle .gw-icon--sun { display: inline; }
+
+/* ============================================================ Barra de navegación responsive (páginas nuevas): marca + enlaces + acciones; en celular se pliega tras «Menú» */
+.gw-nav { position: sticky; top: 0; z-index: 1000; background: var(--gw-nav-bg); color: var(--gw-nav-text); border-bottom: 3px solid var(--gw-gold-1); }
+.gw-nav__inner { display: flex; align-items: center; gap: var(--gw-sp-3); max-width: var(--gw-content-w); margin: 0 auto; padding: var(--gw-sp-2) var(--gw-sp-4); }
+.gw-nav__brand { display: inline-flex; align-items: center; gap: var(--gw-sp-3); min-height: var(--gw-tap); color: var(--gw-nav-text); font-weight: var(--gw-fw-bold); text-decoration: none; margin-right: auto; }
+.gw-nav__brand img { width: 40px; height: 40px; border-radius: 50%; background: #fff; }
+.gw-nav__links { display: flex; align-items: center; gap: var(--gw-sp-1); list-style: none; margin: 0; padding: 0; }
+.gw-nav__link { display: inline-flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: 0 var(--gw-sp-4); color: var(--gw-nav-text); text-decoration: none; font-weight: var(--gw-fw-bold); border-radius: var(--gw-radius-sm); border-bottom: 3px solid transparent; }
+.gw-nav__link:hover { background: var(--gw-nav-hover); }
+.gw-nav__link[aria-current="page"] { border-bottom-color: var(--gw-nav-accent); color: var(--gw-nav-accent); }
+.gw-nav__toggle { display: none; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: 0 var(--gw-sp-3); font: inherit; font-weight: var(--gw-fw-bold); color: var(--gw-nav-text); background: transparent; border: 2px solid var(--gw-nav-text); border-radius: var(--gw-radius-md); cursor: pointer; }
+.gw-nav :focus-visible { outline-color: var(--gw-nav-accent); }
+.gw-nav .gw-theme-toggle { background: transparent; color: var(--gw-nav-text); border-color: var(--gw-nav-text); }
+.gw-nav .gw-theme-toggle:hover { background: var(--gw-nav-hover); }
+@media (max-width: 760px) {
+  .gw-nav__inner { flex-wrap: wrap; }
+  .gw-nav__toggle { display: inline-flex; }
+  .gw-nav__links { display: none; flex-direction: column; align-items: stretch; width: 100%; order: 5; padding-bottom: var(--gw-sp-2); }
+  .gw-nav[data-open="true"] .gw-nav__links { display: flex; }
+  .gw-nav__link { border-bottom: 0; border-left: 3px solid transparent; }
+  .gw-nav__link[aria-current="page"] { border-left-color: var(--gw-nav-accent); }
+}
+
+/* ============================================================ Barra lateral COMPARTIDA (templates/_sidebar.html, todas las pantallas del panel): mismo marco de siempre, con la identidad y el tamaño táctil de la base.
+   Sigue usando --golden-sidebar-bg / --golden-sidebar-contrast, que Configuración > Apariencia puede cambiar por computador. */
+.golden-sidebar a { min-height: var(--gw-tap); }
+.golden-sidebar a .gw-icon { width: 1.25rem; height: 1.25rem; opacity: 0.95; }
+.golden-sidebar a.active { border-left-color: var(--gw-nav-accent); }
+.golden-sidebar a.active .gw-icon { color: var(--gw-nav-accent); }
+.golden-sidebar-toggle .gw-icon { width: 1.5rem; height: 1.5rem; }
+.golden-nav-user { color: #4a4a55; font-size: var(--gw-fs-sm); }
+
+/* Botón «Salir» y similares dentro del encabezado común de las pantallas del panel (claras, no pasan al tema oscuro todavía) */
+.golden-header .gw-btn { min-height: var(--gw-tap); }
+
+/* ============================================================ Movimiento reducido: sin animaciones ni desplazamientos suaves */
+@media (prefers-reduced-motion: reduce) {
+  .gw-page *, .gw-page *::before, .gw-page *::after, .golden-sidebar, .golden-sidebar * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+  .gw-btn--primary:hover, .gw-tile:hover { transform: none; }
+}
+
+/* Modo de alto contraste del sistema: bordes reales en lo que solo se distinguía por color */
+@media (forced-colors: active) {
+  .gw-btn, .gw-tile, .gw-card, .gw-alert, .gw-badge, .gw-input, .gw-select, .gw-textarea { border: 2px solid CanvasText; }
+  .gw-btn--primary { background: ButtonFace; color: ButtonText; }
+}
