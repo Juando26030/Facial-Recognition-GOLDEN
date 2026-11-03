@@ -42,7 +42,7 @@ def channel_of(device: str) -> str:
 
 def enqueue(db, entry_id: str, tenant_id: str, event_id: int, user_id: str, channel: str) -> None:
     """Encola la constancia (una por registro de aceptación; repetirlo no duplica). No hace commit."""
-    jobs.enqueue(db, "consent_receipt", {"entry_id": entry_id, "tenant_id": tenant_id, "event_id": int(event_id), "user_id": str(user_id), "channel": channel},
+    jobs.enqueue(db, "consent_receipt", {"entry_id": entry_id, "tenant_id": tenant_id, "event_id": int(event_id), "uref": jobs.person_ref(user_id), "channel": channel},
                  dedupe_key=f"receipt:{entry_id}", max_attempts=4)
 
 
@@ -113,7 +113,7 @@ def _recipient(att: EventAttendee, user: User) -> str:
 
 @jobs.handler("consent_receipt")
 def run_receipt(payload: dict) -> None:
-    tenant, uid, event_id, entry_id, channel = payload["tenant_id"], str(payload["user_id"]), int(payload["event_id"]), payload["entry_id"], payload.get("channel", "door")
+    tenant, uid, event_id, entry_id, channel = payload["tenant_id"], jobs.payload_user_id(payload), int(payload["event_id"]), payload["entry_id"], payload.get("channel", "door")
     with SessionLocal() as db:
         event = db.get(Event, event_id)
         user = db.query(User).filter(User.id == uid, User.tenant_id == tenant).first()

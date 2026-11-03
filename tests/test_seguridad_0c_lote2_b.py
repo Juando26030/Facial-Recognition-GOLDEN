@@ -86,3 +86,62 @@ def test_c5_approved_without_submission_is_flagged_for_review_never_lost(client,
     _staff(client)
     row = client.get(f"/api/events/{ev.id}/forms/{form['id']}/payments").json()["rows"][0]
     assert row["orphan"] and "sin inscripción" in row["review"]
+
+
+# ------------------------------------------------------------------ E2/E3: la cola no guarda cédulas ni errores sin enmascarar
+def test_e2_person_ref_is_opaque_and_reversible_and_legacy_payload_still_works():
+    from app import jobs
+    ref = jobs.person_ref("1016100329")
+    assert "1016100329" not in ref and ref.startswith("jr1:")
+    assert jobs.payload_user_id({"uref": ref}) == "1016100329"
+    assert jobs.payload_user_id({"user_id": "555"}) == "555"          # trabajos encolados antes del cambio
+    assert "user_id" not in jobs.scrub_payload('{"tenant_id": "acme", "user_id": "1", "uref": "x", "event_id": 3}')
+
+
+def test_e2_enqueued_payloads_carry_no_cedula(db):
+    from app import consent_receipt, jobs
+    from app.models import Job
+    consent_receipt.enqueue(db, "entry-1", "acme", 1, "1016100329", "door")
+    jobs.enqueue(db, "face_enroll", {"tenant_id": "acme", "uref": jobs.person_ref("1016100329"), "event_id": 1})
+    db.commit()
+    for j in db.query(Job).all():
+        assert "1016100329" not in j.payload_json
+
+
+def test_e3_failed_job_error_is_masked_and_done_job_loses_the_person(db):
+    from app import jobs
+    from app.models import Job
+    ok = Job(kind="x", payload_json='{"tenant_id": "acme", "user_id": "1016100329", "event_id": 1}', status="running", attempts=1, max_attempts=3, run_at=utcnow(), created_at=utcnow())
+    bad = Job(kind="x", payload_json='{"tenant_id": "acme", "uref": "jr1:zzz"}', status="running", attempts=3, max_attempts=3, run_at=utcnow(), created_at=utcnow())
+    db.add_all([ok, bad])
+    db.commit()
+    ok_id, bad_id = ok.id, bad.id
+    jobs._finish(ok_id, None, 1, 3)
+    jobs._finish(bad_id, "ValueError: la cédula 1016100329 de ana@example.com no existe", 3, 3)
+    db.expire_all()
+    assert db.get(Job, ok_id).status == "done" and "user_id" not in db.get(Job, ok_id).payload_json
+    failed = db.get(Job, bad_id)
+    assert failed.status == "failed" and "1016100329" not in failed.last_error and "ana@example.com" not in failed.last_error
+    assert "uref" in failed.payload_json                                   # el fallido conserva su referencia sellada para poder reintentarse
+
+
+def test_e2_total_suppression_removes_queue_rows_and_web_acceptances(db, factory):
+    import json
+
+    from app import jobs, privacy
+    from app.models import Job, WebAcceptance
+    ev = factory.event()
+    factory.person(ev, "1016100329")
+    other = factory.person(ev, "2002", first_name="Luis")
+    db.add(WebAcceptance(tenant_id=ev.tenant_id, user_id="1016100329", event_id=ev.id))
+    db.add(WebAcceptance(tenant_id=ev.tenant_id, user_id=other.id, event_id=ev.id))
+    jobs.enqueue(db, "face_enroll", {"tenant_id": ev.tenant_id, "uref": jobs.person_ref("1016100329"), "event_id": ev.id})
+    jobs.enqueue(db, "face_enroll", {"tenant_id": ev.tenant_id, "user_id": "1016100329", "event_id": ev.id})          # trabajo viejo, en claro
+    jobs.enqueue(db, "face_enroll", {"tenant_id": ev.tenant_id, "uref": jobs.person_ref("2002"), "event_id": ev.id})
+    db.commit()
+    res = privacy.erase_person(db, ev, "1016100329", "all")
+    assert res["jobs_deleted"] == 2
+    db.expire_all()
+    assert [w.user_id for w in db.query(WebAcceptance).all()] == ["2002"]
+    left = db.query(Job).all()
+    assert len(left) == 1 and jobs.payload_user_id(json.loads(left[0].payload_json)) == "2002"

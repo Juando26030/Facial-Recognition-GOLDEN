@@ -211,6 +211,25 @@ def _stored_files(data_json: str) -> list:
     return out
 
 
+def _purge_person_jobs(db: Session, tenant: str, uid: str) -> int:
+    """E2: borra de la cola los trabajos que aún llevan a esta persona (con la cédula en claro, de antes, o con su referencia sellada). Los terminados ya no la llevan (`jobs.scrub_payload`)."""
+    import json
+
+    from app import jobs
+    from app.models import Job
+    n = 0
+    for job in db.query(Job).filter(Job.kind.in_(("face_enroll", "consent_receipt")), Job.payload_json.like(f'%"{tenant}"%')).all():
+        try:
+            data = json.loads(job.payload_json)
+            same = data.get("tenant_id") == tenant and any(k in data for k in jobs.PERSON_KEYS) and jobs.payload_user_id(data) == uid
+        except (ValueError, KeyError):
+            continue
+        if same:
+            db.delete(job)
+            n += 1
+    return n
+
+
 def erase_person(db: Session, event: Event, user_id: str, scope: str) -> dict:
     """`scope='biometric'` = REVOCACIÓN: borra vector y foto (todas las versiones posibles), `is_biometric_enabled=false` y registra la `revocation`; la persona sigue entrando por cédula/QR.
     `scope='all'` además borra sus datos personales (users, asistencia al evento, impresiones, movimientos de áreas, entregas de inventario, invitaciones, listas de formularios y adjuntos),
@@ -244,7 +263,8 @@ def erase_person(db: Session, event: Event, user_id: str, scope: str) -> dict:
         db.execute(text(f"DELETE FROM form_people WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)
         db.execute(text(f"DELETE FROM form_invites WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)
         db.execute(text(f"UPDATE form_payments SET payer_email = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p)      # contacto fuera; el resto del pago se conserva (10 años, bloqueado)
-        for table in ("event_attendees", "print_logs", "area_movements", "inventory_deliveries"):
+        result["jobs_deleted"] = _purge_person_jobs(db, tenant, uid)
+        for table in ("event_attendees", "print_logs", "area_movements", "inventory_deliveries", "web_acceptances"):      # E2: web_acceptances lleva la cédula (user_id)
             db.execute(text(f"DELETE FROM {table} WHERE user_id = :u AND tenant_id = :t"), p)
         result["access_logs_anonymized"] = db.execute(text("UPDATE access_logs SET user_id = NULL WHERE user_id = :u AND tenant_id = :t"), p).rowcount
         db.execute(text("DELETE FROM person_changes WHERE user_id = :u AND tenant_id = :t AND kind = 'birth_date'"), p)
