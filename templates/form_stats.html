@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estadísticas del formulario | GoldenWeb 2.0</title>
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/form-stats.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous" defer></script>
+    <script src="{{ url_for('static', path='js/form-stats.js') }}" defer></script>
+</head>
+<body class="gw-page">
+<a class="gw-skip" href="#fs-root">Ir a las estadísticas</a>
+<header class="fs-top">
+    <div class="fs-top__inner">
+        <span class="fs-top__brand"><img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="" width="40" height="40"><span>GoldenWeb 2.0</span></span>
+        <span class="fs-top__who">{{ staff_name }}</span>
+        {% if back_url %}<a class="gw-btn gw-btn--secondary gw-btn--sm" href="{{ back_url }}">{{ back_label }}</a>{% endif %}
+        {% include "_gw_theme_toggle.html" %}
+        {% if client_view %}<form action="/logout" method="post" style="margin:0;"><button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button></form>{% endif %}
+    </div>
+</header>
+<main class="fs-main">
+{% if blocked_message %}
+    <div class="gw-state gw-state--error" role="alert">
+        <h1 class="gw-subtitle">No puedes ver estas estadísticas</h1>
+        <p class="gw-lead">{{ blocked_message }}</p>
+    </div>
+{% else %}
+    <div id="fs-root" data-api="{{ api_url }}"{% if not client_view %} data-staff="1"{% endif %}>
+        <div class="fs-head">
+            <div>
+                <p class="gw-eyebrow" style="margin:0;">{{ event_name }}</p>
+                <h1 class="gw-title">{{ form_name }}</h1>
+                <p class="gw-hint" style="margin:0;" id="fs-updated" aria-live="polite">Cargando…</p>
+            </div>
+            <div class="fs-head__meta fs-actions">
+                <span class="gw-badge" id="fs-state" hidden></span>
+                {% if not client_view %}<label class="gw-check"><input type="checkbox" id="fs-tests"> Incluir pruebas</label>{% endif %}
+                <button type="button" class="gw-btn gw-btn--secondary" data-fs-refresh>Actualizar</button>
+            </div>
+        </div>
+        <div id="fs-body" style="display:flex; flex-direction:column; gap:var(--gw-sp-6); margin-top:var(--gw-sp-5);">
+            <div class="gw-state"><div class="gw-spinner" role="status" aria-label="Cargando"></div></div>
+        </div>
+    </div>
+{% endif %}
+</main>
+</body>
+</html>

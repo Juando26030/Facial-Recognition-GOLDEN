@@ -20,7 +20,7 @@ from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
-from app.models import Event, EventAttendee, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
+from app.models import Event, EventAttendee, FormClientUser, FormDiscountCode, FormEvent, FormInvite, FormPayment, FormPerson, FormRefund, FormSubmission, SavedFormTemplate, StaffUser, User, WebForm
 from app.routers import parametros
 from app.routers.badges import ALLOWED_IMAGE_EXT
 from app.storage import badge_asset_key, form_file_key, get_storage
@@ -275,6 +275,10 @@ def delete_form_rows(db: Session, form: WebForm) -> None:
     db.query(FormEvent).filter(FormEvent.form_id == form.id).delete()
     db.query(FormInvite).filter(FormInvite.form_id == form.id).delete()
     db.query(FormPerson).filter(FormPerson.form_id == form.id).delete()
+    for grant in db.query(FormClientUser).filter(FormClientUser.form_id == form.id).all():       # accesos de cliente por formulario: la cuenta queda sin acceso a nada
+        grant.staff_user.is_active = False
+        db.delete(grant)
+    db.flush()
     event = db.query(Event).filter(Event.id == form.event_id).first()
     if event:
         get_storage().delete_prefix(form_file_key(event.tenant_id, form.id))

@@ -91,6 +91,7 @@ def test_emails_ask_for_agrandir_first_and_a_safe_sans_serif_as_fallback():
 EXTERNAL_SCRIPTS_ALLOWED = {
     "templates/kiosk_estadisticas.html": {"cdnjs.cloudflare.com"},          # Chart.js
     "templates/kiosk_formulario_editor.html": {"cdnjs.cloudflare.com"},     # Chart.js
+    "templates/form_stats.html": {"cdnjs.cloudflare.com"},                  # Chart.js (estadísticas del formulario: personal y cliente de formulario)
     "templates/kiosk_roster.html": {"cdnjs.cloudflare.com"},                # SheetJS (JSZip ya se aloja en static/vendor, 0C D9)
     "templates/form_public.html": {"translate.google.com"},                 # botón «Translate»
 }

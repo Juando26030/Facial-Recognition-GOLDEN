@@ -580,6 +580,21 @@ class FormEvent(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class FormClientUser(Base):
+    """Acceso de un cliente a las ESTADÍSTICAS de UN formulario (no del evento): enlaza una cuenta de staff con rol 'cliente' con el formulario que puede ver. Esa cuenta no tiene
+    EventStaffAuthorization, así que ninguna ruta del evento le abre; solo `/mi-formulario` y `/api/form-client/*` (app/form_client.py). `expires_at` = vencimiento del acceso."""
+    __tablename__ = 'form_client_users'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(Integer, ForeignKey('web_forms.id'), nullable=False, index=True)
+    staff_user_id = Column(Integer, ForeignKey('staff_users.id'), nullable=False, unique=True)
+    created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    expires_at = Column(DateTime, nullable=False)
+
+    form = relationship("WebForm")
+    staff_user = relationship("StaffUser", foreign_keys=[staff_user_id])
+
+
 class FormInvite(Base):
     """Enlace personalizado por invitado (`/f/<evento>/<slug>?i=<token>`): ya trae identificada a la persona."""
     __tablename__ = 'form_invites'
