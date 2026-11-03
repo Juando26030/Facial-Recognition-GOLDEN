@@ -288,7 +288,8 @@ def repeat_by_value(db: Session, form: WebForm, fid: str, ftype: str, key: Optio
     if not want:
         return False
     cell = "coalesce(CAST(fs.data_json AS jsonb) ->> CAST(:fid AS text), '')"
-    expr = f"regexp_replace({cell}, '\\D', '', 'g')" if ftype == "phone" else f"lower(regexp_replace({cell}, '[\\s.\\-]', '', 'g'))"
+    strip = "[\\s]" if ftype == "email" else "[\\s.\\-]"
+    expr = f"regexp_replace({cell}, '\\D', '', 'g')" if ftype == "phone" else f"lower(regexp_replace({cell}, '{strip}', '', 'g'))"
     params = {"form_id": form.id, "fid": fid, "want": want, "pre": PREREGISTERED}
     sql = f"SELECT 1 FROM form_submissions fs WHERE fs.form_id = :form_id AND fs.is_test = false AND fs.status = 'confirmed' AND {expr} = :want LIMIT 1"
     if db.execute(text(sql), params).first():
@@ -296,7 +297,7 @@ def repeat_by_value(db: Session, form: WebForm, fid: str, ftype: str, key: Optio
     col = {"email": "u.email", "phone": "u.phone"}.get(key or "")
     if not col:
         return False
-    uexpr = f"regexp_replace(coalesce({col}, ''), '\\D', '', 'g')" if ftype == "phone" else f"lower(regexp_replace(coalesce({col}, ''), '[\\s.\\-]', '', 'g'))"
+    uexpr = f"regexp_replace(coalesce({col}, ''), '\\D', '', 'g')" if ftype == "phone" else f"lower(regexp_replace(coalesce({col}, ''), '{strip}', '', 'g'))"
     sql = (f"SELECT 1 FROM form_submissions fs JOIN events e ON e.id = fs.event_id JOIN users u ON u.id = fs.person_id AND u.tenant_id = e.tenant_id "
            f"WHERE fs.form_id = :form_id AND fs.is_test = false AND fs.status = :pre AND {uexpr} = :want LIMIT 1")
     return db.execute(text(sql), params).first() is not None

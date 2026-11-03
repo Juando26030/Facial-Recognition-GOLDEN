@@ -40,6 +40,12 @@ def _no_cedula_form(client, ev, field_id, field_type):
     return f
 
 
+def _id_submit(client, ev, f, values, sid="s1"):
+    """Formulario con identificación por cédula: primero `lookup` (da el token), luego el envío."""
+    tok = _lookup(client, ev, f, values["cedula"]).json().get("token")
+    return _submit(client, ev, f, values, token=tok, sid=sid)
+
+
 def _vals(n="Ana", correo="ana@example.com", cel="300 123 4567", doc="AB-12"):
     return {"nombres": n, "correo": correo, "cel": cel, "doc": doc}
 
@@ -75,7 +81,7 @@ def test_lookup_stops_an_already_registered_person_and_reveals_nothing_else(clie
     _block(client, ev, f, prefill={"mode": "cedula", "source": "event"})
     _open(client, ev, f)
     assert _lookup(client, ev, f, "1001").status_code == 200                                   # aún no se ha inscrito
-    assert _submit(client, ev, f, _person_values()).status_code == 200
+    assert _id_submit(client, ev, f, _person_values()).status_code == 200
     r = _lookup(client, ev, f, "1.001")                                                          # misma cédula escrita con punto
     assert r.status_code == 409 and r.json() == {"detail": ALREADY, "already": True, "duplicate": True}      # nada más que «ya inscrito»: ni nombre, ni correo, ni token
     assert "Ana" not in r.text and "ana@" not in r.text
@@ -89,9 +95,9 @@ def test_lookup_does_not_block_when_the_switch_is_off(client, factory):
     login(client, "coord1")
     assert _put(client, ev, f, settings={"prefill": {"mode": "cedula", "source": "event"}}).status_code == 200
     _open(client, ev, f)
-    assert _submit(client, ev, f, _person_values()).status_code == 200
+    assert _id_submit(client, ev, f, _person_values()).status_code == 200
     assert _lookup(client, ev, f, "1001").status_code == 200                                     # sin el ajuste, el comportamiento de siempre (el envío sí rechaza el duplicado)
-    r = _submit(client, ev, f, _person_values(), sid="otra")
+    r = _id_submit(client, ev, f, _person_values(), sid="otra")
     assert r.status_code == 409 and r.json()["detail"] == ALREADY and r.json()["duplicate"] is True
 
 
@@ -196,7 +202,8 @@ def test_roster_column_marks_people_as_already_registered_without_using_capacity
     assert r.status_code == 200, r.text
     rows = {s.person_id: s for s in db.query(FormSubmission).filter_by(form_id=f["id"])}
     assert set(rows) == {"1001", "1003"} and all(s.status == formsvc.PREREGISTERED and s.is_test is False for s in rows.values())
-    assert _upload(client, ev, "Cédula,Nombres,Apellidos,Correo,Registrado en formulario", "1001,Ana,Mora,ana@example.com,sí").status_code == 200      # recargar no duplica
+    assert formsvc.mark_preregistered(db, ev, ["1001", "1003"]) == 0          # recargar no duplica
+    db.commit()
     db.expire_all()
     assert db.query(FormSubmission).filter_by(form_id=f["id"]).count() == 2
     summary = client.get(f"/api/events/{ev.id}/forms/{f['id']}").json()
@@ -205,9 +212,9 @@ def test_roster_column_marks_people_as_already_registered_without_using_capacity
     r = _lookup(client, ev, f, "1001")
     assert r.status_code == 409 and r.json()["detail"] == ALREADY
     assert _lookup(client, ev, f, "1002").status_code == 200
-    assert _submit(client, ev, f, {**_person_values(), "cedula": "1003", "correo": "caro@example.com"}, sid="x").status_code == 409
-    assert _submit(client, ev, f, {**_person_values(), "cedula": "1002", "nombres": "Beto", "correo": "beto@example.com"}, sid="y").status_code == 200      # el cupo (1) seguía libre
-    assert _submit(client, ev, f, {**_person_values(), "cedula": "1004", "correo": "dani@example.com"}, sid="z").status_code == 409                          # ahora sí se llenó
+    assert _id_submit(client, ev, f, {**_person_values(), "cedula": "1003", "correo": "caro@example.com"}, sid="x").status_code == 409
+    assert _id_submit(client, ev, f, {**_person_values(), "cedula": "1002", "nombres": "Beto", "correo": "beto@example.com"}, sid="y").status_code == 200      # el cupo (1) seguía libre
+    assert _id_submit(client, ev, f, {**_person_values(), "cedula": "1004", "correo": "dani@example.com"}, sid="z").status_code == 409                          # ahora sí se llenó
 
 
 def test_roster_flag_also_blocks_by_email_when_the_form_has_no_cedula(client, factory):

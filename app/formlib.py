@@ -853,6 +853,8 @@ def normalize_identifier(value, ftype: str = "text_short") -> str:
     text = str(value if value is not None else "")
     if ftype == "phone":
         return re.sub(r"\D", "", text)
+    if ftype == "email":
+        return re.sub(r"\s", "", text.lower())          # el punto y el guion SÍ cuentan en un correo
     return re.sub(r"[\s.\-]", "", text.lower())
 
 
