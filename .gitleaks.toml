@@ -1,0 +1,8 @@
+# Fase 0C: gitleaks usa sus reglas por defecto + estas excepciones. Solo se permiten los NOMBRES de secretos (no valores) de la lista APP_SECRETS.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Nombres de secretos en deploy/gcp/config.sh (listas «secret:NOMBRE»), sin valores"
+paths = ['''deploy/gcp/config\.sh''']
+regexes = ['''secret:[A-Z][A-Z0-9_]+''']
