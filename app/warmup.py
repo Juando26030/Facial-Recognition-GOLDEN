@@ -10,7 +10,7 @@ cambios de estado lo disparan al instante.
 
 Calienta solo con ACTIVIDAD real: ingresos en los últimos NEON_WARM_ACTIVITY_MIN (30) min o formularios activos / por abrir; «en proceso» solo no cuenta.
 note_activity() (al insertar un AccessLog) lanza kick() al primer ingreso tras un rato inactivo, con límite en memoria WARM_KICK_MIN_INTERVAL_MIN (30) y en un hilo.
-Ocioso: Neon se apaga a los NEON_IDLE_SUSPEND_SECONDS (600) s.
+Ocioso: Neon usa su apagado por defecto (5 min, fijo en el plan Launch); caliente = -1. Un formulario abierto NO calienta por sí solo (su página sale de caché sin base): solo la ventana de apertura (WARM_LOOKAHEAD_MIN / WARM_AFTER_OPENING_MIN, también para aperturas manuales).
 
 Variables: WARM_SERVICE_WEB / WARM_SERVICE_PUBLICO / WARM_SERVICE_BIOMETRIA (rutas completas de los servicios de Cloud Run),
 WARM_WEB_MIN (2), WARM_PUBLICO_MIN (2), WARM_BIOMETRIA_MIN (1), WARM_AFTER_OPENING_MIN (60: una apertura sigue caliente ese tiempo),
@@ -52,18 +52,6 @@ def _openings(db: Session, now_local: datetime, before: timedelta, after: timede
     return out
 
 
-def _open_now(db: Session, now_local: datetime) -> list:
-    """Formularios ABIERTOS ahora (activo por calendario o a mano) y con cupo disponible, de eventos no finalizados: mientras exista uno la base no se apaga."""
-    from app import formsvc
-    out = []
-    forms = db.query(WebForm).join(Event, Event.id == WebForm.event_id).filter(
-        Event.status != "finalizado", (WebForm.manual_status == "activo") | (WebForm.use_schedule == True)).all()  # noqa: E712
-    for form in forms:
-        if formsvc.status_of(form, now_local) == "activo" and not formsvc.is_full(db, form):
-            out.append({"form_id": form.id, "open_now": True})
-    return out
-
-
 def plan(db: Session, now_local: datetime = None) -> dict:
     from app import formsvc
     now_local = now_local or formsvc.now_local()
@@ -79,13 +67,12 @@ def plan(db: Session, now_local: datetime = None) -> dict:
     # Formularios abiertos A MANO (sin calendario): la app dejó constancia al abrirlos (routers/forms.py → «form_opened»).
     opening += [{"form_id": int(ref), "manual": True} for (ref,) in
                 db.query(SystemEvent.ref).filter(SystemEvent.kind == "form_opened", SystemEvent.at > utcnow() - after).all()]
-    opening += _open_now(db, now_local)
     busy = bool(running or opening)
     return {
         "web": _int("WARM_WEB_MIN", 2) if running else 0,
         "biometria": _int("WARM_BIOMETRIA_MIN", 1) if facial else 0,
         "publico": _int("WARM_PUBLICO_MIN", 2) if opening else 0,
-        "neon": {"suspend_timeout_seconds": -1 if busy else _int("NEON_IDLE_SUSPEND_SECONDS", 600),   # -1 = nunca se apaga; ocioso = se apaga a los 10 min
+        "neon": {"suspend_timeout_seconds": -1 if busy else 0,   # -1 = nunca se apaga; 0 = el de por defecto (5 min; en Neon Launch es fijo)
                  "autoscaling_limit_min_cu": float(os.getenv("NEON_WARM_MIN_CU" if busy else "NEON_IDLE_MIN_CU", "0.5" if busy else "0.25"))},
         "why": {"events_active": running, "facial_active": facial, "form_openings": opening},
     }

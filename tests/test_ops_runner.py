@@ -17,14 +17,14 @@ from tests.test_forms import _create, _status
 def test_plan_is_cold_when_nothing_is_happening(db):
     p = warmup.plan(db)
     assert (p["web"], p["publico"], p["biometria"]) == (0, 0, 0)
-    assert p["neon"] == {"suspend_timeout_seconds": 600, "autoscaling_limit_min_cu": 0.25}
+    assert p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}
 
 
 def test_plan_in_progress_without_activity_stays_cold(db, factory):
     factory.event("en_proceso", facial_enabled=True)
     p = warmup.plan(db)
     assert (p["web"], p["publico"], p["biometria"]) == (0, 0, 0)
-    assert p["neon"] == {"suspend_timeout_seconds": 600, "autoscaling_limit_min_cu": 0.25}
+    assert p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}
 
 
 def test_plan_warms_with_recent_activity_only(db, factory):
@@ -55,20 +55,17 @@ def test_note_activity_rate_limited(monkeypatch):
     assert calls == [1]
 
 
-def test_plan_open_form_without_calendar_keeps_everything_warm(db, factory):
+def test_open_form_alone_does_not_keep_warm_but_a_fresh_manual_opening_does(db, factory):
+    from app.timeutil import utcnow
     ev = factory.event("creado")
-    form = WebForm(event_id=ev.id, name="F", slug="fm", manual_status="activo", use_schedule=False, design_json="{}", settings_json="{}", test_key="k2")
-    db.add(form)
+    db.add(WebForm(event_id=ev.id, name="F", slug="fm", manual_status="activo", use_schedule=False, design_json="{}", settings_json="{}", test_key="k2"))
+    db.commit()
+    p = warmup.plan(db)                                                   # abierto desde hace días, sin constancia reciente: frío
+    assert p["publico"] == 0 and p["neon"]["suspend_timeout_seconds"] == 0
+    db.add(SystemEvent(kind="form_opened", ref="1", at=utcnow()))          # recién abierto a mano: ventana de apertura
     db.commit()
     p = warmup.plan(db)
     assert p["publico"] == 2 and p["neon"]["suspend_timeout_seconds"] == -1
-    form.capacity = 0                                                    # sin cupo disponible: ya no cuenta
-    db.commit()
-    assert warmup.plan(db)["publico"] == 0
-    form.capacity, form.manual_status = None, "cerrado"
-    db.commit()
-    p = warmup.plan(db)
-    assert p["publico"] == 0 and p["neon"]["suspend_timeout_seconds"] == 600
 
 
 def test_connect_retries_cover_neon_cold_start(monkeypatch):
