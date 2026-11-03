@@ -44,3 +44,13 @@ def test_logo_svg_not_allowed(client, factory):
     svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
     r = client.post(f"/api/events/{ev.id}/logo/upload", files={"file": ("logo.svg", svg, "image/svg+xml")})
     assert r.status_code == 400
+
+
+def test_consent_when_discards_future_and_ancient_dates():
+    from datetime import datetime, timedelta, timezone
+    from app.routers.consents import _when
+    now = datetime.now(timezone.utc)
+    assert _when((now - timedelta(hours=3)).isoformat()) is not None
+    assert _when((now + timedelta(days=400)).isoformat()) is None
+    assert _when((now - timedelta(days=30)).isoformat()) is None
+    assert _when("no es fecha") is None
