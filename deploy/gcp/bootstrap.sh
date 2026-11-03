@@ -76,6 +76,18 @@ sa_bind() {   # cuenta-destino miembro rol
   retry_iam gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$1")" --member "serviceAccount:$(sa_email "$2")" --role "$3" --quiet
 }
 project_bind() { retry_iam gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$(sa_email "$1")" --role "$2" --condition=None --quiet; }
+# E8 (0C): cuentas por servicio, SOLO con SPLIT_SERVICE_ACCOUNTS=1 (docs/20_CUENTAS_POR_SERVICIO.md). Sin él no se crea ni se cambia nada. Crear las cuentas no mueve los servicios: eso lo hace el siguiente despliegue con el interruptor encendido.
+if [ "$SPLIT_SERVICE_ACCOUNTS" = 1 ]; then
+  for sa in "$SA_SVC_WEB:Servicio web" "$SA_SVC_PUBLICO:Servicio publico" "$SA_SVC_BIOMETRIA:Servicio biometria"; do
+    name="${sa%%:*}"
+    exists gcloud iam service-accounts describe "$(sa_email "$name")" || gcloud iam service-accounts create "$name" --display-name "Golden ${GOLDEN_ENV}: ${sa#*:}"
+  done
+  for sa in "$SA_SVC_WEB" "$SA_SVC_PUBLICO" "$SA_SVC_BIOMETRIA"; do
+    sa_bind "$sa" "$sa" roles/iam.serviceAccountTokenCreator       # firmar sus propias URLs de subida
+    sa_bind "$SA_INVOKER" "$sa" roles/iam.serviceAccountUser       # crear tareas de Cloud Tasks con el token OIDC del invoker
+    sa_bind "$sa" "$SA_DEPLOYER" roles/iam.serviceAccountUser      # GitHub Actions despliega el servicio con esta cuenta
+  done
+fi
 sa_bind "$SA_APP" "$SA_APP" roles/iam.serviceAccountTokenCreator   # firmar sus propias URLs de subida (signBlob): no tiene llave privada
 sa_bind "$SA_INVOKER" "$SA_APP" roles/iam.serviceAccountUser       # crear tareas de Cloud Tasks con el token OIDC del invoker
 sa_bind "$SA_APP" "$SA_DEPLOYER" roles/iam.serviceAccountUser      # desplegar servicios que corren como app / ops
@@ -146,6 +158,9 @@ fi
 secret_access() { gcloud secrets add-iam-policy-binding "$(secret_name "$1")" --member "serviceAccount:$(sa_email "$2")" \
                     --role roles/secretmanager.secretAccessor --quiet >/dev/null 2>&1 || true; }
 for pair in $APP_SECRETS; do secret_access "${pair%%:*}" "$SA_APP"; secret_access "${pair%%:*}" "$SA_OPS"; done
+if [ "$SPLIT_SERVICE_ACCOUNTS" = 1 ]; then      # E8: cada servicio lee SOLO sus secretos (config.sh: service_secrets). Los permisos de $SA_APP no se quitan aquí: ver docs/20, paso 4.
+  for short in web publico biometria; do for pair in $(service_secrets "$short"); do secret_access "${pair%%:*}" "$(service_sa "$short")"; done; done
+fi
 for pair in $OPS_SECRETS neon-project-id:x neon-endpoint-id:x; do secret_access "${pair%%:*}" "$SA_OPS"; done
 secret_access ops-token "$SA_DEPLOYER"     # el despliegue pregunta /api/ops/deploy-allowed (congelamiento)
 # El despliegue necesita saber QUÉ secretos de SU entorno existen (para montarlos), no sus valores: metadatos por secreto, no del proyecto.
@@ -195,6 +210,10 @@ LISTER="projects/${PROJECT_ID}/roles/goldenBackupLister"
 bucket_bind "$BACKUP_BUCKET" "$SA_OPS" roles/storage.objectCreator          # respaldos: crear…
 bucket_bind "$BACKUP_BUCKET" "$SA_OPS" "$LISTER"                            # …y revisar (check-backups lista; no lee ni borra)
 bucket_bind "$BACKUP_BUCKET" "$SA_APP" "$LISTER"                            # «Último respaldo» en /sistema
+if [ "$SPLIT_SERVICE_ACCOUNTS" = 1 ]; then                                  # E8: archivos para los 3 servicios; listar respaldos solo el panel (web)
+  for sa in "$SA_SVC_WEB" "$SA_SVC_PUBLICO" "$SA_SVC_BIOMETRIA"; do bucket_bind "$APP_BUCKET" "$sa" roles/storage.objectAdmin; done
+  bucket_bind "$BACKUP_BUCKET" "$SA_SVC_WEB" "$LISTER"
+fi
 # Cuentas que venían de una versión anterior con objectViewer: se les quita (idempotente)
 for sa in "$SA_OPS" "$SA_APP"; do
   [ "$APP_BUCKET" = "$BACKUP_BUCKET" ] || gcloud storage buckets remove-iam-policy-binding "gs://$BACKUP_BUCKET" --member "serviceAccount:$(sa_email "$sa")" --role roles/storage.objectViewer --quiet >/dev/null 2>&1 || true
@@ -216,6 +235,10 @@ gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" -
 gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_DEPLOYER")" --role roles/cloudtasks.viewer --quiet >/dev/null      # deploy.sh lee la cola para configurar los servicios
 gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$SA_OPS")" --role roles/cloudtasks.enqueuer --quiet >/dev/null           # el barrido horario despierta a la cola
 gcloud iam service-accounts add-iam-policy-binding "$(sa_email "$SA_INVOKER")" --member "serviceAccount:$(sa_email "$SA_OPS")" --role roles/iam.serviceAccountUser --quiet >/dev/null
+if [ "$SPLIT_SERVICE_ACCOUNTS" = 1 ]; then                                  # E8: quién puede encolar (cola general: los 3; cálculos faciales: web y biometria)
+  for sa in "$SA_SVC_WEB" "$SA_SVC_PUBLICO" "$SA_SVC_BIOMETRIA"; do gcloud tasks queues add-iam-policy-binding "$QUEUE" --location "$REGION" --member "serviceAccount:$(sa_email "$sa")" --role roles/cloudtasks.enqueuer --quiet >/dev/null; done
+  for sa in "$SA_SVC_WEB" "$SA_SVC_BIOMETRIA"; do gcloud tasks queues add-iam-policy-binding "$QUEUE_FACES" --location "$REGION" --member "serviceAccount:$(sa_email "$sa")" --role roles/cloudtasks.enqueuer --quiet >/dev/null; done
+fi
 ok "colas con tope de 5 (general) y 2 (cálculos faciales) despachos simultáneos"
 
 # -------------------------------------------------------------------------------------------------------------------------- 8
@@ -236,6 +259,9 @@ for job in "$JOB_MIGRATE" "$JOB_BULK" "$JOB_OPS"; do bind_job "$job" "$SA_DEPLOY
 bind_job "$JOB_BULK" "$SA_APP" roles/run.jobsExecutorWithOverrides  # el servicio lanza la carga masiva
 bind_job "$JOB_OPS" "$SA_APP" roles/run.jobsExecutorWithOverrides   # y el precalentamiento inmediato
 bind_job "$JOB_OPS" "$SA_INVOKER" roles/run.invoker                  # Cloud Scheduler corre la tarea horaria
+if [ "$SPLIT_SERVICE_ACCOUNTS" = 1 ]; then                           # E8: lanzar la carga masiva y el precalentamiento: web y biometria (publico no lanza Jobs)
+  for sa in "$SA_SVC_WEB" "$SA_SVC_BIOMETRIA"; do bind_job "$JOB_BULK" "$sa" roles/run.jobsExecutorWithOverrides; bind_job "$JOB_OPS" "$sa" roles/run.jobsExecutorWithOverrides; done
+fi
 ok "$SA_DEPLOYER: run.developer sobre los 3 servicios y 3 Jobs de $GOLDEN_ENV (nada del otro entorno)"
 # CORS otra vez, ahora que los servicios existen: así entra también la URL corta con hash de Cloud Run (la del paso 6 solo conocía la determinista).
 bash deploy/gcp/cors.sh "$GOLDEN_ENV"

@@ -295,3 +295,77 @@ def test_en1_revoke_only_applies_to_a_digitizer_or_client_of_that_event(client, 
     assert client.delete(f"/api/events/{ev.id}/staff-users/{dig.id}").status_code == 404           # no tenía acceso a ESTE evento
     assert client.delete(f"/api/events/{ev.id}/staff-users/{other_coord.id}").status_code == 404   # un coordinador no se autoriza por evento
     assert client.delete(f"/api/events/{ev.id}/staff-users/99999").status_code == 404
+
+
+# ------------------------------------------------------------------ E8: cuentas de servicio por servicio (solo scripts; no se toca la nube)
+_FAKE_GCLOUD = r'''#!/usr/bin/env bash
+case "$*" in
+  "config get-value run/region") echo us-east4;;
+  "config get-value project") echo proyecto-prueba;;
+  "projects describe"*) echo 123456789;;
+esac
+'''
+
+
+def _config(tmp_path, snippet: str, env: str = "staging", split: str = "") -> str:
+    import os
+    import shutil
+    import stat
+    import subprocess
+    from pathlib import Path
+    bash = shutil.which("bash")
+    if bash is None:
+        import pytest
+        pytest.skip("sin bash")
+    fake = tmp_path / "gcloud"
+    fake.write_text(_FAKE_GCLOUD, encoding="utf-8", newline="\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    root = Path(__file__).resolve().parent.parent
+    run_env = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
+    run_env.pop("SPLIT_SERVICE_ACCOUNTS", None)
+    if split:
+        run_env["SPLIT_SERVICE_ACCOUNTS"] = split
+    out = subprocess.run([bash, "-c", f"source deploy/gcp/config.sh {env} && {snippet}"], capture_output=True, env=run_env, cwd=root)
+    assert out.returncode == 0, out.stderr.decode("utf-8", "replace")
+    return out.stdout.decode("utf-8", "replace")
+
+
+def test_e8_scripts_have_valid_bash_syntax():
+    import shutil
+    import subprocess
+    from pathlib import Path
+    bash = shutil.which("bash")
+    if bash is None:
+        import pytest
+        pytest.skip("sin bash")
+    root = Path(__file__).resolve().parent.parent
+    for name in ("config.sh", "deploy.sh", "bootstrap.sh"):
+        assert subprocess.run([bash, "-n", f"deploy/gcp/{name}"], cwd=root, capture_output=True).returncode == 0, name
+
+
+def test_e8_default_keeps_the_shared_account_and_every_secret(tmp_path):
+    out = _config(tmp_path, 'echo "$(service_sa web) $(service_sa publico) $(service_sa biometria)"; [ "$(service_secrets publico)" = "$APP_SECRETS" ] && echo SAME')
+    assert "golden-app-staging golden-app-staging golden-app-staging" in out and "SAME" in out
+
+
+def test_e8_split_gives_each_service_its_own_account_and_publico_loses_mail_and_private_wompi(tmp_path):
+    out = _config(tmp_path, 'echo "$(service_sa web) $(service_sa publico) $(service_sa biometria)"; echo "PUB: $(service_secrets publico)"; echo "BIO: $(service_secrets biometria)"; echo "WEB: $(service_secrets web)"', split="1")
+    first = out.splitlines()[0]
+    assert first == "golden-svc-web-staging golden-svc-publico-staging golden-svc-biometria-staging"
+    assert all(len(n) <= 30 for n in first.split())                       # límite de Google para el id de una cuenta de servicio
+    pub_all = out[out.index("PUB:"):out.index("BIO:")]
+    assert "azure-client-secret" not in pub_all and "graph-sender" not in pub_all and "wompi-private-key" not in pub_all and "wompi-sandbox-private-key" not in pub_all
+    assert "wompi-events-secret" in pub_all and "database-url" in pub_all
+    bio = out[out.index("BIO:"):out.index("WEB:")]
+    assert "wompi" not in bio and "azure" not in bio and "face-encryption-key" in bio
+    assert "azure-client-secret" in out[out.index("WEB:"):] and "wompi-private-key" in out[out.index("WEB:"):]
+
+
+def test_e8_deploy_and_bootstrap_use_the_per_service_helpers():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    deploy = (root / "deploy/gcp/deploy.sh").read_text(encoding="utf-8")
+    assert '--service-account "$(sa_email "$(service_sa "$short")")"' in deploy and "service_secrets" in deploy
+    boot = (root / "deploy/gcp/bootstrap.sh").read_text(encoding="utf-8")
+    assert boot.count('SPLIT_SERVICE_ACCOUNTS" = 1') >= 5 and "SA_SVC_PUBLICO" in boot       # todo lo nuevo está detrás del interruptor
+    assert (root / "docs/20_CUENTAS_POR_SERVICIO.md").exists()
