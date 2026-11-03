@@ -319,6 +319,44 @@
   });
 })();
 
+/* Puerta central de inactividad de la pestaña (3-nov-2026, docs/22): con la pestaña abierta y VISIBLE pero sin que nadie toque nada, la base de datos debe poder dormirse (Neon, 5 min sin consultas).
+   `GW.idle` es true cuando no hubo clic, tecla, toque, scroll ni movimiento del ratón en los últimos 60 s (`window.GW_IDLE_PAUSE_MS` lo cambia); al volver cualquier actividad pasa a false y se ejecutan
+   AL INSTANTE los refrescos registrados (el ping de sesión incluido: si la sesión se reemplazó o venció, se entera ahí). `GW.poll(fn, ms)` es un setInterval que NO corre mientras `GW.idle`, y `GW.onResume(fn, once)`
+   registra algo para el regreso. Solo se pausa lo que consulta la base: el chequeo de /health (sin base) y el vaciado de la cola sin conexión NO usan esta puerta. Distinto del cierre de sesión (app/idle.py):
+   la sesión sigue contando desde la última actividad REAL. No se usa en pantallas de exhibición ni en páginas públicas. */
+(function () {
+  if (window.GW && window.GW.createIdleGate) return;
+  function createGate(d) {
+    const g = { idle: false, idleMs: d.idleMs || 60000, last: d.now(), resume: [], once: [] };
+    const emit = (name) => { try { if (d.emit) d.emit(name); } catch (e) { /* sin eventos */ } };
+    g.activity = function () {
+      g.last = d.now();
+      if (!g.idle) return;
+      g.idle = false; emit("gw:resume");
+      const once = g.once; g.once = [];
+      g.resume.concat(once).forEach((fn) => { try { fn(); } catch (e) { /* un refresco que falla no frena a los demás */ } });
+    };
+    g.check = function () { if (!g.idle && d.now() - g.last >= g.idleMs) { g.idle = true; emit("gw:idle"); } };
+    g.onResume = function (fn, once) { (once ? g.once : g.resume).push(fn); };
+    g.poll = function (fn, ms) { g.resume.push(fn); return d.setInterval(function () { if (!g.idle) fn(); }, ms); };
+    return g;
+  }
+  const hasDom = typeof document !== "undefined" && document && typeof document.addEventListener === "function";
+  const gate = createGate({
+    idleMs: Number(window.GW_IDLE_PAUSE_MS) || 60000,
+    now: () => Date.now(),
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    emit: (name) => { if (typeof window.dispatchEvent === "function" && typeof Event === "function") window.dispatchEvent(new Event(name)); },
+  });
+  gate.createIdleGate = createGate;
+  window.GW = gate;
+  if (hasDom) {
+    ["click", "keydown", "pointerdown", "touchstart", "wheel", "scroll", "mousemove"].forEach((ev) => document.addEventListener(ev, () => gate.activity(), { capture: true, passive: true }));
+    const t = setInterval(() => gate.check(), 5000);
+    if (t && t.unref) t.unref();
+  }
+})();
+
 /* Sesión única (26-oct-2026, app/sessions.py): si esta cuenta entró en otro dispositivo, el servidor responde 401 «session_replaced» a las peticiones de esta sesión. Aquí se detecta en CUALQUIER
    petición de la página: se avisa el evento `gw:session-replaced` (los sondeos y latidos se detienen), se muestra el motivo y se lleva al inicio de sesión en pocos segundos. Los ingresos hechos sin
    red (outbox / contingencia) NO se descartan: siguen guardados y se envían al volver a iniciar sesión. Las pantallas operativas piden `window.GW_SESSION_PING = true` para enterarse en
@@ -347,6 +385,7 @@
     });
   };
   if (window.GW_SESSION_PING) {
-    setInterval(() => { if (!replaced && document.visibilityState === "visible") original("/api/session/ping", { cache: "no-store" }).then((res) => { if (res.status === 401) window.fetch("/api/session/ping"); }, () => {}); }, 8000);
+    const pingNow = () => { if (!replaced && document.visibilityState === "visible") original("/api/session/ping", { cache: "no-store", headers: { "X-Gw-Passive": "1" } }).then((res) => { if (res.status === 401) window.fetch("/api/session/ping"); }, () => {}); };
+    if (window.GW && window.GW.poll) window.GW.poll(pingNow, 8000); else setInterval(pingNow, 8000);      // pestaña sin uso 60 s: no consulta la base; al volver, ping inmediato
   }
 })();

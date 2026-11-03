@@ -898,7 +898,7 @@
     }).join('');
     box.innerHTML = data.users.length ? `<table style="width:100%; border-collapse:collapse;"><tr><th style="text-align:left; padding:6px;">Usuario</th><th style="text-align:left; padding:6px;">Equipo</th><th style="text-align:left; padding:6px;">Imprime</th></tr>${rows}</table>`
       : '<p>Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
-    timer = setTimeout(load, 5000);
+    timer = setTimeout(() => { if (window.GW && window.GW.idle) window.GW.onResume(load, true); else load(); }, 5000);      // sin uso 60 s el sondeo se detiene y retoma al volver
   }
   box.addEventListener('change', async (e) => {
     const sel = e.target.closest('select[data-route]');

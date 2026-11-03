@@ -450,9 +450,14 @@
       T('contingency:ready');
       c.refreshRoster().then((r) => { if (r === 'ok') { c.machine.authGood(); c.syncQueue(); } });
       c.timers.push(d.setInterval(checkHealth, HEALTH_MS));
+      const gw = root.GW;                                            // toast.js: pestaña sin uso 60 s → no se refresca la lista (consulta la base); al volver se hace de inmediato. /health y la cola NO se pausan.
+      let staleRoster = false;
+      const refreshNow = async () => { staleRoster = false; if (c.machine.state !== 'contingency' && !c.eventFinished) { const r = await c.refreshRoster(); if (r === 'ok') c.machine.authGood(); } };
+      if (gw && gw.onResume) gw.onResume(() => { if (staleRoster) refreshNow(); });
       c.timers.push(d.setInterval(async () => {
         await c.pruneOld();
-        if (c.machine.state !== 'contingency' && !c.eventFinished) { const r = await c.refreshRoster(); if (r === 'ok') c.machine.authGood(); }
+        if (gw && gw.idle) { staleRoster = true; return; }
+        await refreshNow();
       }, REFRESH_MS));
       return c;
     };

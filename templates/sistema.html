@@ -99,7 +99,7 @@
   setInterval(() => { if (last) document.getElementById('updated').textContent = 'Actualizado hace ' + Math.round((Date.now() - last) / 1000) + ' s'; }, 1000);
   document.getElementById('refreshBtn').addEventListener('click', refresh);
   refresh();
-  setInterval(refresh, 15000);
+  if (window.GW && window.GW.poll) window.GW.poll(refresh, 15000); else setInterval(refresh, 15000);      // pausado mientras la pestaña no se usa (GW.idle)
 })();
 </script>
 </body>

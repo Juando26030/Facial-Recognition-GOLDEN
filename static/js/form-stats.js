@@ -199,5 +199,6 @@
   new MutationObserver(function () { if (last && last.timeline) { var c = body.querySelector('.fs-chart canvas'); if (c) drawTimeline(last.timeline, c); } })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   load();
-  setInterval(function () { if (!document.hidden) load(); }, 60000);
+  var again = function () { if (!document.hidden) load(); };
+  if (window.GW && window.GW.poll) window.GW.poll(again, 60000); else setInterval(again, 60000);      // pausado mientras la pestaña no se usa (GW.idle)
 })();
