@@ -3,15 +3,19 @@
 
    classifyQuery(texto) -> { kind, raw, cedula?, words, ... }
      kind: 'vacio' | 'cedula' | 'lector' | 'qr' | 'texto'
-       - 'cedula': solo dígitos (con puntos, espacios o guiones de separador), 5 o más dígitos. `cedula` = clave normalizada (sin separadores ni ceros a la izquierda).
+       - 'cedula': solo dígitos (con puntos, espacios o guiones de separador), 3 o más. `cedula` = clave normalizada (sin separadores ni ceros a la izquierda).
+         `completa` = 5 o más dígitos (ya se puede comparar por huella sin red); `parcial` = lo contrario (3-4 dígitos). La interfaz usa `parcial` para avisar
+         «Sin internet: escribe la cédula completa» cuando el equipo solo tiene huellas. Lector y QR siempre son completos.
        - 'lector': lo que escupe el lector de códigos de barras de la cédula vieja («1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206») o un número con ceros a la izquierda.
        - 'qr': el QR de la escarapela («cédula|nombre|apellido»).
        - 'texto': todo lo demás; se busca como NOMBRE y como EMPRESA a la vez (prefijo de palabra).
    matchPerson(persona, consulta, opts) -> { coincide, motivo }
-     motivo (corto, en español, para mostrar POR QUÉ coincidió): «Cédula exacta» | «Código del lector» | «Nombre» | «Empresa» | «Nombre y empresa»; '' si no coincide.
+     motivo (corto, en español, para mostrar POR QUÉ coincidió): «Cédula exacta» | «Cédula (empieza por 123…)» | «Código del lector» | «Nombre» | «Empresa» | «Nombre y empresa»; '' si no coincide.
+     orden (para ordenar resultados): 0 = cédula exacta o código del lector, 1 = cédula por prefijo, 2 = nombre/empresa. `search(personas, consulta, opts)` ya devuelve [{persona, motivo, orden}] así ordenado.
      persona: { id, first_name, last_name, entity } (directorio en línea) o una fila de la copia local (`__local`, `__h` = huella de la cédula, sin entidad).
      opts.hash: huella (GC.hashFor) de la cédula consultada; solo hace falta con filas locales, que NO guardan la cédula: ahí la comparación es por huella EXACTA.
-   Reglas (decisión D2): la cédula SIEMPRE es coincidencia EXACTA (nunca subcadena: «12345» no lista a «1234567»); nombre y empresa, por prefijo de palabra sin tildes ni mayúsculas. */
+   Reglas: con red (fila con la cédula en claro) la búsqueda es PREDICTIVA: desde 3 dígitos coincide toda cédula que EMPIECE por lo escrito (nunca subcadena: «345» no lista a «1234567»);
+   la exacta sale primero. Sin red (fila de la copia local, solo huella) la cédula sigue siendo SOLO exacta: la copia no lleva la cédula. Nombre y empresa, por prefijo de palabra sin tildes ni mayúsculas. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -19,8 +23,10 @@
 }(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const MIN_CEDULA_DIGITS = 5;
-  const MOTIVOS = { cedula: 'Cédula exacta', lector: 'Código del lector', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa' };
+  const MIN_PREFIX_DIGITS = 3;      // desde aquí la cédula se busca por prefijo (filas con cédula en claro)
+  const MIN_CEDULA_DIGITS = 5;      // desde aquí la cédula se considera completa (huella exacta sin red)
+  const MOTIVOS = { cedula: 'Cédula exacta', lector: 'Código del lector',
+    prefijo: (digits) => 'Cédula (empieza por ' + digits + '…)', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa' };
 
   function stripAccents(text) {
     return String(text == null ? '' : text).normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -59,19 +65,22 @@
   function classifyQuery(texto) {
     const raw = String(texto == null ? '' : texto);
     const text = raw.replace(/[\r\n\t]+/g, ' ').trim();
-    if (!text) return { kind: 'vacio', raw, words: [] };
+    if (!text) return { kind: 'vacio', raw, words: [], parcial: false, completa: false };
     const qr = parseQr(text);
-    if (qr !== null) return { kind: 'qr', raw, cedula: cedulaKey(qr), words: [] };
+    if (qr !== null) return { kind: 'qr', raw, cedula: cedulaKey(qr), words: [], parcial: false, completa: true };
     const barcode = parseBarcode(text);
-    if (barcode !== null) return { kind: 'lector', raw, cedula: cedulaKey(barcode), words: [] };
+    if (barcode !== null) return { kind: 'lector', raw, cedula: cedulaKey(barcode), words: [], parcial: false, completa: true };
     if (/^[\d.\s-]+$/.test(text)) {
       const digits = text.replace(/\D/g, '');
-      if (digits.length >= MIN_CEDULA_DIGITS) {
-        // Ceros a la izquierda: así rellena el número el lector de códigos.
-        return { kind: /^0\d/.test(digits) ? 'lector' : 'cedula', raw, cedula: cedulaKey(digits), words: [] };
+      if (digits.length >= MIN_CEDULA_DIGITS && /^0\d/.test(digits)) {       // ceros a la izquierda: así rellena el número el lector de códigos
+        return { kind: 'lector', raw, cedula: cedulaKey(digits), words: [], parcial: false, completa: true };
+      }
+      if (digits.length >= MIN_PREFIX_DIGITS) {
+        const completa = digits.length >= MIN_CEDULA_DIGITS;
+        return { kind: 'cedula', raw, cedula: cedulaKey(digits), words: [], parcial: !completa, completa };
       }
     }
-    return { kind: 'texto', raw, words: wordsOf(text), normalized: normalize(text), compact: cedulaKey(text) };
+    return { kind: 'texto', raw, words: wordsOf(text), normalized: normalize(text), compact: cedulaKey(text), parcial: false, completa: false };
   }
 
   /* Lo que se compara de cada persona se calcula UNA vez (con 10.000 personas, una tecla no puede volver a normalizar a todas). */
@@ -99,28 +108,45 @@
     return true;
   }
 
-  const NO = { coincide: false, motivo: '' };
+  const NO = { coincide: false, motivo: '', orden: 9 };
+  const hit = (motivo, orden) => ({ coincide: true, motivo, orden });
   function matchPerson(persona, consulta, opts) {
     if (!persona) return NO;
     const q = (consulta && typeof consulta === 'object') ? consulta : classifyQuery(consulta);
     if (q.kind === 'vacio') return NO;
     if (q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr') {
       const motivo = q.kind === 'cedula' ? MOTIVOS.cedula : MOTIVOS.lector;
-      if (persona.__local) {                                    // fila de la copia local: no guarda la cédula, solo su huella (comparación exacta)
+      if (persona.__local) {                                    // fila de la copia local: no guarda la cédula, solo su huella (SOLO exacta; un parcial no coincide)
         const h = opts && opts.hash;
-        return h && persona.__h === h ? { coincide: true, motivo } : NO;
+        return q.completa && h && persona.__h === h ? hit(motivo, 0) : NO;
       }
-      return q.cedula && keysOf(persona).id === q.cedula ? { coincide: true, motivo } : NO;
+      const id = keysOf(persona).id;
+      if (!q.cedula) return NO;
+      if (id === q.cedula) return hit(motivo, 0);
+      if (q.kind === 'cedula' && id.startsWith(q.cedula)) return hit(MOTIVOS.prefijo(q.cedula), 1);    // predictivo: solo con la cédula en claro
+      return NO;
     }
     const k = keysOf(persona);
     // Documento con letras (pasaporte): se escribe como texto, pero si es IGUAL al documento guardado es cédula exacta.
-    if (!persona.__local && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && k.id === q.compact) return { coincide: true, motivo: MOTIVOS.cedula };
+    if (!persona.__local && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && k.id === q.compact) return hit(MOTIVOS.cedula, 0);
     const inName = prefixMatch(k.name, q.words), inEntity = prefixMatch(k.entity, q.words);
-    if (inName && inEntity) return { coincide: true, motivo: MOTIVOS.ambos };
-    if (inName) return { coincide: true, motivo: MOTIVOS.nombre };
-    if (inEntity) return { coincide: true, motivo: MOTIVOS.empresa };
+    if (inName && inEntity) return hit(MOTIVOS.ambos, 2);
+    if (inName) return hit(MOTIVOS.nombre, 2);
+    if (inEntity) return hit(MOTIVOS.empresa, 2);
     return NO;
   }
 
-  return { classifyQuery, matchPerson, cedulaKey, normalize, wordsOf, prepare, MOTIVOS, MIN_CEDULA_DIGITS };
+  /* Filtra y ordena: exacta > prefijo de cédula > nombre/empresa (estable: dentro de cada grupo se respeta el orden original). */
+  function search(personas, consulta, opts) {
+    const q = (consulta && typeof consulta === 'object') ? consulta : classifyQuery(consulta);
+    const out = [];
+    for (let i = 0; i < personas.length; i++) {
+      const r = matchPerson(personas[i], q, opts);
+      if (r.coincide) out.push({ persona: personas[i], motivo: r.motivo, orden: r.orden, i });
+    }
+    out.sort((a, b) => a.orden - b.orden || a.i - b.i);
+    return out.map(({ persona, motivo, orden }) => ({ persona, motivo, orden }));
+  }
+
+  return { classifyQuery, matchPerson, search, cedulaKey, normalize, wordsOf, prepare, MOTIVOS, MIN_CEDULA_DIGITS, MIN_PREFIX_DIGITS };
 }));

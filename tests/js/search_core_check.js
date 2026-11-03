@@ -16,7 +16,14 @@ assert.strictEqual(cq(null).kind, 'vacio');
 assert.strictEqual(cq('1016100329').kind, 'cedula');
 assert.strictEqual(cq('1.016.100.329').cedula, '1016100329');
 assert.strictEqual(cq('1 016 100-329').cedula, '1016100329');
-assert.strictEqual(cq('1234').kind, 'texto');                                   // 4 dígitos: no es cédula
+assert.strictEqual(cq('1234').kind, 'cedula');                                  // 3-4 dígitos: cédula PARCIAL (predictiva con red)
+assert.strictEqual(cq('1234').parcial, true);
+assert.strictEqual(cq('1234').completa, false);
+assert.strictEqual(cq('12').kind, 'texto');                                     // 2 dígitos: texto
+assert.strictEqual(cq('10161').parcial, false);
+assert.strictEqual(cq('10161').completa, true);
+assert.strictEqual(cq('1016100329,A,B,C,D,1').completa, true);
+assert.strictEqual(cq('Juan').parcial, false);
 assert.strictEqual(cq('Juan').kind, 'texto');
 assert.strictEqual(cq('1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206').kind, 'lector');
 assert.strictEqual(cq('1016100329,JHOAN,SEBASTIAN,ANGARITA,ROJAS,19980206').cedula, '1016100329');
@@ -32,15 +39,28 @@ assert.deepStrictEqual(cq('  JOSÉ   María ').words, ['jose', 'maria']);
 con(juan, '1016100329', 'Cédula exacta');
 con(juan, '1.016.100.329', 'Cédula exacta');
 con(juan, ' 1016100329 ', 'Cédula exacta');
-sin(juan, '1016100');                                                            // parcial (7 dígitos): NO
-sin(juan, '16100329');                                                           // subcadena: NO
-sin(juan, '10161003290');
+con(juan, '1016100', 'Cédula (empieza por 1016100…)');                           // con red: predictivo por prefijo
+con(juan, '101', 'Cédula (empieza por 101…)');
+con(juan, '1.016', 'Cédula (empieza por 1016…)');
+sin(juan, '16100329');                                                           // subcadena (no prefijo): NO
+sin(juan, '10161003290');                                                        // más larga que la cédula: NO
 sin(juan, '1016100328');
 sin(juan, '12345');
-sin(juan, '123');                                                                // corto: texto, no coincide con nada
+sin(juan, '123');
+sin(juan, '12');                                                                 // 2 dígitos: texto, no coincide con nada
 con(pasaporte, 'ab-123456', 'Cédula exacta');                                    // documento con letras: igual, exacto
 sin(pasaporte, '123456');
 sin(pasaporte, 'ab123');
+
+// Predictivo y orden: exacta > prefijo > nombre/empresa
+const gp = [{ id: '10161003291', first_name: 'A', last_name: 'B' }, { id: '1016100329', first_name: 'C', last_name: 'D' }, { id: '1016200000', first_name: 'E', last_name: 'F' }, { id: '5', first_name: 'G', last_name: 'H', entity: '1016 SA' }];
+SC.prepare(gp);
+let r3 = SC.search(gp, '101');
+assert.deepStrictEqual(r3.map((x) => x.persona.id), ['10161003291', '1016100329', '1016200000']);
+assert.ok(r3.every((x) => x.orden === 1));
+r3 = SC.search(gp, '1016100329');
+assert.deepStrictEqual(r3.map((x) => [x.persona.id, x.motivo]), [['1016100329', 'Cédula exacta'], ['10161003291', 'Cédula (empieza por 1016100329…)']]);
+assert.deepStrictEqual(SC.search(gp, '1016').map((x) => x.persona.id), ['10161003291', '1016100329', '1016200000']);
 
 // Lector: ceros, CSV y QR
 con(juan, '0001016100329', 'Código del lector');
@@ -75,7 +95,7 @@ sin(juan, '');
 sin(juan, '   ');
 sin(juan, null);
 sin(juan, undefined);
-assert.deepStrictEqual(mp(null, 'x'), { coincide: false, motivo: '' });
+assert.strictEqual(mp(null, 'x').coincide, false);
 
 // Aceptar una consulta ya clasificada
 con(juan, cq('1016100329'), 'Cédula exacta');
@@ -84,6 +104,9 @@ con(juan, cq('1016100329'), 'Cédula exacta');
 const local = { __local: true, __h: 'abc123', id: 'abc123', first_name: 'María José', last_name: 'Gómez' };
 con(local, '1016100329', 'Cédula exacta', { hash: 'abc123' });
 sin(local, '1016100329', { hash: 'zzz' });
+sin(local, '101', { hash: 'abc123' });                                          // parcial: NUNCA coincide en filas locales (solo huella exacta)
+sin(local, '1016', { hash: 'abc123' });
+assert.strictEqual(cq('1016').parcial, true);
 sin(local, '1016100329');                                                        // sin huella calculada todavía: no coincide
 con(local, 'maria', 'Nombre');
 sin(local, 'acme');                                                              // la copia vieja no trae empresa
