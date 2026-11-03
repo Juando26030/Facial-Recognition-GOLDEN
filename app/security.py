@@ -237,9 +237,29 @@ def _public_locked(db: Session, kind: str, key: str, ip: str, max_hits: int, win
     return hits >= max_hits
 
 
-def password_problem(password: str) -> Optional[str]:
-    if len(password or "") < MIN_PASSWORD_LENGTH:
-        return f"La contraseña debe tener al menos {MIN_PASSWORD_LENGTH} caracteres"
+MIN_PASSWORD_LENGTH_CREATED = 10   # 0C (C11): contraseñas que fija un administrador (alta de personal, restablecimiento): más largas y con letra y número
+COMMON_PASSWORDS = frozenset({
+    "password", "passw0rd", "contrasena", "contrasenia", "clave", "claves", "admin", "administrador", "administrator", "root", "qwerty", "qwertyuiop", "asdfgh", "abc", "abcdef", "letmein",
+    "welcome", "bienvenido", "bienvenida", "golden", "goldenweb", "goldeneventos", "goldenlogistica", "goldenlogisticas", "colombia", "bogota", "medellin", "usuario", "digitador", "coordinador",
+    "comercial", "cliente", "evento", "eventos", "cambiame", "cambiar", "iloveyou", "monkey", "dragon", "123456", "12345678", "123456789", "1234567890", "0123456789",
+})
+
+
+def password_problem(password: str, username: Optional[str] = None, strict: bool = False) -> Optional[str]:
+    """Política de contraseñas. Siempre: mínimo MIN_PASSWORD_LENGTH, distinta del usuario y fuera de una lista corta de contraseñas comunes (con o sin cifras/símbolos
+    alrededor). `strict=True` (0C-C11: la contraseña la fija un administrador al crear o restablecer una cuenta): mínimo MIN_PASSWORD_LENGTH_CREATED y al menos una letra y un número."""
+    password = password or ""
+    minimum = MIN_PASSWORD_LENGTH_CREATED if strict else MIN_PASSWORD_LENGTH
+    if len(password) < minimum:
+        return f"La contraseña debe tener al menos {minimum} caracteres"
+    if strict and not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        return "La contraseña debe tener al menos una letra y un número"
+    low = password.strip().lower()
+    if username and low == username.strip().lower():
+        return "La contraseña no puede ser igual al usuario"
+    letters = "".join(c for c in low if c.isalpha())
+    if low in COMMON_PASSWORDS or (letters in COMMON_PASSWORDS and len(letters) >= 4) or (low.strip("0123456789") == "" and len(set(low)) <= 2):
+        return "Esa contraseña es demasiado común: elige otra más difícil de adivinar"
     return None
 
 

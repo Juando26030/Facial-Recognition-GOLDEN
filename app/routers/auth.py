@@ -131,7 +131,8 @@ def reset_submit(
     row = security.find_valid_reset_token(db, token)
     if not row:
         return _page(request, "invalid", status_code=410)
-    problem = security.password_problem(password) or (None if password == confirm else "Las contraseñas no coinciden")
+    staff_row = db.query(StaffUser).filter(StaffUser.id == row.staff_user_id).first()
+    problem = security.password_problem(password, staff_row.username if staff_row else None) or (None if password == confirm else "Las contraseñas no coinciden")
     if problem:
         return _page(request, "reset", error=problem, token=token, status_code=400)
     staff = db.query(StaffUser).filter(StaffUser.id == row.staff_user_id).first()
@@ -161,7 +162,7 @@ def change_submit(
     staff = db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
     if not staff or not verify_password(current, staff.password_hash):
         return _page(request, "change", error="La contraseña actual no es correcta", status_code=400)
-    problem = security.password_problem(password) or (None if password == confirm else "Las contraseñas no coinciden")
+    problem = security.password_problem(password, staff.username) or (None if password == confirm else "Las contraseñas no coinciden")
     if not problem and verify_password(password, staff.password_hash):
         problem = "La contraseña nueva debe ser distinta a la actual"
     if problem:

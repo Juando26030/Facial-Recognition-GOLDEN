@@ -157,3 +157,57 @@ def test_c4_c15_the_same_binding_applies_when_submitting(client, factory, db):
     t = legal_texts.render(ev, web=True)
     r = client.post(f"/api/aceptar/{ev.event_code}", data={"token": token, "cedula": "2002", "birth_date": "1990-04-02", "decision": "reject", "text_hash": t["hash"]})
     assert r.status_code == 404 and db.query(AuditConsentLog).count() == 0
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ C11
+@pytest.mark.parametrize("pwd, strict, ok", [
+    ("Clave-segura-123", True, True),
+    ("corta1A", True, False),                  # menos de 10
+    ("abcdefghijk", True, False),              # sin número
+    ("12345678901", True, False),              # sin letra
+    ("Password123", True, False),              # común con cifras alrededor
+    ("Colombia2026", True, False),
+    ("1111111111a", True, True),               # letra + número y largo: la lista es corta a propósito
+    ("Prueba#2026", True, True),
+    ("abcd1234", False, True),                 # restablecer/cambiar la propia: se mantiene el mínimo de 8
+    ("corta", False, False),
+    ("password", False, False),
+])
+def test_c11_password_policy(pwd, strict, ok):
+    assert (security.password_problem(pwd, "otrousuario", strict=strict) is None) is ok
+
+
+def test_c11_password_cannot_equal_the_username():
+    assert security.password_problem("juan.perez2026", "Juan.Perez2026", strict=True)
+    assert security.password_problem("juan.perez2026", "otro", strict=True) is None
+
+
+def test_c11_staff_creation_by_admin_enforces_the_policy(client, factory):
+    factory.staff("admin", "adm1")
+    assert client.post("/login", data={"username": "adm1", "password": PASSWORD}).status_code == 302
+    base = {"role": "coordinador", "full_name": "Cora", "phone": "+573001112233"}
+    for bad in ("Corta1a", "sinnumeroaqui", "Password123", "cora.admin01"):
+        r = client.post("/api/staff", json={**base, "username": "cora.admin01", "password": bad})
+        assert r.status_code == 400, bad
+    ok = client.post("/api/staff", json={**base, "username": "cora.admin01", "password": "Clave-segura-123"})
+    assert ok.status_code == 200
+
+
+def test_c11_event_staff_creation_enforces_the_policy(client, factory):
+    adm = factory.staff("admin", "adm1")
+    ev = factory.event("en_proceso")
+    factory.authorize(ev, adm)
+    assert client.post("/login", data={"username": "adm1", "password": PASSWORD}).status_code == 302
+    url = f"/api/events/{ev.id}/staff-users"
+    weak = client.post(url, json={"username": "digi.uno", "password": "12345678", "role": "digitador"})
+    assert weak.status_code == 400 and "caracteres" in weak.json()["detail"]
+    assert client.post(url, json={"username": "digi.uno", "password": "Qwerty12345", "role": "digitador"}).status_code == 400
+    assert client.post(url, json={"username": "digi.uno", "password": "Clave-segura-123", "role": "digitador"}).status_code == 200
+
+
+def test_c11_admin_password_reset_enforces_the_policy_too(client, factory):
+    factory.staff("admin", "adm1")
+    digi = factory.staff("digitador", "digi1")
+    assert client.post("/login", data={"username": "adm1", "password": PASSWORD}).status_code == 302
+    assert client.put(f"/api/staff/{digi.id}/password", json={"new_password": "abcdefghij"}).status_code == 400
+    assert client.put(f"/api/staff/{digi.id}/password", json={"new_password": "Clave-segura-123"}).status_code == 200

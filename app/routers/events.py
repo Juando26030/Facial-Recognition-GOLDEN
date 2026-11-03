@@ -13,7 +13,7 @@ from sqlalchemy import func, or_
 
 import logging
 
-from app import status_changes, warmup
+from app import security, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_rules
@@ -494,6 +494,9 @@ def create_event_staff(
     assert_event_tenant(event, staff)
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
+    problem = security.password_problem(data.password, data.username, strict=True)         # 0C (C11): contraseña de una cuenta creada por un administrador
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
     # 'digitador'/'cliente' son las dos excepciones del teléfono obligatorio+único (Sprint 2.4
     # Fase 4) — acá sigue siendo opcional, pero si se manda uno, igual debe ser único.
     phone = (data.phone or "").strip() or None
