@@ -792,6 +792,9 @@ quedar consumo en la región vieja. Lo que sí queda a propósito: secretos, cue
 - [x] 4. Runbook del día del cambio (VM apagada, monitores a `/health`, `golden-ops-hourly`, vuelta atrás): «D2.4» (tabla de costos por componente: pendiente)
 - [ ] 5. Revisión final de pruebas y ruff tras las corridas; luego Fase 3 (modo contingencia del kiosco) en otra rama
 
+### Precalentamiento por actividad (2026-11-03)
+`app/warmup.py plan()` ya no calienta por tener eventos en «en proceso» (en producción siempre hay varios y mantenían Neon encendido 24/7, ~US$45/mes). Calienta solo con: (a) ingresos/registros/reconocimientos reales (`access_logs`) en un evento en proceso durante los últimos `NEON_WARM_ACTIVITY_MIN` (30) min; (b) formularios activos o por abrir (`WARM_LOOKAHEAD_MIN`, `WARM_AFTER_OPENING_MIN`, apertura manual). El horario del evento NO cuenta. Sin nada de eso: instancias en 0, Neon `suspend_timeout_seconds=NEON_IDLE_SUSPEND_SECONDS` (600) y mínimo `NEON_IDLE_MIN_CU` (0,25). Caliente: suspensión -1 y `NEON_WARM_MIN_CU`. El primer `AccessLog` insertado tras un periodo inactivo dispara `warmup.kick()` (listener `after_insert`, solo memoria + hilo aparte, máx. 1 vez cada `WARM_KICK_MIN_INTERVAL_MIN`=30 min por proceso; sin consultas nuevas); la evaluación periódica sigue siendo solo el Job horario golden-ops. Limitación: el primer ingreso tras el apagado paga el arranque en frío de Neon (~segundos).
+
 ## Decisiones tomadas
 - `docs/13` se actualizó con la versión completa que Juan David pegó en el chat (§14-§17); no estaba en el disco.
 - Cupo atómico: la función replica `held_count` (confirmadas + pagos en espera dentro de 30 min) y `quota_counts`, igual que

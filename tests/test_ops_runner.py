@@ -17,11 +17,45 @@ from tests.test_forms import _create, _status
 def test_plan_is_cold_when_nothing_is_happening(db):
     p = warmup.plan(db)
     assert (p["web"], p["publico"], p["biometria"]) == (0, 0, 0)
-    assert p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}
+    assert p["neon"] == {"suspend_timeout_seconds": 600, "autoscaling_limit_min_cu": 0.25}
 
 
-def test_plan_warms_for_events_in_progress_and_form_openings(db, factory):
+def test_plan_in_progress_without_activity_stays_cold(db, factory):
     factory.event("en_proceso", facial_enabled=True)
+    p = warmup.plan(db)
+    assert (p["web"], p["publico"], p["biometria"]) == (0, 0, 0)
+    assert p["neon"] == {"suspend_timeout_seconds": 600, "autoscaling_limit_min_cu": 0.25}
+
+
+def test_plan_warms_with_recent_activity_only(db, factory):
+    from datetime import timezone
+    from app.models import AccessLog
+    ev = factory.event("en_proceso", facial_enabled=True)
+    factory.person(ev)
+    old = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=120)
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1001", record_type="Existente", event_id=ev.id, timestamp=old))
+    db.commit()
+    assert warmup.plan(db)["web"] == 0                                    # actividad vieja: frío
+    db.add(AccessLog(tenant_id=ev.tenant_id, user_id="1001", record_type="Existente", event_id=ev.id))
+    db.commit()
+    p = warmup.plan(db)
+    assert (p["web"], p["biometria"]) == (2, 1)
+    assert p["neon"] == {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}
+
+
+def test_note_activity_rate_limited(monkeypatch):
+    calls = []
+    monkeypatch.setenv("OPS_JOB_NAME", "j")
+    monkeypatch.setattr(warmup, "kick", lambda: calls.append(1))
+    monkeypatch.setattr(warmup, "_last_kick", 0.0)
+    warmup.note_activity()
+    warmup.note_activity()
+    import time as _t
+    _t.sleep(0.2)
+    assert calls == [1]
+
+
+def test_plan_warms_for_form_openings(db, factory):
     ev = factory.event("creado")
     soon = datetime.now().replace(microsecond=0) + timedelta(minutes=30)
     form = WebForm(event_id=ev.id, name="F", slug="f", manual_status="cerrado", use_schedule=True, design_json="{}", settings_json="{}", test_key="k",
@@ -29,7 +63,7 @@ def test_plan_warms_for_events_in_progress_and_form_openings(db, factory):
     db.add(form)
     db.commit()
     p = warmup.plan(db, now_local=soon - timedelta(minutes=30))
-    assert (p["web"], p["publico"], p["biometria"]) == (2, 2, 1)
+    assert (p["web"], p["publico"], p["biometria"]) == (0, 2, 0)
     assert p["neon"] == {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}
     assert warmup.plan(db, now_local=soon + timedelta(hours=3))["publico"] == 0                # la apertura ya pasó hace rato
 

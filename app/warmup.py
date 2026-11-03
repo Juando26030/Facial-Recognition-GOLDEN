@@ -8,12 +8,18 @@ Corre cada hora dentro del Job de operaciones (app/ops_runner.py), que ya despie
 que tocara la base mantendría a Neon despierta todo el mes (~US$19). Por eso mira WARM_LOOKAHEAD_MIN (75) minutos hacia adelante, y los
 cambios de estado lo disparan al instante.
 
+Calienta solo con ACTIVIDAD real: ingresos en los últimos NEON_WARM_ACTIVITY_MIN (30) min o formularios activos / por abrir; «en proceso» solo no cuenta.
+note_activity() (al insertar un AccessLog) lanza kick() al primer ingreso tras un rato inactivo, con límite en memoria WARM_KICK_MIN_INTERVAL_MIN (30) y en un hilo.
+Ocioso: Neon se apaga a los NEON_IDLE_SUSPEND_SECONDS (600) s.
+
 Variables: WARM_SERVICE_WEB / WARM_SERVICE_PUBLICO / WARM_SERVICE_BIOMETRIA (rutas completas de los servicios de Cloud Run),
 WARM_WEB_MIN (2), WARM_PUBLICO_MIN (2), WARM_BIOMETRIA_MIN (1), WARM_AFTER_OPENING_MIN (60: una apertura sigue caliente ese tiempo),
 NEON_API_KEY + NEON_PROJECT_ID + NEON_ENDPOINT_ID (sin ellas se salta Neon), NEON_WARM_MIN_CU (0.5), NEON_IDLE_MIN_CU (0.25),
 OPS_JOB_NAME (Job de operaciones, para kick). Lo que no está configurado se salta con un aviso (desarrollo, VM)."""
 import logging
 import os
+import threading
+import time
 from datetime import datetime, timedelta
 from app.timeutil import utcnow
 
@@ -21,7 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import cloudrun
-from app.models import Event, SystemEvent, WebForm
+from app.models import AccessLog, Event, SystemEvent, WebForm
 
 log = logging.getLogger("golden.warmup")
 NEON_API = "https://console.neon.tech/api/v2"
@@ -49,8 +55,13 @@ def _openings(db: Session, now_local: datetime, before: timedelta, after: timede
 def plan(db: Session, now_local: datetime = None) -> dict:
     from app import formsvc
     now_local = now_local or formsvc.now_local()
-    running = db.query(func.count(Event.id)).filter(Event.status == "en_proceso").scalar() or 0
-    facial = db.query(func.count(Event.id)).filter(Event.status == "en_proceso", Event.facial_enabled == True).scalar() or 0  # noqa: E712
+    # «en_proceso» por sí solo NO calienta: hace falta actividad REAL reciente (ingresos/registros/reconocimientos en access_logs)
+    # o formularios web activos / a punto de abrir. Así, con eventos abiertos pero quietos, Neon se apaga solo.
+    since = utcnow() - timedelta(minutes=_int("NEON_WARM_ACTIVITY_MIN", 30))
+    active = db.query(Event.id, Event.facial_enabled).join(AccessLog, AccessLog.event_id == Event.id) \
+        .filter(Event.status == "en_proceso", AccessLog.timestamp > since).distinct().all()
+    running = len(active)
+    facial = sum(1 for _, f in active if f)
     after = timedelta(minutes=_int("WARM_AFTER_OPENING_MIN", 60))
     opening = _openings(db, now_local, timedelta(minutes=_int("WARM_LOOKAHEAD_MIN", 75)), after)
     # Formularios abiertos A MANO (sin calendario): la app dejó constancia al abrirlos (routers/forms.py → «form_opened»).
@@ -61,9 +72,9 @@ def plan(db: Session, now_local: datetime = None) -> dict:
         "web": _int("WARM_WEB_MIN", 2) if running else 0,
         "biometria": _int("WARM_BIOMETRIA_MIN", 1) if facial else 0,
         "publico": _int("WARM_PUBLICO_MIN", 2) if opening else 0,
-        "neon": {"suspend_timeout_seconds": -1 if busy else 0,       # -1 = nunca se apaga; 0 = el de por defecto (5 min)
+        "neon": {"suspend_timeout_seconds": -1 if busy else _int("NEON_IDLE_SUSPEND_SECONDS", 600),   # -1 = nunca se apaga; ocioso = se apaga a los 10 min
                  "autoscaling_limit_min_cu": float(os.getenv("NEON_WARM_MIN_CU" if busy else "NEON_IDLE_MIN_CU", "0.5" if busy else "0.25"))},
-        "why": {"events_running": running, "facial_running": facial, "form_openings": opening},
+        "why": {"events_active": running, "facial_active": facial, "form_openings": opening},
     }
 
 
@@ -95,7 +106,7 @@ def apply(p: dict) -> list:
             wanted = p["neon"]
             if any(current.get(k) != v for k, v in wanted.items()):
                 _neon("PATCH", path, json={"endpoint": {**wanted, "autoscaling_limit_max_cu": current.get("autoscaling_limit_max_cu")}})
-                changes.append(f"neon: apagado {'nunca' if wanted['suspend_timeout_seconds'] == -1 else 'por defecto'}, mínimo {wanted['autoscaling_limit_min_cu']} CU")
+                changes.append(f"neon: apagado {'nunca' if wanted['suspend_timeout_seconds'] == -1 else str(wanted['suspend_timeout_seconds']) + ' s'}, mínimo {wanted['autoscaling_limit_min_cu']} CU")
         except Exception as e:  # noqa: BLE001
             errors.append(f"neon: {e}")
     if errors:
@@ -112,3 +123,28 @@ def kick() -> None:
         cloudrun.run_job(job, ["-m", "app.ops_runner", "warmup"])
     except Exception:  # noqa: BLE001 — el precalentamiento de cada hora lo recoge igual
         log.error("no se pudo lanzar el precalentamiento inmediato", exc_info=True)
+
+
+_last_kick = 0.0
+_kick_lock = threading.Lock()
+
+
+def note_activity() -> None:
+    """Primer ingreso/registro tras un periodo inactivo → precalentar. Barato: sin base, limitado en memoria y en un hilo aparte."""
+    global _last_kick
+    if not os.getenv("OPS_JOB_NAME"):
+        return
+    now = time.monotonic()
+    with _kick_lock:
+        if _last_kick and now - _last_kick < _int("WARM_KICK_MIN_INTERVAL_MIN", 30) * 60:
+            return
+        _last_kick = now
+    threading.Thread(target=kick, daemon=True).start()
+
+
+def _install_listener() -> None:
+    from sqlalchemy import event as sa_event
+    sa_event.listen(AccessLog, "after_insert", lambda *a, **k: note_activity())
+
+
+_install_listener()
