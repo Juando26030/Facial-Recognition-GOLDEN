@@ -117,6 +117,26 @@ async def csrf_and_password_gate(request, call_next):
 
 
 @app.middleware("http")
+async def security_headers(request, call_next):
+    """Cabeceras de seguridad globales (Fase 0C, pasada 2: B1/D8). No pisan lo que la ruta ya haya fijado.
+    - nosniff: el navegador no «adivina» el tipo de un archivo subido.
+    - frame-ancestors/object-src/base-uri: nadie puede incrustar el panel, ni meter <object>/<base>.
+    - Un SVG (logos antiguos o de otros orígenes) se sirve en «sandbox» y sin scripts, aunque lo abran como documento."""
+    response = await call_next(request)
+    h = response.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    embeddable = request.url.path.startswith("/f/")      # los formularios públicos pueden incrustarse en el sitio del cliente
+    if not embeddable:
+        h.setdefault("X-Frame-Options", "SAMEORIGIN")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if h.get("content-type", "").startswith("image/svg"):
+        h["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    else:
+        h.setdefault("Content-Security-Policy", ("" if embeddable else "frame-ancestors 'self'; ") + "object-src 'none'; base-uri 'self'")
+    return response
+
+
+@app.middleware("http")
 async def no_cache_html(request, call_next):
     """Las páginas HTML dependen del estado del evento (menú del evento con Áreas/Inventario/
     Certificados según lo activado en Parámetros, etc.) — sin esto, volver con "Atrás" mostraba la

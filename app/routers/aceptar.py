@@ -243,14 +243,15 @@ def check(code: str, request: Request, cedula: str = Form(""), token: str = Form
     _limit(request, "aceptar_check", 30)
     event = _event(db, code)
     try:
-        user, _att, _link, birth = _verify(db, event, cedula, token, birth_date)
+        user, _att, by_link, birth = _verify(db, event, cedula, token, birth_date)
     except NeedBirth:
         return {"status": "need_birth"}
     if minors.is_minor(birth):
         from_base = user.birth_date is not None
-        user.birth_date = birth
-        user.is_biometric_enabled = False
-        privacy.purge_person(db, event.tenant_id, user.id)
+        if from_base or by_link:        # 0C (C1/C-N3): quien solo sabe una cédula (sin enlace ni fecha ya registrada) NO puede borrar el rostro ni fijar la fecha de otra persona
+            user.birth_date = birth
+            user.is_biometric_enabled = False
+            privacy.purge_person(db, event.tenant_id, user.id)
         return _minor(from_base)
     return _already(db, event, user.id) or {"status": "ok", "selfie": _need_selfie(event)}
 
@@ -274,10 +275,13 @@ def submit(code: str, request: Request, cedula: str = Form(""), token: str = For
     uid = user.id
     ch = "link" if by_link else ("qr" if channel == "qr" else "web")
     from_base = user.birth_date is not None
-    user.birth_date = birth
+    date_ok = from_base or by_link      # la fecha escrita solo se guarda si coincide con la registrada o si la persona entró con su enlace/QR personal (0C: C1/C-N3)
+    if date_ok:
+        user.birth_date = birth
     if minors.is_minor(birth):
-        user.is_biometric_enabled = False
-        privacy.purge_person(db, event.tenant_id, uid)
+        if date_ok:
+            user.is_biometric_enabled = False
+            privacy.purge_person(db, event.tenant_id, uid)
         return _minor(from_base)
     done = _already(db, event, uid)
     if done:

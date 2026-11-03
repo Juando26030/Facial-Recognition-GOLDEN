@@ -5,6 +5,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from app.inputcheck import text_validator, username_validator
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
@@ -19,7 +21,7 @@ from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate,
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app.routers.areas_inventory import delete_event_modules
-from app.auth import effective_roles, get_current_staff, hash_password, require_role
+from app.auth import assert_event_tenant, effective_roles, get_current_staff, get_event_for_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
 router = APIRouter()
@@ -42,6 +44,9 @@ class EventStaffIn(BaseModel):
     role: str = "digitador"  # "digitador" (coordinador+, no comercial) o "cliente" (comercial+)
     phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
 
+    _u = username_validator("username")
+    _t = text_validator("full_name")
+
 
 class AssignExistingIn(BaseModel):
     staff_id: int
@@ -60,6 +65,7 @@ EVENT_CODE_LOCKED = ("El código del evento no se puede cambiar una vez creado: 
 
 
 class EventIn(BaseModel):
+    _t = text_validator("name", "location", "address", "country", "city")
     """Todos los campos operativos son obligatorios al crear un evento — 'notes' es la única
     excepción real (es explícitamente un campo de observaciones, opcional por naturaleza)."""
     tenant_id: str
@@ -85,6 +91,7 @@ class EventIn(BaseModel):
 
 
 class EventUpdate(BaseModel):
+    _t = text_validator("name", "location", "address", "country", "city")
     event_code: Optional[str] = None
     name: Optional[str] = None
     location: Optional[str] = None
@@ -350,6 +357,15 @@ def create_event(
         if not commercial:
             raise HTTPException(status_code=400, detail="La comercial asignada no es válida")
 
+    if data.coordinator_staff_id is not None:      # 0C (N3): debe ser un coordinador activo (igual que en la creación)
+        coord = db.query(StaffUser).filter(
+            StaffUser.id == data.coordinator_staff_id,
+            or_(StaffUser.role == "coordinador", StaffUser.secondary_role == "coordinador"),
+            StaffUser.is_active == True,
+        ).first()
+        if not coord:
+            raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
+
     if data.super_event_id is not None:
         sup = db.query(SuperEvent).filter(SuperEvent.id == data.super_event_id).first()
         if not sup or sup.tenant_id != data.tenant_id:
@@ -375,6 +391,7 @@ def update_event(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
     new_state = None
     if data.state_id is not None:            # estado configurable (docs/18): el evento pasa al estado base de ese estado
         new_state = db.get(EventState, data.state_id)
@@ -474,6 +491,7 @@ def create_event_staff(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
     # 'digitador'/'cliente' son las dos excepciones del teléfono obligatorio+único (Sprint 2.4
@@ -501,6 +519,7 @@ def assign_existing_staff(
 ):
     """Autoriza una cuenta digitador/cliente YA existente (de otro evento) para ESTE evento —
     admin+ únicamente. Para crear una cuenta nueva usar POST .../staff-users en su lugar."""
+    get_event_for_staff(event_id, db, staff)          # 0C (N2): el evento debe existir y ser accesible para quien asigna
     target = db.query(StaffUser).filter(
         StaffUser.id == data.staff_id, StaffUser.role.in_(("digitador", "cliente"))
     ).first()
@@ -519,6 +538,7 @@ def revoke_event_staff(
     event_id: int, staff_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
+    get_event_for_staff(event_id, db, staff)          # 0C (N2)
     db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff_id).delete()
     db.commit()
     return {"message": "Acceso a este evento revocado"}
@@ -541,6 +561,7 @@ def delete_event(
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
 
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
     db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).delete()
@@ -576,6 +597,7 @@ def revert_to_created_info(event_id: int, db: Session = Depends(get_db), staff: 
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
     return {"name": event.name, "status": event.status, "allowed": event.status == "en_proceso", **_revert_counts(db, event_id),
             "sync_days": status_changes.SYNC_AFTER_REVERT.days}
 
@@ -593,6 +615,7 @@ def revert_to_created(event_id: int, data: Optional[RevertIn] = None, db: Sessio
     event = db.query(Event).filter(Event.id == event_id).with_for_update().first()
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
+    assert_event_tenant(event, staff)
     if event.status != "en_proceso":
         raise HTTPException(status_code=409, detail="Solo un evento «En proceso» se puede devolver a «Creado»" + (" (los finalizados no se tocan)." if event.status == "finalizado" else "."))
     reason = ((data.reason if data else None) or "").strip()[:500] or None

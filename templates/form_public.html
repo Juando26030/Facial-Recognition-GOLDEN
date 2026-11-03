@@ -54,7 +54,7 @@ const SID = (() => { try { let s = sessionStorage.getItem("sid_" + BASE); if (!s
 const app = document.getElementById("app");
 let token = null, theme = null;
 
-const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const assetUrl = (p) => `${BASE}/asset/${p}` + (K ? `?k=${encodeURIComponent(K)}` : "");
 // Contrapresión: 502/503/504 y el 429 que NO es de la aplicación (el «Rate exceeded.» de Cloud Run, texto plano; los 429 de la app traen JSON con `detail` y NO se reintentan) son
 // «ocupado, vuelve a intentar». Se espera lo que diga `Retry-After` (mínimo, con espera creciente 1,5 → 3 → 6 → 12 s) más un poco al azar para que nadie vuelva a la vez.

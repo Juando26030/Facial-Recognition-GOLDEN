@@ -6,7 +6,7 @@
    Requiere Chart.js (CDN) cargado antes. Cada gráfico se destruye y se vuelve a crear en cada refresco. */
 (function () {
   const PALETTE = ['#D4AF37', '#0A0E2E', '#3F7CAC', '#2E9E6B', '#C0392B', '#8E5BB5', '#E08E45', '#5DADE2', '#7F8C8D', '#B8941F'];
-  const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TONES = { good: '#198754', warn: '#b26a00', bad: '#c0392b', '': '#0A0E2E' };
 
   function mount(container, url, opts) {

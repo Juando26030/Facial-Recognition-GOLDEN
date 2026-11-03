@@ -2,6 +2,7 @@
 import json
 import re
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ import pytest
 
 from app import company, consent, faces, legal_texts
 from app.models import AuditConsentLog
+from app.timeutil import utcnow
 from app.legal_texts_data import TEXT_PROPIO, TEXT_TERCERO
 from app.models import EventAttendee, User
 from tests.conftest import accept, login
@@ -253,12 +255,12 @@ def test_offline_entries_use_the_roster_fingerprint_not_the_cedula(client, facto
     factory.person(ev, "1001", "Ana", "Mora")
     t = legal_texts.render(ev)
     h = roster_fingerprint(roster_salt(ev), "1001")
-    e = {"id": str(uuid.uuid4()), "h": h, "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"], "at": "2026-10-06T15:00:00Z"}
+    e = {"id": str(uuid.uuid4()), "h": h, "decision": "accept", "adult": True, "text_hash": t["hash"], "version": t["version"], "at": (utcnow() - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}
     ghost = {**e, "id": str(uuid.uuid4()), "h": "0" * 16}
     r = client.post(f"/api/events/{ev.id}/consents", json={"entries": [e, ghost]}).json()
     assert r == {"inserted": 1, "duplicated": 0, "unknown": 1}
     assert client.post(f"/api/events/{ev.id}/consents", json={"entries": [e]}).json()["duplicated"] == 1
-    assert consent.has_acceptance(db, ev.tenant_id, "1001", ev.id) and consent.latest(db, ev.tenant_id, "1001", ev.id).consent_timestamp_utc.year == 2026
+    assert consent.has_acceptance(db, ev.tenant_id, "1001", ev.id) and consent.latest(db, ev.tenant_id, "1001", ev.id).consent_timestamp_utc.year == utcnow().year
 
 
 def test_kiosk_pages_render_the_gate_and_the_config(client, factory):

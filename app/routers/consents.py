@@ -4,7 +4,7 @@ La aceptación NO la da el digitador: la da la persona al pulsar el botón 1 de 
 Sin una aceptación registrada, el reconocimiento facial no se usa con esa persona (app/faces.py). Ningún dato personal va a los logs."""
 import re
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import text
@@ -43,12 +43,20 @@ def consent_status(event_id: int, user_id: str, db: Session = Depends(get_db), s
             "face": enroll.status(db, event.tenant_id, user_id), "verify": consent.web_pending(db, event.tenant_id, user_id, event.id)}
 
 
+MAX_AGE = timedelta(days=8)           # un dispositivo sin red puede sincronizar hasta 7 días después del evento
+MAX_AHEAD = timedelta(minutes=5)      # tolerancia de reloj del dispositivo
+
+
 def _when(raw):
+    """Fecha de la decisión según el dispositivo. Fuera de [ahora-8 días, ahora+5 min] no es creíble (E1: un digitador no puede fechar a voluntad ni «blindar»
+    una aceptación con una fecha futura): se descarta y `consent.record` usa la hora del servidor."""
     try:
         d = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        d = d if d.tzinfo else d.replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
         return None
+    now = datetime.now(timezone.utc)
+    return d if now - MAX_AGE <= d <= now + MAX_AHEAD else None
 
 
 @router.post("/events/{event_id}/consents")

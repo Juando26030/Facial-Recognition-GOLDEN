@@ -92,7 +92,7 @@
 <script>
 const EV = window.EVENT_ID, api = `/api/events/${EV}/roulette`;
 const $ = (id) => document.getElementById(id);
-const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MODES = {
   single_fixed: ['1 · Un ganador', 'Tú eliges de antemano quién gana.'],
   ordered: ['2 · Varios, en orden fijo', 'Eliges a los ganadores en el orden exacto en que deben salir (1º, 2º, 3º…).'],

@@ -67,8 +67,12 @@
   window.FINALIZE_CONFIRM = "¿Finalizar el evento? Desde ese momento nadie podrá registrar ni entrar con su rostro, y empieza el plazo de 7 días para borrar los rostros. Se puede reabrir después.";
   window.confirmStatusChange = function (newStatus, label) {
     if (newStatus === "finalizado") return window.showConfirm(window.FINALIZE_CONFIRM, { confirmLabel: "Sí, finalizar" });
-    return window.showConfirm(`¿Cambiar el estado del evento a "${label}"?`);
+    return window.showConfirm(`¿Cambiar el estado del evento a "${window.escapeHtml(label)}"?`);
   };
+  window.escapeHtml = function (v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  };
+
   window.showConfirm = function (message, opts) {
     opts = opts || {};
     const isWarning = opts.variant === "warning";
@@ -92,7 +96,7 @@
         <p style="color:${palette.text}; margin-bottom:1.4rem; line-height:1.4; font-size:${isWarning ? "1.05rem" : "1rem"}; ${isWarning ? "font-weight:600;" : ""}">${message}</p>
         <div style="display:flex; justify-content:flex-end; gap:10px;">
           <button id="toastConfirmCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-          <button id="toastConfirmOk" style="border:none; background:${palette.btnBg}; color:${palette.btnText}; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${confirmLabel}</button>
+          <button id="toastConfirmOk" style="border:none; background:${palette.btnBg}; color:${palette.btnText}; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${window.escapeHtml(confirmLabel)}</button>
         </div>
       `;
       overlay.appendChild(box);
@@ -133,7 +137,7 @@
                style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:10px; padding:10px 12px; font-size:1rem; margin-bottom:1.4rem;">
         <div style="display:flex; justify-content:flex-end; gap:10px;">
           <button id="toastPromptCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-          <button id="toastPromptOk" style="border:none; background:var(--golden-primary, #D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${confirmLabel}</button>
+          <button id="toastPromptOk" style="border:none; background:var(--golden-primary, #D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${window.escapeHtml(confirmLabel)}</button>
         </div>
       `;
       overlay.appendChild(box);

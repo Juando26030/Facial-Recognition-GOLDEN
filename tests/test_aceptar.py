@@ -110,6 +110,8 @@ def test_rejecting_or_being_a_minor_from_the_phone_stores_no_face(client, factor
     assert _post(client, ev, "1001", decision="reject", selfie=False).json()["status"] == "rejected"
     assert consent.latest(db, ev.tenant_id, "1001", ev.id).reason == "rejection" and not get_storage().exists(photo_key(ev.tenant_id, "1001"))
     year = date.today().year - 12
+    db.query(User).filter_by(id="2002").one().birth_date = date(year, 1, 1)      # 0C: la fecha ya está en la base (sin ella, declararse menor sin enlace no borra nada: ver test_seguridad_0c_altas)
+    db.commit()
     assert _post(client, ev, "2002", birth=f"{year}-01-01").json()["status"] == "minor"
     db.expire_all()
     u = db.query(User).filter_by(id="2002").one()

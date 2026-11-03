@@ -345,7 +345,7 @@
         { value: 'signature', label: 'Captura de firma' },
     ];
 
-    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
     function optionsHtml(list, selected) {
         return list.map(o => `<option value="${o.value}" ${o.value === selected ? 'selected' : ''}>${o.label}</option>`).join('');
     }
@@ -486,7 +486,7 @@
         document.getElementById('privPerson').addEventListener('click', async () => {
             const id = document.getElementById('privCedula').value.trim();
             if (!id) return say('Escribe la cédula', true);
-            if (!(await showConfirm(`¿Borrar el rostro (foto y datos del rostro) de la persona con cédula ${id}? No se puede deshacer; su registro de asistencia se conserva.`))) return;
+            if (!(await showConfirm(`¿Borrar el rostro (foto y datos del rostro) de la persona con cédula ${window.escapeHtml(id)}? No se puede deshacer; su registro de asistencia se conserva.`))) return;
             const r = await fetch(`${base}/users/${encodeURIComponent(id)}/biometrics`, { method: 'DELETE' }); const d = await r.json().catch(() => ({}));
             r.ok ? (say(d.message), load()) : say(d.detail || 'No se pudo borrar', true);
         });

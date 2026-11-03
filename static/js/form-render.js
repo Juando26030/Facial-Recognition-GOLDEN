@@ -9,7 +9,7 @@
      form.setQuote({amount, applied})   actualiza el «Total a pagar» del campo Pago y el texto del botón (lo llama la página pública
                                         con lo que responde /quote; el precio lo calcula SIEMPRE el servidor)                    */
 (function () {
-  const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;

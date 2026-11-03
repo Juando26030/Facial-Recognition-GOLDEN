@@ -2,7 +2,7 @@
    `revertEventToCreated(eventId)` muestra la ventana de confirmación (nombre del evento, cuántas personas e ingresos tiene y el aviso del quiosco), pide un motivo opcional y llama al servidor.
    Devuelve una promesa con true si el evento volvió a «Creado». No borra nada. Requiere toast.js. */
 (function () {
-  const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   window.revertEventToCreated = async function (eventId) {
     let info;

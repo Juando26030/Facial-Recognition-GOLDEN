@@ -65,7 +65,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 let users = [], person = null, items = [];
 
 async function init() {

@@ -15,7 +15,7 @@
   var SMALL_UPLOAD = 24 * 1024 * 1024;     // hasta aquí el paquete sube por la propia aplicación (igual que el límite del servidor)
   var ROLE_LABELS = { badge_asset: "imágenes de diseño", form_file: "archivos de formularios", signature: "firmas", event_doc: "documentos", expense: "comprobantes", logo: "logo", report: "informe PDF", biometric_photo: "fotos de registro" };
 
-  function esc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function toast(msg, type) { if (window.showToast) window.showToast(msg, type || "info"); }
   function confirmAsk(msg, opts) { return window.showConfirm ? window.showConfirm(msg, opts || {}) : Promise.resolve(true); }
 

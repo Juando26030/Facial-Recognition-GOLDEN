@@ -191,7 +191,7 @@
     const fieldConfigs = window.FIELD_CONFIGS || [];
     const extras = user.extra_fields || {};
 
-    function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
     function fieldRow(label, name, value, type) {
       return `<div style="margin-bottom:0.8rem;">
         <label style="display:block; font-size:0.78rem; font-weight:700; color:#888; margin-bottom:4px;">${esc(label)} *</label>
@@ -339,7 +339,7 @@
       const newId = cedulaInput ? cedulaInput.value.trim() : user.id;
 
       if (isAdmin && newId && newId !== user.id) {
-        const ok = await showConfirm(`¿Cambiar la cédula de "${user.id}" a "${newId}"?<br><br>Esto afecta a esta persona en TODOS los eventos de este cliente, no solo en este.`, { variant: 'warning', confirmLabel: 'Sí, corregir y guardar' });
+        const ok = await showConfirm(`¿Cambiar la cédula de "${window.escapeHtml(user.id)}" a "${window.escapeHtml(newId)}"?<br><br>Esto afecta a esta persona en TODOS los eventos de este cliente, no solo en este.`, { variant: 'warning', confirmLabel: 'Sí, corregir y guardar' });
         if (!ok) return;
         saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
         try {
@@ -373,7 +373,7 @@
           const label = newStatus === 'registrado' ? 'Registrado' : 'No registrado';
           // Pasar a "Registrado" (el valor por defecto de este modal) no pide confirmación: es
           // justo el flujo de "buscar, Editar, Guardar". Volver a "No registrado" sí la pide.
-          const ok = newStatus === 'registrado' || await showConfirm(`¿Cambiar el estado de registro de esta persona a "${label}"? Se guardará junto con el resto de cambios.`, { variant: 'warning', confirmLabel: 'Sí, cambiar y guardar' });
+          const ok = newStatus === 'registrado' || await showConfirm(`¿Cambiar el estado de registro de esta persona a "${window.escapeHtml(label)}"? Se guardará junto con el resto de cambios.`, { variant: 'warning', confirmLabel: 'Sí, cambiar y guardar' });
           if (!ok) return false;
           saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
           try {
@@ -466,7 +466,7 @@
         const GCd = window.GoldenContingency && window.GoldenContingency.instance;
         if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
         const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-        const ok = await showConfirm(`⚠️ Esto elimina COMPLETAMENTE a ${fullName || 'esta persona'} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
+        const ok = await showConfirm(`⚠️ Esto elimina COMPLETAMENTE a ${window.escapeHtml(fullName || 'esta persona')} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
         if (!ok) return;
         try {
           const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });

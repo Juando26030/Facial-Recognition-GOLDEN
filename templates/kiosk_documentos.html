@@ -57,7 +57,7 @@
 </main>
 
 <script>
-function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function fmtSize(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round((b || 0) / 1024)) + ' KB'; }
 
 async function loadDocs() {
@@ -96,7 +96,7 @@ document.getElementById('docForm').addEventListener('submit', async (e) => {
 document.getElementById('docList').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-del]');
   if (!btn) return;
-  if (!await showConfirm(`¿Eliminar el documento "${btn.dataset.name}"? No se puede deshacer.`, { confirmLabel: 'Eliminar' })) return;
+  if (!await showConfirm(`¿Eliminar el documento "${window.escapeHtml(btn.dataset.name)}"? No se puede deshacer.`, { confirmLabel: 'Eliminar' })) return;
   const res = await fetch(`/api/events/${EVENT_ID}/documents/${btn.dataset.del}`, { method: 'DELETE' });
   showToast(res.ok ? 'Documento eliminado' : 'No se pudo eliminar', res.ok ? 'success' : 'error');
   loadDocs();

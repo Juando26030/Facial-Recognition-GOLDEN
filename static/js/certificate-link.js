@@ -4,7 +4,7 @@
    el campo para copiarlo y "Cambiar enlace" (el anterior deja de funcionar). */
 (function () {
   const api = (eventId) => `/api/events/${eventId}/certificates/public-link`;
-  const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   async function mount(box, eventId) {
     let url = null;

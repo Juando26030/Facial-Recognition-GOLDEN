@@ -118,6 +118,8 @@
 
 <script>
 (function() {
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const jsArg = (v) => esc(JSON.stringify(String(v == null ? '' : v)));
     const tempForm = document.getElementById("tempUserForm");
     const assignForm = document.getElementById("assignExistingForm");
 
@@ -126,12 +128,12 @@
         const list = await res.json();
         document.getElementById("tempUsersBody").innerHTML = list.map(u => `
             <tr>
-                <td>${u.username}</td><td>${u.full_name || "-"}</td><td>${u.role}</td>
+                <td>${esc(u.username)}</td><td>${esc(u.full_name || "-")}</td><td>${esc(u.role)}</td>
                 <td>${u.is_active ? "Activo" : "Inactivo"}</td>
                 <td>
-                    ${u.role === "digitador" ? `<button class="btn-table-delete" style="background:#555;" onclick="resetTempPassword(${u.id}, '${u.username}')">Restablecer contraseña</button>` : ""}
+                    ${u.role === "digitador" ? `<button class="btn-table-delete" style="background:#555;" onclick="resetTempPassword(${u.id}, ${jsArg(u.username)})">Restablecer contraseña</button>` : ""}
                     <button class="btn-table-delete" onclick="revokeTempUser(${u.id})">Quitar de este evento</button>
-                    <button class="btn-table-delete" style="background:#6c1c1c;" onclick="deleteTempUser(${u.id}, '${u.username}')">Borrar permanente</button>
+                    <button class="btn-table-delete" style="background:#6c1c1c;" onclick="deleteTempUser(${u.id}, ${jsArg(u.username)})">Borrar permanente</button>
                 </td>
             </tr>
         `).join("");
@@ -142,7 +144,7 @@
         const res = await fetch("/api/staff/assignable");
         const list = await res.json();
         document.getElementById("assignableSelect").innerHTML = list
-            .map(s => `<option value="${s.id}">${s.username}${s.full_name ? " - " + s.full_name : ""} (${s.role})</option>`).join("");
+            .map(s => `<option value="${s.id}">${esc(s.username)}${s.full_name ? " - " + esc(s.full_name) : ""} (${esc(s.role)})</option>`).join("");
     }
 
     tempForm.addEventListener("submit", async (ev) => {
@@ -183,7 +185,7 @@
     };
 
     window.deleteTempUser = async (staffId, username) => {
-        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`))) return;
+        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${window.escapeHtml(username)}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`))) return;
         const res = await fetch(`/api/staff/${staffId}`, {method: "DELETE"});
         if (res.ok) { loadTempUsers(); showToast("Cuenta eliminada", "success"); }
         else { const err = await res.json(); showToast(err.detail || "No se pudo borrar", "error"); }
