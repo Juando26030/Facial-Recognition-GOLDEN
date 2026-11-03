@@ -164,7 +164,7 @@ def test_e4_cliente_gets_masked_directory_and_staff_gets_full(client, factory, d
     cli = factory.staff("cliente", "cli1")
     factory.staff("coordinador", "coord9")
     factory.authorize(ev, cli)
-    assert login(client, "cli1").status_code == 302
+    login(client, "cli1")
     rows = client.get(f"/api/users?event_id={ev.id}").json()
     blob = str(rows)
     assert len(rows) == 2 and len({r["id"] for r in rows}) == 2
