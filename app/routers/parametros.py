@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app import biometric_setup, publicurl
+from app import biometric_setup, idle, publicurl
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
@@ -221,6 +221,28 @@ def set_directory_page_size(
     event.directory_page_size = value
     db.commit()
     return {"directory_page_size": event.directory_page_size}
+
+
+@router.put("/events/{event_id}/idle-minutes")
+def set_idle_minutes(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Minutos sin uso tras los que se cierra la sesión del personal que trabaja en ESTE evento (5 a 60), solo mientras está «en proceso». Vacío (null) = el general (SESSION_IDLE_MINUTES, 10). app/idle.py."""
+    event = get_event_for_staff(event_id, db, staff)
+    raw = data.get("value")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        value = None
+    else:
+        try:
+            value = None if isinstance(raw, bool) or (isinstance(raw, float) and not raw.is_integer()) else int(raw)
+        except (TypeError, ValueError):
+            value = None
+        if value is None or not idle.EVENT_MIN <= value <= idle.EVENT_MAX:
+            raise HTTPException(status_code=400, detail=f"Minutos sin uso: un número entero de {idle.EVENT_MIN} a {idle.EVENT_MAX}, o vacío para usar el general ({idle.general_minutes()})")
+    event.idle_minutes = value
+    db.commit()
+    return {"idle_minutes": event.idle_minutes, "general_minutes": idle.general_minutes()}
 
 
 @router.put("/events/{event_id}/facial-enabled")

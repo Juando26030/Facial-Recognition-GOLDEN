@@ -327,6 +327,7 @@
   if (window.__gwSessionGuard || typeof window.fetch !== "function") return;
   window.__gwSessionGuard = true;
   let replaced = false;
+  window.addEventListener("gw:session-expired", () => { replaced = true; });      // sesión vencida por inactividad (static/js/idle-session.js): se detienen el sondeo y los latidos
   function onReplaced() {
     if (replaced) return;
     replaced = true;

@@ -45,6 +45,14 @@
                     </div>
                 </div>
             </div>
+            {% if notice and not error %}
+            <div class="gw-alert gw-alert--warn" role="status" style="margin-bottom: var(--gw-sp-4);">
+                <div>
+                    <div class="gw-alert__title">{{ notice }}</div>
+                    <div class="gw-alert__body">Tus ingresos hechos sin conexión siguen guardados en este dispositivo.</div>
+                </div>
+            </div>
+            {% endif %}
             {% if error %}
             <div class="gw-alert gw-alert--err" role="alert" style="margin-bottom: var(--gw-sp-4);">
                 <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-error"/></svg>

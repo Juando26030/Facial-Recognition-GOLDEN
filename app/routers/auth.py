@@ -2,8 +2,8 @@ import os
 from datetime import datetime
 from app.timeutil import utcnow
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -13,7 +13,7 @@ from app.database import get_db
 from app.mailer import send_mail
 from app.models import StaffUser
 from app.auth import hash_password, verify_password
-from app import security, sessions
+from app import idle, security, sessions
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -24,7 +24,8 @@ staticver.install(templates)
 def login_form(request: Request):
     if request.session.get("staff_user_id"):
         return RedirectResponse("/", status_code=302)
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
+    notice = "Tu sesión se cerró por inactividad. Ingresa de nuevo para continuar." if request.query_params.get("expirada") else None
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": None, "notice": notice})
 
 
 @router.post("/login")
@@ -65,10 +66,27 @@ def login_submit(
     request.session["staff_secondary_role"] = staff.secondary_role  # Sprint 2.4 Fase 15: doble rol coordinador+comercial
     request.session["staff_name"] = staff.full_name or staff.username
     request.session["staff_username"] = staff.username
+    idle.start(request.session, db, staff)           # inactividad: marca la última actividad (y exime a los puestos de impresión)
     if staff.must_change_password:
         request.session["must_change_password"] = True
         return RedirectResponse("/cambiar-contrasena", status_code=302)
     return RedirectResponse("/", status_code=302)
+
+
+@router.get("/api/session/idle")
+def session_idle(request: Request):
+    """Cuánto le queda a esta sesión antes de cerrarse por inactividad. Pasivo: NO la renueva (la página lo usa para saber cuándo avisar). Sin tocar la base."""
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    return JSONResponse(idle.snapshot(request.session), headers={"Cache-Control": "no-store"})
+
+
+@router.post("/api/session/touch")
+def session_touch(request: Request):
+    """La persona hizo algo (clic, teclas, toque, scroll): el middleware ya renovó la sesión; aquí se devuelve lo que le queda. Sin tocar la base."""
+    if not request.session.get("staff_user_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    return JSONResponse(idle.snapshot(request.session), headers={"Cache-Control": "no-store"})
 
 
 @router.post("/logout")
