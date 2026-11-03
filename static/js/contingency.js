@@ -258,8 +258,9 @@
     c.hashFor = async (raw) => { const meta = await c.rosterMeta(); const cedula = normalize(raw); return meta && cedula ? c.fingerprint(meta.salt, cedula) : ''; };
     c.localPeople = async () => ((await c.rosterUsable()) ? c.db.getAll('roster') : []);
     /* Encola el ingreso (client_id + marca de tiempo; huella y nombre, NO la cédula) y lo anota como registrado en la copia local. */
-    c.enqueue = async (found, method, clientId) => {
-      const rec = { client_id: clientId || uuid(), h: found.person.h, n: found.person.n, timestamp: new Date(d.now()).toISOString(), method: ['qr', 'manual'].includes(method) ? method : 'cedula', prev: found.person.s };          // `prev`: estado que tenía en la copia local (para «Deshacer»)
+    c.enqueue = async (found, method, clientId, timing) => {
+      const rec = { client_id: clientId || uuid(), h: found.person.h, n: found.person.n, timestamp: new Date(d.now()).toISOString(), method: ['qr', 'manual'].includes(method) ? method : 'cedula', prev: found.person.s };
+      if (timing && Number.isFinite(timing.took_ms)) { rec.took_ms = timing.took_ms; rec.ui_flow = String(timing.ui_flow || 'v0'); }          // 1A: tiempo medido (solo una duración y una etiqueta); se envía al sincronizar          // `prev`: estado que tenía en la copia local (para «Deshacer»)
       await putSealed('queue', rec);
       await c.db.put('roster', { ...found.person, s: 'Registrado' });
       await recount();
@@ -289,7 +290,7 @@
           let res;
           try {
             res = await d.fetch(`/api/events/${d.eventId}/access-logs/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-              body: JSON.stringify({ records: q.map((r) => ({ client_id: r.client_id, h: r.h, timestamp: r.timestamp, method: r.method })) }) });
+              body: JSON.stringify({ records: q.map((r) => ({ client_id: r.client_id, h: r.h, timestamp: r.timestamp, method: r.method, took_ms: r.took_ms, ui_flow: r.ui_flow })) }) });
           } catch (e) { return syncFail(); }
           if (res.status === 401) { c.sessionExpired = true; return syncFail('session'); }
           if (res.status === 403 || res.status === 404 || res.status === 400) {

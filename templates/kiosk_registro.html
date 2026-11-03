@@ -362,6 +362,7 @@
 <script src="{{ url_for('static', path='js/outbox-ui.js') }}"></script>
 {% else %}<script src="{{ url_for('static', path='js/contingency-off.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', path='js/consent-gate.js') }}"></script>
+<script src="{{ url_for('static', path='js/timing.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
@@ -381,6 +382,7 @@
         const gc = window.GoldenContingency && window.GoldenContingency.instance;
         if (gc && gc.active()) { showToast('Sin conexión: no se pueden registrar personas nuevas; espera a que vuelva la red', 'error'); return; }       // alta de personas nuevas sin red: fuera de alcance
         if (registerModal) registerModal.style.display = 'flex';
+        if (window.RegTimer) RegTimer.start();          // 1A: el tiempo del alta cuenta desde que se abre el formulario (o desde la primera tecla del buscador, si fue antes)
     }
     function closeRegisterModal() { if (registerModal) registerModal.style.display = 'none'; }
 

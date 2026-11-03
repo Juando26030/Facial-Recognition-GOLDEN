@@ -403,6 +403,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         async function submitManualRegister(formData, btn) {
             try {
+                if (window.RegTimer) RegTimer.appendTo(formData);          // 1A: tiempo desde la primera tecla / apertura del formulario
                 const res = await fetch('/api/register', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (!res.ok) {
@@ -430,6 +431,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast(data.message || data.error, data.error ? "error" : "success");
                 if (data.digital) showToast(`📲 Escarapela digital: ${data.digital.detail}`, 'success');
                 if (!data.error) {
+                    if (window.RegTimer) RegTimer.done();
                     const registeredId = formData.get('id');
                     try { await window.FieldRender.saveSignatures(regForm, registeredId); }
                     catch (e) { showToast(e.message, 'error'); }
@@ -506,7 +508,10 @@ document.addEventListener("DOMContentLoaded", () => {
             for (const key of ['extra_fields', 'categories', 'field_labels']) { const v = formData.get(key); if (v) { try { f[key] = JSON.parse(v); } catch (e) { /* se ignora un JSON roto */ } } }
             if (!f.id || !f.first_name || !f.last_name) { showToast('Escribe la cédula, los nombres y los apellidos.', 'error'); return; }
             const photo = formData.get('file');
+            const tm = window.RegTimer ? RegTimer.payload() : null;          // 1A: el tiempo viaja en la bandeja y se envía al sincronizar
+            if (tm) { f.took_ms = tm.took_ms; f.ui_flow = tm.ui_flow; }
             try { await box.enqueue(f, `${f.first_name} ${f.last_name}`); } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); return; }
+            if (window.RegTimer) RegTimer.done();
             showToast(`Guardado en este dispositivo${photo && photo.size ? ' (la foto no se guarda sin conexión: agrégala después)' : ''}. Se enviará solo al volver la red.`, 'success');
             regForm.reset();
             if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();

@@ -117,6 +117,8 @@ class AccessLog(Base):
     client_id = Column(String, nullable=True)  # identificador generado por el kiosco/navegador: un reintento o una sincronización nunca duplica el ingreso (único por evento, ver 0047)
     doubtful_reason = Column(String(24), nullable=True)  # 0077: ingreso sincronizado tras devolver el evento a «Creado» SIN hora válida del dispositivo (`sin_hora_valida`): consultable para revisarlo
     registration_method = Column(String, nullable=True)  # Sprint 2.4 Fase 16 (2026-09-17, pedido explícito): 'tradicional' | 'autoregistro' | 'biometrico' | 'qr' — para el reporte, que siempre debe decir CÓMO se registró cada persona (ver reports.py y routers/api.py)
+    took_ms = Column(Integer, nullable=True)  # 0079 (1A): ms del digitador desde la primera tecla en el buscador hasta enviar el registro; vacío en lo anterior y en clientes viejos (app/regtime.py lo acota 0..600000)
+    ui_flow = Column(String(12), nullable=True)  # 0079 (1A): pantalla con que se registró («v0» = la de hoy) para comparar antes/después
 
     __table_args__ = (
         ForeignKeyConstraint(

@@ -27,7 +27,7 @@ from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAtt
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
-from app import status_changes, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
+from app import status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
@@ -750,7 +750,7 @@ def _identity_name_matches(db_name: str, scanned_name: str) -> bool:
 @router.post("/checkin-cedula")
 def checkin_cedula(
     event_id: int = Form(...), cedula: str = Form(...), force: bool = Form(False), confirm: bool = Form(False),
-    first_name: str = Form(""), last_name: str = Form(""), method: str = Form(""), client_id: str = Form(""),
+    first_name: str = Form(""), last_name: str = Form(""), method: str = Form(""), client_id: str = Form(""), took_ms: str = Form(""), ui_flow: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """Acreditación por cédula (lector de código de barras o MRZ de la cédula nueva) — mismo
@@ -823,7 +823,7 @@ def checkin_cedula(
         # prendido — misma cédula, la diferencia es si hizo falta que alguien confirmara.
         # "qr" (Sprint 4): el código QR entregó la cédula por la cámara/lector — el mismo flujo, distinto origen.
         registration_method="qr" if method == "qr" else ("autoregistro" if event.auto_register else "tradicional"),
-        client_id=client_id or None,
+        client_id=client_id or None, **regtime.measured(took_ms, ui_flow),          # 1A: tiempo medido por el quiosco (acotado; ausente o inválido = vacío)
     )
     db.add(log)
     _upsert_attendee(db, event.id, user.id, event.tenant_id)
@@ -991,7 +991,8 @@ def sync_access_logs(
         try:
             with db.begin_nested():
                 db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Existente", event_id=event.id, registered_by_staff_id=staff.id,
-                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when, doubtful_reason=doubtful))
+                                 registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when, doubtful_reason=doubtful,
+                                 **regtime.measured(rec.get("took_ms"), rec.get("ui_flow"))))
                 if user.id not in attendees:
                     db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id, origin="manual"))
                 db.flush()
@@ -1060,7 +1061,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
                 db.add(user)
                 db.flush()
             db.add(AccessLog(tenant_id=event.tenant_id, user_id=person_id, record_type=kind, event_id=event.id, registered_by_staff_id=staff.id, registration_method="tradicional",
-                             client_id=op_id, timestamp=when, doubtful_reason=doubtful))
+                             client_id=op_id, timestamp=when, doubtful_reason=doubtful, **regtime.measured(f.get("took_ms"), f.get("ui_flow"))))
             _upsert_attendee(db, event.id, person_id, event.tenant_id, categories if f.get("categories") else None,
                              certificate=_truthy(f.get("certificate")) if f.get("certificate") else None, digital_contact=contact)
             db.flush()
@@ -1479,6 +1480,7 @@ def update_registration_status(
                 tenant_id=event.tenant_id, user_id=user_id, record_type="Existente",
                 event_id=event_id, registered_by_staff_id=staff.id,
                 registration_method="biometrico" if data.get("method") == "biometrico" else "tradicional",  # Fase 16: cambio manual de estado desde el Directorio; «biometrico» lo manda la verificación del operador tras un escaneo facial
+                **regtime.measured(data.get("took_ms"), data.get("ui_flow")),
             )
             db.add(log)
             _upsert_attendee(db, event_id, user_id, event.tenant_id)
@@ -1499,6 +1501,7 @@ def manual_register(
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
     field_labels: str = Form(None), file: UploadFile = File(None), force: bool = Form(False), biometric_consent: str = Form(None), birth_date: str = Form(""),
+    took_ms: str = Form(""), ui_flow: str = Form(""),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador")),
 ):
     """file es OPCIONAL: el alta manual la puede disparar tanto el flujo facial (con foto, para
@@ -1519,7 +1522,7 @@ def manual_register(
 
 
 def _manual_register(event_id, id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, certificate, digital_contact, send_digital_now, request, field_labels, file,
-                     force, biometric_consent, birth_date, db, staff, retry: bool = False):
+                     force, biometric_consent, birth_date, db, staff, retry: bool = False, took_ms=None, ui_flow=None):
     """Cuerpo de `POST /register`. `retry=True` solo en el ÚNICO reintento tras un choque de cédula (ver más abajo): nunca se reintenta dos veces."""
     args = {k: v for k, v in locals().items() if k != "retry"}          # los argumentos tal como llegaron (aquí `locals()` son solo los parámetros), para el único reintento
     event = get_event_for_staff(event_id, db, staff)
@@ -1568,6 +1571,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
             tenant_id=event.tenant_id, user_id=existing.id, record_type="Existente",
             event_id=event.id, registered_by_staff_id=staff.id,
             registration_method="tradicional",  # Fase 16: alta manual, formulario
+            **regtime.measured(took_ms, ui_flow),
         )
         db.add(log)
         _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean)
@@ -1637,6 +1641,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         tenant_id=event.tenant_id, user_id=id, record_type="Nuevo",
         event_id=event.id, registered_by_staff_id=staff.id,
         registration_method="tradicional",  # Fase 16: alta manual, formulario
+        **regtime.measured(took_ms, ui_flow),
     )
     db.add(log)
     _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean)
