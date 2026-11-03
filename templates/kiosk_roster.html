@@ -148,7 +148,7 @@ useSourceEvent.addEventListener("change", async () => {
     if (useSourceEvent.checked && !sourceEventsLoaded) {
         const res = await fetch(`/api/events?tenant_id=${encodeURIComponent("{{ event.tenant_id }}")}`);
         const events = (res.ok ? await res.json() : []).filter(e => e.id !== window.EVENT_ID);
-        const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+        const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         sourceEventList.innerHTML = events.length
             ? events.map(e => `<label style="display:flex; gap:8px; align-items:center; font-weight:400; text-transform:none; margin:4px 0;"><input type="checkbox" name="source_event_id" value="${e.id}" style="width:auto;"> ${esc(e.name)} (${esc(e.event_code || "sin código")})</label>`).join("")
             : '<p style="margin:0.3rem 0; color:#666;">Este cliente no tiene otros eventos</p>';
@@ -165,7 +165,7 @@ const ROSTER_BLOCKED = {{ 'true' if roster_blocked else 'false' }};      // el s
    separamos en cajas de color distinto para que de un vistazo se sepa la gravedad de cada uno. */
 function columnsBoxHtml(columns) {
     if (!columns) return "";
-    const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const list = (items, fmt) => items.length ? `<ul style="margin:0.3rem 0 0; padding-left:1.2rem;">${items.map(i => `<li>${fmt(i)}</li>`).join("")}</ul>` : "";
     return `<div style="background:#eef6ee; border:1px solid #b7dcb7; color:#1e5a1e; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
         <strong>Columnas del archivo</strong>
@@ -204,14 +204,14 @@ function renderRosterResult(data) {
         if (!items.length) return;
         html += `<div style="background:${g.bg}; border:1px solid ${g.border}; color:${g.text}; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
             <strong>${g.title} (${items.length}):</strong>
-            <ul style="margin:0.5rem 0 0; padding-left:1.2rem;">${items.map(err => `<li>${err.replace(g.prefix, "").trim()}</li>`).join("")}</ul>
+            <ul style="margin:0.5rem 0 0; padding-left:1.2rem;">${items.map(err => `<li>${window.escapeHtml(err.replace(g.prefix, "").trim())}</li>`).join("")}</ul>
         </div>`;
     });
     // cualquier mensaje que no traiga uno de los prefijos conocidos (por compatibilidad)
     const unprefixed = data.errors.filter(e => !groups.some(g => e.startsWith(g.prefix)));
     if (unprefixed.length) {
         html += `<div style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
-            <ul style="margin:0; padding-left:1.2rem;">${unprefixed.map(err => `<li>${err}</li>`).join("")}</ul>
+            <ul style="margin:0; padding-left:1.2rem;">${unprefixed.map(err => `<li>${window.escapeHtml(err)}</li>`).join("")}</ul>
         </div>`;
     }
     rosterResult.innerHTML = html;
@@ -624,7 +624,7 @@ rosterForm.addEventListener("submit", async (e) => {
    Nada de cédulas, nombres ni correos en pantalla: solo conteos y títulos de columnas. */
 const appendForm = document.getElementById("appendForm");
 function appendSummaryHtml(a) {
-    const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const rows = [["Personas nuevas creadas", a.created], ["Ya existían en el cliente (solo se inscribieron en este evento)", a.enrolled_existing], ["Ignoradas porque ya estaban en el evento", a.existing],
                   ["Ignoradas por repetidas en el archivo", a.duplicates], ["Omitidas por supresión de datos", a.suppressed], ["Filas con error", a.errors], ["Columnas ignoradas", a.columns_ignored]];
     return `<div style="background:#eef6ee; border:1px solid #b7dcb7; color:#1e5a1e; padding:1rem 1.2rem; border-radius:12px; font-size:0.9rem; margin-top:0.8rem;"><strong>Resultado de «Solo agregar»</strong>

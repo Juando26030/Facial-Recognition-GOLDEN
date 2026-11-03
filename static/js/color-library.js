@@ -3,7 +3,7 @@
    con su nombre o quitar el elegido de la librería. Un color se define una sola vez y sirve en todos los
    eventos; el evento igual guarda su propia copia. Uso: ColorLibrary.attach(colorInput, nameInput). */
 (function () {
-  const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function attach(colorInput, nameInput) {
     const box = document.createElement('div');

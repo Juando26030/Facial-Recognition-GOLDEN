@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import AccessLog, Event, EventStaffAuthorization, STAFF_ROLES, StaffUser
 from app import security
+from app.inputcheck import text_validator, username_validator
 from app.auth import effective_roles, hash_password, require_role
 
 router = APIRouter()
@@ -36,6 +37,9 @@ class StaffIn(BaseModel):
     role: str
     phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
     email: Optional[str] = None  # correo para notificaciones (informe final del evento a la comercial)
+
+    _u = username_validator("username")
+    _t = text_validator("full_name")
 
 
 def _serialize(s: StaffUser) -> dict:

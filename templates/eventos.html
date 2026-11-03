@@ -85,7 +85,7 @@
 
 <script>
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
-function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 const STATUS_LABELS = { creado: "Creado", en_proceso: "En Proceso", finalizado: "Finalizado" };
 

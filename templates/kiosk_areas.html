@@ -81,7 +81,7 @@
 <script>
 let direction = 'auto', users = [];
 const $ = (id) => document.getElementById(id);
-function esc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 const areaId = () => $('areaSelect').value;
 
 async function init() {

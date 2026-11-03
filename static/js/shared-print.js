@@ -477,7 +477,7 @@
       if (e.target.closest('[data-close]')) { panel.remove(); return; }
       const btn = e.target.closest('[data-reprint]');
       if (!btn) return;
-      if (!(await window.showConfirm(`¿Reimprimir la escarapela de ${btn.dataset.reprint}?`, { confirmLabel: 'Sí, reimprimir' }))) return;
+      if (!(await window.showConfirm(`¿Reimprimir la escarapela de ${window.escapeHtml(btn.dataset.reprint)}?`, { confirmLabel: 'Sí, reimprimir' }))) return;
       btn.disabled = true;
       await printFor(btn.dataset.reprint, false, true);
       panel.remove();

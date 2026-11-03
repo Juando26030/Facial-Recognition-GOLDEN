@@ -191,7 +191,7 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
-  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
   function reveal(container, winner, style) {
     container.innerHTML = `<div style="background:${style.winner_bg}; color:${style.winner_color}; border-radius:22px; padding:22px 34px; text-align:center; box-shadow:0 12px 40px rgba(0,0,0,.45); animation:rr-pop .5s ease-out;">

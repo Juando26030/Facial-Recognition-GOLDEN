@@ -119,7 +119,7 @@ def field_labels_for_event(db: Session, event: Event) -> dict:
     return {cfg["key"]: cfg["label"] for cfg in field_configs_for_event(db, event)}
 
 
-LOGO_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+LOGO_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}   # sin .svg: un SVG puede llevar scripts (Fase 0C, B1); los logos SVG ya guardados se sirven en «sandbox» (app/main.py)
 LOGO_MODES = ("default", "hidden", "custom")
 
 

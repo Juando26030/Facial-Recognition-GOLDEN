@@ -106,6 +106,9 @@ const DELETABLE_ROLES = {
 // único par, en cualquier orden — el botón de abajo solo aparece para filas coordinador/comercial.
 const DUAL_ROLE_PAIR = { coordinador: "comercial", comercial: "coordinador" };
 
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const jsArg = (v) => esc(JSON.stringify(String(v == null ? '' : v)));
+
 async function loadStaff() {
   const res = await fetch("/api/staff");
   const list = await res.json();
@@ -119,21 +122,21 @@ async function loadStaff() {
       : "";
     return `
     <tr>
-      <td>${s.username}</td>
-      <td>${s.full_name || "-"}</td>
-      <td>${s.email || '<span style="color:#c98;">sin correo</span>'} <button class="btn-table-action" onclick="editStaffEmail(${s.id}, '${(s.email || "").replace(/'/g, "")}')" title="Editar correo">✎</button></td>
-      <td>${roleLabel}</td>
+      <td>${esc(s.username)}</td>
+      <td>${esc(s.full_name || "-")}</td>
+      <td>${s.email ? esc(s.email) : '<span style="color:#c98;">sin correo</span>'} <button class="btn-table-action" onclick="editStaffEmail(${s.id}, ${jsArg(s.email || "")})" title="Editar correo">✎</button></td>
+      <td>${esc(roleLabel)}</td>
       <td>${s.is_active ? "Activo" : "Inactivo"}</td>
       <td>
         ${s.role === "super_admin" || s.username === staffUsername ? '<span style="color:#aaa; font-size:0.8rem;">—</span>' : `
           ${dualRoleBtn}
-          ${(staffRole === "admin" || staffRole === "super_admin") && ["coordinador", "comercial", "admin"].includes(s.role) ? `<button class="btn-table-action" onclick="changeRole(${s.id}, '${s.username}', '${s.role}')">Cambiar rol</button>` : ""}
-          ${DELETABLE_ROLES.includes(s.role) ? `<button class="btn-table-action" onclick="resetPassword(${s.id}, '${s.username}')">Restablecer contraseña</button>` : ""}
+          ${(staffRole === "admin" || staffRole === "super_admin") && ["coordinador", "comercial", "admin"].includes(s.role) ? `<button class="btn-table-action" onclick="changeRole(${s.id}, ${jsArg(s.username)}, ${jsArg(s.role)})">Cambiar rol</button>` : ""}
+          ${DELETABLE_ROLES.includes(s.role) ? `<button class="btn-table-action" onclick="resetPassword(${s.id}, ${jsArg(s.username)})">Restablecer contraseña</button>` : ""}
           ${s.is_active
             ? `<button class="btn-table-action" style="background:#dc3545;" onclick="toggleStaff(${s.id}, false)">Desactivar</button>`
             : `<button class="btn-table-action btn-save" onclick="toggleStaff(${s.id}, true)">Reactivar</button>`}
           ${DELETABLE_ROLES.includes(s.role)
-            ? `<button class="btn-table-action" style="background:#6c1c1c;" onclick="deleteStaff(${s.id}, '${s.username}')">Borrar permanente</button>`
+            ? `<button class="btn-table-action" style="background:#6c1c1c;" onclick="deleteStaff(${s.id}, ${jsArg(s.username)})">Borrar permanente</button>`
             : ""}
         `}
       </td>
@@ -179,7 +182,7 @@ async function resetPassword(id, username) {
 }
 
 async function deleteStaff(id, username) {
-  if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${username}"? Esto no es desactivar — se elimina de la base de datos y no se puede deshacer.`))) return;
+  if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${window.escapeHtml(username)}"? Esto no es desactivar — se elimina de la base de datos y no se puede deshacer.`))) return;
   const res = await fetch(`/api/staff/${id}`, {method: "DELETE"});
   if (res.ok) { loadStaff(); showToast("Cuenta eliminada", "success"); }
   else { const err = await res.json(); showToast(err.detail || "No se pudo borrar", "error"); }

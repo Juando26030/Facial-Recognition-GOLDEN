@@ -5,6 +5,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from app.inputcheck import text_validator, username_validator
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func, or_
@@ -42,6 +44,9 @@ class EventStaffIn(BaseModel):
     role: str = "digitador"  # "digitador" (coordinador+, no comercial) o "cliente" (comercial+)
     phone: Optional[str] = None  # Sprint 2.4: notificaciones por WhatsApp más adelante
 
+    _u = username_validator("username")
+    _t = text_validator("full_name")
+
 
 class AssignExistingIn(BaseModel):
     staff_id: int
@@ -60,6 +65,7 @@ EVENT_CODE_LOCKED = ("El código del evento no se puede cambiar una vez creado: 
 
 
 class EventIn(BaseModel):
+    _t = text_validator("name", "location", "address", "country", "city")
     """Todos los campos operativos son obligatorios al crear un evento — 'notes' es la única
     excepción real (es explícitamente un campo de observaciones, opcional por naturaleza)."""
     tenant_id: str
@@ -85,6 +91,7 @@ class EventIn(BaseModel):
 
 
 class EventUpdate(BaseModel):
+    _t = text_validator("name", "location", "address", "country", "city")
     event_code: Optional[str] = None
     name: Optional[str] = None
     location: Optional[str] = None

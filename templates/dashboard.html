@@ -46,6 +46,7 @@
 </main>
 
 <script>
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
 
 async function loadMyEvents() {
@@ -64,8 +65,8 @@ async function loadMyEvents() {
   el.innerHTML = events.map(e => `
     <div class="tenant-card"><div class="tenant-head" style="cursor:default;">
       <div>
-        <h3>${e.name}</h3>
-        <div class="meta">${e.location || ""} ${e.city ? "· " + e.city : ""} · ${fmtDate(e.start_date)}</div>
+        <h3>${esc(e.name)}</h3>
+        <div class="meta">${esc(e.location || "")} ${e.city ? "· " + esc(e.city) : ""} · ${fmtDate(e.start_date)}</div>
       </div>
       <a class="small-btn primary" href="/kiosk/${e.id}">Ingresar →</a>
     </div></div>
