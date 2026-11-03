@@ -18,12 +18,12 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
-from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, sessions, timing
+from app import form_client, appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
-from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
+from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
 from app.routers import print_settings
-from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
+from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
@@ -251,6 +251,7 @@ _include(areas_inventory.router, prefix="/api")
 _include(analytics.router, prefix="/api")
 _include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
 _include(forms.router, prefix="/api")
+_include(form_client_router.router, prefix="/api")      # estadísticas de un formulario + acceso de cliente por formulario (solo agregados)
 _include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
 _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
@@ -320,6 +321,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     staff_user = _page_staff(request, db)
     if not staff_user:
         return RedirectResponse("/login", status_code=302)
+
+    if staff_user.role == "cliente" and form_client.is_form_client(db, staff_user):
+        return RedirectResponse("/mi-formulario", status_code=302)       # cliente de FORMULARIO: su única pantalla son las estadísticas de ese formulario
 
     if staff_user.role in ("digitador", "cliente"):
         # Ninguno de los dos tiene panel: si tiene exactamente un evento activo autorizado,
@@ -640,6 +644,46 @@ def kiosk_roulette_visual(event_id: int, request: Request, db: Session = Depends
 def kiosk_forms(event_id: int, request: Request, db: Session = Depends(get_db)):
     """Formularios Web del evento — listado (Sprint 5) — coordinador+."""
     return _resolve_kiosk_page(event_id, request, db, "kiosk_formularios.html", min_role="coordinador")
+
+
+@app.get("/kiosk/{event_id}/formularios/{form_id}/estadisticas")
+def kiosk_form_stats(event_id: int, form_id: int, request: Request, db: Session = Depends(get_db)):
+    """Estadísticas de UN formulario (cupos, inscritos, distribución por variables), solo agregados — coordinador+."""
+    redirect = _require_page_role(request, "coordinador")
+    if redirect:
+        return redirect
+    staff_user = _page_staff(request, db)
+    if not staff_user:
+        return RedirectResponse("/login", status_code=302)
+    try:
+        event = get_event_for_staff(event_id, db, staff_user)
+    except HTTPException:
+        return RedirectResponse("/", status_code=302)
+    form = db.query(WebForm).filter(WebForm.id == form_id, WebForm.event_id == event.id).first()
+    if not form:
+        return RedirectResponse(f"/kiosk/{event_id}/formularios", status_code=302)
+    return templates.TemplateResponse(request=request, name="form_stats.html", context={
+        "api_url": f"/api/events/{event.id}/forms/{form.id}/stats", "form_name": form.name, "event_name": event.name, "staff_name": staff_user.full_name or staff_user.username,
+        "back_url": f"/kiosk/{event.id}/formularios/{form.id}", "back_label": "Volver al formulario", "client_view": False})
+
+
+@app.get("/mi-formulario")
+def mi_formulario_page(request: Request, db: Session = Depends(get_db)):
+    """Pantalla del cliente de FORMULARIO: las estadísticas de su formulario y nada más."""
+    staff_user = _page_staff(request, db)
+    if not staff_user:
+        return RedirectResponse("/login", status_code=302)
+    if not form_client.is_form_client(db, staff_user):
+        return RedirectResponse("/", status_code=302)
+    try:
+        _, form, event = form_client.resolve(db, staff_user)
+    except HTTPException as e:
+        return templates.TemplateResponse(request=request, name="form_stats.html", status_code=e.status_code, context={
+            "api_url": "", "form_name": "", "event_name": "", "staff_name": staff_user.full_name or staff_user.username, "back_url": "", "back_label": "",
+            "client_view": True, "blocked_message": e.detail})
+    return templates.TemplateResponse(request=request, name="form_stats.html", context={
+        "api_url": "/api/form-client/stats", "form_name": form.name, "event_name": event.name, "staff_name": staff_user.full_name or staff_user.username,
+        "back_url": "", "back_label": "", "client_view": True})
 
 
 @app.get("/kiosk/{event_id}/formularios/{form_id}")

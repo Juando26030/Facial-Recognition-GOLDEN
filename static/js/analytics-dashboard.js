@@ -9,6 +9,25 @@
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TONES = { good: '#198754', warn: '#b26a00', bad: '#c0392b', '': '#0A0E2E' };
 
+  /* Cantidad visible en cada barra / porción (solo con { large: true }): se dibuja al final de la barra, en tamaño legible. */
+  const valueLabels = {
+    id: 'adValueLabels',
+    afterDatasetsDraw(chart, _args, o) {
+      if (!o || !o.enabled) return;
+      const ctx = chart.ctx; const horizontal = chart.options.indexAxis === 'y';
+      ctx.save(); ctx.font = '700 14px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#12183f';
+      chart.data.datasets.forEach((ds, di) => {
+        if (chart.config.type !== 'bar' || chart.isDatasetVisible(di) === false) return;
+        chart.getDatasetMeta(di).data.forEach((bar, i) => {
+          const v = ds.data[i]; if (v == null || (v === 0 && chart.data.datasets.length > 1)) return;
+          if (horizontal) { ctx.textAlign = 'left'; ctx.fillText(String(v), bar.x + 6, bar.y); }
+          else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(String(v), bar.x, bar.y - 4); ctx.textBaseline = 'middle'; }
+        });
+      });
+      ctx.restore();
+    },
+  };
+
   function mount(container, url, opts) {
     opts = opts || {};
     container.innerHTML = `
@@ -17,8 +36,8 @@
         <div style="display:flex; gap:10px; align-items:center;"><span class="ad-updated" style="font-size:0.75rem; color:#888;"></span>
           <button type="button" class="ad-refresh" style="border:1px solid #ccc; background:white; border-radius:18px; padding:5px 14px; font-size:0.78rem; cursor:pointer;">↻ Actualizar</button></div>
       </div>
-      <div class="ad-kpis" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:0.8rem; margin-bottom:1.2rem;"></div>
-      <div class="ad-charts" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:1.2rem;"></div>
+      <div class="ad-kpis" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap:0.8rem; margin-bottom:1.2rem;"></div>
+      <div class="ad-charts" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, ${opts.large ? 460 : 380}px), 1fr)); gap:1.2rem;"></div>
       <p class="ad-empty" style="display:none; color:#888; text-align:center; padding:1.5rem;">Todavía no hay datos para mostrar.</p>`;
     const q = (c) => container.querySelector(c);
     const charts = {};
@@ -39,9 +58,11 @@
         data: { labels: spec.labels, datasets },
         options: {
           indexAxis: spec.horizontal ? 'y' : 'x', responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: single || spec.datasets.length > 1, position: 'bottom' } },
-          scales: single ? {} : { x: { stacked: !!spec.stacked, ticks: { maxRotation: 60, autoSkip: true } }, y: { stacked: !!spec.stacked, beginAtZero: true, ticks: { precision: 0 } } },
+          layout: opts.large ? { padding: { right: spec.horizontal ? 36 : 4, top: spec.horizontal ? 4 : 22 } } : {},
+          plugins: { adValueLabels: { enabled: !!opts.large && !single }, legend: { display: single || spec.datasets.length > 1, position: 'bottom', labels: { font: { size: opts.large ? 14 : 12 } } }, tooltip: opts.large ? { titleFont: { size: 14 }, bodyFont: { size: 14 } } : {} },
+          scales: single ? {} : { x: { stacked: !!spec.stacked, ticks: { maxRotation: 60, autoSkip: !opts.large || !spec.horizontal, font: { size: opts.large ? 14 : 12 } } }, y: { stacked: !!spec.stacked, beginAtZero: true, ticks: { precision: 0, autoSkip: !(opts.large && spec.horizontal), font: { size: opts.large ? 14 : 12 } } } },
         },
+        plugins: [valueLabels],
       });
     }
 
@@ -61,8 +82,13 @@
         if (!card) {
           card = document.createElement('div'); card.dataset.chart = spec.id;
           card.style.cssText = 'background:white; border-radius:16px; padding:1rem 1.2rem; box-shadow:0 4px 16px rgba(0,0,0,0.06);';
-          card.innerHTML = `<div class="ad-ct" style="font-weight:700; font-size:0.88rem; color:var(--golden-dark); margin-bottom:6px;"></div><div style="height:250px;"><canvas></canvas></div><div class="ad-note" style="font-size:0.72rem; color:#999;"></div>`;
+          card.innerHTML = `<div class="ad-ct" style="font-weight:700; font-size:0.88rem; color:var(--golden-dark); margin-bottom:6px;"></div><div class="ad-box" style="height:250px;"><canvas></canvas></div><div class="ad-note" style="font-size:0.72rem; color:#999;"></div>`;
           host.appendChild(card);
+        }
+        if (opts.large) {          // gráficas grandes: las barras horizontales crecen con la cantidad de opciones para que cada nombre se lea completo
+          const h = spec.horizontal || spec.type === 'bar' && spec.labels.length > 8 && spec.labels.some((l) => String(l).length > 10) ? Math.max(320, spec.labels.length * 40 + 90) : 360;
+          card.querySelector('.ad-box').style.height = Math.min(h, 900) + 'px';
+          card.querySelector('.ad-ct').style.fontSize = '1.05rem';
         }
         card.querySelector('.ad-ct').textContent = spec.title;
         card.querySelector('.ad-note').textContent = spec.note || '';
