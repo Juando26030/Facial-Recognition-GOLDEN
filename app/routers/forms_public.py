@@ -297,7 +297,7 @@ def lookup(event_id: int, slug: str, data: dict, request: Request, db: Session =
     # Las pruebas nunca cuentan. El mensaje no dice nada más que «ya inscrito».
     if access != "pruebas":
         target = formsvc.repeat_target(settings, formsvc.get_design(form))
-        if formsvc.registered_person(db, form, pid, include_confirmed=bool(target and target[0] == "cedula")):
+        if target and formsvc.registered_person(db, form, pid, include_confirmed=target[0] == "cedula", include_pre=True):
             return JSONResponse({"detail": formsvc.ALREADY_MSG, "already": True, "duplicate": True}, status_code=409)
     new_claims = {**claims, "g": True, "id_ok": True, "typed_id": pid}
     if person:
@@ -587,7 +587,7 @@ def _submit(db: Session, event_id: int, slug: str, request: Request, payload: di
     # «replayed», un duplicado o un sobrante esperaban su turno del bloqueo, hasta 3 s reteniendo turno de Cloud Run, hilo y conexión, para que la base dijera lo mismo). Es solo
     # un adelanto: la reserva bajo bloqueo repite TODAS estas comprobaciones y sigue siendo la autoridad; esto puede rechazar de MÁS unos segundos (el conteo del «lleno» va con
     # caché de ~2 s y un cupo pudo liberarse), nunca dejar pasar de más.
-    retry, duplicate = formsvc.precheck(db, form, sid, person_id, is_test)
+    retry, duplicate = formsvc.precheck(db, form, sid, person_id, is_test, pre=bool(formsvc.repeat_target(settings, design)))
     full = form.capacity is not None and not is_test and not retry and formsvc.held_count_cached(db, form) >= form.capacity
     db.rollback()             # lecturas hechas: la conexión vuelve al pool antes de seguir
     if retry:

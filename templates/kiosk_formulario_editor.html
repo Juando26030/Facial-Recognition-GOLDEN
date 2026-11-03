@@ -153,6 +153,18 @@
         <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem; margin-top:12px;"><input type="checkbox" id="blockRep"> Bloquear inscripciones repetidas («Ya estás inscrito»)</label>
         <div id="blockRepBox" style="display:none; margin:4px 0 0 26px;"><label style="font-size:0.82rem;">Campo que identifica a la persona <select id="blockRepField"></select></label></div>
         <p class="hint" style="margin-top:2px;">Si la persona ya está inscrita en ESTE formulario no podrá volver a enviarlo y verá «Ya estás inscrito» (no se muestra nada más de ella). Con cédula avisa en cuanto la escribe. Las pruebas no cuentan. Las personas marcadas «Registrado en formulario» en la carga de la base también quedan bloqueadas.</p>
+        <div style="border:1px solid #d9d9d9; border-radius:12px; padding:10px 14px; margin-top:12px;">
+          <h4 style="margin:0 0 4px;">Personas ya registradas</h4>
+          <p class="hint" style="margin:0 0 6px;">Sube la lista de quienes ya se inscribieron por otro medio (cédula, o el campo identificador de arriba; la columna «Registrado en formulario» es opcional: si existe, solo cuentan las filas con «sí»). Se puede recargar cuando quieras; vale solo para ESTE formulario.</p>
+          <div id="regCount" class="hint" style="font-weight:700;"></div>
+          <input type="file" id="regFile" accept=".xlsx,.csv">
+          <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:6px; font-size:0.84rem;">
+            <label>Al cargar <select id="regMode"><option value="add">Agregar (no quita nada)</option><option value="replace">Reemplazar (deja solo las del archivo)</option></select></label>
+            <label>Qué pasa con ellos <select id="regEffect"><option value="block">Solo bloquear (no ocupan cupo)</option><option value="hold">Ocupar cupo y bloquear</option></select></label>
+          </div>
+          <label style="display:flex; gap:8px; align-items:center; font-size:0.82rem; margin-top:4px;"><input type="checkbox" id="regEnable" checked> Encender «Bloquear inscripciones repetidas» si está apagado (las marcas solo bloquean con ese interruptor)</label>
+          <div style="margin-top:6px;"><button class="small-btn primary" id="regUp">Cargar / recargar lista</button> <button class="small-btn" id="regClear">Quitar todas las marcas</button></div>
+        </div>
         <button class="small-btn" id="feedNow">Cargar a la base ahora las que falten</button> <span class="hint" id="feedInfo"></span>
       </div>
       <div style="margin-bottom:2rem;"><button class="small-btn primary" id="cfgSave" style="padding:10px 26px;">💾 Guardar configuración</button></div>
@@ -1172,10 +1184,25 @@ function paintConfig() {
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
   paintBlockRep(s.block_repeats || {});
+  paintRegCount();
   $('rfDays').value = (s.refunds && s.refunds.days) || ''; $('rfNote').value = (s.refunds && s.refunds.note) || '';
   paintQuotas();
   $('sendBadgeWarn').style.display = form.digital_badge_enabled ? 'none' : 'block';
 }
+function paintRegCount() {
+  const a = form.preregistered || 0, h = form.registered_hold || 0;
+  $('regCount').textContent = (a + h) ? `+${a + h} ya registradas${h ? ` (${h} ocupan cupo)` : ' (no ocupan cupo)'}` : 'Aún no hay personas ya registradas en este formulario.';
+}
+$('regUp').addEventListener('click', async () => {
+  const f = $('regFile').files[0]; if (!f) { showToast('Elige primero el archivo', 'error'); return; }
+  if ($('regMode').value === 'replace' && !(await showConfirm('«Reemplazar» quita las marcas anteriores de este formulario y deja solo las del archivo. ¿Continuar?', { confirmLabel: 'Reemplazar' }))) return;
+  const fd = new FormData(); fd.append('file', f); fd.append('mode', $('regMode').value); fd.append('effect', $('regEffect').value); fd.append('enable', $('regEnable').checked ? '1' : '0');
+  try { const d = await j(`${api}/registered`, { method: 'POST', body: fd }); showToast(d.message, 'success'); form = await j(api); settings = form.settings; paintConfig(); $('regFile').value = ''; } catch (e) { showToast(e.message, 'error'); }
+});
+$('regClear').addEventListener('click', async () => {
+  if (!(await showConfirm('Se quitarán TODAS las marcas de «ya registrado» de este formulario (las que ocupaban cupo lo liberan). Las inscripciones reales no se tocan. ¿Continuar?', { confirmLabel: 'Quitar todas' }))) return;
+  try { const d = await j(`${api}/registered`, { method: 'DELETE' }); showToast(d.message, 'success'); form = await j(api); settings = form.settings; paintConfig(); } catch (e) { showToast(e.message, 'error'); }
+});
 function paintBlockRep(b) {
   const sel = $('blockRepField');
   const opts = ['<option value="">La cédula (campo vinculado a «Cédula»)</option>'].concat(Object.values(design.fields).filter((f) => ['text_short', 'email', 'phone', 'number'].includes(f.type) && f.key !== 'id')

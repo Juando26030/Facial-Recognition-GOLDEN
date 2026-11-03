@@ -7,7 +7,7 @@ from app import formlib as fl
 from app import formsvc
 from app.models import FormSubmission
 from tests.conftest import login
-from tests.test_forms import _create, _design, _event, _open, _person_values, _put, _state, _submit, _url
+from tests.test_forms import _create, _design, _event, _open, _person_values, _put, _state, _status, _submit, _url
 
 ALREADY = formsvc.ALREADY_MSG
 
@@ -196,7 +196,7 @@ def test_roster_column_marks_people_as_already_registered_without_using_capacity
     f = _create(client, ev)
     login(client, "coord1")
     assert client.put(f"/api/events/{ev.id}/forms/{f['id']}/status", json={"capacity": 1}).status_code == 200
-    assert _put(client, ev, f, settings={"prefill": {"mode": "cedula", "source": "event"}}).status_code == 200      # SIN el ajuste: la marca de la base bloquea igual
+    assert _put(client, ev, f, settings={"prefill": {"mode": "cedula", "source": "event"}, "block_repeats": {"enabled": True, "field": ""}}).status_code == 200      # las marcas solo bloquean con el interruptor encendido
     r = _upload(client, ev, "Cédula,Nombres,Apellidos,Correo,Registrado en formulario",
                 "1001,Ana,Mora,ana@example.com,Sí", "1002,Beto,Paz,beto@example.com,no", "1003,Caro,Gil,caro@example.com,X", "1004,Dani,Ruiz,dani@example.com,")
     assert r.status_code == 200, r.text
@@ -227,3 +227,100 @@ def test_roster_flag_also_blocks_by_email_when_the_form_has_no_cedula(client, fa
     r = _submit(client, ev, f, _vals(correo="ana@example.com"), sid="a")
     assert r.status_code == 409 and r.json()["detail"] == ALREADY
     assert _submit(client, ev, f, _vals(correo="otra@example.com"), sid="b").status_code == 200
+
+
+# ------------------------------- lista «Personas ya registradas» por formulario
+def _list_up(client, ev, f, *lines, mode="add", effect="block", enable="1"):
+    csv = ("\n".join(lines) + "\n").encode()
+    return client.post(f"/api/events/{ev.id}/forms/{f['id']}/registered", data={"mode": mode, "effect": effect, "enable": enable}, files={"file": ("lista.csv", csv, "text/csv")})
+
+
+def _summary(client, ev, f):
+    return client.get(f"/api/events/{ev.id}/forms/{f['id']}").json()
+
+
+def test_form_list_blocks_turns_the_switch_on_and_does_not_use_capacity(client, factory):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    assert _status(client, ev, f, capacity=1).status_code == 200
+    r = _list_up(client, ev, f, "Cédula,Registrado en formulario", "1001,sí", "1002,no", "1003,X")
+    assert r.status_code == 200, r.text
+    assert r.json()["added"] == 2 and r.json()["turned_on"] is True and "Se activó" in r.json()["message"]
+    sm = _summary(client, ev, f)
+    assert sm["preregistered"] == 2 and sm["registered_hold"] == 0 and sm["submissions"] == 0 and sm["settings"]["block_repeats"]["enabled"] is True
+    assert _list_up(client, ev, f, "Cédula", "1001", "1004").json()["added"] == 1                  # agregar no quita nada y no duplica
+    _open(client, ev, f)
+    assert _lookup(client, ev, f, "1001").status_code == 409 and _lookup(client, ev, f, "1004").status_code == 409
+    assert _lookup(client, ev, f, "1002").status_code == 200
+    assert _id_submit(client, ev, f, {**_person_values(), "cedula": "1002", "correo": "b@example.com"}).status_code == 200      # el cupo (1) seguía libre
+
+
+def test_form_list_replace_removes_previous_marks_and_clear_removes_all(client, factory):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    assert _list_up(client, ev, f, "Cédula", "1001", "1002").json()["added"] == 2
+    r = _list_up(client, ev, f, "Cédula", "1002", "1003", mode="replace").json()
+    assert r["removed"] == 2 and r["added"] == 2 and _summary(client, ev, f)["preregistered"] == 2
+    _open(client, ev, f)
+    assert _lookup(client, ev, f, "1001").status_code == 200 and _lookup(client, ev, f, "1003").status_code == 409
+    login(client, "coord1")
+    r = client.delete(f"/api/events/{ev.id}/forms/{f['id']}/registered")
+    assert r.status_code == 200 and r.json()["removed"] == 2
+    assert _summary(client, ev, f)["preregistered"] == 0
+    _open(client, ev, f)
+    assert _lookup(client, ev, f, "1003").status_code == 200
+
+
+def test_form_list_hold_takes_capacity_and_clearing_frees_it(client, factory, db):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    assert _status(client, ev, f, capacity=2).status_code == 200
+    assert _list_up(client, ev, f, "Cédula", "1001", "1002", effect="hold").json()["added"] == 2
+    sm = _summary(client, ev, f)
+    assert sm["registered_hold"] == 2 and sm["preregistered"] == 0
+    _open(client, ev, f)
+    full = _submit(client, ev, f, {**_person_values(), "cedula": "1003"}, sid="x")                # cupo 2 de 2: sin sobreventa
+    assert full.status_code == 409 and full.json().get("stage") == "closed"
+    dup = _submit(client, ev, f, {**_person_values(), "cedula": "1001"}, sid="y")
+    assert dup.status_code == 409
+    login(client, "coord1")
+    assert client.delete(f"/api/events/{ev.id}/forms/{f['id']}/registered").json()["removed"] == 2
+    _open(client, ev, f)
+    assert _submit(client, ev, f, {**_person_values(), "cedula": "1003", "correo": "c@example.com"}, sid="z").status_code == 200
+
+
+def test_form_list_add_with_hold_converts_existing_block_marks(client, factory):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    assert _list_up(client, ev, f, "Cédula", "1001").json()["added"] == 1
+    r = _list_up(client, ev, f, "Cédula", "1001", "1002", effect="hold").json()
+    assert r["converted"] == 1 and r["added"] == 1
+    sm = _summary(client, ev, f)
+    assert sm["registered_hold"] == 2 and sm["preregistered"] == 0
+
+
+def test_form_list_by_email_for_a_form_without_cedula_and_switch_option(client, factory):
+    ev = _event(client, factory)
+    f = _no_cedula_form(client, ev, "correo", "email")
+    assert _list_up(client, ev, f, "Correo", "Ana@Example.com", "otra@example.com").json()["added"] == 2
+    _open(client, ev, f)
+    r = _submit(client, ev, f, _vals(correo=" ana@example.COM "), sid="a")
+    assert r.status_code == 409 and r.json()["detail"] == ALREADY
+    assert _submit(client, ev, f, _vals(correo="nueva@example.com"), sid="b").status_code == 200
+
+
+def test_form_list_with_switch_option_off_keeps_the_switch_off_and_does_not_block(client, factory):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    r = _list_up(client, ev, f, "Cédula", "1001", enable="0").json()
+    assert r["turned_on"] is False and "apagado" in r["message"]
+    _open(client, ev, f)
+    assert _lookup(client, ev, f, "1001").status_code == 200
+
+
+def test_form_list_rejects_bad_files_and_modes(client, factory):
+    ev = _event(client, factory)
+    f = _create(client, ev)
+    assert _list_up(client, ev, f, "Nombre", "Ana").status_code == 400
+    assert _list_up(client, ev, f, "Cédula", "1001", mode="borrar").status_code == 400
+    assert _list_up(client, ev, f, "Cédula,Registrado en formulario", "1001,no").status_code == 400
