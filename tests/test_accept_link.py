@@ -76,7 +76,7 @@ def test_the_personal_page_asks_for_document_and_birth_date_and_a_wrong_token_or
     assert page.status_code == 200 and 'id="cedula"' in page.text and 'id="birth"' in page.text and f'"{token}"' in page.text.replace("&#34;", '"')
     assert 'id="cedula"' in client.get(f"/aceptar/{ev.event_code}").text and 'id="birth"' in client.get(f"/aceptar/{ev.event_code}").text        # el portal general (QR del cartel) también pide documento y fecha
     bad = client.get(f"/aceptar/{ev.event_code}/nope")
-    assert bad.status_code == 404 and "no es válido" in bad.text
+    assert bad.status_code == 404 and "Este enlace ya fue usado o no está disponible." in bad.text          # página amable (orden del 21-oct-2026; antes «no es válido…»)
     other = factory.event("en_proceso", facial_enabled=True, aceptar_enabled=True)
     assert client.get(f"/aceptar/{other.event_code}/{token}").status_code == 404                           # el enlace de un evento no vale en otro
     off = factory.event("en_proceso", facial_enabled=True, aceptar_enabled=False)

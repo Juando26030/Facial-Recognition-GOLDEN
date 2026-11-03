@@ -43,8 +43,10 @@ def test_roster_has_only_the_minimum_and_a_salted_fingerprint(client, factory, d
     assert set(ana) == {"h", "n", "c", "s", "a", "b", "v"} and ana["a"] == 0 and ana["b"] == 0 and ana["v"] == 0                                              # nada más: ni cédula, ni teléfono, ni correo, ni encoding
     assert ana["h"] == _fp(body["salt"], "1001234")                                      # normalizada: sin puntos ni espacios (igual que el cliente)
     assert ana["c"] == ["Prensa", "Staff"] and ana["s"] == "No registrado" and luis["s"] == "Registrado"
+    # La versión, la sal y las huellas son hex aleatorio: a veces contienen «2002» o «1001» por casualidad (falló el CI el 1-nov-2026). Se revisa todo lo demás.
+    visible = json.dumps({**body, "v": "", "salt": "", "people": [{k: val for k, val in p.items() if k != "h"} for p in body["people"]]}, ensure_ascii=False)
     for secret in ("1001", "2002", "3001112233", "ana@example.com", "VIP", "0.1"):
-        assert secret not in r.text, secret
+        assert secret not in visible, secret
     other = factory.event("en_proceso")
     login(client, "root")
     assert _get(client, other).json()["salt"] != body["salt"]                            # sal distinta por evento

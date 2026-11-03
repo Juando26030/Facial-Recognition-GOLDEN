@@ -57,3 +57,10 @@ Se prueba la opción 1 en el piloto y se deja la 2 como salida de emergencia.
 2. ¿Hace falta el reconocimiento facial sin internet, o basta cédula/QR/búsqueda en esos eventos? (dlib en una laptop es posible pero más lento que la nube).
 3. Duración típica de un evento sin internet y cuántos registros nuevos (personas que no están en la lista) se esperan.
 4. ¿Quién arma y verifica el servidor antes de salir? (define cuánta automatización necesita el paso de preparación).
+
+## 7. Paquete de evento (exportar/importar) y el servidor local — diseño (28-oct-2026)
+El servidor local **no se construye todavía**, pero el formato del paquete de `docs/18_EXPORTAR_EVENTOS.md` ya lo contempla:
+1. **Ida (nube → local):** el servidor local importa el `.zip` del evento (mismo importador que la nube: `scripts/event_import.py`), sin biometría salvo orden expresa.
+2. **Operación sin internet:** se registra, imprime y acredita en el local; cada registro conserva su `client_id` y su hora UTC.
+3. **Vuelta (local → nube), «solo lo nuevo»:** `scripts/event_export.py --since <marca UTC>` genera un paquete con únicamente lo hecho allá (registros, movimientos de áreas, entregas, impresiones, cambios, consentimientos, aceptaciones y las personas/inscripciones nuevas). El importador de la nube los **fusiona** con el evento original (mapa por código del evento + identificador de importación; los `client_id` hacen la fusión idempotente, sin duplicar).
+4. Las cuentas del personal no viajan: el local usa las suyas y los registros conservan el nombre de usuario como texto.

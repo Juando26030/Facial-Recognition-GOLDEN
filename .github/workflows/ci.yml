@@ -43,7 +43,13 @@ jobs:
           pip install -r /tmp/requirements-ci.txt pytest httpx pyyaml      # pyyaml: solo lo usa tests/test_cutover_workflows.py (lee los flujos de GitHub); no es dependencia de la app
       - name: Pruebas
         run: python -m pytest -q
-      - name: Pruebas de JS (DOM falso, sin navegador)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Dependencias de las pruebas de JS (jsdom, versión fija)
+        run: npm ci
+      - name: Pruebas de JS (DOM falso o jsdom, sin navegador)
         run: for f in tests/js/*_check.js; do node "$f" || exit 1; done
 
   image:

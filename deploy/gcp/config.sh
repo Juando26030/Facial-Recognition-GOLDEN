@@ -23,8 +23,8 @@ PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(project
 GITHUB_REPO="${GITHUB_REPO:-Juando26030/Facial-Recognition-GOLDEN}"
 # Rama desde la que GitHub Actions puede desplegar cada entorno (Workload Identity: cualquier otra rama no obtiene credenciales).
 if [ "$GOLDEN_ENV" = production ]; then DEPLOY_REF="refs/heads/main"; else DEPLOY_REF="${STAGING_BRANCH_REF:-refs/heads/migra/fase1-2}"; fi
-# Modo contingencia del quiosco (copia local de la lista + service worker): staging lo prende; producción NO (cambiarlo exige constancia legal escrita, pruebas en dispositivos reales y decisión de Juan David: docs/15 D2.5d).
-if [ "$GOLDEN_ENV" = production ]; then CONTINGENCY_ENABLED=0; else CONTINGENCY_ENABLED="${CONTINGENCY_ENABLED:-1}"; fi
+# Modo contingencia del quiosco (copia local de la lista + service worker): ENCENDIDO en staging y en producción (orden explícita de Juan David, 28-oct-2026; antes producción iba en 0: docs/15 D2.5d). Apagarlo = volver producción a =0 y redesplegar.
+if [ "$GOLDEN_ENV" = production ]; then CONTINGENCY_ENABLED=1; else CONTINGENCY_ENABLED="${CONTINGENCY_ENABLED:-1}"; fi
 # Firebase Hosting solo da permisos a nivel de PROYECTO (no por sitio). Por eso la cuenta de despliegue de staging NO los recibe salvo
 # que staging viva en su propio proyecto de Google Cloud (recomendado, docs/15): FIREBASE_DEPLOY=1 para dárselos igual.
 if [ "$GOLDEN_ENV" = production ]; then FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-1}"; else FIREBASE_DEPLOY="${FIREBASE_DEPLOY:-0}"; fi

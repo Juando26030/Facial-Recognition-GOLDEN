@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
     <title>{{ form_title }}</title>
-    <link id="fontsLink" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
+    <script src="{{ url_for('static', path='js/rich-text.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
     <style>
@@ -73,7 +75,6 @@ function applyTheme(t) {
   document.body.style.color = theme.text_color || "#0A0E2E";
   document.body.style.fontFamily = `'${theme.font || "Montserrat"}', sans-serif`;
   if (theme.bg_image) { document.body.style.backgroundImage = `url(${assetUrl(theme.bg_image)})`; document.body.style.backgroundSize = "cover"; document.body.style.backgroundAttachment = "fixed"; }
-  document.getElementById("fontsLink").href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.font || "Montserrat").replace(/%20/g, "+")}:wght@400;700&display=swap`;
 }
 const LANG_NAMES = { es: "Spanish", en: "English", pt: "Portuguese" };
 const TR_LANGS = [["en", "English"], ["es", "Español"], ["pt", "Português"], ["fr", "Français"], ["de", "Deutsch"], ["it", "Italiano"], ["zh-CN", "简体中文"], ["zh-TW", "繁體中文"],
@@ -126,7 +127,7 @@ document.getElementById("tr-grid").addEventListener("click", (e) => { const b = 
 function box(html) { app.innerHTML = `<div class="box">${html}</div>`; }
 function templateHtml(tpl) {
   return `${tpl.image ? `<img src="${esc(assetUrl(tpl.image))}" alt="" style="max-width:100%; max-height:220px; border-radius:12px; margin-bottom:14px;">` : ""}
-    <h2 style="margin:0 0 8px;">${esc(tpl.title)}</h2><p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(tpl.text)}</p>`;
+    <h2 style="margin:0 0 8px;">${esc(tpl.title)}</h2>${(() => { const r = window.RichText ? RichText.html(tpl.text) : { rich: false, html: esc(tpl.text) }; return r.rich ? `<div class="rt" style="margin:0; opacity:.85;">${r.html}</div>` : `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${r.html}</p>`; })()}`;
 }
 
 async function load() {
@@ -167,8 +168,11 @@ function showGate() {
 }
 
 function showIdentify(st) {
-  box(`<h3 style="margin-top:0;">Identifícate</h3><p style="opacity:.8;">${st.required ? "Escribe tu número de documento: debes estar en la lista de invitados." : "Escribe tu número de documento: si ya estás en nuestra base, tus datos aparecerán listos."}</p>
-    <input type="text" id="docid" inputmode="numeric" autocomplete="off" placeholder="Número de documento"><div class="msg" id="msg"></div><button id="go">Continuar</button>`);
+  const idc = st.identify || {};   // textos editables (vacío = los de siempre)
+  const idText = idc.text || (st.required ? "Escribe tu número de documento: debes estar en la lista de invitados." : "Escribe tu número de documento: si ya estás en nuestra base, tus datos aparecerán listos.");
+  const idRich = window.RichText ? RichText.html(idText) : { rich: false, html: esc(idText) };
+  box(`${idc.image ? `<img src="${esc(assetUrl(idc.image))}" alt="" style="max-width:100%; max-height:220px; border-radius:12px; margin-bottom:14px;">` : ""}<h3 style="margin-top:0;">${esc(idc.title || "Identifícate")}</h3>${idRich.rich ? `<div class="rt" style="opacity:.8;">${idRich.html}</div>` : `<p style="opacity:.8;">${idRich.html}</p>`}
+    <input type="text" id="docid" inputmode="numeric" autocomplete="off" placeholder="Número de documento"><div class="msg" id="msg"></div><button id="go">${esc(idc.button || "Continuar")}</button>`);
   const go = async () => {
     const { res, data } = await api("/lookup", { id: document.getElementById("docid").value });
     if (!res.ok) { document.getElementById("msg").textContent = data.detail || "No se pudo verificar"; return; }
@@ -185,6 +189,7 @@ function showForm(st) {
   const host = document.createElement("div"); app.appendChild(host);
   let started = false, quoteTimer = null;
   const label = st.design.theme.button_text || "Enviar";
+  const banner = document.getElementById("test-banner"); if (banner) banner.style.maxWidth = FormRender.cardMax(st.design.theme);   // el aviso de pruebas tiene el mismo ancho que la tarjeta
   const fr = FormRender.render(host, st.design, {
     assetUrl, prefill: st.prefill, readonly: st.readonly, badgeEmailField: st.badge_email_field, idDocs: st.id_docs, quota: st.quota, refund: st.refund,
     onFirstInput: () => { if (!started) { started = true; beacon("start"); } },

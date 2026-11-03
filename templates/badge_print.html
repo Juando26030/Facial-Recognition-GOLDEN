@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Imprimir escarapela</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=PT+Sans:wght@400;700&family=Noto+Sans:wght@400;700&family=Source+Sans+Pro:wght@400;700&family=Rubik:wght@400;700&family=Inter:wght@400;700&family=Work+Sans:wght@400;700&family=Quicksand:wght@400;700&family=Fira+Sans:wght@400;700&family=Barlow:wght@400;700&family=Karla:wght@400;700&family=Mulish:wght@400;700&family=Josefin+Sans:wght@400;700&family=Bebas+Neue&family=Dancing+Script&family=Pacifico&family=Lobster&family=Caveat&family=Anton&family=Archivo+Black&family=Cormorant+Garamond:wght@400;700&family=Crimson+Text:wght@400;700&family=Libre+Baskerville:wght@400;700&family=EB+Garamond:wght@400;700&family=Abril+Fatface&family=Comfortaa:wght@400;700&family=DM+Sans:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
+    <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
+    {# 27-oct-2026: la ventana de impresión usa la MISMA etiqueta compuesta que el USB (recorte, giro y margen resueltos de Parámetros y de ⚙️): static/js/label-compose.js #}
+    <meta name="gw-print-settings" content="{{ print_settings_json(event) }}">
+    <script src="{{ url_for('static', path='vendor/html2canvas-1.4.1.min.js') }}"></script>
+    <script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
+    <script src="{{ url_for('static', path='js/label-compose.js') }}"></script>
     <style>
         html, body { margin:0; padding:0; background:#ddd; }
         .print-toolbar {
@@ -48,6 +51,7 @@
 (function () {
     const EVENT_ID = {{ event.id }};
     const USER_ID = {{ print_user_id_json | safe }};
+    const USER_IDS = {{ print_users_json | safe }};                 // una persona (lo normal) o varias: UNA ventana con una hoja por escarapela («Imprimir pendientes»)
     window.EVENT_ID = EVENT_ID;
 
     const statusEl = document.getElementById('printStatus');
@@ -77,13 +81,66 @@
         return Promise.race([Promise.all(promises), timeout]);
     }
 
+    function printSettings() {
+        try { const m = document.querySelector('meta[name="gw-print-settings"]'); const v = m ? JSON.parse(m.getAttribute('content') || '{}') : {}; return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+    }
+    // Devuelve true si la etiqueta compuesta quedó lista para imprimir; false si no hay con qué componerla (módulos sin cargar); lanza si la composición falla.
+    async function printComposed(template, data, host) {           // `host`: la hoja (div.labelPage) donde va esta etiqueta cuando son varias; sin él, la única etiqueta de siempre
+        if (!(window.LabelCompose && window.QLUsb && window.html2canvas)) return false;
+        let storage = null; try { storage = window.localStorage; } catch (e) { storage = null; }
+        const p = QLUsb.resolvePrefs(storage, printSettings()).prefs;
+        const stage = document.createElement('div');
+        stage.setAttribute('aria-hidden', 'true'); stage.style.cssText = 'position:fixed; left:-10000px; top:0; background:#fff;';
+        document.body.appendChild(stage);
+        let out;
+        try {
+            const shot = await LabelCompose.renderShot(stage, template, data, EVENT_ID);
+            out = LabelCompose.composeBitmap(shot, template.width_mm, template.height_mm, p);
+        } finally { stage.remove(); }
+        const spec = LabelCompose.pageSpec(out);
+        // INAMOVIBLE (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md): estos valores salen de pruebas físicas; no se cambian sin pedido expreso de Juan David y nueva prueba.
+        // 28-oct-2026 (probado en una Brother QL-800 con Windows): Chrome solo respeta «margin: 0» (y quita fecha, ruta y «1/1») si el ancho de la página es el del papel del controlador, 62 mm;
+        // con 58,93 mm los ignora. Por eso la página mide 62 mm de ancho y la etiqueta de 58,93 mm va a PAGE_LEFT_MM del borde izquierdo (el área imprimible empieza en el borde izquierdo y mide ~60 mm).
+        const PAGE_W = 62, PAGE_LEFT_MM = 0.5, PAGE_H = 99.8, MAX_IMG_H = 96;          // probado en la Brother: SOLO el papel exacto del controlador (62×99,8 mm) sale bien. Otras alturas: 40/45/65 mm traen fecha, ruta y «1/1»; 60,6 mm lo gira el controlador (papel de 79 mm); 99,99 mm (apenas más que el papel) sale de 62×62 mm y la tinta pegada a un extremo (28-oct-2026, etiqueta horizontal de 105 mm). Por eso la página mide SIEMPRE 62×99,8 mm
+        // La impresora NO imprime los últimos milímetros del papel (la marca de fin se pierde y el controlador acorta la tira): probado con una imagen de 99,4 mm salió de 6,2 cm; con 96 mm sale de 9 cm y centrada. Por eso la imagen mide como MÁXIMO MAX_IMG_H = 96 mm: una más alta (plantilla horizontal de más de ~101 mm) se reduce
+        // proporcionalmente y queda centrada a lo ancho; las de 100 mm de plantilla (95,08 mm de imagen) y las más bajas conservan su tamaño real (la marca de fin fija su largo).
+        const fit = Math.min(1, MAX_IMG_H / spec.imageHeightMm), imgW = Math.round(spec.imageWidthMm * fit * 100) / 100, imgH = Math.round(spec.imageHeightMm * fit * 100) / 100;
+        const imgLeft = Math.round((PAGE_LEFT_MM + (spec.imageWidthMm - imgW) / 2) * 100) / 100;
+        const pageH = PAGE_H;
+        spec.pageCss = `@page { size: ${PAGE_W}mm ${pageH}mm; margin: 0 }`;
+        const img = document.createElement('img');
+        if (!host) img.id = 'labelImg';
+        img.alt = '';
+        img.src = LabelCompose.bitmapToDataUrl(out.bitmap, out.tapeDots, out.height, p.mirror);
+        img.style.cssText = `display:block; margin-left:${imgLeft}mm; width:${imgW}mm; height:${imgH}mm; image-rendering:pixelated; background:#fff;`;
+        badgeEl.style.display = 'none';
+        const into = host || document.getElementById('badgeWrapper');
+        into.appendChild(img);
+        // El controlador de la Brother recorta el blanco del final de la tira (probado: una página de 75 mm salió de 54 mm); una marca de 0,3 mm en la última fila de la imagen fija el largo de la etiqueta, igual que en el USB.
+        const endMark = document.createElement('div');
+        endMark.id = 'endMark'; endMark.style.cssText = `position:relative; z-index:1; width:0.3mm; height:0.3mm; margin:-0.3mm 0 0 ${imgLeft}mm; background:#000; -webkit-print-color-adjust:exact; print-color-adjust:exact;`;
+        into.appendChild(endMark);
+        if (host) {                                                    // varias hojas: el @page y cada hoja con las MISMAS medidas (62 × 99,8 mm, imagen ≤ 96 mm, 0,5 mm, marca de fin), una página por escarapela
+            pageStyle.innerHTML = `${spec.pageCss} @media print { html, body { margin:0; padding:0; background:#fff; } #badgeWrapper { display:block; padding:0; margin:0; width:${PAGE_W}mm; } ` +
+                `.labelPage { display:block; position:relative; width:${PAGE_W}mm; height:calc(${pageH}mm - 0.2mm); overflow:hidden; break-after:page; page-break-after:always; } .labelPage:last-child { break-after:auto; page-break-after:auto; } ` +
+                `#badgePrint { display:none !important; } .labelPage img { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;
+            statusEl.style.display = 'none';
+            if (img.decode) await img.decode().catch(() => {});
+            return true;
+        }
+        pageStyle.innerHTML = `${spec.pageCss} @media print { html, body { margin:0; padding:0; background:#fff; } #badgeWrapper { display:block; padding:0; margin:0; width:${PAGE_W}mm; height:calc(${pageH}mm - 0.2mm); overflow:hidden; } ` +
+            `#badgePrint { display:none !important; } #labelImg { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }`;
+        statusEl.style.display = 'none';
+        if (img.decode) await img.decode().catch(() => {});
+        return true;
+    }
+
     async function load() {
         try {
             // Primero los datos de la persona: dicen qué plantilla le toca (por categoría, ítem 14).
             const dataRes = await fetch(`/api/users/${encodeURIComponent(USER_ID)}/badge-print-data?event_id=${EVENT_ID}`);
             const data = dataRes.ok ? await dataRes.json() : null;
-            const qs = data && data.template_category ? `?category=${encodeURIComponent(data.template_category)}` : '';
-            const tplRes = data ? await fetch(`/api/events/${EVENT_ID}/badge-template${qs}`) : null;
+            const tplRes = data ? await BadgeRender.fetchTemplate(EVENT_ID, data.template_category) : null;          // la plantilla vigente (sin copias guardadas)
             if (!dataRes.ok || !tplRes.ok) {
                 statusEl.innerText = 'No se pudo cargar la escarapela (revisa que la persona exista en este evento).';
                 return;
@@ -92,20 +149,64 @@
 
             // @page con el tamaño REAL de la plantilla — así la impresora (ej. Brother QL-800)
             // recibe el tamaño de etiqueta correcto en vez del tamaño carta por defecto del navegador.
-            pageStyle.innerHTML = `@page { size: ${template.width_mm}mm ${template.height_mm}mm; margin: 0; }`;
+            // 26-oct-2026 (último recurso: el camino normal es la barra de impresión de Registro, que arma una imagen de 58,9 mm): una etiqueta APAISADA (más ancha que alta) se gira 90° y la página
+            // se declara girada (alto × ancho), igual que el giro automático del USB; así el lado largo va a lo largo de la cinta y nada sale cortado por ningún borde.
+            const rotate = template.width_mm > template.height_mm;
+            const pw = rotate ? template.height_mm : template.width_mm, ph = rotate ? template.width_mm : template.height_mm;
+            pageStyle.innerHTML = `@page { size: ${pw}mm ${ph}mm; margin: 0; } @media print { #badgeWrapper { display:block; position:relative; width:${pw}mm; height:${ph}mm; overflow:hidden; padding:0; } ` +
+                (rotate ? `#badgePrint { position:absolute; left:${pw}mm; top:0; transform-origin:0 0; transform:rotate(90deg); }` : '#badgePrint { position:absolute; left:0; top:0; }') + ' }';
 
-            BadgeRender.renderBadge(badgeEl, template, data, { eventId: EVENT_ID });
-            statusEl.style.display = 'none';
-
-            await waitForImages(badgeEl, 4000);
+            // 27-oct-2026: se imprime la MISMA etiqueta que sale por USB (composición de static/js/label-compose.js con el recorte, el giro y el margen resueltos de Parámetros y de ⚙️), mostrada
+            // como una imagen de tamaño exacto (puntos × 25,4 / 300 mm), con @page de ese tamaño, margin:0, sin escalado, centrada a lo ancho. El cuadro de Chrome sigue apareciendo. Si la composición
+            // falla, cae a la hoja de la plantilla de siempre (arriba) y avisa.
+            let composedOk = false, warn = '';
+            try { composedOk = await printComposed(template, data); } catch (e) { composedOk = false; warn = 'No se pudo armar la etiqueta con el recorte y el margen de Parámetros: se imprime la hoja de la plantilla.'; }
+            if (!composedOk) {
+                await BadgeRender.loadFonts(template);            // la tipografía elegida ya cargada antes de dibujar e imprimir
+                BadgeRender.renderBadge(badgeEl, template, data, { eventId: EVENT_ID });
+                if (warn) { statusEl.innerText = '⚠️ ' + warn; } else statusEl.style.display = 'none';
+                await waitForImages(badgeEl, 4000);
+            }
             window.print();
         } catch (e) {
             statusEl.innerText = 'Error de red cargando la escarapela.';
         }
     }
 
+    // Varias escarapelas («Imprimir pendientes»): UNA ventana, una hoja por persona. Las que no se pudieron armar se avisan a quien abrió la ventana para que no cuenten como impresas.
+    async function loadMany(ids) {
+        const wrapper = document.getElementById('badgeWrapper');
+        const rendered = [], failed = [];
+        for (let i = 0; i < ids.length; i++) {
+            statusEl.innerText = `Preparando la escarapela ${i + 1} de ${ids.length}…`;
+            try {
+                const dataRes = await fetch(`/api/users/${encodeURIComponent(ids[i])}/badge-print-data?event_id=${EVENT_ID}`);
+                const data = dataRes.ok ? await dataRes.json() : null;
+                const tplRes = data ? await BadgeRender.fetchTemplate(EVENT_ID, data.template_category) : null;
+                if (!data || !tplRes.ok) throw new Error('sin datos');
+                const page = document.createElement('div');
+                page.className = 'labelPage';
+                wrapper.appendChild(page);
+                if (!(await printComposed(await tplRes.json(), data, page))) { page.remove(); throw new Error('sin composición'); }
+                rendered.push(ids[i]);
+            } catch (e) { failed.push(ids[i]); }
+        }
+        window.__gwBatch = { rendered, failed };
+        if (!rendered.length) { statusEl.innerText = 'No se pudo armar ninguna escarapela.'; finish(); return; }
+        statusEl.style.display = 'none';
+        window.print();
+    }
+
+    // Al terminar el cuadro de impresión (se imprima o se cancele) la ventana se cierra sola y le avisa a quien la abrió (así no se acumulan ventanas); respaldo por tiempo si el navegador no manda afterprint.
+    function finish() {
+        try { if (window.opener && !window.opener.closed) window.opener.postMessage({ gwPrint: 'done', batch: window.__gwBatch || null }, location.origin); } catch (e) { /* sin ventana de origen */ }
+        setTimeout(() => { try { window.close(); } catch (e) { /* ya cerrada */ } }, 300);
+    }
+    window.addEventListener('afterprint', finish);
+    setTimeout(() => { try { window.close(); } catch (e) { /* ya cerrada */ } }, 180000);
+
     document.getElementById('printBtn').addEventListener('click', () => window.print());
-    load();
+    if (USER_IDS.length > 1) loadMany(USER_IDS); else load();
 })();
 </script>
 </body>

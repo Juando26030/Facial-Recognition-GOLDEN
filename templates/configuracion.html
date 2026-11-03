@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
+    <script src="{{ url_for('static', path='js/font-picker.js') }}"></script>
     <style>
         .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
         .theme-row { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap; }
@@ -58,9 +60,7 @@
         </div>
         <div class="theme-row">
           <label for="themeFonts">Tipografía</label>
-          <select id="themeFonts" class="theme-select">
-            <option value="" style="font-family: 'Agrandir', sans-serif;">Original (Agrandir)</option>
-          </select>
+          <div id="themeFonts" class="theme-select" style="padding:0; border:none;"></div>
         </div>
         <div style="display:flex; gap:10px; margin-top:1rem;">
           <button type="button" id="applyThemeBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 1.8rem;">Aplicar y guardar</button>
@@ -71,6 +71,11 @@
 
     {% if staff_role in ["admin", "super_admin"] %}
     <div id="staff" class="section" style="max-width:100%;">
+      <div id="singleSessionCard" style="background:white; padding:1.2rem 1.6rem; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.08); margin-bottom:1rem; max-width:760px;">
+        <label style="display:flex; gap:10px; align-items:center; font-weight:700;"><input type="checkbox" id="singleSessionChk" style="width:22px; height:22px;"> Sesión única para digitadores y demás roles operativos</label>
+        <p style="color:#555; font-size:0.85rem; margin:0.5rem 0 0;">Al iniciar sesión se cierra la anterior de esa cuenta (el otro dispositivo ve «Tu sesión se cerró porque entraste con esta cuenta en otro dispositivo»). <b>Admin y super_admin</b> pueden tener varias sesiones sin límite, y una cuenta marcada como <b>Puesto de impresión</b> rechaza un segundo inicio de sesión mientras esté en uso. Si algo falla en un evento, apágalo: vuelve al comportamiento anterior sin desplegar nada.</p>
+        <p id="singleSessionNote" style="color:#a12631; font-size:0.85rem; margin:0.4rem 0 0;" hidden>Está forzado por la variable de entorno SINGLE_SESSION: este interruptor no cambia nada mientras exista.</p>
+      </div>
       <iframe src="/admin/staff?embed=1" style="width:100%; min-height:80vh; border:none; border-radius:20px; background:transparent;" title="Staff y Permisos"></iframe>
     </div>
     {% endif %}
@@ -79,23 +84,30 @@
 </main>
 
 <script>
+/* Interruptor «Sesión única» (26-oct-2026, solo admin): app/routers/print_stations.py → app/sessions.py */
+(function () {
+  const chk = document.getElementById('singleSessionChk');
+  if (!chk) return;
+  fetch('/api/settings/single-session', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((d) => {
+    if (!d) return;
+    chk.checked = !!d.enabled;
+    document.getElementById('singleSessionNote').hidden = !d.forced_by_env;
+  }).catch(() => {});
+  chk.addEventListener('change', async () => {
+    const res = await fetch('/api/settings/single-session', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: chk.checked }) });
+    if (!res.ok) { chk.checked = !chk.checked; showToast('No se pudo cambiar la sesión única', 'error'); return; }
+    showToast(chk.checked ? 'Sesión única ACTIVADA.' : 'Sesión única apagada: cada cuenta puede tener varias sesiones, como antes.', 'success');
+  });
+})();
+</script>
+<script>
 (function () {
   const colorInput = document.getElementById('themeColor');
-  const fontsSelect = document.getElementById('themeFonts');
+  // El mismo selector (con buscador y vista previa de cada fuente) que el diseñador de escarapelas: static/js/font-picker.js, con la lista de static/js/fonts-propias.js.
+  const fontsSelect = GoldenFontPicker.mount(document.getElementById('themeFonts'), { value: '', original: { value: '', label: 'Original (Agrandir)', css: "'Agrandir', sans-serif" } });
+  Object.defineProperty(fontsSelect, 'value', { get: () => fontsSelect.get(), set: (v) => fontsSelect.set(v) });
 
-  // Mismas 40 familias que el editor de escarapelas — expuestas por theme.js (cargado en <head>,
-  // antes que este script) como window.GOLDEN_FONT_FAMILIES para no duplicar la lista acá.
-  // Cada <option> se ve en SU PROPIA fuente (2026-09-17, pedido explícito: "que desde el menú se
-  // vea cómo son", antes había que elegirla y aplicarla para verla) — hace falta el <link> de
-  // Google Fonts cargado de una vez, no solo cuando ya hay una guardada en localStorage.
-  if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();
-  (window.GOLDEN_FONT_FAMILIES || []).forEach((f) => {
-    const opt = document.createElement('option');
-    opt.value = f;
-    opt.innerText = f;
-    opt.style.fontFamily = `'${f}', sans-serif`;
-    fontsSelect.appendChild(opt);
-  });
+  if (window.goldenEnsureFontLink) window.goldenEnsureFontLink();          // las fuentes alojadas se cargan de una vez para que cada opción se vea en la suya
 
   try {
     const savedColor = localStorage.getItem('golden_theme_primary');

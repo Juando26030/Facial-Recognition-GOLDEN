@@ -28,7 +28,7 @@ def _service_for(config, path):
 
 @pytest.mark.parametrize("path", [
     "/f/12/feria", "/f/12/feria/submit", "/b/abc", "/c/tok/pdf", "/r/tok/state", "/webhooks/wompi", "/privacidad", "/terminos",
-    "/reembolsos", "/api/email-assets/acme/x.png", "/api/recognize", "/api/register", "/api/bulk_register", "/api/bulk_jobs/9f",
+    "/reembolsos", "/api/email-assets/acme/x.png", "/api/recognize", "/api/register", "/api/bulk_register", "/api/bulk_jobs/9f", "/api/bulk_roster", "/api/bulk_steps/active",
     "/api/events/3/areas/7/movement-face", "/api/users", "/kiosk/3/registro", "/kiosk/sw.js", "/login", "/", "/health", "/ready", "/healthz", "/readyz", "/api/ops/status",
 ])
 def test_each_path_goes_to_the_service_that_serves_it(config, path):
@@ -45,3 +45,9 @@ def test_static_files_come_from_the_cdn(config):
 def test_kiosk_service_worker_is_routed_to_web_and_never_cached_by_the_cdn(config):
     assert _service_for(config, "/kiosk/sw.js") == "golden-web-staging"                  # «**» → web (la app lo sirve en /kiosk/sw.js, ver app/main.py)
     assert not [h for h in config["headers"] if _glob(h["source"]).match("/kiosk/sw.js")]   # solo /static/** lleva cabeceras del CDN: el worker nunca se cachea fuera de la app
+
+
+def test_the_excel_only_load_is_served_by_web_so_it_never_waits_for_the_face_model_to_start(config):
+    assert _service_for(config, "/api/bulk_roster") == "golden-web-staging"
+    assert _service_for(config, "/api/bulk_steps/active") == "golden-web-staging"
+    assert _service_for(config, "/api/bulk_register") == "golden-biometria-staging"

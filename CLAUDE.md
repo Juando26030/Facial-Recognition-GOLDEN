@@ -35,6 +35,7 @@ app/formlib.py         lógica pura de formularios; app/formsvc.py lo que toca l
 app/ops.py             estado del sistema; app/ops_runner.py Job horario (respaldos, purga, cola, precalentamiento: app/warmup.py)
 app/appmode.py         APP_MODE all|publico|web|biometria (app/entrypoints/); qué rutas sirve cada servicio
 app/crypto.py, privacy.py   cifrado del rostro (FACE_ENCRYPTION_KEY) y retención/purga biométrica
+app/event_transfer.py, event_transfer_jobs.py   exportar/importar un evento completo entre entornos (docs/18_EXPORTAR_EVENTOS.md); solo super_admin
 static/js/             app.js (kiosco), directory.js, toast.js, form-render.js, badge-render.js, …
 templates/             páginas Jinja2; alembic/versions/ migraciones; tests/ pytest (+ tests/js)
 scripts/               create_staff_user, bench_jitters, purge_biometrics, neon_app_role, migrate_db_to_neon, migrate_files_to_gcs, …
@@ -83,6 +84,7 @@ STORAGE_EMULATOR_HOST=http://localhost:4443 python -m pytest -q tests/test_migra
   (acceso) y `require_event_in_progress` (registrar/reconocer).
 - **Biometría (L1-L4, 2026-10):** la aceptación la da la PERSONA en la pantalla de la auditora y queda en `audit_consent_logs` (solo INSERT, 3 años; `app/consent.py`); sin aceptación registrada no hay reconocimiento facial (`app/faces.py`); el vector se calcula DESPUÉS de aceptar, por tarea (`app/enroll.py`), nunca en la puerta; menores de 18 años sin biometría (`app/minors.py`); supresión y revocación en `app/privacy.py` (`DELETE /api/attendees/{id}/purge-data`); los textos legales son LITERALES de la auditora (`app/legal_texts_data.py`, no se editan). Además: consentimiento expreso antes de guardar un rostro; cifrado con `FACE_ENCRYPTION_KEY` (perderla = perder los rostros);
   retención 7 días tras finalizar TODOS los eventos de la persona, tope 180 días desde la captura (`app/privacy.py`, paso `purge` del Job de ops); umbral 0,55, `RECOGNITION_JITTERS=2` y regla DUDOSO `MATCH_MARGIN` (docs/14 §6.2-6.3); el operador verifica con foto de registro y candidatos (`/api/recognize/*`).
+- **Impresión (INAMOVIBLE, 28-oct-2026):** los parámetros probados en la Brother QL-800 (página SIEMPRE de 62 × 99,8 mm, imagen de máximo 96 mm, margen izquierdo 0,5 mm, marca de fin, misma etiqueta compuesta que el USB; **Chrome siempre normal con su cuadro de impresión: nunca `--kiosk-printing`**) están en [`docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`](docs/IMPRESION_PARAMETROS_INAMOVIBLES.md) y los fija `tests/test_impresion_parametros_fijos.py`. Cualquier cambio que toque impresión compartida, el diseñador de escarapela, Parámetros, el USB o la ventana de impresión se hace respetándolos; cambiarlos solo si Juan David lo pide expresamente y se repite la prueba física.
 - Mensajes al usuario en español; identificadores en inglés; respuestas como dicts planos.
 
 ## Reglas de trabajo

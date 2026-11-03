@@ -23,6 +23,7 @@ def _serialize_template(t) -> dict:
         "id": t.id, "name": t.name, "width_mm": t.width_mm, "height_mm": t.height_mm,
         "orientation": t.orientation, "background_type": t.background_type,
         "background_value": t.background_value, "elements": t.get_elements(),
+        "updated_at": t.updated_at.isoformat() + "Z" if t.updated_at else None,          # versión: quien imprime sabe con qué plantilla dibujó
     }
 
 
@@ -134,7 +135,8 @@ def template_category_for_user(event, db: Session, user_id: str) -> Optional[str
 
 @router.get("/events/{event_id}/badge-template")
 def get_badge_template(
-    event_id: int, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",)))
+    response: Response, event_id: int, category: Optional[str] = None, kind: str = "badge", db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("digitador", ("comercial",))),
 ):
     """La plantilla ACTIVA del evento — se crea sola con un diseño mínimo por defecto (nombre +
     apellido + entidad) la primera vez que se pide, así el editor nunca arranca en blanco del
@@ -144,6 +146,7 @@ def get_badge_template(
     `coordinador`+, solo se separó el gate de lectura."""
     event = get_event_for_staff(event_id, db, staff)
     tpl = _get_or_create_template(event, db, category, kind)
+    response.headers["Cache-Control"] = "no-store"          # 25-oct-2026: nadie (navegador, Firebase Hosting, un proxy) guarda la plantilla: cada impresión usa la vigente
     return _serialize_template(tpl)
 
 

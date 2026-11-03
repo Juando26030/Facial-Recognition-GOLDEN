@@ -36,11 +36,12 @@ def _sync(client, ev, records):
 def test_sync_by_fingerprint_resolves_the_person_and_stays_idempotent(client, factory, db):
     ev = _setup(factory)
     login(client, "root")
-    body = [{"client_id": "k1-1", "h": _h(ev, "1001"), "timestamp": "2026-09-30T10:00:00Z", "method": "qr"}]
+    sent = (utcnow() - timedelta(hours=2)).replace(microsecond=0)                      # relativa a «ahora»: el servidor descarta marcas de más de 30 días (api.SYNC_MAX_AGE), una fecha fija caducaría
+    body = [{"client_id": "k1-1", "h": _h(ev, "1001"), "timestamp": sent.strftime("%Y-%m-%dT%H:%M:%SZ"), "method": "qr"}]
     first = _sync(client, ev, body).json()
     assert first["results"] == [{"client_id": "k1-1", "result": "created"}] and first["created"] == 1
     log = db.query(AccessLog).filter_by(event_id=ev.id, client_id="k1-1").one()
-    assert log.user_id == "1001" and log.registration_method == "qr" and log.timestamp.isoformat().startswith("2026-09-30T10:00:00")
+    assert log.user_id == "1001" and log.registration_method == "qr" and log.timestamp.replace(tzinfo=None) == sent
     again = _sync(client, ev, body).json()                                           # reintento del mismo lote: nada nuevo
     assert again["results"] == [{"client_id": "k1-1", "result": "replayed"}] and again["created"] == 0
     assert db.query(AccessLog).filter_by(event_id=ev.id, user_id="1001").count() == 1

@@ -112,6 +112,23 @@
       </fieldset>
     </form>
 
+
+    {% if append_available %}
+    <form id="appendForm" class="golden-badge-builder" style="margin-top:1.5rem;">
+      <div class="badge-form-title">Solo agregar personas nuevas</div>
+      <p style="color:#666; font-size:0.85rem; line-height:1.5; margin-bottom:1rem;">
+        Sirve para sumar gente a un evento que ya está en curso <b>sin afectar el registro en vivo</b>. No se toca a nadie que ya esté en el evento (ni sus datos, ni su foto, ni su autorización,
+        ni sus ingresos); solo se crean las personas nuevas. Si una cédula se repite en el archivo se usa la primera fila. Las columnas que no sean un campo de este evento se ignoran
+        (no se crean campos ni categorías nuevas). No admite fotos (zip). Antes de guardar verás un resumen para confirmar.
+      </p>
+      <div class="badge-input-group">
+        <label>Archivo con las personas nuevas (.xlsx o .csv)</label>
+        <input type="file" name="roster_file" id="appendFileInput" accept=".xlsx,.csv" required>
+      </div>
+      <button type="submit" id="appendSubmit" class="golden-btn golden-btn-primary" style="margin-top:1rem;">Ver resumen y agregar</button>
+    </form>
+    {% endif %}
+
     <div id="rosterResult" style="margin-top: 1.5rem;"></div>
   </div>
 </main>
@@ -215,7 +232,18 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 /* `ui(fase, fracción, texto)`: 'upload' = subida del archivo (bytes), 'process' = avance real del servidor. Cada
    lote pesa 15 % subida + 85 % proceso dentro de su parte de la barra total (ver makeUi). */
+/* Tiempos de cada carga (orden del 24-oct-2026): dónde se va el tiempo (preparar en el navegador, firmar y subir el archivo, el POST que lee y valida, el primer paso, los pasos, el total).
+   Se muestran en la consola del navegador (console.info «[carga]») y se mandan al servidor (/api/bulk_timing) para la bitácora junto con las líneas «carga masiva: fases». Solo números. */
+function reportTiming(T, data, extra) {
+    const out = Object.assign({ mode: (data && data.mode) || "?", job_id: data && data.job_id, rows: data && data.total, prep_client_ms: T.prep, sign_ms: T.sign, put_ms: T.put, post_ms: T.post,
+        first_step_ms: T.first, steps_ms: T.steps, steps: T.nsteps, total_ms: performance.now() - T.t0, bytes: T.bytes }, extra || {});
+    Object.keys(out).forEach((k) => { if (typeof out[k] === "number") out[k] = Math.round(out[k]); });
+    console.info("[carga]", out);
+    try { fetch("/api/bulk_timing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(out), keepalive: true }).catch(() => {}); } catch (e) { /* sin red: solo la consola */ }
+}
+
 async function postBulkRegister(formData, ui) {
+    const T = { t0: performance.now(), prep: window.__rosterClickAt ? performance.now() - window.__rosterClickAt : 0, sign: 0, put: 0, post: 0, first: 0, steps: 0, nsteps: 0, bytes: 0 };
     formData.set("background", "true");
     // Los archivos suben DIRECTO al almacenamiento (Cloud Run no acepta peticiones de más de 32 MiB); a la app solo va el token.
     // En un reintento por NEEDS_LABELS el FormData ya trae los tokens y no se vuelve a subir nada.
@@ -229,8 +257,11 @@ async function postBulkRegister(formData, ui) {
         return null;
     }
     let res;
+    T.sign = DirectUpload.timing.sign_ms; T.put = DirectUpload.timing.put_ms; T.bytes = DirectUpload.timing.bytes;
+    const tPost = performance.now();
     try {
-        res = await xhrPost("/api/bulk_register", formData, (loaded, total) => {
+        // Solo la base (sin zip de fotos) va por /api/bulk_roster: la sirve el servicio web, sin el arranque en frío del servicio de biometría (que carga el modelo facial). Con fotos: /api/bulk_register.
+        res = await xhrPost((formData.get("zip_upload") || formData.get("zip_file")) ? "/api/bulk_register" : "/api/bulk_roster", formData, (loaded, total) => {
             ui && ui("upload", loaded / total, `Subiendo archivos… ${(loaded / 1048576).toFixed(1)} de ${(total / 1048576).toFixed(1)} MB`);
         });
     } catch (e) {
@@ -258,12 +289,19 @@ async function postBulkRegister(formData, ui) {
         showToast(data.detail || "No se pudo cargar la base", "error");
         return null;
     }
-    if (!data.job_id) return data;   // respuesta directa (sin tarea en segundo plano)
+    T.post = performance.now() - tPost;
+    if (!data.job_id) { reportTiming(T, data); return data; }   // respuesta directa (sin tarea en segundo plano)
+    if (data.mode === "steps") {   // carga POR PASOS: cada paso se procesa dentro de su propia petición (ver app/bulk_steps.py); el primero ya corrió dentro del POST
+        const out = await runSteps(data, ui, T);
+        reportTiming(T, data, { outcome: out ? "ok" : "fallo" });
+        return out;
+    }
 
-    // La carga corre en el servidor: se consulta su avance cada segundo hasta que termine.
-    let failures = 0;
+    // La carga corre en el servidor (Job de Cloud Run o hilo): se consulta su avance cada medio segundo hasta que termine (la primera consulta sale de inmediato).
+    let failures = 0, first = true;
     while (true) {
-        await sleep(1000);
+        if (!first) await sleep(500);
+        first = false;
         let st;
         try {
             const r = await fetch(`/api/bulk_jobs/${data.job_id}`);
@@ -275,8 +313,33 @@ async function postBulkRegister(formData, ui) {
             continue;
         }
         if (st.status === "error") { showToast(st.error.detail || "No se pudo cargar la base", "error"); return null; }
-        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); return st.result; }
+        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); reportTiming(T, data, { outcome: "ok" }); return st.result; }
         if (ui) ui("process", st.total ? st.done / st.total : 0, st.stage);
+    }
+}
+
+/* Carga por pasos: el servidor ya leyó y validó el archivo; aquí se pide un paso tras otro (cada uno guarda un grupo de filas) hasta que termina. Un paso que falla por la red se reintenta
+   solo (es idempotente: repetirlo no duplica nada). Si se cierra la página a la mitad, al volver se retoma donde quedó (resumeSteps). */
+async function runSteps(first, ui, T) {
+    let st = first, failures = 0, n = 0;
+    const tSteps = performance.now();
+    while (true) {
+        if (st.status === "error") { showToast((st.error && st.error.detail) || "No se pudo cargar la base", "error"); return null; }
+        if (st.status === "done") { ui && ui("process", 1, "Terminando…"); if (T) { T.steps = performance.now() - tSteps; T.nsteps = n; } return st.result; }
+        if (ui) ui("process", st.total ? st.done / st.total : 0, st.stage);
+        try {
+            const tStep = performance.now();
+            const r = await fetch(`/api/bulk_jobs/${first.job_id || first.id}/step`, { method: "POST" });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.detail || "paso");
+            if (T && n === 0) T.first = performance.now() - tStep;
+            n++;
+            st = d;
+            failures = 0;
+        } catch (e) {
+            if (++failures >= 5) { showToast("Se perdió la conexión con el servidor. La carga queda a medias y se retoma al volver a esta página.", "error"); return null; }
+            await sleep(1000 * failures);
+        }
     }
 }
 
@@ -315,6 +378,26 @@ async function submitRoster(formData) {
     rosterResult.prepend(keep);
     resetRosterForm();
 }
+
+// Retoma una carga por pasos que quedó a medias (se cerró la página o se reinició el servicio)
+async function resumeSteps() {
+    try {
+        const r = await fetch(`/api/bulk_steps/active?event_id=${window.EVENT_ID}`, { cache: "no-store" });
+        if (!r.ok) return;
+        const job = (await r.json()).job;
+        if (!job) return;
+        rosterResult.innerHTML = "";
+        const bar = ProgressBar.create(rosterResult, { title: "Retomando la carga de la base", stage: "Continuando…" });
+        const data = await runSteps(job, makeUi(bar, 0, 1));
+        if (!data) { bar.fail("No se pudo completar la carga"); return; }
+        bar.finish(data.message || "Base cargada");
+        showToast(data.message || "Base cargada", "success");
+        const keep = bar.element;
+        renderRosterResult(data);
+        rosterResult.prepend(keep);
+    } catch (e) { /* sin red: no se retoma ahora */ }
+}
+document.addEventListener("DOMContentLoaded", resumeSteps);
 
 function resetRosterForm() {
     rosterForm.reset();
@@ -472,6 +555,7 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
 
 rosterForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    window.__rosterClickAt = performance.now();       // para el tiempo de preparación en el navegador (bitácora de la carga)
 
     // El evento ya arrancó — cargar (o volver a cargar) la base aquí puede pisar registros que
     // ya se hicieron en vivo. Avisamos SIEMPRE antes de intentarlo; si de verdad es un re-upload
@@ -480,7 +564,7 @@ rosterForm.addEventListener("submit", async (e) => {
     if (ROSTER_BLOCKED) return;      // no se ofrece «cargar de todas formas»: el botón está deshabilitado y el servidor lo rechazaría igual
     if (EVENT_STATUS === "en_proceso") {      // primera carga de un evento que ya arrancó (permitida): solo se avisa del riesgo de pisar registros hechos en vivo
         const seguro = await showConfirm(
-            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después no podrás volver a cargar otra base sobre este evento. ¿Continuar?",
+            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después esta carga normal quedará bloqueada. Para sumar más personas después, usa «Solo agregar personas nuevas», que no toca a quienes ya están. ¿Continuar?",
             { variant: "warning", confirmLabel: "Sí, cargar la base" }
         );
         if (!seguro) return;
@@ -511,7 +595,7 @@ rosterForm.addEventListener("submit", async (e) => {
                 // se dispara sola apenas el PRIMER lote tenga éxito — el segundo lote quedaría
                 // bloqueado a mitad de camino. Se avisa de una en vez de dejarlo fallar a la mitad.
                 showToast(
-                    "El archivo es grande y la carga automática en lotes solo está disponible con el evento en estado \"Creado\" " +
+                    "El archivo es grande y la carga automática en lotes solo está disponible con el evento en estado \"Creado\". Para sumar personas a un evento en curso usa \"Solo agregar personas nuevas\" " +
                     "(si no, quedaría bloqueado a mitad de camino por la protección contra recargas). Cambia el estado del evento, " +
                     "o divide el archivo tú mismo antes de subirlo.",
                     "error"
@@ -533,6 +617,61 @@ rosterForm.addEventListener("submit", async (e) => {
         showToast("Error de red", "error");
     }
     setButtonLoading(btn, false);
+});
+
+/* ------------------------------------------------------------------------------------------------
+   «Solo agregar personas nuevas» (app/roster_append.py): sube el archivo UNA vez, pide la vista previa (no escribe nada), pide confirmación y recién entonces guarda por pasos de 200 filas.
+   Nada de cédulas, nombres ni correos en pantalla: solo conteos y títulos de columnas. */
+const appendForm = document.getElementById("appendForm");
+function appendSummaryHtml(a) {
+    const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const rows = [["Personas nuevas creadas", a.created], ["Ya existían en el cliente (solo se inscribieron en este evento)", a.enrolled_existing], ["Ignoradas porque ya estaban en el evento", a.existing],
+                  ["Ignoradas por repetidas en el archivo", a.duplicates], ["Omitidas por supresión de datos", a.suppressed], ["Filas con error", a.errors], ["Columnas ignoradas", a.columns_ignored]];
+    return `<div style="background:#eef6ee; border:1px solid #b7dcb7; color:#1e5a1e; padding:1rem 1.2rem; border-radius:12px; font-size:0.9rem; margin-top:0.8rem;"><strong>Resultado de «Solo agregar»</strong>
+        <ul style="margin:0.4rem 0 0; padding-left:1.2rem;">${rows.map(([k, v]) => `<li>${esc(k)}: <b>${esc(v)}</b></li>`).join("")}</ul></div>`;
+}
+if (appendForm) appendForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("appendSubmit");
+    const file = document.getElementById("appendFileInput").files[0];
+    if (!file) return;
+    setButtonLoading(btn, true, "Revisando el archivo...");
+    rosterResult.innerHTML = "";
+    window.__rosterClickAt = performance.now();
+    try {
+        const fd = new FormData();
+        fd.append("event_id", window.EVENT_ID);
+        fd.append("roster_file", file);
+        await DirectUpload.replaceFiles(fd, { roster_file: ["roster_upload", "bulk_roster"] }, { body: { event_id: String(window.EVENT_ID) } });
+        const res = await xhrPost("/api/bulk_roster/preview", fd);
+        let p;
+        try { p = JSON.parse(res.text); } catch (err) { showToast(`El servidor rechazó el archivo (código ${res.status}).`, "error"); return; }
+        if (res.status < 200 || res.status >= 300) { showToast(p.detail || "No se pudo revisar el archivo", "error"); return; }
+        const cols = p.columns_ignored ? ` Se ignorarán ${p.columns_ignored} columna(s): ${p.ignored_columns.map(c => "«" + c.title.replace(/</g, "&lt;") + "»").join(", ")}.` : "";
+        const extra = [p.enroll_existing ? `${p.enroll_existing} ya existen en el cliente y solo se inscribirán en este evento` : "", p.duplicates ? `${p.duplicates} repetidas en el archivo (se usa la primera)` : "",
+                       p.suppressed ? `${p.suppressed} con supresión de datos (se omiten)` : "", p.without_id ? `${p.without_id} sin cédula (se omiten)` : ""].filter(Boolean);
+        const ok = await showConfirm(
+            `Se agregarán <strong>${p.new}</strong> personas nuevas, se ignorarán <strong>${p.existing}</strong> que ya están en el evento y <strong>${p.columns_ignored}</strong> ${p.columns_ignored === 1 ? "columna se ignora" : "columnas se ignoran"}.` +
+            (extra.length ? `<br><br>${extra.join(".<br>")}.` : "") + (cols ? `<br><br>${cols}` : "") +
+            `<br><br>No se modifica a nadie que ya esté en el evento y el registro en vivo sigue funcionando. ¿Agregar?`,
+            { variant: "warning", confirmLabel: "Sí, agregar personas nuevas" });
+        if (!ok) { showToast("No se agregó a nadie", "info"); return; }
+        fd.set("append_only", "true");
+        const bar = ProgressBar.create(rosterResult, { title: "Agregando personas nuevas", stage: "Preparando…" });
+        const data = await postBulkRegister(fd, makeUi(bar, 0, 1));
+        if (!data) { bar.fail("No se pudo completar la carga"); return; }
+        bar.finish(data.message || "Listo");
+        showToast(data.message || "Listo", "success");
+        const keep = bar.element;
+        renderRosterResult(data);
+        rosterResult.prepend(keep);
+        if (data.append) keep.insertAdjacentHTML("afterend", appendSummaryHtml(data.append));
+        appendForm.reset();
+    } catch (err) {
+        showToast(err && err.message && err.message !== "network" ? err.message : "Error de red", "error");
+    } finally {
+        setButtonLoading(btn, false);
+    }
 });
 </script>
 </body>

@@ -364,7 +364,7 @@ docker run --rm -it \
 En el navegador, en la dirección de Cloud Run del servicio web (paso 28): inicia sesión con ese usuario → **Estado del sistema** (`/sistema`). *Debes ver:* todo en verde. (El respaldo aparecerá recién en el paso 33.)
 
 **Paso 32 — Evento de prueba (humo).** ✅
-Sigue `docs/legal/GUIA_PRUEBAS_NO_TECNICA.md`, puntos 0, 1, 2 y 6 (evento «PRUEBA-CORTE», carga de 5 personas, sin biometría, aceptación en el celular y en la puerta). *Debes ver:* todo sin errores 5xx; en el quiosco, **ninguna** franja de modo contingencia y ningún service worker (DevTools → Application → Service Workers: vacío).
+Sigue `docs/legal/GUIA_PRUEBAS_NO_TECNICA.md`, puntos 0, 1, 2 y 6 (evento «PRUEBA-CORTE», carga de 5 personas, sin biometría, aceptación en el celular y en la puerta). **Orden: activa y guarda el reconocimiento facial del evento (Parámetros → paso guiado → «Guardar y revisar») ANTES de cargar la lista; si no, la fecha de nacimiento no se guarda.** Ver la nota del punto 0 de esa guía. *Debes ver:* todo sin errores 5xx; en el quiosco, **ninguna** franja de modo contingencia y ningún service worker (DevTools → Application → Service Workers: vacío).
 
 **Paso 33 — Scheduler en marcha y primeros respaldos.** ✅
 ```bash

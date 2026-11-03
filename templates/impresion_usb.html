@@ -72,8 +72,9 @@
   var DOTS = QLUsb.MEDIA[62].printable;
 
   function setStatus(el, text, kind) { el.textContent = text; el.className = "usb-status" + (kind ? " " + kind : ""); }
-  function pref(key, def) { try { var v = localStorage.getItem("ql_" + key); return v === null ? def : v === "1"; } catch (e) { return def; } }
-  function savePref(key, val) { try { localStorage.setItem("ql_" + key, val ? "1" : "0"); } catch (e) { /* sin almacenamiento: se usa el valor de esta sesión */ } }
+  function pref(key, def) { try { var v = localStorage.getItem(QLUsb.PREF_KEYS[key]); return v === null ? def : v === "1"; } catch (e) { return def; } }
+  function savePref(key, val) { try { localStorage.setItem(QLUsb.PREF_KEYS[key], val ? "1" : "0"); } catch (e) { /* sin almacenamiento: se usa el valor de esta sesión */ } }
+  try { QLUsb.dropLegacyPrefs(window.localStorage); } catch (e) { /* sin almacenamiento */ }      // «Espejo» con el significado viejo (antes del 24-oct-2026) no se hereda
 
   $("optMirror").checked = pref("mirror", false);
   $("optInvert").checked = pref("invert", false);

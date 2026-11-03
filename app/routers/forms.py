@@ -9,14 +9,14 @@ from datetime import datetime
 from app.timeutil import utcnow
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
-from app import bulk_jobs, formlib, formsvc, heavy, ops, publicurl, warmup, wompi
+from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
 from app.mailer import send_mail
@@ -261,8 +261,9 @@ def set_status(event_id: int, form_id: int, data: dict, request: Request, db: Se
 
 
 def _upsert():
+    import functools
     from app.routers.api import _upsert_attendee
-    return _upsert_attendee
+    return functools.partial(_upsert_attendee, origin="autoregistro")      # B1: lo que entra por un formulario web = «Autoregistro»
 
 
 def _maybe_feed_on_close(db: Session, form: WebForm) -> None:
@@ -297,6 +298,78 @@ def event_fields(event_id: int, db: Session = Depends(get_db), staff: StaffUser 
             kind = "phone"
         out.append({"key": key, "label": cfg["label"], "type": kind if kind in formlib.INPUT_TYPES else "text_short", "options": cfg.get("options") or [], "required": bool(cfg.get("required")), "help": cfg.get("help_text") or ""})
     return out
+
+
+@router.get("/events/{event_id}/field-values")
+def field_values(event_id: int, key: str, scope: str = "event", db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Valores DISTINTOS que ya hay en la base para un campo NO identificante del evento (para armar opciones de lista). `scope`: «event» (las
+    personas de este evento) o «client» (las de todos los eventos del mismo cliente). Solo valores con su conteo, nunca registros de personas."""
+    event = get_event_for_staff(event_id, db, staff)
+    label = next((c["label"] for c in parametros.field_configs_for_event(db, event) if c["key"] == key), None)
+    if label is None:
+        raise HTTPException(status_code=404, detail="Ese campo no existe en este evento")
+    try:
+        optionvalues.check_key(key, label)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    q = db.query(EventAttendee, User).join(User, (User.id == EventAttendee.user_id) & (User.tenant_id == EventAttendee.tenant_id))
+    if scope == "client":
+        q = q.filter(EventAttendee.event_id.in_([e for (e,) in db.query(Event.id).filter(Event.tenant_id == event.tenant_id)]))
+    else:
+        q = q.filter(EventAttendee.event_id == event.id)
+    counts: dict = {}
+    seen: set = set()
+    for att, user in q.limit(200000):
+        if key != "categories":
+            if user.id in seen:
+                continue
+            seen.add(user.id)
+        found = att.get_categories() if key == "categories" else [user.get_extras().get(key) if key.startswith("opcional_") else getattr(user, key, None)]
+        for v in found:
+            v = str(v or "").strip()
+            if v:
+                counts[v] = counts.get(v, 0) + 1
+    return {"key": key, "label": label, "scope": "client" if scope == "client" else "event", **optionvalues.group_values(counts)}
+
+
+# ------------------------------------------------------------------ tabla de variantes en Excel (P11)
+@router.post("/events/{event_id}/forms/{form_id}/variant-table/template")
+def variant_table_template(event_id: int, form_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Genera el .xlsx (hojas «Tabla», «Instrucciones» y «Valores válidos») de la tabla de variantes que define el navegador; con las celdas que ya traiga es la descarga de una tabla armada.
+    Mismos permisos que editar el diseño del formulario. No guarda nada."""
+    event = get_event_for_staff(event_id, db, staff)
+    _get_form(db, event, form_id)
+    try:
+        content = variant_table.build_template(data)
+    except variant_table.ExcelRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="tabla-de-variantes.xlsx"', "Cache-Control": "no-store"})
+
+
+@router.post("/events/{event_id}/forms/{form_id}/variant-table/parse")
+def variant_table_parse(event_id: int, form_id: int, file: UploadFile = File(...), spec: str = Form(...), mapping: str = Form(""), db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Lee un .xlsx subido y lo empareja con la tabla; devuelve las celdas y los problemas SIN guardar nada (el archivo se procesa en memoria: ni disco ni almacenamiento) y sin escribir su contenido en los logs."""
+    event = get_event_for_staff(event_id, db, staff)
+    _get_form(db, event, form_id)
+    if len(spec) > 1_000_000:
+        raise HTTPException(status_code=400, detail="La definición de la tabla es demasiado grande")
+    try:
+        spec_obj = json.loads(spec)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="La definición de la tabla no es válida")
+    if len(mapping) > 50_000:
+        raise HTTPException(status_code=400, detail="La asignación de columnas es demasiado grande")
+    try:
+        mapping_obj = json.loads(mapping) if mapping else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="La asignación de columnas no es válida")
+    raw = file.file.read(variant_table.MAX_FILE_BYTES + 1)
+    try:
+        # sin asignación: si algún encabezado no coincide, se devuelve el paso «Asignar columnas» (no se lee nada); con asignación, vale solo para esta lectura
+        return variant_table.read_table(raw, file.filename or "", spec_obj, mapping=mapping_obj, ask=mapping_obj is None)
+    except variant_table.ExcelRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ------------------------------------------------------------------ descuentos: sugerencias de valores y códigos

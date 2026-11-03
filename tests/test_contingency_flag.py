@@ -47,8 +47,8 @@ def test_worker_endpoint_serves_the_self_removing_worker_when_off_and_the_real_o
     assert r.status_code == 200 and "addEventListener('fetch'" in r.text and "__BUILD__" not in r.text
 
 
-def test_deploy_config_turns_it_on_in_staging_only():
-    """config.sh decide: producción SIEMPRE 0 (aunque la variable venga puesta); staging 1 salvo que se pida otra cosa; deploy.sh la escribe en el YAML de cada servicio."""
+def test_deploy_config_turns_it_on_in_staging_and_production():
+    """config.sh decide: producción SIEMPRE 1 (orden de Juan David del 28-oct-2026: el modo sin conexión va encendido, aunque la variable venga puesta); staging 1 salvo que se pida otra cosa; deploy.sh la escribe en el YAML de cada servicio."""
     src = pathlib.Path("deploy/gcp/config.sh").read_text(encoding="utf8")
-    assert 'if [ "$GOLDEN_ENV" = production ]; then CONTINGENCY_ENABLED=0; else CONTINGENCY_ENABLED="${CONTINGENCY_ENABLED:-1}"; fi' in src
+    assert 'if [ "$GOLDEN_ENV" = production ]; then CONTINGENCY_ENABLED=1; else CONTINGENCY_ENABLED="${CONTINGENCY_ENABLED:-1}"; fi' in src
     assert 'echo "CONTINGENCY_ENABLED: \\"$CONTINGENCY_ENABLED\\""' in pathlib.Path("deploy/gcp/deploy.sh").read_text(encoding="utf8")

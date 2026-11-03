@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 from urllib.parse import urlsplit
 
 import anyio.to_thread
@@ -16,13 +17,18 @@ from sqlalchemy.exc import DBAPIError, OperationalError, TimeoutError as PoolTim
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, timing
+from app import report_jobs
+from app import appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant
-from app.routers import shared_print
+from app.routers import print_stations, shared_print
+from app.routers import print_settings
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
+from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
+
+jobs.load_handlers(jobs.GENERAL_KINDS | jobs.FACE_KINDS)          # todos los manejadores registrados AL ARRANCAR, en cualquier modo (antes payments_reconcile solo al llamar /internal/jobs/run)
 
 obs.configure_logging()       # logs en JSON a stdout (formato de Cloud Logging), con datos personales enmascarados
 log = logging.getLogger("golden.app")
@@ -54,6 +60,7 @@ async def lifespan(_app: FastAPI):
     default_threads = int(os.getenv("DB_POOL_SIZE", "10")) + int(os.getenv("DB_MAX_OVERFLOW", "10")) + faces.FACE_CONCURRENCY
     anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.getenv("THREADPOOL_SIZE", default_threads))
     crypto.assert_ready()                         # producción sin FACE_ENCRYPTION_KEY: no arranca (falla cerrado)
+    jobs.assert_handlers(appmode.MODE)            # sin el manejador de un trabajo que Cloud Tasks le manda a ESTE servicio: no arranca (falla cerrado)
     worker = None
     if os.getenv("JOBS_WORKER", "on") != "off" and not jobs.uses_cloud_tasks():
         worker = jobs.Worker()
@@ -186,6 +193,7 @@ templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Ev
 templates.env.globals["event_logo_url"] = event_logo_url
 templates.env.globals["public_base_url"] = publicurl.base          # dirección pública (PUBLIC_BASE_URL) para los enlaces que muestra el panel: QR del cartel, enlaces de formularios, webhook
 templates.env.globals["event_logo_attrs"] = event_logo_attrs
+templates.env.globals["print_settings_json"] = print_settings.settings_json       # valores de impresión del evento con el significado actual (sin lo de versiones viejas)
 
 
 def _include(router, prefix: str = "") -> None:
@@ -218,12 +226,15 @@ _include(uploads_router.router, prefix="/api")   # subida directa al almacenamie
 _include(super_events.router, prefix="/api")
 _include(areas_inventory.router, prefix="/api")
 _include(analytics.router, prefix="/api")
+_include(report_jobs.router, prefix="/api")      # reporte Excel en segundo plano, con progreso
 _include(forms.router, prefix="/api")
 _include(form_refunds.router, prefix="/api")   # reembolsos de pagos (admin+)
 _include(forms_public.router)  # /f/<evento>/<formulario>, público (sin login) a propósito
 _include(form_payments.router)  # cotización y confirmación del pago Wompi + webhook (público: Wompi no tiene sesión)
 _include(roulette.router, prefix="/api")
+_include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
+_include(print_settings.router, prefix="/api")   # valores de impresión de escarapelas por evento (cinta, giro, recorte)
 _include(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
 _include(certificates_public.router)  # /c/<token>, público (sin login) a propósito
 _include(certificates_public.staff_router, prefix="/api")
@@ -231,6 +242,7 @@ _include(digital_public.router)  # /b/<token>, público (sin login) a propósito
 _include(signatures.router, prefix="/api")
 _include(calendar_router.router, prefix="/api")
 _include(form_transfer.router, prefix="/api")      # exportar / importar un formulario entre entornos (solo admin)
+_include(event_transfer_router.router, prefix="/api")      # exportar / importar un evento completo (solo super_admin)
 _include(ops_router.router)          # /healthz, /readyz, /api/ops/*
 _include(ops_router.pages)           # /sistema
 
@@ -240,7 +252,11 @@ def _page_staff(request: Request, db: Session):
     staff_id = request.session.get("staff_user_id")
     if not staff_id:
         return None
-    return db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
+    staff = db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
+    if staff is not None and sessions.is_replaced(db, request, staff):
+        request.session.clear()
+        return None
+    return staff
 
 
 def _display_role(role: str, secondary_role: str = None) -> str:
@@ -538,7 +554,9 @@ def kiosk_roster(event_id: int, request: Request, db: Session = Depends(get_db))
     from app.routers.api import OVERWRITE_BIRTH_LABEL
     event_obj = db.get(Event, event_id)
     return _resolve_kiosk_page(event_id, request, db, "kiosk_roster.html", min_role="coordinador", exclude_roles=["comercial"],
-                               extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL})
+                               extra_context={"roster_blocked": event_rules.roster_block_reason(event_obj) if event_obj is not None else None, "overwrite_birth_label": OVERWRITE_BIRTH_LABEL,
+                                              # «Solo agregar personas nuevas»: con el evento en proceso, o con la base ya cargada (nunca finalizado)
+                                              "append_available": event_obj is not None and not event_rules.roster_block_reason(event_obj, append_only=True) and (event_obj.status == "en_proceso" or bool(event_obj.roster_uploaded))})
 
 
 @app.get("/kiosk/{event_id}/usuarios")
@@ -648,15 +666,18 @@ def kiosk_certificates(event_id: int, request: Request, db: Session = Depends(ge
 
 
 @app.get("/kiosk/{event_id}/escarapela/imprimir/{user_id}")
-def kiosk_badge_print(event_id: int, user_id: str, request: Request, db: Session = Depends(get_db)):
+def kiosk_badge_print(event_id: int, user_id: str, request: Request, users: Optional[str] = None, db: Session = Depends(get_db)):
     """Vista de SOLO la escarapela de una persona, a tamaño real (mm), para imprimir — se abre en
     una pestaña/ventana aparte desde el botón "Imprimir Escarapela" (o sola, si el evento tiene
     auto_print_badge activo) sin sacar al digitador de la pantalla de Registro. 'comercial'
     excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito: "la comercial no debe poder
     imprimir")."""
+    # `?users=a,b,c` (29-oct-2026, «Imprimir pendientes»): UNA sola ventana con una página por escarapela (hasta 50); sin él, una sola persona como siempre.
+    many = [u.strip() for u in (users or "").split(",") if u.strip()][:50]
     return _resolve_kiosk_page(event_id, request, db, "badge_print.html", exclude_roles=["comercial"], extra_context={
         "print_user_id": user_id,
         "print_user_id_json": json.dumps(user_id).replace("</", "<\\/"),
+        "print_users_json": json.dumps(many if len(many) > 1 else [user_id]).replace("</", "<\\/"),
     })
 
 

@@ -27,8 +27,15 @@ def _face_changed(user: User) -> bool:
     return inspect(user).attrs.face_encoding.history.has_changes()
 
 
-def _has_face(session: Session, user_id: str, tenant_id: str) -> bool:
-    return session.execute(text("SELECT 1 FROM users WHERE id = :i AND tenant_id = :t AND face_encoding IS NOT NULL"), {"i": user_id, "t": tenant_id}).first() is not None
+def _with_face(session: Session, wanted: dict) -> Set[tuple]:
+    """{(cliente, cédula)} de las personas pedidas que tienen rostro guardado: UNA consulta por cada 2.000 cédulas de un cliente."""
+    found: Set[tuple] = set()
+    for tenant, ids in wanted.items():
+        ordered = sorted(ids)
+        for i in range(0, len(ordered), 2000):
+            rows = session.execute(text("SELECT id FROM users WHERE tenant_id = :t AND id = ANY(:ids) AND face_encoding IS NOT NULL"), {"t": tenant, "ids": ordered[i:i + 2000]})
+            found.update((tenant, r[0]) for r in rows)
+    return found
 
 
 @event.listens_for(Session, "before_flush")
@@ -44,10 +51,22 @@ def _collect(session: Session, flush_context, instances) -> None:
     for obj in session.deleted:
         if isinstance(obj, User):
             tenants.add(obj.tenant_id)
-    for obj in list(session.new) + list(session.deleted):
-        if isinstance(obj, EventAttendee) and obj.tenant_id not in tenants and obj.event_id is not None:
-            pending = next((u for u in session.new if isinstance(u, User) and u.id == obj.user_id and u.tenant_id == obj.tenant_id), None)
-            if (pending is not None and pending.face_encoding) or (pending is None and _has_face(session, obj.user_id, obj.tenant_id)):
+    # Una persona con rostro que entra o sale de un evento sube la versión de ESE evento. Antes: una consulta a la base POR inscripción («¿tiene rostro?»); con 8.000 inscripciones eran 8.000
+    # viajes. Ahora: lo pendiente en la sesión se resuelve en memoria y lo demás con UNA consulta por cada 2.000 cédulas (misma regla: tiene `face_encoding`).
+    skip = session.info.get("faces_no_bump", ())          # «solo agregar»: personas que se inscriben sin aceptación en el evento (no entran a la matriz): la versión no sube, el quiosco no la reconstruye
+    attendees = [o for o in list(session.new) + list(session.deleted) if isinstance(o, EventAttendee) and o.tenant_id not in tenants and o.event_id is not None
+                 and (o.tenant_id, o.user_id) not in skip]
+    if attendees:
+        pending = {(u.tenant_id, u.id): u for u in session.new if isinstance(u, User)}
+        to_ask: dict = {}
+        for obj in attendees:
+            user = pending.get((obj.tenant_id, obj.user_id))
+            if user is None:
+                to_ask.setdefault(obj.tenant_id, set()).add(obj.user_id)
+        with_face = _with_face(session, to_ask)
+        for obj in attendees:
+            user = pending.get((obj.tenant_id, obj.user_id))
+            if (user is not None and user.face_encoding) or (user is None and (obj.tenant_id, obj.user_id) in with_face):
                 events.add(obj.event_id)
     session.info["faces_bump"] = (tenants, events)
 

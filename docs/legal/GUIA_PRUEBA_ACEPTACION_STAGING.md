@@ -25,7 +25,7 @@
 | 9990004 | Dani Prueba | Decir **que no** al rostro | 1992-11-20 |
 | 9990005 | Eli Prueba | **Sin coincidencia** (nunca acepta) | 1995-01-30 |
 
-**Cargar a las cinco:** en el evento, tarjeta **«Adjuntar Base de Datos»**. Descarga la plantilla (`plantilla_carga_base_asistentes.xlsx`, el enlace está en esa pantalla), llena una fila por persona con **cédula, nombres y apellidos** y agrega una columna llamada **`fecha de nacimiento`** con el formato AAAA-MM-DD. **No subas fotos** (el rostro se capta en la prueba). Botón **«Cargar Base de Datos»**.
+> **Orden: 1.º activar el rostro (este bloque), 2.º cargar la lista (el bloque siguiente).**
 
 **Activar el rostro con el paso guiado:** en el evento, tarjeta **«Parámetros del Evento»**, bloque **«Reconocimiento facial: paso guiado»**:
 1. Marca **«Paso 0. Este evento usará reconocimiento facial»**.
@@ -37,6 +37,10 @@
 **Qué debes ver abajo:** un cuadro con **«✅ Listo: así funcionará en la puerta»** y varias frases (Golden es el Responsable único, la autorización se pide una sola vez, hay aceptación previa por celular, etc.). Si dice **«⚠️ Falta algo antes del evento»**, lee la línea roja: te dice qué falta (por ejemplo un dato de la empresa) y no sigas hasta resolverlo.
 
 Ahí mismo aparece **«Enlace (para el correo):»** con la dirección terminada en `/aceptar/PRUEBA-ACEPT-01` y un código QR. **Copia ese enlace**: es el de la prueba del celular.
+
+**Cargar a las cinco (DESPUÉS de activar el rostro, paso anterior):** en el evento, tarjeta **«Adjuntar Base de Datos»**. Descarga la plantilla (`plantilla_carga_base_asistentes.xlsx`, el enlace está en esa pantalla), llena una fila por persona con **cédula, nombres y apellidos** y agrega una columna llamada **`fecha de nacimiento`** con el formato AAAA-MM-DD. **No subas fotos** (el rostro se capta en la prueba). Botón **«Cargar Base de Datos»**.
+
+> **Por qué en este orden:** la fecha de nacimiento solo se guarda si el evento ya tiene el reconocimiento facial activo al cargar. Si cargas antes, la carga termina bien pero la fecha **no se guarda** (aviso rojo en el resumen) y habrá que volver a cargar el mismo archivo.
 
 ---
 

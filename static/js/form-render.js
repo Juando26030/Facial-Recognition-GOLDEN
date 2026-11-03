@@ -10,10 +10,62 @@
                                         con lo que responde /quote; el precio lo calcula SIEMPRE el servidor)                    */
 (function () {
   const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const norm = (x) => String(x == null ? '' : x).trim().toLowerCase();
+  const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+  // Ancho máximo de la tarjeta (theme.width: «full» o 480–1100 px; sin valor, 760 px como siempre). En pantallas angostas es siempre el 100 %.
+  const cardMax = (th) => { const w = th && th.width; if (w === 'full') return 'none'; const n = Math.round(Number(w)); return Number.isFinite(n) && n >= 480 && n <= 1100 ? n + 'px' : '760px'; };
+  // Nombre de PRESENTACIÓN de un campo (P8): con formato si lo tiene, si no el nombre plano de siempre. Los reportes, Excel y demás usan siempre `label`.
+  const lab = (f) => { if (!f.display_label) return esc(f.label); const r = rich(f.display_label); return r.rich ? `<span class="rt">${r.html}</span>` : r.html; };
+  // Texto con formato (P3): sin static/js/rich-text.js (o sin etiquetas permitidas) se pinta como siempre, escapado.
+  const rich = (t, basic) => (window.RichText ? window.RichText.html(t, basic) : { rich: false, html: esc(t) });
   const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 }) + ' COP';
+
+  // Variantes por propiedad (P9) y condiciones en árbol: MISMA lógica que app/formlib.py (cond_tree_met, pick_variant, variants_of); los casos comunes
+  // están en tests/cond_vectors.json. Condición = hoja {field,op,value} o grupo {match: all|any, rules: [...]}; los formatos antiguos de show_if son casos particulares.
+  const HIDEABLE = ['content', 'src'];   // sin variante que aplique, el elemento no ocupa espacio; las demás propiedades usan su valor propio
+  function variantsOf(f) {   // normaliza el formato de P2 ({by, items:[{rule, content}], default}; nunca llegó a producción)
+    const v = f && f.variants;
+    if (!v || typeof v !== 'object') return {};
+    if (Array.isArray(v.items)) return { content: { items: v.items.map((i) => ({ when: i.rule, value: i.content || '' })), default: v.default || '' } };
+    return v;
+  }
+  function condTree(node, isVisible, values) {
+    if (!node) return true;
+    if (node.rules) { const m = node.rules.map((r) => condTree(r, isVisible, values)); return node.match === 'any' ? m.some(Boolean) : m.length > 0 && m.every(Boolean); }
+    return !!isVisible(node.field) && conditionMet(node, values);
+  }
+  function pickVariant(f, prop, values, isVisible) {
+    const v = variantsOf(f)[prop];
+    if (!v) return f[prop] || '';
+    const hit = (v.items || []).find((i) => condTree(i.when, isVisible, values));
+    if (hit) return hit.value || (HIDEABLE.includes(prop) ? null : f[prop] || '');
+    if (v.default) return v.default;
+    return HIDEABLE.includes(prop) ? null : f[prop] || '';
+  }
+
+  // Qué campos se ven: su regla, la regla de su HOJA (una hoja oculta oculta todos sus campos) y, en títulos/textos/imágenes con variantes, que alguna aplique.
+  // Misma lógica que app/formlib.py::visible_ids (casos comunes en tests/sheet_vectors.json y tests/cond_vectors.json).
+  function computeVisible(design, values, fids) {
+    const fields = design.fields, memo = {}, sheetMemo = {}, sheetAt = {}, sheetCond = {};
+    (design.rows || []).forEach((row) => { if (row.sheet) (row.items || []).forEach((fid) => { sheetAt[fid] = row.sheet; }); });
+    (design.sheets || []).forEach((sh) => { sheetCond[sh.id] = sh.show_if; });
+    const known = (id) => !!fields[id];
+    const sheetVisible = (sid) => {
+      if (!(sid in sheetMemo)) { const c = sheetCond[sid]; sheetMemo[sid] = !c || condTree(c, (id) => known(id) && vis(id), values); }
+      return sheetMemo[sid];
+    };
+    const vis = (fid) => {
+      if (fid in memo) return memo[fid];
+      const f = fields[fid];
+      let r = fid in sheetAt ? sheetVisible(sheetAt[fid]) : true;
+      if (r && f.show_if) r = condTree(f.show_if, (id) => known(id) && vis(id), values);
+      if (r) for (const prop of HIDEABLE) { if (variantsOf(f)[prop] && !pickVariant(f, prop, values, (id) => known(id) && vis(id))) { r = false; break; } }   // sin variante que aplique: no ocupa espacio
+      memo[fid] = r;
+      return r;
+    };
+    return new Set((fids || Object.keys(fields)).filter(vis));
+  }
 
   function conditionMet(cond, values) {
     if (!cond) return true;
@@ -41,7 +93,7 @@
     container.style.color = theme.text_color || '#0A0E2E';
 
     const card = document.createElement('div');
-    card.style.cssText = `background:${theme.card_color || '#fff'}; border-radius:20px; padding:28px 30px; box-shadow:0 12px 40px rgba(0,0,0,.12); max-width:760px; margin:0 auto; box-sizing:border-box;`;
+    card.style.cssText = `background:${theme.card_color || '#fff'}; border-radius:20px; padding:28px 30px; box-shadow:0 12px 40px rgba(0,0,0,.12); max-width:${cardMax(theme)}; margin:0 auto; box-sizing:border-box;`;
     container.appendChild(card);
     if (theme.logo) {
       const lw = theme.logo_width || 0;
@@ -67,6 +119,9 @@
       .fr-item .fr-ro { background:#eef0f4 !important; color:#555 !important; }
       .fr-opts label { display:flex; gap:8px; align-items:center; font-weight:400; margin:4px 0; cursor:pointer; }
       .fr-err { color:#c0392b; font-size:.76rem; margin-top:3px; } .fr-item.has-err input, .fr-item.has-err select, .fr-item.has-err textarea { border-color:#c0392b; }
+      .fr-prog { margin:0 0 14px; } .fr-prog-t { font-size:.8rem; font-weight:700; margin-bottom:4px; } .fr-prog-b { height:6px; border-radius:6px; background:rgba(0,0,0,.1); overflow:hidden; } .fr-prog-b i { display:block; height:100%; background:${accent}; transition:width .2s; }
+      .fr-sheet .fr-st:focus { outline:none; } .fr-sheet .fr-st:focus-visible { outline:3px solid #111; outline-offset:3px; }
+      .fr-nav { display:flex; gap:10px; justify-content:space-between; margin:6px 0; } .fr-navbtn { flex:1; padding:11px; border:2px solid ${accent}; border-radius:26px; background:#fff; color:#111; font:inherit; font-weight:800; cursor:pointer; } .fr-navnext { background:${accent}; color:${onAccent}; } .fr-navbtn:focus-visible { outline:3px solid #111; outline-offset:2px; }
       .fr-btn { width:100%; padding:13px; border:none; border-radius:26px; background:${accent}; color:${onAccent}; font:inherit; font-weight:800; font-size:1rem; cursor:pointer; margin-top:6px; }
       .fr-btn:disabled { opacity:.6; cursor:default; }
       .fr-pay { border:2px dashed ${accent}; border-radius:14px; padding:14px 16px; background:rgba(0,0,0,.03); }
@@ -88,6 +143,30 @@
     form.noValidate = true;
     card.appendChild(form);
     const els = {};   // fid -> {wrap, input(s)}
+    const rowEls = [];   // filas, para ocultar la fila entera (y su margen) cuando todos sus campos están ocultos
+
+    // ---- Hojas (P12): con 2 o más, cada una es una sección del mismo formulario y se ve una a la vez; con una sola, todo es como siempre.
+    const sheets = (design.sheets || []).length > 1 ? design.sheets : null;
+    const sheetSec = {}, fieldSheet = {};
+    if (sheets) {
+      const live = document.createElement('div');   // anuncios para lectores de pantalla (cambio de hoja, campos que faltan)
+      live.className = 'fr-live'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+      live.style.cssText = 'position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden;';
+      form.appendChild(live);
+      const prog = document.createElement('div');
+      prog.className = 'fr-prog'; prog.innerHTML = '<div class="fr-prog-t" data-prog-text></div><div class="fr-prog-b" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Avance del formulario"><i data-prog-bar></i></div>';
+      form.appendChild(prog);
+      sheets.forEach((sh, i) => {
+        const sec = document.createElement('section');
+        sec.className = 'fr-sheet'; sec.dataset.sheet = sh.id; sec.style.display = i === 0 ? '' : 'none'; sec.setAttribute('aria-labelledby', 'frs_' + sh.id);
+        const d = sh.description ? rich(sh.description) : null;
+        sec.innerHTML = `<h3 class="fr-st" id="frs_${esc(sh.id)}" tabindex="-1" style="margin:0 0 6px;">${sh.title ? rich(sh.title, true).html : 'Hoja ' + (i + 1)}</h3>` +
+          (d ? (d.rich ? `<div class="rt" style="margin:0 0 12px; opacity:.85;">${d.html}</div>` : `<p style="margin:0 0 12px; white-space:pre-wrap; opacity:.85;">${d.html}</p>`) : '');
+        form.appendChild(sec);
+        sheetSec[sh.id] = sec;
+      });
+      (design.rows || []).forEach((row) => (row.items || []).forEach((fid) => { fieldSheet[fid] = row.sheet || sheets[0].id; }));
+    }
 
     (design.rows || []).forEach((row) => {
       const r = document.createElement('div');
@@ -113,12 +192,84 @@
         r.appendChild(wrap);
         els[fid] = { wrap, f };
       });
-      form.appendChild(r);
+      (sheets ? sheetSec[row.sheet] || sheetSec[sheets[0].id] : form).appendChild(r);
+      rowEls.push(r);
     });
     const btn = document.createElement('button');
     btn.type = 'submit'; btn.className = 'fr-btn'; btn.textContent = theme.button_text || 'Enviar';
     if (opts.previewOnly) btn.type = 'button';
     form.appendChild(btn);
+
+    // ---- Navegación entre hojas
+    let curIdx = 0, histDepth = 0, prevBtn = null, nextBtn = null;
+    const sheetIdx = (sid) => (sheets ? sheets.findIndex((sh) => sh.id === sid) : -1);
+    const announce = (text) => { const l = form.querySelector('.fr-live'); if (l) { l.textContent = ''; setTimeout(() => { l.textContent = text; }, 30); } };
+    function effectiveSheets(vis) {   // hojas con al menos un campo visible: una hoja cuyos campos se ocultaron todos se salta sola
+      vis = vis || visibleSet();
+      const has = new Set();
+      (design.rows || []).forEach((row) => (row.items || []).forEach((fid) => { if (vis.has(fid)) has.add(sheetIdx(row.sheet || sheets[0].id)); }));
+      return sheets.map((_, i) => i).filter((i) => has.has(i));
+    }
+    function updateNav(vis) {
+      if (!sheets) return;
+      const list = effectiveSheets(vis);
+      if (!list.length) list.push(0);
+      if (!list.includes(curIdx)) { curIdx = [...list].reverse().find((i) => i <= curIdx) ?? list[0]; sheets.forEach((sh, i) => { sheetSec[sh.id].style.display = i === curIdx ? '' : 'none'; }); }
+      const pos = list.indexOf(curIdx) + 1, total = list.length;
+      form.querySelector('[data-prog-text]').textContent = `Hoja ${pos} de ${total}`;
+      form.querySelector('[data-prog-bar]').style.width = Math.round((pos / total) * 100) + '%';
+      form.querySelector('[role=progressbar]').setAttribute('aria-valuenow', Math.round((pos / total) * 100));
+      prevBtn.style.display = pos <= 1 ? 'none' : ''; nextBtn.style.display = pos >= total ? 'none' : ''; btn.style.display = pos >= total ? '' : 'none';
+    }
+    function showSheet(i, o) {
+      o = o || {};
+      curIdx = i;
+      sheets.forEach((sh, k) => { sheetSec[sh.id].style.display = k === i ? '' : 'none'; });
+      updateNav();
+      if (o.push) { histDepth += 1; try { history.pushState({ frSheet: i, d: histDepth }, ''); } catch (e) { /* sin historial: solo no hay «atrás» */ } }   // en el historial va SOLO el número de hoja
+      const list = effectiveSheets(), t = sheetSec[sheets[i].id].querySelector('.fr-st');
+      if (o.focus !== false && t) { t.focus(); }
+      if (o.focus !== false && t) announce(`Hoja ${list.indexOf(i) + 1} de ${list.length}: ${window.RichText ? RichText.toPlain(sheets[i].title) || 'Hoja ' + (i + 1) : sheets[i].title}`);
+    }
+    function goNext() {
+      const vis = visibleSet(), raw = rawValues();
+      const errs = computeErrors(vis, raw, (fid) => fieldSheet[fid] === sheets[curIdx].id);
+      setErrors(errs);
+      const keys = Object.keys(errs);
+      if (keys.length) {
+        announce(`Faltan por completar o corregir ${keys.length} ${keys.length === 1 ? 'campo' : 'campos'} en esta hoja. Empieza por «${els[keys[0]].f.label}».`);
+        return;
+      }
+      const list = effectiveSheets(vis), pos = list.indexOf(curIdx);
+      if (pos < list.length - 1) showSheet(list[pos + 1], { push: true });
+    }
+    function goPrev() {
+      if (histDepth > 0) { history.back(); return; }   // el «atrás» del navegador y el botón hacen lo mismo
+      const list = effectiveSheets(), pos = list.indexOf(curIdx);
+      if (pos > 0) showSheet(list[pos - 1]);
+    }
+    if (sheets) {
+      const nav = document.createElement('div');
+      nav.className = 'fr-nav';
+      nav.innerHTML = '<button type="button" class="fr-navbtn" data-nav="prev">Anterior</button><button type="button" class="fr-navbtn fr-navnext" data-nav="next">Siguiente</button>';
+      form.insertBefore(nav, btn);
+      prevBtn = nav.querySelector('[data-nav=prev]'); nextBtn = nav.querySelector('[data-nav=next]');
+      prevBtn.addEventListener('click', goPrev); nextBtn.addEventListener('click', goNext);
+      try { history.replaceState({ ...(history.state || {}), frSheet: 0, d: 0 }, ''); } catch (e) { /* sin historial */ }
+      const onPop = (e) => {
+        if (!form.isConnected) { window.removeEventListener('popstate', onPop); return; }
+        const st = e.state;
+        if (st && typeof st.frSheet === 'number' && sheets[st.frSheet]) { histDepth = st.d || 0; showSheet(st.frSheet); }
+      };
+      window.addEventListener('popstate', onPop);
+      // Enter avanza de hoja SOLO en campos de una línea (input); en textarea, listas y casillas no. En la última hoja envía, como siempre.
+      form.addEventListener('keydown', (e) => {
+        const t = e.target;
+        if (e.key !== 'Enter' || e.isComposing || !t || t.tagName !== 'INPUT' || ['checkbox', 'radio', 'file', 'button', 'submit', 'reset'].includes(t.type) || t.matches('[data-code]')) return;
+        const list = effectiveSheets();
+        if (list.indexOf(curIdx) < list.length - 1) { e.preventDefault(); goNext(); }
+      });
+    }
 
     let started = false;
     form.addEventListener('input', (e) => { syncComp(e.target); paintQuotaWarn(); if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); if (opts.onChange) opts.onChange(); });
@@ -162,30 +313,37 @@
       if (box) applyFilter(box);
     });
 
+    // Nombre visible de un elemento (con su asterisco de obligatorio y el aviso de la escarapela virtual); lo usan fieldHtml y el repintado de variantes.
+    function ttlHtml(g) {
+      if (g.type === 'payment') return g.label || g.display_label ? lab(g) : 'Pago';
+      if (g.type === 'companions') return lab(g);
+      const note = opts.badgeEmailField && opts.badgeEmailField === g.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
+      return `${lab(g)}${g.required ? ' <span style="color:#c0392b">*</span>' : ''}${g.type === 'checkbox' ? '' : note}`;
+    }
     function fieldHtml(f, pre, ro, assetUrl) {
-      const badgeNote = opts.badgeEmailField && opts.badgeEmailField === f.id ? ' <span class="fr-badge-note" style="font-weight:400; opacity:.75;">(a este correo se le enviará su escarapela virtual)</span>' : '';
-      const label = f.label ? `<label class="fr-l">${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}${badgeNote}</label>` : '';
-      const help = f.help ? `<div class="fr-help">${esc(f.help)}</div>` : '';
+      const vv = variantsOf(f), tAttr = vv.display_label ? ' data-ttl' : '';
+      const label = f.label ? `<label class="fr-l"${tAttr}>${ttlHtml(f)}</label>` : '';
+      const help = f.help || vv.help ? `<div class="fr-help"${vv.help ? ` data-hv${f.help ? '' : ' style="display:none"'}` : ''}>${rich(f.help || '').html}</div>` : '';
       const val = pre == null ? '' : pre;
       const roAttr = ro ? 'readonly class="fr-ro" tabindex="-1"' : '';
       const name = `name="${esc(f.id)}"`;
       let control = '';
       switch (f.type) {
-        case 'heading': return `<h3 style="margin:8px 0 2px;">${esc(f.content)}</h3>`;
-        case 'paragraph': return `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${esc(f.content)}</p>`;
+        case 'heading': { const r = rich(f.content); return r.rich ? `<div class="rt" style="margin:8px 0 2px; font-size:1.17em; font-weight:700;">${r.html}</div>` : `<h3 style="margin:8px 0 2px;">${r.html}</h3>`; }
+        case 'paragraph': { const r = rich(f.content); return r.rich ? `<div class="rt" style="margin:0; opacity:.85;">${r.html}</div>` : `<p style="margin:0; white-space:pre-wrap; opacity:.85;">${r.html}</p>`; }
         case 'payment': { const varies = f.pay && (f.pay.mode === 'rules' || (f.pay.discounts || []).length);
-          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 ${esc(f.label || 'Pago')}${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div><div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div>${f.pay && f.pay.codes && !opts.previewOnly ? '<div class="fr-code" style="margin:8px 0 2px;"><div style="display:flex; gap:6px;"><input type="text" data-code placeholder="¿Tienes un código de descuento?" autocomplete="off" style="flex:1; margin:0;"><button type="button" class="fr-chip" data-applycode>Aplicar</button></div><div data-codemsg style="font-size:.78rem; margin-top:3px;"></div></div>' : (f.pay && f.pay.codes ? '<div class="fr-help">🎟️ Aquí la persona podrá escribir un código de descuento.</div>' : '')}<div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div><div class="fr-help" data-taxnote></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span><br>Al pagar aceptas los <a href="/terminos" target="_blank" rel="noopener">Términos y Condiciones</a> y la <a href="${refundHref}" target="_blank" rel="noopener">Política de reembolsos</a>${opts.refund && opts.refund.days ? ` (puedes pedir el reembolso hasta ${opts.refund.days} días después del pago)` : ''}.</div></div>`; }
+          return `<div class="fr-pay"><div style="font-size:.82rem;font-weight:700;">💳 <span${tAttr}>${ttlHtml(f)}</span>${f.pay && f.pay.description ? ' — ' + esc(f.pay.description) : ''}</div>${help}<div class="fr-cur" data-curbar style="margin:8px 0 2px;"><span style="font-size:.72rem;opacity:.7;">Ver el precio en: </span>${['COP', 'USD', 'EUR'].map((c) => `<button type="button" class="fr-chip" data-cur="${c}" ${c === 'COP' ? '' : 'hidden'}>${c}</button>`).join('')}</div>${f.pay && f.pay.codes && !opts.previewOnly ? '<div class="fr-code" style="margin:8px 0 2px;"><div style="display:flex; gap:6px;"><input type="text" data-code placeholder="¿Tienes un código de descuento?" autocomplete="off" style="flex:1; margin:0;"><button type="button" class="fr-chip" data-applycode>Aplicar</button></div><div data-codemsg style="font-size:.78rem; margin-top:3px;"></div></div>' : (f.pay && f.pay.codes ? '<div class="fr-help">🎟️ Aquí la persona podrá escribir un código de descuento.</div>' : '')}<div class="fr-total" data-total translate="no">Calculando…</div><div class="fr-charge" data-charge translate="no"></div><div class="fr-help" data-taxnote></div>${opts.previewOnly && varies ? '<div class="fr-help">El valor final cambia según las respuestas y descuentos configurados.</div>' : ''}<div class="fr-svc" data-svc hidden></div><ul data-applied></ul><div class="fr-safe">🔒 <b>Pago seguro procesado por Wompi.</b> Golden no ve ni guarda los datos de tu tarjeta. El dinero ingresa a Golden en <b>pesos colombianos (COP)</b>. Si eliges USD o EUR es solo un valor de referencia con la tasa del día: tu tarjeta se cobra en COP y tu banco hace la conversión con su propia tasa (puede cobrarte una comisión).<span data-fxnote></span><br>Al pagar aceptas los <a href="/terminos" target="_blank" rel="noopener">Términos y Condiciones</a> y la <a href="${refundHref}" target="_blank" rel="noopener">Política de reembolsos</a>${opts.refund && opts.refund.days ? ` (puedes pedir el reembolso hasta ${opts.refund.days} días después del pago)` : ''}.</div></div>`; }
         case 'companions': {
           const lo = f.min || 0;
           const opts = Array.from({ length: f.max - lo + 1 }, (_, i) => lo + i).map((n) => `<option value="${n}">${n === 0 ? 'Ninguno (voy solo/a)' : n === 1 ? '1 acompañante' : n + ' acompañantes'}</option>`).join('');
-          return `<label class="fr-l">${esc(f.label)}</label><select data-comp-count="${esc(f.id)}">${opts}</select><div data-comp-list="${esc(f.id)}"></div>${help}<div class="fr-err"></div>`;
+          return `<label class="fr-l"${tAttr}>${ttlHtml(f)}</label><select data-comp-count="${esc(f.id)}">${opts}</select><div data-comp-list="${esc(f.id)}"></div>${help}<div class="fr-err"></div>`;
         }
         case 'image': return f.src ? `<img src="${esc(assetUrl(f.src))}" alt="${esc(f.alt || '')}" style="width:${f.width || 100}%; max-width:100%; height:auto; border-radius:12px; display:block; margin:0 auto;">` : '';
         case 'text_long': control = `<textarea ${name} rows="4" placeholder="${esc(f.placeholder)}" ${roAttr}>${esc(val)}</textarea>`; break;
         case 'select': control = `<select ${name} ${ro ? 'disabled class="fr-ro"' : ''}><option value="">Selecciona…</option>${(f.options || []).map((o) => `<option value="${esc(o)}" ${String(val) === o ? 'selected' : ''} ${quotaLeft(f, o) === 0 ? 'disabled' : ''}>${esc(o)}${quotaNote(f, o)}</option>`).join('')}</select>${ro ? `<input type="hidden" ${name} value="${esc(val)}">` : ''}`; break;
         case 'radio': control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="radio" ${name} value="${esc(o)}" ${String(val) === o ? 'checked' : ''} ${ro || quotaLeft(f, o) === 0 ? 'disabled' : ''}> ${esc(o)}${quotaNote(f, o)}</label>`).join('')}</div>`; break;
         case 'multiselect': { const sel = asList(val); control = `<div class="fr-opts">${(f.options || []).map((o) => `<label><input type="checkbox" ${name} value="${esc(o)}" ${sel.includes(o) ? 'checked' : ''} ${ro ? 'disabled' : ''}> ${esc(o)}</label>`).join('')}</div>`; break; }
-        case 'checkbox': return `<div class="fr-opts"><label><input type="checkbox" ${name} value="true" ${val === true || String(val) === 'true' ? 'checked' : ''} ${ro ? 'disabled' : ''}> ${esc(f.label)}${f.required ? ' <span style="color:#c0392b">*</span>' : ''}</label></div>${help}<div class="fr-err"></div>`;
+        case 'checkbox': return `<div class="fr-opts"><label><input type="checkbox" ${name} value="true" ${val === true || String(val) === 'true' ? 'checked' : ''} ${ro ? 'disabled' : ''}> <span${tAttr}>${ttlHtml(f)}</span></label></div>${help}<div class="fr-err"></div>`;
         case 'file': control = `<input type="file" ${name} accept="${(f.accept || []).map((a) => '.' + a).join(',')}" style="width:100%;"><div class="fr-help">Formatos: ${esc((f.accept || []).join(', '))} · máximo ${f.max_mb || 10} MB</div>`; break;
         default: {
           const docs = f.type === 'text_short' ? (f.doc_types || []).map((c) => docByCode[c]).filter(Boolean) : [];
@@ -250,19 +408,7 @@
       return out;
     }
 
-    function visibleSet() {
-      const values = rawValues();
-      const memo = {};
-      const vis = (fid) => {
-        if (fid in memo) return memo[fid];
-        const cond = design.fields[fid].show_if;
-        const rules = !cond ? [] : (cond.rules || [cond]);
-        const met = rules.map((r) => design.fields[r.field] && vis(r.field) && conditionMet(r, values));
-        memo[fid] = !cond || (cond.match === 'any' ? met.some(Boolean) : met.every(Boolean));
-        return memo[fid];
-      };
-      return new Set(Object.keys(els).filter(vis));
-    }
+    function visibleSet() { return computeVisible(design, rawValues(), Object.keys(els)); }
 
     // Cupos por combinación de variables: si lo que la persona lleva escrito cae en un cupo YA lleno, se avisa antes de enviar.
     function fullQuota() {
@@ -281,9 +427,39 @@
       return !!r;
     }
 
+    // Variantes de la parte visible de un elemento. Los títulos/textos/imágenes se repintan enteros; en los campos solo se cambia el nombre, la ayuda o el texto de ejemplo
+    // (lo que la persona ya escribió NO se toca).
+    function paintVariants(wrap, f, values, isVis) {
+      const vp = variantsOf(f), last = wrap._vp = wrap._vp || {};
+      if (['heading', 'paragraph', 'image'].includes(f.type)) {
+        const eff = { content: pickVariant(f, 'content', values, isVis), src: pickVariant(f, 'src', values, isVis) };
+        const sig = JSON.stringify(eff);
+        if (last.all !== sig) { last.all = sig; wrap.innerHTML = fieldHtml({ ...f, content: eff.content || '', src: eff.src || '' }, null, false, assetUrl); }
+        return;
+      }
+      if (vp.display_label) {
+        const eff = pickVariant(f, 'display_label', values, isVis);
+        if (last.display_label !== eff) { last.display_label = eff; const t = wrap.querySelector('[data-ttl]'); if (t) t.innerHTML = ttlHtml({ ...f, display_label: eff }); }
+      }
+      if (vp.help) {
+        const eff = pickVariant(f, 'help', values, isVis);
+        if (last.help !== eff) { last.help = eff; const h = wrap.querySelector('[data-hv]'); if (h) { h.innerHTML = eff ? rich(eff).html : ''; h.style.display = eff ? '' : 'none'; } }
+      }
+      if (vp.placeholder) {
+        const eff = pickVariant(f, 'placeholder', values, isVis);
+        if (last.placeholder !== eff) { last.placeholder = eff; const c = wrap.querySelector('input[type=text],input[type=email],input[type=tel],input[type=number],textarea'); if (c) c.placeholder = eff; }
+      }
+    }
+
     function applyConditions() {
       const vis = visibleSet();
-      Object.entries(els).forEach(([fid, { wrap }]) => { wrap.style.display = vis.has(fid) ? '' : 'none'; });
+      const values = rawValues(), isVis = (id) => vis.has(id);
+      Object.entries(els).forEach(([fid, { wrap, f }]) => {
+        wrap.style.display = vis.has(fid) ? '' : 'none';
+        if (f.variants && vis.has(fid)) paintVariants(wrap, f, values, isVis);
+      });
+      rowEls.forEach((r) => { r.style.display = Array.from(r.children).every((w) => w.style.display === 'none') ? 'none' : ''; });
+      if (sheets) updateNav(vis);
       return vis;
     }
     Object.values(els).forEach(({ f }) => { if (f.type === 'companions') renderGroups(f); });
@@ -298,6 +474,12 @@
         wrap.querySelectorAll('input:not([type=hidden]), select, textarea').forEach((c) => { if (msg) { c.setAttribute('aria-invalid', 'true'); if (box) c.setAttribute('aria-describedby', box.id); } else { c.removeAttribute('aria-invalid'); c.removeAttribute('aria-describedby'); } });
       });
       const first = errors && Object.keys(errors)[0];
+      if (sheets && first && els[first]) {   // el error está en otra hoja: se salta a ella
+        const k = sheetIdx(fieldSheet[first]);
+        if (k !== curIdx) showSheet(k, { focus: false });
+        const c = els[first].wrap.querySelector('input:not([type=hidden]), select, textarea');
+        if (c) { try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); } }
+      }
       if (first && els[first]) els[first].wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -315,12 +497,10 @@
       return { values, files };
     }
 
-    function validate() {
-      const vis = visibleSet();
-      const raw = rawValues();
+    function computeErrors(vis, raw, only) {   // errores de los campos visibles (de una hoja, si se da `only`)
       const errors = {};
       Object.entries(els).forEach(([fid, { f }]) => {
-        if (!vis.has(fid) || !(fid in raw)) return;
+        if (!vis.has(fid) || !(fid in raw) || (only && !only(fid))) return;
         if (f.type === 'companions') { const msg = checkComp(f, raw[fid]); if (msg) errors[fid] = msg; return; }
         const v = raw[fid];
         const empty = f.type === 'multiselect' ? v.length === 0 : (f.type === 'checkbox' ? v !== 'true' : v === '');
@@ -339,6 +519,12 @@
           else if (file.size > (f.max_mb || 10) * 1048576) errors[fid] = `El archivo pesa más de ${f.max_mb || 10} MB`;
         }
       });
+      return errors;
+    }
+
+    function validate() {   // al enviar: TODAS las hojas visibles (con su código, nunca la validación nativa del navegador); si falla algo, salta a esa hoja
+      const vis = visibleSet();
+      const errors = computeErrors(vis, rawValues());
       setErrors(errors);
       return Object.keys(errors).length === 0 && !paintQuotaWarn();
     }
@@ -395,9 +581,9 @@
     if (opts.previewOnly) { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) lastQuote = { has_payment: true, amount: Math.round(((pf.pay && pf.pay.amount) || 0) * (pf.pay && pf.pay.tax === 'add' ? 1.19 : 1)), applied: [] }; }
     paintPay();
 
-    return { collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
+    return { sheets: sheets ? { next: goNext, prev: goPrev, show: showSheet, current: () => curIdx, effective: () => effectiveSheets() } : null, collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
   }
 
-  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet };
-  if (typeof module !== 'undefined') module.exports = { conditionMet };
+  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax, variantsOf, computeVisible };
+  if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant, condTree, variantsOf, computeVisible };
 })();

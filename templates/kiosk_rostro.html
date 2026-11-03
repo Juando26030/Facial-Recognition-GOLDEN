@@ -107,7 +107,8 @@
                 endTurn(); say(j.message, true); reset(4500);
                 if (j.print_user_id) {                    // autoimpresión del evento: igual que con cédula (la foto biométrica sale en blanco mientras su interruptor esté apagado)
                     fetch(`/api/users/${encodeURIComponent(j.print_user_id)}/print-log?event_id=${EVENT_ID}`, { method: 'POST' }).catch(() => {});
-                    window.open(`/kiosk/${EVENT_ID}/escarapela/imprimir/${encodeURIComponent(j.print_user_id)}`, '_blank', 'width=480,height=720,noopener');
+                    try { if (window.__gwPrintWin && !window.__gwPrintWin.closed) window.__gwPrintWin.close(); } catch (e) { /* otra referencia */ }       // ventana con nombre fijo: no se acumulan
+                    window.__gwPrintWin = window.open(`/kiosk/${EVENT_ID}/escarapela/imprimir/${encodeURIComponent(j.print_user_id)}`, 'goldenweb_print', 'width=480,height=720');
                 }
                 return;
             }

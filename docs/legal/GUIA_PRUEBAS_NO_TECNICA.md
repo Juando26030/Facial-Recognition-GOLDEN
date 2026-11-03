@@ -17,7 +17,8 @@ Cada prueba dice **dónde hacer clic** y **qué debe ver**. Si algo no coincide,
 
 Necesitas: un celular (cámara y correo), un portátil (la «puerta»), los cinco buzones de correo que controlas (sirve una cuenta con `+`: `tunombre+ana@…`), un cartel impreso o en pantalla (para el QR) y un cronómetro.
 **Un evento de pruebas:** menú lateral **«📅 Eventos»** → **«Nuevo evento»** → nombre «PRUEBA-ACEPT-02» → **«Crear evento»**. En la lista, en la fila del evento, **«✏️ Editar»** → cambia el **estado** a **«En Proceso»** → guardar. Para entrar: **«Ingresar →»**. Verás las tarjetas del evento (Registro, Adjuntar Base de Datos, Escarapelas, Formularios Web, Parámetros del Evento…).
-**Cargar a las cinco personas:** tarjeta **«Adjuntar Base de Datos»** → sube un Excel con columnas `Cédula`, `Nombres`, `Apellidos`, `Correo`, `Fecha de nacimiento` → **«Cargar Base de Datos»**. *Debe ver:* «Carga completa: 5 perfiles cargados» y la caja «Columnas del archivo» con las columnas reconocidas.
+**⚠️ Orden obligatorio: PRIMERO se activa el reconocimiento facial del evento y DESPUÉS se carga la lista.** La fecha de nacimiento solo se guarda si el evento ya tiene el rostro activo (Parámetros del Evento → paso guiado → «Guardar y revisar») en el momento de cargar; si se carga antes, la carga termina bien pero **la fecha NO se guarda** (el resumen lo avisa en rojo: «traían fecha de nacimiento y NO se guardaron…»), las personas menores parecen adultas y habrá que volver a cargar el mismo archivo. En un evento SIN biometría (punto 1) la fecha no se guarda por diseño.
+**Cargar a las cinco personas** (en los eventos con rostro, solo DESPUÉS de activarlo, ver punto 2 pasos 1 a 3): tarjeta **«Adjuntar Base de Datos»** → sube un Excel con columnas `Cédula`, `Nombres`, `Apellidos`, `Correo`, `Fecha de nacimiento` → **«Cargar Base de Datos»**. *Debe ver:* «Carga completa: 5 perfiles cargados» y la caja «Columnas del archivo» con las columnas reconocidas.
 
 ---
 
@@ -30,10 +31,11 @@ Necesitas: un celular (cámara y correo), un portátil (la «puerta»), los cinc
 6. **Registro:** acredita a Ana por cédula escrita y a Beto con un QR; crea a alguien nuevo con **«➕ Registrar nuevo»**. *Debe ver:* cada ingreso en 1 o 2 toques.
 
 ## 2. Interruptor del enlace personal y aceptación desde el celular
-Evento nuevo «PRUEBA-ACEPT-03» (igual que en el punto 0) con las cinco personas cargadas.
+Evento nuevo «PRUEBA-ACEPT-03» (como en el punto 0, pero **todavía SIN cargar la lista**: primero los pasos 1 a 3 —activar el rostro y guardar— y SOLO DESPUÉS el paso 3b).
 1. **«Parámetros del Evento»** → paso guiado: marca **Paso 0** «Este evento usará reconocimiento facial»; **Paso 1** déjalo en **«Evento propio de Golden»**; **Paso 2**, elige **B** («Cada persona se toma una selfie…»).
 2. **Paso 3:** marca **«Permitir aceptar el reconocimiento facial y dar la selfie desde el celular antes del evento (página /aceptar)»**. Se despliega un recuadro con el enlace, un QR y «Imprimir póster con el QR».
 3. Dentro de ese recuadro, **deja SIN marcar** «Enviar por correo, al inscribirse por formulario, el enlace personal…» (por ahora está apagado a propósito hasta la revisión de la auditora). → pulsa **«Guardar y revisar»**. *Debe ver:* «✅ Listo: así funcionará en la puerta» y la línea «Antes del evento, las personas ya inscritas pueden aceptar desde su celular…».
+3b. **Ahora sí, carga las cinco personas** (punto 0, «Cargar a las cinco personas»). *Debe ver:* «Carga completa: 5 perfiles cargados», en la pantalla de carga el recuadro verde «Este evento usa reconocimiento facial… La fecha de nacimiento del archivo se guarda» y **ningún** aviso rojo de «fecha de nacimiento NO se guardó». Si lo ves, el evento no tenía el rostro activo: actívalo, guarda y vuelve a cargar el mismo archivo.
 4. **En el celular de Ana:** abre el enlace que muestra el recuadro (o escanea el QR). *Debe ver:* el nombre del evento, la explicación «totalmente voluntario» y los campos **«Número de documento»** y **«Fecha de nacimiento»**. Escribe `9991001` y `1990-04-02` → **«Continuar»**.
 5. *Debe ver:* el texto de autorización completo y los botones **«ACEPTO Y DESEO USAR RECONOCIMIENTO FACIAL»** y **«PREFIERO INGRESAR CON DOCUMENTO / QR»**. **Todavía no hay cámara.** Pulsa **ACEPTO…**
 6. *Debe ver:* ahora sí el campo **«Tu selfie (de frente, con buena luz)»**. Toma la selfie → **«Enviar mi selfie»**. *Debe ver:* «¡Gracias! Cuando llegues, muestra tu cédula o QR en la acreditación: el personal confirmará tu identidad…».

@@ -13,3 +13,4 @@ ensayo_*.log
 restore_test_*.log
 .env.restore
 .env.live
+node_modules/

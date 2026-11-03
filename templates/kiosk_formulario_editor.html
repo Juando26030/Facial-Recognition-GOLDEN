@@ -5,10 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editor de formulario | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Raleway:wght@400;700&family=Poppins:wght@400;700&family=Playfair+Display:wght@400;700&family=Inter:wght@400;700&family=Bebas+Neue&family=Merriweather:wght@400;700&family=Nunito:wght@400;700&family=Ubuntu:wght@400;700&family=Rubik:wght@400;700&family=Comfortaa:wght@400;700&family=Space+Grotesk:wght@400;700&family=Manrope:wght@400;700&family=Zilla+Slab:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/form-render.js') }}"></script>
+    <script src="{{ url_for('static', path='js/form-sync.js') }}"></script>
+    <script src="{{ url_for('static', path='js/rich-text.js') }}"></script>
+    <script src="{{ url_for('static', path='js/cond-tree.js') }}"></script>
+    <script src="{{ url_for('static', path='js/element-names.js') }}"></script>
+    <script src="{{ url_for('static', path='js/variant-table.js') }}"></script>
+    <script src="{{ url_for('static', path='js/variant-table-ui.js') }}"></script>
+    <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/progress-bar.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
@@ -58,6 +66,7 @@
         <span id="statusPill" class="hint"></span>
         <button class="small-btn primary" id="saveBtn">💾 Guardar diseño</button>
         <button class="small-btn" id="previewBtn">👁 Previsualizar</button>
+        <button class="small-btn" id="tableBtn" title="Cargar variantes como una hoja de Excel">📊 Tabla de variantes</button>
         <a class="small-btn" id="testBtn" target="_blank" rel="noopener" title="Abre el enlace real del formulario, respetando su estado actual">🧪 Probar</a>
         <button class="small-btn" id="tplBtn">📚 Guardar como plantilla</button>
       </div>
@@ -71,10 +80,10 @@
     <div class="pane active" id="pane-design"><div class="grid3">
       <div>
         <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Elementos nuevos</h4><p class="hint" style="margin:0 0 8px;">Arrástralos al lienzo (o haz clic para agregarlos al final).</p><div class="pal" id="palNew"></div></div>
-        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Campos del evento</h4><p class="hint" style="margin:0 0 8px;">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div></div>
+        <div class="card"><h4 style="margin:0 0 6px; font-size:0.9rem;">Campos del evento</h4><p class="hint" style="margin:0 0 8px;">Los de Parámetros del Evento: lo que se llene aquí alimenta esa base.</p><div class="pal" id="palEvent"></div><button type="button" class="small-btn" id="palSync" style="margin-top:8px;" title="Pone en los campos ya enlazados el tipo y las opciones que hoy tienen en Parámetros; antes te muestra qué cambia">Sincronizar con Parámetros</button></div>
         <div class="card"><details><summary style="cursor:pointer; font-weight:700; font-size:0.9rem;">Apariencia del formulario</summary><div id="themeBox" class="props" style="margin-top:0.7rem;"></div></details></div>
       </div>
-      <div><div class="card" style="padding:0.8rem;"><div id="canvas"></div><p class="hint" style="margin:8px 4px 0;">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></div></div>
+      <div><div class="card" style="padding:0.8rem;"><div id="sheetsBar" style="margin-bottom:8px;"></div><div id="sheetsPanel"></div><div id="canvas"></div><p class="hint" style="margin:8px 4px 0;">Arrastra un elemento sobre la mitad izquierda/derecha de otro para ponerlos <b>uno al lado del otro</b> (hasta 4), o entre filas para que quede <b>debajo</b>. Clic para editarlo.</p></div></div>
       <div><div class="card props" id="propsBox"><p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p></div></div>
     </div></div>
 
@@ -117,13 +126,18 @@
           <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="trOn"> Mostrar el botón «Translate» a todos (25 idiomas)</label></div>
         <p class="hint">El botón «🌐 Translate» siempre está visible y ofrece 25 idiomas (inglés, francés, alemán, chino, japonés, árabe, hindi, ruso…). Traduce los textos del formulario con Google Translate; lo que la persona escribe en los campos no se traduce ni se envía. Marca aquí el idioma en que escribiste el formulario para que la traducción parta bien.</p>
       </div>
+      <div class="card"><h4 style="margin:0 0 8px;">Paso de identificación (cédula)</h4>
+        <p class="hint" style="margin:0 0 6px;">Lo que ve la persona antes del formulario cuando se le pide el documento. Vacío = los textos de siempre («Identifícate», la explicación y «Continuar»).</p>
+        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="idTitle" maxlength="120" placeholder="Identifícate" style="width:260px;"></div><div class="fld"><label>Texto del botón</label><input type="text" id="idButton" maxlength="40" placeholder="Continuar" style="width:180px;"></div></div>
+        <div class="bar"><div class="fld"><label>Texto</label><input type="hidden" id="idText"><div id="idTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="idImgFile" accept="image/*"><span class="hint" id="idImgName"></span> <button type="button" class="small-btn" id="idImgX">Quitar</button></div></div>
+      </div>
       <div class="card"><h4 style="margin:0 0 8px;">Al terminar el registro</h4>
         <div class="bar"><div class="fld"><label>Qué pasa</label><select id="thMode"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
           <div class="fld" id="thUrlBox" style="display:none;"><label>Dirección (https://…)</label><input type="text" id="thUrl" style="width:320px;"></div></div>
-        <div id="thTplBox" class="bar" style="margin-top:8px;"><div class="fld"><label>Título</label><input type="text" id="thTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="text" id="thText" style="width:340px;"></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="thImgFile" accept="image/*"><span class="hint" id="thImgName"></span></div></div>
+        <div id="thTplBox" class="bar" style="margin-top:8px;"><div class="fld"><label>Título</label><input type="text" id="thTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="hidden" id="thText"><div id="thTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="thImgFile" accept="image/*"><span class="hint" id="thImgName"></span></div></div>
       </div>
       <div class="card"><h4 style="margin:0 0 8px;">Plantilla de «formulario cerrado» / cupo lleno</h4>
-        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="clTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="text" id="clText" style="width:340px;"></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="clImgFile" accept="image/*"><span class="hint" id="clImgName"></span></div></div>
+        <div class="bar"><div class="fld"><label>Título</label><input type="text" id="clTitle" style="width:260px;"></div><div class="fld"><label>Mensaje</label><input type="hidden" id="clText"><div id="clTextRt" style="width:min(520px,100%);"></div></div><div class="fld"><label>Imagen (opcional)</label><input type="file" id="clImgFile" accept="image/*"><span class="hint" id="clImgName"></span></div></div>
       </div>
       <div class="card"><h4 style="margin:0 0 8px;">Alimentar la base de datos del evento</h4>
         <div class="bar"><label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;"><input type="radio" name="feed" value="realtime"> En tiempo real: cada inscripción entra de una vez al roster del evento («No registrado»)</label></div>
@@ -186,7 +200,8 @@
   </div>
 </div>
 
-<div id="previewOverlay"><div style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
+<div id="tableOverlay" role="dialog" aria-modal="true" aria-label="Tabla de variantes" style="position:fixed; inset:0; background:rgba(10,14,46,.6); z-index:9990; display:none; overflow:auto; padding:1.5rem 1rem;"><div style="max-width:1100px; margin:0 auto; background:#fff; border-radius:16px; padding:1rem 1.2rem;"><div style="display:flex; justify-content:space-between; align-items:center;"><h3 style="margin:0;">Tabla de variantes</h3><button class="small-btn primary" id="closeTable">Cerrar</button></div><div id="tableHost"></div></div></div>
+<div id="previewOverlay"><div id="previewInner" style="max-width:800px; margin:0 auto;"><div style="text-align:right; margin-bottom:8px;"><button class="small-btn primary" id="closePreview">Cerrar vista previa</button></div><div id="previewHost" style="border-radius:20px; padding:24px 0;"></div></div></div>
 
 <script>
 const EV = window.EVENT_ID, FID = window.FORM_ID, api = `/api/events/${EV}/forms/${FID}`;
@@ -197,7 +212,7 @@ async function j(url, opts) { const r = await fetch(url, opts); const d = await 
 const jput = (url, body) => j(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const jpost = (url, body) => j(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
 const assetUrl = (p) => `/api/badge-assets/${p}`;
-const FONTS = ['Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Oswald', 'Raleway', 'Poppins', 'Playfair Display', 'Inter', 'Bebas Neue', 'Merriweather', 'Nunito', 'Ubuntu', 'Rubik', 'Comfortaa', 'Space Grotesk', 'Manrope', 'Zilla Slab'];
+const FONTS = GoldenFonts.choices;          // las 6 tipografías alojadas
 const TYPES = {
   text_short: ['Texto corto', '✏️'], text_long: ['Texto largo', '📄'], email: ['Correo', '✉️'], phone: ['Teléfono', '📞'], number: ['Número', '🔢'], date: ['Fecha', '📅'],
   checkbox: ['Casilla sí/no', '☑️'], select: ['Lista desplegable', '▾'], radio: ['Opción única', '◉'], multiselect: ['Selección múltiple', '☰'], file: ['Archivo adjunto', '📎'],
@@ -209,13 +224,11 @@ const STATUS_LABEL = { pruebas: 'En pruebas', activo: 'Activo', cerrado: 'Cerrad
 
 let ID_DOCS = [];
 let form = null, design = null, settings = null, eventFields = [], selected = null, dirty = false, cfgDirty = false;
-const markDirty = () => { dirty = true; $('saveBtn').textContent = '💾 Guardar diseño *'; };
+let namesCache = null;   // nombres de los elementos para las listas (ElementNames); se recalculan tras cualquier cambio
+const markDirty = () => { dirty = true; namesCache = null; $('saveBtn').textContent = '💾 Guardar diseño *'; };
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------------------------------------------------------------- utilidades del diseño
-const rulesOf = (c) => (!c ? [] : (c.rules || [c]));
-const matchOf = (c) => (c && c.rules && c.match) || 'all';
-const setRules = (f, rs, match) => { f.show_if = !rs.length ? null : (rs.length === 1 ? rs[0] : { match: match || 'all', rules: rs }); };
 function locate(id) { for (let r = 0; r < design.rows.length; r++) { const i = design.rows[r].items.indexOf(id); if (i >= 0) return [r, i]; } return null; }
 function detach(id) { const at = locate(id); if (!at) return; design.rows[at[0]].items.splice(at[1], 1); if (!design.rows[at[0]].items.length) design.rows.splice(at[0], 1); }
 const cop = (n) => '$' + Number(n || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 });
@@ -235,13 +248,355 @@ function newField(type, evField) {
   return f;
 }
 function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
-  if (target.gap != null) { design.rows.splice(target.gap, 0, { align: 'left', items: [id] }); }
+  if (target.gap != null) { design.rows.splice(target.gap, 0, newRow([id])); }
   else { const row = design.rows[target.row]; if (row.items.length >= 4) { showToast('Una fila admite hasta 4 elementos', 'error'); return false; } row.items.splice(target.pos, 0, id); }
   return true;
 }
 function usedKeys() { return new Set(Object.values(design.fields).map((f) => f.key).filter(Boolean)); }
 
+// ---------------------------------------------------------------- condiciones en árbol y variantes (P9)
+const OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
+const VARIANT_WARNING = 'No escribas aquí información confidencial: todo el contenido de las variantes es visible para quien abra el formulario, aunque no se le muestre.';
+const VPROPS = { content: 'Texto', src: 'Imagen', display_label: 'Nombre de presentación', help: 'Ayuda', placeholder: 'Texto de ejemplo' };
+const variantProps = (f) => (f.type === 'heading' || f.type === 'paragraph' ? ['content'] : f.type === 'image' ? ['src'] : f.type === 'payment' || f.type === 'companions' ? ['display_label', 'help'] : ['display_label', 'help', 'placeholder']);
+const normDesign = () => { Object.values(design.fields).forEach((f) => { if (f.variants) { f.variants = FormRender.variantsOf(f); ensureUids(f); } }); if (typeof normSheets === 'function') { activeSheet = null; normSheets(); } };   // formato de P2 → el nuevo
+let condOwners = {}, condSeq = 0;
+const regOwner = (fid, get, set, extra) => { const id = 'co' + (++condSeq); condOwners[id] = { fid, get, set, ...(extra || {}) }; return id; };
+const ownerOthers = (o) => (o.others ? o.others() : condOthers(o.fid));
+const condOthers = (fid) => Object.values(design.fields).filter((x) => x.id !== fid && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
+const defaultLeaf = (others) => ({ field: others[0].id, op: 'equals', value: '' });
+const canvasText = (f) => (f.variants && f.variants.content ? '↔ Según respuesta: ' + (f.variants.content.default || (f.variants.content.items[0] || {}).value || '') : f.content || '');
+
+// ---- plegado (P10): solo estado de pantalla, nada de esto se guarda
+const foldCond = new Set();       // claves «dueño|camino» de reglas y grupos plegados
+const foldItem = new Map();       // uid de variante -> true (desplegada) / false (plegada); sin dato: se despliega si hay 3 o menos
+const foldGroup = new Map();      // clave de grupo de variantes -> true (desplegado) / false
+const searchQ = {};               // «campo:propiedad» -> texto del buscador
+let uidSeq = 0;
+const newUid = () => 'v' + (++uidSeq);
+const ensureUids = (f) => Object.values(f.variants || {}).forEach((v) => (v.items || []).forEach((it) => { if (!it._uid) it._uid = newUid(); }));   // `_uid` es solo del editor: el servidor lo ignora
+const elementNames = () => namesCache || (namesCache = ElementNames.build(design, { typeLabel: (t) => TYPES[t][0], plain: (h) => RichText.toPlain(h || '') }));
+const labelOfField = (id) => { const n = design.fields[id] && elementNames()[id]; return n ? n.full : '(el elemento ya no existe)'; };   // nombre completo para las listas: interno o automático
+const shortNameOf = (id) => { const n = design.fields[id] && elementNames()[id]; return n ? n.short : ''; };
+
+function leafHtml(oid, ps, r, others, ck) {
+  const collapsed = foldCond.has(ck), at = `data-co="${oid}" data-cp="${ps}"`;
+  const tog = `<button type="button" class="small-btn" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} la regla" style="padding:0 6px;">${collapsed ? '▸' : '▾'}</button>`;
+  if (collapsed) return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:3px 6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" title="${esc(CondTree.summary(r, labelOfField))}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(CondTree.summary(r, labelOfField))}</span><button type="button" class="small-btn danger" ${at} data-cx="delnode" aria-label="Quitar la regla" style="padding:0 6px;">✕</button></div>`;
+  const parent = design.fields[r.field], opts = FormSync.optionsOf(parent, eventFields) || (parent && parent.type === 'checkbox' ? ['true', 'false'] : null);
+  let val = '';
+  if (r.op !== 'filled') {
+    if (opts) {   // con opciones (propias o del campo del evento) el valor SIEMPRE se elige de la lista; un valor guardado que no coincide ni con tildes/mayúsculas se conserva visible
+      const cur = Array.isArray(r.value) ? r.value : [r.value];
+      const extra = cur.filter((v) => v !== '' && !FormSync.findOption(opts, v));
+      if (r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" ${at} data-cx="valin" value="${esc(o)}" ${cur.some((v) => FormSync.norm(v) === FormSync.norm(o)) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}${extra.map((v) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" ${at} data-cx="valin" value="${esc(v)}" checked> ${esc(v)} (no está en la lista)</label>`).join('')}</div>`;
+      else val = `<select ${at} data-cx="valsel"><option value=""></option>${opts.map((o) => `<option ${FormSync.norm(r.value) === FormSync.norm(o) ? 'selected' : ''}>${esc(o)}</option>`).join('')}${extra.map((v) => `<option selected>${esc(v)}</option>`).join('')}</select>${extra.length ? '<div class="hint">El valor guardado no está en la lista de opciones.</div>' : ''}`;
+    } else val = `<input type="text" ${at} data-cx="val" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
+  }
+  return `<div data-leaf style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin:4px 0; display:grid; gap:4px;">
+    <div>${tog}</div>
+    <select ${at} data-cx="field">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(labelOfField(o.id))}</option>`).join('')}</select>
+    <select ${at} data-cx="op">${OPS_ALL.map(([v, l]) => `<option value="${v}" ${r.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${val}
+    <button type="button" class="small-btn danger" ${at} data-cx="delnode" style="justify-self:end;">Quitar regla</button></div>`;
+}
+function condNodeHtml(oid, node, path, others) {
+  const o = condOwners[oid], ps = path.join('.'), at = `data-co="${oid}" data-cp="${ps}"`, ck = `${o.key || oid}|${ps}`;
+  if (!CondTree.isGroup(node)) return leafHtml(oid, ps, node, others, ck);
+  const collapsed = foldCond.has(ck), n = CondTree.leaves(node).length;
+  const tog = `<button type="button" class="small-btn" ${at} data-cx="fold" data-ck="${esc(ck)}" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Desplegar' : 'Plegar'} el grupo de reglas" style="padding:0 6px;">${collapsed ? '▸' : '▾'}</button>`;
+  const del = path.length ? `<button type="button" class="small-btn danger" ${at} data-cx="delnode">Quitar grupo</button>` : '';
+  if (collapsed) return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0; display:flex; gap:4px; align-items:center;">${tog}<span class="hint" title="${esc(CondTree.summary(node, labelOfField))}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(node.name ? node.name + ' · ' : '')}${n} ${n === 1 ? 'regla' : 'reglas'}: ${esc(CondTree.summary(node.name ? { ...node, name: '' } : node, labelOfField))}</span>${del}</div>`;
+  const kids = node.rules.map((c, i) => condNodeHtml(oid, c, path.concat(i), others)).join('') || '<div class="hint">Sin reglas todavía.</div>';
+  const root = CondTree.group(condOwners[oid].get());
+  return `<div style="border-left:3px solid #c9d1ff; padding-left:6px; margin:4px 0;"><div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${tog}<span class="hint">Se cumplen</span><select ${at} data-cx="match"><option value="all" ${node.match !== 'any' ? 'selected' : ''}>TODAS (Y)</option><option value="any" ${node.match === 'any' ? 'selected' : ''}>ALGUNA (O)</option></select><input type="text" ${at} data-cx="gname" maxlength="40" placeholder="Nombre del grupo (opcional)" value="${esc(node.name || '')}" aria-label="Nombre del grupo de reglas" style="width:150px;">${del}</div>${kids}
+    <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" ${at} data-cx="addleaf" ${CondTree.canAddLeaf(root, path) ? '' : 'disabled'}>+ Regla</button>${path.length + 2 <= CondTree.MAX_DEPTH ? `<button type="button" class="small-btn" ${at} data-cx="addgroup" ${CondTree.canAddGroup(root, path) ? '' : 'disabled'}>+ Grupo (Y/O)</button>` : ''}</div></div>`;
+}
+const condEditorHtml = (oid) => condNodeHtml(oid, CondTree.group(condOwners[oid].get()), [], ownerOthers(condOwners[oid]));
+
+// Clics y cambios dentro de un editor de condiciones (delegados en el panel, que se repinta: se enlazan UNA vez)
+function onCx(e) {
+  const el = e.target.closest('[data-cx]');
+  if (!el || !el.dataset.co || !condOwners[el.dataset.co]) return;
+  const tag = el.tagName, act = el.dataset.cx;
+  if (e.type === 'click' && (tag === 'SELECT' || tag === 'INPUT')) return;
+  if (e.type === 'change' && !(tag === 'SELECT' || el.type === 'checkbox')) return;
+  if (e.type === 'input' && !(tag === 'INPUT' && el.type === 'text')) return;
+  const o = condOwners[el.dataset.co], path = el.dataset.cp ? el.dataset.cp.split('.').map(Number) : [], others = ownerOthers(o);
+  if (act === 'fold') { const k = el.dataset.ck; if (foldCond.has(k)) foldCond.delete(k); else foldCond.add(k); (o.rerender || renderProps)(); return; }
+  let root = CondTree.group(o.get()), structural = true;
+  if (act === 'gname') { root = CondTree.update(root, path, (g) => { const { name, ...rest } = g; return el.value.trim() ? { ...rest, name: el.value.trim() } : rest; }); structural = false; }
+  else if (act === 'match') root = CondTree.update(root, path, (g) => ({ ...g, match: el.value }));
+  else if (act === 'addleaf') { if (!others.length) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); return; } root = CondTree.addLeaf(root, path, defaultLeaf(others)); }
+  else if (act === 'addgroup') { if (!others.length) return; root = CondTree.addGroup(root, path, defaultLeaf(others)); }
+  else if (act === 'delnode') root = CondTree.remove(root, path);
+  else if (act === 'field') root = CondTree.update(root, path, (r) => ({ ...r, field: el.value, value: r.op === 'in' ? [] : '' }));
+  else if (act === 'op') root = CondTree.update(root, path, (r) => { const wasIn = r.op === 'in', op = el.value; let value = r.value; if (op === 'in' && !Array.isArray(value)) value = value ? [value] : []; else if (wasIn && op !== 'in') value = Array.isArray(value) ? (value[0] || '') : value; return { ...r, op, value }; });
+  else if (act === 'valsel') { root = CondTree.update(root, path, (r) => ({ ...r, value: el.value })); structural = false; }
+  else if (act === 'valin') { const boxes = el.closest('[data-leaf]').querySelectorAll('[data-cx="valin"]:checked'); root = CondTree.update(root, path, (r) => ({ ...r, value: Array.from(boxes).map((x) => x.value) })); structural = false; }
+  else if (act === 'val') { root = CondTree.update(root, path, (r) => ({ ...r, value: r.op === 'in' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value })); structural = false; }
+  else if (act === 'startroot') { if (!others.length) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); return; } root = CondTree.group(defaultLeaf(others)); }
+  else if (act === 'clearroot') root = CondTree.group(null);
+  else return;
+  o.set(root);
+  if (structural) (o.rerender || renderProps)();
+}
+
+const isHide = (prop) => prop === 'content' || prop === 'src';
+const itemsOf = (f, prop) => ((f.variants || {})[prop] || { items: [] }).items;
+function valueEditorHtml(prop, key, val) {
+  if (prop === 'placeholder') return `<input type="text" data-vtxt="${key}" maxlength="120" value="${esc(val)}">`;
+  if (prop === 'src') return `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${val ? `<img src="${esc(assetUrl(val))}" alt="" style="max-height:56px; max-width:120px; border-radius:6px;">` : '<span class="hint">sin imagen</span>'}<input type="file" data-vimg="${key}" accept="image/*"> ${val ? `<button type="button" class="small-btn" data-vact="clearimg" data-vk="${key}">Quitar</button>` : ''}</div>`;
+  return `<div data-vrt="${key}"></div>`;
+}
+const valueText = (prop, val) => (prop === 'src' ? (val ? val.split('/').pop() : '(sin imagen)') : (RichText.toPlain(val || '').replace(/\s+/g, ' ').trim() || '(vacío)'));
+const isOpen = (v, it) => (foldItem.has(it._uid) ? foldItem.get(it._uid) : v.items.length <= 3);
+function itemSummary(f, prop, it) { return `${it.name ? it.name + ' · ' : ''}${CondTree.summary(CondTree.compact(it.when) || it.when, labelOfField) || '(sin condiciones)'} → ${valueText(prop, it.value)}`; }
+function itemBodyHtml(f, prop, v, it) {   // el cuerpo solo se arma al desplegar: así abrir un formulario con 100 variantes no monta 100 editores
+  const oid = regOwner(f.id, () => it.when, (n) => { it.when = n; markDirty(); renderCanvas(); }, { key: `${f.id}:${prop}:${it._uid}` });
+  const groups = [...new Set(v.items.map((x) => x.group).filter(Boolean))];
+  return `<div style="display:flex; gap:4px; flex-wrap:wrap; margin:4px 0;"><input type="text" data-vname="${prop}:${it._uid}" maxlength="40" placeholder="Nombre (opcional)" value="${esc(it.name || '')}" style="width:130px;" aria-label="Nombre de la variante"><input type="text" list="vgl_${esc(f.id)}_${prop}" data-vgroup="${prop}:${it._uid}" maxlength="40" placeholder="Grupo (opcional)" value="${esc(it.group || '')}" style="width:130px;" aria-label="Grupo de la variante"><datalist id="vgl_${esc(f.id)}_${prop}">${groups.map((g) => `<option value="${esc(g)}">`).join('')}</datalist></div>
+    <div class="hint">Se aplica cuando:</div>${condEditorHtml(oid)}<div class="hint">Muestra:</div>${valueEditorHtml(prop, `${prop}:${it._uid}`, it.value)}`;
+}
+function itemHtml(f, prop, v, it, i) {
+  const open = isOpen(v, it), q = (searchQ[`${f.id}:${prop}`] || '').toLowerCase(), sum = itemSummary(f, prop, it);
+  const hay = `${sum} ${it.group || ''}`.toLowerCase();
+  return `<div class="cv" data-uid="${it._uid}" data-hay="${esc(hay)}" style="border:1px solid #d9dcea; border-radius:10px; padding:4px 6px; margin:4px 0;${q && !hay.includes(q) ? ' display:none;' : ''}">
+    <div style="display:flex; gap:4px; align-items:center;"><button type="button" class="small-btn" data-vact="toggle" data-vp="${prop}" data-vu="${it._uid}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} la variante ${i + 1}" style="padding:0 6px;">${open ? '▾' : '▸'}</button>
+      <span class="cvs" title="${esc(`${i + 1}. ${sum}`)}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8rem;"><b>${i + 1}.</b> ${esc(sum)}</span>
+      <button type="button" class="small-btn" data-vact="up" data-vp="${prop}" data-vu="${it._uid}" aria-label="Subir la variante ${i + 1}" ${i === 0 ? 'disabled' : ''} style="padding:0 6px;">↑</button><button type="button" class="small-btn" data-vact="down" data-vp="${prop}" data-vu="${it._uid}" aria-label="Bajar la variante ${i + 1}" ${i === v.items.length - 1 ? 'disabled' : ''} style="padding:0 6px;">↓</button><button type="button" class="small-btn" data-vact="dup" data-vp="${prop}" data-vu="${it._uid}" aria-label="Duplicar la variante ${i + 1}" ${v.items.length >= 200 ? 'disabled' : ''} style="padding:0 6px;">⎘</button><button type="button" class="small-btn danger" data-vact="del" data-vp="${prop}" data-vu="${it._uid}" aria-label="Quitar la variante ${i + 1}" style="padding:0 6px;">✕</button></div>
+    <div class="cvb" data-vu="${it._uid}">${open ? itemBodyHtml(f, prop, v, it) : ''}</div></div>`;
+}
+function propSectionHtml(f, prop) {
+  const v = (f.variants || {})[prop], hide = isHide(prop);
+  if (!v) return `<div class="fld" style="margin-top:6px;"><span class="hint"><b>${VPROPS[prop]}</b>: igual para todos.</span> <button type="button" class="small-btn" data-vact="enable" data-vp="${prop}">Cambiar según respuestas…</button></div>`;
+  ensureUids(f);
+  const sk = `${f.id}:${prop}`, choice = condOthers(f.id).filter((x) => FormSync.optionsOf(x, eventFields));
+  const bands = [];   // grupos = tandas SEGUIDAS de variantes con el mismo grupo (agrupar no cambia el orden ni cuál se muestra)
+  v.items.forEach((it, i) => { const g = it.group || '', last = bands[bands.length - 1]; if (g && last && last.g === g) last.items.push([it, i]); else bands.push({ g, items: [[it, i]] }); });
+  const list = bands.map((b) => {
+    if (!b.g) return itemHtml(f, prop, v, b.items[0][0], b.items[0][1]);
+    const gk = `${sk}:${b.g}:${b.items[0][0]._uid}`, open = foldGroup.has(gk) ? foldGroup.get(gk) : true;
+    return `<div style="border-left:3px solid #9fb0ff; padding-left:6px; margin:6px 0;"><div style="display:flex; gap:4px; align-items:center;"><button type="button" class="small-btn" data-vact="gtoggle" data-vp="${prop}" data-vgk="${esc(gk)}" aria-expanded="${open}" aria-label="${open ? 'Plegar' : 'Desplegar'} el grupo ${esc(b.g)}" style="padding:0 6px;">${open ? '▾' : '▸'}</button><b style="font-size:.82rem;">${esc(b.g)}</b><span class="hint">(${b.items.length})</span><input type="text" data-vgname="${prop}:${b.items[0][0]._uid}" maxlength="40" value="${esc(b.g)}" aria-label="Renombrar el grupo" style="width:120px;"></div>${open ? b.items.map(([it, i]) => itemHtml(f, prop, v, it, i)).join('') : ''}</div>`;
+  }).join('');
+  return `<div style="border:1px solid #cfd4e8; border-radius:10px; padding:6px; margin-top:8px;"><div style="display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap;"><b>${VPROPS[prop]} — variantes (${v.items.length})</b><button type="button" class="small-btn danger" data-vact="disable" data-vp="${prop}">Quitar variantes</button></div>
+    <div class="hint">Se muestra la primera variante que se cumpla, de arriba hacia abajo; si ninguna, el texto por defecto${hide ? '; si tampoco hay, el elemento no ocupa espacio' : '; si tampoco hay, se usa el valor del campo'}.</div>
+    <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin:6px 0;"><input type="search" data-vsearch="${sk}" value="${esc(searchQ[sk] || '')}" placeholder="Buscar en las variantes…" aria-label="Buscar en las variantes" style="flex:1; min-width:120px;"><button type="button" class="small-btn" data-vact="foldall" data-vp="${prop}">Plegar todas</button><button type="button" class="small-btn" data-vact="unfoldall" data-vp="${prop}">Desplegar todas</button></div>
+    <div data-vlist="${sk}">${list}</div>
+    <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:6px;"><button type="button" class="small-btn" data-vact="add" data-vp="${prop}" ${v.items.length >= 200 ? 'disabled' : ''}>+ Agregar variante</button>
+      ${choice.length ? `<select data-vpo="${prop}" aria-label="Campo cuyas opciones generan variantes">${choice.map((x) => `<option value="${x.id}">${esc(labelOfField(x.id))}</option>`).join('')}</select><button type="button" class="small-btn" data-vact="peropt" data-vp="${prop}">Una variante por cada opción</button>` : ''}</div>
+    <div style="border:1px dashed #cfd4e8; border-radius:10px; padding:6px; margin-top:6px;"><b>Por defecto</b> <span class="hint">(${hide ? 'vacío = no se muestra nada' : 'vacío = se usa el valor del campo'})</span>${valueEditorHtml(prop, `${prop}:def`, v.default || '')}</div></div>`;
+}
+function variantsHtml(f) {
+  let html = `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="hint" style="background:#fff8e1; border:1px solid #f0ad4e; color:#7a5b00; border-radius:8px; padding:6px 8px;"><b>Variantes.</b> ${VARIANT_WARNING}</div>`;
+  variantProps(f).forEach((prop) => { html += propSectionHtml(f, prop); });
+  return html;
+}
+
+// ---- comportamiento (delegado en el panel, que se repinta: se enlaza UNA vez)
+const curField = () => design.fields[selected];
+const findItem = (f, prop, uid) => itemsOf(f, prop).find((x) => x._uid === uid);
+function mountBody(root) {   // los editores de texto con formato se montan solo en lo que está desplegado
+  const f = curField(); if (!f) return;
+  root.querySelectorAll('[data-vrt]').forEach((h) => {
+    const [prop, k] = h.dataset.vrt.split(':'), v = (f.variants || {})[prop]; if (!v) return;
+    const it = k === 'def' ? null : findItem(f, prop, k);
+    const m = RichText.mount(h, { value: it ? it.value : v.default, label: `${VPROPS[prop]}${it ? ' de la variante' : ' por defecto'}`, onChange: (x) => { if (it) { it.value = x; const sp = document.querySelector(`.cv[data-uid="${it._uid}"] .cvs`); if (sp) { sp.textContent = `${(v.items.indexOf(it)) + 1}. ${itemSummary(f, prop, it)}`; sp.title = sp.textContent; } } else v.default = x; markDirty(); renderCanvas(); } });
+    rtMounts.push(m); (root._mounts = root._mounts || []).push(m);
+  });
+}
+function toggleItem(f, prop, uid) {
+  const v = f.variants[prop], it = findItem(f, prop, uid), cv = document.querySelector(`.cv[data-uid="${uid}"]`), body = cv.querySelector('.cvb'), btn = cv.querySelector('[data-vact="toggle"]');
+  const open = !isOpen(v, it); foldItem.set(uid, open);
+  if (open) { body.innerHTML = itemBodyHtml(f, prop, v, it); mountBody(body); }
+  else { (body._mounts || []).forEach((m) => m.destroy()); body._mounts = []; body.innerHTML = ''; }
+  btn.textContent = open ? '▾' : '▸'; btn.setAttribute('aria-expanded', open);
+}
+const redoProps = () => { markDirty(); renderCanvas(); renderProps(); };
+function addItem(f, prop, item, at) {
+  const v = f.variants[prop]; item._uid = newUid(); foldItem.set(item._uid, true);
+  if (at == null) v.items.push(item); else v.items.splice(at, 0, item);
+  return item;
+}
+async function onVact(e) {
+  const b = e.target.closest('[data-vact]'); if (!b || b.disabled) return;
+  const f = curField(); if (!f) return;
+  const act = b.dataset.vact, prop = b.dataset.vp, uid = b.dataset.vu, v = (f.variants || {})[prop], idx = v && uid ? v.items.findIndex((x) => x._uid === uid) : -1;
+  if (act === 'toggle') { toggleItem(f, prop, uid); return; }
+  if (act === 'enable') { f.variants = f.variants || {}; f.variants[prop] = { items: [], default: isHide(prop) ? (f[prop] || '') : '' }; redoProps(); }
+  else if (act === 'disable') {
+    if (!(await showConfirm(`¿Quitar todas las variantes de «${VPROPS[prop]}»? ${isHide(prop) ? 'Queda el valor por defecto.' : 'Queda el valor del campo.'}`, { confirmLabel: 'Quitar' }))) return;
+    if (isHide(prop)) f[prop] = v.default || ''; delete f.variants[prop]; if (!Object.keys(f.variants).length) delete f.variants; redoProps();
+  } else if (act === 'add') {
+    const others = condOthers(f.id); if (!others.length) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); return; }
+    addItem(f, prop, { when: { match: 'all', rules: [defaultLeaf(others)] }, value: '' }); redoProps();
+  } else if (act === 'del') { v.items.splice(idx, 1); redoProps(); }
+  else if (act === 'up' || act === 'down') { const j = act === 'up' ? idx - 1 : idx + 1; [v.items[idx], v.items[j]] = [v.items[j], v.items[idx]]; redoProps(); }
+  else if (act === 'dup') { const c = JSON.parse(JSON.stringify(v.items[idx])); delete c._uid; if (c.name) c.name += ' (copia)'; addItem(f, prop, c, idx + 1); redoProps(); }
+  else if (act === 'gtoggle') { const k = b.dataset.vgk; foldGroup.set(k, !(foldGroup.has(k) ? foldGroup.get(k) : true)); renderProps(); }
+  else if (act === 'foldall' || act === 'unfoldall') {
+    const open = act === 'unfoldall';
+    if (open && v.items.length > 12 && !(await showConfirm(`Desplegar ${v.items.length} variantes puede tardar un poco. ¿Continuar?`, { confirmLabel: 'Desplegar todas' }))) return;
+    v.items.forEach((it) => foldItem.set(it._uid, open));
+    new Set(v.items.map((x) => x.group).filter(Boolean)).forEach((g) => { const first = v.items.find((x) => x.group === g); foldGroup.set(`${f.id}:${prop}:${g}:${first._uid}`, open); });
+    renderProps();
+  } else if (act === 'peropt') {
+    const fid = box_.querySelector(`[data-vpo="${prop}"]`).value, src = design.fields[fid], opts = FormSync.optionsOf(src, eventFields) || [];
+    const have = new Set(v.items.flatMap((it) => [...CondTree.coveredBy(it.when, fid)])), todo = opts.filter((o) => !have.has(FormSync.norm(o))).slice(0, 200 - v.items.length);
+    if (!todo.length) { showToast('Ya hay una variante para cada opción', 'info'); return; }
+    if (!(await showConfirm(`Se crearán ${todo.length} variantes, una por cada opción de «${esc(labelOfField(fid))}», con el valor por defecto copiado para que lo edites. ¿Continuar?`, { confirmLabel: 'Crear las variantes' }))) return;
+    todo.forEach((o) => { const it = addItem(f, prop, { when: { match: 'all', rules: [{ field: fid, op: 'equals', value: o }] }, value: v.default || '', name: o }); foldItem.set(it._uid, false); });
+    redoProps();
+  } else if (act === 'clearimg') { const [, k] = b.dataset.vk.split(':'); if (k === 'def') v.default = ''; else findItem(f, prop, k).value = ''; redoProps(); }
+}
+function onVinput(e) {
+  const f = curField(); if (!f) return;
+  const t = e.target;
+  if (t.dataset.vsearch) {   // buscador: filtra sin repintar
+    searchQ[t.dataset.vsearch] = t.value;
+    const q = t.value.toLowerCase();
+    document.querySelectorAll(`[data-vlist="${t.dataset.vsearch}"] .cv`).forEach((cv) => { cv.style.display = !q || cv.dataset.hay.includes(q) ? '' : 'none'; });
+    return;
+  }
+  const key = t.dataset.vname || t.dataset.vgroup || t.dataset.vtxt || t.dataset.vgname || t.dataset.vimg; if (!key) return;
+  const [prop, k] = key.split(':'), v = (f.variants || {})[prop]; if (!v) return;
+  const it = k === 'def' ? null : findItem(f, prop, k);
+  const sum = () => { const sp = document.querySelector(`.cv[data-uid="${k}"] .cvs`); if (sp && it) { sp.textContent = `${v.items.indexOf(it) + 1}. ${itemSummary(f, prop, it)}`; sp.title = sp.textContent; } };
+  if (t.dataset.vname && e.type === 'input') { if (t.value) it.name = t.value; else delete it.name; sum(); markDirty(); }
+  else if (t.dataset.vgroup && e.type === 'change') { if (t.value.trim()) it.group = t.value.trim(); else delete it.group; redoProps(); }
+  else if (t.dataset.vgname && e.type === 'change') { const g = it.group; let i = v.items.indexOf(it); while (i < v.items.length && v.items[i].group === g) { if (t.value.trim()) v.items[i].group = t.value.trim(); else delete v.items[i].group; i++; } redoProps(); }
+  else if (t.dataset.vtxt && e.type === 'input') { if (it) it.value = t.value; else v.default = t.value; sum(); markDirty(); renderCanvas(); }
+  else if (t.dataset.vimg && e.type === 'change') {
+    const fd = new FormData(); fd.append('file', t.files[0]);
+    j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }).then((d) => { if (it) it.value = d.storage_path; else v.default = d.storage_path; redoProps(); }).catch((err) => showToast(err.message, 'error'));
+  }
+}
+let box_ = null;
+function bindVariants(box, f) {   // tras cada repintado: monta los editores de lo desplegado
+  box_ = box;
+  mountBody(box);
+}
+box_ = $('propsBox');
+$('propsBox').addEventListener('click', onVact);
+['input', 'change'].forEach((t) => $('propsBox').addEventListener(t, onVinput));
+
+['click', 'change', 'input'].forEach((t) => $('propsBox').addEventListener(t, onCx));
+
+// ---------------------------------------------------------------- hojas (P12)
+let activeSheet = null, sheetMounts = [];
+const canvasFold = new Set();   // bloques condicionales plegados en el lienzo (solo pantalla)
+const sheetsOn = () => (design.sheets || []).length > 1;
+const sheetIndex = (sid) => (design.sheets || []).findIndex((x) => x.id === sid);
+const sheetName = (sh, i) => RichText.toPlain(sh.title || '') || `Hoja ${i + 1}`;
+const lastSheetId = () => design.sheets[design.sheets.length - 1].id;
+const newSheetId = () => 'sh_' + Math.random().toString(36).slice(2, 8);
+const newRow = (items, sheet) => ({ align: 'left', items, ...(sheetsOn() ? { sheet: sheet || activeSheet } : {}) });
+const isLastOnly = (fid) => ['payment', 'companions'].includes((design.fields[fid] || {}).type);   // el pago y los acompañantes van en la última hoja
+// Mantiene el diseño coherente: filas con hoja válida, ordenadas por hoja (estable), pago/acompañantes en la última y la primera y la última sin condición.
+function normSheets() {
+  if (!design.sheets || design.sheets.length < 2) { delete design.sheets; design.rows.forEach((r) => { delete r.sheet; }); activeSheet = null; return; }
+  const ids = design.sheets.map((x) => x.id);
+  let prev = ids[0];
+  design.rows.forEach((r) => { if (!ids.includes(r.sheet)) r.sheet = prev; if (r.items.some(isLastOnly)) r.sheet = ids[ids.length - 1]; prev = r.sheet; });
+  design.rows.sort((a, b) => ids.indexOf(a.sheet) - ids.indexOf(b.sheet));
+  design.sheets.forEach((x, i) => { if (i === 0 || i === ids.length - 1) delete x.show_if; });
+  if (!ids.includes(activeSheet)) activeSheet = ids[0];
+}
+const clearSheetRt = () => { sheetMounts.forEach((m) => m.destroy()); sheetMounts = []; };
+const fieldsBeforeSheet = (i) => {   // la condición de una hoja solo puede usar campos de hojas anteriores
+  const before = new Set(design.rows.filter((r) => sheetIndex(r.sheet) < i).flatMap((r) => r.items));
+  return Object.values(design.fields).filter((x) => before.has(x.id) && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
+};
+function splitSheets() {   // de una hoja a dos: todo queda en la primera, salvo el pago y los acompañantes (que van en la última)
+  design.sheets = [{ id: newSheetId(), title: '', description: '' }, { id: newSheetId(), title: '', description: '' }];
+  design.rows.forEach((r) => { r.sheet = design.sheets[0].id; });
+  activeSheet = design.sheets[0].id; normSheets(); markDirty(); renderAll();
+}
+function moveToSheet(fid, sid) {
+  if (isLastOnly(fid) && sid !== lastSheetId()) { showToast('El pago y los acompañantes van en la última hoja', 'error'); renderProps(); return; }
+  detach(fid); design.rows.push(newRow([fid], sid)); activeSheet = sid; normSheets(); markDirty(); renderAll();
+}
+function duplicateSheet(i) {
+  const sh = design.sheets[i], rows = design.rows.filter((r) => r.sheet === sh.id), map = {}, id = newSheetId();
+  rows.forEach((r) => r.items.forEach((fid) => { if (!isLastOnly(fid)) map[fid] = uid(); }));
+  const remap = (n) => (n ? (n.rules ? { ...n, rules: n.rules.map(remap) } : { ...n, field: map[n.field] || n.field }) : n);   // las reglas entre campos copiados apuntan a las copias
+  Object.entries(map).forEach(([old, nid]) => {
+    const c = JSON.parse(JSON.stringify(design.fields[old]));
+    c.id = nid; c.key = null; c.sync = false;
+    if (c.show_if) c.show_if = remap(c.show_if);
+    Object.values(c.variants || {}).forEach((v) => v.items.forEach((it) => { it.when = remap(it.when); }));
+    design.fields[nid] = c;
+  });
+  design.sheets.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(sh)), id, title: (sh.title || '') + ' (copia)' });
+  rows.forEach((r) => { const items = r.items.filter((fid) => map[fid]).map((fid) => map[fid]); if (items.length) design.rows.push({ align: r.align, items, sheet: id }); });
+  if (rows.some((r) => r.items.some(isLastOnly))) showToast('El pago y los acompañantes no se copian: un formulario admite uno solo', 'info');
+  activeSheet = id; normSheets(); markDirty(); renderAll();
+}
+async function deleteSheet(i) {
+  const sh = design.sheets[i], di = i === 0 ? 1 : i - 1, dest = design.sheets[di];
+  const n = design.rows.filter((r) => r.sheet === sh.id).reduce((a, r) => a + r.items.length, 0);
+  const msg = `¿Eliminar la hoja «${esc(sheetName(sh, i))}»? ${n ? `Sus ${n} ${n === 1 ? 'campo pasa' : 'campos pasan'} a la hoja «${esc(sheetName(dest, di))}». No se borra ningún campo.` : 'No tiene campos.'}`;
+  if (!(await showConfirm(msg, { confirmLabel: 'Eliminar la hoja' }))) return;
+  design.rows.forEach((r) => { if (r.sheet === sh.id) r.sheet = dest.id; });
+  design.sheets.splice(i, 1); activeSheet = dest.id; normSheets(); markDirty(); renderAll();
+}
+async function mergeSheets() {
+  const n = design.rows.reduce((a, r) => a + r.items.length, 0);
+  if (!(await showConfirm(`¿Volver a una sola hoja? Los ${n} campos quedan juntos, en el mismo orden. Se pierden los títulos, las descripciones y las condiciones de las hojas.`, { confirmLabel: 'Volver a una hoja' }))) return;
+  delete design.sheets; normSheets(); markDirty(); renderAll();
+}
+function renderSheets() {
+  clearSheetRt();
+  Object.keys(condOwners).forEach((k) => { if (condOwners[k].keep) delete condOwners[k]; });
+  const bar = $('sheetsBar'), panel = $('sheetsPanel');
+  if (!sheetsOn()) { bar.innerHTML = '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><span class="hint">Formulario de una sola hoja.</span><button type="button" class="small-btn" data-shact="split">Dividir en hojas</button></div>'; panel.innerHTML = ''; return; }
+  const i = sheetIndex(activeSheet), sh = design.sheets[i];
+  bar.innerHTML = `<div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;" role="tablist" aria-label="Hojas del formulario">${design.sheets.map((x, k) => `<button type="button" role="tab" aria-selected="${x.id === activeSheet}" class="small-btn ${x.id === activeSheet ? 'primary' : ''}" data-shtab="${x.id}">${k + 1} · ${esc(sheetName(x, k).slice(0, 22))}${x.show_if ? ' ⚙' : ''}</button>`).join('')}<button type="button" class="small-btn" data-shact="add" ${design.sheets.length >= 20 ? 'disabled' : ''}>+ Hoja</button></div>`;
+  const cond = (i > 0 && i < design.sheets.length - 1)
+    ? (() => { const oid = regOwner(null, () => sh.show_if, (n) => { const c = CondTree.compact(n); if (c) sh.show_if = c; else delete sh.show_if; markDirty(); }, { keep: true, key: `sheet:${sh.id}`, others: () => fieldsBeforeSheet(i), rerender: renderSheets });
+        return `<div class="fld"><label>Mostrar esta hoja</label>${sh.show_if ? `${condEditorHtml(oid)}<button type="button" class="small-btn danger" data-co="${oid}" data-cx="clearroot">Siempre (quitar la regla)</button>` : `<span class="hint">Siempre.</span> <button type="button" class="small-btn" data-co="${oid}" data-cx="startroot">Mostrar solo si…</button>`}<div class="hint">Solo puede usar campos de hojas anteriores.</div></div>`; })()
+    : '<div class="hint">La primera y la última hoja siempre se muestran.</div>';
+  panel.innerHTML = `<details style="margin-bottom:8px;"><summary style="cursor:pointer; font-size:.85rem; font-weight:700;">Opciones de la hoja ${i + 1}</summary><div style="padding:6px 2px; display:grid; gap:6px;">
+    <div class="fld"><label>Título de la hoja</label><div id="shTitleRt"></div></div><div class="fld"><label>Descripción (opcional)</label><div id="shDescRt"></div></div>${cond}
+    <div style="display:flex; gap:4px; flex-wrap:wrap;"><button type="button" class="small-btn" data-shact="left" ${i === 0 ? 'disabled' : ''}>← Antes</button><button type="button" class="small-btn" data-shact="right" ${i === design.sheets.length - 1 ? 'disabled' : ''}>Después →</button><button type="button" class="small-btn" data-shact="dup" ${design.sheets.length >= 20 ? 'disabled' : ''}>Duplicar</button><button type="button" class="small-btn danger" data-shact="del">Eliminar</button><button type="button" class="small-btn" data-shact="merge">Volver a una sola hoja</button></div>
+    <div class="hint">El pago y los acompañantes siempre van en la última hoja.</div></div></details>`;
+  const mount = (id, opts) => { const m = RichText.mount($(id), opts); sheetMounts.push(m); };
+  mount('shTitleRt', { basic: true, value: sh.title, label: 'Título de la hoja', onChange: (v) => { sh.title = v; markDirty(); const t = bar.querySelector(`[data-shtab="${sh.id}"]`); if (t) t.textContent = `${i + 1} · ${sheetName(sh, i).slice(0, 22)}${sh.show_if ? ' ⚙' : ''}`; } });
+  mount('shDescRt', { value: sh.description, label: 'Descripción de la hoja', onChange: (v) => { sh.description = v; markDirty(); } });
+}
+function onSheetAction(e) {
+  const tab = e.target.closest('[data-shtab]');
+  if (tab) { activeSheet = tab.dataset.shtab; selected = null; renderAll(); return; }
+  const b = e.target.closest('[data-shact]');
+  if (!b || b.disabled) return;
+  const i = sheetIndex(activeSheet), act = b.dataset.shact;
+  if (act === 'split') splitSheets();
+  else if (act === 'add') { design.sheets.splice(i + 1, 0, { id: newSheetId(), title: '', description: '' }); activeSheet = design.sheets[i + 1].id; normSheets(); markDirty(); renderAll(); }
+  else if (act === 'left' || act === 'right') { const j = act === 'left' ? i - 1 : i + 1; [design.sheets[i], design.sheets[j]] = [design.sheets[j], design.sheets[i]]; normSheets(); markDirty(); renderAll(); }
+  else if (act === 'dup') duplicateSheet(i);
+  else if (act === 'del') deleteSheet(i);
+  else if (act === 'merge') mergeSheets();
+}
+['click'].forEach((t) => { $('sheetsBar').addEventListener(t, onSheetAction); $('sheetsPanel').addEventListener(t, (e) => { if (e.target.closest('[data-shact]')) onSheetAction(e); }); });
+['click', 'change', 'input'].forEach((t) => $('sheetsPanel').addEventListener(t, onCx));
+$('canvas').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-bandtoggle]'), all = e.target.closest('[data-bandall]');
+  if (t) { const k = t.dataset.bandtoggle; if (canvasFold.has(k)) canvasFold.delete(k); else canvasFold.add(k); renderCanvas(); }
+  else if (all) {
+    const rows = design.rows, mine = CondTree.bands(rows, design.fields).filter((b) => !sheetsOn() || rows[b.start].sheet === activeSheet);
+    mine.forEach((b) => { const k = `${activeSheet || ''}|${b.key}|${rows[b.start].items[0]}`; if (all.dataset.bandall === 'fold') canvasFold.add(k); else canvasFold.delete(k); });
+    renderCanvas();
+  }
+});
+
 // ---------------------------------------------------------------- paleta
+async function syncWithParams() {
+  try { eventFields = await j(`/api/events/${EV}/form-event-fields`); } catch (e) { showToast(e.message, 'error'); return; }
+  const ch = FormSync.plan(design, eventFields);
+  if (!ch.length) { showToast('Los campos enlazados ya están al día con Parámetros', 'success'); return; }
+  const list = ch.map((p) => `<li><b>${esc(p.label)}</b>: ${p.changes.map(esc).join('; ')}</li>`).join('');
+  if (!(await showConfirm(`Esto va a cambiar en el formulario:<ul style="margin:8px 0 0 18px; text-align:left;">${list}</ul>`, { confirmLabel: 'Sincronizar' }))) return;
+  FormSync.apply(design, ch); markDirty(); renderAll();
+}
 function renderPalette() {
   $('palNew').innerHTML = Object.entries(TYPES).map(([t, [l, ic]]) => `<button type="button" draggable="true" data-new="${t}">${ic} ${l}</button>`).join('');
   const used = usedKeys();
@@ -279,11 +634,24 @@ function onDrop(target, raw) {
   selected = id; markDirty(); renderAll();
 }
 function renderCanvas() {
+  normSheets();
   const rows = design.rows;
   const gap = (i) => `<div class="gap" data-gap="${i}"></div>`;
-  $('canvas').innerHTML = rows.map((row, ri) => gap(ri) + `<div class="crow" data-ri="${ri}">${row.items.map((id) => cardHtml(design.fields[id])).join('')}
+  const endGap = !sheetsOn() ? rows.length : (() => { let e = rows.findIndex((r) => r.sheet === activeSheet); if (e < 0) { e = rows.findIndex((r) => sheetIndex(r.sheet) > sheetIndex(activeSheet)); return e < 0 ? rows.length : e; } while (e < rows.length && rows[e].sheet === activeSheet) e++; return e; })();
+  // bloques condicionales (P10): 2 o más filas seguidas con la misma condición se pueden plegar; conviven con las pestañas de hojas (solo se miran las filas de la hoja activa)
+  const bandList = CondTree.bands(rows, design.fields).filter((b) => !sheetsOn() || rows[b.start].sheet === activeSheet);
+  const bandAt = (ri) => bandList.find((b) => ri >= b.start && ri < b.end);
+  const bandId = (b) => `${activeSheet || ''}|${b.key}|${rows[b.start].items[0]}`;
+  const foldedRow = (ri) => { const b = bandAt(ri); return !!b && canvasFold.has(bandId(b)); };
+  const bandHead = (ri) => {
+    const b = bandAt(ri); if (!b || ri !== b.start) return '';
+    const folded = canvasFold.has(bandId(b)), n = b.end - b.start;
+    return `<div class="cband" style="display:flex; gap:6px; align-items:center; margin:6px 0 2px; padding:3px 6px; border-left:4px solid #9fb0ff; background:#f3f5ff; border-radius:6px; font-size:.78rem;"><button type="button" class="small-btn" data-bandtoggle="${esc(bandId(b))}" aria-expanded="${!folded}" aria-label="${folded ? 'Desplegar' : 'Plegar'} el bloque condicional" style="padding:0 6px;">${folded ? '▸' : '▾'}</button><span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><b>Se muestra si:</b> ${esc(CondTree.summary(b.cond, labelOfField))}</span><span class="hint">${n} filas</span></div>`;
+  };
+  const bandTools = bandList.length ? '<div style="display:flex; gap:4px; justify-content:flex-end; margin-bottom:4px;"><button type="button" class="small-btn" data-bandall="fold">Plegar bloques condicionales</button><button type="button" class="small-btn" data-bandall="unfold">Desplegar bloques</button></div>' : '';
+  $('canvas').innerHTML = bandTools + rows.map((row, ri) => bandHead(ri) + ((sheetsOn() && row.sheet !== activeSheet) || foldedRow(ri) ? '' : gap(ri) + `<div class="crow" data-ri="${ri}">${row.items.map((id) => cardHtml(design.fields[id])).join('')}
     <div class="rowtools"><select data-align="${ri}" aria-label="Alineación de la fila" style="font-size:0.7rem; padding:1px;"><option value="left" ${row.align === 'left' ? 'selected' : ''}>◀ izquierda</option><option value="center" ${row.align === 'center' ? 'selected' : ''}>▬ centro</option><option value="right" ${row.align === 'right' ? 'selected' : ''}>▶ derecha</option></select>
-    <button class="small-btn" data-rowup="${ri}" aria-label="Subir esta fila" title="Subir esta fila" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" aria-label="Bajar esta fila" title="Bajar esta fila" style="padding:0 6px;">↓</button></div></div>`).join('') + gap(rows.length) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
+    <button class="small-btn" data-rowup="${ri}" aria-label="Subir esta fila" title="Subir esta fila" style="padding:0 6px;">↑</button><button class="small-btn" data-rowdown="${ri}" aria-label="Bajar esta fila" title="Bajar esta fila" style="padding:0 6px;">↓</button></div></div>`)).join('') + gap(endGap) || '<p class="hint" style="text-align:center; padding:3rem;">Arrastra aquí un elemento para empezar.</p>';
   $('canvas').querySelectorAll('.gap').forEach((g) => {
     g.addEventListener('dragover', (e) => { e.preventDefault(); g.classList.add('over'); });
     g.addEventListener('dragleave', () => g.classList.remove('over'));
@@ -305,9 +673,10 @@ function renderCanvas() {
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
         const target = ri + (e.key === 'ArrowUp' ? -1 : 1);
-        if (target < 0 || target >= design.rows.length) { if (row.items.length > 1) { detach(id); design.rows.splice(e.key === 'ArrowUp' ? 0 : design.rows.length, 0, { align: 'left', items: [id] }); } else return; }
+        if (sheetsOn() && (target < 0 || target >= design.rows.length || design.rows[target].sheet !== row.sheet)) return;   // entre hojas se cambia con el selector «Hoja»
+        if (target < 0 || target >= design.rows.length) { if (row.items.length > 1) { detach(id); design.rows.splice(e.key === 'ArrowUp' ? 0 : design.rows.length, 0, newRow([id], row.sheet)); } else return; }
         else if (row.items.length === 1) { const t = design.rows[target]; if (t.items.length >= 4) return; detach(id); const ti = design.rows.indexOf(t); design.rows[ti].items.push(id); }
-        else { const t = design.rows[target]; detach(id); const ti = design.rows.indexOf(t); design.rows.splice(e.key === 'ArrowUp' ? ti + 1 : ti, 0, { align: 'left', items: [id] }); }
+        else { const t = design.rows[target]; detach(id); const ti = design.rows.indexOf(t); design.rows.splice(e.key === 'ArrowUp' ? ti + 1 : ti, 0, newRow([id], row.sheet)); }
       } else return;
       selected = id; markDirty(); renderAll(); focusBack();
     });
@@ -317,19 +686,28 @@ function renderCanvas() {
     c.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); const r = c.getBoundingClientRect(); const left = e.clientX < r.left + r.width / 2; c.classList.remove('dl', 'dr'); onDrop({ row: ri, pos: left ? pos : pos + 1 }, e.dataTransfer.getData('text/plain')); });
   });
   $('canvas').querySelectorAll('[data-align]').forEach((s) => s.addEventListener('change', () => { design.rows[+s.dataset.align].align = s.value; markDirty(); }));
-  const moveRow = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= design.rows.length) return; [design.rows[i], design.rows[j2]] = [design.rows[j2], design.rows[i]]; markDirty(); renderCanvas(); };
+  const moveRow = (i, d) => { const j2 = i + d; if (j2 < 0 || j2 >= design.rows.length || (sheetsOn() && design.rows[j2].sheet !== design.rows[i].sheet)) return; [design.rows[i], design.rows[j2]] = [design.rows[j2], design.rows[i]]; markDirty(); renderCanvas(); };
   $('canvas').querySelectorAll('[data-rowup]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowup, -1)));
   $('canvas').querySelectorAll('[data-rowdown]').forEach((b) => b.addEventListener('click', () => moveRow(+b.dataset.rowdown, 1)));
 }
 function cardHtml(f) {
   const tags = [f.required ? '<span>obligatorio</span>' : '', f.key ? `<span>🔗 ${esc(f.key)}</span>` : '', f.stats ? '<span>📊</span>' : '', f.readonly_when_prefilled ? '<span>🔒</span>' : '', (f.doc_types || []).length ? `<span>🪪 ${f.doc_types.join('/')}</span>` : '', f.show_if ? '<span>👁 condicional</span>' : ''].join('');
-  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : (f.content || '').slice(0, 40)) : f.label;
-  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (label || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(label) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
+  const label = f.type === 'companions' ? `${f.label} (hasta ${f.max})` : f.type === 'payment' ? `${f.label} — ${cop(f.pay.amount)}${f.pay.mode === 'rules' || (f.pay.discounts || []).length ? ' (varía)' : ''}` : STATIC.includes(f.type) ? (f.type === 'image' ? (f.src ? 'Imagen' : 'Imagen (sin cargar)') : RichText.toPlain(canvasText(f)).replace(/\s+/g, ' ').slice(0, 40)) : f.label;
+  const shown = f.internal_name || label;     // el «Nombre interno», si existe, es la etiqueta del lienzo
+  return `<div class="ccard ${selected === f.id ? 'sel' : ''}" draggable="true" data-id="${f.id}" tabindex="0" role="button" aria-label="${esc(TYPES[f.type][0] + ': ' + (shown || 'sin nombre'))}${selected === f.id ? ' (seleccionado)' : ''}"><div class="t">${TYPES[f.type][1]} ${TYPES[f.type][0]}</div><div class="l">${esc(shown) || '(sin nombre)'}</div><div class="tags">${tags}</div></div>`;
 }
 
 // ---------------------------------------------------------------- propiedades del elemento
+const helpRtHtml = () => '<div class="fld"><label>Texto de ayuda (opcional, con formato)</label><div id="pHelpRt"></div></div>';
+const dispRtHtml = () => '<div class="fld"><label>Nombre de presentación (opcional, con formato)</label><div id="pDispRt"></div><div class="hint">Es lo que ve la persona en el formulario. Reportes, Excel y estadísticas usan el nombre de arriba. Vacío = se ve el nombre de arriba.</div></div>';
+// editores de texto con formato montados en el panel de propiedades (se desmontan al repintarlo)
+let rtMounts = [];
+const mountRt = (host, opts) => { const m = RichText.mount(host, opts); rtMounts.push(m); return m; };
+function clearRt() { rtMounts.forEach((m) => m.destroy()); rtMounts = []; }
 function fieldInput(id, lbl, value, extra) { return `<div class="fld"><label>${lbl}</label><input type="text" id="${id}" value="${esc(value)}" ${extra || ''}></div>`; }
 function renderProps() {
+  clearRt();
+  Object.keys(condOwners).forEach((k) => { if (!condOwners[k].keep) delete condOwners[k]; });   // los de las hojas se conservan
   const box = $('propsBox');
   const f = selected && design.fields[selected];
   if (!f) { box.innerHTML = '<p class="hint">Selecciona un elemento del lienzo para editar sus propiedades.</p>'; return; }
@@ -338,11 +716,12 @@ function renderProps() {
   const isInput = !STATIC.includes(f.type) && !isPay && !isComp;
   const others = Object.values(design.fields).filter((x) => x.id !== f.id && !STATIC.includes(x.type) && !NOCOND.includes(x.type));
   const used = usedKeys();
-  let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4>`;
-  if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
-  if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + payHtml(f);
-  if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + fieldInput('pHelp', 'Texto de ayuda (opcional)', f.help) + compHtml(f);
-  if (f.type === 'heading' || f.type === 'paragraph') html += `<div class="fld"><label>Texto</label><textarea id="pContent" rows="4">${esc(f.content)}</textarea></div>`;
+  let html = `<h4 style="margin:0 0 8px; font-size:0.9rem;">${TYPES[f.type][1]} ${TYPES[f.type][0]}</h4><div class="fld"><label for="pInternal">Nombre interno (opcional)</label><input type="text" id="pInternal" maxlength="60" value="${esc(f.internal_name || '')}" placeholder="${esc(shortNameOf(f.id))}"><div class="hint">Solo lo ves tú: aparece en las listas, en el lienzo y en la tabla de variantes. No se muestra a quien llena el formulario.</div></div>`;
+  if (sheetsOn()) { const at = locate(f.id), cur = at ? design.rows[at[0]].sheet : activeSheet; html += `<div class="fld"><label for="pSheet">Hoja</label><select id="pSheet">${design.sheets.map((x, k) => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${k + 1} · ${esc(sheetName(x, k))}</option>`).join('')}</select></div>`; }
+  if (isInput) html += fieldInput('pLabel', 'Nombre del campo', f.label) + dispRtHtml() + helpRtHtml() + (['text_short', 'text_long', 'email', 'phone', 'number'].includes(f.type) ? fieldInput('pPh', 'Texto de ejemplo dentro del campo', f.placeholder) : '');
+  if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
+  if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + dispRtHtml() + helpRtHtml() + compHtml(f);
+  if ((f.type === 'heading' || f.type === 'paragraph') && !(f.variants && f.variants.content)) html += '<div class="fld"><label>Texto</label><div id="pContentRt"></div></div>';
   if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" style="max-width:100%; margin-top:6px; border-radius:8px;">` : ''}</div>
     <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" style="width:100%;"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
     <div class="fld"><label for="pImgAlt">Texto alternativo (describe la imagen para personas que no la ven)</label><input type="text" id="pImgAlt" value="${esc(f.alt || '')}" placeholder="Ej. Banner del Congreso Cundi 2026"><div class="hint">Déjalo vacío solo si la imagen es decorativa.</div></div>`;
@@ -365,39 +744,34 @@ function renderProps() {
       <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pStats" ${f.stats ? 'checked' : ''}> Genera estadísticas (analítica)</label>
       <label style="display:flex; gap:6px; font-size:0.8rem;"><input type="checkbox" id="pRo" ${f.readonly_when_prefilled ? 'checked' : ''} ${f.key ? '' : 'disabled'}> Se muestra pero no se puede editar (cuando ya tenemos el dato)</label>`;
   }
-  // regla de visibilidad: una o VARIAS reglas, combinadas con «todas» (y) o «alguna» (o)
-  const rules = rulesOf(f.show_if), OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
-  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label><select id="cOn"><option value="">Siempre visible</option><option value="1" ${rules.length ? 'selected' : ''}>Mostrar solo si…</option></select></div>`;
-  if (rules.length) {
-    if (rules.length > 1) html += `<div class="fld"><label>Se muestra cuando se cumplan</label><select id="cMatch"><option value="all" ${matchOf(f.show_if) === 'all' ? 'selected' : ''}>TODAS las reglas (y)</option><option value="any" ${matchOf(f.show_if) === 'any' ? 'selected' : ''}>ALGUNA de las reglas (o)</option></select></div>`;
-    rules.forEach((r, i) => {
-      const parent = design.fields[r.field], opts = parent && (parent.options || (parent.type === 'checkbox' ? ['true', 'false'] : null));
-      let val = '';
-      if (r.op !== 'filled') {
-        if (opts && r.op === 'in') val = `<div style="max-height:150px; overflow:auto; padding:2px 4px;">${opts.map((o) => `<label style="display:flex; gap:5px; font-size:0.78rem;"><input type="checkbox" data-rvin="${i}" value="${esc(o)}" ${(Array.isArray(r.value) ? r.value : [r.value]).includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div><div class="hint">Marca todas las que apliquen (basta con que coincida una).</div>`;
-        else if (opts) val = `<select data-rv="${i}"><option value=""></option>${opts.map((o) => `<option ${r.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-        else val = `<input type="text" data-rv="${i}" value="${esc(Array.isArray(r.value) ? r.value.join(', ') : r.value)}" placeholder="${r.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
-      }
-      html += `<div style="border:1px solid #e3e5ec; border-radius:10px; padding:6px; margin-bottom:6px; display:grid; gap:4px;"><div class="hint">Regla ${i + 1}</div>
-        <select data-rf="${i}">${others.map((o) => `<option value="${o.id}" ${o.id === r.field ? 'selected' : ''}>${esc(o.label || TYPES[o.type][0])}</option>`).join('')}</select>
-        <select data-ro="${i}">${OPS_ALL.map(([v, l]) => `<option value="${v}" ${r.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${val}
-        ${rules.length > 1 ? `<button type="button" class="small-btn danger" data-rdel="${i}" style="justify-self:end;">Quitar regla</button>` : ''}</div>`;
-    });
-    if (rules.length < 6) html += '<button type="button" class="small-btn" id="cAdd">+ Agregar otra regla</button>';
-  }
+  // variantes (cualquier elemento) y regla de visibilidad en árbol (Y/O anidados)
+  html += variantsHtml(f);
+  const showOid = regOwner(f.id, () => f.show_if, (n) => { f.show_if = CondTree.compact(n); markDirty(); renderCanvas(); }, { key: `show:${f.id}` });
+  html += `<hr style="margin:0.8rem 0; border:none; border-top:1px solid #eee;"><div class="fld"><label>Regla de visibilidad</label>${f.show_if ? `${condEditorHtml(showOid)}<button type="button" class="small-btn danger" data-co="${showOid}" data-cx="clearroot">Siempre visible (quitar la regla)</button>` : `<span class="hint">Siempre visible.</span> <button type="button" class="small-btn" data-co="${showOid}" data-cx="startroot">Mostrar solo si…</button>`}</div>`;
   html += `<div style="display:flex; gap:6px; margin-top:0.8rem; flex-wrap:wrap;"><button class="small-btn" id="pUp">← Antes</button><button class="small-btn" id="pDown">Después →</button><button class="small-btn danger" id="pDel">Eliminar</button></div>`;
   box.innerHTML = html;
 
   const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('pInternal', 'input', () => { const v = $('pInternal').value.trim(); if (v) f.internal_name = v.slice(0, 60); else delete f.internal_name; markDirty(); renderCanvas(); });
+  on('pSheet', 'change', () => moveToSheet(f.id, $('pSheet').value));
+  if ($('pDispRt')) mountRt($('pDispRt'), { value: f.display_label, label: 'Nombre de presentación', onChange: (v) => { if (v) f.display_label = v; else delete f.display_label; markDirty(); renderCanvas(); } });
+  if ($('pHelpRt')) mountRt($('pHelpRt'), { value: f.help, label: 'Texto de ayuda', onChange: (v) => { f.help = v; markDirty(); renderCanvas(); } });
+  if (CHOICE.includes(f.type) && $('pOpts')) OptionTools.attach($('pOpts'), { eventId: EV, key: f.key, fromDb: !!f.options_from_db, onImported: () => { f.options_from_db = true; } });
   const upd = (fn) => () => { fn(); markDirty(); renderCanvas(); };
   if (isPay) bindPay(box, f);
   if (isComp) bindComp(box, f);
-  on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pHelp', 'input', upd(() => { f.help = $('pHelp').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
-  on('pContent', 'input', upd(() => { f.content = $('pContent').value; }));
+  on('pLabel', 'input', upd(() => { f.label = $('pLabel').value; })); on('pPh', 'input', upd(() => { f.placeholder = $('pPh').value; }));
+  if ($('pContentRt')) mountRt($('pContentRt'), { value: f.content, label: f.type === 'heading' ? 'Título' : 'Texto informativo', onChange: (v) => { f.content = v; markDirty(); renderCanvas(); } });
   on('pOpts', 'input', upd(() => { f.options = $('pOpts').value.split('\n').map((s) => s.trim()).filter(Boolean); }));
   on('pMax', 'input', upd(() => { f.max_mb = +$('pMax').value || 10; }));
   box.querySelectorAll('[data-ext]').forEach((c) => c.addEventListener('change', upd(() => { f.accept = Array.from(box.querySelectorAll('[data-ext]:checked')).map((x) => x.dataset.ext); })));
-  on('pKey', 'change', () => { f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false; markDirty(); renderAll(); });
+  on('pKey', 'change', async () => {
+    f.key = $('pKey').value || null; if (f.key) f.sync = false; else f.readonly_when_prefilled = false;
+    markDirty();
+    const ch = f.key ? FormSync.plan({ fields: { [f.id]: f } }, eventFields) : [];   // al enlazar un campo a Parámetros se ofrece heredar su tipo y opciones (nunca solo)
+    if (ch.length && await showConfirm(`El campo del evento tiene otro tipo u opciones (${ch[0].changes.map(esc).join('; ')}). ¿Usar los de Parámetros?`, { confirmLabel: 'Sí, usarlos' })) FormSync.apply(design, ch);
+    renderAll();
+  });
   on('pDocOn', 'change', () => { if ($('pDocOn').value) f.doc_types = ['CC']; else delete f.doc_types; markDirty(); renderCanvas(); renderProps(); });
   box.querySelectorAll('[data-doc]').forEach((c) => c.addEventListener('change', () => {
     const picked = Array.from(box.querySelectorAll('[data-doc]:checked')).map((x) => x.dataset.doc);
@@ -408,23 +782,10 @@ function renderProps() {
   on('pImgAlt', 'input', () => { f.alt = $('pImgAlt').value; markDirty(); });
   on('pImgW', 'input', () => { f.width = +$('pImgW').value; $('pImgWv').textContent = f.width; markDirty(); });
   on('pImg', 'change', async () => { const fd = new FormData(); fd.append('file', $('pImg').files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); f.src = d.storage_path; markDirty(); renderCanvas(); renderProps(); } catch (e) { showToast(e.message, 'error'); } });
-  const saveRules = (rs, match) => { setRules(f, rs, match); markDirty(); renderCanvas(); };
-  on('cOn', 'change', () => {
-    if (!$('cOn').value) { f.show_if = null; markDirty(); renderCanvas(); renderProps(); return; }
-    if (!others[0]) { showToast('Agrega primero otro campo para usarlo como condición', 'error'); renderProps(); return; }
-    setRules(f, [{ field: others[0].id, op: 'equals', value: '' }]); markDirty(); renderCanvas(); renderProps();
-  });
-  const cur = () => rulesOf(f.show_if).map((r) => ({ ...r })), match = matchOf(f.show_if);
-  on('cMatch', 'change', () => { f.show_if.match = $('cMatch').value; markDirty(); });
-  on('cAdd', 'click', () => { const rs = cur(); rs.push({ field: others[0].id, op: 'equals', value: '' }); saveRules(rs, match); renderProps(); });
-  box.querySelectorAll('[data-rdel]').forEach((b) => b.addEventListener('click', () => { const rs = cur(); rs.splice(+b.dataset.rdel, 1); saveRules(rs, match); renderProps(); }));
-  box.querySelectorAll('[data-rf]').forEach((el) => el.addEventListener('change', () => { const rs = cur(), r = rs[+el.dataset.rf]; r.field = el.value; r.value = r.op === 'in' ? [] : ''; saveRules(rs, match); renderProps(); }));
-  box.querySelectorAll('[data-ro]').forEach((el) => el.addEventListener('change', () => { const rs = cur(), r = rs[+el.dataset.ro]; const wasIn = r.op === 'in'; r.op = el.value; if (r.op === 'in' && !Array.isArray(r.value)) r.value = r.value ? [r.value] : []; else if (wasIn && r.op !== 'in') r.value = Array.isArray(r.value) ? (r.value[0] || '') : r.value; saveRules(rs, match); renderProps(); }));
-  box.querySelectorAll('[data-rv]').forEach((el) => { const i = +el.dataset.rv, h = () => { const rs = cur(), r = rs[i]; r.value = r.op === 'in' ? el.value.split(',').map((x) => x.trim()).filter(Boolean) : el.value; saveRules(rs, match); }; el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', h); });
-  box.querySelectorAll('[data-rvin]').forEach((el) => el.addEventListener('change', () => { const i = +el.dataset.rvin, rs = cur(); rs[i].value = Array.from(box.querySelectorAll(`[data-rvin="${i}"]:checked`)).map((x) => x.value); saveRules(rs, match); }));
+  bindVariants(box, f);
   const shift = (d) => { const at = locate(f.id); const row = design.rows[at[0]]; const n = at[1] + d; if (n < 0 || n >= row.items.length) return; [row.items[at[1]], row.items[n]] = [row.items[n], row.items[at[1]]]; markDirty(); renderCanvas(); };
   on('pUp', 'click', () => shift(-1)); on('pDown', 'click', () => shift(1));
-  on('pDel', 'click', () => { Object.values(design.fields).forEach((x) => { if (x.show_if) setRules(x, rulesOf(x.show_if).filter((r) => r.field !== f.id), matchOf(x.show_if)); }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
+  on('pDel', 'click', () => { Object.values(design.fields).forEach((x) => { if (x.show_if) x.show_if = CondTree.prune(x.show_if, f.id); Object.entries(x.variants || {}).forEach(([prop, v]) => { v.items = v.items.filter((it) => { it.when = CondTree.prune(it.when, f.id); return !!it.when; }); if (!v.items.length && !v.default) delete x.variants[prop]; }); if (x.variants && !Object.keys(x.variants).length) delete x.variants; }); dropPriceConditions(f.id); if (f.type === 'companions') { const pf = Object.values(design.fields).find((x) => x.type === 'payment'); if (pf) pf.pay.companions_charge = false; } detach(f.id); delete design.fields[f.id]; selected = null; markDirty(); renderAll(); });
 }
 
 // ---------------------------------------------------------------- campo Pago: monto, reglas y descuentos
@@ -553,7 +914,7 @@ function bindPay(box, f) {
     f.pay.companions_charge = cc.checked;
     if (cc.checked && !Object.values(design.fields).some((x) => x.type === 'companions')) {   // se crea solo el campo «Acompañantes», justo antes del pago
       const c = newField('companions');
-      const at = locate(f.id); design.rows.splice(at ? at[0] : design.rows.length, 0, { align: 'left', items: [c.id] });
+      const at = locate(f.id); design.rows.splice(at ? at[0] : design.rows.length, 0, newRow([c.id], sheetsOn() ? lastSheetId() : null));
       showToast('Se agregó el campo «Acompañantes» al formulario', 'success');
     }
     markDirty(); renderAll();
@@ -599,7 +960,10 @@ function renderTheme() {
   const t = design.theme;
   $('themeBox').innerHTML = fieldInput('tTitle', 'Título', t.title) + fieldInput('tSub', 'Subtítulo', t.subtitle) + fieldInput('tBtn', 'Texto del botón', t.button_text) +
     ['bg_color', 'card_color', 'text_color', 'accent'].map((k) => `<div class="fld"><label>${COLOR_LABELS[k]}</label><input type="color" data-color="${k}" value="${t[k]}" style="width:100%; height:34px; padding:2px;"></div>`).join('') +
-    `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${t.font === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
+    `<div class="fld"><label>Fuente</label><select id="tFont">${FONTS.map((f) => `<option ${GoldenFonts.resolve(t.font) === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></div>
+     <div class="fld"><label>Ancho del formulario</label><select id="tWidth">${WIDTHS.map(([v, l]) => `<option value="${v}" ${widthKind(t.width) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+       <input type="number" id="tWidthPx" min="480" max="1100" step="10" value="${typeof t.width === 'number' ? t.width : 800}" style="margin-top:4px; ${widthKind(t.width) === 'custom' ? '' : 'display:none;'}" aria-label="Ancho en píxeles (480 a 1100)">
+       <div class="hint">En celulares y pantallas angostas siempre ocupa todo el ancho. Con 4 campos por fila conviene «Ancho» o más.</div></div>
      <div class="fld"><label>Logo o banner</label><input type="file" id="tLogo" accept="image/*"> <button class="small-btn" id="tLogoX">Quitar</button></div>
      <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" style="width:100%;"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
      <label style="display:flex; gap:6px; font-size:0.82rem; margin-bottom:0.6rem;"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>
@@ -610,23 +974,38 @@ function renderTheme() {
   on('tFont', 'change', () => { t.font = $('tFont').value; markDirty(); });
   const up = (id, key) => on(id, 'change', async () => { const fd = new FormData(); fd.append('file', $(id).files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); t[key] = d.storage_path; markDirty(); showToast('Imagen cargada — guarda el diseño', 'success'); } catch (e) { showToast(e.message, 'error'); } });
   up('tLogo', 'logo'); up('tBg', 'bg_image');
+  const setWidth = () => {   // '' = normal (sin llave), full, un valor de la lista o personalizado (480–1100)
+    const k = $('tWidth').value;
+    $('tWidthPx').style.display = k === 'custom' ? '' : 'none';
+    if (k === '') delete t.width; else if (k === 'full') t.width = 'full'; else if (k === 'custom') t.width = Math.max(480, Math.min(1100, Math.round(+$('tWidthPx').value) || 800)); else t.width = +k;
+    markDirty(); previewWidth();
+  };
+  on('tWidth', 'change', setWidth); on('tWidthPx', 'input', setWidth);
   on('tLogoW', 'input', () => { const v = +$('tLogoW').value; t.logo_width = v >= 10 ? v : 0; $('tLogoWv').textContent = t.logo_width ? t.logo_width + ' %' : 'automático'; markDirty(); });
   on('tLogoFull', 'change', () => { t.logo_full = $('tLogoFull').checked; markDirty(); });
   on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
 }
-function renderAll() { renderPalette(); renderCanvas(); renderProps(); $('payTab').style.display = Object.values(design.fields).some((x) => x.type === 'payment') ? '' : 'none'; }
+function renderAll() { renderPalette(); renderSheets(); renderCanvas(); renderProps(); $('payTab').style.display = Object.values(design.fields).some((x) => x.type === 'payment') ? '' : 'none'; }
 
 // ---------------------------------------------------------------- guardar / previsualizar / plantilla
 async function saveDesign() {
+  normSheets();
+  for (const f of Object.values(design.fields)) {
+    for (const [prop, v] of Object.entries(f.variants || {})) {
+      const bad = v.items.findIndex((it) => !CondTree.leaves(it.when).length);
+      if (bad >= 0) { selected = f.id; renderAll(); showToast(`«${f.label || RichText.toPlain(f.content || '') || TYPES[f.type][0]}»: la variante ${bad + 1} de «${VPROPS[prop]}» no tiene condiciones. Agrégale una regla o quítala.`, 'error'); return false; }
+    }
+  }
   try {
     form = await jput(api, { name: $('fname').value, slug: $('fslug').value, design });
-    design = form.design; dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
+    design = form.design; normDesign(); saveGen += 1; dirty = false; $('saveBtn').textContent = '💾 Guardar diseño';
     eventFields = await j(`/api/events/${EV}/form-event-fields`);
     showToast('Diseño guardado', 'success'); paintHeader(); renderTheme(); renderAll();
     return true;
   } catch (e) { showToast(e.message, 'error'); return false; }
 }
 $('saveBtn').addEventListener('click', saveDesign);
+$('palSync').addEventListener('click', syncWithParams);
 $('testBtn').addEventListener('click', async (e) => {
   if (form.public_state === 'pruebas') return;          // el enlace de pruebas es seguro
   e.preventDefault();
@@ -634,8 +1013,67 @@ $('testBtn').addEventListener('click', async (e) => {
   const msg = `El formulario está en «${STATUS_LABEL[form.public_state] || form.public_state}», no en «Pruebas»: «Probar» abre el enlace PÚBLICO real${pays ? ' y cualquier pago se cobra de verdad' : ''}, y lo que envíes cuenta como inscripción real. ¿Abrirlo de todos modos?`;
   if (await showConfirm(msg, { variant: 'warning', confirmLabel: 'Sí, abrir' })) window.open(form.public_url, '_blank', 'noopener');
 });
+const WIDTHS = [['', 'Normal (760 px)'], ['600', 'Estrecho (600 px)'], ['960', 'Ancho (960 px)'], ['1100', 'Muy ancho (1100 px)'], ['full', 'Completo (todo el ancho)'], ['custom', 'Personalizado…']];
+const widthKind = (w) => (w == null || w === '' ? '' : w === 'full' ? 'full' : [600, 960, 1100].includes(+w) ? String(+w) : +w === 760 ? '' : 'custom');
+function previewWidth() {   // la vista previa tiene el mismo ancho que verá el público (en una pantalla más angosta, el 100 %)
+  const w = design.theme.width;
+  $('previewInner').style.maxWidth = w === 'full' ? 'none' : Math.max(800, +w + 0 || 0) + 'px';
+}
+// ---------------------------------------------------------------- tabla de variantes (P11)
+let vtUI = null, saveGen = 0;
+function richPrompt(html) {   // editor de texto con formato (el de P3) para UNA celda de la tabla
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed; inset:0; background:rgba(10,14,46,.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+    ov.innerHTML = '<div style="background:#fff; border-radius:14px; padding:1rem; width:min(640px,94vw);"><div data-vt-richbox></div><div style="text-align:right; margin-top:8px;"><button type="button" class="small-btn" data-no>Cancelar</button> <button type="button" class="small-btn primary" data-ok>Listo</button></div></div>';
+    document.body.appendChild(ov);
+    let val = html;
+    const m = RichText.mount(ov.querySelector('[data-vt-richbox]'), { value: html, label: 'Texto de la celda', onChange: (v) => { val = v; } });
+    const close = (v) => { m.destroy(); ov.remove(); resolve(v); };
+    ov.querySelector('[data-ok]').addEventListener('click', () => close(val)); ov.querySelector('[data-no]').addEventListener('click', () => close(null));
+  });
+}
+function vtCtx() {
+  return {
+    url: `${api}/variant-table`,
+    design: () => design,
+    fields: () => Object.values(design.fields).filter((f) => variantProps(f).length).map((f) => ({ id: f.id, label: labelOfField(f.id) })),
+    optionsOf: (id) => FormSync.optionsOf(design.fields[id], eventFields),
+    fieldLabel: labelOfField,
+    shortName: shortNameOf,
+    exists: (id) => !!design.fields[id],
+    propsOf: (id) => variantProps(design.fields[id]),
+    propLabel: (p) => VPROPS[p],
+    sheetOf: (id) => { if (!sheetsOn()) return 0; const at = locate(id); return at ? sheetIndex(design.rows[at[0]].sheet) : 0; },
+    assetUrl,
+    toast: (m, k) => showToast(m, k),
+    confirm: (m, o) => showConfirm(m, o),
+    richEdit: richPrompt,
+    uploadImage: async (file) => { const fd = new FormData(); fd.append('file', file); const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); return d.storage_path; },   // la subida de siempre: extensión y 8 MB
+    apply(built) {   // reemplaza SOLO las propiedades de las columnas; la copia de lo anterior sirve para deshacer hasta que se guarde el diseño
+      const snap = Object.keys(built.variants).map((fid) => { const f = design.fields[fid]; return [fid, JSON.stringify({ v: f.variants || null, content: f.content, src: f.src })]; });
+      const gen = saveGen;
+      VariantTable.applyTo(design, built);
+      normDesign(); markDirty(); renderAll();
+      return () => {
+        if (gen !== saveGen) return false;
+        snap.forEach(([fid, js]) => {
+          const o = JSON.parse(js), f = design.fields[fid]; if (!f) return;
+          if (o.v) f.variants = o.v; else delete f.variants;
+          ['content', 'src'].forEach((k) => { if (o[k] === undefined) delete f[k]; else f[k] = o[k]; });
+        });
+        normDesign(); markDirty(); renderAll();
+        return true;
+      };
+    },
+  };
+}
+$('tableBtn').addEventListener('click', () => { $('tableOverlay').style.display = 'block'; if (!vtUI) vtUI = VariantTableUI.mount($('tableHost'), vtCtx()); else vtUI.paint(); });
+$('closeTable').addEventListener('click', () => { $('tableOverlay').style.display = 'none'; });
+
 $('previewBtn').addEventListener('click', () => {
   const host = $('previewHost');
+  previewWidth();
   RenderPreview(host);
   $('previewOverlay').style.display = 'block';
 });
@@ -700,7 +1138,8 @@ function paintConfig() {
   $('preSrcBox').style.display = s.prefill.mode === 'none' ? 'none' : ''; $('preUpBox').style.display = s.prefill.source === 'upload' ? '' : 'none';
   $('thMode').value = s.thanks.mode; $('thUrl').value = s.thanks.url; $('thTitle').value = s.thanks.title; $('thText').value = s.thanks.text; $('thImgName').textContent = s.thanks.image ? ' (imagen cargada)' : '';
   $('thUrlBox').style.display = s.thanks.mode === 'redirect' ? '' : 'none'; $('thTplBox').style.display = s.thanks.mode === 'redirect' ? 'none' : '';
-  $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
+  $('clTitle').value = s.closed_template.title; $('clText').value = s.closed_template.text; thRt.setValue(s.thanks.text); clRt.setValue(s.closed_template.text);
+  const idn = s.identify || {}; $('idTitle').value = idn.title || ''; $('idButton').value = idn.button || ''; $('idText').value = idn.text || ''; idRt.setValue(idn.text || ''); $('idImgName').textContent = idn.image ? ' (imagen cargada)' : ''; $('clImgName').textContent = s.closed_template.image ? ' (imagen cargada)' : '';
   document.querySelectorAll('[name=feed]').forEach((r) => { r.checked = r.value === s.feed; });
   $('langSel').value = s.language || 'es'; $('trOn').checked = s.translate !== false;
   $('sendBadge').checked = !!s.send_digital_badge;
@@ -766,17 +1205,24 @@ $('preMode').addEventListener('change', () => { $('preSrcBox').style.display = $
 $('preSrc').addEventListener('change', () => { $('preUpBox').style.display = $('preSrc').value === 'upload' ? '' : 'none'; });
 $('thMode').addEventListener('change', () => { $('thUrlBox').style.display = $('thMode').value === 'redirect' ? '' : 'none'; $('thTplBox').style.display = $('thMode').value === 'redirect' ? 'none' : ''; });
 const cfgUpload = (input, target, label) => input.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', input.files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); target(d.storage_path); label.textContent = ' (imagen cargada — guarda la configuración)'; } catch (e) { showToast(e.message, 'error'); } });
+cfgUpload($('idImgFile'), (p) => { settings.identify = { ...(settings.identify || {}), image: p }; }, $('idImgName'));
+$('idImgX').addEventListener('click', () => { settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; });
 cfgUpload($('thImgFile'), (p) => { settings.thanks.image = p; }, $('thImgName')); cfgUpload($('clImgFile'), (p) => { settings.closed_template.image = p; }, $('clImgName'));
 $('preFile').addEventListener('change', async () => {
   const fd = new FormData(); fd.append('file', $('preFile').files[0]);
   try { const d = await j(`${api}/people`, { method: 'POST', body: fd }); showToast(d.message, 'success'); settings.prefill.source = 'upload'; } catch (e) { showToast(e.message, 'error'); }
 });
+// Mensajes de gracias y de «cerrado»: con formato (el valor vive en el campo oculto que lee «Guardar»)
+const thRt = RichText.mount($('thTextRt'), { label: 'Mensaje de gracias', onChange: (v) => { $('thText').value = v; } });
+const idRt = RichText.mount($('idTextRt'), { label: 'Texto del paso de identificación', onChange: (v) => { $('idText').value = v; } });
+const clRt = RichText.mount($('clTextRt'), { label: 'Mensaje de formulario cerrado', onChange: (v) => { $('clText').value = v; } });
 $('cfgSave').addEventListener('click', async () => {
   const payload = {
     security: { enabled: $('secOn').checked, type: $('secType').value, code: $('secCode').value },
     prefill: { mode: $('preMode').value, source: $('preSrc').value },
     thanks: { ...settings.thanks, mode: $('thMode').value, url: $('thUrl').value, title: $('thTitle').value, text: $('thText').value },
     closed_template: { ...settings.closed_template, title: $('clTitle').value, text: $('clText').value },
+    identify: { image: (settings.identify || {}).image || '', title: $('idTitle').value, text: $('idText').value, button: $('idButton').value },
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => r.limit > 0) },
@@ -891,7 +1337,7 @@ $('invSend').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- inicio
 (async function init() {
-  form = await j(api); design = form.design; settings = form.settings;
+  form = await j(api); design = form.design; normDesign(); settings = form.settings;
   eventFields = await j(`/api/events/${EV}/form-event-fields`);
   try { ID_DOCS = await j("/api/form-id-docs"); } catch (e) { ID_DOCS = []; }
   paintHeader(); renderTheme(); renderAll(); paintConfig();

@@ -71,9 +71,9 @@ def _image_refs(design: dict, settings: dict):
     yield design["theme"], "bg_image"
     yield settings["closed_template"], "image"
     yield settings["thanks"], "image"
-    for f in design["fields"].values():
-        if f.get("type") == "image":
-            yield f, "src"
+    if settings.get("identify"):
+        yield settings["identify"], "image"
+    yield from formlib.image_refs(design)          # imágenes de los elementos imagen y de sus variantes
 
 
 def build_export(db: Session, event: Event, form: WebForm, request: Request) -> tuple:
@@ -261,7 +261,7 @@ def plan_import(db: Session, event: Event, package: dict, images: dict) -> dict:
     design, settings = json.loads(json.dumps(package["diseno"])), json.loads(json.dumps(package["ajustes"]))
     if not isinstance(design.get("fields"), dict) or not isinstance(design.get("theme", {}), dict):
         _bad("el diseño no tiene la forma esperada.")
-    for key in ("closed_template", "thanks"):
+    for key in ("closed_template", "thanks", "identify"):
         if not isinstance(settings.get(key, {}), dict):
             _bad("los ajustes no tienen la forma esperada.")
         settings.setdefault(key, {})
@@ -301,7 +301,7 @@ def plan_import(db: Session, event: Event, package: dict, images: dict) -> dict:
             f["key"] = None                                           # nunca un opcional_N «crudo» de otro evento
     # imágenes: cada «zip:imagenes/…» debe venir en el zip; se le da un nombre nuevo del cliente destino
     uploads, new_names = {}, {}
-    for owner, key in _image_refs(design, {"closed_template": settings["closed_template"], "thanks": settings["thanks"]}):
+    for owner, key in _image_refs(design, {"closed_template": settings["closed_template"], "thanks": settings["thanks"], "identify": settings["identify"]}):
         value = str(owner.get(key) or "")
         if value.startswith(ZIP_REF):
             name = value[len(ZIP_REF):]

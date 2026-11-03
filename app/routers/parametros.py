@@ -43,6 +43,8 @@ LOCKED_KEYS = IDENTITY_KEYS | {"categories", "certificate", "digital_contact", "
 
 # Campos fijos configurables (además de los opcional_N ya rotulados del evento, ver
 # Event.optional_field_labels). "status" no es un campo de formulario (ver stats.py).
+DELETED_TYPE = "deleted"          # B2: un campo FIJO borrado en este evento queda marcado así en event_field_configs (sin migración)
+DELETABLE_FIXED = ("role", "entity", "phone", "email", "opt_1")      # cédula/ID, nombres y apellidos nunca; categoría, certificado, correo de escarapela y fecha se apagan en su módulo
 CONFIGURABLE_FIXED_FIELDS = [
     ("role", "Cargo"),
     ("entity", "Entidad"),
@@ -104,6 +106,8 @@ def field_configs_for_event(db: Session, event: Event) -> list:
     ordered = []
     for idx, (key, label) in enumerate(_configurable_fields(event)):
         row = rows.get(key)
+        if row is not None and row.field_type == DELETED_TYPE:       # B2: campo borrado en este evento (no aparece en ningún lado)
+            continue
         position = row.sort_order if row and row.sort_order is not None else 1000 + idx
         ordered.append((position, _serialize(key, label, row, event.get_categories())))
     return [cfg for _, cfg in sorted(ordered, key=lambda pair: pair[0])]
@@ -327,6 +331,9 @@ def upsert_field_config(
     valid_keys = {k for k, _ in _configurable_fields(event)}
     if field_key not in valid_keys:
         raise HTTPException(status_code=400, detail="Ese campo no existe o no es configurable en este evento")
+    gone = db.query(EventFieldConfig).filter_by(event_id=event.id, field_key=field_key, field_type=DELETED_TYPE).first()
+    if gone is not None:
+        raise HTTPException(status_code=400, detail="Ese campo se borró de este evento")
 
     label = str(data.get("label") or "").strip()[:60] or None
     sort_order = data.get("sort_order")
@@ -469,3 +476,118 @@ def email_asset(tenant_id: str, filename: str):
     if not get_storage().exists(key):
         raise HTTPException(status_code=404)
     return get_storage().response(key, headers={"Cache-Control": "public, max-age=86400"})
+
+
+# ------------------------------------------------------------------------------------------------ B2: borrar un campo del evento
+def _people_with_data(db: Session, event: Event, key: str) -> list:
+    from app.models import EventAttendee, User
+    ids = [u for (u,) in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)]
+    if not ids:
+        return []
+    out = []
+    for user in db.query(User).filter(User.tenant_id == event.tenant_id, User.id.in_(ids)):
+        value = user.get_extras().get(key) if key.startswith("opcional_") else getattr(user, key, None)
+        if value not in (None, ""):
+            out.append(user)
+    return out
+
+
+def _field_usage(db: Session, event: Event, key: str) -> dict:
+    from app.models import BadgeTemplate, WebForm
+    import json as _json
+    templates = [t.name or "Escarapela" for t in db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id)
+                 if any(e.get("variable") == key for e in t.get_elements())]
+    forms = []
+    for f in db.query(WebForm).filter(WebForm.event_id == event.id):
+        try:
+            design = _json.loads(f.design_json or "{}")
+        except ValueError:
+            design = {}
+        if any((fld or {}).get("key") == key for fld in (design.get("fields") or {}).values()):
+            forms.append(f.name)
+    return {"templates": templates, "forms": forms}
+
+
+def _deletable(event: Event, key: str) -> Optional[str]:
+    """None si se puede borrar; si no, el motivo."""
+    if key in IDENTITY_KEYS:
+        return "La cédula/ID, los nombres y los apellidos no se pueden borrar."
+    if key in LOCKED_KEYS:
+        return "Este campo se apaga desde su propio módulo en Parámetros, no se borra."
+    if key in DELETABLE_FIXED or key in event.get_optional_labels():
+        return None
+    return "Ese campo no existe en este evento."
+
+
+@router.get("/events/{event_id}/fields/{field_key}/usage")
+def field_usage(event_id: int, field_key: str, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Lo que se pierde al borrar el campo: cuántas personas tienen dato en él y qué plantillas de escarapela y formularios lo usan (para la confirmación fuerte)."""
+    event = get_event_for_staff(event_id, db, staff)
+    reason = _deletable(event, field_key)
+    label = next((c["label"] for c in field_configs_for_event(db, event) if c["key"] == field_key), field_key)
+    return {"key": field_key, "label": label, "deletable": reason is None, "reason": reason,
+            "people": len(_people_with_data(db, event, field_key)) if reason is None else 0, **(_field_usage(db, event, field_key) if reason is None else {"templates": [], "forms": []})}
+
+
+@router.delete("/events/{event_id}/fields/{field_key}")
+def delete_field(event_id: int, field_key: str, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",)))):
+    """Borra un campo de ESTE evento (también uno que vino en la base original). Hay que escribir su nombre para confirmar. Desaparece de formularios, edición, directorio, reporte y
+    variables de escarapela, y se borran sus datos en este evento: el dato se limpia en las personas del evento que NO están en ningún otro evento del cliente (la persona es la
+    misma entre eventos; en las demás se conserva para no dañar otro evento). Queda en el historial de cambios (quién y cuándo)."""
+    import json as _json
+    from app.models import BadgeTemplate, PersonChange, WebForm, EventAttendee
+    from app.timeutil import utcnow
+    event = get_event_for_staff(event_id, db, staff)
+    reason = _deletable(event, field_key)
+    if reason:
+        raise HTTPException(status_code=400, detail=reason)
+    label = next((c["label"] for c in field_configs_for_event(db, event) if c["key"] == field_key), None)
+    if label is None:
+        raise HTTPException(status_code=404, detail="Ese campo ya no existe en este evento.")
+    typed = str((data or {}).get("confirm") or "").strip().lower()
+    if typed != label.strip().lower():
+        raise HTTPException(status_code=400, detail=f"Para borrar escribe exactamente el nombre del campo: «{label}».")
+    people = _people_with_data(db, event, field_key)
+    usage = _field_usage(db, event, field_key)
+    elsewhere = {u for (u,) in db.query(EventAttendee.user_id).filter(EventAttendee.tenant_id == event.tenant_id, EventAttendee.event_id != event.id,
+                                                                      EventAttendee.user_id.in_([p.id for p in people] or [""]))}
+    cleared = 0
+    for user in people:
+        if user.id in elsewhere:
+            continue
+        if field_key.startswith("opcional_"):
+            extras = user.get_extras(); extras.pop(field_key, None); user.set_extras(extras)
+        else:
+            setattr(user, field_key, None)
+        cleared += 1
+    for t in db.query(BadgeTemplate).filter(BadgeTemplate.event_id == event.id):              # variables de escarapela
+        els = t.get_elements()
+        keep = [e for e in els if e.get("variable") != field_key]
+        if len(keep) != len(els):
+            t.set_elements(keep)
+    for f in db.query(WebForm).filter(WebForm.event_id == event.id):                          # formularios: la pregunta queda, pero ya no alimenta la base
+        try:
+            design = _json.loads(f.design_json or "{}")
+        except ValueError:
+            continue
+        changed = False
+        for fld in (design.get("fields") or {}).values():
+            if (fld or {}).get("key") == field_key:
+                fld["key"] = None; changed = True
+        if changed:
+            f.design_json = _json.dumps(design, ensure_ascii=False)
+    row = db.query(EventFieldConfig).filter_by(event_id=event.id, field_key=field_key).first()
+    if field_key.startswith("opcional_"):
+        labels = event.get_optional_labels(); labels.pop(field_key, None); event.set_optional_labels(labels)
+        if row is not None:
+            db.delete(row)
+    else:
+        if row is None:
+            row = EventFieldConfig(event_id=event.id, field_key=field_key)
+            db.add(row)
+        row.field_type, row.required, row.default_stat_enabled = DELETED_TYPE, False, False
+    db.add(PersonChange(tenant_id=event.tenant_id, event_id=event.id, user_id=None, staff_user_id=staff.id, kind="field_deleted", at=utcnow(),
+                        old_value=f"{field_key} ({label})", new_value=None,
+                        detail=f"personas con dato: {len(people)}; datos borrados: {cleared}; plantillas: {len(usage['templates'])}; formularios: {len(usage['forms'])}"))
+    db.commit()
+    return {"deleted": field_key, "label": label, "people_with_data": len(people), "cleared": cleared, "kept_other_events": len(people) - cleared, **usage}
