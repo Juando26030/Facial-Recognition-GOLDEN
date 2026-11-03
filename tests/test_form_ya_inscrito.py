@@ -212,7 +212,9 @@ def test_roster_column_marks_people_as_already_registered_without_using_capacity
     r = _lookup(client, ev, f, "1001")
     assert r.status_code == 409 and r.json()["detail"] == ALREADY
     assert _lookup(client, ev, f, "1002").status_code == 200
-    assert _id_submit(client, ev, f, {**_person_values(), "cedula": "1003", "correo": "caro@example.com"}, sid="x").status_code == 409
+    assert _lookup(client, ev, f, "1003").status_code == 409
+    tok = _lookup(client, ev, f, "1002").json()["token"]                                         # saltándose el paso de identificación con el token de otra persona, el envío también lo rechaza
+    assert _submit(client, ev, f, {**_person_values(), "cedula": "1003", "correo": "caro@example.com"}, token=tok, sid="x").status_code == 409
     assert _id_submit(client, ev, f, {**_person_values(), "cedula": "1002", "nombres": "Beto", "correo": "beto@example.com"}, sid="y").status_code == 200      # el cupo (1) seguía libre
     assert _id_submit(client, ev, f, {**_person_values(), "cedula": "1004", "correo": "dani@example.com"}, sid="z").status_code == 409                          # ahora sí se llenó
 
