@@ -78,6 +78,13 @@
             <button type="button" id="purgePhotosBtn" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px; cursor:pointer;">Borrar fotos del evento</button>
         </div>
         {% endif %}
+        {% if staff_role in ["admin", "super_admin"] %}
+        <div style="background: white; padding: 1.2rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;" id="timingReport">
+            <div style="font-weight:700;">⏱️ Tiempo por registro</div>
+            <div style="color:#666; font-size:0.82rem; margin-bottom:8px;">Mediana (p50) y percentil 90 (p90) de lo que tarda el digitador desde la primera tecla hasta enviar el registro. Solo agregados; sin datos de las personas.</div>
+            <div id="timingBody" role="status" aria-live="polite" style="font-size:0.85rem; color:#666;">Cargando…</div>
+        </div>
+        {% endif %}
         <div style="background:#f6f7fb; padding:1.5rem 1.6rem; border-radius:20px; margin-bottom:1.5rem;" id="analyticsRegistro"></div>
 
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;">
@@ -100,6 +107,35 @@
   </section>
 </main>
 
+{% if staff_role in ["admin", "super_admin"] %}
+<script>
+(function() {
+    /* Informe de tiempo por registro (Fase 1A, PR1): solo lectura, admin/super_admin. Todo se pinta con textContent (nada de HTML armado con datos). */
+    const body = document.getElementById('timingBody');
+    if (!body) return;
+    const sec = (ms) => (ms == null ? '—' : (ms / 1000).toFixed(1) + ' s');
+    const cell = (tag, text, left) => { const el = document.createElement(tag); el.textContent = text; el.style.cssText = 'padding:4px 10px; text-align:' + (left ? 'left' : 'right') + ';'; return el; };
+    const table = (title, head, rows) => {
+        const box = document.createElement('div'); box.style.cssText = 'margin-top:10px;';
+        const h = document.createElement('div'); h.textContent = title; h.style.cssText = 'font-weight:600; color:#333; margin-bottom:4px;'; box.appendChild(h);
+        const t = document.createElement('table'); t.style.cssText = 'border-collapse:collapse; font-size:0.85rem;';
+        const tr0 = document.createElement('tr'); head.forEach((x, i) => tr0.appendChild(cell('th', x, i === 0))); t.appendChild(tr0);
+        rows.forEach((r) => { const tr = document.createElement('tr'); r.forEach((x, i) => tr.appendChild(cell('td', String(x), i === 0))); t.appendChild(tr); });
+        box.appendChild(t); return box;
+    };
+    const line = (s) => [s.n, sec(s.p50_ms), sec(s.p90_ms), s.small_sample ? 'muestra pequeña' : ''];
+    fetch(`/api/events/${window.EVENT_ID}/timing-report`, { cache: 'no-store' }).then((r) => r.ok ? r.json() : Promise.reject(new Error('No se pudo cargar'))).then((d) => {
+        body.textContent = '';
+        if (!d.measured) { body.textContent = d.registrations ? 'Aún no hay registros medidos en este evento (los hechos antes de esta medición no cuentan).' : 'Aún no hay registros en este evento.'; return; }
+        const sum = document.createElement('div');
+        sum.textContent = `Medidos: ${d.measured} de ${d.registrations} registros (${d.coverage_pct}%). Mediana ${sec(d.overall.p50_ms)}, p90 ${sec(d.overall.p90_ms)}.`;
+        body.appendChild(sum);
+        body.appendChild(table('Por pantalla', ['Pantalla', 'Registros', 'p50', 'p90', ''], d.by_flow.map((f) => [f.ui_flow, ...line(f)])));
+        body.appendChild(table('Por digitador', ['Digitador', 'Registros', 'p50', 'p90', ''], d.by_staff.map((s) => [s.name, ...line(s)])));
+    }).catch(() => { body.textContent = 'No se pudo cargar el informe de tiempos.'; });
+})();
+</script>
+{% endif %}
 <script>
 AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `/api/events/${window.EVENT_ID}/analytics/registro`, { refreshSeconds: 30 });
 
