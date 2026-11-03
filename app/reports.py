@@ -1,4 +1,5 @@
 from app.storage import get_storage, key_of
+from app.xlsafe import safe_frame
 from app.timeutil import to_local
 import io
 import os
@@ -188,7 +189,7 @@ class ReportManager:
         header_row = TITLE_ROWS + 1
 
         with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Reporte", startrow=header_row - 1)
+            safe_frame(df).to_excel(writer, index=False, sheet_name="Reporte", startrow=header_row - 1)
             ws = writer.sheets["Reporte"]
 
             # Título arriba de la tabla (2026-09-17, pedido explícito): nombre del cliente/cuenta,

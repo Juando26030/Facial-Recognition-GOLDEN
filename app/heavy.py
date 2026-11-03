@@ -16,6 +16,7 @@ from io import BytesIO
 from typing import Callable
 from urllib.parse import quote
 
+from app.xlsafe import safe_cell, safe_frame, safe_workbook  # noqa: F401 — se reexportan aquí
 from fastapi import HTTPException
 from fastapi.responses import Response
 
@@ -63,7 +64,7 @@ def workbook_response(wb, filename: str) -> Response:
     """Guarda un `openpyxl.Workbook` en memoria y lo entrega como descarga."""
     with heavy_slot():
         buffer = BytesIO()
-        wb.save(buffer)
+        safe_workbook(wb).save(buffer)
     return _attachment(buffer.getvalue(), filename)
 
 

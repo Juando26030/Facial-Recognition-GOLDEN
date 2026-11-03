@@ -23,6 +23,7 @@ from typing import Optional
 from fastapi import HTTPException
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+from app.secretkey import secret_key
 from app.storage import get_storage, key_of
 
 URL_SECONDS = 15 * 60          # vigencia de la URL de subida
@@ -49,7 +50,7 @@ class Uploaded:
 
 
 def _serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(os.getenv("SECRET_KEY") or "dev-only-insecure-key-do-not-use-in-production", salt="direct-upload")
+    return URLSafeTimedSerializer(secret_key(), salt="direct-upload")
 
 
 def safe_name(name: str) -> str:

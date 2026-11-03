@@ -213,7 +213,7 @@ def _xlsx_response(sheets: dict, filename: str, widths: dict = None) -> Streamin
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
         for name, df in sheets.items():
-            df.to_excel(writer, index=False, sheet_name=name)
+            heavy.safe_frame(df).to_excel(writer, index=False, sheet_name=name)
             ws = writer.sheets[name]
             for cell in ws[1]:
                 cell.fill = PatternFill(start_color="0A0E2E", end_color="0A0E2E", fill_type="solid")
