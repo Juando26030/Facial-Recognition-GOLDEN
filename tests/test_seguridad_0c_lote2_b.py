@@ -192,3 +192,106 @@ def test_e4_masked_and_full_directory_do_not_share_an_etag(client, factory, db):
     login(client, "cli1")
     r = client.get(f"/api/users?event_id={ev.id}", headers={"If-None-Match": full_tag})
     assert r.status_code == 200 and r.headers["etag"] != full_tag
+
+
+# ------------------------------------------------------------------ A2: PATCH /users/{id} sin asignación masiva
+def test_a2_user_edit_only_writes_the_allowed_columns(client, factory, db):
+    from app.models import User
+    ev = factory.event()
+    u = factory.person(ev, "1001")
+    u.face_encoding, u.is_biometric_enabled = "[0.1]", True
+    db.commit()
+    captured = u.face_captured_at                      # lo estampa un listener al guardar el vector
+    factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    r = client.patch(f"/api/users/1001?event_id={ev.id}", json={
+        "first_name": "Nueva", "phone": "3001112233", "face_encoding": "[9.9]", "is_biometric_enabled": False, "biometric_consent_at": "2020-01-01T00:00:00",
+        "face_captured_at": "2020-01-01T00:00:00", "opt_2": "x", "logs": [], "get_encoding": "x"})
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    row = db.query(User).filter_by(id="1001").one()
+    assert row.first_name == "Nueva" and row.phone == "3001112233"
+    assert row.face_encoding == "[0.1]" and row.is_biometric_enabled is True and row.biometric_consent_at is None and row.face_captured_at == captured and row.opt_2 is None
+
+
+def test_a2_user_edit_rejects_structured_values(client, factory):
+    ev = factory.event()
+    factory.person(ev, "1001")
+    factory.staff("coordinador", "coord1")
+    login(client, "coord1")
+    assert client.patch(f"/api/users/1001?event_id={ev.id}", json={"entity": {"x": 1}}).status_code == 400
+    assert client.patch(f"/api/users/1001?event_id={ev.id}", json={"entity": ["a"]}).status_code == 400
+
+
+# ------------------------------------------------------------------ A6/A7: pertenencia al evento (ENFORCE_STAFF_EVENT_SCOPE)
+def test_a7_scope_is_off_by_default_so_production_does_not_change(client, factory):
+    mine, other = factory.staff("coordinador", "coord1"), factory.staff("coordinador", "coord2")
+    ev = factory.event(coordinator=mine)
+    login(client, "coord2")
+    assert client.get(f"/api/events/{ev.id}/staff-users").status_code == 200       # hoy cualquier coordinador opera en cualquier evento
+    assert other.id != mine.id
+
+
+def test_a7_coordinator_only_operates_on_events_he_belongs_to(client, factory, monkeypatch):
+    monkeypatch.setenv("ENFORCE_STAFF_EVENT_SCOPE", "1")
+    mine, other = factory.staff("coordinador", "coord1"), factory.staff("coordinador", "coord2")
+    com = factory.staff("comercial", "com1")
+    ev_mine, ev_com, ev_foreign = factory.event(coordinator=mine), factory.event(coordinator=other, commercial=com), factory.event(coordinator=other)
+    login(client, "coord1")
+    assert client.get(f"/api/events/{ev_mine.id}/staff-users").status_code == 200
+    assert client.get(f"/api/events/{ev_foreign.id}/staff-users").status_code == 404
+    assert client.patch(f"/api/events/{ev_foreign.id}", json={"name": "Hackeado"}).status_code == 404
+    ids = {e["id"] for e in client.get("/api/events").json()}
+    assert ids == {ev_mine.id} and {e["id"] for e in client.get("/api/events/search").json()} == {ev_mine.id}
+    assert {e["id"] for e in client.get("/api/my-events").json()["events"]} == {ev_mine.id}
+    client.post("/logout")
+    login(client, "com1")                                             # el comercial dueño sí pertenece
+    assert client.get(f"/api/events/{ev_com.id}/staff-users").status_code == 200
+    assert client.get(f"/api/events/{ev_foreign.id}/staff-users").status_code == 404
+    client.post("/logout")
+    factory.authorize(ev_foreign, mine)                                # una autorización explícita también cuenta
+    login(client, "coord1")
+    assert client.get(f"/api/events/{ev_foreign.id}/staff-users").status_code == 200
+
+
+def test_a7_admin_keeps_seeing_every_event_with_the_scope_on(client, factory, monkeypatch):
+    monkeypatch.setenv("ENFORCE_STAFF_EVENT_SCOPE", "1")
+    ev = factory.event(coordinator=factory.staff("coordinador", "coord1"))
+    factory.staff("admin", "adm1")
+    login(client, "adm1")
+    assert client.get(f"/api/events/{ev.id}/staff-users").status_code == 200
+    assert {e["id"] for e in client.get("/api/events").json()} == {ev.id}
+
+
+# ------------------------------------------------------------------ E-N1: la revocación es por evento
+def test_en1_revoking_one_event_leaves_the_other_events_and_the_account_alone(client, factory, db):
+    from app.models import EventStaffAuthorization, PrintDevice, PrintRoute, StaffUser
+    coord = factory.staff("coordinador", "coord1")
+    ev1, ev2 = factory.event(coordinator=coord), factory.event(coordinator=coord)
+    dig = factory.staff("digitador", "dig1")
+    helper = factory.staff("digitador", "dig2")
+    factory.authorize(ev1, dig)
+    factory.authorize(ev2, dig)
+    db.add_all([PrintDevice(event_id=ev1.id, staff_user_id=dig.id, device_id="d1"), PrintDevice(event_id=ev2.id, staff_user_id=dig.id, device_id="d2"),
+                PrintRoute(event_id=ev1.id, staff_user_id=helper.id, printer_staff_id=dig.id)])
+    db.commit()
+    login(client, "coord1")
+    r = client.delete(f"/api/events/{ev1.id}/staff-users/{dig.id}")
+    assert r.status_code == 200 and r.json()["other_events"] == 1
+    db.expire_all()
+    assert db.query(EventStaffAuthorization).filter_by(event_id=ev1.id, staff_user_id=dig.id).count() == 0
+    assert db.query(EventStaffAuthorization).filter_by(event_id=ev2.id, staff_user_id=dig.id).count() == 1          # el otro evento sigue intacto
+    assert [d.event_id for d in db.query(PrintDevice).all()] == [ev2.id]
+    assert db.query(PrintRoute).one().printer_staff_id is None
+    assert db.query(StaffUser).filter_by(id=dig.id).one().is_active is True                                          # la cuenta no se desactiva
+
+
+def test_en1_revoke_only_applies_to_a_digitizer_or_client_of_that_event(client, factory):
+    coord, other_coord = factory.staff("coordinador", "coord1"), factory.staff("coordinador", "coord2")
+    ev, ev_b = factory.event(coordinator=coord), factory.event(coordinator=coord)
+    dig = factory.staff("digitador", "dig1")
+    factory.authorize(ev_b, dig)
+    login(client, "coord1")
+    assert client.delete(f"/api/events/{ev.id}/staff-users/{dig.id}").status_code == 404           # no tenía acceso a ESTE evento
+    assert client.delete(f"/api/events/{ev.id}/staff-users/{other_coord.id}").status_code == 404   # un coordinador no se autoriza por evento
+    assert client.delete(f"/api/events/{ev.id}/staff-users/99999").status_code == 404

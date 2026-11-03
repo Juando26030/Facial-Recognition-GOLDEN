@@ -17,11 +17,11 @@ from app import status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_rules
-from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintLog, SavedColor, StaffUser, SuperEvent, Tenant
+from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
 from app.routers.areas_inventory import delete_event_modules
-from app.auth import assert_event_tenant, effective_roles, get_current_staff, get_event_for_staff, hash_password, require_role
+from app.auth import assert_event_scope, assert_event_tenant, effective_roles, scope_events_query, get_current_staff, get_event_for_staff, hash_password, require_role
 from app.cities_data import COUNTRY_CITIES
 
 router = APIRouter()
@@ -169,6 +169,8 @@ def my_events(db: Session = Depends(get_db), staff: StaffUser = Depends(get_curr
         query = query.join(
             EventStaffAuthorization, EventStaffAuthorization.event_id == Event.id
         ).filter(EventStaffAuthorization.staff_user_id == staff.id)
+    else:
+        query = scope_events_query(query, staff)
     events = query.order_by(Event.created_at.desc()).all()
     return {"events": [_serialize(e) for e in events], "has_any_authorization": has_any_authorization}
 
@@ -239,7 +241,7 @@ def search_events(
     pertenencia — una comercial usa `commercial_staff_id=<su propio id>` para "Mis eventos"
     (omitiéndolo ve "Todos"); admin+ los usa para filtrar por cualquier comercial o coordinador
     asignado, ambos combinables entre sí y con `q`/`status`."""
-    all_events = db.query(Event).order_by(Event.created_at.desc()).all()
+    all_events = scope_events_query(db.query(Event), staff).order_by(Event.created_at.desc()).all()
     matches = []
     for e in all_events:
         if status and e.status != status:
@@ -263,7 +265,7 @@ def list_events(
     tenant_id: Optional[str] = None, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
-    query = db.query(Event)
+    query = scope_events_query(db.query(Event), staff)
     if tenant_id:
         query = query.filter(Event.tenant_id == tenant_id)
     return [_serialize(e) for e in query.order_by(Event.created_at.desc()).all()]
@@ -392,6 +394,7 @@ def update_event(
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
     new_state = None
     if data.state_id is not None:            # estado configurable (docs/18): el evento pasa al estado base de ese estado
         new_state = db.get(EventState, data.state_id)
@@ -456,6 +459,7 @@ def list_event_staff(
     event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
     """digitador + cliente autorizados para ESTE evento."""
+    get_event_for_staff(event_id, db, staff)          # 0C (N2/A7): el evento debe existir y ser accesible (tenant y pertenencia) para quien lista
     staff_list = (
         db.query(StaffUser)
         .join(EventStaffAuthorization, EventStaffAuthorization.staff_user_id == StaffUser.id)
@@ -492,6 +496,7 @@ def create_event_staff(
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
     if db.query(StaffUser).filter(StaffUser.username == data.username).first():
         raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese usuario")
     # 'digitador'/'cliente' son las dos excepciones del teléfono obligatorio+único (Sprint 2.4
@@ -538,10 +543,20 @@ def revoke_event_staff(
     event_id: int, staff_id: int, db: Session = Depends(get_db),
     staff: StaffUser = Depends(require_role("coordinador")),
 ):
-    get_event_for_staff(event_id, db, staff)          # 0C (N2)
-    db.query(EventStaffAuthorization).filter_by(event_id=event_id, staff_user_id=staff_id).delete()
+    """Revoca el acceso de un digitador/cliente a ESTE evento y SOLO a este (E-N1, 0C). Su cuenta, su sesión y sus autorizaciones en otros eventos no se tocan (desactivar la cuenta es otra acción: /staff/{id}/deactivate).
+    Se quitan además los restos por evento: su equipo de impresión registrado aquí, su ruta de impresión y las rutas de otros que imprimían en su equipo."""
+    event = get_event_for_staff(event_id, db, staff)          # 0C (N2)
+    target = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    auth = db.query(EventStaffAuthorization).filter_by(event_id=event.id, staff_user_id=staff_id).first()
+    if not target or not auth or target.role not in ("digitador", "cliente"):
+        raise HTTPException(status_code=404, detail="Esa cuenta no tiene acceso a este evento")      # coordinador+ no se autoriza por evento: no hay nada que revocar aquí
+    db.delete(auth)
+    db.query(PrintDevice).filter_by(event_id=event.id, staff_user_id=staff_id).delete()
+    db.query(PrintRoute).filter_by(event_id=event.id, staff_user_id=staff_id).delete()
+    db.query(PrintRoute).filter_by(event_id=event.id, printer_staff_id=staff_id).update({"printer_staff_id": None})      # quien imprimía en su equipo vuelve a imprimir en el propio
     db.commit()
-    return {"message": "Acceso a este evento revocado"}
+    remaining = db.query(EventStaffAuthorization).filter_by(staff_user_id=staff_id).count()
+    return {"message": "Acceso a este evento revocado", "other_events": remaining}
 
 
 @router.delete("/events/{event_id}")
@@ -562,6 +577,7 @@ def delete_event(
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
 
     db.query(BulkJob).filter(BulkJob.event_id == event_id).delete()
     db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).delete()
@@ -598,6 +614,7 @@ def revert_to_created_info(event_id: int, db: Session = Depends(get_db), staff: 
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
     return {"name": event.name, "status": event.status, "allowed": event.status == "en_proceso", **_revert_counts(db, event_id),
             "sync_days": status_changes.SYNC_AFTER_REVERT.days}
 
@@ -616,6 +633,7 @@ def revert_to_created(event_id: int, data: Optional[RevertIn] = None, db: Sessio
     if not event:
         raise HTTPException(status_code=404, detail="Evento no encontrado")
     assert_event_tenant(event, staff)
+    assert_event_scope(event, staff, db)
     if event.status != "en_proceso":
         raise HTTPException(status_code=409, detail="Solo un evento «En proceso» se puede devolver a «Creado»" + (" (los finalizados no se tocan)." if event.status == "finalizado" else "."))
     reason = ((data.reason if data else None) or "").strip()[:500] or None
