@@ -1,0 +1,76 @@
+name: Seguridad (escáneres)
+
+# Fase 0C. Escáneres automáticos y gratuitos sobre el código: secretos (gitleaks), dependencias vulnerables (pip-audit) y análisis estático
+# (Bandit y Semgrep). Corre en cada PR, en cada push a main y cada lunes. Al principio SOLO INFORMA (continue-on-error) para ver la línea
+# base sin bloquear a nadie; cuando se revise y se limpie la línea base, se quita `continue-on-error` y las críticas/altas bloquean (plan 4d).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 11 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secretos:
+    name: Secretos (gitleaks, todo el historial)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 detect --source /repo --redact --no-banner --exit-code 1 --report-format json --report-path /repo/gitleaks.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks
+          path: gitleaks.json
+          if-no-files-found: ignore
+
+  dependencias:
+    name: Dependencias vulnerables (pip-audit)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit
+      - name: pip-audit
+        run: pip-audit -r requirements.txt --progress-spinner off --format columns | tee pip-audit.txt
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit
+          path: pip-audit.txt
+          if-no-files-found: ignore
+
+  estatico:
+    name: Análisis estático (Bandit + Semgrep)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install bandit semgrep
+      - name: Bandit (severidad media o más)
+        run: bandit -r app scripts -ll -q -f txt -o bandit.txt || (cat bandit.txt; exit 1)
+      - name: Semgrep (reglas de Python y OWASP)
+        run: semgrep scan --config p/python --config p/owasp-top-ten --error --metrics=off app scripts | tee semgrep.txt
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: estatico
+          path: |
+            bandit.txt
+            semgrep.txt
+          if-no-files-found: ignore

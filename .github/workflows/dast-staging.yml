@@ -1,0 +1,53 @@
+name: Prueba dinámica en STAGING (ZAP)
+
+# Fase 0C. Ataque automatizado con OWASP ZAP contra STAGING, con datos ficticios. NUNCA contra producción: el flujo se niega si la dirección
+# no es la de staging o si no se escribe la confirmación. Antes de correrlo: rama de respaldo de Neon de staging (la crea Juan David) y
+# correo, SMS, WhatsApp y pagos de staging en modo de prueba o apagados.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Dirección de STAGING a atacar"
+        default: "https://golden-staging-298291650070.web.app"
+        required: true
+      modo:
+        description: "baseline = solo observa (seguro) · completo = ataque activo"
+        type: choice
+        options: [baseline, completo]
+        default: baseline
+      confirmacion:
+        description: "Escribe SOLO STAGING (con datos ficticios y respaldo de Neon hecho)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Salvaguardas
+        run: |
+          [ "${{ inputs.confirmacion }}" = "SOLO STAGING" ] || { echo "::error::Falta la confirmación «SOLO STAGING»."; exit 1; }
+          case "${{ inputs.target }}" in
+            https://golden-staging-*.web.app|https://golden-staging-*.web.app/*|https://staging.golden-eventos.com|https://staging.golden-eventos.com/*) ;;
+            *) echo "::error::La dirección no es la de staging. No se ataca."; exit 1;;
+          esac
+          case "${{ inputs.target }}" in *app.golden-eventos.com*) echo "::error::Eso es PRODUCCIÓN."; exit 1;; esac
+      - uses: actions/checkout@v7
+      - name: ZAP baseline (pasivo)
+        if: inputs.modo == 'baseline'
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ inputs.target }}
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap_baseline
+      - name: ZAP completo (activo)
+        if: inputs.modo == 'completo'
+        uses: zaproxy/action-full-scan@v0.12.0
+        with:
+          target: ${{ inputs.target }}
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap_completo
