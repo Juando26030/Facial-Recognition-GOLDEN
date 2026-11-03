@@ -1069,3 +1069,10 @@ Visto el 1-nov-2026 al probar «Devolver a Creado» a 375 px: la página de Even
 
 ## Pendiente para otra etapa — avisar que la foto no se guardó cuando la persona ya existía
 Decisión de Juan David (1-nov-2026): cuando `POST /api/register` llega con foto y la persona YA existe (camino normal o la carrera con otra petición, `_manual_register`), el ingreso se registra pero la foto se descarta sin avisar: la rama «persona que ya existía» no lee la foto ni el consentimiento (no hay riesgo de privacidad: no se guarda foto ni vector, y `audit_consent_logs` no se toca). Pendiente: avisar al operador de que la foto NO se guardó (cambiaría el mensaje de ambos casos, el normal y el de la carrera). No se hizo ahora a propósito.
+
+## Contraseñas con motivo claro y «ojito» (2026-11-03, rama `producto/login-password-ux`)
+- Fuente única de la política: `app/security.py::password_rules` (lista de requisitos con su texto); `password_problem` devuelve el primero que falla. `GET /api/password-policy[?strict=1]` la expone sin datos de nadie
+  (`strict=1` = contraseñas que fija un administrador: 10+ caracteres, letra y número; sin `strict`: la propia, 8+). Sin migración.
+- `static/js/password-policy.js` (+ `static/css/password-ui.css`): ojito en todo `input[type=password][data-gw-eye]` (login, cambiar/restablecer, alta de personal y de usuarios temporales; vuelve a ocultar al enviar/salir)
+  y lista de requisitos EN VIVO con ✓/✗, fuerza y botón deshabilitado hasta cumplir todo (`form[data-gw-pwcheck]`). El servidor sigue validando y devuelve el motivo exacto.
+- Íconos `i-eye`/`i-eye-off` en `static/img/icons.svg`. Pruebas: `tests/test_password_policy.py` y `tests/js/password_policy_check.js` comparten `tests/js/password_cases.json` (paridad navegador/servidor).

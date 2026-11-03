@@ -245,22 +245,46 @@ COMMON_PASSWORDS = frozenset({
 })
 
 
-def password_problem(password: str, username: Optional[str] = None, strict: bool = False) -> Optional[str]:
-    """Política de contraseñas. Siempre: mínimo MIN_PASSWORD_LENGTH, distinta del usuario y fuera de una lista corta de contraseñas comunes (con o sin cifras/símbolos
-    alrededor). `strict=True` (0C-C11: la contraseña la fija un administrador al crear o restablecer una cuenta): mínimo MIN_PASSWORD_LENGTH_CREATED y al menos una letra y un número."""
+def _is_common(low: str) -> bool:
+    letters = "".join(c for c in low if c.isalpha())
+    return low in COMMON_PASSWORDS or (letters in COMMON_PASSWORDS and len(letters) >= 4) or (low.strip("0123456789") == "" and len(set(low)) <= 2)
+
+
+def password_rules(password: str, username: Optional[str] = None, strict: bool = False) -> list:
+    """Política de contraseñas como lista de requisitos [{id, label, problem, ok}] (la ÚNICA fuente: `password_problem` y el endpoint
+    /api/password-policy salen de acá; static/js/password-policy.js evalúa lo mismo en vivo). Siempre: mínimo MIN_PASSWORD_LENGTH, distinta del usuario y fuera de una lista
+    corta de contraseñas comunes (con o sin cifras/símbolos alrededor). `strict=True` (0C-C11: la fija un administrador al crear o restablecer una cuenta): mínimo
+    MIN_PASSWORD_LENGTH_CREATED y al menos una letra y un número."""
     password = password or ""
     minimum = MIN_PASSWORD_LENGTH_CREATED if strict else MIN_PASSWORD_LENGTH
-    if len(password) < minimum:
-        return f"La contraseña debe tener al menos {minimum} caracteres"
-    if strict and not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
-        return "La contraseña debe tener al menos una letra y un número"
     low = password.strip().lower()
-    if username and low == username.strip().lower():
-        return "La contraseña no puede ser igual al usuario"
-    letters = "".join(c for c in low if c.isalpha())
-    if low in COMMON_PASSWORDS or (letters in COMMON_PASSWORDS and len(letters) >= 4) or (low.strip("0123456789") == "" and len(set(low)) <= 2):
-        return "Esa contraseña es demasiado común: elige otra más difícil de adivinar"
+    rules = [{"id": "length", "label": f"Tiene al menos {minimum} caracteres", "problem": f"La contraseña debe tener al menos {minimum} caracteres", "ok": len(password) >= minimum}]
+    if strict:
+        rules.append({"id": "letter_digit", "label": "Tiene al menos una letra y un número", "problem": "La contraseña debe tener al menos una letra y un número",
+                      "ok": any(c.isalpha() for c in password) and any(c.isdigit() for c in password)})
+    rules.append({"id": "not_username", "label": "No es igual a tu usuario", "problem": "La contraseña no puede ser igual al usuario",
+                  "ok": not (username and low == username.strip().lower())})
+    rules.append({"id": "not_common", "label": "No es una contraseña muy común (como «123456» o «Colombia2026»)",
+                  "problem": "Esa contraseña es demasiado común: elige otra más difícil de adivinar", "ok": not _is_common(low)})
+    return rules
+
+
+def password_problem(password: str, username: Optional[str] = None, strict: bool = False) -> Optional[str]:
+    """Primer requisito que NO se cumple (mensaje en español para la persona), o None si la contraseña sirve. Ver `password_rules`."""
+    for r in password_rules(password, username, strict):
+        if not r["ok"]:
+            return r["problem"]
     return None
+
+
+def password_policy(strict: bool = False) -> dict:
+    """Lo que el navegador necesita para evaluar los requisitos en vivo sin duplicar números ni listas (se sirve en /api/password-policy)."""
+    base = password_rules("", None, strict)
+    return {
+        "strict": strict, "min_length": MIN_PASSWORD_LENGTH_CREATED if strict else MIN_PASSWORD_LENGTH,
+        "rules": [{"id": r["id"], "label": r["label"], "problem": r["problem"]} for r in base],
+        "common": sorted(COMMON_PASSWORDS),
+    }
 
 
 def _hash_token(token: str) -> str:
