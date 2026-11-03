@@ -927,12 +927,13 @@
     // Con la pestaña oculta no se consulta (no gasta la base); al volver a ella se ponen al día los cambios de inmediato.
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 
+    // 1A: el cronómetro del registro arranca con la primera tecla en cualquiera de los buscadores y se descarta si se vacían todos (no se registró a nadie). Va DENTRO del mismo escuchador (uno solo por campo).
+    const timerOnInput = () => {
+      if (!opts.fastCheckin || !window.RegTimer) return;
+      if ([cedulaInput, nombreInput, entidadInput].every((i) => !i || !i.value)) RegTimer.cancel(); else RegTimer.start();
+    };
     [cedulaInput, nombreInput, entidadInput].forEach(input => {
-      if (input) input.addEventListener('input', onSearchInput);
-    });
-    // 1A: el cronómetro del registro arranca con la primera tecla en cualquiera de los buscadores y se descarta si se vacían todos (no se registró a nadie).
-    if (opts.fastCheckin) [cedulaInput, nombreInput, entidadInput].forEach(input => {
-      if (input) input.addEventListener('input', () => { if (!window.RegTimer) return; if ([cedulaInput, nombreInput, entidadInput].every((i) => !i || !i.value)) RegTimer.cancel(); else RegTimer.start(); });
+      if (input) input.addEventListener('input', (e) => { timerOnInput(); return onSearchInput(e); });
     });
 
     /* nameInfo (Sprint 2 Parte 2, 2.1): {nombres, apellidos} cuando el escaneo trajo un nombre
