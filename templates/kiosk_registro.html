@@ -56,7 +56,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
 <script src="{{ url_for('static', path='js/qr.js') }}"></script>
 
@@ -377,8 +377,7 @@
     const closeRegisterModalBtn = document.getElementById('closeRegisterModalBtn');
 
     function openRegisterModal() {
-        const gc = window.GoldenContingency && window.GoldenContingency.instance;
-        if (gc && gc.active()) { showToast('Sin conexión: no se pueden registrar personas nuevas; espera a que vuelva la red', 'error'); return; }       // alta de personas nuevas sin red: fuera de alcance
+        // Sin red el botón ya se habilita o deshabilita solo (onChange de más abajo: se puede si la bandeja de salida está disponible). El guardia que había aquí lo contradecía y el modal nunca abría (causa F de docs/etapa/0A).
         if (registerModal) registerModal.style.display = 'flex';
     }
     function closeRegisterModal() { if (registerModal) registerModal.style.display = 'none'; }
@@ -407,6 +406,7 @@
             if (warn) warn.style.display = window.EVENT_AUTO_REGISTER ? 'block' : 'none';       // aviso permanente mientras esté activo con rostro
         }
         updateAutoRegisterBtn();
+        window.addEventListener('gw:flags', updateAutoRegisterBtn);          // otro equipo cambió el interruptor: el sondeo del directorio trae la bandera del servidor
         autoRegisterBtn.addEventListener('click', async () => {
             const next = !window.EVENT_AUTO_REGISTER;
             if (next && document.getElementById('autoRegisterWarn') && !(await showConfirm(
@@ -438,6 +438,7 @@
             autoPrintBtn.style.color = window.EVENT_AUTO_PRINT ? 'white' : 'var(--golden-dark)';
         }
         updateAutoPrintBtn();
+        window.addEventListener('gw:flags', updateAutoPrintBtn);
         autoPrintBtn.addEventListener('click', async () => {
             const next = !window.EVENT_AUTO_PRINT;
             const res = await fetch(`/api/events/${window.EVENT_ID}`, {

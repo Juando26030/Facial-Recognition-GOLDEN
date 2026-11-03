@@ -122,6 +122,17 @@
      cédula). Busca en la copia local; quien no está NO se admite; si ya consta como registrado o está en la cola pide la confirmación de DUPLICADO; si no, encola (client_id, marca de
      tiempo, huella; método `cedula` | `qr` | `manual`) y avisa. Devuelve lo encontrado o null. Las listas abiertas se actualizan por `accreditHooks`. */
   const accreditHooks = [];
+  /* PR3 (4a, autoimpresión): las banderas del evento las decide el SERVIDOR (respuestas de checkin-cedula/register/status/undo y `flags` de /users/changes), no la página. Se copian a las variables de
+     la página (BadgePrint.setFlags) y a la copia local (el autorregistro sin red usa la última conocida, ya no la de la descarga de hace hasta 4 min). */
+  function applyFlags(flags) {
+    if (!flags || typeof flags !== 'object') return;
+    if (window.BadgePrint && BadgePrint.setFlags) BadgePrint.setFlags(flags);
+    const gc = window.GoldenContingency && window.GoldenContingency.instance;
+    if (gc && gc.setAutoRegister && typeof flags.auto_register === 'boolean') gc.setAutoRegister(flags.auto_register);
+  }
+  const jsonOf = async (r) => { try { return (await r.json()) || {}; } catch (e) { return {}; } };
+  const primePrint = () => { if (window.BadgePrint && BadgePrint.primeWindow) { try { BadgePrint.primeWindow(); } catch (e) { /* sin ventana preparada */ } } };       // dentro del gesto del usuario (ver badge-render.js)
+  const cancelPrimedPrint = () => { if (window.BadgePrint && BadgePrint.cancelPrimed) BadgePrint.cancelPrimed(); };
   let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
   async function offlineAccredit(GC, target, method, cid) {
     const found = target.h ? await GC.findByHash(target.h) : await GC.scanLocal(target.cedula);
@@ -314,7 +325,7 @@
     // solo con "Cancelar" o guardando, para no perder cambios sin querer.
     box.querySelector('#editModalCancel').addEventListener('click', close);
 
-    box.querySelector('#editModalSave').addEventListener('click', async () => {
+    const saveHandler = async () => {
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;
       if (GCs && GCs.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto: aviso claro, no «Error de red»
       const form = box.querySelector('#editModalForm');
@@ -391,7 +402,7 @@
             // registrado, si está autoimpresión activo entonces debe mandar a imprimir" — este es
             // uno de los puntos donde el estado puede pasar a "Registrado" sin pasar por un
             // escaneo (ver maybeAutoPrint en badge-render.js para el resto).
-            if (newStatus === 'registrado' && window.BadgePrint) BadgePrint.maybeAutoPrint(currentId);
+            if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
           } catch (e) {
             showToast('Error de red', 'error');
             saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
@@ -441,7 +452,7 @@
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado', method: opts.method }),
               });
-              if (st.ok) { if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId); }
+              if (st.ok) { const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
               else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
@@ -459,6 +470,14 @@
         showToast('Error de red', 'error');
         saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
       }
+    };
+    box.querySelector('#editModalSave').addEventListener('click', async () => {
+      // La ventana de impresión se abre AQUÍ, dentro del clic, solo si este guardado va a dejar a la persona «Registrada» (si no, no se abre nada).
+      const GCw = window.GoldenContingency && window.GoldenContingency.instance;
+      const statusSel = box.querySelector('#editModalStatus');
+      const willRegister = canManageStatus ? !!(statusSel && statusSel.value === 'registrado' && originalStatus !== 'registrado') : !isRegistered;
+      if (willRegister && !(GCw && GCw.active())) primePrint();
+      try { await saveHandler(); } finally { cancelPrimedPrint(); }
     });
 
     if (canManageStatus) {
@@ -836,7 +855,9 @@
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
         const head = await fetch(withEvent('/api/users/changes?cursor=' + NOW_CURSOR));
         if (!head.ok) throw new Error(head.status);
-        const nextCursor = (await head.json()).cursor;
+        const headBody = await head.json();
+        applyFlags(headBody.flags);
+        const nextCursor = headBody.cursor;
         const byId = new Map();
         for (let offset = 0, total = 1; offset < total; offset += PAGE) {
           const res = await fetch(withEvent(`/api/users?limit=${PAGE}&offset=${offset}`));
@@ -865,6 +886,7 @@
         const res = await fetch(withEvent('/api/users/changes?cursor=' + encodeURIComponent(cursor)));
         if (!res.ok) return;
         const delta = await res.json();
+        applyFlags(delta.flags);
         cursor = delta.cursor;
         { const GCt = GCref(); if (GCt && GCt.noteServerTotal && Number.isInteger(delta.total)) GCt.noteServerTotal(delta.total); }
         if (delta.users.length) {
@@ -969,6 +991,8 @@
           const res = await fetch(`/api/events/${window.EVENT_ID}/accreditations/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: acc.cid }) });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) { showToast(data.detail || 'No se pudo deshacer', 'error'); return; }
+          applyFlags(data);
+          if (window.BadgePrint && BadgePrint.releaseClaim) BadgePrint.releaseClaim(data.user_id || acc.id);       // PR3 (causa B/T5): volver a acreditar a la misma persona dentro de los 30 s sí imprime
           await reload();
         }
         showToast(`Acreditación de ${acc.name} deshecha`, 'success');
@@ -1034,6 +1058,11 @@
     }
 
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
+      const GC0 = window.GoldenContingency && window.GoldenContingency.instance;
+      if (!(GC0 && GC0.active()) && (confirmFlag || window.EVENT_AUTO_REGISTER !== false)) primePrint();          // la ventana de impresión se abre dentro del gesto (Enter del lector, clic en «Acreditar»), antes de cualquier llamada de red
+      try { return await fastCheckinCore(cedula, force, nameInfo, confirmFlag, method, clientId); } finally { cancelPrimedPrint(); }
+    }
+    async function fastCheckinCore(cedula, force, nameInfo, confirmFlag, method, clientId) {
       const cid = clientId || newClientId();
       const GC = window.GoldenContingency && window.GoldenContingency.instance;
       if (GC && GC.active()) return offlineCheckin(GC, cedula, method, cid);
@@ -1061,6 +1090,7 @@
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {
+          cancelPrimedPrint();                                      // mientras se pregunta no queda una ventana en blanco abierta
           const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
           if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method, cid);
           return;
@@ -1080,11 +1110,12 @@
           // como si se hubiera buscado por cédula a mano.
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
           Recent.add(data.data.id);
-          lastAccredit = { cid, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
+          lastAccredit = { cid, id: data.data.id, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
           if (data.data.sibling_events && data.data.sibling_events.length) {
             showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
           }
-          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id);
+          applyFlags(data);
+          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print });
           await reload();
           if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
           return;

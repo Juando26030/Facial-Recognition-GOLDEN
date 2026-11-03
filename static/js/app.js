@@ -402,6 +402,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 0));
 
         async function submitManualRegister(formData, btn) {
+            // La ventana de impresión se abre AQUÍ, dentro del gesto (el envío del formulario o el clic de una confirmación), antes de la llamada de red; maybeAutoPrint la usa o se cierra al terminar.
+            if (window.BadgePrint && BadgePrint.primeWindow) { try { BadgePrint.primeWindow(); } catch (e) { /* sin ventana preparada */ } }
             try {
                 const res = await fetch('/api/register', { method: 'POST', body: formData });
                 const data = await res.json();
@@ -409,6 +411,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     showToast(data.detail || "No se pudo registrar", "error");
                     return;
                 }
+                if (window.BadgePrint && BadgePrint.setFlags) BadgePrint.setFlags(data);         // el servidor dice si se imprime solo (auto_print) y si autorregistra (auto_register)
+                if ((data.result === 'NEEDS_LABELS' || data.result === 'DUPLICADO') && window.BadgePrint && BadgePrint.cancelPrimed) BadgePrint.cancelPrimed();       // mientras se pregunta no queda una ventana en blanco
                 if (data.result === 'NEEDS_LABELS') {
                     // Camino defensivo: normalmente ya mandamos field_labels de una vez (el botón
                     // "+ Agregar campo opcional" pregunta el nombre en el momento), esto solo se
@@ -438,11 +442,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (window.directorySearch) window.directorySearch.reload();
                     if (window.closeRegisterModal) window.closeRegisterModal();
                     if (window.GoldenDirectory && window.GoldenDirectory.noteRecent) window.GoldenDirectory.noteRecent(registeredId);      // A5: queda primera en la lista de ESTE equipo
-                    if (window.BadgePrint) BadgePrint.maybeAutoPrint(registeredId);
+                    if (window.BadgePrint) BadgePrint.maybeAutoPrint(registeredId, { auto: data.auto_print });
                     const photoSent = formData.get('file');
                     if (photoSent && photoSent.size) showPrint(registeredId);      // registro facial nuevo: «Imprimir» ahí mismo (la auto-impresión ya se disparó arriba si el evento la tiene)
                 }
             } catch(err) { showToast("Error de red", "error"); }
+            finally { if (window.BadgePrint && BadgePrint.cancelPrimed) BadgePrint.cancelPrimed(); }
         }
 
         regForm.onsubmit = async (e) => {

@@ -517,6 +517,12 @@ def get_all_users(
     return JSONResponse(rows, headers=headers)
 
 
+def event_flags(event: Event) -> dict:
+    """Las banderas de la puerta que decide el SERVIDOR en cada petición (no la página, que las congela al cargar): `auto_print` (autoimpresión de la escarapela) y
+    `auto_register` (modo autorregistro). Las respuestas de checkin-cedula, register, PATCH status y undo las incluyen para que el cliente imprima según ellas."""
+    return {"auto_print": bool(event.auto_print_badge), "auto_register": bool(event.auto_register)}
+
+
 def _directory_total(db: Session, event: Event) -> int:
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
@@ -538,7 +544,7 @@ def get_directory_changes(
     last_log = db.query(func.coalesce(func.max(AccessLog.id), 0)).filter(AccessLog.event_id == event.id).scalar()
     last_att = db.query(func.coalesce(func.max(EventAttendee.id), 0)).filter(EventAttendee.event_id == event.id).scalar()
     rows = _directory_rows(db, event, changed_since=(since_log, since_att), mask=staff.role == "cliente")
-    return {"cursor": f"{last_log}:{last_att}", "total": _directory_total(db, event), "users": rows}
+    return {"cursor": f"{last_log}:{last_att}", "total": _directory_total(db, event), "users": rows, "flags": event_flags(event)}
 
 
 @router.get("/email-validate")
@@ -795,7 +801,7 @@ def checkin_cedula(
                 db_name = f"{candidate.first_name or ''} {candidate.last_name or ''}"
                 if _identity_name_matches(db_name, full_name):
                     name_matches.append({"id": candidate.id, "first_name": candidate.first_name, "last_name": candidate.last_name})
-        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches}
+        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches, **event_flags(event)}
 
     if not force and _already_checked_in(db, event.id, user.id):
         return _duplicate_warning(db, event.id, user)
@@ -810,10 +816,10 @@ def checkin_cedula(
     data["sibling_events"] = [s["event_name"] for s in sibling_attendance(db, event, user.id)]
 
     if not event.auto_register and not confirm:
-        return {"result": "FOUND_PENDING", "data": data}
+        return {"result": "FOUND_PENDING", "data": data, **event_flags(event)}
     missing = person_missing_required(db, event, user)
     if missing:                                         # A3: NO se acredita; la página abre «Editar persona» en el primer campo vacío
-        return {"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing)}
+        return {"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing), **event_flags(event)}
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
@@ -835,7 +841,7 @@ def checkin_cedula(
         if not replay:
             raise
         return replay
-    return {"result": "SÍ", "data": data}
+    return {"result": "SÍ", "data": data, **event_flags(event)}
 
 
 ACCREDIT_UNDO_WINDOW = timedelta(seconds=15)          # «Deshacer» una acreditación: solo quien la hizo y hace menos de 15 s (la pantalla ofrece ~8 s; aquí se verifica en el SERVIDOR)
@@ -861,7 +867,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     user_id = log.user_id
     db.delete(log)
     db.commit()
-    return {"undone": True, "user_id": user_id}
+    return {"undone": True, "user_id": user_id, **event_flags(event)}
 
 
 def _person_data(user: User) -> dict:
@@ -879,7 +885,7 @@ def _replayed_checkin(db: Session, event: Event, client_id: str) -> Optional[dic
     if not prev:
         return None
     user = db.get(User, (prev.user_id, event.tenant_id))
-    return {"result": "SÍ", "data": _person_data(user) if user else {"id": prev.user_id}, "replayed": True}
+    return {"result": "SÍ", "data": _person_data(user) if user else {"id": prev.user_id}, "replayed": True, **event_flags(event)}
 
 
 SYNC_MAX_RECORDS = 500
@@ -1490,7 +1496,7 @@ def update_registration_status(
                             old_value="Registrado" if was_registered else "No registrado", new_value="Registrado" if new_status == "registrado" else "No registrado",
                             detail=f"accesos borrados: {deleted_logs}" if new_status == "no_registrado" else None))
     db.commit()
-    return {"message": "Estado de registro actualizado", "status": new_status}
+    return {"message": "Estado de registro actualizado", "status": new_status, **event_flags(event)}
 
 @router.post("/register")
 def manual_register(
@@ -1572,7 +1578,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         db.add(log)
         _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean)
         db.commit()
-        reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
+        reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento.", **event_flags(event)}
         if contact_clean and event.digital_badge_enabled:
             reply["digital"] = _send_digital(db, event, existing, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
         return reply
@@ -1645,7 +1651,7 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     if img_array is not None:
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
-    reply = {"message": "Usuario registrado exitosamente como Nuevo."}
+    reply = {"message": "Usuario registrado exitosamente como Nuevo.", **event_flags(event)}
     if img_array is not None and not face_enc_json:
         reply["face_pending"] = "La foto quedó guardada; el reconocimiento facial se activa cuando la persona acepte en la pantalla de autorización."
     if minor:
