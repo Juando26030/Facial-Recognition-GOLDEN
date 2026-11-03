@@ -63,6 +63,7 @@ def status_of(form: WebForm, at: Optional[datetime] = None) -> str:
 PENDING = "awaiting_payment"          # FormSubmission.status mientras se espera la confirmación de Wompi
 PENDING_HOLD = timedelta(minutes=30)  # una inscripción esperando pago aparta su cupo este tiempo
 PENDING_PURGE = timedelta(hours=24)   # y se borra pasado este (antes podría llegar una aprobación tardía)
+PENDING_PAY_WINDOW = timedelta(days=3)   # C5: mientras su pago siga «pendiente» dentro de esta ventana (la misma de la conciliación con Wompi) la inscripción NO se borra
 
 
 def real_submissions(db: Session, form: WebForm):
@@ -279,9 +280,22 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
     return res
 
 
-def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
+def has_live_payment(db: Session, sub: FormSubmission) -> bool:
+    """C5: ¿la inscripción tiene un pago APROBADO/reembolsado, o uno pendiente que todavía puede aprobarse? Si sí, borrarla dejaría un pago aprobado sin inscripción."""
+    return db.query(FormPayment.id).filter(
+        FormPayment.submission_id == sub.id,
+        or_(FormPayment.status.in_(("approved", "refunded")),
+            and_(FormPayment.status == "pending", FormPayment.created_at > utcnow() - PENDING_PAY_WINDOW))).first() is not None
+
+
+def discard_submission(db: Session, form: WebForm, sub: FormSubmission, force: bool = False) -> bool:
     """Borra una inscripción (y sus archivos) que nunca llegó a confirmarse. Los pagos que la referenciaban quedan
-    como registro financiero, sin inscripción."""
+    como registro financiero, sin inscripción. C5: nunca borra una inscripción con un pago aprobado (ni, sin `force`, con uno pendiente que aún
+    puede aprobarse: la conciliación la confirmará); devuelve False si no la borró."""
+    if db.query(FormPayment.id).filter(FormPayment.submission_id == sub.id, FormPayment.status.in_(("approved", "refunded"))).first():
+        return False
+    if not force and has_live_payment(db, sub):
+        return False
     event = db.query(Event).filter(Event.id == form.event_id).first()
     for v in json.loads(sub.data_json).values():
         if isinstance(v, dict) and v.get("stored") and event:
@@ -289,10 +303,12 @@ def discard_submission(db: Session, form: WebForm, sub: FormSubmission) -> None:
     db.query(FormPayment).filter(FormPayment.submission_id == sub.id).update({"submission_id": None}, synchronize_session=False)
     db.delete(sub)
     invalidate_held()
+    return True
 
 
 def purge_stale_pending(db: Session, form: WebForm) -> None:
-    """Quita las inscripciones en espera de pago de más de 24 h (abandonadas). Se llama de forma perezosa al enviar."""
+    """Quita las inscripciones en espera de pago de más de 24 h (abandonadas). Se llama de forma perezosa al enviar. C5: las que tienen un pago aprobado o aún
+    pendiente (dentro de PENDING_PAY_WINDOW) se conservan para que la conciliación las confirme sin perder el cobro."""
     for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == PENDING,
                                                FormSubmission.created_at < utcnow() - PENDING_PURGE):
         discard_submission(db, form, sub)

@@ -614,7 +614,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             if person_id:
                 cond.append(FormSubmission.person_id == person_id)
             for old in prior.filter(or_(*cond)).all():
-                formsvc.discard_submission(db, form, old)
+                formsvc.discard_submission(db, form, old, force=True)      # reintento de la misma persona: el intento anterior se descarta (si su pago aún aprobara, queda a la vista «sin inscripción»)
             db.flush()
         res = formsvc.reserve_slot(db, form, person_id, sid, is_test, rules, clean)
         if not res["ok"]:

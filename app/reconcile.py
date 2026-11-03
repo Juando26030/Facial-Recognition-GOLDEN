@@ -41,10 +41,22 @@ def reconcile_pending(db: Session, limit: int = 200) -> dict:
         updated = apply_result(db, pay.id, txn.get("status", ""), txn.get("id"), txn.get("payment_method_type"))
         if updated and updated.status != before:
             summary["updated"] += 1
-    if summary["updated"] or summary["mismatch"]:
+    summary["healed"] = heal_approved_pending(db)
+    if summary["updated"] or summary["mismatch"] or summary["healed"]:
         ops.record_system_event("payments_reconciled", None, str(summary))
     log.info("conciliación de pagos: %s", summary)
     return summary
+
+
+def heal_approved_pending(db: Session, limit: int = 100) -> int:
+    """C5: pagos APROBADOS cuya inscripción sigue «esperando pago» (p. ej. se cayó la confirmación a mitad): se completan con la misma `apply_result`. Idempotente."""
+    from app.models import FormSubmission
+    from app.routers.form_payments import apply_result
+    rows = (db.query(FormPayment.id, FormPayment.transaction_id).join(FormSubmission, FormSubmission.id == FormPayment.submission_id)
+            .filter(FormPayment.status == "approved", FormSubmission.status == "awaiting_payment").limit(limit).all())
+    for pid, txn in rows:
+        apply_result(db, pid, "APPROVED", txn)
+    return len(rows)
 
 
 @jobs.handler("payments_reconcile")
