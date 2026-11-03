@@ -127,3 +127,8 @@ def test_secret_key_has_no_default_in_production(monkeypatch):
         secret_key()
     monkeypatch.setenv("ENVIRONMENT", "development")
     assert secret_key()
+
+
+def test_permissions_policy_header(client):
+    r = client.get("/health")
+    assert "camera=(self)" in r.headers["permissions-policy"] and "microphone=()" in r.headers["permissions-policy"]
