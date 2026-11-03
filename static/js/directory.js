@@ -128,7 +128,9 @@
     if (found.status === 'expired') { showToast('No hay copia local vigente: verificar manualmente', 'error'); return null; }
     if (found.status === 'not_found') { showToast('No registrado: verificar manualmente', 'error'); return null; }
     if (found.duplicate && !(await confirmDuplicateRegistration({ first_name: found.person.n, last_name: '' }, undefined))) return null;
-    await GC.enqueue(found, method, cid);
+    const tm = window.RegTimer ? RegTimer.payload() : null;          // 1A: tiempo medido; viaja en la cola y se envía al sincronizar
+    await GC.enqueue(found, method, cid, tm);
+    if (window.RegTimer) RegTimer.done();
     lastAccredit = { cid, name: found.person.n, offline: true, at: Date.now() };
     showToast(`Acreditado: ${found.person.n}`, 'success');
     accreditHooks.forEach((f) => f(found));
@@ -378,7 +380,7 @@
           saveBtn.disabled = true; saveBtn.innerText = 'Guardando...';
           try {
             const statusRes = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
-              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus, method: opts.method }),
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: newStatus, method: opts.method }, newStatus === 'registrado' && window.RegTimer ? RegTimer.payload() : null)),
             });
             if (!statusRes.ok) {
               const data = await statusRes.json().catch(() => ({}));
@@ -391,6 +393,7 @@
             // registrado, si está autoimpresión activo entonces debe mandar a imprimir" — este es
             // uno de los puntos donde el estado puede pasar a "Registrado" sin pasar por un
             // escaneo (ver maybeAutoPrint en badge-render.js para el resto).
+            if (newStatus === 'registrado' && window.RegTimer) RegTimer.done();
             if (newStatus === 'registrado' && window.BadgePrint) BadgePrint.maybeAutoPrint(currentId);
           } catch (e) {
             showToast('Error de red', 'error');
@@ -439,9 +442,9 @@
           if (!canManageStatus && !isRegistered) {
             try {
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'registrado', method: opts.method }),
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
               });
-              if (st.ok) { if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId); }
+              if (st.ok) { if (window.RegTimer) RegTimer.done(); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId); }
               else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
@@ -927,6 +930,10 @@
     [cedulaInput, nombreInput, entidadInput].forEach(input => {
       if (input) input.addEventListener('input', onSearchInput);
     });
+    // 1A: el cronómetro del registro arranca con la primera tecla en cualquiera de los buscadores y se descarta si se vacían todos (no se registró a nadie).
+    if (opts.fastCheckin) [cedulaInput, nombreInput, entidadInput].forEach(input => {
+      if (input) input.addEventListener('input', () => { if (!window.RegTimer) return; if ([cedulaInput, nombreInput, entidadInput].every((i) => !i || !i.value)) RegTimer.cancel(); else RegTimer.start(); });
+    });
 
     /* nameInfo (Sprint 2 Parte 2, 2.1): {nombres, apellidos} cuando el escaneo trajo un nombre
        completo además de la cédula (CSV de la cédula vieja, o el OCR de la MRZ de la nueva) —
@@ -1044,6 +1051,7 @@
       if (force) formData.append('force', 'true');
       if (confirmFlag) formData.append('confirm', 'true');
       if (method) formData.append('method', method);  // 'qr' cuando la cédula vino de un código QR
+      if (window.RegTimer) RegTimer.appendTo(formData);  // 1A: took_ms/ui_flow (tiempo desde la primera tecla); el servidor lo acota y lo ignora si no sirve
       if (nameInfo) {
         if (nameInfo.nombres) formData.append('first_name', nameInfo.nombres);
         if (nameInfo.apellidos) formData.append('last_name', nameInfo.apellidos);
@@ -1079,6 +1087,7 @@
           // explícito) — la "confirmación" es ver la fila aparecer filtrada en el Directorio,
           // como si se hubiera buscado por cédula a mano.
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
+          if (window.RegTimer) RegTimer.done();
           Recent.add(data.data.id);
           lastAccredit = { cid, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
           if (data.data.sibling_events && data.data.sibling_events.length) {
