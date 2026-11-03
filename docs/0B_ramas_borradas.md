@@ -1,5 +1,7 @@
 # Ramas borradas en 0B (2-nov-2026)
 
+**Hecho el 2-nov-2026:** las 72 ramas de la tabla se borraron desde GitHub (verificado: ninguna sigue en el remoto). Quedan 18 ramas. `cand28` también desapareció del remoto sin estar en esta lista; su punta (`5ff752b`) está dentro de `main`.
+
 Recuperar: `git branch <nombre> <sha>`. Las que dicen «en main» ya estaban 100% dentro de `main`; las 4 marcadas «archivo» están además bajo la rama `archivo/ramas-borradas-0b-2026-11-02` (sus puntas son padres de su commit).
 
 | Rama | SHA | Dónde queda |
