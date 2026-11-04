@@ -1,0 +1,70 @@
+/* Registro (Plan 7): engranaje y panel de configuración. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md). */
+.gw-regcfg { display: flex; flex-direction: column; align-items: flex-end; gap: var(--gw-sp-2, 8px); margin: 0 0 var(--gw-sp-3, 12px); }
+.gw-regcfg:not(:has(*)) { display: none; }
+.gw-regcfg__btn { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border-radius: var(--gw-radius-sm, 8px);
+  border: 1px solid var(--gw-border-strong); background: var(--gw-surface); color: var(--gw-text); cursor: pointer; }
+.gw-regcfg__btn:hover { background: var(--gw-surface-2); }
+.gw-regcfg__btn:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-regcfg__btn[aria-expanded="true"] { background: var(--gw-surface-2); border-color: var(--gw-text); }
+.gw-regcfg__dot { position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--gw-danger); border: 2px solid var(--gw-surface); }
+.gw-regcfg__panel { align-self: stretch; }
+.gw-regcfg__panel[hidden] { display: none; }
+.gw-regcfg__modes { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2, 8px); margin-top: var(--gw-sp-3, 12px); align-items: flex-start; }
+.gw-regcfg__modes .gw-btn { min-height: 44px; }
+.gw-regcfg__panel #sharedPrintBar { position: static; margin: 0; }
+
+/* ---- Base visual nueva en Registro (Plan 7, pieza D): lo antiguo (style.css, filas que arma directory.js) se lleva a tokens --gw-* para que se lea en claro y en oscuro. ----
+   Todo cuelga de body.gw-registro: nada afecta a otras pantallas. */
+body.gw-registro { background: var(--gw-bg); color: var(--gw-text); }
+.gw-registro .golden-header { background: var(--gw-surface); color: var(--gw-text); border-bottom: 1px solid var(--gw-border); box-shadow: var(--gw-shadow-sm); }
+.gw-registro .golden-header-container { gap: var(--gw-sp-3); }
+.gw-registro .golden-nav { flex-wrap: wrap; justify-content: flex-end; }
+.gw-registro .golden-nav a { color: var(--gw-text); min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.gw-registro__who { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-registro .golden-event-strip { background: var(--gw-nav-bg); color: var(--gw-nav-text); border-bottom-color: var(--gw-nav-accent); }
+.gw-registro .golden-event-strip strong { color: var(--gw-nav-accent); }
+.gw-registro .golden-section { background: transparent !important; }
+.gw-registro .golden-section-title span { color: var(--gw-gold-text); }
+.gw-registro .golden-section-title h2 { color: var(--gw-text); }
+.gw-registro .tab { background: var(--gw-surface); color: var(--gw-text); border: 2px solid var(--gw-border-strong); box-shadow: none; min-height: 44px; }
+.gw-registro .tab.active, .gw-registro .tab:hover { background: var(--gw-navy); color: var(--gw-nav-text); border-color: var(--gw-navy); }
+.gw-registro__card { padding: var(--gw-sp-5); }
+.gw-registro__notice { max-width: 700px; margin: 0 auto var(--gw-sp-5); justify-content: center; text-align: center; }
+.gw-registro__door { margin-bottom: var(--gw-sp-4); }
+.gw-registro__modal { max-width: 560px; width: 100%; max-height: 90vh; overflow: auto; padding: 1.8rem; }
+.gw-registro .badge-form-title { color: var(--gw-text); }
+.gw-registro .badge-input-group label, .gw-registro .directory-scan-hint { color: var(--gw-text-muted); }
+.gw-registro .badge-input-group input, .gw-registro .badge-input-group select, .gw-registro .badge-input-group textarea { background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); }
+.gw-registro .badge-input-group input::placeholder { color: var(--gw-text-muted); }
+.gw-registro .golden-table { font-family: inherit; }
+.gw-registro .golden-table th { background: var(--gw-navy); color: var(--gw-nav-text); }
+.gw-registro .golden-table td { color: var(--gw-text); border-color: var(--gw-border); }
+.gw-registro .golden-table tbody tr { background: var(--gw-surface); }
+.gw-registro .golden-table tbody tr:nth-child(even) { background: var(--gw-surface-2); }
+/* botones que arma directory.js (golden-btn btn-table-action) */
+.gw-registro .golden-btn.btn-table-action { background: var(--gw-secondary-bg); color: var(--gw-secondary-text); border: 1px solid var(--gw-border-strong); min-height: 44px; }
+.gw-registro .golden-btn.btn-accredit-row, .gw-registro .golden-btn.btn-accredit-pending { background: var(--gw-navy); color: var(--gw-nav-text); border-color: var(--gw-navy); }
+.gw-registro .golden-btn:disabled { opacity: .6; cursor: not-allowed; }
+.gw-registro .btn-table-delete { background: var(--gw-danger); color: var(--gw-on-danger); }
+/* modo touch: lo que shared-print.js pinta con colores fijos, a tokens (claro y oscuro) */
+body.gw-registro.touch-mode .golden-table tbody tr { background: var(--gw-surface); border-color: var(--gw-border-strong); box-shadow: var(--gw-shadow-sm); }
+body.gw-registro.touch-mode .golden-table tbody tr:nth-child(even) { background: var(--gw-surface-2); }
+body.gw-registro.touch-mode .golden-table tbody td[data-field=first_name], body.gw-registro.touch-mode .golden-table tbody td[data-field=last_name] { color: var(--gw-text); }
+body.gw-registro.touch-mode .golden-table tbody td[data-field=entity], body.gw-registro.touch-mode .golden-table tbody td[data-field=id], body.gw-registro.touch-mode .golden-table tbody td[data-field=opt_1] { color: var(--gw-text-muted); }
+body.gw-registro.touch-mode .golden-table tbody td[data-field=status] { background: var(--gw-surface-2); color: var(--gw-text); }
+body.gw-registro.touch-mode .gw-btn { min-height: 52px; }
+/* barra de impresión (shared-print.js) dentro del panel */
+.gw-registro #sharedPrintBar { background: var(--gw-surface-2); border: 1px solid var(--gw-border-strong); color: var(--gw-text); }
+.gw-registro #sharedPrintBar.bad { background: var(--gw-err-bg); border-color: var(--gw-danger); }
+.gw-registro #sharedPrintBar.warn { background: var(--gw-warn-bg); border-color: var(--gw-warn-line); }
+.gw-registro #sharedPrintBar .sp-btn { background: var(--gw-secondary-bg); color: var(--gw-secondary-text); border: 1px solid var(--gw-border-strong); }
+.gw-registro #sharedPrintBar #spPending { background: var(--gw-warn-bg); color: var(--gw-warn-text); border: 2px solid var(--gw-warn-line); }
+.gw-registro .sp-kbd { background: var(--gw-secondary-bg); color: var(--gw-secondary-text); border: 1px solid var(--gw-border-strong); }
+@media (max-width: 480px) {
+  .gw-registro .golden-header-container { padding: 0 var(--gw-sp-3); height: auto; min-height: 64px; flex-wrap: wrap; }
+  .gw-registro .golden-container { padding: 0 var(--gw-sp-3); }
+  .gw-registro__card { padding: var(--gw-sp-3); }
+  .gw-registro .golden-section-title h2 { font-size: 1.6rem; }
+  .gw-registro .tab { flex: 1 1 100%; text-align: center; }
+  .gw-registro .golden-event-strip { padding: .6rem var(--gw-sp-3); }
+}
