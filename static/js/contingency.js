@@ -187,8 +187,23 @@
     };
     c.serverTotal = async () => { try { return (c.supported && c.db && (await c.db.get('meta', 'server_total'))) || null; } catch (e) { return null; } };
     c.rosterUsable = async () => { const m = await c.rosterMeta(); return !!(m && m.expires_at && d.now() < m.expires_at); };
-    c.wipeRoster = async () => { if (c.db) await c.db.clear(['roster', 'meta']); };           // al cerrar sesión, al finalizar el evento y al vencer
-    c.wipeAll = async () => { if (c.db) { await c.db.clear(['roster', 'meta', 'queue']); await recount(); } };      // la lista de «revisar» se conserva hasta que el operador la vea
+    /* Formulario de persona (Fase 1A, pieza 5): la definición VERSIONADA (sin datos personales) vive en `meta` para que alta y edición funcionen igual sin red. Sobrevive a los borrados de la lista
+       (cerrar sesión, vencer): no es un dato de nadie y sin ella el quiosco no sabría cómo dibujar el formulario sin red. */
+    c.personForm = async () => { try { const m = c.db ? await c.db.get('meta', 'person_form') : null; return m && m.definition ? m.definition : null; } catch (e) { return null; } };
+    c.savePersonForm = async (definition) => { if (!c.db) return; if (definition) await c.db.put('meta', { k: 'person_form', definition, saved_at: d.now() }); else await c.db.del('meta', 'person_form'); };
+    /* Pide la definición vigente (solo si la pantalla se abrió con el formulario de persona: `personForm: true` en init). El servidor dice «apagado» → se borra la copia. Nunca rompe el refresco. */
+    c.refreshPersonForm = async () => {
+      try {
+        const res = await d.fetch(`/api/events/${d.eventId}/person-form`, { cache: 'no-store' });
+        if (!res.ok) return null;
+        const body = await res.json();
+        if (!body.enabled || !body.definition) { await c.savePersonForm(null); return null; }
+        await c.savePersonForm(body.definition);
+        return body.definition;
+      } catch (e) { return null; }
+    };
+    c.wipeRoster = async () => { if (!c.db) return; const pf = await c.personForm(); await c.db.clear(['roster', 'meta']); if (pf) await c.savePersonForm(pf); };           // al cerrar sesión, al finalizar el evento y al vencer
+    c.wipeAll = async () => { if (c.db) { const pf = await c.personForm(); await c.db.clear(['roster', 'meta', 'queue']); if (pf) await c.savePersonForm(pf); await recount(); } };      // la lista de «revisar» se conserva hasta que el operador la vea
 
     /* Descarga/valida el roster (`If-None-Match`: 304 = nada cambió, solo se renueva la vigencia). Devuelve 'ok' | 'unauth' (sesión vencida) | 'denied' (evento finalizado o sin
        permiso: se borra la copia y se avisa) | 'error'. Un 429 cuenta como respuesta buena (el servidor contestó) pero no renueva nada. */
@@ -211,12 +226,14 @@
       const fetchedAt = d.now();
       if (res.status === 304 && meta) {
         await c.db.put('meta', { ...meta, fetched_at: fetchedAt, expires_at: fetchedAt + (meta.max_age_s || 86400) * 1000 });
+        if (d.personForm) await c.refreshPersonForm();
         return 'ok';
       }
       if (!res.ok) return 'error';
       const body = await res.json();
       await c.db.replaceRoster(body.people, { v: body.v, generated_at: body.generated_at, salt: body.salt, count: body.count, max_age_s: body.max_age_s, consent: body.consent || null,
         event_id: body.event && body.event.id, auto_register: !!(body.event && body.event.auto_register), fetched_at: fetchedAt, expires_at: fetchedAt + (body.max_age_s || 86400) * 1000 });
+      if (d.personForm) await c.refreshPersonForm();
       return 'ok';
     };
 

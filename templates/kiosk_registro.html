@@ -58,8 +58,11 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};{% if person_form_json != "null" %} window.PERSON_FORM = {{ person_form_json | safe }};{% endif %}</script>
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
+{# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y el evento con él prendido; si no, nada de esto se carga y la pantalla es la de siempre. #}
+{% if person_form_json != "null" %}<script src="{{ url_for('static', path='js/form-render.js') }}"></script>
+<script src="{{ url_for('static', path='js/person-form.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', path='js/qr.js') }}"></script>
 
 <main class="golden-main">
@@ -323,6 +326,7 @@
                         </div>
                         {% endfor %}
                     </div>
+                    {% if person_form_json != "null" %}<script>(function () { var c = document.getElementById('dynamicFieldsContainer'); if (c && window.PersonForm && window.PERSON_FORM) { window.PersonForm.current = window.PERSON_FORM; window.regPersonForm = window.PersonForm.mount(c, window.PERSON_FORM); } })();</script>{% endif %}
                     {% if event.facial_enabled %}
                     <div class="badge-input-group" style="margin-top:1.2rem;">
                         <label>Fotografía Oficial <span style="font-weight:400; font-size:0.78rem; color:#666;">(opcional: solo si la persona lo autoriza)</span></label>
@@ -465,7 +469,14 @@
     }
 
     // Modo contingencia (Fase 3): copia local del roster + registro sin red; si el navegador no lo soporta, avisa y todo sigue como siempre.
-    if (canAccredit && window.GoldenContingency) GoldenContingency.init({ eventId: window.EVENT_ID });
+    if (canAccredit && window.GoldenContingency) {
+        const contingencyReady = GoldenContingency.init({ eventId: window.EVENT_ID, personForm: !!window.PERSON_FORM });
+        // Formulario de persona: se pone de acuerdo con la copia guardada en el dispositivo (la página en caché puede traer una definición más vieja); la más nueva manda.
+        if (window.PERSON_FORM && window.PersonForm && contingencyReady && contingencyReady.then) contingencyReady.then(async (GC) => {
+            const chosen = await PersonForm.sync(GC, window.PERSON_FORM);
+            if (chosen && chosen !== window.PERSON_FORM) { window.PERSON_FORM = chosen; PersonForm.current = chosen; if (window.regPersonForm) window.regPersonForm.relayout(chosen); }
+        });
+    }
     // Bandeja de salida (B8 R1): las altas hechas sin red se guardan CIFRADAS en este dispositivo y se envían al volver la red (static/js/outbox.js). Sin soporte (IndexedDB/WebCrypto) vuelve al comportamiento de antes.
     if (canAccredit && window.GoldenContingency && window.GoldenOutbox) {
         GoldenOutbox.init({ eventId: window.EVENT_ID }).then((box) => {

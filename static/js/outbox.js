@@ -86,10 +86,11 @@
     const dec = async (blob) => JSON.parse(new TextDecoder().decode(await d.subtle.decrypt({ name: 'AES-GCM', iv: blob.iv }, o.key, blob.ct)));
 
     /* Encola un alta (`fields` = lo que iría a POST /register, SIN foto). `label` = nombre para mostrar. */
-    o.enqueue = async (fields, label) => {
+    o.enqueue = async (fields, label, opts) => {
       if (!o.supported) throw new Error('Este dispositivo no puede guardar la bandeja de salida (falta IndexedDB o WebCrypto)');
       const now = d.now();
-      const rec = { op_id: d.uuid() || `o${now}${Math.random().toString(16).slice(2)}`, event_id: d.eventId, type: 'create_person', status: 'pendiente', created_at: now, expires_at: now + TTL_DAYS * DAY_MS, attempts: 0, result: null, blob: await enc({ fields, label }) };
+      const rec = { op_id: d.uuid() || `o${now}${Math.random().toString(16).slice(2)}`, event_id: d.eventId, type: (opts && opts.type) || 'create_person', status: 'pendiente', created_at: now, expires_at: now + TTL_DAYS * DAY_MS, attempts: 0, result: null, blob: await enc({ fields, label }) };
+      if (opts && opts.form_version != null) { rec.form_version = opts.form_version; if (opts.form_sig) rec.form_sig = opts.form_sig; }       // formulario de persona: con qué copia del formulario se hizo (no es un dato personal)
       await o.db.put('ops', rec);
       emit();
       return { op_id: rec.op_id };
@@ -128,7 +129,7 @@
       const recs = (await o.db.getAll('ops')).filter((r) => r.status === 'pendiente' && (force || now <= r.expires_at));
       for (let i = 0; i < recs.length; i += BATCH) {
         const chunk = recs.slice(i, i + BATCH), ops = [];
-        for (const rec of chunk) { const { fields } = await dec(rec.blob); ops.push({ op_id: rec.op_id, type: rec.type, timestamp: new Date(rec.created_at).toISOString(), fields }); }
+        for (const rec of chunk) { const { fields } = await dec(rec.blob); ops.push({ op_id: rec.op_id, type: rec.type, timestamp: new Date(rec.created_at).toISOString(), fields, ...(rec.form_version != null ? { form_version: rec.form_version, ...(rec.form_sig ? { form_sig: rec.form_sig } : {}) } : {}) }); }
         let res;
         try { res = await d.fetch(`/api/events/${d.eventId}/outbox/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops }) }); } catch (e) { summary.stopped = 'red'; break; }
         if (res.status === 401 || res.status === 403) { summary.stopped = 'sesion'; break; }
@@ -138,6 +139,7 @@
         for (const rec of chunk) {
           const r = byId.get(rec.op_id); if (!r) continue;
           summary.sent++;
+          if (r.warnings && r.warnings.length) (summary.warnings = summary.warnings || []).push(...r.warnings);          // copia anterior del formulario: se guardó, con avisos
           if (r.result === 'ok' || r.result === 'replayed') {
             const { label } = await dec(rec.blob);
             await o.db.put('ops', { ...rec, status: 'ok', result: null, expires_at: d.now() + OK_KEEP_MS, blob: await enc({ fields: null, label }) });       // borrado tras sincronizar: fuera los campos
