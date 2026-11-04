@@ -881,3 +881,10 @@ La exención de cierre por inactividad solo aplica con impresión en marcha (eve
 - [x] Efecto: `quota_public` ya deshabilita la opción (`left[campo][valor] == 0`) y `full[]` trae `limit` y `closed`. El servidor responde 409 (`stage: quota`) con el mensaje de la regla; si está vacío, texto de CERRADO por defecto: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.» (`formlib.quota_full_message(..., closed=True)`, espejo `quotaFullMessage(msg, label, closed)` en `form-render.js`).
 - [x] `form_reserve_slot` (migración 0049) NO se modifica: rechaza con `v_used >= limit` (0 >= 0) aun sin inscripciones previas. Estadísticas: pct 100 y «Cerrado temporalmente» con límite 0 (sin división por 0). `rule_sig` no incluye el máximo: abrir/cerrar no reinicia conteos.
 - [x] Pruebas: `tests/test_form_extras.py` (3 nuevas, 2 existentes ajustadas: el 0 ya no se descarta) y `tests/js/form_quota_message_check.js`.
+
+### Fase 1A · pieza 1: buscador único (2026-11-04, rama `feat/1a-buscador-unico`, sin migración)
+- [x] `templates/_gw_buscador.html`: una sola caja (conserva `id="searchCedula"` para el lector, el modo touch y `shared-print.js`), con ayuda «?» y pista de resultados; solo clases `.gw-*`. Reemplaza las 3 cajas del Directorio en vivo (digitador y cliente).
+- [x] Interruptor `SEARCH_UNIFIED` (por defecto encendido; `SEARCH_UNIFIED=0` vuelve a las 3 cajas sin tocar código). Lo lee `_resolve_kiosk_page` (`search_unified`).
+- [x] `directory.js` usa `SearchCore` (cédula exacta > prefijo > nombre/empresa), muestra por qué coincidió cada fila y, sin red, busca por nombre y por cédula completa (huella). Enter hace check-in solo con cédula/lector/QR; con nombre solo filtra.
+- [x] Componente nuevo `.gw-search` / `.gw-scroll-x` / `.gw-reason` en `design-system.css` y `guia_visual.html` (sección «Buscador único»). Pendientes de la Fase 2 en `docs/ux/PENDIENTES_VISUALES.md`.
+- [ ] Capturas antes/después y aprobación de Juan David; PR sin fusionar hasta su frase escrita.

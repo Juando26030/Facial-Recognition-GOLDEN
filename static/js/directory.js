@@ -611,6 +611,11 @@
     const cedulaInput = ids.cedula ? document.getElementById(ids.cedula) : null;
     const nombreInput = ids.nombre ? document.getElementById(ids.nombre) : null;
     const entidadInput = ids.entidad ? document.getElementById(ids.entidad) : null;
+    const SC = window.SearchCore;
+    const unified = !!(opts.unified && cedulaInput && SC);            // buscador único: una sola caja (cédula, nombre o empresa) con SearchCore
+    const hintEl = unified ? document.getElementById('gwSearchHint') : null;
+    const reasons = new WeakMap();                                    // persona -> motivo de la coincidencia (solo con consulta activa)
+    let activeQuery = false;
 
     /* Botón/contador "N sin registrar" (Sprint 2 Fix 2, 2026-09-15) — se crea solo, insertado
        justo antes de la tabla, así no hay que tocar cada template que use mountSearch. Clic
@@ -701,6 +706,22 @@
       const size = pageSize(), total = lastFiltered.length, pages = Math.max(1, Math.ceil(total / size));
       if (pageIdx > pages - 1) pageIdx = pages - 1;                    // un filtro o un refresco dejó la página fuera de rango
       const rows = lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).map(rowOf);
+      if (unified) {                                                   // el motivo vive en la fila en caché: se quita el anterior y se pone el actual (no se duplican filas)
+        lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).forEach((u, i) => {
+          const tr = rows[i];
+          if (!tr || !tr.querySelectorAll) return;
+          tr.querySelectorAll('.gw-reason').forEach((n) => n.remove());
+          const motivo = activeQuery ? reasons.get(u) : '';
+          if (!motivo) return;
+          const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
+          if (!td) return;
+          const b = document.createElement('span');
+          b.className = 'gw-badge gw-badge--info gw-reason';
+          b.textContent = motivo;
+          b.style.marginLeft = '6px';
+          td.appendChild(b);
+        });
+      }
       if (localMode) rows.unshift(localNoteRow());
       if (total > size) rows.push(pagerRow(total, size, pages));
       tbody.replaceChildren(...rows);
@@ -730,8 +751,42 @@
       return tr;
     }
 
+    function setHint(text) { if (hintEl) hintEl.textContent = text; }
+    function applyUnified() {
+      const q = SC.classifyQuery(cedulaInput.value || '');
+      const base = allUsers.filter((u) => {
+        if (onlyNotRegistered && u.status !== 'No registrado') return false;
+        if (originSelect && originSelect.value && (u.origin || 'desconocido') !== originSelect.value) return false;
+        return true;
+      });
+      activeQuery = q.kind !== 'vacio';
+      if (!activeQuery) {
+        lastFiltered = base;
+        const rec = Recent.list();
+        if (rec.length) {
+          const pos = new Map(rec.map((id, i) => [id, i]));
+          const top = lastFiltered.filter((u) => pos.has(u.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
+          if (top.length) lastFiltered = top.concat(lastFiltered.filter((u) => !pos.has(u.id)));
+        }
+        setHint(localMode ? 'Sin red: se busca por nombre y por cédula completa.' : '');
+      } else {
+        const sopts = {};
+        if (localMode && q.cedula && q.completa) {                    // lista local: la cédula se compara por huella (exacta); nunca se guarda en claro
+          const h = localHashes.get(q.cedula);
+          if (h !== undefined) sopts.hash = h;
+          else { const GC = GCref(); if (GC) { const job = GC.hashFor(q.cedula).then((hh) => { localHashes.set(q.cedula, hh); applyFilters(); }).finally(() => inflightHashes.delete(job)); inflightHashes.add(job); } }
+        }
+        const res = SC.search(base, q, sopts);
+        lastFiltered = res.map((r) => { reasons.set(r.persona, r.motivo); return r.persona; });
+        setHint(res.length ? `${res.length} ${res.length === 1 ? 'coincidencia' : 'coincidencias'}` : 'Sin coincidencias. Revisa la cédula o prueba con el nombre.');
+      }
+      updateCounterLabel();
+      drawRows();
+    }
+
     function applyFilters() {
       clearTimeout(searchTimer);
+      if (unified) return applyUnified();
       const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
       const nombre = wordsOf((nombreInput && nombreInput.value || '').trim());
       const entidad = wordsOf((entidadInput && entidadInput.value || '').trim());
@@ -1129,9 +1184,9 @@
         // vieja, u OCR de la MRZ nueva), se filtra el Directorio por ese nombre — mismo criterio
         // de "empieza por palabra" que la búsqueda manual — y el operador decide desde ahí.
         const fullName = nameInfo ? `${nameInfo.nombres || ''} ${nameInfo.apellidos || ''}`.trim() : '';
-        if (fullName && nombreInput) {
-          if (cedulaInput) cedulaInput.value = '';
-          nombreInput.value = fullName;
+        if (fullName && (nombreInput || unified)) {
+          if (unified) cedulaInput.value = fullName;
+          else { if (cedulaInput) cedulaInput.value = ''; nombreInput.value = fullName; }
           applyFilters();
           const found = data.name_matches && data.name_matches.length;
           showToast(
@@ -1161,6 +1216,12 @@
           e.preventDefault();
           const raw = cedulaInput.value.trim();
           if (!raw) return;
+          if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
+            const q = SC.classifyQuery(raw);
+            const doc = q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr'
+              || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
+            if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }
+          }
           const parsed = parseOldCedulaBarcode(raw);
           const qr = window.QrCode ? QrCode.parse(raw) : null;
           if (qr && qr.isQr) {
@@ -1176,9 +1237,11 @@
       });
     }
 
+    if (unified && !cedulaInput.disabled) { try { cedulaInput.focus(); } catch (_) { /* sin foco en pruebas */ } }
     reload();
     return {
       reload,
+      searchState: () => ({ unified, query: activeQuery, reasons: lastFiltered.map((u) => reasons.get(u) || ''), results: lastFiltered.slice() }),
       /* Punto de entrada compartido para cualquier OTRO método que resuelva una cédula+nombre
          fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */

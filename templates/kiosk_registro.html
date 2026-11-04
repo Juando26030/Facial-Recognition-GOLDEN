@@ -112,8 +112,9 @@
 
         <!-- DIRECTORIO (cliente: solo lectura, sin acreditar) -->
         <div id="directorio" class="section" style="max-width: 100%;">
-            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: {{ 'visible' if search_unified else 'auto' }};">
                 <div class="badge-form-title">Directorio en Vivo</div>
+                {% if search_unified %}{% set busq_disabled = false %}{% include "_gw_buscador.html" %}{% else %}
                 <div class="directory-search-bar">
                     <div class="badge-input-group">
                         <label>Buscar por {{ field_labels.id|lower }}</label>
@@ -128,14 +129,15 @@
                         <input type="text" id="searchEntidad" placeholder="Entidad" autocomplete="off">
                     </div>
                 </div>
-                <table class="golden-table">
+                {% endif %}
+                {% if search_unified %}<div class="gw-scroll-x">{% endif %}<table class="golden-table">
                     <thead>
                         <tr>
                             <th>Acción</th><th>{{ field_labels.id }}</th><th>{{ field_labels.first_name }}</th><th>{{ field_labels.last_name }}</th><th>{{ field_labels.opt_1 }}</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
-                </table>
+                </table>{% if search_unified %}</div>{% endif %}
             </div>
         </div>
         {% else %}
@@ -199,7 +201,7 @@
              de siempre, más un botón "Registrar nuevo" que abre el alta manual en una ventana
              flotante en vez de ser otra pestaña. -->
         <div id="directorio" class="section{% if not event.facial_enabled %} active{% endif %}" style="max-width: 100%;">
-            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
+            <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: {{ 'visible' if search_unified else 'auto' }};">
                 <div class="badge-form-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.8rem;">
                     <span>Registro</span>
                     <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:flex-end;">
@@ -215,8 +217,9 @@
                     <button type="button" id="autoPrintBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
                 </div>
                 {% endif %}
+                {% if search_unified %}{% set busq_disabled = (event.status != "en_proceso") %}{% include "_gw_buscador.html" %}{% endif %}
                 <div class="directory-search-bar">
-                    <div class="badge-input-group">
+                    {% if not search_unified %}<div class="badge-input-group">
                         <label>Buscar por {{ field_labels.id|lower }}</label>
                         <input type="text" id="searchCedula" placeholder="Escanea o escribe la cédula" autocomplete="off" inputmode="numeric"
                                {% if event.status != "en_proceso" %}disabled{% endif %}>
@@ -229,6 +232,7 @@
                         <label>Buscar por {{ field_labels.entity|lower }}</label>
                         <input type="text" id="searchEntidad" placeholder="Entidad" autocomplete="off">
                     </div>
+                    {% endif %}
                     <div class="badge-input-group">
                         <label>Código QR</label>
                         <button type="button" id="scanQrBtn" class="golden-btn" style="background:#f0f0f0; color:var(--golden-dark); white-space:nowrap; width:auto;"
@@ -246,14 +250,14 @@
                     </div>
                 </div>
                 <div class="directory-scan-hint">Tip: si escaneas o escribes una cédula exacta y presionas Enter, se busca al instante sin necesidad de buscarla en la tabla. La cédula nueva no se puede leer con el lector (su QR viene encriptado) — usa "Adjuntar imagen" o "Usar cámara" para tomarle una foto al reverso.</div>
-                <table class="golden-table">
+                {% if search_unified %}<div class="gw-scroll-x">{% endif %}<table class="golden-table">
                     <thead>
                         <tr>
                             <th>Acción</th><th>{{ field_labels.id }}</th><th>{{ field_labels.first_name }}</th><th>{{ field_labels.last_name }}</th><th>{{ field_labels.opt_1 }}</th><th>Estado</th>
                         </tr>
                     </thead>
                     <tbody id="directoryTableBody"></tbody>
-                </table>
+                </table>{% if search_unified %}</div>{% endif %}
             </div>
         </div>
 
@@ -364,6 +368,8 @@
 {% else %}<script src="{{ url_for('static', path='js/contingency-off.js') }}"></script>{% endif %}
 <script src="{{ url_for('static', path='js/consent-gate.js') }}"></script>
 <script src="{{ url_for('static', path='js/timing.js') }}"></script>
+{% if search_unified %}<script src="{{ url_for('static', path='js/search-core.js') }}"></script>
+<script src="{{ url_for('static', path='js/gw-ui.js') }}" defer></script>{% endif %}
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
@@ -490,6 +496,7 @@
 
     window.directorySearch = GoldenDirectory.mountSearch({
         tbodyId: 'directoryTableBody',
+        unified: {{ 'true' if search_unified else 'false' }},
         searchIds: { cedula: 'searchCedula', nombre: 'searchNombre', entidad: 'searchEntidad' },
         fastCheckin: canAccredit,
     });
