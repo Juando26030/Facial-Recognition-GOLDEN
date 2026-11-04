@@ -17,7 +17,7 @@ _cache = {"at": 0.0, "data": None}
 
 def _fetch() -> Optional[dict]:
     try:
-        with urllib.request.urlopen(urllib.request.Request(URL, headers={"Accept": "application/json"}), timeout=6) as res:
+        with urllib.request.urlopen(urllib.request.Request(URL, headers={"Accept": "application/json"}), timeout=6) as res:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
             raw = json.loads(res.read().decode())
     except (urllib.error.URLError, ValueError, TimeoutError, OSError):
         return None

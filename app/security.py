@@ -129,7 +129,7 @@ def limit_ip(request: Request) -> Optional[str]:
         with _lock:
             _google_hits.append(now)
         return None
-    fp = hashlib.sha1((request.headers.get("user-agent", "") + "|" + request.headers.get("accept-language", "")).encode()).hexdigest()[:10]
+    fp = hashlib.sha1((request.headers.get("user-agent", "") + "|" + request.headers.get("accept-language", "")).encode(), usedforsecurity=False).hexdigest()[:10]
     with _lock:
         _events.append((now, ip, fp))
     return ip

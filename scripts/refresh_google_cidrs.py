@@ -20,7 +20,7 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 
 
 def fetch(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=30) as resp:
+    with urllib.request.urlopen(url, timeout=30) as resp:  # nosec B310 - URLs https fijas de Google; script manual
         return json.load(resp)
 
 

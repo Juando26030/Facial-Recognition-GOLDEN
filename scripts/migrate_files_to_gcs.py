@@ -21,7 +21,7 @@ SKIP_DIRS = {"uploads"}
 
 
 def md5_b64(path: str) -> str:
-    h = hashlib.md5()
+    h = hashlib.md5(usedforsecurity=False)  # suma de verificación de integridad (GCS la exige en MD5), no seguridad
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)

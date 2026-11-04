@@ -253,19 +253,19 @@ def erase_person(db: Session, event: Event, user_id: str, scope: str) -> dict:
     if scope == "all":
         p = {"t": tenant, "u": uid}
         events_of_tenant = "(SELECT id FROM events WHERE tenant_id = :t)"
-        subs = db.execute(text(f"SELECT id, form_id, data_json FROM form_submissions WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).all()
+        subs = db.execute(text(f"SELECT id, form_id, data_json FROM form_submissions WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).all()  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
         for _sid, form_id, data_json in subs:
             for stored in _stored_files(data_json):
                 from app.storage import form_file_key
                 result["versions_not_deleted"] += get_storage().delete_all_versions(form_file_key(tenant, form_id, stored))
-        result["submissions_emptied"] = db.execute(text(f"UPDATE form_submissions SET data_json = '{{}}', person_id = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).rowcount
-        forms_of_tenant = f"(SELECT id FROM web_forms WHERE event_id IN {events_of_tenant})"
-        db.execute(text(f"DELETE FROM form_people WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)
-        db.execute(text(f"DELETE FROM form_invites WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)
-        db.execute(text(f"UPDATE form_payments SET payer_email = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p)      # contacto fuera; el resto del pago se conserva (10 años, bloqueado)
+        result["submissions_emptied"] = db.execute(text(f"UPDATE form_submissions SET data_json = '{{}}', person_id = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p).rowcount  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
+        forms_of_tenant = f"(SELECT id FROM web_forms WHERE event_id IN {events_of_tenant})"  # nosec B608 - subconsulta fija en el código
+        db.execute(text(f"DELETE FROM form_people WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
+        db.execute(text(f"DELETE FROM form_invites WHERE person_id = :u AND form_id IN {forms_of_tenant}"), p)  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
+        db.execute(text(f"UPDATE form_payments SET payer_email = NULL WHERE person_id = :u AND event_id IN {events_of_tenant}"), p)      # contacto fuera; el resto del pago se conserva (10 años, bloqueado)  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
         result["jobs_deleted"] = _purge_person_jobs(db, tenant, uid)
         for table in ("event_attendees", "print_logs", "area_movements", "inventory_deliveries", "web_acceptances"):      # E2: web_acceptances lleva la cédula (user_id)
-            db.execute(text(f"DELETE FROM {table} WHERE user_id = :u AND tenant_id = :t"), p)
+            db.execute(text(f"DELETE FROM {table} WHERE user_id = :u AND tenant_id = :t"), p)  # nosec B608 - tablas/subconsultas fijas en el código; la cédula y el tenant van enlazados (:u, :t)
         result["access_logs_anonymized"] = db.execute(text("UPDATE access_logs SET user_id = NULL WHERE user_id = :u AND tenant_id = :t"), p).rowcount
         db.execute(text("DELETE FROM person_changes WHERE user_id = :u AND tenant_id = :t AND kind = 'birth_date'"), p)
         db.execute(text("UPDATE accept_mail_log SET user_id = NULL WHERE user_id = :u AND tenant_id = :t"), p)      # el registro de envíos se conserva sin la persona
