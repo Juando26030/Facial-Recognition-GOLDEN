@@ -475,7 +475,7 @@ def _alloc_ids(db: Session, table: str, n: int) -> list:
     if n == 0:
         return []
     seq = db.execute(text("select pg_get_serial_sequence(:t, 'id')"), {"t": table}).scalar()
-    return [r[0] for r in db.execute(text(f"select nextval('{seq}') from generate_series(1, :n)"), {"n": n}).all()]
+    return [r[0] for r in db.execute(text(f"select nextval('{seq}') from generate_series(1, :n)"), {"n": n}).all()]  # nosec B608 - seq sale de pg_get_serial_sequence de una tabla interna; n va enlazado
 
 
 def _existing(db: Session, table: str, col: str, values) -> set:

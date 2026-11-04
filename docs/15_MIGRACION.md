@@ -873,6 +873,9 @@ La exención de cierre por inactividad solo aplica con impresión en marcha (eve
 - [x] Editor: campo «Mensaje cuando este cupo esté lleno» por cupo. Página pública: aviso grande (1,12 rem, negrita, borde, ⚠, `role="alert"`) y el error de un campo se quita al corregirlo.
 - [x] Pruebas: `tests/test_form_extras.py` (4 nuevas) y `tests/js/form_quota_message_check.js`.
 
+### 0C · escáneres limpios y bloqueantes (2026-11-04, rama fix/0c-escaneres-limpios)
+- [x] Bandit: 5 altos (hashes no criptográficos, `usedforsecurity=False`, mismo valor) y medios documentados con `nosec`; gitleaks: 7 falsos positivos en `.gitleaks.toml`. Detalle en `docs/0C_hallazgos.md`.
+- [x] `seguridad.yml`: gitleaks y Bandit alto bloquean el PR (ya sin `continue-on-error`).
 ### Cupo en 0 = «cerrado temporalmente» (2026-11-04, rama `feat/cupo-cerrado`, sin migración)
 - [x] Un cupo con máximo 0 ya no se borra al guardar: `formlib._sanitize_quota_rules` acepta `0 <= limit <= 1_000_000` (vacío/no numérico/negativo se siguen descartando). El editor deja `min="0"`, conserva los 0 (`r.limit ?? ''`, filtro `Number.isFinite`), muestra «Cerrado temporalmente» y la ayuda «0 = cerrado…».
 - [x] Efecto: `quota_public` ya deshabilita la opción (`left[campo][valor] == 0`) y `full[]` trae `limit` y `closed`. El servidor responde 409 (`stage: quota`) con el mensaje de la regla; si está vacío, texto de CERRADO por defecto: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.» (`formlib.quota_full_message(..., closed=True)`, espejo `quotaFullMessage(msg, label, closed)` en `form-render.js`).

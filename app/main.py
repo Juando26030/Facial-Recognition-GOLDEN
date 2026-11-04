@@ -233,8 +233,8 @@ def event_logo_attrs(event):
         return Markup("")
     height = max(30, min(80, int(getattr(event, "logo_height", None) or 50)))
     if getattr(event, "logo_fit", "logo") == "banner":
-        return Markup(f'style="height:{height}px; width:100%; object-fit:cover;" data-banner="1"')
-    return Markup(f'style="height:{height}px;"')
+        return Markup(f'style="height:{height}px; width:100%; object-fit:cover;" data-banner="1"')  # nosec B704 - height es un entero acotado 30-80
+    return Markup(f'style="height:{height}px;"')  # nosec B704 - height es un entero acotado 30-80
 
 
 templates.env.globals["company_name"] = (os.getenv("COMPANY_NAME") or "Golden Eventos y Logística S.A.S.").strip()      # nombre de la sociedad en pantalla (variable COMPANY_NAME; sin ella, el nombre de siempre)
@@ -474,7 +474,7 @@ def kiosk_service_worker():
         source = open(os.path.join("static", "js", "kiosk-sw-off.js"), encoding="utf8").read()
         return Response(source, media_type="application/javascript", headers={"Cache-Control": "no-cache, max-age=0"})
     source = open(os.path.join("static", "js", "kiosk-sw.js"), encoding="utf8").read()
-    build = f"{os.getenv('K_REVISION', 'local')}-{hashlib.sha1(source.encode()).hexdigest()[:10]}"
+    build = f"{os.getenv('K_REVISION', 'local')}-{hashlib.sha1(source.encode(), usedforsecurity=False).hexdigest()[:10]}"
     return Response(source.replace("__BUILD__", build), media_type="application/javascript", headers={"Cache-Control": "no-cache, max-age=0"})
 
 

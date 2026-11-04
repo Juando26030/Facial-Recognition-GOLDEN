@@ -88,7 +88,7 @@ _refreshing = False
 def _fetch_status() -> Optional[dict]:
     """Una consulta a la página de estado de Wompi; None si falla o la respuesta no se entiende."""
     try:
-        with urllib.request.urlopen(urllib.request.Request(STATUS_URL, headers={"Accept": "application/json"}), timeout=STATUS_TIMEOUT) as res:
+        with urllib.request.urlopen(urllib.request.Request(STATUS_URL, headers={"Accept": "application/json"}), timeout=STATUS_TIMEOUT) as res:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
             st = (json.loads(res.read().decode()) or {}).get("status") or {}
     except (urllib.error.URLError, ValueError, TimeoutError, OSError):
         return None
@@ -186,7 +186,7 @@ def fetch_transaction(cfg: dict, transaction_id: str) -> Optional[dict]:
     if not _safe_id(transaction_id):
         return None
     try:
-        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/transactions/{transaction_id}", headers=_headers(cfg)), timeout=8) as res:
+        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/transactions/{transaction_id}", headers=_headers(cfg)), timeout=8) as res:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
             return (json.loads(res.read().decode()) or {}).get("data")
     except (urllib.error.URLError, ValueError, TimeoutError, OSError):
         return None
@@ -198,7 +198,7 @@ def fetch_by_reference(cfg: dict, reference: str) -> Optional[dict]:
     if not _safe_id(reference):
         return None
     try:
-        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/transactions?reference={reference}", headers=_headers(cfg)), timeout=8) as res:
+        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/transactions?reference={reference}", headers=_headers(cfg)), timeout=8) as res:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
             rows = (json.loads(res.read().decode()) or {}).get("data") or []
     except (urllib.error.URLError, ValueError, TimeoutError, OSError):
         return None
@@ -222,7 +222,7 @@ def _post(cfg: dict, path: str, body: dict) -> tuple:
         return False, "Falta la llave privada de Wompi (WOMPI_PRIVATE_KEY) en el servidor"
     req = urllib.request.Request(f"{cfg['api']}{path}", data=json.dumps(body).encode(), method="POST", headers=_headers(cfg, json_body=True))
     try:
-        with urllib.request.urlopen(req, timeout=15) as res:
+        with urllib.request.urlopen(req, timeout=15) as res:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
             body_ok = json.loads(res.read().decode() or "{}")
             soft = _soft_error(body_ok)
             return (False, f"Wompi no lo procesó: {soft}") if soft else (True, body_ok)
@@ -259,7 +259,7 @@ def get_refund_v2(cfg: dict, refund_id) -> Optional[dict]:
     if not str(refund_id).isdigit():
         return None
     try:
-        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/refunds/{refund_id}", headers=_headers(cfg)), timeout=8) as res:
+        with urllib.request.urlopen(urllib.request.Request(f"{cfg['api']}/refunds/{refund_id}", headers=_headers(cfg)), timeout=8) as res:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
             return (json.loads(res.read().decode()) or {}).get("data")
     except (urllib.error.URLError, ValueError, TimeoutError, OSError):
         return None
