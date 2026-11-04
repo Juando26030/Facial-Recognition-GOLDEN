@@ -76,6 +76,7 @@
       try {
         const s = await outbox.sync();
         if (s.ok) { toast(`${s.ok} persona(s) nueva(s) enviada(s) al servidor`, 'success'); if (root.directorySearch) root.directorySearch.reload(); }
+        if (s.warnings && s.warnings.length) toast(`Enviado con avisos: ${s.warnings.slice(0, 2).join(' · ')}${s.warnings.length > 2 ? ` (+${s.warnings.length - 2})` : ''}`, 'error');
         if (s.revision) toast(`${s.revision} alta(s) requieren revisión: la cédula ya existía (abre la bandeja)`, 'error');
         if (s.error) toast(`${s.error} alta(s) con error (abre la bandeja)`, 'error');
         if (manual && s.stopped) toast(s.stopped === 'sesion' ? 'Tu sesión venció: inicia sesión para enviar la bandeja' : 'Sin conexión con el servidor: se enviará solo al volver la red', 'error');

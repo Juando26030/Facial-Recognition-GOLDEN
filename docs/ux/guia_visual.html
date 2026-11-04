@@ -196,6 +196,28 @@
   &lt;span class="gw-error-msg" id="correoError"&gt;Escribe el correo completo, por ejemplo ana@correo.com.&lt;/span&gt;
 &lt;/div&gt;</pre>
 
+  <h3 class="gw-subtitle">Grupos plegables y filas en columnas (formulario de persona)</h3>
+  <p class="gw-lead">Los campos de una persona se agrupan; lo obligatorio va en un grupo abierto y el resto en grupos que se despliegan. Una fila reparte hasta 4 campos en columnas (en el celular, una sola).</p>
+  <details class="gw-group" open>
+    <summary class="gw-group__summary">Datos principales</summary>
+    <div class="gw-group__body">
+      <div class="gw-fields-row gw-fields-row--2">
+        <div class="gw-field"><label class="gw-label" for="g-pf1">Nombres *</label><input class="gw-input" id="g-pf1" type="text" value="Ana María"></div>
+        <div class="gw-field"><label class="gw-label" for="g-pf2">Apellidos</label><input class="gw-input" id="g-pf2" type="text"></div>
+      </div>
+    </div>
+  </details>
+  <details class="gw-group">
+    <summary class="gw-group__summary">Más datos</summary>
+    <div class="gw-group__body"><p class="gw-hint">Cargo, entidad, teléfono y los campos opcionales del evento.</p></div>
+  </details>
+  <pre class="g-pre">&lt;details class="gw-group" open&gt;
+  &lt;summary class="gw-group__summary"&gt;Datos principales&lt;/summary&gt;
+  &lt;div class="gw-group__body"&gt;
+    &lt;div class="gw-fields-row gw-fields-row--2"&gt; …campos… &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/details&gt;</pre>
+
   <h3 class="gw-subtitle">Tabla e insignias de estado</h3>
   <div class="gw-table-wrap">
     <table class="gw-table">

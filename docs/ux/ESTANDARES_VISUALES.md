@@ -33,7 +33,7 @@
 Uso del color: azul marino = identidad y acción; dorado = acento y fondo de énfasis; verde/ámbar/rojo/azul-info **solo** para estados, y siempre acompañados de ícono o texto (no depender solo del color).
 
 ## 3. Componentes que ya existen (reutilizar, no reinventar)
-Botón `.gw-btn` · mosaico por tarea `.gw-tile/.gw-tiles` · tarjeta `.gw-card` · campos `.gw-field/.gw-label/.gw-input/.gw-textarea/.gw-check/.gw-hint/.gw-error` · tabla `.gw-table` · insignia `.gw-badge` · aviso `.gw-alert` · estado de pantalla (vacío/cargando/error) `.gw-state/.gw-spinner` · ventana `.gw-modal` · asistente por pasos `.gw-wizard/.gw-progress` · navegación `.gw-nav` · interruptor de tema `.gw-theme-toggle` · ayuda en contexto `.gw-help/.gw-popover` · recorrido `.gw-tour`.
+Botón `.gw-btn` · mosaico por tarea `.gw-tile/.gw-tiles` · tarjeta `.gw-card` · campos `.gw-field/.gw-label/.gw-input/.gw-textarea/.gw-check/.gw-hint/.gw-error` · tabla `.gw-table` · insignia `.gw-badge` · aviso `.gw-alert` · estado de pantalla (vacío/cargando/error) `.gw-state/.gw-spinner` · ventana `.gw-modal` · asistente por pasos `.gw-wizard/.gw-progress` · navegación `.gw-nav` · interruptor de tema `.gw-theme-toggle` · ayuda en contexto `.gw-help/.gw-popover` · recorrido `.gw-tour` · grupos plegables y filas en columnas `.gw-group/.gw-group__summary/.gw-group__body/.gw-fields-row--1..4` (formulario de persona; heredan color y fondo de la pantalla donde se usen).
 Si necesitas algo que no está: primero se agrega a `design-system.css` **y** a `guia_visual.html` (con su par de contraste en `test_design_system.py`), después se usa.
 
 ## 4. Patrones de pantalla

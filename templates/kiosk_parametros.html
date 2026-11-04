@@ -147,6 +147,16 @@
           </div>
           {% endif %}
         </div>
+        {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y para admin+; si no, esta tarjeta no existe. app/personform.py, static/js/person-form-designer.js #}
+        {% if person_form_can_design %}
+        <section class="gw-card" id="personFormCard" aria-labelledby="personFormTitle" style="margin-bottom:1.2rem;">
+          <div class="gw-card__head"><h4 class="gw-card__title" id="personFormTitle">Formulario de persona</h4></div>
+          <p class="gw-hint">Así se ven «Registrar nuevo» y «Editar» en el quiosco: orden, columnas, grupos, obligatorios arriba y a la vista, y cómo se escribe cada texto. Funciona igual sin conexión.</p>
+          <div id="personFormEditor" class="gw-stack">Cargando…</div>
+        </section>
+        <script src="{{ url_for('static', path='js/person-form-designer.js') }}"></script>
+        <script>PersonFormDesigner.mount(document.getElementById('personFormEditor'), { eventId: window.EVENT_ID });</script>
+        {% endif %}
         <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
           <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Certificados</h4>

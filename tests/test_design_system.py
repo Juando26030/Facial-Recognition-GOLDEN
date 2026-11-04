@@ -242,3 +242,16 @@ def test_the_kiosk_precaches_what_the_pages_load_so_the_base_works_offline():
     assert "performance.getEntriesByType('resource')" in reg and "startsWith(location.origin + '/static/')" in reg
     sw = pathlib.Path("static/js/kiosk-sw.js").read_text(encoding="utf-8")
     assert "url.pathname.startsWith('/static/')" in sw
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ formulario de persona (Fase 1A, pieza 5)
+def test_person_form_groups_and_columns_are_in_the_base_the_guide_and_the_standards():
+    """Componente nuevo `.gw-group` / `.gw-fields-row`: en design-system.css, en la guía visual y en ESTANDARES_VISUALES.md; solo tokens (sin colores sueltos), con el objetivo táctil de 44 px,
+    el color y el fondo heredados (así sirve en una pantalla clara u oscura: los pares de contraste son los de superficie y texto ya probados) y sin animación con movimiento reducido."""
+    standards = pathlib.Path("docs/ux/ESTANDARES_VISUALES.md").read_text(encoding="utf-8")
+    for cls in ("gw-group", "gw-group__summary", "gw-group__body", "gw-fields-row"):
+        assert f".{cls}" in CSS and cls in GUIDE and cls in standards, cls
+    block = CSS[CSS.index("/* ============================================================ Grupos plegables"):CSS.index("/* ============================================================ Recorrido de primera vez")]
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", re.sub(r"/\*.*?\*/", "", block, flags=re.S)), "nada de colores sueltos: solo --gw-*"
+    assert "var(--gw-tap)" in block and "prefers-reduced-motion" in block and "grid-template-columns: 1fr" in block, "una columna en el celular, 44 px, movimiento reducido"
+    assert "background" not in re.sub(r"/\*.*?\*/", "", block, flags=re.S), "sin fondo propio: hereda de la pantalla"
