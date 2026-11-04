@@ -32,7 +32,7 @@ def main():
     tables = [t.name for t in Base.metadata.sorted_tables if t.name not in KEEP]
     print(f"Base de datos: {db_name}  ({engine.url.host})")
     with engine.connect() as conn:
-        counts = {t: conn.execute(text(f'SELECT count(*) FROM "{t}"')).scalar() for t in tables}
+        counts = {t: conn.execute(text(f'SELECT count(*) FROM "{t}"')).scalar() for t in tables}  # nosec B608 - t sale del catálogo de tablas de la propia base, entre comillas
     for t, n in counts.items():
         if n:
             print(f"  {t}: {n}")

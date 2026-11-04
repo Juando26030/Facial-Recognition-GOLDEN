@@ -425,7 +425,7 @@ def _directory_etag(db: Session, event_id: int, tenant_id: str, extra: str = "")
     usr = db.execute(text(
         "SELECT coalesce(max(u.xmin::text::bigint), 0) FROM users u WHERE u.tenant_id = :t AND u.id IN "
         "(SELECT user_id FROM event_attendees WHERE event_id = :e UNION SELECT user_id FROM access_logs WHERE event_id = :e)"), {"t": tenant_id, "e": event_id}).scalar()
-    return hashlib.md5(f"{tuple(att)}|{tuple(logs)}|{usr}|{extra}".encode()).hexdigest()[:20]
+    return hashlib.md5(f"{tuple(att)}|{tuple(logs)}|{usr}|{extra}".encode(), usedforsecurity=False).hexdigest()[:20]
 
 
 def _masked_directory_id(tenant_id: str, user_id: str) -> str:
