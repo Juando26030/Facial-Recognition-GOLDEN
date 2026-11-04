@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app import biometric_setup, idle, publicurl
+from app.roster_columns import MAX_OPTIONAL_FIELDS
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
 from app.models import CHART_TYPES, Event, EventFieldConfig, FIELD_TYPES, StaffUser
@@ -325,9 +326,9 @@ def add_optional_field(
 
     labels = event.get_optional_labels()
     used_slots = {int(k.split("_")[1]) for k in labels.keys()}
-    new_slot = next((n for n in range(1, 31) if n not in used_slots), None)
+    new_slot = next((n for n in range(1, MAX_OPTIONAL_FIELDS + 1) if n not in used_slots), None)
     if new_slot is None:
-        raise HTTPException(status_code=400, detail="Ya se usaron los 30 campos opcionales disponibles para este evento")
+        raise HTTPException(status_code=400, detail=f"Se alcanzó el techo técnico de {MAX_OPTIONAL_FIELDS} campos opcionales para este evento")
 
     key = f"opcional_{new_slot}"
     labels[key] = label

@@ -144,10 +144,10 @@ def _apply_movement(db: Session, event, area: EventArea, user: User, direction: 
         ).first()
         if already:
             return {"result": "ALREADY_ENTERED", "direction": "in", "area": area.name, "data": data,
-                    "details": f"{user.first_name} {user.last_name} YA había entrado a «{area.name}» y esta zona no permite reingresos"}
+                    "details": f"{user.first_name or ''} {user.last_name or ''}".strip() + f" YA había entrado a «{area.name}» y esta zona no permite reingresos"}
     if direction == "out" and not (last and last.direction == "in"):
         return {"result": "NOT_INSIDE", "direction": "out", "area": area.name, "data": data,
-                "details": f"{user.first_name} {user.last_name} no figura adentro de «{area.name}»"}
+                "details": f"{user.first_name or ''} {user.last_name or ''}".strip() + f" no figura adentro de «{area.name}»"}
 
     if not event.auto_register and not confirm:
         return {"result": "FOUND_PENDING", "direction": direction, "area": area.name, "data": data}

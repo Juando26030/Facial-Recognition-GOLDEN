@@ -1,7 +1,7 @@
 """«No eliminar repetidos» (Plan 5, paso 3): qué hacer con una cédula que aparece en varias filas de la base que se carga.
 
 Apagado (lo de siempre): la última fila gana, con una advertencia. Encendido: la PRIMERA aparición conserva su cédula; las siguientes reciben un serial `CED-2`, `CED-3`… (guion + número de aparición), así
-cada fila es una persona distinta. La cédula original queda en un campo opcional automático «Cédula original» (cuenta para el tope de 30 campos opcionales del evento).
+cada fila es una persona distinta. La cédula original queda en un campo opcional automático «Cédula original» (ya no depende de ningún cupo: el tope de 30 campos opcionales se eliminó; solo hay un techo técnico de 500).
 
 La numeración se decide UNA vez, por el orden del archivo, ANTES de partirlo en pasos (la carga por pasos guarda las filas ya con su serial) o en lotes del navegador (el navegador manda cuántas veces
 ya vio cada cédula en los lotes anteriores: `offsets`), de modo que la misma cédula en lotes distintos recibe seriales consecutivos y sin choques.

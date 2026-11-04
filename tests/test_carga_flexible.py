@@ -15,6 +15,7 @@ from app.models import EventAttendee, EventFieldConfig, User
 from app.routers import parametros
 from app.routers.api import _read_roster_rows
 from tests.test_carga_por_pasos import _drive, _post, coord, small_steps  # noqa: F401  (fixtures)
+from tests.conftest import login
 from tests.test_roster_columns import _coord, _csv, _upload, _xlsx
 from tests.test_solo_agregar import _drive as _drive_append, _post_append, live  # noqa: F401  (fixture)
 
@@ -67,12 +68,15 @@ def test_missing_default_fields_are_not_an_error_for_the_column_layer():
     assert list(header) == ["id", "opcional_1"] and report["unused"] == [] and new_labels == {"opcional_1": "Ciudad"}
 
 
-def test_a_title_equal_to_an_existing_label_reuses_the_field_and_the_cap_of_30_has_a_clear_message():
+def test_a_title_equal_to_an_existing_label_reuses_the_field_and_only_a_very_high_technical_ceiling_remains():
     _, _, report, new_labels = _canon(["id", "ciudad"], ["1", "Cali"], labels={"opcional_4": "Ciudad"})
     assert new_labels == {} and report["columns"][1] == {"title": "ciudad", "kind": "opcional", "field": "Ciudad"}
-    full = {f"opcional_{n}": f"Campo {n}" for n in range(1, 31)}
-    _, _, report, new_labels = _canon(["id", "ciudad"], ["1", "Cali"], labels=full)
-    assert new_labels == {} and "30 campos opcionales" in report["unused"][0]["reason"] and "ciudad" in report["unused"][0]["reason"].lower()
+    thirty = {f"opcional_{n}": f"Campo {n}" for n in range(1, 31)}
+    _, _, report, new_labels = _canon(["id", "ciudad"], ["1", "Cali"], labels=thirty)
+    assert new_labels == {"opcional_31": "Ciudad"} and report["unused"] == []                       # ya no hay tope de 30
+    ceiling = {f"opcional_{n}": f"Campo {n}" for n in range(1, roster_columns.MAX_OPTIONAL_FIELDS + 1)}
+    _, _, report, new_labels = _canon(["id", "ciudad"], ["1", "Cali"], labels=ceiling)
+    assert new_labels == {} and "techo técnico de 500" in report["unused"][0]["reason"] and "ciudad" in report["unused"][0]["reason"].lower()
 
 
 def test_a_header_repeated_in_the_file_keeps_the_first_column_and_reports_the_other():
@@ -123,7 +127,7 @@ def test_the_typical_base_with_email_and_city_loads_with_no_questions_and_a_colu
     assert r.status_code == 200 and r.json().get("result") != "NEEDS_LABELS", r.text
     body = r.json()
     assert body["count"] == 2 and not [e for e in body["errors"] if e.startswith("❌")]
-    assert [c["kind"] for c in body["columns"]["columns"]] == ["entendida"] * 7 + ["opcional"]
+    assert [c["kind"] for c in body["columns_detail"]] == ["entendida"] * 7 + ["opcional"]
     users = _users(db, ev)
     assert users["1001"].email == "ana@example.com" and users["1001"].get_extras() == {"opcional_1": "Cali"} and users["1002"].entity == "Acme"
     assert json.loads(db.get(type(ev), ev.id).optional_field_labels) == {"opcional_1": "Ciudad"}
@@ -191,13 +195,26 @@ def test_a_label_with_its_own_parameters_configuration_survives_the_cleanup(clie
     assert json.loads(db.get(type(ev), ev.id).optional_field_labels) == {"opcional_1": "Firma", "opcional_2": "Ciudad"}
 
 
-def test_thirty_own_titled_columns_fit_and_the_31st_is_reported_with_a_clear_message(client, factory, db):
+def test_sixty_five_own_titled_columns_all_enter_in_file_order_with_no_limit_of_30(client, factory, db):
     ev = _coord(client, factory)
-    titles = [f"Campo {n}" for n in range(1, 32)]
-    r = _upload(client, ev, _csv("id,nombres,apellidos," + ",".join(titles), "1001,Ana,Mora," + ",".join(str(n) for n in range(1, 32))))
-    assert r.status_code == 200, r.text
+    titles = [f"Campo {n}" for n in range(1, 66)]
+    r = _upload(client, ev, _csv("id,nombres,apellidos," + ",".join(titles), "1001,Ana,Mora," + ",".join(str(n) for n in range(1, 66))))
+    assert r.status_code == 200 and r.json().get("result") != "NEEDS_LABELS", r.text
     cols = r.json()["columns"]
-    assert len(cols["created"]) == 30 and len(cols["unused"]) == 1 and "30 campos opcionales" in cols["unused"][0]["reason"]
+    assert len(cols["created"]) == 65 and cols["unused"] == []
+    db.expire_all()
+    labels = json.loads(db.get(type(ev), ev.id).optional_field_labels)
+    assert labels == {f"opcional_{n}": f"Campo {n}" for n in range(1, 66)} and list(labels) == [f"opcional_{n}" for n in range(1, 66)]
+    assert _users(db, ev)["1001"].get_extras() == {f"opcional_{n}": str(n) for n in range(1, 66)}
+    keys = [c["key"] for c in parametros.field_configs_for_event(db, db.get(type(ev), ev.id)) if c["key"].startswith("opcional_")]
+    assert keys == [f"opcional_{n}" for n in range(1, 66)]                                                  # opcional_10 va después de opcional_9, no después de opcional_1
+
+
+def test_explicit_opcional_n_columns_beyond_30_are_read(client, factory, db):
+    ev = _coord(client, factory)
+    r = _upload(client, ev, _csv("id,nombres,apellidos,opcional_45,opcional 100", "1001,Ana,Mora,x,y"), data={"field_labels": json.dumps({"opcional_45": "Cuarenta", "opcional_100": "Cien"})})
+    assert r.status_code == 200, r.text
+    assert _users(db, ev)["1001"].get_extras() == {"opcional_45": "x", "opcional_100": "y"}
 
 
 def test_a_file_without_a_cedula_column_is_the_only_format_error(client, factory):
@@ -288,18 +305,42 @@ def test_repeated_ids_get_their_serial_before_the_steps_so_a_repeat_in_a_later_s
     assert _users(db, coord)["2001-3"].first_name == "N4"                                                    # la 5.ª fila (2.º paso) es la 3.ª aparición de 2001
 
 
-def test_with_append_only_the_box_adds_the_repeated_rows_with_serial_and_without_it_only_the_first_is_kept(client, live, db):
-    assert _drive_append(client, _post_append(client, live, data="id,nombres,apellidos\n5001,Ana,Uno\n5001,Ana,Dos\n", keep_duplicates="true").json())["status"] == "done"
+def test_with_append_only_the_box_adds_the_repeated_rows_with_serial_and_creates_the_original_cedula_field_when_missing(client, live, db):
+    r = _post_append(client, live, data="id,nombres,apellidos\n5001,Ana,Uno\n5001,Ana,Dos\n6001,Caro,Tres\n", keep_duplicates="true")
+    assert r.status_code == 200, r.text
+    assert _drive_append(client, r.json())["status"] == "done"
+    users = _users(db, live)
+    assert {"5001", "5001-2", "6001"} <= set(users)
+    assert json.loads(db.get(type(live), live.id).optional_field_labels) == {"opcional_1": "Cédula original"}      # «solo agregar» lo crea solo (antes avisaba que no)
+    assert users["5001-2"].get_extras() == {"opcional_1": "5001"} and users["5001"].get_extras() == {}
+
+
+def test_append_only_without_the_box_keeps_only_the_first_and_creates_no_field(client, live, db):
     assert _drive_append(client, _post_append(client, live, data="id,nombres,apellidos\n6001,Ana,Uno\n6001,Ana,Dos\n").json())["status"] == "done"
+    ids = set(_users(db, live))
+    assert "6001" in ids and "6001-2" not in ids and "opcional_1" not in json.loads(db.get(type(live), live.id).optional_field_labels or "{}")
+
+
+def test_the_append_preview_counts_the_serial_rows_but_writes_nothing(client, live, db):
+    r = client.post("/api/bulk_roster/preview", data={"event_id": str(live.id), "keep_duplicates": "true"}, files={"roster_file": ("n.csv", b"id,nombres,apellidos\n7001,Ana,Uno\n7001,Ana,Dos\n", "text/csv")})
+    assert r.status_code == 200, r.text
+    assert r.json()["new"] == 2 and r.json()["duplicates"] == 0
     db.expire_all()
-    ids = {u.id for u in db.query(User).filter_by(tenant_id=live.tenant_id)}
-    assert {"5001", "5001-2", "6001"} <= ids and "6001-2" not in ids                                      # «solo agregar» no crea el campo «Cédula original», pero sí a la persona con serial
+    assert "7001" not in _users(db, live) and "Cédula original" not in (db.get(type(live), live.id).optional_field_labels or "")
+
+
+def test_append_only_reports_when_the_technical_ceiling_leaves_no_room_for_the_original_cedula_field(client, live, db):
+    live.set_optional_labels({f"opcional_{n}": f"Campo {n}" for n in range(1, roster_columns.MAX_OPTIONAL_FIELDS + 1)})
+    db.commit()
+    r = _drive_append(client, _post_append(client, live, data="id,nombres,apellidos\n5001,Ana,Uno\n5001,Ana,Dos\n", keep_duplicates="true").json())
+    assert r["status"] == "done" and "5001-2" in _users(db, live)
+    assert any("techo técnico" in e for e in r["result"]["errors"])
 
 
 def test_the_downloadable_template_explains_the_flexible_load():
     from openpyxl import load_workbook
     text = " ".join(str(c.value) for c in load_workbook("static/templates/plantilla_carga_base_asistentes.xlsx")["Instrucciones"]["A"] if c.value)
-    assert "No eliminar repetidos" in text and "Cédula original" in text and "MAYÚSCULAS" in text and "Lo único indispensable es la cédula" in text and "30 campos opcionales" in text
+    assert "No eliminar repetidos" in text and "Cédula original" in text and "MAYÚSCULAS" in text and "Lo único indispensable es la cédula" in text and "techo" in text
 
 
 # ------------------------------------------------------------------------------------------------------------------------------ mayúsculas al subir
@@ -328,3 +369,58 @@ def test_the_text_selector_applies_in_the_steps_flow_too(client, coord, db, smal
     final, _ = _drive(client, _post(client, coord, book, text_case="upper").json())
     assert final["status"] == "done"
     assert {u.first_name for u in _users(db, coord).values()} == {f"NOMBRE {n}" for n in range(5)}
+
+
+# ------------------------------------------------------------------------------------------------------------------------------ nombres y apellidos NO se exigen separados
+@pytest.mark.parametrize("head", ["cédula,nombres", "cédula,nombre", "cédula,Nombre(s)", "cédula,Nombre completo", "cédula,Nombres y Apellidos"])
+def test_a_file_with_only_the_cedula_and_one_name_column_loads_everything_into_names_and_leaves_surnames_empty_without_errors(client, factory, db, head):
+    ev = _coord(client, factory)
+    r = _upload(client, ev, _csv(head, "1001,Ana María Mora Pérez"))
+    assert r.status_code == 200 and r.json()["count"] == 1, r.text
+    assert not [e for e in r.json()["errors"] if "apellido" in e or e.startswith("❌")]
+    u = _users(db, ev)["1001"]
+    assert u.first_name == "Ana María Mora Pérez" and u.last_name == ""                          # no se parte el texto: todo queda en nombres
+
+
+def test_the_full_name_column_is_kept_whole_even_when_surnames_do_not_exist_and_split_columns_still_work(client, factory, db):
+    ev = _coord(client, factory)
+    assert _upload(client, ev, _csv("cédula,nombre completo,ciudad", "1001,Juan de la Cruz Pérez,Cali")).status_code == 200
+    ev2 = factory.event("creado")
+    assert _upload(client, ev2, _csv("cédula,nombres,apellidos", "2001,Ana,Mora Pérez")).status_code == 200
+    users = _users(db, ev)
+    assert (users["1001"].first_name, users["1001"].last_name) == ("Juan de la Cruz Pérez", "") and (users["2001"].first_name, users["2001"].last_name) == ("Ana", "Mora Pérez")
+
+
+def test_the_report_says_the_full_name_column_was_understood_as_names(client, factory):
+    ev = _coord(client, factory)
+    r = _upload(client, ev, _csv("cédula,nombre completo", "1001,Ana Mora"))
+    assert r.json()["columns_detail"] == [{"title": "cédula", "kind": "entendida", "field": "Cédula"}, {"title": "nombre completo", "kind": "entendida", "field": "Nombres"}]
+
+
+def test_a_person_without_surnames_shows_no_none_in_the_directory_the_badge_data_or_the_search_name(client, factory, db):
+    ev = _coord(client, factory)
+    assert _upload(client, ev, _csv("cédula,nombre completo", "1001,Ana Mora")).status_code == 200
+    people = client.get(f"/api/users?event_id={ev.id}").json()
+    person = next(p for p in (people if isinstance(people, list) else people.get("users", people.get("people", []))) if p["id"] == "1001")
+    assert person["first_name"] == "Ana Mora" and (person["last_name"] or "") == ""
+    badge = client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}").json()
+    assert badge["first_name"] == "Ana Mora" and (badge["last_name"] or "") == "" and "None" not in json.dumps(badge)
+    assert "None" not in json.dumps(person)
+
+
+def test_manual_registration_and_the_offline_outbox_accept_a_person_without_surnames(client, factory, db):
+    factory.staff("coordinador", "coord2")
+    live_ev = factory.event("en_proceso")
+    login(client, "coord2")
+    r = client.post("/api/register", data={"event_id": str(live_ev.id), "id": "8001", "first_name": "Solo Nombre"})
+    assert r.status_code == 200, r.text
+    ops = client.post(f"/api/events/{live_ev.id}/outbox/sync", json={"ops": [{"op_id": "op-1", "type": "create_person", "fields": {"id": "8002", "first_name": "Otro Nombre"}}]})
+    assert ops.status_code == 200, ops.text
+    assert ops.json()["results"][0]["result"] == "ok", ops.text
+    db.expire_all()
+    assert db.query(User).filter_by(id="8001").one().last_name == "" and db.query(User).filter_by(id="8002").one().last_name == ""
+
+
+def test_names_columns_are_recognised_by_the_column_layer_without_surnames():
+    header, _, report, _ = roster_columns.canonicalize({"cedula": "A", "Nombre(s)".lower(): "B"}, [{"cedula": "1", "nombre(s)": "Ana Mora"}], {})
+    assert list(header) == ["id", "nombres"] and report["unused"] == []

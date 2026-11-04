@@ -1,7 +1,7 @@
 """Columnas de la base que se carga ("Adjuntar Base de Datos"): reconocer por el TÍTULO de cada columna a qué campo de la persona corresponde.
 
 Dos formas de traer datos adicionales, que conviven en el mismo archivo:
-  a) columnas «opcional 1»…«opcional 30» de la plantilla: el sistema detecta cuáles traen datos y pregunta qué son (NEEDS_LABELS, ver app/routers/api.py);
+  a) columnas «opcional 1»…«opcional N» de la plantilla: el sistema detecta cuáles traen datos y pregunta qué son (NEEDS_LABELS, ver app/routers/api.py);
   b) columnas con título propio («fecha de nacimiento», «talla de camisa»…): si el título es el de un campo conocido (sin importar mayúsculas, tildes ni variantes comunes) se asigna a ese campo; si no,
      se crea un campo opcional de texto con ese título en los parámetros del evento, SIN preguntar. Volver a cargar el mismo archivo reutiliza ese campo (se busca por título): no crea otro.
 Ninguna columna se ignora en silencio: `canonicalize` devuelve el informe «reconocidos / nuevos creados / no usadas» que la pantalla le muestra a quien carga.
@@ -9,14 +9,15 @@ Ninguna columna se ignora en silencio: `canonicalize` devuelve el informe «reco
 import re
 import unicodedata
 
-MAX_OPTIONAL_FIELDS = 30
-_OPTIONAL_RE = re.compile(r"^opcional[\s_]*([0-9]{1,2})$")
+MAX_OPTIONAL_FIELDS = 500          # techo TÉCNICO (archivos corruptos o columnas por error), no un límite de producto: un evento puede traer 60 o más campos propios (Plan 5)
+_OPTIONAL_RE = re.compile(r"^opcional[\s_]*([0-9]{1,3})$")
 
 # nombre canónico (el que ya buscan las filas de bulk_register) → títulos equivalentes, ya normalizados (minúsculas, sin tildes, signos como espacio)
 KNOWN = {
     "id": {"id", "identificacion", "cedula", "cedula de ciudadania", "cc", "c c", "documento", "documento de identidad", "numero de documento", "numero documento", "no documento", "nro documento",
            "n documento", "numero de cedula", "numero cedula", "nro cedula"},
-    "nombres": {"nombres", "nombre"},   # «nombres y apellidos» en UNA columna no se puede partir con certeza: queda como campo propio en vez de adivinar
+    "nombres": {"nombres", "nombre", "nombre s", "nombre(s)", "nombre (s)", "nombres(s)", "nombre completo", "nombres completos", "nombres y apellidos", "nombre y apellidos", "nombre y apellido", "nombres y apellido", "nombre apellido", "nombre completo y apellidos",
+                "full name", "name"},   # «nombre completo» / «nombres y apellidos» en UNA columna NO se parte (no se puede con certeza): todo va a nombres y apellidos queda vacío, sin error (Plan 5)
     "apellidos": {"apellidos", "apellido"},
     "cargo": {"cargo", "puesto", "posicion"},
     "entidad": {"entidad", "empresa", "organizacion", "compania", "institucion"},
@@ -116,7 +117,7 @@ def canonicalize(header_columns: dict, rows: list, event_labels: dict, create_fi
         if slot is None:
             slot = next((f"opcional_{n}" for n in range(1, MAX_OPTIONAL_FIELDS + 1) if f"opcional_{n}" not in used_slots), None)
             if slot is None:
-                unused(h, f"el evento ya tiene {MAX_OPTIONAL_FIELDS} campos opcionales (el máximo): no hay lugar para «{_pretty(h)}». Quita columnas que no necesites del archivo o usa menos de {MAX_OPTIONAL_FIELDS} campos propios")
+                unused(h, f"se alcanzó el techo técnico de {MAX_OPTIONAL_FIELDS} campos opcionales por evento: no hay lugar para «{_pretty(h)}». Revisa que el archivo no tenga columnas de más (¿archivo dañado?)")
                 continue
             used_slots.add(slot)
             new_labels[slot] = _pretty(h)
@@ -175,6 +176,11 @@ def merge_reports(*reports) -> dict:
             if item["title"] not in seen and not any(u["title"] == item["title"] for u in out["unused"]):
                 out["unused"].append(item)
     return out
+
+
+def public(report: dict) -> dict:
+    """Lo que se le devuelve a quien carga: `columns` = los tres listados de siempre (reconocidos / nuevos / no usados) y `columns_detail` = el informe por columna (Plan 5)."""
+    return {"columns": {k: v for k, v in report.items() if k != "columns"}, "columns_detail": report.get("columns", [])}
 
 
 def summary(report: dict) -> str:

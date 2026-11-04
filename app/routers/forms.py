@@ -7,6 +7,7 @@ import re
 import secrets
 from datetime import datetime
 from app.timeutil import utcnow
+from app.roster_columns import MAX_OPTIONAL_FIELDS
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -70,9 +71,9 @@ def _allocate_event_fields(event: Event, design: dict) -> dict:
     for f in design["fields"].values():
         if f["type"] in formlib.INPUT_TYPES and f.get("sync") and not f.get("key"):
             used = {int(k.split("_")[1]) for k in labels}
-            slot = next((n for n in range(1, 31) if n not in used), None)
+            slot = next((n for n in range(1, MAX_OPTIONAL_FIELDS + 1) if n not in used), None)
             if slot is None:
-                raise HTTPException(status_code=400, detail="Ya se usaron los 30 campos opcionales del evento")
+                raise HTTPException(status_code=400, detail=f"Se alcanzó el techo técnico de {MAX_OPTIONAL_FIELDS} campos opcionales del evento")
             key = f"opcional_{slot}"
             labels[key] = f["label"]
             f["key"], f["sync"] = key, False
@@ -126,7 +127,7 @@ def create_form(event_id: int, data: dict, request: Request, db: Session = Depen
     else:
         design = formlib.default_design(name)
     try:
-        design = formlib.sanitize_design(design, _optional_keys(event) | {f"opcional_{i}" for i in range(1, 31)})
+        design = formlib.sanitize_design(design, _optional_keys(event) | {f"opcional_{i}" for i in range(1, MAX_OPTIONAL_FIELDS + 1)})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     # un diseño importado puede traer campos opcional_N que este evento no tiene: se desvinculan (quedan como campos solo del formulario)

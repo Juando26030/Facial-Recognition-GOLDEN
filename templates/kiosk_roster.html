@@ -108,7 +108,7 @@
           </label>
           <p id="keepDuplicatesHelp" class="gw-hint" style="margin:0;">Apagado (lo de siempre): si una cédula se repite, queda la última fila. Encendido: la primera conserva su cédula y las siguientes reciben un serial
             (<code>123456-2</code>, <code>123456-3</code>…), con la cédula original en el campo «Cédula original». El serial depende del orden de las filas: volver a cargar el mismo archivo solo es seguro si ese orden no cambió.
-            Con «Solo agregar personas nuevas», las repetidas de la hoja también reciben serial (no se descartan).</p>
+            Con «Solo agregar personas nuevas», las repetidas de la hoja también reciben serial (no se descartan) y el campo «Cédula original» se crea solo si el evento no lo tiene.</p>
           <div class="gw-field">
             <label class="gw-label" for="textCase">Texto</label>
             <select class="gw-input" name="text_case" id="textCase" aria-describedby="textCaseHelp">
@@ -204,7 +204,7 @@ function columnDetailHtml(items, esc) {
         return `<li><span class="gw-badge ${k[1]}">${k[0]}</span> «${esc(c.title)}»${c.field ? " → " + esc(c.field) : ""}${c.reason ? ": " + esc(c.reason) : ""}</li>`; }).join("");
     return `<div style="margin-top:0.6rem;"><b>Qué pasó con cada columna:</b><ul style="margin:0.3rem 0 0; padding-left:1.2rem; list-style:none;">${rows}</ul></div>`;
 }
-function columnsBoxHtml(columns) {
+function columnsBoxHtml(columns, detail) {
     if (!columns) return "";
     const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const list = (items, fmt) => items.length ? `<ul style="margin:0.3rem 0 0; padding-left:1.2rem;">${items.map(i => `<li>${fmt(i)}</li>`).join("")}</ul>` : "";
@@ -213,15 +213,13 @@ function columnsBoxHtml(columns) {
         <div style="margin-top:0.4rem;"><b>Campos reconocidos (${columns.recognized.length}):</b>${list(columns.recognized, c => `«${esc(c.title)}» → ${esc(c.field)}`) || " ninguno"}</div>
         <div style="margin-top:0.4rem;"><b>Campos nuevos creados (${columns.created.length}):</b>${list(columns.created, c => `«${esc(c.title)}» → campo opcional «${esc(c.field)}» (ya está en Parámetros del evento)`) || " ninguno"}</div>
         <div style="margin-top:0.4rem;"><b>Columnas no usadas (${columns.unused.length}):</b>${list(columns.unused, c => `«${esc(c.title)}»: ${esc(c.reason)}`) || " ninguna"}</div>
-        ${columnDetailHtml(columns.columns, esc)}
+        ${columnDetailHtml(detail, esc)}
     </div>`;
 }
 
 // Une los informes de columnas de varios lotes (una columna es «nueva» si en algún lote se creó; «no usada» solo si en ningún lote se usó).
 function mergeColumns(list) {
-    const out = { recognized: [], created: [], unused: [], columns: [] }, seen = new Map(), cols = new Map();
-    list.filter(Boolean).forEach(c => (c.columns || []).forEach(i => { const prev = cols.get(i.title); if (!prev || (prev.kind === "ignorada" && i.kind !== "ignorada")) cols.set(i.title, i); }));
-    out.columns = Array.from(cols.values());
+    const out = { recognized: [], created: [], unused: [] }, seen = new Map();
     list.filter(Boolean).forEach(c => {
         c.created.forEach(i => seen.set(i.title, ["created", i]));
         c.recognized.forEach(i => { if (!seen.has(i.title)) seen.set(i.title, ["recognized", i]); });
@@ -231,9 +229,16 @@ function mergeColumns(list) {
     return out;
 }
 
+// Une el informe por columna de varios lotes: gana el lote donde la columna se usó (entendida/opcional) sobre «ignorada» (p. ej. vacía en un lote y con datos en otro).
+function mergeDetails(list) {
+    const cols = new Map();
+    list.filter(Boolean).forEach(items => items.forEach(i => { const prev = cols.get(i.title); if (!prev || (prev.kind === "ignorada" && i.kind !== "ignorada")) cols.set(i.title, i); }));
+    return Array.from(cols.values());
+}
+
 function renderRosterResult(data) {
     rosterResult.innerHTML = "";
-    const columnsHtml = columnsBoxHtml(data.columns);
+    const columnsHtml = columnsBoxHtml(data.columns, data.columns_detail);
     if (!data.errors || !data.errors.length) { rosterResult.innerHTML = columnsHtml; return; }
 
     const groups = [
@@ -588,7 +593,7 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
     if (!rows.length) { bar.remove(); showToast("El archivo no tiene filas de datos", "error"); return null; }
     const { groups, zip } = await buildBatchPlan(header, rows, zipFile);
 
-    let totalCount = 0, allErrors = [], allColumns = [];
+    let totalCount = 0, allErrors = [], allColumns = [], allDetails = [];
     for (let i = 0; i < groups.length; i++) {
         bar.update(i / groups.length, `Lote ${i + 1} de ${groups.length} — ${totalCount} de ${rows.length} personas procesadas hasta ahora.`);
         const group = groups[i];
@@ -604,11 +609,11 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
         const data = await submitChunkWithLabels(fd, makeUi(bar, i, groups.length, `Lote ${i + 1} de ${groups.length} — `));
         if (!data) { bar.fail("La carga se detuvo en el lote " + (i + 1) + " de " + groups.length); return null; }
         totalCount += data.count || 0;
-        allColumns.push(data.columns);
+        allColumns.push(data.columns); allDetails.push(data.columns_detail);
         if (data.errors && data.errors.length) allErrors.push(...data.errors.map(e => `[Lote ${i + 1}/${groups.length}] ${e}`));
     }
     bar.finish(`Carga completa: ${totalCount} de ${rows.length} personas`);
-    return { message: `Carga en ${groups.length} lote(s) completa: ${totalCount} de ${rows.length} perfiles cargados.`, count: totalCount, errors: allErrors, columns: mergeColumns(allColumns) };
+    return { message: `Carga en ${groups.length} lote(s) completa: ${totalCount} de ${rows.length} perfiles cargados.`, count: totalCount, errors: allErrors, columns: mergeColumns(allColumns), columns_detail: mergeDetails(allDetails) };
 }
 
 rosterForm.addEventListener("submit", async (e) => {
