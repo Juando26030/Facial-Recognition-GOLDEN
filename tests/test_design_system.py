@@ -285,5 +285,12 @@ def test_person_form_groups_and_columns_are_in_the_base_the_guide_and_the_standa
         assert f".{cls}" in CSS and cls in GUIDE and cls in standards, cls
     block = CSS[CSS.index("/* ============================================================ Grupos plegables"):CSS.index("/* ============================================================ Recorrido de primera vez")]
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", re.sub(r"/\*.*?\*/", "", block, flags=re.S)), "nada de colores sueltos: solo --gw-*"
-    assert "var(--gw-tap)" in block and "prefers-reduced-motion" in block and "grid-template-columns: 1fr" in block, "una columna en el celular, 44 px, movimiento reducido"
+    assert "var(--gw-tap)" in block and "prefers-reduced-motion" in block, "44 px, movimiento reducido"
+    # sin desbordes: columnas minmax(0,1fr), hijos con min-width:0, border-box dentro del grupo y una columna en ancho de celular
+    assert re.search(r"\.gw-fields-row \{[^}]*grid-template-columns: minmax\(0, 1fr\)", block)
+    for n in (2, 3, 4):
+        assert f"repeat({n}, minmax(0, 1fr))" in block
+    assert re.search(r"\.gw-fields-row > \* \{ min-width: 0", block)
+    assert re.search(r"\.gw-form-group \*[^{]*\{ box-sizing: border-box", block)
+    assert re.search(r"@media \(max-width: 480px\)[^}]*\{[^}]*\.gw-fields-row--2[^}]*grid-template-columns: minmax\(0, 1fr\)", block)
     assert "background" not in re.sub(r"/\*.*?\*/", "", block, flags=re.S), "sin fondo propio: hereda de la pantalla"
