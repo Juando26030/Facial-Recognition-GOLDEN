@@ -12,6 +12,11 @@ const { quotaFullMessage } = w.FormRender;
 assert.strictEqual(quotaFullMessage('Se acabó {cupo} ({cupo})', 'VIP'), 'Se acabó VIP (VIP)');
 assert.strictEqual(quotaFullMessage('', 'VIP'), 'Ya se llenaron los cupos de VIP. Elige otra opción para poder inscribirte.');
 assert.strictEqual(quotaFullMessage(null, 'VIP'), quotaFullMessage('   ', 'VIP'));
+// Máximo 0 = cerrado temporalmente: texto por defecto distinto; el mensaje propio de la regla sigue mandando
+assert.strictEqual(quotaFullMessage('', 'Popayán', true), 'Por ahora no estamos recibiendo inscripciones de Popayán. Elige otra opción.');
+assert.strictEqual(quotaFullMessage(null, 'Popayán', true), quotaFullMessage('   ', 'Popayán', true));
+assert.strictEqual(quotaFullMessage('Vuelve pronto: {cupo}', 'Popayán', true), 'Vuelve pronto: Popayán');
+assert.strictEqual(quotaFullMessage('', 'Popayán', false), 'Ya se llenaron los cupos de Popayán. Elige otra opción para poder inscribirte.');
 
 const design = {
   theme: {},

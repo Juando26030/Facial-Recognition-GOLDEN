@@ -14,7 +14,8 @@
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
   // Mensaje del cupo lleno: el de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo. Espejo de formlib.quota_full_message.
   const QUOTA_DEFAULT_MESSAGE = 'Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.';
-  const quotaFullMessage = (message, label) => (String(message == null ? '' : message).trim() || QUOTA_DEFAULT_MESSAGE).split('{cupo}').join(String(label == null ? '' : label));
+  const QUOTA_CLOSED_MESSAGE = 'Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.';   // máximo 0 = cerrado temporalmente
+  const quotaFullMessage = (message, label, closed) => (String(message == null ? '' : message).trim() || (closed ? QUOTA_CLOSED_MESSAGE : QUOTA_DEFAULT_MESSAGE)).split('{cupo}').join(String(label == null ? '' : label));
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
   // Ancho máximo de la tarjeta (theme.width: «full» o 480–1100 px; sin valor, 760 px como siempre). En pantallas angostas es siempre el 100 %.
   const cardMax = (th) => { const w = th && th.width; if (w === 'full') return 'none'; const n = Math.round(Number(w)); return Number.isFinite(n) && n >= 480 && n <= 1100 ? n + 'px' : '760px'; };
@@ -435,7 +436,7 @@
         ico.textContent = '\u26A0';
         const txt = document.createElement('span');
         txt.style.cssText = 'flex:1; min-width:0;';
-        txt.textContent = quotaFullMessage(r.message, r.label);
+        txt.textContent = quotaFullMessage(r.message, r.label, r.closed || r.limit === 0);
         quotaWarn.append(ico, txt);
       }
       return !!r;

@@ -518,13 +518,14 @@ def _quota_form(client, factory, limits, capacity=None):
 def test_category_quota_blocks_a_full_category_but_not_the_others(client, factory):
     ev, form = _quota_form(client, factory, {"VIP": 2, "Estudiante": 1, "Basura": "x", "General": 0})
     st = client.get(f"{_url(ev, form)}/state").json()
-    assert st["quota"]["left"] == {"cat": {"VIP": 2, "Estudiante": 1}}                                   # lo inválido/0 se descarta; General queda sin límite
+    assert st["quota"]["left"] == {"cat": {"VIP": 2, "Estudiante": 1, "General": 0}}                    # lo inválido se descarta; 0 = cerrado (se conserva y la opción queda deshabilitada)
     assert _submit(client, ev, form, {**_who(1), "cat": "Estudiante"}, sid="a").status_code == 200
     r = _submit(client, ev, form, {**_who(2), "cat": "Estudiante"}, sid="b")
     assert r.status_code == 409 and r.json()["stage"] == "quota" and "Estudiante" in r.json()["detail"]
     assert _submit(client, ev, form, {**_who(3), "cat": "VIP"}, sid="c").status_code == 200           # otra categoría sigue abierta
-    assert _submit(client, ev, form, {**_who(4), "cat": "General"}, sid="d").status_code == 200       # sin límite
-    assert client.get(f"{_url(ev, form)}/state").json()["quota"]["left"] == {"cat": {"VIP": 1, "Estudiante": 0}}
+    r = _submit(client, ev, form, {**_who(4), "cat": "General"}, sid="d")                              # máximo 0 = cerrado temporalmente
+    assert r.status_code == 409 and r.json()["stage"] == "quota" and "no estamos recibiendo inscripciones de General" in r.json()["detail"]
+    assert client.get(f"{_url(ev, form)}/state").json()["quota"]["left"] == {"cat": {"VIP": 1, "Estudiante": 0, "General": 0}}
 
 
 def test_category_quota_does_not_count_tests_and_frees_up_when_a_registration_is_cancelled(client, factory):
@@ -592,7 +593,7 @@ def test_quotas_can_combine_several_variables_and_answers(client, factory):
     rules = [{"label": "VIP Colombia", "limit": 1, "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "VIP"}, {"field": "pais", "op": "equals", "value": "Colombia"}]},
              {"label": "Andinos", "limit": 2, "match": "all", "conds": [{"field": "pais", "op": "in", "value": ["Perú", "Chile"]}]},
              {"label": "Malo", "limit": 5, "conds": [{"field": "no_existe", "op": "not_equals", "value": "x"}]},
-             {"label": "Sin límite", "limit": 0, "conds": [{"field": "cat", "op": "equals", "value": "VIP"}]}]
+             {"label": "Sin límite", "limit": "", "conds": [{"field": "cat", "op": "equals", "value": "VIP"}]}]
     r = _put(client, ev, form, design=_design(_basic_fields() + [cat, pais]), settings={"quotas": {"rules": rules}})
     assert r.status_code == 200, r.text
     assert [x["label"] for x in r.json()["settings"]["quotas"]["rules"]] == ["VIP Colombia", "Andinos", "Malo"]                 # sin límite válido → se descarta
@@ -697,3 +698,48 @@ def test_server_409_uses_the_rule_message_and_public_state_carries_it(client, fa
     assert r.status_code == 409 and r.json()["detail"] == "Ya se llenaron los cupos de General. Elige otra opción o escribe a los organizadores."
     full = {f["label"]: f["message"] for f in client.get(f"{_url(ev, form)}/state").json()["quota"]["full"]}
     assert full == {"VIP": "Ya no hay {cupo}, elige General.", "General": ""}
+
+
+# ------------------------------- cupo en 0 = cerrado temporalmente -------------------------------
+def test_quota_limit_zero_is_kept_but_empty_or_invalid_limit_is_dropped():
+    from app import formlib
+    cond = [{"field": "cat", "op": "equals", "value": "Popayán"}]
+    rules = formlib._sanitize_quota_rules({"rules": [
+        {"label": "Popayán", "limit": 0, "conds": cond}, {"label": "Vacío", "limit": "", "conds": cond}, {"label": "Nulo", "limit": None, "conds": cond},
+        {"label": "Texto", "limit": "x", "conds": cond}, {"label": "Negativo", "limit": -1, "conds": cond}, {"label": "Enorme", "limit": 1_000_001, "conds": cond},
+        {"label": "Tope", "limit": 1_000_000, "conds": cond}]})
+    assert [(r["label"], r["limit"]) for r in rules] == [("Popayán", 0), ("Tope", 1_000_000)]
+
+
+def test_quota_closed_default_message_and_rule_sig_unchanged_by_limit():
+    from app import formlib, formsvc
+    assert formlib.quota_full_message("", "Popayán", closed=True) == "Por ahora no estamos recibiendo inscripciones de Popayán. Elige otra opción."
+    assert formlib.quota_full_message(None, "Popayán", server=True, closed=True) == formlib.quota_full_message("", "Popayán", closed=True)
+    assert formlib.quota_full_message("Volvemos pronto: {cupo}", "Popayán", closed=True) == "Volvemos pronto: Popayán"
+    assert formlib.quota_full_message("", "VIP") == "Ya se llenaron los cupos de VIP. Elige otra opción para poder inscribirte."
+    base = {"id": "abc123", "label": "Popayán", "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "Popayán"}]}
+    assert formsvc.rule_sig({**base, "limit": 0}) == formsvc.rule_sig({**base, "limit": 5})
+
+
+def test_quota_limit_zero_closes_the_option_and_rejects_with_409(client, factory):
+    """Sin ninguna inscripción previa (cuenta 0) la reserva igual se rechaza: `0 >= 0`. Las demás opciones siguen abiertas."""
+    if not getattr(factory, "_coord", None):
+        factory._coord = factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso")
+    login(client, "coord1")
+    form = _create(client, ev)
+    cat = {"id": "cat", "type": "select", "label": "Ciudad", "options": ["Popayán", "Cali"]}
+    rules = [{"id": "pop001", "label": "Popayán", "limit": 0, "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "Popayán"}], "message": "Popayán está cerrada por ahora ({cupo})."},
+             {"id": "cal001", "label": "Cali", "limit": 0, "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "Cali"}]}]
+    r = _put(client, ev, form, design=_design(_basic_fields() + [cat]), settings={"quotas": {"rules": rules}})
+    assert r.status_code == 200, r.text
+    assert [(x["label"], x["limit"]) for x in r.json()["settings"]["quotas"]["rules"]] == [("Popayán", 0), ("Cali", 0)]
+    _open(client, ev, form)
+    client.post("/logout")
+    pub = client.get(f"{_url(ev, form)}/state").json()["quota"]
+    assert pub["left"] == {"cat": {"Popayán": 0, "Cali": 0}}
+    assert all(f["closed"] and f["limit"] == 0 for f in pub["full"])
+    r = _submit(client, ev, form, {**_who(1), "cat": "Popayán"}, sid="a")
+    assert r.status_code == 409 and r.json()["stage"] == "quota" and r.json()["detail"] == "Popayán está cerrada por ahora (Popayán)."
+    r = _submit(client, ev, form, {**_who(2), "cat": "Cali"}, sid="b")
+    assert r.status_code == 409 and r.json()["detail"] == "Por ahora no estamos recibiendo inscripciones de Cali. Elige otra opción."
