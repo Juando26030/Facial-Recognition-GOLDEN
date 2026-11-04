@@ -7,6 +7,7 @@ const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<!doctype html><body><div id="h"></div></body>', { runScripts: 'outside-only' });
 const w = dom.window;
 ['static/js/fonts-propias.js', 'static/js/rich-text.js', 'static/js/form-render.js'].forEach((f) => w.eval(fs.readFileSync(path.join(__dirname, '../..', f), 'utf8')));
+w.HTMLElement.prototype.scrollIntoView = function () {};   // jsdom no lo implementa (validate() salta al primer error)
 const { quotaFullMessage } = w.FormRender;
 assert.strictEqual(quotaFullMessage('Se acabó {cupo} ({cupo})', 'VIP'), 'Se acabó VIP (VIP)');
 assert.strictEqual(quotaFullMessage('', 'VIP'), 'Ya se llenaron los cupos de VIP. Elige otra opción para poder inscribirte.');
