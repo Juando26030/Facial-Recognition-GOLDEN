@@ -25,7 +25,7 @@ from app.routers import print_stations, shared_print
 from app.routers import print_settings
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
-from app import personform
+from app import personform, registro_gear
 from app.routers import person_form as person_form_router      # formulario de persona diseñado por el admin (apagado con PERSON_FORM_ENABLED=0)
 from app.routers import form_transfer      # exportar / importar un formulario entre entornos (solo admin)
 from app.routers import event_transfer as event_transfer_router      # exportar / importar un EVENTO completo entre entornos (solo super_admin)
@@ -571,6 +571,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "field_labels": {cfg["key"]: cfg["label"] for cfg in field_configs},
         "sidebar_active": "eventos",
         "contingency_enabled": contingency_enabled(),
+        "registro_gear": registro_gear.can_see_gear(db, event.id, staff_roles),        # Plan 7: engranaje «Configuración del registro» (solo visual)
         "search_unified": os.getenv("SEARCH_UNIFIED", "1") != "0",       # Fase 1A: buscador único en el directorio; SEARCH_UNIFIED=0 vuelve a las 3 cajas
     }
     if extra_context:
@@ -652,7 +653,7 @@ def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_
     entrar a Estadísticas. Mismo mínimo de rol que Adjuntar Base de Datos/Usuarios del Evento.
     'comercial' excluido explícitamente (Sprint 2.4 Fase 6, 2026-09-16, pedido explícito) — queda
     por ENCIMA de 'coordinador' en STAFF_ROLES, así que min_role solo no alcanza para bloquearlo."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"], extra_context={"idle_general_minutes": idle.general_minutes()})
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"], extra_context={"idle_general_minutes": idle.general_minutes(), "registro_gear_dig": registro_gear.digitadores_enabled(db, event_id)})
 
 
 @app.get("/kiosk/{event_id}/documentos")

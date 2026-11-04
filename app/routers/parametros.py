@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app import biometric_setup, idle, publicurl
+from app import biometric_setup, idle, publicurl, registro_gear
 from app.roster_columns import MAX_OPTIONAL_FIELDS
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 from app.database import get_db
@@ -222,6 +222,30 @@ def set_directory_page_size(
     event.directory_page_size = value
     db.commit()
     return {"directory_page_size": event.directory_page_size}
+
+
+@router.get("/events/{event_id}/registro-gear-digitadores")
+def get_registro_gear_digitadores(
+    event_id: int, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    event = get_event_for_staff(event_id, db, staff)
+    return {"enabled": registro_gear.digitadores_enabled(db, event.id)}
+
+
+@router.put("/events/{event_id}/registro-gear-digitadores")
+def set_registro_gear_digitadores(
+    event_id: int, data: dict, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
+):
+    """Plan 7: «Mostrar configuración del registro a digitadores». Solo decide si el digitador VE el engranaje; lo ya configurado no se pierde y los permisos de la API no cambian."""
+    event = get_event_for_staff(event_id, db, staff)
+    value = data.get("enabled")
+    if not isinstance(value, bool):
+        raise HTTPException(status_code=400, detail="enabled debe ser verdadero o falso")
+    registro_gear.set_digitadores_enabled(db, event.id, value)
+    db.commit()
+    return {"enabled": value}
 
 
 @router.put("/events/{event_id}/idle-minutes")
