@@ -189,6 +189,38 @@ def test_first_time_tour_is_once_per_device_with_restart_and_no_external_depende
     assert not re.search(r"\b(alert|confirm|prompt)\(", JS)
 
 
+def _rule(selector):
+    """Declaraciones de la primera regla cuyo selector empieza EXACTAMENTE por `selector {`."""
+    i = CSS.index(selector + " {")
+    return CSS[CSS.index("{", i) + 1:CSS.index("}", i)]
+
+
+def test_group_and_savebar_components_use_only_verified_token_pairs_and_the_44px_target():
+    """Plan 6 (Parámetros agrupado): el título del grupo (texto sobre superficie y sobre superficie-2 al abrir/pasar), la ayuda, la lista de fallos y las insignias de estado de la barra
+    usan pares ya verificados arriba, en claro y en oscuro; el título del grupo es un objetivo táctil de 44 px."""
+    for cls in (".gw-group", ".gw-group__sum", ".gw-group__body", ".gw-group__item", ".gw-savebar", ".gw-savebar__status", ".gw-savebar__fail"):
+        assert cls + " {" in CSS, cls
+    assert "min-height: var(--gw-tap)" in _rule(".gw-group__sum")
+    pairs = {(fg, bg) for fg, bg, _ in TEXT_PAIRS}
+    assert "color: var(--gw-text)" in _rule(".gw-group") and "background: var(--gw-surface)" in _rule(".gw-group") and ("--gw-text", "--gw-surface") in pairs
+    assert "background: var(--gw-surface-2)" in CSS[CSS.index(".gw-group[open] > .gw-group__sum {"):] and ("--gw-text", "--gw-surface-2") in pairs
+    assert "color: var(--gw-text-muted)" in _rule(".gw-group__hint") and ("--gw-text-muted", "--gw-surface") in pairs and ("--gw-text-muted", "--gw-surface-2") in pairs
+    fail = _rule(".gw-savebar__fail")
+    assert "color: var(--gw-err-text)" in fail and "background: var(--gw-err-bg)" in fail and ("--gw-err-text", "--gw-err-bg") in pairs
+    bar = _rule(".gw-savebar")
+    assert "color: var(--gw-text)" in bar and "background: var(--gw-surface)" in bar and "position: sticky" in bar and "bottom: 0" in bar
+    # los bordes de estado de la barra son los de las insignias (>= 3:1 sobre su fondo, ya verificados)
+    for state, line in (("dirty", "warn"), ("saved", "ok"), ("error", "err")):
+        assert f'.gw-savebar[data-state="{state}"] {{ border-color: var(--gw-{line}-line); }}' in CSS
+    assert ("--gw-warn-line", "--gw-warn-bg", 3) in NON_TEXT_PAIRS and ("--gw-ok-line", "--gw-ok-bg", 3) in NON_TEXT_PAIRS and ("--gw-err-line", "--gw-err-bg", 3) in NON_TEXT_PAIRS
+    # fuera del CSS de la base, ni un color suelto en estos componentes
+    block = CSS[CSS.index("Grupo desplegable (<details"):]
+    assert not re.search(r"#[0-9a-fA-F]{3,6}\b|rgba?\(", block), "solo tokens --gw-*"
+    # y la guía los muestra
+    for needle in ("gw-group", "gw-savebar", 'data-state="dirty"', 'data-state="saved"', 'data-state="error"'):
+        assert needle in GUIDE, needle
+
+
 def test_wizard_and_state_components_exist_and_leave_the_search_slot_unbuilt():
     for cls in (".gw-wizard__foot", ".gw-progress", ".gw-state--error", ".gw-spinner", ".gw-tile", ".gw-modal", ".gw-nav", ".gw-badge--ok", ".gw-alert--err", ".gw-table", ".gw-field--error"):
         assert cls in CSS, cls
