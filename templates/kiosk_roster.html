@@ -106,9 +106,7 @@
             <input type="checkbox" name="keep_duplicates" id="keepDuplicates" value="true" aria-describedby="keepDuplicatesHelp">
             <span>No eliminar repetidos</span>
           </label>
-          <p id="keepDuplicatesHelp" class="gw-hint" style="margin:0;">Apagado (lo de siempre): si una cédula se repite, queda la última fila. Encendido: la primera conserva su cédula y las siguientes reciben un serial
-            (<code>123456-2</code>, <code>123456-3</code>…), con la cédula original en el campo «Cédula original». El serial depende del orden de las filas: volver a cargar el mismo archivo solo es seguro si ese orden no cambió.
-            Con «Solo agregar personas nuevas», las repetidas de la hoja también reciben serial (no se descartan) y el campo «Cédula original» se crea solo si el evento no lo tiene.</p>
+          <p id="keepDuplicatesHelp" class="gw-hint" style="margin:0;">Apagado: si una cédula se repite, queda la última fila. Encendido: las repetidas se guardan con serial (<code>123456-2</code>, <code>123456-3</code>…) y la cédula original queda en el campo «Cédula original». El serial depende del orden de las filas.</p>
           <div class="gw-field">
             <label class="gw-label" for="textCase">Texto</label>
             <select class="gw-input" name="text_case" id="textCase" aria-describedby="textCaseHelp">
@@ -116,7 +114,7 @@
               <option value="upper">MAYÚSCULAS</option>
               <option value="lower">minúsculas</option>
             </select>
-            <p id="textCaseHelp" class="gw-hint" style="margin:0;">Se aplica a nombres, apellidos, cargo, entidad y campos opcionales. Nunca cambia la cédula ni el teléfono; el correo siempre se guarda en minúsculas.</p>
+            <p id="textCaseHelp" class="gw-hint" style="margin:0;">Aplica a nombres, apellidos y campos de texto. Nunca cambia la cédula ni el teléfono; el correo siempre va en minúsculas.</p>
           </div>
         </div>
 
