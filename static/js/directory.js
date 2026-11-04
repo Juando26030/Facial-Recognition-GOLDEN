@@ -730,7 +730,7 @@
         const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
         if (!td) return;
         const b = document.createElement('span');
-        b.className = 'gw-badge gw-badge--ok gw-recent-tag';
+        b.className = 'gw-badge gw-recent-tag';
         b.textContent = 'Recién registrado';
         td.appendChild(b);
       });

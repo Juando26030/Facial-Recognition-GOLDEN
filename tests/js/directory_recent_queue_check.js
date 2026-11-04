@@ -72,7 +72,7 @@ const sortedServed = order.map((idx) => 'P' + String(idx).padStart(2, '0'));    
   assert.deepStrictEqual(tags(), sortedServed.slice(0, 8));
   assert.ok(rows().slice(0, 8).every((tr) => tr.dataset.recent === '1') && rows().slice(8).every((tr) => tr.dataset.recent !== '1'));
   assert.strictEqual(rows()[0].children[2].children.find((c) => c.className.includes('gw-recent-tag')).textContent, 'Recién registrado');
-  assert.ok(rows()[0].children[2].children.find((c) => c.className.includes('gw-recent-tag')).className.includes('gw-badge gw-badge--ok'));
+  assert.ok(rows()[0].children[2].children.find((c) => c.className.includes('gw-recent-tag')).className.includes('gw-badge gw-recent-tag'));
 
   // con consulta: manda SearchCore, no la recencia
   type(els.cedula, 'persona');
