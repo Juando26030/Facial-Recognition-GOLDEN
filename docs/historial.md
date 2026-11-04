@@ -1079,3 +1079,6 @@ Decisión de Juan David (1-nov-2026): cuando `POST /api/register` llega con foto
 
 ## Mensaje editable del cupo lleno (2026-11-03)
 `message` por regla de cupo (JSON en settings, sin migración, fuera de `rule_sig`); aviso público más grande; los errores de campo en `form-render.js` ya se limpian al corregir ese campo (antes «Debes marcar esta casilla» seguía visible con la casilla marcada hasta reenviar). Ver `docs/15_MIGRACION.md`.
+
+## Cupo en 0 = cerrado temporalmente (2026-11-04)
+Antes un cupo con máximo 0 se borraba al guardar; ahora se conserva, deshabilita la opción en la página pública y el servidor responde 409 con el mensaje del cupo (o un texto de «cerrado» por defecto). Sin migración; `form_reserve_slot` ya lo rechazaba (`0 >= 0`).

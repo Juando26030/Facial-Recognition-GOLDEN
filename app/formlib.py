@@ -791,7 +791,7 @@ def _sanitize_quota_rules(q_in) -> list:
             if isinstance(c, dict) and c.get("field") and c.get("op", "equals") in CONDITION_OPS:
                 v = c.get("value")
                 conds.append({"field": _text(c["field"], 40), "op": c.get("op", "equals"), "value": [str(x) for x in v] if isinstance(v, list) else _text(v, 200)})
-        if not (0 < limit <= 1_000_000) or not conds:
+        if not (0 <= limit <= 1_000_000) or not conds:     # 0 = «cerrado temporalmente»: se guarda y nadie puede elegirlo
             continue
         rid = str(r.get("id") or "")
         while not re.fullmatch(r"[a-z0-9]{4,12}", rid) or rid in used:
@@ -807,10 +807,14 @@ QUOTA_DEFAULT_MESSAGE = "Ya se llenaron los cupos de {cupo}. Elige otra opción 
 QUOTA_DEFAULT_MESSAGE_SERVER = "Ya se llenaron los cupos de {cupo}. Elige otra opción o escribe a los organizadores."
 
 
-def quota_full_message(message, label, server: bool = False) -> str:
-    """Texto que ve la persona cuando su elección cae en un cupo lleno: el mensaje de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo.
+QUOTA_CLOSED_MESSAGE = "Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción."
+
+
+def quota_full_message(message, label, server: bool = False, closed: bool = False) -> str:
+    """Texto que ve la persona cuando su elección cae en un cupo lleno: el mensaje de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo. Con `closed` (máximo 0) el texto por defecto es el de CERRADO.
     Espejo en JS: `quotaFullMessage` de static/js/form-render.js."""
-    text = str(message or "").strip() or (QUOTA_DEFAULT_MESSAGE_SERVER if server else QUOTA_DEFAULT_MESSAGE)
+    default = QUOTA_CLOSED_MESSAGE if closed else (QUOTA_DEFAULT_MESSAGE_SERVER if server else QUOTA_DEFAULT_MESSAGE)   # `closed`: el máximo del cupo es 0
+    text = str(message or "").strip() or default
     return text.replace("{cupo}", str(label or ""))
 
 

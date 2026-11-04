@@ -1226,7 +1226,7 @@ function paintQuotas() {
   const rules = ((settings && settings.quotas) || {}).rules || [], st = Object.fromEntries((form.quota_status || []).map((x) => [x.id, x])), fields = qFields();
   $('qRules').innerHTML = rules.map((r, ri) => `<div style="border:1px solid #e3e5ec; border-radius:12px; padding:8px; margin-bottom:8px; display:grid; gap:5px;">
     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><input type="text" data-ql="${ri}" value="${esc(r.label)}" placeholder="Nombre del cupo (ej. VIP Colombia)" style="flex:1; min-width:180px;">
-      <span style="font-size:0.8rem;">máximo</span><input type="number" min="1" data-qn="${ri}" value="${r.limit || ''}" style="width:90px;">
+      <span style="font-size:0.8rem;">máximo</span><input type="number" min="0" data-qn="${ri}" value="${r.limit ?? ''}" style="width:90px;"><span data-qclosed="${ri}" class="hint" style="color:#a1261b; font-weight:700;${r.limit === 0 ? '' : ' display:none;'}">Cerrado temporalmente</span>
       ${st[r.id] ? `<span class="hint">${st[r.id].used} inscritos · quedan ${st[r.id].left}</span>` : ''}<button type="button" class="small-btn danger" data-qdel="${ri}">Quitar cupo</button></div>
     ${r.conds.length > 1 ? `<select data-qm="${ri}" style="max-width:300px;"><option value="all" ${r.match !== 'any' ? 'selected' : ''}>Cuenta a quien cumpla TODAS las condiciones</option><option value="any" ${r.match === 'any' ? 'selected' : ''}>Cuenta a quien cumpla ALGUNA condición</option></select>` : ''}
     ${r.conds.map((c, ci) => `<div style="display:grid; gap:3px; background:#f6f7fb; padding:5px; border-radius:8px;"><select data-qf="${ri}.${ci}">${fields.map((f) => `<option value="${f.id}" ${f.id === c.field ? 'selected' : ''}>${esc(f.label || TYPES[f.type][0])}</option>`).join('')}</select>
@@ -1234,12 +1234,18 @@ function paintQuotas() {
       ${r.conds.length > 1 ? `<button type="button" class="small-btn danger" data-qcd="${ri}.${ci}" style="justify-self:end;">Quitar condición</button>` : ''}</div>`).join('')}
     ${r.conds.length < 6 ? `<button type="button" class="small-btn" data-qca="${ri}" style="justify-self:start;">+ Otra condición</button>` : ''}
     <label style="display:grid; gap:3px; font-size:0.8rem;">Mensaje cuando este cupo esté lleno<textarea rows="2" maxlength="300" data-qmsg="${ri}" placeholder="Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.">${esc(r.message || '')}</textarea>
-      <span class="hint">Puedes usar {cupo} para el nombre. Si lo dejas vacío se usa el texto por defecto.</span></label></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
+      <span class="hint">Puedes usar {cupo} para el nombre. Si lo dejas vacío se usa el texto por defecto.</span>
+      <span class="hint" data-qhelp="${ri}" style="color:#a1261b;${r.limit === 0 ? '' : ' display:none;'}">0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></label></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
   $('qQuickField').innerHTML = '<option value="">Campo de lista/opción única…</option>' + fields.filter((f) => ['select', 'radio'].includes(f.type)).map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join('');
   const R = () => settings.quotas.rules, ix = (v) => v.split('.').map(Number);
   const box = $('qRules');
   box.querySelectorAll('[data-ql]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.ql].label = el.value; }));
-  box.querySelectorAll('[data-qn]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qn].limit = +el.value || 0; }));
+  box.querySelectorAll('[data-qn]').forEach((el) => el.addEventListener('input', () => {
+    const i = +el.dataset.qn, n = el.value.trim() === '' ? null : Math.max(0, Math.floor(Number(el.value)));   // vacío = sin máximo (se quita al guardar); 0 = cerrado
+    R()[i].limit = Number.isFinite(n) ? n : null;
+    const closed = R()[i].limit === 0;
+    box.querySelectorAll(`[data-qclosed="${i}"], [data-qhelp="${i}"]`).forEach((x) => { x.style.display = closed ? '' : 'none'; });
+  }));
   box.querySelectorAll('[data-qmsg]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qmsg].message = el.value; }));
   box.querySelectorAll('[data-qm]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qm].match = el.value; }));
   box.querySelectorAll('[data-qdel]').forEach((el) => el.addEventListener('click', () => { R().splice(+el.dataset.qdel, 1); paintQuotas(); }));
@@ -1295,7 +1301,7 @@ $('cfgSave').addEventListener('click', async () => {
     feed: (document.querySelector('[name=feed]:checked') || {}).value || 'manual',
     language: $('langSel').value, translate: $('trOn').checked, send_digital_badge: $('sendBadge').checked,
     block_repeats: { enabled: $('blockRep').checked, field: $('blockRep').checked ? $('blockRepField').value : '' },
-    quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => r.limit > 0) },
+    quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => Number.isFinite(r.limit) && r.limit >= 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };
   try { form = await jput(api, { settings: payload }); settings = form.settings; paintHeader(); paintConfig(); showToast('Configuración guardada', 'success'); } catch (e) { showToast(e.message, 'error'); }
