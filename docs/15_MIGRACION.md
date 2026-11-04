@@ -872,3 +872,7 @@ La exención de cierre por inactividad solo aplica con impresión en marcha (eve
 - [x] Llega al navegador en `quota.full[].message` (`quota_public`, misma caché de la página pública: se ve al renovarse, ~`FORM_PUBLIC_STALE_SECONDS`) y al 409 del servidor (`reserve_slot` agrega `message`).
 - [x] Editor: campo «Mensaje cuando este cupo esté lleno» por cupo. Página pública: aviso grande (1,12 rem, negrita, borde, ⚠, `role="alert"`) y el error de un campo se quita al corregirlo.
 - [x] Pruebas: `tests/test_form_extras.py` (4 nuevas) y `tests/js/form_quota_message_check.js`.
+
+### 0C · escáneres limpios y bloqueantes (2026-11-04, rama fix/0c-escaneres-limpios)
+- [x] Bandit: 5 altos (hashes no criptográficos, `usedforsecurity=False`, mismo valor) y medios documentados con `nosec`; gitleaks: 7 falsos positivos en `.gitleaks.toml`. Detalle en `docs/0C_hallazgos.md`.
+- [x] `seguridad.yml`: gitleaks y Bandit alto bloquean el PR (ya sin `continue-on-error`).
