@@ -12,6 +12,9 @@
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const norm = (x) => String(x == null ? '' : x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();   // sin tildes ni mayúsculas ni espacios de más: igual que formlib.norm_value
   const asList = (v) => (Array.isArray(v) ? v.map(String) : (v === '' || v == null ? [] : [String(v)]));
+  // Mensaje del cupo lleno: el de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo. Espejo de formlib.quota_full_message.
+  const QUOTA_DEFAULT_MESSAGE = 'Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.';
+  const quotaFullMessage = (message, label) => (String(message == null ? '' : message).trim() || QUOTA_DEFAULT_MESSAGE).split('{cupo}').join(String(label == null ? '' : label));
   const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
   // Ancho máximo de la tarjeta (theme.width: «full» o 480–1100 px; sin valor, 760 px como siempre). En pantallas angostas es siempre el 100 %.
   const cardMax = (th) => { const w = th && th.width; if (w === 'full') return 'none'; const n = Math.round(Number(w)); return Number.isFinite(n) && n >= 480 && n <= 1100 ? n + 'px' : '760px'; };
@@ -272,11 +275,11 @@
     }
 
     let started = false;
-    form.addEventListener('input', (e) => { syncComp(e.target); paintQuotaWarn(); if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); if (opts.onChange) opts.onChange(); });
+    form.addEventListener('input', (e) => { syncComp(e.target); paintQuotaWarn(); if (!started) { started = true; if (opts.onFirstInput) opts.onFirstInput(); } applyConditions(); clearFieldError(e.target); if (opts.onChange) opts.onChange(); });
     form.addEventListener('change', (e) => {
       paintQuotaWarn();
       if (e.target && e.target.dataset && e.target.dataset.compCount) renderGroups(design.fields[e.target.dataset.compCount]);
-      applyConditions(); if (opts.onChange) opts.onChange();
+      applyConditions(); clearFieldError(e.target); if (opts.onChange) opts.onChange();
     });
 
     // ---- Validación de tipo: los campos numéricos/teléfono/documento no dejan escribir letras; el servidor vuelve a validar todo.
@@ -418,12 +421,23 @@
     }
     const quotaWarn = document.createElement('div');
     quotaWarn.setAttribute('role', 'alert');
-    quotaWarn.style.cssText = 'display:none; margin:8px 0; padding:9px 12px; border-radius:10px; background:#fdecea; color:#a1261b; font-size:.85rem;';
+    quotaWarn.className = 'fr-quota-warn';
+    quotaWarn.style.cssText = 'display:none; box-sizing:border-box; width:100%; margin:12px 0; padding:14px 16px; border-radius:12px; border:2px solid #a1261b; background:#fdecea; color:#7a160e; font-size:1.12rem; font-weight:700; line-height:1.4; white-space:pre-line; overflow-wrap:anywhere; gap:10px; align-items:flex-start;';
     form.insertBefore(quotaWarn, btn);
     function paintQuotaWarn() {
       const r = fullQuota();
-      quotaWarn.style.display = r ? 'block' : 'none';
-      quotaWarn.textContent = r ? `El cupo «${r.label}» ya se completó. Cambia tu elección para poder inscribirte.` : '';
+      quotaWarn.style.display = r ? 'flex' : 'none';
+      quotaWarn.textContent = '';
+      if (r) {
+        const ico = document.createElement('span');
+        ico.setAttribute('aria-hidden', 'true');
+        ico.style.cssText = 'font-size:1.4rem; line-height:1.2; flex:none;';
+        ico.textContent = '\u26A0';
+        const txt = document.createElement('span');
+        txt.style.cssText = 'flex:1; min-width:0;';
+        txt.textContent = quotaFullMessage(r.message, r.label);
+        quotaWarn.append(ico, txt);
+      }
       return !!r;
     }
 
@@ -481,6 +495,19 @@
         if (c) { try { c.focus({ preventScroll: true }); } catch (e) { c.focus(); } }
       }
       if (first && els[first]) els[first].wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // Al escribir/cambiar un campo que mostraba error: si ahora es válido se quita SOLO su error (la validación completa sigue siendo la de «Enviar»).
+    function clearFieldError(target) {
+      const wrap = target && target.closest && target.closest('[data-fid]');
+      const fid = wrap && wrap.dataset.fid;
+      if (!fid || !els[fid] || !els[fid].wrap.classList.contains('has-err')) return;
+      const errors = computeErrors(visibleSet(), rawValues(), (id) => id === fid);
+      if (errors[fid]) return;
+      const w = els[fid].wrap, box = w.querySelector('.fr-err');
+      w.classList.remove('has-err');
+      if (box) box.textContent = '';
+      w.querySelectorAll('input:not([type=hidden]), select, textarea').forEach((c) => { c.removeAttribute('aria-invalid'); c.removeAttribute('aria-describedby'); });
     }
 
     function collect() {
@@ -585,5 +612,5 @@
   }
 
   if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax, variantsOf, computeVisible };
-  if (typeof module !== 'undefined') module.exports = { conditionMet, norm, pickVariant, condTree, variantsOf, computeVisible };
+  if (typeof module !== 'undefined') module.exports = { quotaFullMessage, conditionMet, norm, pickVariant, condTree, variantsOf, computeVisible };
 })();

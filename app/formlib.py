@@ -798,8 +798,20 @@ def _sanitize_quota_rules(q_in) -> list:
             rid = secrets.token_hex(3)
         used.add(rid)
         label = _text(r.get("label"), 120) or f"Cupo {len(out) + 1}"
-        out.append({"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit})
+        out.append({"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit, "message": _text(r.get("message"), QUOTA_MESSAGE_MAX)})
     return out
+
+
+QUOTA_MESSAGE_MAX = 300
+QUOTA_DEFAULT_MESSAGE = "Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte."
+QUOTA_DEFAULT_MESSAGE_SERVER = "Ya se llenaron los cupos de {cupo}. Elige otra opción o escribe a los organizadores."
+
+
+def quota_full_message(message, label, server: bool = False) -> str:
+    """Texto que ve la persona cuando su elección cae en un cupo lleno: el mensaje de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo.
+    Espejo en JS: `quotaFullMessage` de static/js/form-render.js."""
+    text = str(message or "").strip() or (QUOTA_DEFAULT_MESSAGE_SERVER if server else QUOTA_DEFAULT_MESSAGE)
+    return text.replace("{cupo}", str(label or ""))
 
 
 def sanitize_settings(settings: dict) -> dict:

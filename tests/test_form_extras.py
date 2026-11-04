@@ -649,3 +649,51 @@ def test_quotas_have_no_cap_on_number_of_rules(client, factory):
     assert r.status_code == 200, r.text
     saved = r.json()["settings"]["quotas"]["rules"]
     assert len(saved) == 45 and saved[44]["limit"] == 54
+
+
+# ------------------------------- mensaje del cupo lleno -------------------------------
+def test_quota_message_is_sanitized_and_optional():
+    from app import formlib
+    base = {"label": "VIP", "limit": 2, "conds": [{"field": "cat", "op": "equals", "value": "VIP"}]}
+    rules = formlib._sanitize_quota_rules({"rules": [{**base, "message": "  Se acabó {cupo}  "}, dict(base), {**base, "message": "x" * 500}]})
+    assert rules[0]["message"] == "Se acabó {cupo}" and rules[1]["message"] == "" and len(rules[2]["message"]) == formlib.QUOTA_MESSAGE_MAX
+    legacy = formlib._sanitize_quota_rules({"field": "cat", "limits": {"VIP": 2}})
+    assert legacy[0]["message"] == ""                                                                                           # el formato anterior sigue valiendo
+
+
+def test_quota_full_message_replaces_placeholder_and_falls_back_to_default():
+    from app import formlib
+    assert formlib.quota_full_message("Lo sentimos, {cupo} está lleno ({cupo})", "VIP") == "Lo sentimos, VIP está lleno (VIP)"
+    assert formlib.quota_full_message("", "VIP") == "Ya se llenaron los cupos de VIP. Elige otra opción para poder inscribirte."
+    assert formlib.quota_full_message(None, "VIP", server=True) == "Ya se llenaron los cupos de VIP. Elige otra opción o escribe a los organizadores."
+    assert formlib.quota_full_message("  ", "VIP") == formlib.quota_full_message("", "VIP")
+
+
+def test_rule_sig_ignores_the_message():
+    from app import formsvc
+    rule = {"id": "ab12cd", "label": "VIP", "match": "all", "limit": 2, "conds": [{"field": "cat", "op": "equals", "value": "VIP"}]}
+    assert formsvc.rule_sig(rule) == formsvc.rule_sig({**rule, "message": "otro texto", "label": "Otro nombre", "limit": 9})       # cambiar el texto no reinicia conteos
+
+
+def test_server_409_uses_the_rule_message_and_public_state_carries_it(client, factory):
+    if not getattr(factory, "_coord", None):
+        factory._coord = factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso")
+    login(client, "coord1")
+    form = _create(client, ev)
+    cat = {"id": "cat", "type": "select", "label": "Categoría", "options": ["VIP", "General"]}
+    rules = [{"id": "vip111", "label": "VIP", "limit": 1, "match": "all", "message": "Ya no hay {cupo}, elige General.", "conds": [{"field": "cat", "op": "equals", "value": "VIP"}]},
+             {"id": "gen222", "label": "General", "limit": 1, "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "General"}]}]
+    r = _put(client, ev, form, design=_design(_basic_fields() + [cat]), settings={"quotas": {"rules": rules}})
+    assert r.status_code == 200, r.text
+    assert [x["message"] for x in r.json()["settings"]["quotas"]["rules"]] == ["Ya no hay {cupo}, elige General.", ""]
+    _open(client, ev, form)
+    client.post("/logout")
+    assert _submit(client, ev, form, {**_who(1), "cat": "VIP"}, sid="a").status_code == 200
+    assert _submit(client, ev, form, {**_who(2), "cat": "General"}, sid="b").status_code == 200
+    r = _submit(client, ev, form, {**_who(3), "cat": "VIP"}, sid="c")
+    assert r.status_code == 409 and r.json()["stage"] == "quota" and r.json()["detail"] == "Ya no hay VIP, elige General."
+    r = _submit(client, ev, form, {**_who(4), "cat": "General"}, sid="d")                                                          # sin mensaje: texto por defecto del servidor
+    assert r.status_code == 409 and r.json()["detail"] == "Ya se llenaron los cupos de General. Elige otra opción o escribe a los organizadores."
+    full = {f["label"]: f["message"] for f in client.get(f"{_url(ev, form)}/state").json()["quota"]["full"]}
+    assert full == {"VIP": "Ya no hay {cupo}, elige General.", "General": ""}
