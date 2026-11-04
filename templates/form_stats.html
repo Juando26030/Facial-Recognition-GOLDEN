@@ -7,6 +7,8 @@
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/form-stats.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous" defer></script>
+    <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/form-stats.js') }}" defer></script>
 </head>
 <body class="gw-page">

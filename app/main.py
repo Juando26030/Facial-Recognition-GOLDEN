@@ -18,7 +18,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import report_jobs
-from app import form_client, appmode, bulk_jobs, crypto, faces, jobs, obs, ops, publicurl, sessions, timing
+from app import form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs, ops, publicurl, sessions, timing
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
@@ -114,6 +114,31 @@ async def csrf_and_password_gate(request, call_next):
             return RedirectResponse("/cambiar-contrasena", status_code=302)
         return JSONResponse({"detail": "Debes cambiar tu contraseña antes de continuar"}, status_code=403)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def idle_gate(request, call_next):
+    """Cierre de sesión por inactividad del personal (app/idle.py, docs/22). Sin consultas a la base: la última actividad va en la cookie de sesión. Pasado el tiempo (el del evento en proceso, o el
+    general), la sesión se borra: las páginas llevan a /login?expirada=1 y las llamadas reciben 401 «session_expired». Solo renuevan la sesión las navegaciones y /api/session/touch."""
+    session = request.scope.get("session")
+    path = request.url.path
+    if not session or not session.get("staff_user_id") or idle.exempt_path(path):
+        return await call_next(request)
+    nav = idle.is_navigation(request.method, request.headers)
+    if idle.expired(session):
+        session.clear()
+        if nav:
+            return RedirectResponse("/login?expirada=1", status_code=302)
+        return JSONResponse({"detail": "session_expired"}, status_code=401, headers={"Cache-Control": "no-store"})
+    if (nav or path == idle.TOUCH_PATH) and request.headers.get(idle.PASSIVE_HEADER) != "1":
+        idle.renew(session, reset_event=nav)
+    elif not isinstance(session.get("la"), int):
+        session["la"] = idle.now()
+    token = idle.bind(session)
+    try:
+        return await call_next(request)
+    finally:
+        idle.unbind(token)
 
 
 @app.middleware("http")
@@ -619,7 +644,7 @@ def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_
     entrar a Estadísticas. Mismo mínimo de rol que Adjuntar Base de Datos/Usuarios del Evento.
     'comercial' excluido explícitamente (Sprint 2.4 Fase 6, 2026-09-16, pedido explícito) — queda
     por ENCIMA de 'coordinador' en STAFF_ROLES, así que min_role solo no alcanza para bloquearlo."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"])
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"], extra_context={"idle_general_minutes": idle.general_minutes()})
 
 
 @app.get("/kiosk/{event_id}/documentos")

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
+    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -64,6 +65,14 @@
               {% for n in (10, 20, 50, 100, 200) %}<option value="{{ n }}" {% if (event.directory_page_size or 50) == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
             </select></label>
           <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior / Siguiente» y «Ir a la página» llegan a cualquier fila.</p>
+        </div>
+        <!-- Cierre de sesión por inactividad (app/idle.py, docs/22): tiempo propio de este evento, solo mientras está en proceso. -->
+        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
+          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Cierre de sesión por inactividad</h4>
+          <label style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">Minutos sin uso antes de cerrar la sesión del personal:
+            <input type="number" id="idleMinutes" min="5" max="60" step="1" value="{{ event.idle_minutes if event.idle_minutes else '' }}" placeholder="General: {{ idle_general_minutes }}" style="width:110px; padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
+            <button type="button" id="idleMinutesSave" class="small-btn">Guardar</button></label>
+          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">De 5 a 60 minutos. Déjalo vacío para usar el general ({{ idle_general_minutes }} minutos). Solo rige mientras el evento está «En proceso» y para quienes trabajan en él; si no está en proceso, rige el general. Cuenta el uso real (clics, teclas, toques, scroll): lo que la pantalla refresca sola no mantiene la sesión abierta. Un minuto antes aparece un aviso con «Seguir conectado». Los ingresos hechos sin conexión no se pierden.</p>
         </div>
         <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
         <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
@@ -562,6 +571,12 @@
         const res = await fetch(`/api/events/${window.EVENT_ID}/directory-page-size`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: Number(e.target.value) }) });
         if (res.ok) showToast('Filas por página guardado', 'success'); else showToast('No se pudo guardar las filas por página', 'error');
     });
+    document.getElementById('idleMinutesSave').addEventListener('click', async () => {
+        const raw = document.getElementById('idleMinutes').value.trim();
+        const res = await fetch(`/api/events/${window.EVENT_ID}/idle-minutes`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: raw === '' ? null : Number(raw) }) });
+        if (res.ok) showToast(raw === '' ? 'Se usará el tiempo general' : 'Tiempo de inactividad guardado', 'success');
+        else { let m = 'No se pudo guardar el tiempo de inactividad'; try { m = (await res.json()).detail || m; } catch (e) { /* sin detalle */ } showToast(m, 'error'); }
+    });
     // Paso guiado de biometría: el resumen sale del servidor (lo que protege lo valida el servidor; esto solo guía).
     function renderSummary(d) {
         const box = document.getElementById('bsSummary'); if (!box) return;
@@ -883,7 +898,7 @@
     }).join('');
     box.innerHTML = data.users.length ? `<table style="width:100%; border-collapse:collapse;"><tr><th style="text-align:left; padding:6px;">Usuario</th><th style="text-align:left; padding:6px;">Equipo</th><th style="text-align:left; padding:6px;">Imprime</th></tr>${rows}</table>`
       : '<p>Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
-    timer = setTimeout(load, 5000);
+    timer = setTimeout(() => { if (window.GW && window.GW.idle) window.GW.onResume(load, true); else load(); }, 5000);      // sin uso 60 s el sondeo se detiene y retoma al volver
   }
   box.addEventListener('change', async (e) => {
     const sel = e.target.closest('select[data-route]');

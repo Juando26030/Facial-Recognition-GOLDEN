@@ -1,0 +1,22 @@
+# Cierre de sesión por inactividad (3-nov-2026)
+
+Evita sesiones olvidadas que mantienen la base (Neon) despierta. Solo personal (staff); no toca formularios públicos, impresión, webhooks ni `/internal/*`.
+
+- **Tiempo general:** `SESSION_IDLE_MINUTES` (10 por defecto; 0 = apagado).
+- **Por evento:** Parámetros del evento → «Cierre de sesión por inactividad» (5 a 60 min; vacío = general). Solo rige con el evento **en proceso** y para quien trabaja en él; si no, rige el general. Columna `events.idle_minutes` (migración aditiva `0081_event_idle_minutes`; se eligió columna porque el único JSON del evento es el de impresión, que no se toca). Va ANTES que el código (Job de migraciones primero).
+- **Dónde vive la actividad:** en la cookie de sesión firmada (`la` = última acción real, `idle_m` = minutos del evento, `idle_off` = cuenta exenta). Cero consultas a la base; compatible con el pooler de Neon. Lo aplica el middleware `idle_gate` (`app/main.py`, lógica en `app/idle.py`) en cada petición: vencida → se borra la sesión; páginas redirigen a `/login?expirada=1`, llamadas reciben `401 {"detail":"session_expired"}`.
+- **Qué cuenta como uso:** solo navegaciones del navegador y `POST /api/session/touch`, que `static/js/idle-session.js` manda (máx. 1 cada 30 s) cuando hubo clic, teclas, toque o scroll. Los sondeos (`/api/session/ping`, directorio, estadísticas, sistema, analítica…) y `GET /api/session/idle` nunca renuevan; `X-Gw-Passive: 1` lo declara explícitamente.
+- **Aviso:** 1 minuto antes, toast «Tu sesión se cerrará por inactividad…» con «Seguir conectado». Al vencer se llama a `/logout` y se lleva al login con mensaje.
+- **Sin conexión:** el cliente no avisa ni cierra si no hay red o el servidor no responde; la cola offline (IndexedDB) no se borra. Si el servidor ya venció la sesión, al volver la red el primer llamado recibe 401 y se pide iniciar sesión; los ingresos pendientes se envían después (igual que `session_replaced`).
+- **Exentos:** cuentas de «Puesto de impresión» y las que atienden la impresión de otros equipos (sin toques en pantalla). Sesiones anteriores al despliegue (sin `la`) no se expulsan.
+- **Pantallas con el script:** las que cargan `toast.js` salvo `impresion_usb`. Escarapela, formularios públicos y certificados no lo cargan.
+- **Límites conocidos:** una petición lenta que empezó antes de un `touch` puede reescribir la cookie con una marca algo más vieja (segundos); `kiosk_ruleta_visual` sin ningún clic vence como cualquier otra pantalla.
+- Pruebas: `tests/test_idle_session.py`, `tests/js/idle_session_check.js`.
+
+## Pausa de sondeos por pestaña sin uso (para que Neon pueda dormirse)
+Distinta del cierre de sesión: con la pestaña abierta y visible pero **sin clic, tecla, toque, scroll ni movimiento del ratón en 60 s** (`window.GW_IDLE_PAUSE_MS`), `GW.idle = true` (`static/js/toast.js`, evento `gw:idle`). Mientras tanto NO corren los sondeos que llegan a la base; al volver cualquier actividad, `GW.idle = false` (evento `gw:resume`) y se ejecutan al instante el ping de sesión y los refrescos (si la sesión se reemplazó o venció, ahí se entera). La sesión sigue contando desde la última actividad REAL.
+API: `GW.poll(fn, ms)` (setInterval que no corre en idle y se ejecuta al reanudar), `GW.onResume(fn, once)`.
+
+Pausados: ping `/api/session/ping` (8 s, además marcado `X-Gw-Passive`), directorio (`directory.js`, 15 s), analítica (`analytics-dashboard.js`), estadísticas de formulario (`form-stats.js`, 60 s; ahora `form_stats.html` carga `toast.js` e `idle-session.js`), `sistema.html` (15 s), lista de entradas con rostro del Registro (3 s), usuarios/impresoras de Parámetros (5 s, `setTimeout` que se detiene y retoma), refresco de la lista de contingencia (4 min; se hace al volver).
+NO se pausan (no tocan la base o son funciones activas): chequeo `/health` de contingencia, vaciado de la cola/bandeja sin conexión (`outbox-ui.js`, solo consulta si hay altas pendientes), `idle-session.js` (no toca la base), pantallas de exhibición (`roulette_display`, `digital_badge`), `kiosk_rostro` (puerta de entrada con rostro: `/health` y contador de 30 s; sin `toast.js`) y la impresión compartida (`shared-print.js`: latido y consulta de trabajos del anfitrión, solo con la función encendida). Formularios públicos `/f/*` no cargan nada de esto.
+Prueba: `tests/js/gw_idle_gate_check.js` (reloj falso) que además audita que todo `setInterval` nuevo pase por la puerta o esté en su lista de excepciones.
