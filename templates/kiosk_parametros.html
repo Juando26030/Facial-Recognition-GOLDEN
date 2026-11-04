@@ -340,6 +340,16 @@
             <button type="button" id="saveParamsBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Guardar cambios</button>
           </div>
         </div>
+        {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y para admin+; si no, este bloque no existe. Se registra en el Guardar global (clave «personform»; static/js/person-form-designer.js, app/personform.py). #}
+        {% if person_form_can_design %}
+        <div class="gw-group__item" id="personFormCard">
+          <h4 id="personFormTitle">Formulario de persona</h4>
+          <p class="gw-hint">Así se ven «Registrar nuevo» y «Editar» en el quiosco: orden, columnas, grupos, obligatorios arriba y a la vista, y cómo se escribe cada texto. Funciona igual sin conexión. Se guarda con el botón «Guardar» de abajo.</p>
+          <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">Cargando…</div>
+        </div>
+        <script src="{{ url_for('static', path='js/person-form-designer.js') }}"></script>
+        <script>PersonFormDesigner.mount(document.getElementById('personFormEditor'), { eventId: window.EVENT_ID });</script>
+        {% endif %}
           </div>
         </details>
         <details class="gw-group" data-group="marca" id="grp_marca">

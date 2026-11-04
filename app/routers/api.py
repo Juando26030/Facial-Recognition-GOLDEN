@@ -29,7 +29,7 @@ from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
-from app import roster_dups, roster_text
+from app import roster_dups, roster_text, personform
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -1046,10 +1046,16 @@ OUTBOX_MAX_OPS = 50
 OUTBOX_PERSON_KEYS = ("role", "entity", "phone", "email", "opt_1")
 
 
-def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, doubtful: Optional[str] = None) -> dict:
+def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, doubtful: Optional[str] = None, pf: Optional[dict] = None, stale: bool = False) -> dict:
     """Una operación `create_person` de la bandeja de salida de un quiosco que estaba sin red (docs/16, B8 R1): crea a la persona como «alta manual» (mismas reglas que `POST /register`, SIN foto).
     Resultados: `ok` (persona nueva creada y registrada), `existente` (la cédula YA existía: NO se pisan sus datos; solo se registra para este evento y el cliente muestra qué había), `duplicado`
     (ya estaba registrada en este evento: no se hace nada) o `error` (con el motivo, para corregirlo en el dispositivo). Idempotente por `op_id` (= `AccessLog.client_id`)."""
+    warnings = []          # solo con el formulario de persona activo: avisos de una operación hecha con una copia anterior del formulario (nunca se pierde un dato por eso)
+    if pf:
+        f = dict(f)
+        if isinstance(f.get("extra_fields"), dict):
+            f["extra_fields"] = dict(f["extra_fields"])
+        personform.apply_case(f, pf)          # «Texto al escribir» también aquí: el dispositivo pudo estar con una copia anterior de la regla
     person_id = str(f.get("id") or "").strip()
     first, last = str(f.get("first_name") or "").strip(), str(f.get("last_name") or "").strip()
     if not person_id or not first:          # los apellidos no se exigen (pueden ir junto con los nombres)
@@ -1059,6 +1065,11 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
     extras = f.get("extra_fields") if isinstance(f.get("extra_fields"), dict) else {}
     extras = {str(k): str(v) for k, v in extras.items() if re.fullmatch(r"opcional_\d+", str(k)) and str(v).strip()}
     labels = f.get("field_labels") if isinstance(f.get("field_labels"), dict) else None
+    if pf and stale:          # copia anterior del formulario: un campo que el evento ya no tiene se ignora CON aviso (el resto se guarda completo)
+        known_keys = {c["key"] for c in field_configs} | set(labels or {})
+        for gone in sorted(k for k in extras if k not in known_keys):
+            extras.pop(gone)
+            warnings.append(f"El campo «{gone}» ya no existe en el formulario del evento: se ignoró")
     missing_labels = set(extras) - set(event.get_optional_labels())
     if missing_labels and not labels:
         return {"op_id": op_id, "result": "error", "detail": "Hay campos opcionales sin nombre para este evento"}
@@ -1078,7 +1089,9 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
         kind = "Existente"
     else:
         missing = _missing_required_fields(field_configs, values)
-        if missing:
+        if missing and pf and stale:          # el obligatorio es más nuevo que la copia del dispositivo: se guarda igual y se avisa (nunca se pierde la alta)
+            warnings.append(f"Faltan campos que ahora son obligatorios: {', '.join(missing)}. Complétalos en Editar")
+        elif missing:
             return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
         bad = _invalid_email_fields(field_configs, values)
         if bad:
@@ -1101,14 +1114,85 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
     except IntegrityError:
         return {"op_id": op_id, "result": "replayed"}
     flag = {"doubtful": True} if doubtful else {}
+    if warnings:
+        flag["warnings"] = warnings
     if kind == "Existente":
         return {"op_id": op_id, "result": "existente", "existing_name": f"{existing.first_name or ''} {existing.last_name or ''}".strip(), **flag}
     return {"op_id": op_id, "result": "ok", **flag}
 
 
+OUTBOX_EDIT_KEYS = ("first_name", "last_name", "role", "entity", "phone", "email", "opt_1")
+
+
+def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str, f: dict, when, field_configs: list, pf: Optional[dict] = None, stale: bool = False) -> dict:
+    """Una operación `edit_person` de la bandeja de salida: la EDICIÓN de una persona hecha sin red (formulario de persona, Fase 1A pieza 5). `fields` trae la cédula (`id`) o la huella (`h`, la del
+    roster local) y SOLO lo que el digitador escribió: lo que va en blanco queda como estaba (sin red no se ven los datos guardados, así que un vacío no borra nada). No cambia la cédula, la
+    fecha de nacimiento ni firmas (eso pide conexión). Mismas reglas que `PATCH /users/{id}`: texto al escribir, correo válido y obligatorios (con una copia anterior del formulario el obligatorio
+    nuevo solo avisa). Idempotente por `op_id` (queda como un registro «Actualizado» con ese `client_id`). Gana la última que llega."""
+    person_id = str(f.get("id") or "").strip()
+    h = str(f.get("h") or "").strip().lower()
+    if not person_id and SYNC_HASH_RE.match(h):
+        person_id = _roster_map(db, event).get(h) or _roster_map(db, event, force=True).get(h) or ""
+    user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first() if person_id else None
+    if not user:
+        return {"op_id": op_id, "result": "error", "detail": "No se encontró a la persona que se editó sin conexión"}
+    f = dict(f)
+    if isinstance(f.get("extra_fields"), dict):
+        f["extra_fields"] = dict(f["extra_fields"])
+    if pf:
+        personform.apply_case(f, pf)
+    warnings = []
+    changes = {k: str(f[k]).strip()[:500] for k in OUTBOX_EDIT_KEYS if f.get(k) is not None and str(f[k]).strip()}
+    known_keys = {c["key"] for c in field_configs}
+    extras_in = f.get("extra_fields") if isinstance(f.get("extra_fields"), dict) else {}
+    extras = {}
+    for k, v in extras_in.items():
+        k = str(k)
+        if not re.fullmatch(r"opcional_\d+", k) or not str(v).strip():
+            continue
+        if k in known_keys:
+            extras[k] = str(v).strip()
+        else:
+            warnings.append(f"El campo «{k}» ya no existe en el formulario del evento: se ignoró")
+    try:
+        categories = _clean_categories(event, f["categories"]) if isinstance(f.get("categories"), list) and f["categories"] else None
+        contact = digital_badge.normalize_contact(f.get("digital_contact")) if f.get("digital_contact") else None
+    except ValueError as e:
+        return {"op_id": op_id, "result": "error", "detail": str(e)}
+    certificate = True if f.get("certificate") and _truthy(f.get("certificate")) else None
+    attendee = db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).first()
+    final = {"role": user.role, "entity": user.entity, "phone": user.phone, "email": user.email, "opt_1": user.opt_1, **user.get_extras(), **{k: v for k, v in changes.items() if k in ("role", "entity", "phone", "email", "opt_1")}, **extras}
+    final["certificate"] = "true" if (certificate or (attendee and attendee.certificate)) else ""
+    final["digital_contact"] = contact or ((attendee.digital_contact if attendee else "") or "")
+    touched = set(changes) | set(extras)
+    bad = _invalid_email_fields([c for c in field_configs if c["key"] in touched], final)
+    if bad:
+        return {"op_id": op_id, "result": "error", "detail": "Correo no válido — " + "; ".join(bad)}
+    missing = _missing_required_fields(field_configs, final)
+    if missing and pf and stale:
+        warnings.append(f"Faltan campos que ahora son obligatorios: {', '.join(missing)}. Complétalos en Editar")
+    elif missing:
+        return {"op_id": op_id, "result": "error", "detail": f"Faltan campos obligatorios: {', '.join(missing)}"}
+    try:
+        with db.begin_nested():
+            for k, v in changes.items():
+                setattr(user, k, v)
+            if extras:
+                merged = user.get_extras()
+                merged.update(extras)
+                user.set_extras(merged)
+            if categories is not None or contact is not None or certificate is not None:
+                _upsert_attendee(db, event.id, user.id, event.tenant_id, categories, certificate=certificate, digital_contact=contact)
+            db.add(AccessLog(tenant_id=event.tenant_id, user_id=user.id, record_type="Actualizado", event_id=event.id, registered_by_staff_id=staff.id, client_id=op_id, timestamp=when))
+            db.flush()
+    except IntegrityError:
+        return {"op_id": op_id, "result": "replayed"}
+    return {"op_id": op_id, "result": "ok", **({"warnings": warnings} if warnings else {})}
+
+
 @router.post("/events/{event_id}/outbox/sync")
 def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("digitador"))):
-    """Sincroniza la BANDEJA DE SALIDA de un quiosco (docs/16, B8): operaciones hechas sin red, hasta `OUTBOX_MAX_OPS` por lote. Hoy solo `create_person` (R1: alta sin foto). Cuerpo:
+    """Sincroniza la BANDEJA DE SALIDA de un quiosco (docs/16, B8): operaciones hechas sin red, hasta `OUTBOX_MAX_OPS` por lote. `create_person` (alta sin foto) y `edit_person` (edición de una persona con el formulario de persona, ver `_outbox_edit_person`); cada operación puede traer `form_version`/`form_sig` (la copia del formulario con que se hizo). Cuerpo:
     `{"ops": [{"op_id", "type": "create_person", "timestamp" (ISO UTC, opcional), "fields": {id, first_name, last_name, role, entity, phone, email, opt_1, extra_fields, categories, ...}}]}`.
     Devuelve `{"results": [{op_id, result, detail?, existing_name?}]}` con `ok | replayed | existente | duplicado | error`: un resultado por operación; repetir un lote nunca duplica (`replayed`)."""
     event = _event_for_sync(db, event_id, staff)
@@ -1119,13 +1203,14 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
         raise HTTPException(status_code=400, detail=f"Máximo {OUTBOX_MAX_OPS} operaciones por lote")
     now = utcnow()
     field_configs = parametros.field_configs_for_event(db, event)
+    pf = personform.active(db, event, field_configs)          # formulario de persona diseñado (None = apagado: todo como siempre)
     known = {cid for (cid,) in db.query(AccessLog.client_id).filter(AccessLog.event_id == event.id, AccessLog.client_id.in_([str((o or {}).get("op_id") or "")[:64] for o in ops if isinstance(o, dict)]))}
     results = []
     reverted_at = event.sync_revert[0] if event.sync_revert else None
     for op in ops:
         op = op if isinstance(op, dict) else {}
         op_id = str(op.get("op_id") or "").strip()[:64]
-        if not op_id or op.get("type") != "create_person" or not isinstance(op.get("fields"), dict):
+        if not op_id or op.get("type") not in ("create_person", "edit_person") or not isinstance(op.get("fields"), dict):
             results.append({"op_id": op_id, "result": "error", "detail": "Operación no válida"})
             continue
         if op_id in known:
@@ -1135,12 +1220,17 @@ def outbox_sync(event_id: int, body: dict, db: Session = Depends(get_db), staff:
         if verdict == "after":          # alta hecha DESPUÉS de devolver el evento a «Creado»: no se crea (el quiosco la deja en su bandeja con este motivo)
             results.append({"op_id": op_id, "result": "error", "reason": "after_revert", "detail": status_changes.AFTER_REVERT_DETAIL})
             continue
-        res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs, doubtful=status_changes.DOUBTFUL if verdict == "no_hour" else None)
+        stale = bool(pf) and personform.is_stale(pf, op.get("form_version"), op.get("form_sig"))          # hecha con una copia ANTERIOR del formulario
+        if op["type"] == "edit_person":
+            res = _outbox_edit_person(db, event, staff, op_id, op["fields"], when, field_configs, pf=pf, stale=stale)
+        else:
+            res = _outbox_create_person(db, event, staff, op_id, op["fields"], when, field_configs, doubtful=status_changes.DOUBTFUL if verdict == "no_hour" else None, pf=pf, stale=stale)
         if res["result"] in ("ok", "existente", "replayed"):
             known.add(op_id)
         results.append(res)
     db.commit()
     return {"results": results, "ok": sum(r["result"] in ("ok", "replayed") for r in results),
+            **({"form_version": pf["form_version"], "form_sig": pf["form_sig"]} if pf else {}),
             **({"doubtful": sum(bool(r.get("doubtful")) for r in results), "after_revert": sum(r.get("reason") == "after_revert" for r in results)} if reverted_at else {})}
 
 
@@ -1249,6 +1339,7 @@ def update_user(
     event = get_event_for_staff(event_id, db, staff)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if user:
+        personform.apply_case(data, personform.active(db, event))          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» y correo en minúsculas
         # Fecha de nacimiento (base del control de menores): se valida ANTES de tocar nada. Vacía = borrarla.
         birth_change = False
         if "birth_date" in data and not event.facial_enabled:
@@ -1562,6 +1653,11 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
     require_event_in_progress(event)
 
     extras = _parse_extra_fields(extra_fields)
+    pf = personform.active(db, event)          # formulario de persona diseñado (apagado por defecto): «Texto al escribir» también se aplica aquí, no solo en pantalla
+    if pf:
+        typed = {"first_name": first_name, "last_name": last_name, "role": role, "entity": entity, "opt_1": opt_1, "email": email, "extra_fields": extras}
+        personform.apply_case(typed, pf)
+        first_name, last_name, role, entity, opt_1, email = (typed[k] for k in ("first_name", "last_name", "role", "entity", "opt_1", "email"))
     try:
         person_categories = _clean_categories(event, json.loads(categories)) if categories else []
     except ValueError:

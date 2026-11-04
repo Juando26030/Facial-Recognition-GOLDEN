@@ -103,3 +103,11 @@ def test_the_page_renders_with_groups_the_global_bar_and_every_old_id(client, fa
     login(client, "coord")
     coord = client.get(f"/kiosk/{ev.id}/parametros").text
     assert coord.count('<details class="gw-group"') == 7 and 'id="prTabla"' not in coord and 'id="pcSave"' not in coord and 'id="saveParamsBtn"' in coord
+
+
+def test_the_person_form_card_lives_in_the_campos_group_and_registers_in_the_global_save():
+    """Unión Plan 4 + Plan 6: «Formulario de persona» es un .gw-group__item del grupo «Categorías y campos», se guarda con el Guardar global (clave `personform`)."""
+    designer = pathlib.Path("static/js/person-form-designer.js").read_text(encoding="utf-8")
+    campos = TEMPLATE[TEMPLATE.index('data-group="campos"'):TEMPLATE.index('data-group="marca"')]
+    assert 'id="personFormCard"' in campos and 'id="personFormEditor"' in campos and 'data-psave="personform"' in campos
+    assert "register({ key: 'personform'" in designer and "markDirty('personform')" in designer and "id: 'pfSave'" in designer
