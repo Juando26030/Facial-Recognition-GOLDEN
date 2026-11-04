@@ -40,7 +40,7 @@ def test_plan_warms_with_recent_activity_only(db, factory):
     db.commit()
     p = warmup.plan(db)
     assert (p["web"], p["biometria"]) == (2, 1)
-    assert p["neon"] == {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}
+    assert p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}   # ocupado: jamás -1
 
 
 def test_note_activity_rate_limited(monkeypatch):
@@ -94,7 +94,7 @@ def test_plan_warms_with_recent_form_submissions(db, factory):
     db.add(FormSubmission(form_id=form.id, event_id=ev.id, data_json="{}"))
     db.commit()
     p = warmup.plan(db)
-    assert p["publico"] == 2 and p["neon"] == {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}
+    assert p["publico"] == 2 and p["neon"] == {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}
 
 
 def test_opening_a_form_by_hand_warms_now_and_leaves_a_trace(client, factory, db, monkeypatch):
@@ -122,10 +122,23 @@ def test_apply_only_changes_what_differs(monkeypatch):
     neon = []
     monkeypatch.setattr(warmup, "_neon", lambda m, path, **kw: {"endpoint": {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25,
                                                                              "autoscaling_limit_max_cu": 4}} if m == "GET" else neon.append(kw["json"]))
-    plan = {"web": 2, "publico": 2, "biometria": 0, "neon": {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5}}
+    plan = {"web": 2, "publico": 2, "biometria": 0, "neon": {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.5}}
     changes = warmup.apply(plan)
     assert calls == [("svc/web", 2)] and len(changes) == 2
-    assert neon == [{"endpoint": {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.5, "autoscaling_limit_max_cu": 4}}]
+    assert neon == [{"endpoint": {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.5, "autoscaling_limit_max_cu": 4}}]
+
+
+def test_apply_fixes_an_endpoint_stuck_on_never_suspend(monkeypatch):
+    """Un endpoint que hoy está en -1 («nunca apagar») se corrige a 0 aunque el mínimo de CU ya coincida."""
+    for k, v in {"NEON_API_KEY": "k", "NEON_PROJECT_ID": "p", "NEON_ENDPOINT_ID": "e"}.items():
+        monkeypatch.setenv(k, v)
+    for k in ("WARM_SERVICE_WEB", "WARM_SERVICE_PUBLICO", "WARM_SERVICE_BIOMETRIA"):
+        monkeypatch.delenv(k, raising=False)
+    neon = []
+    monkeypatch.setattr(warmup, "_neon", lambda m, path, **kw: {"endpoint": {"suspend_timeout_seconds": -1, "autoscaling_limit_min_cu": 0.25,
+                                                                             "autoscaling_limit_max_cu": 4}} if m == "GET" else neon.append(kw["json"]))
+    changes = warmup.apply({"web": 0, "publico": 0, "biometria": 0, "neon": {"suspend_timeout_seconds": 0, "autoscaling_limit_min_cu": 0.25}})
+    assert len(changes) == 1 and neon[0]["endpoint"]["suspend_timeout_seconds"] == 0
 
 
 # ------------------------------------------------------------------ respaldos

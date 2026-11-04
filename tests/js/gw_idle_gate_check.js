@@ -51,7 +51,7 @@ const ALLOWED = {
   'static/js/toast.js': 'puerta de inactividad y ping de sesión (por GW.poll)',
   'templates/digital_badge.html': 'pantalla de exhibición del carné digital',
   'templates/roulette_display.html': 'pantalla de exhibición de la ruleta',
-  'templates/kiosk_rostro.html': 'entrada con rostro (pantalla de la puerta, sin toast.js): /health y contador',
+  'templates/kiosk_rostro.html': 'entrada con rostro (pantalla de la puerta, sin toast.js): /health (sin base) y contador, que solo consulta tras un intento reciente (5 min)',
   'templates/sistema.html': 'solo la línea del reloj local «Actualizado hace»; el refresco va por GW.poll',
 };
 const files = [];
