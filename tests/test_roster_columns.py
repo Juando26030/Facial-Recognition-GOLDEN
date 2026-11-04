@@ -259,7 +259,7 @@ def test_the_template_has_the_birth_date_column_right_after_the_email_and_explai
     from openpyxl import load_workbook
     wb = load_workbook(TEMPLATE)
     header = [c.value for c in wb["Base de Asistentes"][1]]
-    assert header[:9] == ["id", "nombres", "apellidos", "cargo", "entidad", "telefono", "correo", "fecha de nacimiento", "tipo de asistente"] and header[-1] == "opcional_30" and len(header) == 40
+    assert header[:9] == ["id", "nombres", "apellidos", "cargo", "entidad", "telefono", "correo", "fecha de nacimiento", "tipo de asistente"] and header[-1] == "opcional_5" and len(header) == 15          # solo ejemplos: la plantilla no sugiere ningún tope de campos opcionales
     unused = roster_columns.canonicalize({h: "A" for h in header}, [], {})[2]["unused"]
     assert all(u["title"].startswith("opcional_") for u in unused)                                         # la única "no usada" son las opcionales vacías: la fecha y las demás se reconocen
     rows = {r[0].value: r[1].value for r in wb["Instrucciones"].iter_rows(min_row=2) if r[0].value and r[1].value}

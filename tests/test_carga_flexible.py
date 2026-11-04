@@ -240,7 +240,7 @@ def test_the_flexible_columns_work_with_and_without_the_photos_zip(client, facto
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("1001.jpg", img.getvalue())
-    csv = _csv("cédula,ciudad,correo", "1001,Cali,ana@example.com", "1002,Bogotá,beto@example.com")
+    csv = _csv("cédula,ciudad,correo,fecha de nacimiento", "1001,Cali,ana@example.com,1990-04-02", "1002,Bogotá,beto@example.com,1985-08-15")      # con rostro, una foto sin fecha de nacimiento no se guarda (menores, L3)
     r = _upload(client, ev, csv, data={"photos_authorized": "true"}, files={"zip_file": ("f.zip", buf.getvalue(), "application/zip")})
     assert r.status_code == 200 and r.json()["count"] == 2, r.text
     assert get_storage().exists(photo_key(ev.tenant_id, "1001")) and not get_storage().exists(photo_key(ev.tenant_id, "1002"))
