@@ -29,3 +29,9 @@ Subida de archivos y URLs firmadas (`uploads.py`, `storage.py`), tokens de enlac
 1. Proveedor y **tope de gasto** de la clave de IA exclusiva para las pruebas con Strix (la crea Juan David; nunca en el repo ni en el chat).
 2. Ventana de fechas para las pruebas en staging (con datos ficticios y una rama de respaldo de Neon).
 3. ¿Quieres además una prueba de penetración humana externa (recomendada antes del SaaS)?
+
+## Línea base de escáneres limpia (2026-11-04)
+- **Bandit alto (5, B324 sha1/md5):** ids/etags/huellas, no seguridad (`rule_sig` de cupos, etag del directorio, huella de cliente, build del service worker, MD5 de GCS). Ahora `usedforsecurity=False`; el VALOR del hash no cambia (los conteos de cupos y datos guardados quedan iguales).
+- **Bandit medio:** B608 (SQL con f-string) revisados uno por uno: solo nombres internos de tablas/columnas/subconsultas; lo del usuario va enlazado (`# nosec B608` con el porqué). B310 (urlopen): URLs https fijas (Wompi, FX, Microsoft Graph, Google); `# nosec B310`. B704: `Markup` con un entero acotado 30-80.
+- **gitleaks (7):** todos falsos positivos (contraseñas de prueba inventadas en `tests/`); permitidos con cadenas exactas en `.gitleaks.toml`. Ninguna clave real.
+- **CI (`seguridad.yml`):** gitleaks y Bandit ALTO bloquean; Bandit medio, Semgrep y pip-audit siguen informativos (Semgrep nunca llegó a correr antes: se revisa su primer informe).
