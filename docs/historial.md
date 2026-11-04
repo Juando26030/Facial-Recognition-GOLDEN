@@ -1076,3 +1076,6 @@ Decisión de Juan David (1-nov-2026): cuando `POST /api/register` llega con foto
 - `static/js/password-policy.js` (+ `static/css/password-ui.css`): ojito en todo `input[type=password][data-gw-eye]` (login, cambiar/restablecer, alta de personal y de usuarios temporales; vuelve a ocultar al enviar/salir)
   y lista de requisitos EN VIVO con ✓/✗, fuerza y botón deshabilitado hasta cumplir todo (`form[data-gw-pwcheck]`). El servidor sigue validando y devuelve el motivo exacto.
 - Íconos `i-eye`/`i-eye-off` en `static/img/icons.svg`. Pruebas: `tests/test_password_policy.py` y `tests/js/password_policy_check.js` comparten `tests/js/password_cases.json` (paridad navegador/servidor).
+
+## Mensaje editable del cupo lleno (2026-11-03)
+`message` por regla de cupo (JSON en settings, sin migración, fuera de `rule_sig`); aviso público más grande; los errores de campo en `form-render.js` ya se limpian al corregir ese campo (antes «Debes marcar esta casilla» seguía visible con la casilla marcada hasta reenviar). Ver `docs/15_MIGRACION.md`.

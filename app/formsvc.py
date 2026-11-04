@@ -181,7 +181,7 @@ def quota_public(db: Session, form: WebForm) -> dict:
             c = r["conds"][0]
             left.setdefault(c["field"], {})[c["value"]] = min(remaining, left.get(c["field"], {}).get(c["value"], remaining))
         if remaining == 0:
-            full.append({"label": r["label"], "match": r["match"], "conds": r["conds"]})
+            full.append({"label": r["label"], "message": r.get("message", ""), "match": r["match"], "conds": r["conds"]})
     return {"left": left, "full": full}
 
 
@@ -420,11 +420,13 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
     formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
     Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
     params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
-              "matched": json.dumps([{"sig": rule_sig(r), "limit": r["limit"], "label": r["label"]} for r in rules if quota_match(r, values)])}
+              "matched": json.dumps([{"sig": rule_sig(r), "limit": r["limit"], "label": r["label"], "message": r.get("message", "")} for r in rules if quota_match(r, values)])}
     res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
         rebuild_quota_keys(db, form, rules)
         res = db.execute(_RESERVE_SQL, params).scalar()
+    if res.get("reason") == "quota":            # la función SQL devuelve solo el nombre: el mensaje de la regla se toma de las que cumple la persona
+        res["message"] = next((r.get("message", "") for r in rules if r["label"] == res.get("label") and quota_match(r, values)), "")
     return res
 
 

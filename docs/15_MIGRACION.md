@@ -865,3 +865,10 @@ Ajuste `block_repeats` en `settings_json` del formulario (por cédula o por otro
 
 ### 3-nov-2026 — Exención de inactividad acotada (sin migración)
 La exención de cierre por inactividad solo aplica con impresión en marcha (evento `en_proceso`; anfitrión además con impresión compartida encendida) y vence a `IDLE_EXEMPT_HOURS` (12 h); admins sin trato especial. Detalle: `docs/22_SESION_INACTIVIDAD.md`.
+
+### Mensaje editable del cupo lleno (2026-11-03, rama `feat/cupo-mensaje`, sin migración)
+- [x] Cada regla de `settings.quotas.rules` tiene `message` (texto, máx. 300; `formlib._sanitize_quota_rules`). `{cupo}` se reemplaza por el nombre del cupo; vacío = texto por defecto
+  (`formlib.quota_full_message`, espejo `quotaFullMessage` en `static/js/form-render.js`). NO entra en `rule_sig`: cambiar el texto no reinicia conteos ni llaves.
+- [x] Llega al navegador en `quota.full[].message` (`quota_public`, misma caché de la página pública: se ve al renovarse, ~`FORM_PUBLIC_STALE_SECONDS`) y al 409 del servidor (`reserve_slot` agrega `message`).
+- [x] Editor: campo «Mensaje cuando este cupo esté lleno» por cupo. Página pública: aviso grande (1,12 rem, negrita, borde, ⚠, `role="alert"`) y el error de un campo se quita al corregirlo.
+- [x] Pruebas: `tests/test_form_extras.py` (4 nuevas) y `tests/js/form_quota_message_check.js`.
