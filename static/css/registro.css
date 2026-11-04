@@ -1,0 +1,14 @@
+/* Registro (Plan 7): engranaje y panel de configuración. Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md). */
+.gw-regcfg { display: flex; flex-direction: column; align-items: flex-end; gap: var(--gw-sp-2, 8px); margin: 0 0 var(--gw-sp-3, 12px); }
+.gw-regcfg:not(:has(*)) { display: none; }
+.gw-regcfg__btn { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border-radius: var(--gw-radius-sm, 8px);
+  border: 1px solid var(--gw-border-strong); background: var(--gw-surface); color: var(--gw-text); cursor: pointer; }
+.gw-regcfg__btn:hover { background: var(--gw-surface-2); }
+.gw-regcfg__btn:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-regcfg__btn[aria-expanded="true"] { background: var(--gw-surface-2); border-color: var(--gw-text); }
+.gw-regcfg__dot { position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--gw-danger); border: 2px solid var(--gw-surface); }
+.gw-regcfg__panel { align-self: stretch; }
+.gw-regcfg__panel[hidden] { display: none; }
+.gw-regcfg__modes { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2, 8px); margin-top: var(--gw-sp-3, 12px); align-items: flex-start; }
+.gw-regcfg__modes .gw-btn { min-height: 44px; }
+.gw-regcfg__panel #sharedPrintBar { position: static; margin: 0; }

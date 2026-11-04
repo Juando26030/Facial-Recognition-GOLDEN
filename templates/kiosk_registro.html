@@ -6,6 +6,7 @@
     <title>Registro | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/registro.css') }}">
     <script src="{{ url_for('static', path='js/boot-trace.js') }}"></script>
     {% if staff_role not in ['admin', 'super_admin'] %}<script>window.GW_SESSION_PING = true;</script>{% endif %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
@@ -82,6 +83,25 @@
       {% if event.status != "en_proceso" and staff_role != "cliente" %}
       <div style="max-width:700px; margin:0 auto 1.5rem; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.85rem; text-align:center;">
         ⚠️ Este evento está <strong>{{ "Creado (todavía no ha comenzado)" if event.status == "creado" else "Finalizado" }}</strong> — el escáner y el registro no van a funcionar hasta que esté "En Proceso". Un coordinador puede activarlo desde el panel.
+      </div>
+      {% endif %}
+
+      {% if staff_role != "cliente" %}
+      {# Plan 7 (Registro limpio): TODA la configuración del registro (impresora, «Impresión», autoregistro, auto-impresión) vive en este panel, cerrado por defecto. El panel SIEMPRE existe (la barra de impresión se monta aquí aunque la persona no vea el engranaje); el engranaje solo lo ve quien corresponda (app/registro_gear.py). Solo visual: no cambia permisos ni lo ya configurado. #}
+      <div class="gw-regcfg">
+        {% if registro_gear %}<button type="button" id="gwRegCfgBtn" class="gw-regcfg__btn" aria-label="Configuración del registro" title="Configuración del registro" aria-expanded="false" aria-controls="gwRegCfgPanel">
+          <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg><span class="gw-regcfg__dot" id="gwRegCfgDot" hidden></span></button>{% endif %}
+        <section id="gwRegCfgPanel" class="gw-regcfg__panel gw-card" aria-label="Configuración del registro" hidden>
+          <h3 class="gw-card__title">Configuración del registro</h3>
+          <div id="gwRegCfgBar"></div>
+          {% if staff_role in ["coordinador", "admin", "super_admin"] %}
+                <div class="gw-regcfg__modes">
+                    <button type="button" id="autoRegisterBtn" class="gw-btn gw-btn--secondary" aria-pressed="false"></button>
+                    {% if event.facial_enabled %}<p id="autoRegisterWarn" role="alert" class="gw-alert gw-alert--warn gw-text-sm" style="display:none;">⚠️ Con reconocimiento facial el registro automático NO se recomienda en eventos grandes: dos personas parecidas pueden confundirse y nadie verifica la foto. Recomendado: apagado, para que el operador compare y confirme.</p>{% endif %}
+                    <button type="button" id="autoPrintBtn" class="gw-btn gw-btn--secondary" aria-pressed="false"></button>
+                </div>
+                {% endif %}
+        </section>
       </div>
       {% endif %}
 
@@ -213,13 +233,6 @@
                         <button type="button" id="clearFiltersBtn" class="golden-btn" style="width:auto; padding:0.4rem 1rem; background:#f0f0f0; color:var(--golden-dark); font-size:0.8rem;">🧹 Limpiar filtros</button>
                     </div>
                 </div>
-                {% if staff_role in ["coordinador", "admin", "super_admin"] %}
-                <div style="margin-bottom:1rem; display:flex; gap:0.6rem; flex-wrap:wrap;">
-                    <button type="button" id="autoRegisterBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
-                    {% if event.facial_enabled %}<p id="autoRegisterWarn" role="alert" style="display:none; margin:6px 0 0; padding:8px 10px; border-radius:8px; background:#fff3cd; color:#664d03; font-size:0.8rem; max-width:420px;">⚠️ Con reconocimiento facial el registro automático NO se recomienda en eventos grandes: dos personas parecidas pueden confundirse y nadie verifica la foto. Recomendado: apagado, para que el operador compare y confirme.</p>{% endif %}
-                    <button type="button" id="autoPrintBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.2rem;"></button>
-                </div>
-                {% endif %}
                 {% if search_unified %}{% set busq_disabled = (event.status != "en_proceso") %}{% include "_gw_buscador.html" %}{% endif %}
                 <div class="directory-search-bar">
                     {% if not search_unified %}<div class="badge-input-group">
@@ -402,6 +415,26 @@
     // solo con "Cancelar" o guardando ("Guardar Perfil"), para no perder lo escrito por error.
     window.closeRegisterModal = closeRegisterModal;
 
+    /* Plan 7: engranaje «Configuración del registro». Abre/cierra el panel (cerrado por defecto). El punto del engranaje avisa si hay algo que atender: impresora por conectar, trabajos pendientes,
+       sin conexión o auto-impresión activa. Solo muestra/oculta: la lógica de impresión y los interruptores son los de siempre. */
+    (function () {
+        const btn = document.getElementById('gwRegCfgBtn'), panel = document.getElementById('gwRegCfgPanel'), dot = document.getElementById('gwRegCfgDot');
+        function attention() {
+            const bar = document.getElementById('sharedPrintBar');
+            const vis = (id) => { const el = bar && bar.querySelector(id); return !!(el && !el.hidden); };
+            return !!(window.EVENT_AUTO_PRINT || (bar && bar.classList.contains('bad')) || vis('#spPending') || vis('#spConnect'));
+        }
+        function refresh() { if (dot) { const a = attention(); dot.hidden = !a; if (btn) btn.title = a ? 'Configuración del registro (hay algo que atender)' : 'Configuración del registro'; } }
+        function setOpen(open) { if (!btn || !panel) return; panel.hidden = !open; btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+        window.GWRegCfg = { refresh, setOpen };
+        if (!btn || !panel) return;
+        btn.addEventListener('click', () => setOpen(panel.hidden));
+        panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setOpen(false); btn.focus(); } });
+        const bar = document.getElementById('sharedPrintBar');
+        if (bar && window.MutationObserver) new MutationObserver(refresh).observe(bar, { attributes: true, subtree: true, attributeFilter: ['class', 'hidden'] });
+        refresh();
+    })();
+
     /* Switch "Modo autoregistro" (Sprint 2.2 Fase B, 2026-09-16) — visible solo coordinador+.
        Apagado por defecto: un match FACIAL queda "pendiente" hasta que el digitador confirme con
        "Guardar y autorizar acceso" en vez de acreditar solo. Mismo componente/patrón que el
@@ -414,8 +447,9 @@
         window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }};
         function updateAutoRegisterBtn() {
             autoRegisterBtn.innerText = window.EVENT_AUTO_REGISTER ? '🔓 Modo autoregistro: ACTIVADO' : '🔒 Modo autoregistro: apagado';
-            autoRegisterBtn.style.background = window.EVENT_AUTO_REGISTER ? '#28a745' : '#f0f0f0';
-            autoRegisterBtn.style.color = window.EVENT_AUTO_REGISTER ? 'white' : 'var(--golden-dark)';
+            autoRegisterBtn.classList.toggle('gw-btn--primary', !!window.EVENT_AUTO_REGISTER);
+            autoRegisterBtn.classList.toggle('gw-btn--secondary', !window.EVENT_AUTO_REGISTER);
+            autoRegisterBtn.setAttribute('aria-pressed', window.EVENT_AUTO_REGISTER ? 'true' : 'false');
             const warn = document.getElementById('autoRegisterWarn');
             if (warn) warn.style.display = window.EVENT_AUTO_REGISTER ? 'block' : 'none';       // aviso permanente mientras esté activo con rostro
         }
@@ -448,8 +482,10 @@
     if (autoPrintBtn) {
         function updateAutoPrintBtn() {
             autoPrintBtn.innerText = window.EVENT_AUTO_PRINT ? '🖨️ Auto-impresión: ACTIVADA' : '🖨️ Auto-impresión: apagada';
-            autoPrintBtn.style.background = window.EVENT_AUTO_PRINT ? '#28a745' : '#f0f0f0';
-            autoPrintBtn.style.color = window.EVENT_AUTO_PRINT ? 'white' : 'var(--golden-dark)';
+            autoPrintBtn.classList.toggle('gw-btn--primary', !!window.EVENT_AUTO_PRINT);
+            autoPrintBtn.classList.toggle('gw-btn--secondary', !window.EVENT_AUTO_PRINT);
+            autoPrintBtn.setAttribute('aria-pressed', window.EVENT_AUTO_PRINT ? 'true' : 'false');
+            if (window.GWRegCfg) window.GWRegCfg.refresh();
         }
         updateAutoPrintBtn();
         window.addEventListener('gw:flags', updateAutoPrintBtn);

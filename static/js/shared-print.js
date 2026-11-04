@@ -122,6 +122,8 @@
   document.head.appendChild(style);
 
   function mount() {
+    const host = document.getElementById('gwRegCfgBar');                       // Plan 7: dentro del panel del engranaje de Registro (cerrado por defecto)
+    if (host) { host.appendChild(bar); return; }
     const anchor = document.querySelector('.golden-container .tabs');        // encima de las pestañas: se ve en todas (Registro, Escáner, Directorio)
     if (anchor) anchor.parentNode.insertBefore(bar, anchor); else (document.querySelector('main') || document.body).prepend(bar);
   }
