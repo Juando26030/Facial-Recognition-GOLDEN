@@ -340,10 +340,10 @@ Respaldos (copias a las 3 am activas, alerta de borrado masivo, copia semanal fu
 
 | Fase | Estado | Cierre confirmado por Juan David |
 |---|---|---|
-| 0A · Cierre del piloto | ☐ pendiente | ☐ |
-| 0B · Limpieza y orden del repo | ☐ | ☐ |
-| 0C · Línea base de seguridad | ☐ | ☐ |
-| 1A · Puerta rápida | ☐ | ☐ |
+| 0A · Cierre del piloto | ✔ hecha (30-oct) | ☐ pendiente de tu «sí» |
+| 0B · Limpieza y orden del repo | ✔ hecha (2-nov; ver `docs/0B_inventario.md`) | ☐ pendiente de tu «sí» |
+| 0C · Línea base de seguridad | ✔ hecha (ver `docs/0C_cierre.md`) | ☐ pendiente de tu «sí» |
+| 1A · Puerta rápida | ◐ en curso: base de diseño hecha (3-nov); PR #26 autoimpresión abierto, falta prueba física Brother; faltan buscador único, cola compartida y formulario de persona | ☐ |
 | 1B · Impresión con permisos | ☐ | ☐ |
 | 2 · Diseño y calendario | ☐ | ☐ |
 | 3 · CRUD completo (+ L7 en diciembre) | ☐ | ☐ |
@@ -378,3 +378,7 @@ Respaldos (copias a las 3 am activas, alerta de borrado masivo, copia semanal fu
 ## Anexo B · Requisitos nuevos de esta etapa y dónde quedaron
 
 Buscador único (1A) · cola compartida de recién registrados (1A) · formulario de persona con motor de formularios (1A) · reimpresión configurable con permisos por correo (1B) · tema por dispositivo (2) · rediseño del calendario (2) · CRUD completo (3) · carga masiva de temporales con Excel (4) · gestión de bloqueos por el coordinador (4) · compromiso digital con firma y vigencia de 30 días (4) · liberación del evento al cliente por bandera de la comercial y encuesta (7) · CRM integrado con importación desde SugarCRM (10).
+
+| Fecha | Cambio | Motivo | Aprobado por |
+|---|---|---|---|
+| 2026-11-04 | Pista «Formularios web» entregada a producción (3 y 4-nov): mensaje de cupo lleno editable por cupo, cupo en 0 = «cerrado temporalmente», sesión por inactividad, ahorro de Neon. Estándares visuales unificados en `docs/ux/ESTANDARES_VISUALES.md`. | Cierre de la pista y orden para la Fase 1A/2 | Juan David |

@@ -124,7 +124,7 @@ def quota_match(rule: dict, values: dict) -> bool:
 
 def rule_sig(rule: dict) -> str:
     """Firma estable de un cupo: cambia si cambian sus condiciones, así una inscripción vieja no cuenta para un cupo que ya es otro."""
-    digest = hashlib.sha1(json.dumps({"m": rule["match"], "c": rule["conds"]}, sort_keys=True).encode()).hexdigest()[:10]
+    digest = hashlib.sha1(json.dumps({"m": rule["match"], "c": rule["conds"]}, sort_keys=True).encode(), usedforsecurity=False).hexdigest()[:10]
     return f"{rule['id']}~{digest}"
 
 
@@ -294,14 +294,14 @@ def repeat_by_value(db: Session, form: WebForm, fid: str, ftype: str, key: Optio
     strip = "[\\s]" if ftype == "email" else "[\\s.\\-]"
     expr = f"regexp_replace({cell}, '\\D', '', 'g')" if ftype == "phone" else f"lower(regexp_replace({cell}, '{strip}', '', 'g'))"
     params = {"form_id": form.id, "fid": fid, "want": want, "pre": PREREGISTERED}
-    sql = f"SELECT 1 FROM form_submissions fs WHERE fs.form_id = :form_id AND fs.is_test = false AND fs.status IN ('confirmed', :pre) AND {expr} = :want LIMIT 1"
+    sql = f"SELECT 1 FROM form_submissions fs WHERE fs.form_id = :form_id AND fs.is_test = false AND fs.status IN ('confirmed', :pre) AND {expr} = :want LIMIT 1"  # nosec B608 - solo fragmentos fijos (expresión, columna de lista cerrada); lo del usuario va enlazado (:want, :fid)
     if db.execute(text(sql), params).first():
         return True
     col = {"email": "u.email", "phone": "u.phone"}.get(key or "")
     if not col:
         return False
     uexpr = f"regexp_replace(coalesce({col}, ''), '\\D', '', 'g')" if ftype == "phone" else f"lower(regexp_replace(coalesce({col}, ''), '{strip}', '', 'g'))"
-    sql = (f"SELECT 1 FROM form_submissions fs JOIN events e ON e.id = fs.event_id JOIN users u ON u.id = fs.person_id AND u.tenant_id = e.tenant_id "
+    sql = (f"SELECT 1 FROM form_submissions fs JOIN events e ON e.id = fs.event_id JOIN users u ON u.id = fs.person_id AND u.tenant_id = e.tenant_id "  # nosec B608 - solo fragmentos fijos (expresión, columna de lista cerrada); lo del usuario va enlazado (:want, :fid)
            f"WHERE fs.form_id = :form_id AND fs.is_test = false AND fs.status = :pre AND {uexpr} = :want LIMIT 1")
     return db.execute(text(sql), params).first() is not None
 
@@ -385,7 +385,7 @@ def apply_list(db: Session, form: WebForm, values: list, kind: str, fid: str, ft
                                                          FormSubmission.person_id.in_(part)).update({"status": "confirmed", "source": "lista_cupo"}, synchronize_session=False)
     else:
         cell = "CAST(data_json AS jsonb) ->> CAST(:fid AS text)"
-        have = {formlib.normalize_identifier(r[0], ftype) for r in db.execute(text(f"SELECT {cell} FROM form_submissions WHERE form_id = :f AND is_test = false AND status IN ('confirmed', 'preregistered')"),
+        have = {formlib.normalize_identifier(r[0], ftype) for r in db.execute(text(f"SELECT {cell} FROM form_submissions WHERE form_id = :f AND is_test = false AND status IN ('confirmed', 'preregistered')"),  # nosec B608 - solo fragmentos fijos (expresión, columna de lista cerrada); lo del usuario va enlazado (:want, :fid)
                                                                                 {"f": form.id, "fid": fid})}
         for raw in values:
             norm = formlib.normalize_identifier(raw, ftype)

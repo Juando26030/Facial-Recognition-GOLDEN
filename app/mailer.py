@@ -39,7 +39,7 @@ def _graph_token() -> str:
         "grant_type": "client_credentials",
     }).encode()
     req = urllib.request.Request(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token", data=data)
-    with urllib.request.urlopen(req, timeout=20) as resp:
+    with urllib.request.urlopen(req, timeout=20) as resp:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
         payload = json.load(resp)
     _graph_token_cache["token"] = payload["access_token"]
     _graph_token_cache["exp"] = now + payload.get("expires_in", 3600)
@@ -69,7 +69,7 @@ def _send_via_graph(to: str, subject: str, body: str, attachments: list, html: O
             f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail", data=body_json,
             headers={"Authorization": f"Bearer {_graph_token()}", "Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=20) as resp:  # nosec B310 - URL https fija (constante/entorno), nunca del usuario
             resp.read()
         return {"sent": True, "detail": f"Correo enviado a {to} (Microsoft Graph)"}
     except urllib.error.HTTPError as e:

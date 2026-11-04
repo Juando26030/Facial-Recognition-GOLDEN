@@ -5,4 +5,10 @@ useDefault = true
 [allowlist]
 description = "Nombres de secretos en deploy/gcp/config.sh (listas «secret:NOMBRE»), sin valores"
 paths = ['''deploy/gcp/config\.sh''']
-regexes = ['''secret:[A-Z][A-Z0-9_]+''']
+regexes = [
+  '''secret:[A-Z][A-Z0-9_]+''',
+  # FALSOS POSITIVOS revisados (fase 0C): contraseñas de PRUEBA inventadas que usan solo tests/js/password_cases.json y tests/test_seguridad_0c_*.py
+  # (validación de contraseñas del personal). No son claves de ningún sistema. Cadenas exactas, no un patrón amplio.
+  '''Clave-segura-123''',
+  '''juan\.perez2026''',
+]

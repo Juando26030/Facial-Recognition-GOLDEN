@@ -10,6 +10,7 @@ runbooks ni los espejos del proyecto de Claude. Abajo dice cuál es cuál.
 | [`HANDOFF.md`](HANDOFF.md) | Relevo de la migración a Cloud Run + Neon |
 | [`historial.md`](historial.md) | Detalle por sprint: porqués, bugs reales y arreglos |
 | [`HANDOFF_IMPRESION_COMPARTIDA_29OCT.md`](HANDOFF_IMPRESION_COMPARTIDA_29OCT.md) | Relevo de impresión/sesión del 29-oct |
+| [`ux/ESTANDARES_VISUALES.md`](ux/ESTANDARES_VISUALES.md) | **Regla única de diseño: todo lo visual se hace así** |
 | [`IMPRESION_PARAMETROS_INAMOVIBLES.md`](IMPRESION_PARAMETROS_INAMOVIBLES.md) | **Parámetros de impresión fijados en hardware. No cambiar sin orden expresa.** |
 
 ## Producto (los mantiene otra sesión)

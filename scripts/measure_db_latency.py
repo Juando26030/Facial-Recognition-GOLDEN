@@ -23,7 +23,7 @@ def region_label() -> str:
     """Región donde corre (servidor de metadatos de Google) para etiquetar el resultado; «desconocida» fuera de Cloud Run."""
     try:
         req = urllib.request.Request("http://metadata.google.internal/computeMetadata/v1/instance/region", headers={"Metadata-Flavor": "Google"})
-        return urllib.request.urlopen(req, timeout=2).read().decode().rsplit("/", 1)[-1]
+        return urllib.request.urlopen(req, timeout=2).read().decode().rsplit("/", 1)[-1]  # nosec B310 - servidor de metadatos de Google (http interno por diseño)
     except Exception:  # noqa: BLE001
         return "desconocida"
 
