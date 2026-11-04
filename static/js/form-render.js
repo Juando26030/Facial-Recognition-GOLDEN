@@ -611,6 +611,6 @@
     return { sheets: sheets ? { next: goNext, prev: goPrev, show: showSheet, current: () => curIdx, effective: () => effectiveSheets() } : null, collect, validate, setErrors, setQuote, setRates, code: () => (codeBox() ? codeBox().value.trim() : ''), form, button: btn, applyConditions, hasPayment: Object.values(els).some(({ f }) => f.type === 'payment') };
   }
 
-  if (typeof window !== 'undefined') window.FormRender = { render, conditionMet, cardMax, variantsOf, computeVisible };
+  if (typeof window !== 'undefined') window.FormRender = { render, quotaFullMessage, conditionMet, cardMax, variantsOf, computeVisible };
   if (typeof module !== 'undefined') module.exports = { quotaFullMessage, conditionMet, norm, pickVariant, condTree, variantsOf, computeVisible };
 })();
