@@ -214,8 +214,8 @@
 /* ============================================================ Insignias y avisos (siempre ícono + texto: el color nunca va solo) */
 .gw-badge { display: inline-flex; align-items: center; gap: var(--gw-sp-1); padding: 2px var(--gw-sp-3); min-height: 1.75rem; border-radius: var(--gw-radius-pill); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); }
 .gw-badge--ok { background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
-/* «Recién registrado»: píldora SÓLIDA (texto claro sobre verde fuerte; en oscuro, al revés) para que se lea también sobre la fila verde de «Registrado» */
-.gw-recent-tag { margin-left: var(--gw-sp-2); background: var(--gw-ok-text); color: var(--gw-ok-bg); border-color: var(--gw-ok-text); }
+/* «Recién registrado»: la píldora suave de siempre (borde verde, letra verde) pero con el fondo de la SUPERFICIE para que se lea sobre la fila verde de «Registrado»; en oscuro usa los mismos tokens */
+.gw-recent-tag { margin-left: var(--gw-sp-2); background: var(--gw-surface); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
 .gw-badge--warn { background: var(--gw-warn-bg); color: var(--gw-warn-text); border-color: var(--gw-warn-line); }
 .gw-badge--err { background: var(--gw-err-bg); color: var(--gw-err-text); border-color: var(--gw-err-line); }
 .gw-badge--info { background: var(--gw-info-bg); color: var(--gw-info-text); border-color: var(--gw-info-line); }
