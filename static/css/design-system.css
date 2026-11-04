@@ -374,3 +374,10 @@
   .gw-btn, .gw-tile, .gw-card, .gw-alert, .gw-badge, .gw-input, .gw-select, .gw-textarea { border: 2px solid CanvasText; }
   .gw-btn--primary { background: ButtonFace; color: ButtonText; }
 }
+
+/* ============================================================ Buscador único (Fase 1A): una caja fija arriba; la lista pasa por debajo */
+.gw-search { position: sticky; top: 0; z-index: 10; display: flex; flex-direction: column; gap: var(--gw-sp-2); padding: var(--gw-sp-3) var(--gw-sp-4); margin-bottom: var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
+.gw-search .gw-input { min-height: calc(var(--gw-tap) + var(--gw-sp-2)); font-size: var(--gw-fs-lg); }
+.gw-search .gw-hint:empty { display: none; }
+.gw-scroll-x { overflow-x: auto; }
+.gw-reason { display: flex; width: fit-content; max-width: 100%; margin-top: var(--gw-sp-1); border-radius: var(--gw-radius-md); }

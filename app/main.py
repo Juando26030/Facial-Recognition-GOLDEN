@@ -564,6 +564,7 @@ def _resolve_kiosk_page(event_id: int, request: Request, db: Session, template_n
         "field_labels": {cfg["key"]: cfg["label"] for cfg in field_configs},
         "sidebar_active": "eventos",
         "contingency_enabled": contingency_enabled(),
+        "search_unified": os.getenv("SEARCH_UNIFIED", "1") != "0",       # Fase 1A: buscador único en el directorio; SEARCH_UNIFIED=0 vuelve a las 3 cajas
     }
     if extra_context:
         context.update(extra_context)
