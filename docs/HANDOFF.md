@@ -59,6 +59,8 @@ ruff limpio en lo tocado, shellcheck y actionlint limpios.
 - **Una sola tarea de Cloud Scheduler** (cabe en las 3 gratis) reemplaza los 4 cron de la VM; en producción se crea EN PAUSA hasta el cambio.
 - **Carga masiva como Cloud Run Job** (no cola dentro de la petición: hay cargas de horas y el tope por petición es 60 s).
 
+- **Permisos de coordinador (decisión del dueño, 2026-11-04):** super_admin, admin y todos los coordinadores configuran cualquier evento y acceden a todos; comercial, digitador y cliente no. `ENFORCE_STAFF_EVENT_SCOPE` sigue APAGADO por defecto (no encenderlo sin que Juan David lo pida). Fijado en `tests/test_permisos_coordinador.py`; detalle en docs/15.
+
 ## 4. Reglas de trabajo (las de siempre)
 - Rama `migra/fase1-2` para esta migración; se puede empujar. **Prohibido sin autorización explícita para ESA acción:** merge o push a
   `main`, desplegar en producción, correr migraciones en producción, crear recursos de nube (los crea Juan David), pruebas de carga
