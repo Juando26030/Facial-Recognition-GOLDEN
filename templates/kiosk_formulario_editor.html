@@ -1232,12 +1232,15 @@ function paintQuotas() {
     ${r.conds.map((c, ci) => `<div style="display:grid; gap:3px; background:#f6f7fb; padding:5px; border-radius:8px;"><select data-qf="${ri}.${ci}">${fields.map((f) => `<option value="${f.id}" ${f.id === c.field ? 'selected' : ''}>${esc(f.label || TYPES[f.type][0])}</option>`).join('')}</select>
       <select data-qo="${ri}.${ci}">${QOPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${qValueHtml(c, ri, ci)}
       ${r.conds.length > 1 ? `<button type="button" class="small-btn danger" data-qcd="${ri}.${ci}" style="justify-self:end;">Quitar condición</button>` : ''}</div>`).join('')}
-    ${r.conds.length < 6 ? `<button type="button" class="small-btn" data-qca="${ri}" style="justify-self:start;">+ Otra condición</button>` : ''}</div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
+    ${r.conds.length < 6 ? `<button type="button" class="small-btn" data-qca="${ri}" style="justify-self:start;">+ Otra condición</button>` : ''}
+    <label style="display:grid; gap:3px; font-size:0.8rem;">Mensaje cuando este cupo esté lleno<textarea rows="2" maxlength="300" data-qmsg="${ri}" placeholder="Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.">${esc(r.message || '')}</textarea>
+      <span class="hint">Puedes usar {cupo} para el nombre. Si lo dejas vacío se usa el texto por defecto.</span></label></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
   $('qQuickField').innerHTML = '<option value="">Campo de lista/opción única…</option>' + fields.filter((f) => ['select', 'radio'].includes(f.type)).map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join('');
   const R = () => settings.quotas.rules, ix = (v) => v.split('.').map(Number);
   const box = $('qRules');
   box.querySelectorAll('[data-ql]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.ql].label = el.value; }));
   box.querySelectorAll('[data-qn]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qn].limit = +el.value || 0; }));
+  box.querySelectorAll('[data-qmsg]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qmsg].message = el.value; }));
   box.querySelectorAll('[data-qm]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qm].match = el.value; }));
   box.querySelectorAll('[data-qdel]').forEach((el) => el.addEventListener('click', () => { R().splice(+el.dataset.qdel, 1); paintQuotas(); }));
   box.querySelectorAll('[data-qca]').forEach((el) => el.addEventListener('click', () => { R()[+el.dataset.qca].conds.push({ field: fields[0].id, op: 'equals', value: '' }); paintQuotas(); }));
@@ -1249,12 +1252,12 @@ function paintQuotas() {
 }
 $('qAdd').addEventListener('click', () => {
   const fields = qFields(); if (!fields.length) { showToast('Agrega primero campos al formulario', 'error'); return; }
-  settings.quotas = settings.quotas || { rules: [] }; settings.quotas.rules.push({ label: '', match: 'all', limit: 50, conds: [{ field: fields[0].id, op: 'equals', value: '' }] }); paintQuotas();
+  settings.quotas = settings.quotas || { rules: [] }; settings.quotas.rules.push({ label: '', message: '', match: 'all', limit: 50, conds: [{ field: fields[0].id, op: 'equals', value: '' }] }); paintQuotas();
 });
 $('qQuick').addEventListener('click', () => {
   const f = design.fields[$('qQuickField').value]; if (!f) { showToast('Elige el campo', 'error'); return; }
   settings.quotas = settings.quotas || { rules: [] };
-  f.options.forEach((o) => { if (!settings.quotas.rules.some((r) => r.conds.length === 1 && r.conds[0].field === f.id && r.conds[0].value === o)) settings.quotas.rules.push({ label: o, match: 'all', limit: 50, conds: [{ field: f.id, op: 'equals', value: o }] }); });
+  f.options.forEach((o) => { if (!settings.quotas.rules.some((r) => r.conds.length === 1 && r.conds[0].field === f.id && r.conds[0].value === o)) settings.quotas.rules.push({ label: o, message: '', match: 'all', limit: 50, conds: [{ field: f.id, op: 'equals', value: o }] }); });
   paintQuotas(); showToast('Se crearon los cupos: ajusta el máximo de cada uno', 'success');
 });
 $('cfgStatusSave').addEventListener('click', async () => {
