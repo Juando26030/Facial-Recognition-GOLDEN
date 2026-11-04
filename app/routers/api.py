@@ -290,14 +290,17 @@ def _send_now(value) -> bool:
     return str(value).strip().lower() not in ("false", "0", "no", "off", "")
 
 
-def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None, digital_contact: Optional[str] = None, origin: Optional[str] = "manual") -> None:
+def _upsert_attendee(db: Session, event_id: int, user_id: str, tenant_id: str, categories: Optional[list] = None, certificate: Optional[bool] = None, digital_contact: Optional[str] = None, origin: Optional[str] = "manual", touch: bool = False) -> None:
     """Asegura que esta persona quede en la lista del evento, se haya precargado o no (ej. un
     'Nuevo' dado de alta sobre la marcha el día del evento) — ver EventAttendee en models.py.
-    `categories` (ítem 14): si viene, fija las categorías de la persona EN este evento."""
+    `categories` (ítem 14): si viene, fija las categorías de la persona EN este evento.
+    `touch=True` (cola compartida): es una alta o una acreditación; marca `last_action_at` con la hora del SERVIDOR (nunca la del dispositivo)."""
     row = db.query(EventAttendee).filter_by(event_id=event_id, user_id=user_id).first()
     if not row:
         row = EventAttendee(event_id=event_id, user_id=user_id, tenant_id=tenant_id, origin=origin)       # B1: el origen se asigna al CREAR y nunca cambia con el estado
         db.add(row)
+    if touch:
+        row.last_action_at = utcnow()
     if categories is not None:
         row.set_categories(categories)
     if certificate is not None:
@@ -469,12 +472,13 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
         real, new = counts.get(u.id, (0, 0))
         att = attendees.get(u.id)
         status = "No registrado" if not real else ("Nuevo" if new else "Registrado")
+        recent_at = (att.last_action_at.isoformat() + "Z") if att is not None and att.last_action_at else None      # cola compartida: hora del SERVIDOR de la última alta/acreditación (UTC)
         origin = (att.origin if att is not None and att.origin else ("manual" if new else "desconocido"))      # B1: origen aparte del estado
         if mask:
             result.append({
                 "id": _masked_directory_id(event.tenant_id, u.id), "first_name": u.first_name, "last_name": u.last_name, "role": u.role, "entity": u.entity,
                 "phone": "", "email": "", "opt_1": u.opt_1, "opt_2": None, "status": status, "origin": origin, "birth_date": "", "extra_fields": {},
-                "categories": att.get_categories() if att else [], "certificate": bool(att.certificate) if att else False, "digital_contact": "", "digital_sent_at": None, "masked": True,
+                "categories": att.get_categories() if att else [], "certificate": bool(att.certificate) if att else False, "digital_contact": "", "digital_sent_at": None, "masked": True, "recent_at": recent_at,
             })
             continue
         result.append({
@@ -488,6 +492,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "certificate": bool(att.certificate) if att else False,
             "digital_contact": (att.digital_contact or "") if att else "",
             "digital_sent_at": att.digital_sent_at.isoformat() if att and att.digital_sent_at else None,
+            "recent_at": recent_at,
         })
     return result
 
@@ -517,6 +522,12 @@ def get_all_users(
     return JSONResponse(rows, headers=headers)
 
 
+def event_flags(event: Event) -> dict:
+    """Las banderas de la puerta que decide el SERVIDOR en cada petición (no la página, que las congela al cargar): `auto_print` (autoimpresión de la escarapela) y
+    `auto_register` (modo autorregistro). Las respuestas de checkin-cedula, register, PATCH status y undo las incluyen para que el cliente imprima según ellas."""
+    return {"auto_print": bool(event.auto_print_badge), "auto_register": bool(event.auto_register)}
+
+
 def _directory_total(db: Session, event: Event) -> int:
     attendee_ids = db.query(EventAttendee.user_id).filter(EventAttendee.event_id == event.id)
     log_ids = db.query(AccessLog.user_id).filter(AccessLog.event_id == event.id)
@@ -538,7 +549,7 @@ def get_directory_changes(
     last_log = db.query(func.coalesce(func.max(AccessLog.id), 0)).filter(AccessLog.event_id == event.id).scalar()
     last_att = db.query(func.coalesce(func.max(EventAttendee.id), 0)).filter(EventAttendee.event_id == event.id).scalar()
     rows = _directory_rows(db, event, changed_since=(since_log, since_att), mask=staff.role == "cliente")
-    return {"cursor": f"{last_log}:{last_att}", "total": _directory_total(db, event), "users": rows}
+    return {"cursor": f"{last_log}:{last_att}", "total": _directory_total(db, event), "users": rows, "flags": event_flags(event)}
 
 
 @router.get("/email-validate")
@@ -677,7 +688,7 @@ def recognize(
         registration_method="biometrico",  # Fase 16: este endpoint es SIEMPRE reconocimiento facial
     )
     db.add(log)
-    _upsert_attendee(db, event.id, user.id, event.tenant_id)
+    _upsert_attendee(db, event.id, user.id, event.tenant_id, touch=True)
     db.commit()
     return _private_json({"result": "SÍ", "data": data, **extra})
 
@@ -795,7 +806,7 @@ def checkin_cedula(
                 db_name = f"{candidate.first_name or ''} {candidate.last_name or ''}"
                 if _identity_name_matches(db_name, full_name):
                     name_matches.append({"id": candidate.id, "first_name": candidate.first_name, "last_name": candidate.last_name})
-        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches}
+        return {"result": "NO_MATCH", "details": "Cédula no encontrada", "name_matches": name_matches, **event_flags(event)}
 
     if not force and _already_checked_in(db, event.id, user.id):
         return _duplicate_warning(db, event.id, user)
@@ -810,10 +821,10 @@ def checkin_cedula(
     data["sibling_events"] = [s["event_name"] for s in sibling_attendance(db, event, user.id)]
 
     if not event.auto_register and not confirm:
-        return {"result": "FOUND_PENDING", "data": data}
+        return {"result": "FOUND_PENDING", "data": data, **event_flags(event)}
     missing = person_missing_required(db, event, user)
     if missing:                                         # A3: NO se acredita; la página abre «Editar persona» en el primer campo vacío
-        return {"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing)}
+        return {"result": "MISSING_REQUIRED", "data": data, "missing": missing, "details": missing_required_message(missing), **event_flags(event)}
 
     log = AccessLog(
         tenant_id=event.tenant_id, user_id=user.id, record_type="Existente",
@@ -826,7 +837,7 @@ def checkin_cedula(
         client_id=client_id or None, **regtime.measured(took_ms, ui_flow),          # 1A: tiempo medido por el quiosco (acotado; ausente o inválido = vacío)
     )
     db.add(log)
-    _upsert_attendee(db, event.id, user.id, event.tenant_id)
+    _upsert_attendee(db, event.id, user.id, event.tenant_id, touch=True)
     try:
         db.commit()
     except IntegrityError:        # dos envios con el mismo client_id a la vez: gana uno, el otro recibe el mismo resultado
@@ -835,7 +846,7 @@ def checkin_cedula(
         if not replay:
             raise
         return replay
-    return {"result": "SÍ", "data": data}
+    return {"result": "SÍ", "data": data, **event_flags(event)}
 
 
 ACCREDIT_UNDO_WINDOW = timedelta(seconds=15)          # «Deshacer» una acreditación: solo quien la hizo y hace menos de 15 s (la pantalla ofrece ~8 s; aquí se verifica en el SERVIDOR)
@@ -861,7 +872,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     user_id = log.user_id
     db.delete(log)
     db.commit()
-    return {"undone": True, "user_id": user_id}
+    return {"undone": True, "user_id": user_id, **event_flags(event)}
 
 
 def _person_data(user: User) -> dict:
@@ -879,7 +890,7 @@ def _replayed_checkin(db: Session, event: Event, client_id: str) -> Optional[dic
     if not prev:
         return None
     user = db.get(User, (prev.user_id, event.tenant_id))
-    return {"result": "SÍ", "data": _person_data(user) if user else {"id": prev.user_id}, "replayed": True}
+    return {"result": "SÍ", "data": _person_data(user) if user else {"id": prev.user_id}, "replayed": True, **event_flags(event)}
 
 
 SYNC_MAX_RECORDS = 500
@@ -994,7 +1005,9 @@ def sync_access_logs(
                                  registration_method=SYNC_METHODS.get(str(rec.get("method") or ""), "tradicional"), client_id=client_id, timestamp=when, doubtful_reason=doubtful,
                                  **regtime.measured(rec.get("took_ms"), rec.get("ui_flow"))))
                 if user.id not in attendees:
-                    db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id, origin="manual"))
+                    db.add(EventAttendee(event_id=event.id, user_id=user.id, tenant_id=event.tenant_id, origin="manual", last_action_at=utcnow()))      # cola compartida: la hora en que el SERVIDOR recibe, no la `when` del dispositivo
+                else:
+                    db.query(EventAttendee).filter_by(event_id=event.id, user_id=user.id).update({"last_action_at": utcnow()}, synchronize_session=False)
                 db.flush()
         except IntegrityError:
             results.append({"client_id": client_id, "result": "replayed"})
@@ -1063,7 +1076,7 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
             db.add(AccessLog(tenant_id=event.tenant_id, user_id=person_id, record_type=kind, event_id=event.id, registered_by_staff_id=staff.id, registration_method="tradicional",
                              client_id=op_id, timestamp=when, doubtful_reason=doubtful, **regtime.measured(f.get("took_ms"), f.get("ui_flow"))))
             _upsert_attendee(db, event.id, person_id, event.tenant_id, categories if f.get("categories") else None,
-                             certificate=_truthy(f.get("certificate")) if f.get("certificate") else None, digital_contact=contact)
+                             certificate=_truthy(f.get("certificate")) if f.get("certificate") else None, digital_contact=contact, touch=True)
             db.flush()
     except IntegrityError:
         return {"op_id": op_id, "result": "replayed"}
@@ -1483,7 +1496,7 @@ def update_registration_status(
                 **regtime.measured(data.get("took_ms"), data.get("ui_flow")),
             )
             db.add(log)
-            _upsert_attendee(db, event_id, user_id, event.tenant_id)
+            _upsert_attendee(db, event_id, user_id, event.tenant_id, touch=True)
     else:
         deleted_logs = db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
 
@@ -1492,7 +1505,7 @@ def update_registration_status(
                             old_value="Registrado" if was_registered else "No registrado", new_value="Registrado" if new_status == "registrado" else "No registrado",
                             detail=f"accesos borrados: {deleted_logs}" if new_status == "no_registrado" else None))
     db.commit()
-    return {"message": "Estado de registro actualizado", "status": new_status}
+    return {"message": "Estado de registro actualizado", "status": new_status, **event_flags(event)}
 
 @router.post("/register")
 def manual_register(
@@ -1574,9 +1587,9 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
             **regtime.measured(took_ms, ui_flow),
         )
         db.add(log)
-        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean)
+        _upsert_attendee(db, event.id, existing.id, event.tenant_id, person_categories if categories else None, digital_contact=contact_clean, touch=True)
         db.commit()
-        reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento."}
+        reply = {"message": "Esta persona ya existía en el sistema — registrada para este evento.", **event_flags(event)}
         if contact_clean and event.digital_badge_enabled:
             reply["digital"] = _send_digital(db, event, existing, request) if _send_now(send_digital_now) else {"sent": False, "detail": "Correo guardado. La escarapela NO se envió (dejaste sin marcar «Enviar ahora la escarapela»)"}
         return reply
@@ -1644,13 +1657,13 @@ def _manual_register(event_id, id, first_name, last_name, role, entity, phone, e
         **regtime.measured(took_ms, ui_flow),
     )
     db.add(log)
-    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean)
+    _upsert_attendee(db, event.id, id, event.tenant_id, person_categories, certificate=_truthy(certificate) if certificate else None, digital_contact=contact_clean, touch=True)
     db.commit()
 
     if img_array is not None:
         crypto.save_image(Image.fromarray(img_array), photo_key(event.tenant_id, id))      # cifrada en reposo si hay llave
 
-    reply = {"message": "Usuario registrado exitosamente como Nuevo."}
+    reply = {"message": "Usuario registrado exitosamente como Nuevo.", **event_flags(event)}
     if img_array is not None and not face_enc_json:
         reply["face_pending"] = "La foto quedó guardada; el reconocimiento facial se activa cuando la persona acepte en la pantalla de autorización."
     if minor:

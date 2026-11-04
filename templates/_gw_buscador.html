@@ -1,0 +1,19 @@
+{# Buscador único del directorio (Fase 1A, pieza 1). Una sola caja: cédula, nombre, empresa o lo que escupe el lector/QR. Mantiene id="searchCedula" para que el lector, el
+   modo touch y shared-print.js sigan funcionando igual. Variable opcional: busq_disabled (verdadero = la caja se deshabilita). Solo tokens y clases .gw-*. #}
+<div class="gw-search" id="gwSearch" role="search">
+  <div class="gw-row gw-row--between">
+    <label class="gw-label" for="searchCedula">Buscar a la persona</label>
+    <div class="gw-help">
+      <button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="gwSearchHelp" aria-haspopup="dialog" aria-label="Ayuda: cómo buscar"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-help"/></svg></button>
+      <div class="gw-popover" id="gwSearchHelp" role="dialog" aria-modal="true" aria-labelledby="gwSearchHelpT" hidden>
+        <svg class="gw-anim gw-anim--search" viewBox="0 0 160 100" aria-hidden="true" focusable="false"><rect class="a-card" x="14" y="12" width="132" height="76" rx="10"/><rect class="a-line" x="28" y="26" width="64" height="8" rx="4"/><rect class="a-line" x="28" y="40" width="90" height="8" rx="4"/><rect class="a-hit" x="26" y="56" width="108" height="18" rx="6"/><rect class="a-body" x="34" y="62" width="40" height="6" rx="3"/><path class="a-ok" d="M112 65l6 6 11-13"/><g class="a-lens-g"><circle class="a-lens" cx="64" cy="62" r="11"/><path class="a-lens" d="M72 70l12 12"/></g></svg>
+        <p class="gw-popover__title" id="gwSearchHelpT">Una sola caja para todo</p>
+        <p class="gw-popover__text">Escribe o escanea lo que tengas: la cédula, el nombre o la empresa. Cada resultado dice por qué apareció. Si es una cédula exacta, pulsa Enter y se busca al instante.</p>
+        <button type="button" class="gw-btn gw-btn--primary gw-btn--sm" data-gw-help-close>Entendido</button>
+      </div>
+    </div>
+  </div>
+  <input class="gw-input" type="text" id="searchCedula" inputmode="text" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus
+         placeholder="Escribe o escanea: cédula, nombre o empresa" {% if busq_disabled %}disabled{% endif %}>
+  <p class="gw-hint" id="gwSearchHint" aria-live="polite"></p>
+</div>

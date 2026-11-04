@@ -255,6 +255,12 @@
     };
     /* «Modo autoregistro» del evento, tal como vino con la copia (se guarda en IndexedDB: vale tras recargar sin red). Apagado o desconocido → NO acredita al escanear, solo busca. */
     c.autoRegister = async () => { const m = await c.rosterMeta(); return !!(m && m.auto_register === true); };
+    /* PR3 (causa E): el autorregistro sin red usaba la bandera de la última DESCARGA de la copia (hasta 4 min de antigüedad). Cada sondeo bueno del directorio trae la bandera actual del servidor
+       (`flags` de /users/changes) y se guarda aquí, así que al cortarse la red vale la de hace segundos. Sin copia local no hay dónde guardarla. */
+    c.setAutoRegister = async (v) => {
+      if (!c.supported || !c.db || typeof v !== 'boolean') return;
+      try { const m = await c.rosterMeta(); if (m && m.auto_register !== v) await c.db.put('meta', { ...m, auto_register: v }); } catch (e) { /* se queda la de la descarga */ }
+    };
     c.hashFor = async (raw) => { const meta = await c.rosterMeta(); const cedula = normalize(raw); return meta && cedula ? c.fingerprint(meta.salt, cedula) : ''; };
     c.localPeople = async () => ((await c.rosterUsable()) ? c.db.getAll('roster') : []);
     /* Encola el ingreso (client_id + marca de tiempo; huella y nombre, NO la cédula) y lo anota como registrado en la copia local. */

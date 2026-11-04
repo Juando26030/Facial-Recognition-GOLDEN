@@ -872,3 +872,31 @@ La exención de cierre por inactividad solo aplica con impresión en marcha (eve
 - [x] Llega al navegador en `quota.full[].message` (`quota_public`, misma caché de la página pública: se ve al renovarse, ~`FORM_PUBLIC_STALE_SECONDS`) y al 409 del servidor (`reserve_slot` agrega `message`).
 - [x] Editor: campo «Mensaje cuando este cupo esté lleno» por cupo. Página pública: aviso grande (1,12 rem, negrita, borde, ⚠, `role="alert"`) y el error de un campo se quita al corregirlo.
 - [x] Pruebas: `tests/test_form_extras.py` (4 nuevas) y `tests/js/form_quota_message_check.js`.
+
+### Cupo en 0 = «cerrado temporalmente» (2026-11-04, rama `feat/cupo-cerrado`, sin migración)
+- [x] Un cupo con máximo 0 ya no se borra al guardar: `formlib._sanitize_quota_rules` acepta `0 <= limit <= 1_000_000` (vacío/no numérico/negativo se siguen descartando). El editor deja `min="0"`, conserva los 0 (`r.limit ?? ''`, filtro `Number.isFinite`), muestra «Cerrado temporalmente» y la ayuda «0 = cerrado…».
+- [x] Efecto: `quota_public` ya deshabilita la opción (`left[campo][valor] == 0`) y `full[]` trae `limit` y `closed`. El servidor responde 409 (`stage: quota`) con el mensaje de la regla; si está vacío, texto de CERRADO por defecto: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.» (`formlib.quota_full_message(..., closed=True)`, espejo `quotaFullMessage(msg, label, closed)` en `form-render.js`).
+- [x] `form_reserve_slot` (migración 0049) NO se modifica: rechaza con `v_used >= limit` (0 >= 0) aun sin inscripciones previas. Estadísticas: pct 100 y «Cerrado temporalmente» con límite 0 (sin división por 0). `rule_sig` no incluye el máximo: abrir/cerrar no reinicia conteos.
+- [x] Pruebas: `tests/test_form_extras.py` (3 nuevas, 2 existentes ajustadas: el 0 ya no se descarta) y `tests/js/form_quota_message_check.js`.
+
+### Fase 1A · pieza 1: buscador único (2026-11-04, rama `feat/1a-buscador-unico`, sin migración)
+- [x] `templates/_gw_buscador.html`: una sola caja (conserva `id="searchCedula"` para el lector, el modo touch y `shared-print.js`), con ayuda «?» y pista de resultados; solo clases `.gw-*`. Reemplaza las 3 cajas del Directorio en vivo (digitador y cliente).
+- [x] Interruptor `SEARCH_UNIFIED` (por defecto encendido; `SEARCH_UNIFIED=0` vuelve a las 3 cajas sin tocar código). Lo lee `_resolve_kiosk_page` (`search_unified`).
+- [x] `directory.js` usa `SearchCore` (cédula exacta > prefijo > nombre/empresa), muestra por qué coincidió cada fila y, sin red, busca por nombre y por cédula completa (huella). Enter hace check-in solo con cédula/lector/QR; con nombre solo filtra.
+- [x] Componente nuevo `.gw-search` / `.gw-scroll-x` / `.gw-reason` en `design-system.css` y `guia_visual.html` (sección «Buscador único»). Pendientes de la Fase 2 en `docs/ux/PENDIENTES_VISUALES.md`.
+- [ ] Capturas antes/después y aprobación de Juan David; PR sin fusionar hasta su frase escrita.
+
+### Fase 1A · pieza 2: cola compartida de recién registrados (2026-11-04, rama `feat/1a-cola-compartida`, apilada sobre `feat/1a-buscador-unico`)
+- [x] **Migración 0082** `0082_attendee_last_action`: `event_attendees.last_action_at` (nullable, sin default, sin backfill) + índice `(event_id, last_action_at)`. Aditiva y reversible. **NO aplicada en producción**: necesita la frase escrita de Juan David («autorizo la migración 0082 en producción»). En staging, con datos ficticios.
+- [x] La hora la pone SIEMPRE el servidor (`utcnow()`) al crear, acreditar (cédula, reconocimiento facial, estado «registrado») y, sin red, al RECIBIR el sync (no la hora del equipo). Editar datos y deshacer no la mueven. Único punto común: `_upsert_attendee(..., touch=True)` en `api.py`.
+- [x] `/users` y `/users/changes` traen `recent_at` (ISO UTC «Z» o null), también para el rol cliente. El refresco de 15 s ya devolvía a quien se acaba de acreditar.
+- [x] Directorio: sin búsqueda, TODO el directorio ordenado por última acción (lo local de este equipo primero, luego `recent_at` de la más nueva a la más vieja, luego el resto); con búsqueda manda la relevancia. Insignia «Recién registrado» (píldora sólida verde, sin amarillo) a quien esté a menos de 15 min (`RECENT_WINDOW_MS`, comparación relativa, sin reloj del equipo); la fila verde de «Registrado» es la de siempre. Sin red solo se ve lo propio y la pantalla lo avisa.
+- [x] Pruebas: `tests/test_cola_compartida.py` (8; las corre el CI, no se pudieron correr en el entorno del agente) y `tests/js/directory_recent_queue_check.js`.
+- [ ] Capturas y aprobación del aspecto; PR sin fusionar hasta la frase de Juan David; migración en producción solo con su frase.
+
+### Fase 1A · pieza 3: autoimpresión y autorregistro (2026-11-04, rama `feat/1a-autoimpresion`, apilada sobre `feat/1a-cola-compartida`, sin migración)
+- [x] Se traen a esta rama los 2 commits del PR #26 («autoimpresión 4a»), que estaba con conflictos y 49 commits detrás de `main`; el PR #26 y su rama NO se tocaron. Un solo conflicto de texto (`directory.js`, `applyStatus` y guardado del digitador); `api.py` y `kiosk_registro.html` conviven con `recent_at` y el buscador único.
+- [x] El servidor dice en cada respuesta (`auto_print`/`auto_register`, y `flags` en `/users/changes`) si se imprime/registra solo; el candado de 30 s se confirma tras el éxito; la ventana de impresión se abre dentro del gesto.
+- [x] Matriz de pruebas nueva `tests/js/autoprint_matrix_check.js` (28 casos: 6 entradas × bandera en vivo o ya activa × con/sin autoimpresión + Enter con nombre + botones de fila). Sin imprimir sin red (caso D: pieza aparte).
+- [x] Impresión INAMOVIBLE sin cambios (no se tocaron `badge_print.html`, `label-compose.js`, `ql-usb.js` ni las pruebas fijas).
+- [ ] pytest (`test_autoprint_flags.py`, `test_accreditation_undo.py`) los corre el CI. Prueba física con la Brother: `docs/PRUEBA_FISICA_AUTOIMPRESION.md`. Sin fusionar hasta la frase de Juan David.

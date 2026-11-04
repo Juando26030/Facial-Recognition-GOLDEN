@@ -255,6 +255,20 @@
   <p class="gw-lead">La barra de arriba ES el componente <code class="g-code">.gw-nav</code>: en celular se pliega tras «Menú». Reserva el hueco <code class="g-code">&lt;div class="gw-nav__search" data-gw-search-slot hidden&gt;</code> para el buscador «¿qué quieres hacer?» de la Fase 2 (hoy no existe y está oculto). La barra lateral actual (<code class="g-code">templates/_sidebar.html</code>) ya usa los íconos y el tamaño táctil de la base.</p>
 </section>
 
+<section class="g-sec" id="buscador">
+  <h2 class="gw-title">Buscador único</h2>
+  <p class="gw-lead">Una sola caja fija arriba (<code class="g-code">.gw-search</code>) para cédula, nombre o empresa. Cada resultado trae su motivo en una insignia <code class="g-code">.gw-badge.gw-badge--info.gw-reason</code>. La lista se desplaza por debajo (<code class="g-code">.gw-scroll-x</code> para la tabla ancha). Usa solo tokens; se ve igual en claro y oscuro.</p>
+  <div class="g-demo">
+    <div class="gw-search">
+      <div class="gw-row gw-row--between"><label class="gw-label" for="gBusq">Buscar a la persona</label></div>
+      <input class="gw-input" type="text" id="gBusq" value="1016" autocomplete="off" aria-describedby="gBusqHint">
+      <p class="gw-hint" id="gBusqHint">2 coincidencias</p>
+    </div>
+    <p>Ana Gómez <span class="gw-badge gw-badge--info gw-reason">Cédula (empieza por 1016…)</span></p>
+    <p>Pepito Pérez <span class="gw-badge gw-recent-tag">Recién registrado</span> <span class="gw-text-sm gw-muted">(píldora sólida; la fila de «Registrado» sigue en verde)</span></p>
+  </div>
+</section>
+
 <section class="g-sec" id="ayuda">
   <h2 class="gw-title">Ayuda en contexto y recorrido</h2>
   <p class="gw-lead">En cada pantalla va un «?» que abre un panel con un dibujo animado, una o dos líneas y «Entendido». Con teclado: Enter/Espacio abre, Tab gira dentro del panel, Esc cierra y el foco vuelve al «?». Si la persona pidió menos movimiento (<code class="g-code">prefers-reduced-motion</code>), el dibujo queda quieto en su último cuadro.</p>

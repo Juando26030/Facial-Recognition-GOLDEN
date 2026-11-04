@@ -45,7 +45,7 @@ def _quotas(db: Session, form: WebForm, design: dict) -> list:
     for r in rules:
         used = counts.get(r["id"], 0)
         out.append({"id": r["id"], "label": r["label"], "rule": _describe_rule(r, design), "limit": r["limit"], "used": used,
-                    "left": max(0, r["limit"] - used), "pct": min(100, _pct(used, r["limit"])), "full": used >= r["limit"]})
+                    "left": max(0, r["limit"] - used), "pct": 100 if r["limit"] == 0 else min(100, _pct(used, r["limit"])), "closed": r["limit"] == 0, "full": used >= r["limit"]})
     return out
 
 

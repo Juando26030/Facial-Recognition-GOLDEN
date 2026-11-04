@@ -12,6 +12,20 @@
     add(id) { if (!id) return; id = String(id); const l = [id].concat(this.list().filter((x) => x !== id)).slice(0, 5); try { localStorage.setItem(this.key(), JSON.stringify(l)); } catch (e) { /* sin almacenamiento */ } },
     has(id) { return !!id && this.list().indexOf(String(id)) >= 0; },
   };
+  /* Cola compartida de recién registrados: la ventana es RELATIVA a la acción más nueva de la lista (recent_at del servidor, UTC); nunca se usa el reloj de este equipo. */
+  const RECENT_WINDOW_MS = 15 * 60 * 1000;
+  function recentMs(u) { const t = u && u.recent_at ? Date.parse(u.recent_at) : NaN; return Number.isNaN(t) ? null : t; }
+  function newestRecentMs(list) { let m = null; for (const u of list) { const t = recentMs(u); if (t !== null && (m === null || t > m)) m = t; } return m; }
+  /* Sin consulta de búsqueda: primero lo que ESTE equipo acaba de hacer y el servidor aún no trae (la más reciente primero), luego todo lo que trae recent_at (la más nueva primero), luego el resto en su orden. */
+  function orderByRecency(list) {
+    const pos = new Map(Recent.list().map((id, i) => [id, i]));
+    const locals = [], served = [], rest = [];
+    list.forEach((u) => { const t = recentMs(u); if (t !== null) served.push([u, t]); else if (pos.has(String(u.id))) locals.push(u); else rest.push(u); });
+    locals.sort((a, b) => pos.get(String(a.id)) - pos.get(String(b.id)));
+    served.sort((a, b) => b[1] - a[1]);
+    return locals.concat(served.map((x) => x[0]), rest);
+  }
+  function isRecentRow(u, newest) { const t = recentMs(u); if (t !== null) return newest !== null && newest - t < RECENT_WINDOW_MS; return Recent.has(u.id); }
   const ORIGINS = { base: { icon: '📄', label: 'Base (Excel)' }, manual: { icon: '✍️', label: 'Alta manual' }, autoregistro: { icon: '🌐', label: 'Autoregistro' }, desconocido: { icon: '❔', label: 'Desconocido' } };
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
@@ -122,6 +136,17 @@
      cédula). Busca en la copia local; quien no está NO se admite; si ya consta como registrado o está en la cola pide la confirmación de DUPLICADO; si no, encola (client_id, marca de
      tiempo, huella; método `cedula` | `qr` | `manual`) y avisa. Devuelve lo encontrado o null. Las listas abiertas se actualizan por `accreditHooks`. */
   const accreditHooks = [];
+  /* PR3 (4a, autoimpresión): las banderas del evento las decide el SERVIDOR (respuestas de checkin-cedula/register/status/undo y `flags` de /users/changes), no la página. Se copian a las variables de
+     la página (BadgePrint.setFlags) y a la copia local (el autorregistro sin red usa la última conocida, ya no la de la descarga de hace hasta 4 min). */
+  function applyFlags(flags) {
+    if (!flags || typeof flags !== 'object') return;
+    if (window.BadgePrint && BadgePrint.setFlags) BadgePrint.setFlags(flags);
+    const gc = window.GoldenContingency && window.GoldenContingency.instance;
+    if (gc && gc.setAutoRegister && typeof flags.auto_register === 'boolean') gc.setAutoRegister(flags.auto_register);
+  }
+  const jsonOf = async (r) => { try { return (await r.json()) || {}; } catch (e) { return {}; } };
+  const primePrint = () => { if (window.BadgePrint && BadgePrint.primeWindow) { try { BadgePrint.primeWindow(); } catch (e) { /* sin ventana preparada */ } } };       // dentro del gesto del usuario (ver badge-render.js)
+  const cancelPrimedPrint = () => { if (window.BadgePrint && BadgePrint.cancelPrimed) BadgePrint.cancelPrimed(); };
   let lastAccredit = null;          // última acreditación hecha (para ofrecer «Deshacer»): { cid, name, offline, at }
   async function offlineAccredit(GC, target, method, cid) {
     const found = target.h ? await GC.findByHash(target.h) : await GC.scanLocal(target.cedula);
@@ -316,7 +341,7 @@
     // solo con "Cancelar" o guardando, para no perder cambios sin querer.
     box.querySelector('#editModalCancel').addEventListener('click', close);
 
-    box.querySelector('#editModalSave').addEventListener('click', async () => {
+    const saveHandler = async () => {
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;
       if (GCs && GCs.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto: aviso claro, no «Error de red»
       const form = box.querySelector('#editModalForm');
@@ -394,7 +419,7 @@
             // uno de los puntos donde el estado puede pasar a "Registrado" sin pasar por un
             // escaneo (ver maybeAutoPrint en badge-render.js para el resto).
             if (newStatus === 'registrado' && window.RegTimer) RegTimer.done();
-            if (newStatus === 'registrado' && window.BadgePrint) BadgePrint.maybeAutoPrint(currentId);
+            if (newStatus === 'registrado' && window.BadgePrint) { const sd = await jsonOf(statusRes); applyFlags(sd); BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
           } catch (e) {
             showToast('Error de red', 'error');
             saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
@@ -444,7 +469,7 @@
               const st = await fetch(`/api/events/${window.EVENT_ID}/users/${currentId}/status`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
               });
-              if (st.ok) { if (window.RegTimer) RegTimer.done(); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId); }
+              if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
               else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
@@ -462,6 +487,14 @@
         showToast('Error de red', 'error');
         saveBtn.disabled = false; saveBtn.innerText = 'Guardar cambios';
       }
+    };
+    box.querySelector('#editModalSave').addEventListener('click', async () => {
+      // La ventana de impresión se abre AQUÍ, dentro del clic, solo si este guardado va a dejar a la persona «Registrada» (si no, no se abre nada).
+      const GCw = window.GoldenContingency && window.GoldenContingency.instance;
+      const statusSel = box.querySelector('#editModalStatus');
+      const willRegister = canManageStatus ? !!(statusSel && statusSel.value === 'registrado' && originalStatus !== 'registrado') : !isRegistered;
+      if (willRegister && !(GCw && GCw.active())) primePrint();
+      try { await saveHandler(); } finally { cancelPrimedPrint(); }
     });
 
     if (canManageStatus) {
@@ -492,7 +525,7 @@
     tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
     tr.dataset.userId = user.id;
     if (user.__h) tr.dataset.h = user.__h;          // fila de la lista local (sin cédula)
-    if (Recent.has(user.id)) { tr.dataset.recent = '1'; queueMicrotask(() => { const nameTd = tr.querySelector('td[data-field="first_name"]') || tr.cells[1]; if (nameTd && !nameTd.querySelector('.gw-recent')) { const b = document.createElement('span'); b.className = 'gw-recent'; b.textContent = 'Reciente'; b.title = 'Registrada o editada hace poco en este equipo'; b.style.cssText = 'margin-left:6px; font-size:0.7rem; font-weight:700; color:#2b6cb0; border:1px solid #2b6cb0; border-radius:999px; padding:0 6px; vertical-align:middle;'; nameTd.appendChild(b); } }); }      // A5: marca discreta
+    if (isRecentRow(user, null)) tr.dataset.recent = '1';          // el resaltado y la insignia los pone drawRows (relativos a la lista)
 
     /* La columna de Acción va PRIMERO (2026-09-16, pedido explícito: antes al final, obligaba a
        desplazarse hasta el final de la fila para editar/imprimir). El resto de columnas
@@ -611,6 +644,11 @@
     const cedulaInput = ids.cedula ? document.getElementById(ids.cedula) : null;
     const nombreInput = ids.nombre ? document.getElementById(ids.nombre) : null;
     const entidadInput = ids.entidad ? document.getElementById(ids.entidad) : null;
+    const SC = window.SearchCore;
+    const unified = !!(opts.unified && cedulaInput && SC);            // buscador único: una sola caja (cédula, nombre o empresa) con SearchCore
+    const hintEl = unified ? document.getElementById('gwSearchHint') : null;
+    const reasons = new WeakMap();                                    // persona -> motivo de la coincidencia (solo con consulta activa)
+    let activeQuery = false;
 
     /* Botón/contador "N sin registrar" (Sprint 2 Fix 2, 2026-09-15) — se crea solo, insertado
        justo antes de la tabla, así no hay que tocar cada template que use mountSearch. Clic
@@ -701,6 +739,36 @@
       const size = pageSize(), total = lastFiltered.length, pages = Math.max(1, Math.ceil(total / size));
       if (pageIdx > pages - 1) pageIdx = pages - 1;                    // un filtro o un refresco dejó la página fuera de rango
       const rows = lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).map(rowOf);
+      const newest = newestRecentMs(allUsers);
+      lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).forEach((u, i) => {          // resaltado + insignia «Recién registrado» (se quitan las previas: las filas están en caché)
+        const tr = rows[i];
+        if (!tr || !tr.querySelectorAll) return;
+        tr.querySelectorAll('.gw-recent-tag').forEach((n) => n.remove());
+        if (!isRecentRow(u, newest)) { delete tr.dataset.recent; return; }
+        tr.dataset.recent = '1';
+        const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
+        if (!td) return;
+        const b = document.createElement('span');
+        b.className = 'gw-badge gw-recent-tag';
+        b.textContent = 'Recién registrado';
+        td.appendChild(b);
+      });
+      if (unified) {                                                   // el motivo vive en la fila en caché: se quita el anterior y se pone el actual (no se duplican filas)
+        lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).forEach((u, i) => {
+          const tr = rows[i];
+          if (!tr || !tr.querySelectorAll) return;
+          tr.querySelectorAll('.gw-reason').forEach((n) => n.remove());
+          const motivo = activeQuery ? reasons.get(u) : '';
+          if (!motivo) return;
+          const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
+          if (!td) return;
+          const b = document.createElement('span');
+          b.className = 'gw-badge gw-badge--info gw-reason';
+          b.textContent = motivo;
+          b.style.marginLeft = '6px';
+          td.appendChild(b);
+        });
+      }
       if (localMode) rows.unshift(localNoteRow());
       if (total > size) rows.push(pagerRow(total, size, pages));
       tbody.replaceChildren(...rows);
@@ -730,8 +798,36 @@
       return tr;
     }
 
+    function setHint(text) { if (hintEl) hintEl.textContent = text; }
+    function applyUnified() {
+      const q = SC.classifyQuery(cedulaInput.value || '');
+      const base = allUsers.filter((u) => {
+        if (onlyNotRegistered && u.status !== 'No registrado') return false;
+        if (originSelect && originSelect.value && (u.origin || 'desconocido') !== originSelect.value) return false;
+        return true;
+      });
+      activeQuery = q.kind !== 'vacio';
+      if (!activeQuery) {
+        lastFiltered = orderByRecency(base);
+        setHint(localMode ? 'Sin red: se busca por nombre y por cédula completa. Ves lo que registra este equipo; lo de los demás llega al reconectar.' : '');
+      } else {
+        const sopts = {};
+        if (localMode && q.cedula && q.completa) {                    // lista local: la cédula se compara por huella (exacta); nunca se guarda en claro
+          const h = localHashes.get(q.cedula);
+          if (h !== undefined) sopts.hash = h;
+          else { const GC = GCref(); if (GC) { const job = GC.hashFor(q.cedula).then((hh) => { localHashes.set(q.cedula, hh); applyFilters(); }).finally(() => inflightHashes.delete(job)); inflightHashes.add(job); } }
+        }
+        const res = SC.search(base, q, sopts);
+        lastFiltered = res.map((r) => { reasons.set(r.persona, r.motivo); return r.persona; });
+        setHint(res.length ? `${res.length} ${res.length === 1 ? 'coincidencia' : 'coincidencias'}` : 'Sin coincidencias. Revisa la cédula o prueba con el nombre.');
+      }
+      updateCounterLabel();
+      drawRows();
+    }
+
     function applyFilters() {
       clearTimeout(searchTimer);
+      if (unified) return applyUnified();
       const cedula = (cedulaInput && cedulaInput.value || '').trim().toLowerCase();
       const nombre = wordsOf((nombreInput && nombreInput.value || '').trim());
       const entidad = wordsOf((entidadInput && entidadInput.value || '').trim());
@@ -753,12 +849,7 @@
         if (entidad.length && !matchesWords(k.entity, entidad)) return false;
         return true;
       });
-      const rec = Recent.list();
-      if (rec.length && !cedula && !nombre.length && !entidad.length) {          // sin filtro de búsqueda: las recientes de ESTE equipo primero
-        const pos = new Map(rec.map((id, i) => [id, i]));
-        const top = lastFiltered.filter((u) => pos.has(u.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
-        if (top.length) lastFiltered = top.concat(lastFiltered.filter((u) => !pos.has(u.id)));
-      }
+      if (!cedula && !nombre.length && !entidad.length) lastFiltered = orderByRecency(lastFiltered);          // sin consulta: la cola de recién registrados primero
       updateCounterLabel();
       drawRows();
     }
@@ -839,7 +930,9 @@
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
         const head = await fetch(withEvent('/api/users/changes?cursor=' + NOW_CURSOR));
         if (!head.ok) throw new Error(head.status);
-        const nextCursor = (await head.json()).cursor;
+        const headBody = await head.json();
+        applyFlags(headBody.flags);
+        const nextCursor = headBody.cursor;
         const byId = new Map();
         for (let offset = 0, total = 1; offset < total; offset += PAGE) {
           const res = await fetch(withEvent(`/api/users?limit=${PAGE}&offset=${offset}`));
@@ -868,11 +961,12 @@
         const res = await fetch(withEvent('/api/users/changes?cursor=' + encodeURIComponent(cursor)));
         if (!res.ok) return;
         const delta = await res.json();
+        applyFlags(delta.flags);
         cursor = delta.cursor;
         { const GCt = GCref(); if (GCt && GCt.noteServerTotal && Number.isInteger(delta.total)) GCt.noteServerTotal(delta.total); }
         if (delta.users.length) {
           const byId = new Map(allUsers.map(u => [u.id, u]));
-          delta.users.forEach(u => byId.set(u.id, u));
+          delta.users.forEach(u => { const old = byId.get(u.id); if (old && u.recent_at === undefined && old.recent_at !== undefined) u.recent_at = old.recent_at; byId.set(u.id, u); });          // merge por id: recent_at nuevo manda
           allUsers = [...byId.values()];
         }
         if (allUsers.length !== delta.total) return reload();
@@ -976,6 +1070,8 @@
           const res = await fetch(`/api/events/${window.EVENT_ID}/accreditations/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: acc.cid }) });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) { showToast(data.detail || 'No se pudo deshacer', 'error'); return; }
+          applyFlags(data);
+          if (window.BadgePrint && BadgePrint.releaseClaim) BadgePrint.releaseClaim(data.user_id || acc.id);       // PR3 (causa B/T5): volver a acreditar a la misma persona dentro de los 30 s sí imprime
           await reload();
         }
         showToast(`Acreditación de ${acc.name} deshecha`, 'success');
@@ -1041,6 +1137,11 @@
     }
 
     async function fastCheckin(cedula, force, nameInfo, confirmFlag, method, clientId) {
+      const GC0 = window.GoldenContingency && window.GoldenContingency.instance;
+      if (!(GC0 && GC0.active()) && (confirmFlag || window.EVENT_AUTO_REGISTER !== false)) primePrint();          // la ventana de impresión se abre dentro del gesto (Enter del lector, clic en «Acreditar»), antes de cualquier llamada de red
+      try { return await fastCheckinCore(cedula, force, nameInfo, confirmFlag, method, clientId); } finally { cancelPrimedPrint(); }
+    }
+    async function fastCheckinCore(cedula, force, nameInfo, confirmFlag, method, clientId) {
       const cid = clientId || newClientId();
       const GC = window.GoldenContingency && window.GoldenContingency.instance;
       if (GC && GC.active()) return offlineCheckin(GC, cedula, method, cid);
@@ -1069,6 +1170,7 @@
         const data = await res.json();
         if (!res.ok) { showToast(data.detail || 'No se pudo acreditar', 'error'); return; }
         if (data.result === 'DUPLICADO') {
+          cancelPrimedPrint();                                      // mientras se pregunta no queda una ventana en blanco abierta
           const confirmado = await confirmDuplicateRegistration(data.data, data.times_registered);
           if (confirmado) await fastCheckin(cedula, true, nameInfo, undefined, method, cid);
           return;
@@ -1089,11 +1191,12 @@
           showToast(`Acreditado: ${data.data.first_name} ${data.data.last_name}`, 'success');
           if (window.RegTimer) RegTimer.done();
           Recent.add(data.data.id);
-          lastAccredit = { cid, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
+          lastAccredit = { cid, id: data.data.id, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
           if (data.data.sibling_events && data.data.sibling_events.length) {
             showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
           }
-          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id);
+          applyFlags(data);
+          if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print });
           await reload();
           if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
           return;
@@ -1129,9 +1232,9 @@
         // vieja, u OCR de la MRZ nueva), se filtra el Directorio por ese nombre — mismo criterio
         // de "empieza por palabra" que la búsqueda manual — y el operador decide desde ahí.
         const fullName = nameInfo ? `${nameInfo.nombres || ''} ${nameInfo.apellidos || ''}`.trim() : '';
-        if (fullName && nombreInput) {
-          if (cedulaInput) cedulaInput.value = '';
-          nombreInput.value = fullName;
+        if (fullName && (nombreInput || unified)) {
+          if (unified) cedulaInput.value = fullName;
+          else { if (cedulaInput) cedulaInput.value = ''; nombreInput.value = fullName; }
           applyFilters();
           const found = data.name_matches && data.name_matches.length;
           showToast(
@@ -1161,6 +1264,12 @@
           e.preventDefault();
           const raw = cedulaInput.value.trim();
           if (!raw) return;
+          if (unified) {                                                // nombre/empresa (o menos de 3 dígitos): solo buscar, sin registrar ni limpiar
+            const q = SC.classifyQuery(raw);
+            const doc = q.kind === 'cedula' || q.kind === 'lector' || q.kind === 'qr'
+              || (q.kind === 'texto' && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && !/\s/.test(raw));
+            if (!doc) { clearTimeout(searchTimer); pageIdx = 0; applyFilters(); return; }
+          }
           const parsed = parseOldCedulaBarcode(raw);
           const qr = window.QrCode ? QrCode.parse(raw) : null;
           if (qr && qr.isQr) {
@@ -1176,9 +1285,11 @@
       });
     }
 
+    if (unified && !cedulaInput.disabled) { try { cedulaInput.focus(); } catch (_) { /* sin foco en pruebas */ } }
     reload();
     return {
-      reload,
+      reload, refresh,
+      searchState: () => ({ unified, query: activeQuery, reasons: lastFiltered.map((u) => reasons.get(u) || ''), results: lastFiltered.slice() }),
       /* Punto de entrada compartido para cualquier OTRO método que resuelva una cédula+nombre
          fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —
          reusa exactamente el mismo flujo de dos pasos + DUPLICADO/force que el atajo de lector. */
