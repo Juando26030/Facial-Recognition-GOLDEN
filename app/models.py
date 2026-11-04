@@ -89,6 +89,7 @@ class EventAttendee(Base):
     accept_trusted = Column(Boolean, default=False, server_default='false', nullable=False)   # el enlace salió del listado que cargó el organizador (correo propio): abrirlo verifica la aceptación; si salió de un formulario abierto, no
     accept_sent_at = Column(DateTime, nullable=True)
     origin = Column(String(16), nullable=True)  # 0073 (B1): origen de carga en ESTE evento — base | manual | autoregistro; NULL = Desconocido. No cambia con el estado de registro
+    last_action_at = Column(DateTime, nullable=True)  # 0082 (cola compartida): hora del SERVIDOR de la última alta/acreditación en ESTE evento; NULL = sin acción desde que existe la columna
     created_at = Column(DateTime, default=utcnow)
 
     __table_args__ = (

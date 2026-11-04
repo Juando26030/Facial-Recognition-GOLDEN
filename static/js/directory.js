@@ -12,6 +12,20 @@
     add(id) { if (!id) return; id = String(id); const l = [id].concat(this.list().filter((x) => x !== id)).slice(0, 5); try { localStorage.setItem(this.key(), JSON.stringify(l)); } catch (e) { /* sin almacenamiento */ } },
     has(id) { return !!id && this.list().indexOf(String(id)) >= 0; },
   };
+  /* Cola compartida de recién registrados: la ventana es RELATIVA a la acción más nueva de la lista (recent_at del servidor, UTC); nunca se usa el reloj de este equipo. */
+  const RECENT_WINDOW_MS = 15 * 60 * 1000;
+  function recentMs(u) { const t = u && u.recent_at ? Date.parse(u.recent_at) : NaN; return Number.isNaN(t) ? null : t; }
+  function newestRecentMs(list) { let m = null; for (const u of list) { const t = recentMs(u); if (t !== null && (m === null || t > m)) m = t; } return m; }
+  /* Sin consulta de búsqueda: primero lo que ESTE equipo acaba de hacer y el servidor aún no trae (la más reciente primero), luego todo lo que trae recent_at (la más nueva primero), luego el resto en su orden. */
+  function orderByRecency(list) {
+    const pos = new Map(Recent.list().map((id, i) => [id, i]));
+    const locals = [], served = [], rest = [];
+    list.forEach((u) => { const t = recentMs(u); if (t !== null) served.push([u, t]); else if (pos.has(String(u.id))) locals.push(u); else rest.push(u); });
+    locals.sort((a, b) => pos.get(String(a.id)) - pos.get(String(b.id)));
+    served.sort((a, b) => b[1] - a[1]);
+    return locals.concat(served.map((x) => x[0]), rest);
+  }
+  function isRecentRow(u, newest) { const t = recentMs(u); if (t !== null) return newest !== null && newest - t < RECENT_WINDOW_MS; return Recent.has(u.id); }
   const ORIGINS = { base: { icon: '📄', label: 'Base (Excel)' }, manual: { icon: '✍️', label: 'Alta manual' }, autoregistro: { icon: '🌐', label: 'Autoregistro' }, desconocido: { icon: '❔', label: 'Desconocido' } };
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
@@ -492,7 +506,7 @@
     tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
     tr.dataset.userId = user.id;
     if (user.__h) tr.dataset.h = user.__h;          // fila de la lista local (sin cédula)
-    if (Recent.has(user.id)) { tr.dataset.recent = '1'; queueMicrotask(() => { const nameTd = tr.querySelector('td[data-field="first_name"]') || tr.cells[1]; if (nameTd && !nameTd.querySelector('.gw-recent')) { const b = document.createElement('span'); b.className = 'gw-recent'; b.textContent = 'Reciente'; b.title = 'Registrada o editada hace poco en este equipo'; b.style.cssText = 'margin-left:6px; font-size:0.7rem; font-weight:700; color:#2b6cb0; border:1px solid #2b6cb0; border-radius:999px; padding:0 6px; vertical-align:middle;'; nameTd.appendChild(b); } }); }      // A5: marca discreta
+    if (isRecentRow(user, null)) tr.dataset.recent = '1';          // el resaltado y la insignia los pone drawRows (relativos a la lista)
 
     /* La columna de Acción va PRIMERO (2026-09-16, pedido explícito: antes al final, obligaba a
        desplazarse hasta el final de la fila para editar/imprimir). El resto de columnas
@@ -706,6 +720,20 @@
       const size = pageSize(), total = lastFiltered.length, pages = Math.max(1, Math.ceil(total / size));
       if (pageIdx > pages - 1) pageIdx = pages - 1;                    // un filtro o un refresco dejó la página fuera de rango
       const rows = lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).map(rowOf);
+      const newest = newestRecentMs(allUsers);
+      lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).forEach((u, i) => {          // resaltado + insignia «Recién registrado» (se quitan las previas: las filas están en caché)
+        const tr = rows[i];
+        if (!tr || !tr.querySelectorAll) return;
+        tr.querySelectorAll('.gw-recent-tag').forEach((n) => n.remove());
+        if (!isRecentRow(u, newest)) { delete tr.dataset.recent; return; }
+        tr.dataset.recent = '1';
+        const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
+        if (!td) return;
+        const b = document.createElement('span');
+        b.className = 'gw-badge gw-badge--ok gw-recent-tag';
+        b.textContent = 'Recién registrado';
+        td.appendChild(b);
+      });
       if (unified) {                                                   // el motivo vive en la fila en caché: se quita el anterior y se pone el actual (no se duplican filas)
         lastFiltered.slice(pageIdx * size, (pageIdx + 1) * size).forEach((u, i) => {
           const tr = rows[i];
@@ -761,14 +789,8 @@
       });
       activeQuery = q.kind !== 'vacio';
       if (!activeQuery) {
-        lastFiltered = base;
-        const rec = Recent.list();
-        if (rec.length) {
-          const pos = new Map(rec.map((id, i) => [id, i]));
-          const top = lastFiltered.filter((u) => pos.has(u.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
-          if (top.length) lastFiltered = top.concat(lastFiltered.filter((u) => !pos.has(u.id)));
-        }
-        setHint(localMode ? 'Sin red: se busca por nombre y por cédula completa.' : '');
+        lastFiltered = orderByRecency(base);
+        setHint(localMode ? 'Sin red: se busca por nombre y por cédula completa. Ves lo que registra este equipo; lo de los demás llega al reconectar.' : '');
       } else {
         const sopts = {};
         if (localMode && q.cedula && q.completa) {                    // lista local: la cédula se compara por huella (exacta); nunca se guarda en claro
@@ -808,12 +830,7 @@
         if (entidad.length && !matchesWords(k.entity, entidad)) return false;
         return true;
       });
-      const rec = Recent.list();
-      if (rec.length && !cedula && !nombre.length && !entidad.length) {          // sin filtro de búsqueda: las recientes de ESTE equipo primero
-        const pos = new Map(rec.map((id, i) => [id, i]));
-        const top = lastFiltered.filter((u) => pos.has(u.id)).sort((a, b) => pos.get(a.id) - pos.get(b.id));
-        if (top.length) lastFiltered = top.concat(lastFiltered.filter((u) => !pos.has(u.id)));
-      }
+      if (!cedula && !nombre.length && !entidad.length) lastFiltered = orderByRecency(lastFiltered);          // sin consulta: la cola de recién registrados primero
       updateCounterLabel();
       drawRows();
     }
@@ -927,7 +944,7 @@
         { const GCt = GCref(); if (GCt && GCt.noteServerTotal && Number.isInteger(delta.total)) GCt.noteServerTotal(delta.total); }
         if (delta.users.length) {
           const byId = new Map(allUsers.map(u => [u.id, u]));
-          delta.users.forEach(u => byId.set(u.id, u));
+          delta.users.forEach(u => { const old = byId.get(u.id); if (old && u.recent_at === undefined && old.recent_at !== undefined) u.recent_at = old.recent_at; byId.set(u.id, u); });          // merge por id: recent_at nuevo manda
           allUsers = [...byId.values()];
         }
         if (allUsers.length !== delta.total) return reload();
@@ -1240,7 +1257,7 @@
     if (unified && !cedulaInput.disabled) { try { cedulaInput.focus(); } catch (_) { /* sin foco en pruebas */ } }
     reload();
     return {
-      reload,
+      reload, refresh,
       searchState: () => ({ unified, query: activeQuery, reasons: lastFiltered.map((u) => reasons.get(u) || ''), results: lastFiltered.slice() }),
       /* Punto de entrada compartido para cualquier OTRO método que resuelva una cédula+nombre
          fuera del campo de texto de arriba (ej. el escaneo por foto de la MRZ, Historia 2.3) —

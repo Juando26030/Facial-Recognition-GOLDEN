@@ -116,7 +116,7 @@ const tick = () => new Promise((r) => setImmediate(r));
   } };
   const dl = window.GoldenDirectory.mountSearch({ tbodyId: 'tbody', unified: true, fastCheckin: true, searchIds: { cedula: 'cedula', nombre: 'searchNombre', entidad: 'searchEntidad' } });
   await dl.reload(); await tick();
-  assert.strictEqual(rows().length, 2); assert.strictEqual(els.hint.textContent, 'Sin red: se busca por nombre y por cédula completa.');
+  assert.strictEqual(rows().length, 2); assert.strictEqual(els.hint.textContent, 'Sin red: se busca por nombre y por cédula completa. Ves lo que registra este equipo; lo de los demás llega al reconectar.');
   type(els.cedula, 'carla'); assert.strictEqual(rows().length, 1); assert.deepStrictEqual(reasonOf(rows()[0]), ['Nombre']);
   type(els.cedula, '98765432'); await dl.hashesSettled(); advance(0);
   assert.strictEqual(rows().length, 1, 'la cédula completa coincide por huella'); assert.deepStrictEqual(reasonOf(rows()[0]), ['Cédula exacta']);
