@@ -435,22 +435,23 @@
   }
 
   /* ------------------------------------------------------------------ X: mandar a otro equipo y seguir el estado */
-  async function sendToPrinter(userId, reprint) {
+  async function sendToPrinter(userId, reprint, onSent) {       // `onSent` se llama en cuanto el servidor aceptó el trabajo (la impresión AUTOMÁTICA confirma ahí su candado, sin esperar el seguimiento)
     const requestId = uuid();
     let job = null;
     for (let i = 0; i < 2 && !job; i++) {           // el mismo request_id: si la primera respuesta se perdió, el servidor no duplica
       try {
         const res = await fetch(`/api/events/${EID}/print-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, request_id: requestId, reprint: !!reprint, prefs: prefs() }) });      // con los parámetros YA resueltos de este equipo
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) { toast(`⚠️ No se pudo enviar la escarapela a imprimir: ${body.detail || res.status}`, 'error'); return; }
+        if (!res.ok) { toast(`⚠️ No se pudo enviar la escarapela a imprimir: ${body.detail || res.status}`, 'error'); return false; }
         job = body;
       } catch (e) { await sleep(800); }
     }
-    if (!job) { toast('⚠️ Sin conexión: la escarapela NO se envió a imprimir. Reintente con «Imprimir escarapela».', 'error'); return; }
+    if (!job) { toast('⚠️ Sin conexión: la escarapela NO se envió a imprimir. Reintente con «Imprimir escarapela».', 'error'); return false; }
     if (job.duplicate) { toast('ℹ️ Esta escarapela ya se mandó a imprimir hace un momento: no se repite.', 'info'); }
     if (job.warning) toast('⚠️ ' + job.warning, 'warning');
     pending += 1; render();
     try {
+      if (onSent) onSent();
       for (let s = 0; s < FOLLOW_MAX; s++) {
         await sleep(FOLLOW_MS);
         let st = null;
@@ -529,10 +530,22 @@
     return false;
   }
 
+  /* PR3 (causa B): la impresión AUTOMÁTICA toma el candado de 30 s de forma provisional (`claimTicket`) y lo CONFIRMA solo cuando algo salió (trabajo aceptado por el servidor, impresión USB hecha o
+     ventana abierta); si la comprobación «¿registrado?» falla, el envío no sale o el navegador bloquea la ventana, lo SUELTA y un reintento automático de la misma persona no queda bloqueado. */
   async function printFor(userId, auto, confirmed) {
     if (!SHARED && !usb.ok) return auto ? original.maybeAutoPrint(userId) : original.openPrintWindow(userId);       // compartida apagada y sin impresora: la ventana de impresión de siempre
-    if (auto && original.claim && !(await original.claim(userId))) return;          // una impresión automática por persona (entre pestañas del mismo equipo, 30 s)
-    if (!auto && original.beginManual && !original.beginManual(userId)) return;       // doble clic / doble toque en «Imprimir»: una sola
+    let ticket = null;
+    if (auto) {                                    // una impresión automática por persona (entre pestañas del mismo equipo, 30 s)
+      if (original.claimTicket) { ticket = await original.claimTicket(userId); if (!ticket) return; }
+      else if (original.claim && !(await original.claim(userId))) return;
+    }
+    let ok = false;
+    try { ok = await dispatch(userId, auto, confirmed, ticket); }
+    finally { if (ticket) { if (ok) ticket.commit(); else ticket.release(); } }
+    return ok;
+  }
+  async function dispatch(userId, auto, confirmed, ticket) {         // true = salió (o quedó en manos del servidor); false = no salió
+    if (!auto && original.beginManual && !original.beginManual(userId)) return false;       // doble clic / doble toque en «Imprimir»: una sola
     if (SHARED && !(await registeredOrSay(userId))) return;            // «solo a quien está Registrado» lo comprueba la ruta compartida; sin ella, la regla de siempre
     let explicit = !!confirmed;                    // reimpresión EXPLÍCITA: desde la Cola o tras confirmar «¿imprimir de nuevo?»
     if (SHARED && route.mode === 'shared') {
@@ -542,10 +555,13 @@
           const c = r.ok ? await r.json() : { times_printed: 0 };
           if (c.times_printed > 0) explicit = true;
           if (c.times_printed > 0 && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
-            { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return;
+            { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return false;
         } catch (e) { /* si falla la consulta, no bloquea */ }
       }
-      return sendToPrinter(userId, !auto && explicit);
+      if (original.dropPrimed) original.dropPrimed();            // la ruta compartida no abre ventana aquí
+      let accepted = false;                                       // el servidor aceptó el trabajo (el seguimiento posterior puede terminar de varias formas)
+      await sendToPrinter(userId, !auto && explicit, () => { accepted = true; if (ticket) ticket.commit(); });
+      return accepted;
     }
     if (usb.ok) {
       try {
@@ -553,21 +569,35 @@
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`).catch(() => null);
           const c = r && r.ok ? await r.json() : { times_printed: 0 };
           if (c.times_printed > 0 && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
-            { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return;
+            { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return false;
         }
+        if (original.dropPrimed) original.dropPrimed();          // USB no abre ventana
         await printUsb(userId);
         await logPrint(userId);
         toast('🖨️ Escarapela impresa' + (lastPrint ? ` (${lastPrint.text})` : '.'), 'success');
-        return;
+        return true;
       } catch (e) {
         toast(`⚠️ No se pudo imprimir por USB (${e && e.message ? e.message : e}). Se abre la impresión normal.`, 'warning');
       }
     }
-    return auto ? (original.printNow ? original.printNow(userId) : original.maybeAutoPrint(userId)) : (original.openNow || original.openPrintWindow)(userId);
+    if (auto) {
+      if (!original.printNow) return !!(await original.maybeAutoPrint(userId, { auto: true }));
+      const w = await original.printNow(userId);
+      if (w === null && original.dropPrimed) original.dropPrimed();
+      return w !== null;                           // null = el navegador bloqueó la ventana: no se gasta el candado
+    }
+    await (original.openNow || original.openPrintWindow)(userId);
+    return true;
   }
 
   window.BadgePrint = Object.assign({}, original, {
-    maybeAutoPrint(userId) { if (!window.EVENT_AUTO_PRINT) return; printFor(userId, true); },
+    maybeAutoPrint(userId, opts) {
+      const auto = original.resolveAuto ? original.resolveAuto(opts) : (opts && typeof opts.auto === 'boolean' ? opts.auto : !!window.EVENT_AUTO_PRINT);
+      if (!auto) { if (original.cancelPrimed) original.cancelPrimed(); return Promise.resolve(false); }
+      if (original.holdPrimed) original.holdPrimed();            // esta llamada se queda con la ventana preparada (la consume printNow)
+      return printFor(userId, true);
+    },
+    primeWindow() { return (usb.ok || (SHARED && route.mode === 'shared') || !original.primeWindow) ? null : original.primeWindow(); },       // con USB o ruta compartida no se abre ventana
     openPrintWindow(userId) { return printFor(userId, false); },
   });
 
