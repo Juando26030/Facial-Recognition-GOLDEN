@@ -1,8 +1,8 @@
 """Cierre de sesión por inactividad del personal (3-nov-2026, docs/22_SESION_INACTIVIDAD.md).
 
 La última actividad vive DENTRO de la cookie de sesión firmada (`__session`), sin tocar la base: `la` (segundos desde la época de la última acción real de la persona),
-`idle_m` (minutos propios del evento en proceso en el que trabaja, o ausente) e `idle_off` (cuentas de puesto de impresión / que atienden a otros equipos: no se les cierra la sesión,
-porque su equipo queda imprimiendo sin que nadie toque la pantalla). El middleware de app/main.py (`idle_gate`) hace cumplir el tiempo en CADA petición.
+`idle_m` (minutos propios del evento en proceso en el que trabaja, o ausente) e `idle_off` (marca de tiempo de VENCIMIENTO de una exención: cuentas de puesto de impresión / que atienden a otros equipos mientras hay impresión en marcha en un evento EN PROCESO;
+pasado ese vencimiento rige el tiempo general). Los admins/super_admin no tienen trato especial: solo quedan exentos si cumplen la misma condición estricta. El middleware de app/main.py (`idle_gate`) hace cumplir el tiempo en CADA petición.
 
 Qué cuenta como «uso»: una navegación del navegador (página nueva o formulario enviado) y `POST /api/session/touch`, que la página manda cuando la persona hizo clic, teclas, toque o scroll.
 Los sondeos de fondo, latidos, balizas y refrescos NO renuevan la sesión (tampoco con el encabezado `X-Gw-Passive: 1`, que además lo declara).
@@ -15,6 +15,7 @@ from typing import Optional
 DEFAULT_MINUTES = 10
 EVENT_MIN, EVENT_MAX = 5, 60          # rango permitido para el tiempo propio de un evento (Parámetros)
 WARN_SECONDS = 60                     # el aviso sale 1 minuto antes de cerrar
+EXEMPT_HOURS_DEFAULT = 12             # vigencia de la exención (IDLE_EXEMPT_HOURS); pasada, rige el tiempo general
 PASSIVE_HEADER = "x-gw-passive"
 TOUCH_PATH = "/api/session/touch"
 # No se exige ni se renueva en: archivos estáticos, salud, tareas internas (token de Google), formularios y páginas públicas, webhooks, cierre/inicio de sesión.
@@ -58,9 +59,32 @@ def is_navigation(method: str, headers) -> bool:
     return method == "GET" and (headers.get("accept") or "").lower().startswith("text/html")
 
 
+def exempt_hours() -> float:
+    raw = os.getenv("IDLE_EXEMPT_HOURS", "").strip()
+    if not raw:
+        return EXEMPT_HOURS_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        return EXEMPT_HOURS_DEFAULT
+    return value if 0 < value <= 72 else EXEMPT_HOURS_DEFAULT
+
+
+def printing_in_progress(db, staff) -> bool:
+    """¿De verdad hay impresión en marcha para esta cuenta? Un solo query. Cuenta de puesto: algún evento EN PROCESO. Anfitrión de otros equipos: un evento EN PROCESO con impresión compartida
+    encendida donde alguien más eligió su equipo (PrintRoute). Eventos creados/finalizados, rutas viejas o impresión compartida apagada NO cuentan. Sin trato especial por rol (admin/super_admin incluidos)."""
+    from sqlalchemy import exists, false, select, true
+    from app.models import Event, PrintRoute
+    running = Event.status == "en_proceso"
+    hosts = exists(select(PrintRoute.id).where(PrintRoute.event_id == Event.id, PrintRoute.printer_staff_id == staff.id, PrintRoute.staff_user_id != staff.id))
+    cond = running & (hosts & (Event.shared_print_enabled.is_(True)) | (true() if staff.print_station else false()))
+    return db.query(Event.id).filter(cond).first() is not None
+
+
 def limit_seconds(session) -> int:
     """Segundos de inactividad permitidos para esta sesión; 0 = sin límite."""
-    if session.get("idle_off"):
+    off = session.get("idle_off")
+    if isinstance(off, int) and not isinstance(off, bool) and now() < off:      # exención vigente; un True antiguo o una marca vencida NO eximen
         return 0
     own = session.get("idle_m")
     if isinstance(own, int) and EVENT_MIN <= own <= EVENT_MAX:
@@ -69,14 +93,13 @@ def limit_seconds(session) -> int:
 
 
 def start(session, db=None, staff=None) -> None:
-    """Al iniciar sesión: marca la última actividad y si la cuenta queda exenta (puesto de impresión o anfitrión de otros equipos)."""
+    """Al iniciar sesión: marca la última actividad y, si hay impresión en marcha (`printing_in_progress`), una exención con vencimiento a IDLE_EXEMPT_HOURS (12 h por defecto)."""
     session["la"] = now()
     session.pop("idle_m", None)
     session.pop("idle_off", None)
     if staff is not None and db is not None:
-        from app import sessions
-        if staff.print_station or sessions._hosts_others(db, staff):
-            session["idle_off"] = True
+        if printing_in_progress(db, staff):
+            session["idle_off"] = now() + int(exempt_hours() * 3600)
 
 
 def expired(session, at: Optional[int] = None) -> bool:

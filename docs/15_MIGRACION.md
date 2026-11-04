@@ -862,3 +862,6 @@ El quiosco manda `took_ms`/`ui_flow` en el registro por cédula/QR, el alta, el 
 Ajuste `block_repeats` en `settings_json` del formulario (por cédula o por otro campo, atómico bajo el bloqueo del formulario) y estado `preregistered` en `form_submissions` para la columna opcional de la carga de la base (bloquea, no ocupa cupo). Detalle y pasos de prueba: `docs/20_FORM_YA_INSCRITO.md`.
 ### 3-nov-2026 — Cierre de sesión por inactividad del personal (migración 0081)
 `SESSION_IDLE_MINUTES` (10) y tiempo propio por evento en proceso (`events.idle_minutes`, Parámetros); la actividad va en la cookie firmada, sin consultas; solo navegaciones y `/api/session/touch` renuevan. Aditiva: **Job de migraciones antes que el código**. Detalle: `docs/22_SESION_INACTIVIDAD.md`.
+
+### 3-nov-2026 — Exención de inactividad acotada (sin migración)
+La exención de cierre por inactividad solo aplica con impresión en marcha (evento `en_proceso`; anfitrión además con impresión compartida encendida) y vence a `IDLE_EXEMPT_HOURS` (12 h); admins sin trato especial. Detalle: `docs/22_SESION_INACTIVIDAD.md`.
