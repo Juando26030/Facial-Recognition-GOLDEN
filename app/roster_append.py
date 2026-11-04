@@ -116,7 +116,7 @@ def _apply(db, event, info: dict, header_columns: dict, birth_used: bool, dup_ro
         apellidos, _ = _field_lookup(row, header_columns, row_num, "apellidos", "apellido")
         correo, _ = _field_lookup(row, header_columns, row_num, "correo", "e-mail corporativo")
         telefono, _ = _field_lookup(row, header_columns, row_num, "telefono", "tel. celular")
-        for ok, what in ((bool(nombres), "falta el nombre"), (bool(apellidos), "falta el apellido"), (not correo or bool(_EMAIL_RE.match(correo)), "el correo no parece válido"),
+        for ok, what in ((bool(nombres), "falta el nombre"), (not correo or bool(_EMAIL_RE.match(correo)), "el correo no parece válido"),
                          (not telefono or bool(_PHONE_RE.match(telefono)), "el teléfono tiene caracteres raros")):
             if not ok:
                 c["warnings"] += 1
@@ -223,7 +223,7 @@ def run_step(db, event, staff, step: dict, row_infos: list, header_columns: dict
     report = {"created": c["created"], "enrolled_existing": c["enrolled_existing"], "existing": c["existing"], "duplicates": c["duplicates"], "suppressed": c["suppressed"],
               "errors": c["errors"], "warnings": c["warnings"], "columns_ignored": len(columns_report.get("unused", [])), "unknown_categories": ap["unknown_categories"]}
     return {"message": message, "count": c["created"] + c["enrolled_existing"], "errors": ap["messages"] + notes, "optional_labels": event.get_optional_labels(),
-            "columns": columns_report, "append": report}
+            **roster_columns.public(columns_report), "append": report}
 
 
 def preview(db, event, prepared: dict) -> dict:
