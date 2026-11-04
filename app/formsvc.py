@@ -181,7 +181,7 @@ def quota_public(db: Session, form: WebForm) -> dict:
             c = r["conds"][0]
             left.setdefault(c["field"], {})[c["value"]] = min(remaining, left.get(c["field"], {}).get(c["value"], remaining))
         if remaining == 0:
-            full.append({"label": r["label"], "message": r.get("message", ""), "match": r["match"], "conds": r["conds"]})
+            full.append({"label": r["label"], "message": r.get("message", ""), "limit": r["limit"], "closed": r["limit"] == 0, "match": r["match"], "conds": r["conds"]})
     return {"left": left, "full": full}
 
 
@@ -426,7 +426,9 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
         rebuild_quota_keys(db, form, rules)
         res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "quota":            # la función SQL devuelve solo el nombre: el mensaje de la regla se toma de las que cumple la persona
-        res["message"] = next((r.get("message", "") for r in rules if r["label"] == res.get("label") and quota_match(r, values)), "")
+        hit = next((r for r in rules if r["label"] == res.get("label") and quota_match(r, values)), None)
+        res["message"] = (hit or {}).get("message", "")
+        res["closed"] = bool(hit) and hit["limit"] == 0
     return res
 
 

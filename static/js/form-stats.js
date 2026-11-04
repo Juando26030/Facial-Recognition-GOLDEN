@@ -61,7 +61,7 @@
     var main = el('div', 'fs-cap__main', nf.format(q.used));
     main.appendChild(el('small', null, ' de ' + nf.format(q.limit) + ' (' + q.pct + '%)'));
     nums.appendChild(main);
-    nums.appendChild(el('div', 'fs-cap__left', q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
+    nums.appendChild(el('div', 'fs-cap__left', q.limit === 0 ? 'Cerrado temporalmente' : q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
     card.appendChild(nums);
     card.appendChild(track(q.pct, tone(q.pct, q.full), 'Cupo ' + q.label));
     return card;

@@ -656,7 +656,7 @@ def _reserve_and_store(db: Session, form: WebForm, payload: dict, settings: dict
             if reason == "retry":
                 return {"ok": True, "thanks": settings["thanks"], "is_test": is_test, "replayed": True}
             if reason == "quota":
-                return JSONResponse({"detail": formlib.quota_full_message(res.get("message"), res["label"], server=True), "stage": "quota"}, status_code=409)
+                return JSONResponse({"detail": formlib.quota_full_message(res.get("message"), res["label"], server=True, closed=bool(res.get("closed"))), "stage": "quota"}, status_code=409)
             if reason == "duplicate":
                 return JSONResponse({"detail": formsvc.ALREADY_MSG, "duplicate": True, "already": True}, status_code=409)
             return JSONResponse({"detail": "El cupo de este formulario se completó", "stage": "closed"}, status_code=409)
