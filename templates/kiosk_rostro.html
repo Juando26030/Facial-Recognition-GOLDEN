@@ -104,6 +104,7 @@
         try {
             const r = await fetch('/api/door-face', { method: 'POST', body: fd });
             const j = await r.json().catch(() => ({}));
+            lastAct = Date.now(); counter();            // hubo un intento en esta pantalla: actualiza el contador ya (y mantiene el refresco 5 min)
             if (r.ok && (j.result === 'OK' || j.result === 'ALREADY')) {
                 endTurn(); say(j.message, true); reset(4500);
                 if (j.print_user_id) {                    // autoimpresión del evento: igual que con cédula (la foto biométrica sale en blanco mientras su interruptor esté apagado)
@@ -124,6 +125,7 @@
         } catch (e) { setUp(false); say('Sin conexión: ingresa con tu cédula o QR en la acreditación.'); }
         endTurn(); reset(4500);
     });
+    let lastAct = 0;                       // último intento de reconocimiento en esta pantalla; sin actividad en 5 min el contador no consulta la base (Neon se duerme)
     async function counter() {             // contador solo numérico, para el personal
         try { const r = await fetch(`/api/events/${EVENT_ID}/door-face/stats`, { cache: 'no-store' }); if (r.ok) { const d = await r.json(); $('counter').textContent = `Intentos ${d.attempts} · Coincidencias ${d.matches} · Sin coincidencia ${d.no_match}`; } } catch (e) { /* sin red */ }
     }
@@ -141,7 +143,7 @@
         send();
         navigator.serviceWorker.addEventListener('controllerchange', send);
     }).catch(() => {}));
-    counter(); setInterval(() => { if (!document.hidden) counter(); }, 30000);
+    counter(); setInterval(() => { if (!document.hidden && lastAct && Date.now() - lastAct < 300000) counter(); }, 30000);
 })();
 </script>
 </body>

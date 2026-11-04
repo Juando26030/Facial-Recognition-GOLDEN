@@ -7,13 +7,13 @@
 Corre cada hora dentro del Job de operaciones (app/ops_runner.py), que ya despierta a Neon para el respaldo: un chequeo cada 5 minutos
 que tocara la base mantendría a Neon despierta todo el mes (~US$19). Por eso la evaluación es horaria y el primer ingreso/envío tras un rato inactivo la dispara al instante.
 
-Calienta SOLO con ACTIVIDAD real en los últimos NEON_WARM_ACTIVITY_MIN (30) min: ingresos/registros/reconocimientos (access_logs) o envíos de formularios
-(form_submissions). No hay lógica de horarios: ni «en proceso», ni formularios abiertos o por abrir cuentan. Sin actividad: Neon con su apagado por defecto
-(0 = 5 min, fijo en el plan Launch) y NEON_IDLE_MIN_CU. note_activity() (al insertar un AccessLog o FormSubmission) lanza kick() al primer evento tras un rato
+Calienta SOLO con ACTIVIDAD real en los últimos NEON_WARM_ACTIVITY_MIN (15) min: ingresos/registros/reconocimientos (access_logs) o envíos de formularios
+(form_submissions). No hay lógica de horarios: ni «en proceso», ni formularios abiertos o por abrir cuentan. Neon SIEMPRE con su apagado por defecto (suspend_timeout_seconds=0 = 5 min; jamás -1) y el mínimo de CU: NEON_WARM_MIN_CU ocupado, NEON_IDLE_MIN_CU en reposo.
+apply() corrige un endpoint que hoy esté en -1. note_activity() (al insertar un AccessLog o FormSubmission) lanza kick() al primer evento tras un rato
 inactivo, con límite en memoria WARM_KICK_MIN_INTERVAL_MIN (30) y en un hilo, sin consultas a la base.
 
 Variables: WARM_SERVICE_WEB / WARM_SERVICE_PUBLICO / WARM_SERVICE_BIOMETRIA (rutas completas de los servicios de Cloud Run),
-WARM_WEB_MIN (2), WARM_PUBLICO_MIN (2), WARM_BIOMETRIA_MIN (1), NEON_API_KEY + NEON_PROJECT_ID + NEON_ENDPOINT_ID (sin ellas se salta Neon), NEON_WARM_MIN_CU (0.5), NEON_IDLE_MIN_CU (0.25),
+WARM_WEB_MIN (2), WARM_PUBLICO_MIN (2), WARM_BIOMETRIA_MIN (1), NEON_API_KEY + NEON_PROJECT_ID + NEON_ENDPOINT_ID (sin ellas se salta Neon), NEON_WARM_MIN_CU (0.25), NEON_IDLE_MIN_CU (0.25),
 OPS_JOB_NAME (Job de operaciones, para kick). Lo que no está configurado se salta con un aviso (desarrollo, VM)."""
 import logging
 import os
@@ -40,7 +40,7 @@ def plan(db: Session, now_local: datetime = None) -> dict:
     from app import formsvc
     now_local = now_local or formsvc.now_local()
     # SIN lógica de horarios (ni de eventos ni de formularios): solo actividad REAL reciente. «en_proceso» y formularios abiertos/por abrir NO cuentan.
-    since = utcnow() - timedelta(minutes=_int("NEON_WARM_ACTIVITY_MIN", 30))
+    since = utcnow() - timedelta(minutes=_int("NEON_WARM_ACTIVITY_MIN", 15))
     active = db.query(Event.id, Event.facial_enabled).join(AccessLog, AccessLog.event_id == Event.id) \
         .filter(Event.status == "en_proceso", AccessLog.timestamp > since).distinct().all()
     running = len(active)
@@ -51,8 +51,9 @@ def plan(db: Session, now_local: datetime = None) -> dict:
         "web": _int("WARM_WEB_MIN", 2) if (running or submits) else 0,
         "biometria": _int("WARM_BIOMETRIA_MIN", 1) if facial else 0,
         "publico": _int("WARM_PUBLICO_MIN", 2) if submits else 0,
-        "neon": {"suspend_timeout_seconds": -1 if busy else 0,   # -1 = nunca se apaga; 0 = el de por defecto (5 min; en Neon Launch es fijo)
-                 "autoscaling_limit_min_cu": float(os.getenv("NEON_WARM_MIN_CU" if busy else "NEON_IDLE_MIN_CU", "0.5" if busy else "0.25"))},
+        # NUNCA -1 («nunca apagar»): mantendría a Neon cobrando CU-hora sin consultas. Siempre 0 = apagado por defecto (5 min sin consultas).
+        "neon": {"suspend_timeout_seconds": 0,
+                 "autoscaling_limit_min_cu": float(os.getenv("NEON_WARM_MIN_CU" if busy else "NEON_IDLE_MIN_CU", "0.25"))},
         "why": {"events_active": running, "facial_active": facial, "form_submissions": submits},
     }
 
