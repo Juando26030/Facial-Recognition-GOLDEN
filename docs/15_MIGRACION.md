@@ -896,3 +896,10 @@ La exención de cierre por inactividad solo aplica con impresión en marcha (eve
 - [x] Directorio: sin búsqueda, TODO el directorio ordenado por última acción (lo local de este equipo primero, luego `recent_at` de la más nueva a la más vieja, luego el resto); con búsqueda manda la relevancia. Insignia «Recién registrado» (píldora sólida verde, sin amarillo) a quien esté a menos de 15 min (`RECENT_WINDOW_MS`, comparación relativa, sin reloj del equipo); la fila verde de «Registrado» es la de siempre. Sin red solo se ve lo propio y la pantalla lo avisa.
 - [x] Pruebas: `tests/test_cola_compartida.py` (8; las corre el CI, no se pudieron correr en el entorno del agente) y `tests/js/directory_recent_queue_check.js`.
 - [ ] Capturas y aprobación del aspecto; PR sin fusionar hasta la frase de Juan David; migración en producción solo con su frase.
+
+### Fase 1A · pieza 3: autoimpresión y autorregistro (2026-11-04, rama `feat/1a-autoimpresion`, apilada sobre `feat/1a-cola-compartida`, sin migración)
+- [x] Se traen a esta rama los 2 commits del PR #26 («autoimpresión 4a»), que estaba con conflictos y 49 commits detrás de `main`; el PR #26 y su rama NO se tocaron. Un solo conflicto de texto (`directory.js`, `applyStatus` y guardado del digitador); `api.py` y `kiosk_registro.html` conviven con `recent_at` y el buscador único.
+- [x] El servidor dice en cada respuesta (`auto_print`/`auto_register`, y `flags` en `/users/changes`) si se imprime/registra solo; el candado de 30 s se confirma tras el éxito; la ventana de impresión se abre dentro del gesto.
+- [x] Matriz de pruebas nueva `tests/js/autoprint_matrix_check.js` (28 casos: 6 entradas × bandera en vivo o ya activa × con/sin autoimpresión + Enter con nombre + botones de fila). Sin imprimir sin red (caso D: pieza aparte).
+- [x] Impresión INAMOVIBLE sin cambios (no se tocaron `badge_print.html`, `label-compose.js`, `ql-usb.js` ni las pruebas fijas).
+- [ ] pytest (`test_autoprint_flags.py`, `test_accreditation_undo.py`) los corre el CI. Prueba física con la Brother: `docs/PRUEBA_FISICA_AUTOIMPRESION.md`. Sin fusionar hasta la frase de Juan David.

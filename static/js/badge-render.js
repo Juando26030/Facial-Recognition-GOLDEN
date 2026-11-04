@@ -281,7 +281,35 @@
      es nuestra (mismo origen). La propia página se cierra al terminar (afterprint) y por tiempo máximo (templates/badge_print.html). */
   const PRINT_WINDOW = 'goldenweb_print';
   let printWin = null;
+  /* Ventana "preparada" (PR3, causa C de docs/etapa/0A): `primeWindow()` abre la ventana de impresión EN BLANCO dentro del gesto del usuario (clic/Enter/lector), antes de cualquier llamada de
+     red, y `openPrintTab(url)` la navega después. Así el navegador no la toma por emergente bloqueada aunque la red tarde más de ~5 s. Mismo nombre fijo `goldenweb_print` y mismas medidas. Si el
+     flujo no termina en una impresión, `cancelPrimed()` la cierra; un temporizador de seguridad la cierra a los 25 s. */
+  let primed = null, primedKeep = false, primedTimer = null;
+  function dropPrimed() {
+    if (primedTimer) clearTimeout(primedTimer);
+    primedTimer = null;
+    const w = primed;
+    primed = null; primedKeep = false;
+    try { if (w && !w.closed) w.close(); } catch (e) { /* ya cerrada */ }
+  }
+  function primeWindow() {
+    if (!window.EVENT_AUTO_PRINT) return null;                 // solo si se va a imprimir (la bandera se refresca con cada sondeo del directorio)
+    if (primed && !primed.closed) return primed;
+    let w = null;
+    try { w = window.open('about:blank', PRINT_WINDOW, 'width=480,height=720'); } catch (e) { w = null; }
+    primed = w || null; primedKeep = false;
+    if (primed) primedTimer = setTimeout(dropPrimed, 25000);
+    return primed;
+  }
+  function holdPrimed() { if (primed) primedKeep = true; }
+  function cancelPrimed() { if (!primedKeep) dropPrimed(); }          // el flujo terminó sin pedir impresión: se cierra la ventana en blanco (si maybeAutoPrint ya la tomó, se respeta)
   function openPrintTab(url) {
+    if (primed && !primed.closed) {                             // la ventana abierta en el gesto: se navega a la página de impresión
+      const w = primed;
+      if (primedTimer) clearTimeout(primedTimer);
+      primedTimer = null; primed = null; primedKeep = false;
+      try { w.location.href = url; printWin = w; return w; } catch (e) { /* no se pudo navegar: se abre de la forma de siempre */ }
+    }
     try { if (printWin && !printWin.closed) printWin.close(); } catch (e) { /* otra referencia: se sigue */ }
     let w = null;
     try { w = window.open(url, PRINT_WINDOW, 'width=480,height=720'); } catch (e) { w = null; }
@@ -345,19 +373,35 @@
      ventana (print-jobs). */
   const CLAIM_MS = 30000;
   const claims = new Map();
-  function claim(userId) {
+  const lockReleasers = new Map();               // key -> función que suelta el candado del navegador de ESTA pestaña
+  /* PR3 (causa B): el candado se CONFIRMA después del éxito. `claimTicket` lo toma de forma provisional (misma ventana de 30 s, para que dos llamadas casi simultáneas no impriman las dos) y
+     devuelve `{commit, release}` o `null` si otra llamada ya lo tiene: `commit()` lo deja firme desde el momento del éxito; `release()` lo suelta (la comprobación falló, la ventana se bloqueó, el
+     servidor no confirmó o la acreditación se deshizo) para que el reintento no quede bloqueado en silencio. */
+  function claimTicket(userId) {
     const key = `${window.EVENT_ID}:${userId}`;
     const now = Date.now();
-    if ((claims.get(key) || 0) > now) return Promise.resolve(false);
-    claims.set(key, now + CLAIM_MS);
-    if (!(window.navigator && navigator.locks)) return Promise.resolve(true);
+    if ((claims.get(key) || 0) > now) return Promise.resolve(null);
+    const until = now + CLAIM_MS;
+    claims.set(key, until);
+    const ticket = {
+      commit() { claims.set(key, Date.now() + CLAIM_MS); },
+      release() { claims.delete(key); const r = lockReleasers.get(key); if (r) { lockReleasers.delete(key); r(); } },
+    };
+    if (!(window.navigator && navigator.locks)) return Promise.resolve(ticket);
     return new Promise((resolve) => {
       navigator.locks.request(`gw-print-${key}`, { ifAvailable: true }, (lock) => {
-        if (!lock) { resolve(false); return null; }
-        resolve(true);
-        return new Promise((release) => setTimeout(release, CLAIM_MS));          // el candado dura la ventana y se suelta solo
-      }).catch(() => resolve(true));
+        if (!lock) { claims.delete(key); resolve(null); return null; }
+        resolve(ticket);
+        return new Promise((release) => { lockReleasers.set(key, release); setTimeout(release, CLAIM_MS); });          // el candado dura la ventana, se suelta solo o con release()
+      }).catch(() => resolve(ticket));
     });
+  }
+  function claim(userId) { return claimTicket(userId).then((t) => { if (t) t.commit(); return !!t; }); }       // forma de siempre: toma y confirma de una vez
+  function releaseClaim(userId) {                // «Deshacer» una acreditación: la misma persona puede volver a imprimirse sola enseguida
+    const key = `${window.EVENT_ID}:${userId}`;
+    claims.delete(key);
+    const r = lockReleasers.get(key);
+    if (r) { lockReleasers.delete(key); r(); }
   }
   const manualBusy = new Set();
   function beginManual(userId) {                  // el botón «Imprimir»: un toque a la vez por persona (3 s)
@@ -367,15 +411,38 @@
     return true;
   }
   function printNow(userId) {
-    return logPrint(userId).then(() => {
-      openPrintTab(printWindowUrl(userId));
+    return logPrint(userId).then(() => openPrintTab(printWindowUrl(userId)));       // devuelve la ventana (null = el navegador la bloqueó)
+  }
+  /* Banderas del evento que decide el SERVIDOR (PR3, causa A): `window.EVENT_AUTO_PRINT` ya no es la verdad (la página lo escribe una vez al cargar). Cada respuesta de checkin-cedula, register, PATCH
+     status y undo trae `auto_print`/`auto_register`, y cada sondeo del directorio (/users/changes) trae `flags`: aquí se copian a las variables de la página y se avisa (gw:flags) para repintar
+     los interruptores del coordinador. */
+  function setFlags(flags) {
+    if (!flags || typeof flags !== 'object') return;
+    let changed = false;
+    const auto_print = flags.auto_print !== undefined ? flags.auto_print : flags.autoPrint;
+    const auto_register = flags.auto_register !== undefined ? flags.auto_register : flags.autoRegister;
+    if (typeof auto_print === 'boolean' && window.EVENT_AUTO_PRINT !== auto_print) { window.EVENT_AUTO_PRINT = auto_print; changed = true; }
+    if (typeof auto_register === 'boolean' && window.EVENT_AUTO_REGISTER !== auto_register) { window.EVENT_AUTO_REGISTER = auto_register; changed = true; }
+    if (changed && typeof window.dispatchEvent === 'function' && typeof window.CustomEvent === 'function') { try { window.dispatchEvent(new window.CustomEvent('gw:flags', { detail: { auto_print, auto_register } })); } catch (e) { /* sin evento */ } }
+  }
+  /* ¿Se imprime solo? Manda la respuesta del servidor (`opts.auto`); sin ella (escáner facial, que no la trae) vale la bandera de la página, que se mantiene al día con cada sondeo. */
+  function resolveAuto(opts) {
+    if (opts && typeof opts.auto === 'boolean') { setFlags({ auto_print: opts.auto }); return opts.auto; }
+    return !!window.EVENT_AUTO_PRINT;
+  }
+  function maybeAutoPrint(userId, opts) {
+    if (!resolveAuto(opts)) { cancelPrimed(); return Promise.resolve(false); }
+    primedKeep = true;                                           // esta llamada se queda con la ventana preparada
+    return claimTicket(userId).then(async (ticket) => {
+      if (!ticket) { dropPrimed(); return false; }
+      let w;
+      try { w = await printNow(userId); } catch (e) { w = null; }
+      if (w === null) { ticket.release(); dropPrimed(); return false; }         // la ventana se bloqueó: el candado no se gasta
+      ticket.commit();
+      return true;
     });
   }
-  function maybeAutoPrint(userId) {
-    if (!window.EVENT_AUTO_PRINT) return;
-    claim(userId).then((ok) => { if (ok) printNow(userId); });
-  }
 
-  window.BadgePrint = { printWindowUrl, printBatchUrl, openPrintTab, openPrintWindow, openNow, maybeAutoPrint, claim, beginManual, printNow };
+  window.BadgePrint = { printWindowUrl, printBatchUrl, openPrintTab, openPrintWindow, openNow, maybeAutoPrint, claim, claimTicket, releaseClaim, beginManual, printNow, primeWindow, holdPrimed, cancelPrimed, dropPrimed, setFlags, resolveAuto };
   if (typeof module === 'object' && module.exports) module.exports = window.BadgeRender;           // node: tests/js/badge_text_fit_check.js
 })(typeof window !== 'undefined' ? window : globalThis);
