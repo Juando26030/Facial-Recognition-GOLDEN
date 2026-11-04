@@ -203,17 +203,66 @@ def test_parameters_screen_shows_the_field_and_the_value(client, factory):
     assert 'id="idleMinutes"' in html and 'value="25"' in html and "General: 10" in html
 
 
-def test_print_station_account_is_exempt(client, factory, clock):
-    _staff(client, factory, username="puesto")
-    from app.models import StaffUser
-    # una cuenta de puesto de impresión nunca se cierra sola
-    client.post("/logout")
-    s = factory.staff("digitador", "impresora", print_station=True)
+def test_print_station_with_event_in_progress_is_exempt_with_expiry(client, factory, clock, monkeypatch):
+    monkeypatch.delenv("IDLE_EXEMPT_HOURS", raising=False)
+    factory.event("en_proceso")
+    factory.staff("digitador", "impresora", print_station=True)
     assert login(client, "impresora").status_code == 302
     clock.advance(minutes=300)
     assert client.get("/api/ping-auth").status_code == 200
     assert client.get("/api/session/idle").json() == {"enabled": False}
-    assert isinstance(s, StaffUser)
+    clock.advance(minutes=60 * 12)                                   # pasadas las 12 h de la exención rige el tiempo general
+    assert client.get("/api/ping-auth").status_code == 401
+
+
+def test_print_station_without_event_in_progress_is_not_exempt(client, factory, clock):
+    factory.event("finalizado")
+    factory.staff("digitador", "impresora", print_station=True)
+    assert login(client, "impresora").status_code == 302
+    clock.advance(minutes=11)
+    assert client.get("/api/ping-auth").status_code == 401
+
+
+def _host_with_route(factory, db, status="en_proceso", shared=True):
+    from app.models import PrintRoute
+    ev = factory.event(status)
+    ev.shared_print_enabled = shared
+    host = factory.staff("coordinador", "anfitrion")
+    other = factory.staff("digitador", "otro")
+    db.add(PrintRoute(event_id=ev.id, staff_user_id=other.id, printer_staff_id=host.id))
+    db.commit()
+    return host
+
+
+def test_host_with_shared_print_in_running_event_is_exempt(client, factory, db, clock):
+    _host_with_route(factory, db)
+    assert login(client, "anfitrion").status_code == 302
+    clock.advance(minutes=120)
+    assert client.get("/api/ping-auth").status_code == 200
+    assert client.get("/api/session/idle").json() == {"enabled": False}
+
+
+@pytest.mark.parametrize("status,shared", [("finalizado", True), ("en_proceso", False)])
+def test_host_with_stale_route_is_not_exempt(client, factory, db, clock, status, shared):
+    _host_with_route(factory, db, status=status, shared=shared)
+    assert login(client, "anfitrion").status_code == 302
+    clock.advance(minutes=11)
+    assert client.get("/api/ping-auth").status_code == 401
+
+
+def test_admin_has_no_special_treatment(client, factory, clock):
+    factory.event("en_proceso")
+    factory.staff("super_admin", "dueno")
+    assert login(client, "dueno").status_code == 302
+    assert client.get("/api/session/idle").json()["idle_seconds"] == 600
+    clock.advance(minutes=11)
+    assert client.get("/api/ping-auth").status_code == 401
+
+
+def test_limit_seconds_ignores_legacy_true_and_expired_marks(clock):
+    assert idle.limit_seconds({"idle_off": True}) == 600              # un True antiguo no exime
+    assert idle.limit_seconds({"idle_off": clock.t - 1}) == 600       # vencida
+    assert idle.limit_seconds({"idle_off": clock.t + 60}) == 0        # vigente
 
 
 def test_old_session_without_marker_is_not_expelled_on_deploy(client, factory, clock, monkeypatch):
