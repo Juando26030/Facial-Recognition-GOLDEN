@@ -26,7 +26,7 @@ const quota = { full: [
   { label: 'General', message: '', match: 'all', conds: [{ field: 'c', op: 'equals', value: 'General' }] }] };
 const f = w.FormRender.render(w.document.getElementById('h'), design, { previewOnly: true, quota });
 const doc = w.document, wrap = (id) => doc.querySelector(`[data-fid="${id}"]`);
-const warn = doc.querySelector('[role=alert]');
+const warn = doc.querySelector('.fr-quota-warn');
 const pick = (v) => { const s = doc.querySelector('select[name=c]'); s.value = v; s.dispatchEvent(new w.Event('input', { bubbles: true })); };
 
 assert.strictEqual(warn.style.display, 'none');
