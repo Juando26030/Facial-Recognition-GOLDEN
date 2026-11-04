@@ -47,3 +47,11 @@ def test_digitador_cannot_change_the_option(client, factory):
 def test_option_is_registered_in_the_global_save():
     p = open("templates/kiosk_parametros.html", encoding="utf-8").read()
     assert "GWParams.register({ key: 'reggear'" in p and 'data-psave="reggear"' in p
+
+
+def test_touch_mode_is_automatic_and_has_no_manual_switch():
+    sp = open("static/js/shared-print.js", encoding="utf-8").read()
+    assert "spTouch" not in sp and "Registro touch: ACTIVADO" not in sp and "gw_touch_mode" not in sp
+    assert "GWTouchDetect.fromWindow(window)" in sp and "classList.toggle('touch-mode', touch)" in sp
+    page = open("templates/kiosk_registro.html", encoding="utf-8").read()
+    assert page.index("js/touch-detect.js") < page.index("js/shared-print.js")
