@@ -100,6 +100,26 @@
           <span id="overwriteBirthText">{{ overwrite_birth_label }} (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
         </label>
 
+        <!-- Plan 5 (carga flexible): repetidos con serial y mayúsculas/minúsculas (app/roster_dups.py, app/roster_text.py) -->
+        <div class="gw-stack" style="margin-top:1rem;">
+          <label class="gw-check" for="keepDuplicates">
+            <input type="checkbox" name="keep_duplicates" id="keepDuplicates" value="true" aria-describedby="keepDuplicatesHelp">
+            <span>No eliminar repetidos</span>
+          </label>
+          <p id="keepDuplicatesHelp" class="gw-hint" style="margin:0;">Apagado (lo de siempre): si una cédula se repite, queda la última fila. Encendido: la primera conserva su cédula y las siguientes reciben un serial
+            (<code>123456-2</code>, <code>123456-3</code>…), con la cédula original en el campo «Cédula original». El serial depende del orden de las filas: volver a cargar el mismo archivo solo es seguro si ese orden no cambió.
+            Con «Solo agregar personas nuevas», las repetidas de la hoja también reciben serial (no se descartan).</p>
+          <div class="gw-field">
+            <label class="gw-label" for="textCase">Texto</label>
+            <select class="gw-input" name="text_case" id="textCase" aria-describedby="textCaseHelp">
+              <option value="" selected>Como viene</option>
+              <option value="upper">MAYÚSCULAS</option>
+              <option value="lower">minúsculas</option>
+            </select>
+            <p id="textCaseHelp" class="gw-hint" style="margin:0;">Se aplica a nombres, apellidos, cargo, entidad y campos opcionales. Nunca cambia la cédula ni el teléfono; el correo siempre se guarda en minúsculas.</p>
+          </div>
+        </div>
+
         {% if event.facial_enabled and event.client_photos_before %}
         <div id="facialZipGroup" class="badge-input-group" style="margin-top:0.8rem;">
           <label>Fotos de las personas (.zip, cada foto nombrada como la cédula, ej. 123456.jpg)</label>
@@ -121,12 +141,20 @@
       <div class="badge-form-title">Solo agregar personas nuevas</div>
       <p style="color:#666; font-size:0.85rem; line-height:1.5; margin-bottom:1rem;">
         Sirve para sumar gente a un evento que ya está en curso <b>sin afectar el registro en vivo</b>. No se toca a nadie que ya esté en el evento (ni sus datos, ni su foto, ni su autorización,
-        ni sus ingresos); solo se crean las personas nuevas. Si una cédula se repite en el archivo se usa la primera fila. Las columnas que no sean un campo de este evento se ignoran
+        ni sus ingresos); solo se crean las personas nuevas. Si una cédula se repite en el archivo se usa la primera fila (salvo con «No eliminar repetidos»: entonces las repetidas reciben serial y se agregan). Las columnas que no sean un campo de este evento se ignoran
         (no se crean campos ni categorías nuevas). No admite fotos (zip). Antes de guardar verás un resumen para confirmar.
       </p>
       <div class="badge-input-group">
         <label>Archivo con las personas nuevas (.xlsx o .csv)</label>
         <input type="file" name="roster_file" id="appendFileInput" accept=".xlsx,.csv" required>
+      </div>
+      <label class="gw-check" for="appendKeepDuplicates" style="margin-top:0.6rem;">
+        <input type="checkbox" id="appendKeepDuplicates" value="true">
+        <span>No eliminar repetidos (las cédulas repetidas de la hoja reciben serial en vez de descartarse)</span>
+      </label>
+      <div class="gw-field" style="margin-top:0.6rem;">
+        <label class="gw-label" for="appendTextCase">Texto</label>
+        <select class="gw-input" id="appendTextCase"><option value="" selected>Como viene</option><option value="upper">MAYÚSCULAS</option><option value="lower">minúsculas</option></select>
       </div>
       <button type="submit" id="appendSubmit" class="golden-btn golden-btn-primary" style="margin-top:1rem;">Ver resumen y agregar</button>
     </form>
@@ -159,6 +187,8 @@ useSourceEvent.addEventListener("change", async () => {
     }
 });
 const rosterForm = document.getElementById("rosterForm");
+const keepDuplicates = document.getElementById("keepDuplicates");
+const textCase = document.getElementById("textCase");
 const rosterResult = document.getElementById("rosterResult");
 const EVENT_STATUS = "{{ event.status }}";
 const ROSTER_BLOCKED = {{ 'true' if roster_blocked else 'false' }};      // el servidor decide (app/event_rules.py roster_block_reason); aquí solo se muestra
@@ -166,6 +196,14 @@ const ROSTER_BLOCKED = {{ 'true' if roster_blocked else 'false' }};      // el s
 /* El backend prefija cada mensaje con ❌ (fila omitida por completo), ⚠️ (se guardó igual, pero
    revisa el dato) o ℹ️ (corrección automática, ej. Excel volvió número una cédula) — los
    separamos en cajas de color distinto para que de un vistazo se sepa la gravedad de cada uno. */
+const COLUMN_KIND_LABEL = { entendida: ["Entendida", "gw-badge--ok"], opcional: ["Campo opcional", "gw-badge--info"], ignorada: ["Ignorada", "gw-badge--warn"] };
+// Informe columna por columna (Plan 5): cada título del archivo con lo que pasó con él.
+function columnDetailHtml(items, esc) {
+    if (!items || !items.length) return "";
+    const rows = items.map(c => { const k = COLUMN_KIND_LABEL[c.kind] || COLUMN_KIND_LABEL.ignorada;
+        return `<li><span class="gw-badge ${k[1]}">${k[0]}</span> «${esc(c.title)}»${c.field ? " → " + esc(c.field) : ""}${c.reason ? ": " + esc(c.reason) : ""}</li>`; }).join("");
+    return `<div style="margin-top:0.6rem;"><b>Qué pasó con cada columna:</b><ul style="margin:0.3rem 0 0; padding-left:1.2rem; list-style:none;">${rows}</ul></div>`;
+}
 function columnsBoxHtml(columns) {
     if (!columns) return "";
     const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -175,12 +213,15 @@ function columnsBoxHtml(columns) {
         <div style="margin-top:0.4rem;"><b>Campos reconocidos (${columns.recognized.length}):</b>${list(columns.recognized, c => `«${esc(c.title)}» → ${esc(c.field)}`) || " ninguno"}</div>
         <div style="margin-top:0.4rem;"><b>Campos nuevos creados (${columns.created.length}):</b>${list(columns.created, c => `«${esc(c.title)}» → campo opcional «${esc(c.field)}» (ya está en Parámetros del evento)`) || " ninguno"}</div>
         <div style="margin-top:0.4rem;"><b>Columnas no usadas (${columns.unused.length}):</b>${list(columns.unused, c => `«${esc(c.title)}»: ${esc(c.reason)}`) || " ninguna"}</div>
+        ${columnDetailHtml(columns.columns, esc)}
     </div>`;
 }
 
 // Une los informes de columnas de varios lotes (una columna es «nueva» si en algún lote se creó; «no usada» solo si en ningún lote se usó).
 function mergeColumns(list) {
-    const out = { recognized: [], created: [], unused: [] }, seen = new Map();
+    const out = { recognized: [], created: [], unused: [], columns: [] }, seen = new Map(), cols = new Map();
+    list.filter(Boolean).forEach(c => (c.columns || []).forEach(i => { const prev = cols.get(i.title); if (!prev || (prev.kind === "ignorada" && i.kind !== "ignorada")) cols.set(i.title, i); }));
+    out.columns = Array.from(cols.values());
     list.filter(Boolean).forEach(c => {
         c.created.forEach(i => seen.set(i.title, ["created", i]));
         c.recognized.forEach(i => { if (!seen.has(i.title)) seen.set(i.title, ["recognized", i]); });
@@ -479,6 +520,10 @@ function buildRosterBlob(kind, header, rows) {
 // exacto que su fila por corrección de datos (el backend igual crea la fila sin foto si no la
 // encuentra) — se hace así para que cada persona SÍ tenga su encoding facial listo desde el
 // primer intento, en vez de depender de que otro lote posterior suba esa foto antes.
+function normRosterId(v) {          // misma limpieza que el servidor (app/roster_dups.py clean_id): Excel vuelve '123' número y llega '123.0'
+    const s = String(v == null ? "" : v).trim(), m = s.match(/^(\d+)\.0+$/);
+    return m ? m[1] : s;
+}
 async function buildBatchPlan(header, rows, zipFile) {
     const idIdx = header.findIndex(h => ID_HEADER_NAMES.has(stripAccentsLower(h)));
     let zip = null;
@@ -496,14 +541,22 @@ async function buildBatchPlan(header, rows, zipFile) {
         }
     }
     const groups = [];
-    let cur = { rows: [], ids: new Set(), bytes: 0, photos: 0 };
-    const flush = () => { if (cur.rows.length) groups.push(cur); cur = { rows: [], ids: new Set(), bytes: 0, photos: 0 }; };
+    // «No eliminar repetidos»: el serial lo numera el servidor por el orden del archivo; como cada lote es una petición aparte, aquí se cuenta cuántas veces ya salió cada cédula ANTES de cada lote (`offsets`).
+    const seenCount = new Map();
+    const newGroup = () => ({ rows: [], ids: new Set(), bytes: 0, photos: 0, offsets: {}, offsetIds: new Set() });
+    let cur = newGroup();
+    const flush = () => { if (cur.rows.length) groups.push(cur); cur = newGroup(); };
     for (const row of rows) {
         const id = idIdx >= 0 ? String(row[idIdx] || "").trim() : "";
         const hasPhoto = !!(id && sizeByBase.has(id));
         const photoBytes = hasPhoto ? sizeByBase.get(id) : 0;
         if (cur.rows.length && (cur.bytes + photoBytes > BATCH_TARGET_BYTES || cur.rows.length >= MAX_ROWS_PER_BATCH || (hasPhoto && cur.photos >= MAX_PHOTOS_PER_BATCH))) flush();
         cur.rows.push(row);
+        const rid = normRosterId(idIdx >= 0 ? row[idIdx] : "");
+        if (rid) {
+            if (!cur.offsetIds.has(rid)) { cur.offsetIds.add(rid); if (seenCount.get(rid)) cur.offsets[rid] = seenCount.get(rid); }
+            seenCount.set(rid, (seenCount.get(rid) || 0) + 1);
+        }
         if (id) cur.ids.add(id);
         cur.bytes += photoBytes;
         if (hasPhoto) cur.photos++;
@@ -542,6 +595,8 @@ async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
         const fd = new FormData();
         fd.append("event_id", window.EVENT_ID);
         if (document.getElementById("overwriteBirth") && document.getElementById("overwriteBirth").checked) fd.append("overwrite_birth", "true");
+        if (keepDuplicates.checked) { fd.append("keep_duplicates", "true"); if (Object.keys(group.offsets).length) fd.append("dup_offsets", JSON.stringify(group.offsets)); }
+        fd.append("text_case", textCase.value);
         if (i === 0) (sourceEventIds || []).forEach(id => fd.append("source_event_id", id));  // los eventos anteriores entran una sola vez, con el primer lote
         fd.append("roster_file", buildRosterBlob(kind, header, group.rows), `lote_${i + 1}.${kind}`);
         const zipBlob = await buildBatchZip(zip, group.ids);
@@ -645,6 +700,8 @@ if (appendForm) appendForm.addEventListener("submit", async (e) => {
         const fd = new FormData();
         fd.append("event_id", window.EVENT_ID);
         fd.append("roster_file", file);
+        if (document.getElementById("appendKeepDuplicates").checked) fd.append("keep_duplicates", "true");
+        fd.append("text_case", document.getElementById("appendTextCase").value);
         await DirectUpload.replaceFiles(fd, { roster_file: ["roster_upload", "bulk_roster"] }, { body: { event_id: String(window.EVENT_ID) } });
         const res = await xhrPost("/api/bulk_roster/preview", fd);
         let p;
