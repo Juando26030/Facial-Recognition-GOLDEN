@@ -3,7 +3,7 @@
 ENVIRONMENT: "production"
 APP_TIMEZONE: "America/Bogota"
 LEGAL_ADDRESS: "Carrera 14a # 71a - 59, Bogotá"
-LEGAL_PHONE: "+57 317 427 6073"
+LEGAL_PHONE: "+57 318 098 1752"
 LEGAL_EMAIL: "info@goldenlogisticas.com"
 # PRIVACY_EMAIL es el ÚNICO correo de privacidad (política, pantallas, correos y formularios; se revisa a diario). LEGAL_PRIVACY_EMAIL queda como alias OBSOLETO: el código solo lo lee si falta PRIVACY_EMAIL.
 LEGAL_PRIVACY_EMAIL: "soporteit@goldenlogisticas.com"
