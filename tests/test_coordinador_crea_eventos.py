@@ -60,7 +60,7 @@ def test_coordinator_does_not_gain_other_permissions(client, factory):
     assert client.post("/api/tenants", json={"name": "Otro"}).status_code == 403
     assert client.get("/api/staff").status_code == 403
     assert client.get("/api/staff/commercials").status_code == 403
-    assert client.post(f"/api/events/{ev['id']}/staff-users", json={"role": "cliente", "username": "c1", "password": "Clave#2026xy", "full_name": "C"}).status_code == 403
+    assert client.post(f"/api/events/{ev['id']}/staff-users", json={"role": "cliente", "username": "1234567", "password": "Clave#2026xy", "full_name": "C"}).status_code == 403
 
 
 @pytest.mark.parametrize("role", ["comercial", "admin", "super_admin"])
