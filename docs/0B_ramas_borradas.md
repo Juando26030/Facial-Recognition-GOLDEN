@@ -78,3 +78,30 @@ Recuperar: `git branch <nombre> <sha>`. Las que dicen «en main» ya estaban 100
 | `producto/fecha-nacimiento-sin-rostro` | `10a8cff72779` | archivo |
 | `producto/impresion-compartida` | `b56afce43edc` | archivo |
 | `sprint2/reverify-fixes-and-badges` | `0aede4bb2420` | archivo |
+
+## 5-nov-2026 · cierre de las Fases 0 y 1 (ramas ya fusionadas a `main` que siguen en GitHub)
+
+En GitHub quedan 68 ramas (las demás ya se habían borrado). De ellas, estas 18 están completamente fusionadas a `main` y se pueden borrar sin perder nada (SHA para recuperarlas). **Estado: pendiente de borrar por Juan David desde GitHub** (la sesión de Claude no tiene permiso de escritura sobre ramas).
+
+```
+candidato/formularios-p1 3ab6f68
+candidato/produccion-28oct 5ff752b
+candidato/produccion-29oct 979f2ae
+docs/etapa-0a 12fcac5
+docs/etapa-0b-inventario 1a736ad
+feat/1b-reimpresion-permisos 805af21
+feat/coordinador-crea-eventos 3c20a24
+feat/cupo-mensaje 1d1309c
+feat/visual-registro efaf5e0
+feat/visual-roster 9dfef87
+fix/telefono-contacto 9cafaf6
+fix/test-privacy-flaky 13c771e
+producto/form-cliente-stats 229a4d3
+producto/form-ya-inscrito ff13743
+producto/formularios-ajustes 4f2ab40
+producto/login-password-ux adaa9c7
+producto/sesion-inactividad 05ec3d8
+producto/warmup-por-actividad 7eae02c
+```
+
+Se conservan a propósito: `migra/fase1-2` (su push despliega staging), `corte/main` (punto de corte), `feat/visual-parametros` (PR #52 abierto), `fix/registro-busqueda` (PR #58) y las ramas con commits propios sin fusionar (`candidato/produccion-23oct`, `candidato/produccion-25oct`, `fix/legal-1-1-borrador`, `fix/offline-recarga`, `producto/constancia-puerta`, `producto/eventos-flujo`, `producto/fecha-nacimiento-sin-rostro`, `producto/impresion-ajustes`, `producto/impresion-compartida`, `sprint2/reverify-fixes-and-badges`, `ux/fase1-visual`, `archivo/*`).

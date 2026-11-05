@@ -386,6 +386,7 @@
 
     function openRegisterModal() {
         // Sin red el botón ya se habilita o deshabilita solo (onChange de más abajo: se puede si la bandeja de salida está disponible). El guardia que había aquí lo contradecía y el modal nunca abría (causa F de docs/etapa/0A).
+        if (registerModal && registerModal.style.display !== 'flex' && window.resetRegForm) window.resetRegForm();          // un alta nueva empieza SIEMPRE en blanco (la cédula de la anterior no se hereda)
         if (registerModal) registerModal.style.display = 'flex';
         if (window.RegTimer) RegTimer.start();          // 1A: el tiempo del alta cuenta desde que se abre el formulario (o desde la primera tecla del buscador, si fue antes)
     }

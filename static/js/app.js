@@ -395,6 +395,19 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             siblingBanner.style.display = 'block';
         });
+        /* «Registrar nuevo» SIEMPRE abre en blanco (5-nov-2026): la cédula de la última persona guardada no puede quedar escrita. Se limpia explícitamente al abrir (además del reset al guardar), también
+           lo que el navegador haya recordado. Lo llama el botón «Registrar nuevo» al abrir la ventana. */
+        window.resetRegForm = () => {
+            regForm.reset();
+            regForm.querySelectorAll('input, textarea').forEach((el) => {
+                if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'file' || el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return;
+                if (el.readOnly || el.disabled) return;
+                el.value = el.defaultValue || '';
+            });
+            idInput.value = '';
+            siblingBanner.style.display = 'none';
+            if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
+        };
         regForm.addEventListener('reset', () => setTimeout(() => {
             siblingBanner.style.display = 'none';
             regForm.querySelectorAll('.sig-canvas').forEach(c => c.getContext('2d').clearRect(0, 0, c.width, c.height));
@@ -440,6 +453,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     try { await window.FieldRender.saveSignatures(regForm, registeredId); }
                     catch (e) { showToast(e.message, 'error'); }
                     regForm.reset();
+                    if (window.resetRegForm) window.resetRegForm();                   // vacía TODO (incluida la cédula) antes de la siguiente alta
                     if (window.clearPendingOptionalLabels) window.clearPendingOptionalLabels();
                     if (window.directorySearch) window.directorySearch.reload();
                     if (window.closeRegisterModal) window.closeRegisterModal();

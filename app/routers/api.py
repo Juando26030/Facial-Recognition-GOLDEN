@@ -26,6 +26,7 @@ from app.database import get_db
 from app.models import Event, EventStaffAuthorization, User, AccessLog, EventAttendee, PersonChange, PrintLog, StaffUser, BulkJob
 from app.biometrics import BiometricEngine
 from app.reports import ReportManager
+from app import testperson
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
@@ -499,6 +500,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
                 "id": _masked_directory_id(event.tenant_id, u.id), "first_name": u.first_name, "last_name": u.last_name, "role": u.role, "entity": u.entity,
                 "phone": "", "email": "", "opt_1": u.opt_1, "opt_2": None, "status": status, "origin": origin, "birth_date": "", "extra_fields": {},
                 "categories": att.get_categories() if att else [], "certificate": bool(att.certificate) if att else False, "digital_contact": "", "digital_sent_at": None, "masked": True, "recent_at": recent_at,
+                "test": testperson.is_test(u.id),
             })
             continue
         result.append({
@@ -513,6 +515,7 @@ def _directory_rows(db: Session, event: Event, limit: Optional[int] = None, offs
             "digital_contact": (att.digital_contact or "") if att else "",
             "digital_sent_at": att.digital_sent_at.isoformat() if att and att.digital_sent_at else None,
             "recent_at": recent_at,
+            "test": testperson.is_test(u.id),          # la persona de prueba del evento: se ve y se acredita, pero no cuenta en contadores, reportes ni estadísticas
         })
     return result
 
@@ -810,7 +813,8 @@ def checkin_cedula(
     cedula = cedula.strip()
     client_id = client_id.strip()[:64]
     event = get_event_for_staff(event_id, db, staff)
-    require_event_in_progress(event)
+    if not testperson.bypasses_gate(event, cedula):
+        require_event_in_progress(event)          # la persona de prueba es la ÚNICA excepción: se ensaya el flujo y la impresión aun con el evento en «creado»
     if client_id:
         replay = _replayed_checkin(db, event, client_id)
         if replay:
@@ -878,11 +882,12 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     `ACCREDIT_UNDO_WINDOW` (15 s) después y con el evento todavía abierto para registrar; se identifica por el `client_id` que generó la pantalla. Borra solo ESE ingreso (la persona vuelve a «No
     registrado» si era el único). Quien necesite deshacer más tarde o lo de otro usa Editar → Estado de registro (administrador o más), como siempre."""
     event = get_event_for_staff(event_id, db, staff)
-    require_event_in_progress(event)
     client_id = str((body or {}).get("client_id") or "").strip()[:64]
     if not client_id:
         raise HTTPException(status_code=400, detail="Falta el identificador de la acreditación")
     log = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id, AccessLog.record_type != "Actualizado").first()
+    if not (log and testperson.bypasses_gate(event, log.user_id)):
+        require_event_in_progress(event)
     if not log:
         raise HTTPException(status_code=404, detail="Esa acreditación no existe (o ya se deshizo)")
     if log.registered_by_staff_id != staff.id:
@@ -1415,7 +1420,7 @@ def update_user(
         missing = _missing_required_fields(field_configs, final_values)
         if missing:
             raise HTTPException(status_code=400, detail=f"Faltan campos obligatorios: {', '.join(missing)}")
-        bad_emails = _invalid_email_fields(field_configs, final_values)
+        bad_emails = [] if testperson.is_test(user.id) else _invalid_email_fields(field_configs, final_values)
         if bad_emails:
             raise HTTPException(status_code=400, detail="Correo no válido — " + "; ".join(bad_emails))
 
@@ -1599,6 +1604,8 @@ def update_registration_status(
 
     was_registered = _already_checked_in(db, event_id, user_id)
     deleted_logs = 0
+    if new_status == "registrado" and not was_registered and not testperson.bypasses_gate(event, user_id):
+        require_event_in_progress(event)          # 5-nov-2026: «Editar → Estado de registro → Guardar» tampoco registra con el evento en «creado» (antes sí, y dejaba imprimir)
     if new_status == "registrado" and not was_registered:
         missing = person_missing_required(db, event, user)
         if missing:                                     # A3: el mismo código claro en todos los caminos

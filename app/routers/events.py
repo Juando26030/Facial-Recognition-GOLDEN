@@ -17,6 +17,7 @@ from app import security, status_changes, warmup
 from app.timeutil import utcnow
 from app.database import get_db
 from app import event_rules
+from app import testperson
 from app.models import EventStatusChange, SystemEvent, AccessLog, BadgeTemplate, BulkJob, WebForm, RouletteConfig, RouletteDraw, EVENT_STATUSES, Event, EventAttendee, EventFieldConfig, EventState, EventStaffAuthorization, PrintDevice, PrintLog, PrintRoute, SavedColor, StaffUser, SuperEvent, Tenant
 from app.routers.event_docs import delete_event_files
 from app.routers.forms import delete_form_rows
@@ -383,6 +384,8 @@ def create_event(
         event_data["state_id"] = initial.id
     event = Event(**event_data, created_by_id=staff.id)
     db.add(event)
+    db.flush()
+    testperson.ensure_for_event(db, event)          # toda evento nuevo trae su persona de prueba (no cuenta en reportes ni estadísticas)
     db.commit()
     db.refresh(event)
     return _serialize(event)
@@ -414,7 +417,7 @@ def update_event(
     # volver a ese estado con datos reales adentro presta a confusión (¿el evento no ha empezado,
     # o ya tiene gente?). No aplica a pasar a 'finalizado', solo a la vuelta específica hacia atrás.
     if data.status == "creado" and event.status != "creado":
-        tiene_asistentes = db.query(EventAttendee).filter(EventAttendee.event_id == event_id).first() is not None
+        tiene_asistentes = db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id != testperson.TEST_ID).first() is not None
         if tiene_asistentes:
             raise HTTPException(
                 status_code=400,
@@ -609,8 +612,8 @@ def delete_event(
 
 # ------------------------------------------------------------------ devolver un evento «en curso» a «creado» (pedido B, 1-nov-2026)
 def _revert_counts(db: Session, event_id: int) -> dict:
-    return {"attendees": db.query(func.count(EventAttendee.id)).filter(EventAttendee.event_id == event_id).scalar() or 0,
-            "access_logs": db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.record_type != "Actualizado").scalar() or 0}
+    return {"attendees": db.query(func.count(EventAttendee.id)).filter(EventAttendee.event_id == event_id, EventAttendee.user_id != testperson.TEST_ID).scalar() or 0,
+            "access_logs": db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.record_type != "Actualizado", AccessLog.user_id != testperson.TEST_ID).scalar() or 0}
 
 
 @router.get("/events/{event_id}/revert-to-created")
@@ -660,7 +663,7 @@ def revert_to_created(event_id: int, data: Optional[RevertIn] = None, db: Sessio
 def list_status_changes(event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("admin"))):
     """Historial de retrocesos del evento y cuántos ingresos se sincronizaron sin hora válida (`doubtful`) para poder revisarlos. Sin datos personales."""
     rows = db.query(EventStatusChange).filter(EventStatusChange.event_id == event_id).order_by(EventStatusChange.at.desc(), EventStatusChange.id.desc()).all()
-    doubtful = db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.doubtful_reason.isnot(None)).scalar() or 0
+    doubtful = db.query(func.count(AccessLog.id)).filter(AccessLog.event_id == event_id, AccessLog.doubtful_reason.isnot(None), AccessLog.user_id != testperson.TEST_ID).scalar() or 0
     flagged = db.query(SystemEvent.kind, SystemEvent.detail).filter(SystemEvent.ref == str(event_id), SystemEvent.kind.in_(list(status_changes.CONSENT_FLAGS.values()))).order_by(SystemEvent.id).all()
     consents = {"sin_hora_valida": sum(k == status_changes.CONSENT_FLAGS["no_hour"] for k, _ in flagged), "after_revert": sum(k == status_changes.CONSENT_FLAGS["after"] for k, _ in flagged),
                 "entry_ids": [d for _, d in flagged][:200]}          # consentimientos guardados dentro de la ventana y marcados para revisar (UUID del dispositivo; sin datos personales)

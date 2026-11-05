@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app import analytics as an, regtime
 from app.auth import get_event_for_staff, require_role, require_role_or_client
 from app.database import get_db
+from app import testperson
 from app.models import AccessLog, Event, EventAttendee, StaffUser, User
 from app.reports import REGISTRATION_METHOD_LABELS
 from app.timeutil import to_local
@@ -17,8 +18,8 @@ router = APIRouter()
 
 
 def registro_dashboard(db: Session, event: Event) -> dict:
-    attendees = {a.user_id: a for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id)}
-    logs = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado").order_by(AccessLog.timestamp).all()
+    attendees = {a.user_id: a for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id != testperson.TEST_ID)}
+    logs = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id != testperson.TEST_ID).order_by(AccessLog.timestamp).all()
     first = {}
     for lg in logs:
         first.setdefault(lg.user_id, lg)                       # el primer registro real de cada persona
@@ -78,7 +79,7 @@ def timing_report(event_id: int, db: Session = Depends(get_db), staff: StaffUser
     """Fase 1A, PR1 (solo lectura, admin y super_admin): p50/p90 del tiempo por registro (`access_logs.took_ms`) del evento, en total, por pantalla (`ui_flow`) y por digitador. Solo agregados:
     ni cédulas ni nombres de asistentes; el digitador va por su nombre de cuenta (nunca su usuario, que es su cédula) o «Digitador N»."""
     event = get_event_for_staff(event_id, db, staff)
-    rows = db.query(AccessLog.registered_by_staff_id, AccessLog.ui_flow, AccessLog.took_ms, AccessLog.record_type).filter(AccessLog.event_id == event.id).all()
+    rows = db.query(AccessLog.registered_by_staff_id, AccessLog.ui_flow, AccessLog.took_ms, AccessLog.record_type).filter(AccessLog.event_id == event.id, AccessLog.user_id != testperson.TEST_ID).all()
     ids = {r[0] for r in rows if r[0] is not None}
     names = {sid: (name or "").strip() for sid, name in db.query(StaffUser.id, StaffUser.full_name).filter(StaffUser.id.in_(ids))} if ids else {}
     return {"event_id": event.id, **regtime.build_report([tuple(r) for r in rows], names)}

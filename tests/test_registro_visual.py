@@ -149,3 +149,16 @@ def test_celular_la_lista_no_queda_sin_alto():
     css = (ROOT / "static/css/design-system.css").read_text(encoding="utf-8")
     bloque = css.split("@media (max-width: 720px) {\n  .gw-workarea {")[1].split("}")[0]
     assert "height: auto" in bloque, "en celular la zona de trabajo no tiene alto fijo"
+
+
+def test_search_has_a_trash_button_and_the_created_pill_is_blue():
+    """Pedido de Juan David (5-nov-2026): papelera junto a la caja única, y «Recién creado» (alta manual) en píldora sólida AZUL, distinta de «Recién registrado» (verde)."""
+    assert 'id="searchClearBtn"' in BUSC and 'aria-label="Borrar lo escrito"' in BUSC and "#i-trash" in BUSC and "gw-search__row" in BUSC
+    css = _no_comments(DS_CSS)
+    assert ".gw-search__clear" in css and ".gw-recent-tag--new" in css and "var(--gw-info-line)" in css.split(".gw-recent-tag--new")[1].split("}")[0]
+    assert "Recién creado" in DIR_JS and "Recién registrado" in DIR_JS and "gw-recent-tag--new" in DIR_JS
+    assert "gw-search__clear" in STANDARDS and "gw-recent-tag--new" in STANDARDS and "gw-recent-tag--new" in GUIDE
+
+
+def test_register_new_always_opens_blank():
+    assert "window.resetRegForm" in TPL and "registerModal.style.display !== 'flex'" in TPL

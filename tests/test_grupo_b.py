@@ -123,11 +123,11 @@ def test_report_and_stats_show_origin_and_state(client, factory, db, tmp_path):
     for col in ("Origen de carga", "Estado", "Fecha de Registro", "Hora de Registro", "Registrado por"):
         assert col in header
     body = [dict(zip(header, r)) for r in rows[rows.index(header) + 1:] if any(r)]
-    manual = next(b for b in body if b["Origen de carga"] == "Alta manual")
+    manual = next(b for b in body if b["Origen de carga"] == "Creado nuevo")
     assert manual["Estado"] == "Registrado" and manual["Registrado por"] and manual["Hora de Registro"]
     assert any(b["Origen de carga"] == "Desconocido" and b["Estado"] == "No registrado" for b in body)
     stats = client.get(f"/api/events/{ev.id}/stats/data", params={"variable": "origin"}).json()
     labels = {b["label"]: b["count"] for b in stats["buckets"]}
-    assert labels.get("Alta manual") == 1 and labels.get("Desconocido") == 3
+    assert labels.get("Creado nuevo") == 1 and labels.get("Desconocido") == 3
     st = {b["label"] for b in client.get(f"/api/events/{ev.id}/stats/data", params={"variable": "status"}).json()["buckets"]}
     assert st <= {"Registrado", "No registrado"}

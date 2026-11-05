@@ -10,13 +10,13 @@
        - 'texto': todo lo demás; se busca como NOMBRE y como EMPRESA a la vez (prefijo de palabra).
    matchPerson(persona, consulta, opts) -> { coincide, motivo }
      motivo (corto, en español, para mostrar POR QUÉ coincidió): «Cédula exacta» | «Cédula (empieza por 123…)» | «Código del lector» | «Nombre» | «Empresa» | «Nombre y empresa»; '' si no coincide.
-     orden (para ordenar resultados): 0 = cédula exacta o código del lector, 1 = cédula por prefijo, 2 = nombre/empresa. `search(personas, consulta, opts)` ya devuelve [{persona, motivo, orden}] así ordenado.
+     orden (para ordenar resultados): 0 = cédula exacta o código del lector, 1 = cédula por prefijo, 1.5 = cédula que contiene lo escrito, 2 = nombre/empresa, 2.5 = nombre/empresa corrigiendo un error de tipeo. `search(personas, consulta, opts)` ya devuelve [{persona, motivo, orden}] así ordenado.
      persona: { id, first_name, last_name, entity } (directorio en línea) o una fila de la copia local (`__local`, `__h` = huella de la cédula).
      opts.cedulaPlain: cédula en claro de ESA fila (la descifra el llamador, en memoria, solo mientras busca); con ella una fila local también se busca por prefijo.
        Alternativa para recorrer una lista: opts.cedulaOf(persona) -> cédula en claro o ''. Este módulo NUNCA guarda ni cachea una cédula recibida por opts.
      opts.hash: huella (GC.hashFor) de la cédula consultada; respaldo de una fila local sin cédula en claro (copia vieja): ahí solo cabe la coincidencia EXACTA.
-   Reglas: la búsqueda es PREDICTIVA con y sin red: desde 3 dígitos coincide toda cédula que EMPIECE por lo escrito (nunca subcadena: «345» no lista a «1234567»); la exacta sale primero.
-   Nombre y empresa, por prefijo de palabra sin tildes ni mayúsculas. */
+   Reglas: la búsqueda es PREDICTIVA con y sin red: desde 3 dígitos coincide toda cédula que EMPIECE por lo escrito y, después de esas, la que CONTENGA esos dígitos («345» lista a «1234567»: se busca por los últimos dígitos); la exacta sale primero.
+   Nombre y empresa, por prefijo de palabra sin tildes ni mayúsculas, y tolerando errores de tipeo («jaun david» encuentra «Juan David»). */
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -27,7 +27,7 @@
   const MIN_PREFIX_DIGITS = 3;      // desde aquí la cédula se busca por prefijo (filas con cédula en claro)
   const MIN_CEDULA_DIGITS = 5;      // desde aquí la cédula se considera completa (huella exacta sin red)
   const MOTIVOS = { cedula: 'Cédula exacta', lector: 'Código del lector',
-    prefijo: (digits) => 'Cédula (empieza por ' + digits + '…)', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa' };
+    prefijo: (digits) => 'Cédula (empieza por ' + digits + '…)', contiene: (digits) => 'Cédula (contiene ' + digits + ')', nombre: 'Nombre', empresa: 'Empresa', ambos: 'Nombre y empresa' };
 
   function stripAccents(text) {
     return String(text == null ? '' : text).normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -103,17 +103,74 @@
   }
   function prepare(personas) { for (let i = 0; i < personas.length; i++) keysOf(personas[i]); return personas; }
 
-  /* Cada palabra escrita debe ser prefijo de una palabra DISTINTA de lo guardado, en cualquier orden. */
+  /* Distancia de edición con transposición (Damerau/OSA): «jaun» vs «juan» = 1. */
+  const ROWS = [new Int32Array(66), new Int32Array(66), new Int32Array(66)];        // tres filas reutilizadas: sin crear arreglos por cada comparación (son miles por tecla)
+  function editDistance(a, b, max) {
+    if (a.length > 64) a = a.slice(0, 64);
+    if (b.length > 64) b = b.slice(0, 64);
+    let prev2 = ROWS[0], prev = ROWS[1], cur = ROWS[2];
+    for (let j = 0; j <= b.length; j++) prev[j] = j;
+    let prevMin = 0;
+    for (let i = 1; i <= a.length; i++) {
+      cur[0] = i;
+      let curMin = i;
+      for (let j = 1; j <= b.length; j++) {
+        const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+        let v = prev[j] + 1;
+        const ins = cur[j - 1] + 1, sub = prev[j - 1] + cost;
+        if (ins < v) v = ins;
+        if (sub < v) v = sub;
+        if (i > 1 && j > 1 && a.charCodeAt(i - 1) === b.charCodeAt(j - 2) && a.charCodeAt(i - 2) === b.charCodeAt(j - 1) && prev2[j - 2] + 1 < v) v = prev2[j - 2] + 1;
+        cur[j] = v;
+        if (v < curMin) curMin = v;
+      }
+      if (max !== undefined && curMin > max && prevMin > max) return max + 1;          // ya no puede bajar de ahí
+      const t = prev2; prev2 = prev; prev = cur; cur = t; prevMin = curMin;
+    }
+    return prev[b.length];
+  }
+  function shareStart(a, b) {                                                       // alguna de las 2 primeras letras de una está entre las 3 primeras de la otra
+    for (let i = 0; i < 2 && i < a.length; i++) for (let j = 0; j < 3 && j < b.length; j++) if (a[i] === b[j]) return true;
+    for (let i = 0; i < 2 && i < b.length; i++) for (let j = 0; j < 3 && j < a.length; j++) if (b[i] === a[j]) return true;
+    return false;
+  }
+  function wordMatch(qw, hw) {
+    if (hw.startsWith(qw)) return 2;
+    if (hw.length >= 4 && qw.startsWith(hw)) return 1;
+    const shortLen = Math.min(qw.length, hw.length);
+    if (shortLen < 4 || /\d/.test(qw) || /\d/.test(hw)) return 0;
+    const limit = shortLen <= 6 ? 1 : 2;
+    if (hw.length + limit < qw.length) return 0;
+    if (!shareStart(qw, hw)) return 0;                                              // filtro barato: un error de tipeo no cambia a la vez las 3 primeras letras
+    if (Math.abs(qw.length - hw.length) <= limit && editDistance(qw, hw, limit) <= limit) return 1;
+    return hw.length > qw.length && editDistance(qw, hw.slice(0, qw.length), limit) <= limit ? 1 : 0;       // mientras se escribe: contra el inicio de la palabra
+  }
+
+  /* Cada palabra escrita debe corresponder a una palabra DISTINTA de lo guardado, en cualquier orden.
+     Devuelve 2 si todas fueron por prefijo exacto, 1 si alguna necesitó tolerancia, 0 si no coincide. Primero se prueba el prefijo exacto en todas
+     las palabras (rápido) y solo si no alcanza se aplica la tolerancia. */
   function prefixMatch(haystack, queryWords) {
-    if (!queryWords.length) return false;
+    if (!queryWords.length) return 0;
     const used = new Array(haystack.length).fill(false);
+    let fuzzy = false;
     for (let q = 0; q < queryWords.length; q++) {
-      let hit = -1;
-      for (let i = 0; i < haystack.length; i++) if (!used[i] && haystack[i].startsWith(queryWords[q])) { hit = i; break; }
-      if (hit < 0) return false;
+      let hit = -1, best = 0;
+      for (let i = 0; i < haystack.length; i++) {
+        if (used[i]) continue;
+        if (haystack[i].startsWith(queryWords[q])) { hit = i; best = 2; break; }
+      }
+      if (hit < 0) {
+        for (let i = 0; i < haystack.length; i++) {
+          if (used[i]) continue;
+          const m = wordMatch(queryWords[q], haystack[i]);
+          if (m) { hit = i; best = m; break; }
+        }
+      }
+      if (hit < 0) return 0;
+      if (best < 2) fuzzy = true;
       used[hit] = true;
     }
-    return true;
+    return fuzzy ? 1 : 2;
   }
 
   const NO = { coincide: false, motivo: '', orden: 9 };
@@ -136,15 +193,17 @@
       if (!q.cedula) return NO;
       if (id === q.cedula) return hit(motivo, 0);
       if (q.kind === 'cedula' && id.startsWith(q.cedula)) return hit(MOTIVOS.prefijo(q.cedula), 1);    // predictivo: solo con la cédula en claro
+      if (q.kind === 'cedula' && q.cedula.length >= MIN_PREFIX_DIGITS && /^[0-9-]+$/.test(id) && id.includes(q.cedula)) return hit(MOTIVOS.contiene(q.cedula), 1.5);      // los últimos dígitos o un tramo del medio: después de los que empiezan igual
       return NO;
     }
     const k = keysOf(persona);
     // Documento con letras (pasaporte): se escribe como texto, pero si es IGUAL al documento guardado es cédula exacta.
     if (!persona.__local && q.compact && /\d/.test(q.compact) && /[a-z]/.test(q.compact) && k.id === q.compact) return hit(MOTIVOS.cedula, 0);
     const inName = prefixMatch(k.name, q.words), inEntity = prefixMatch(k.entity, q.words);
-    if (inName && inEntity) return hit(MOTIVOS.ambos, 2);
-    if (inName) return hit(MOTIVOS.nombre, 2);
-    if (inEntity) return hit(MOTIVOS.empresa, 2);
+    const exact = (inName === 2 || inEntity === 2) ? 2 : 2.5;                       // lo escrito bien primero; lo que solo coincide corrigiendo un error de tipeo, después
+    if (inName && inEntity) return hit(MOTIVOS.ambos, exact);
+    if (inName) return hit(MOTIVOS.nombre, inName === 2 ? 2 : 2.5);
+    if (inEntity) return hit(MOTIVOS.empresa, inEntity === 2 ? 2 : 2.5);
     return NO;
   }
 

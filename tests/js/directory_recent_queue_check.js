@@ -73,6 +73,12 @@ const sortedServed = order.map((idx) => 'P' + String(idx).padStart(2, '0'));    
   assert.ok(rows().slice(0, 8).every((tr) => tr.dataset.recent === '1') && rows().slice(8).every((tr) => tr.dataset.recent !== '1'));
   assert.strictEqual(rows()[0].children[2].children.find((c) => c.className.includes('gw-recent-tag')).textContent, 'Recién registrado');
   assert.ok(rows()[0].children[2].children.find((c) => c.className.includes('gw-recent-tag')).className.includes('gw-badge gw-recent-tag'));
+  // alta manual («Registrar nuevo») = «Recién creado» en azul; acreditar a alguien de la base sigue siendo «Recién registrado» en verde (5-nov-2026)
+  const nuevoId = rows()[0].dataset.userId; users.find((u) => u.id === nuevoId).origin = 'manual'; users.find((u) => u.id === rows()[1].dataset.userId).origin = 'base';
+  await d.reload();
+  const tagOf = (i) => rows()[i].children[2].children.find((c) => c.className.includes('gw-recent-tag'));
+  assert.strictEqual(tagOf(0).textContent, 'Recién creado'); assert.ok(tagOf(0).className.includes('gw-recent-tag--new'), 'la píldora de «Recién creado» es la azul');
+  assert.strictEqual(tagOf(1).textContent, 'Recién registrado'); assert.ok(!tagOf(1).className.includes('gw-recent-tag--new'), 'la de «Recién registrado» sigue verde');
 
   // con consulta: manda SearchCore, no la recencia
   type(els.cedula, 'persona');

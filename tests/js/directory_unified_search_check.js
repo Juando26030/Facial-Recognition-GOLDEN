@@ -25,7 +25,7 @@ class El {
 const container = new El('div');
 const table = container.appendChild(new El('table'));
 let els = {};
-const fresh = (withExtra) => { els = { tbody: new El('tbody'), cedula: new El('input'), hint: new El('p') }; if (withExtra) { els.nombre = new El('input'); els.entidad = new El('input'); } };
+const fresh = (withExtra) => { els = { tbody: new El('tbody'), cedula: new El('input'), hint: new El('p'), searchClearBtn: new El('button') }; if (withExtra) { els.nombre = new El('input'); els.entidad = new El('input'); } };
 global.window = { EVENT_ID: 1, STAFF_ROLE: 'coordinador', OPTIONAL_VARIABLES: [], FIELD_CONFIGS: [] };
 global.document = { getElementById: (id) => (id === 'gwSearchHint' ? els.hint : els[id] || null), createElement: (t) => new El(t), visibilityState: 'visible', body: new El('body'), addEventListener: () => {} };
 global.showToast = () => {};
@@ -46,7 +46,7 @@ global.FormData = class { constructor() { this.m = {}; } append(k, v) { this.m[k
 global.fetch = async (url, init) => {
   const u = new URL(url, 'http://x');
   const json = (body, headers = {}) => ({ ok: true, status: 200, headers: { get: (k) => headers[k] ?? null }, json: async () => JSON.parse(JSON.stringify(body)) });
-  if (u.pathname === '/api/checkin-cedula') { checkins.push(init && init.body && init.body.m ? init.body.m.cedula : '?'); return json({ status: 'NO_MATCH' }); }
+  if (u.pathname === '/api/checkin-cedula') { checkins.push(init && init.body && init.body.m ? init.body.m.cedula : '?'); return json(global.__checkinResult || { status: 'NO_MATCH' }); }
   if (u.pathname === '/api/users/changes') return json({ cursor: '1:1', total: users.length, users: [] });
   const limit = +u.searchParams.get('limit'), offset = +u.searchParams.get('offset');
   return json(users.slice(offset, offset + limit), { 'X-Total-Count': String(users.length) });
@@ -104,6 +104,28 @@ const tick = () => new Promise((r) => setImmediate(r));
   assert.strictEqual(els.cedula.value, '', 'tras acreditar se limpia la caja');
   enter(els.cedula, 'AB123456'); await tick();                        // pasaporte: letras y dígitos sin espacios
   assert.strictEqual(checkins[1], 'AB123456');
+
+  // --- pedido de Juan David (5-nov-2026)
+  // (a) la caja única perdona errores de tipeo y busca la cédula también por sus últimos dígitos
+  type(els.cedula, 'jaun'); assert.strictEqual(rows().length, 0, 'ninguna persona de la prueba se llama Juan');
+  type(els.cedula, 'marat'); assert.deepStrictEqual(ids(), ['555000111'], '«marat» encuentra a Marta (letras cambiadas)'); assert.deepStrictEqual(reasonOf(rows()[0]), ['Nombre']);
+  type(els.cedula, 'peres'); assert.deepStrictEqual(ids(), ['1012345678'], '«peres» encuentra a Pérez');
+  type(els.cedula, '45678'); assert.deepStrictEqual(ids(), ['1012345678'], 'los últimos dígitos de la cédula encuentran a la persona'); assert.ok(reasonOf(rows()[0])[0].startsWith('Cédula (contiene 45678'));
+  // (b) la papelera: aparece con texto, borra todo y devuelve el foco
+  assert.strictEqual(els.searchClearBtn.hidden, false, 'con texto la papelera se ve');
+  els.cedula.focused = false; els.searchClearBtn.listeners.click();
+  assert.strictEqual(els.cedula.value, ''); assert.strictEqual(rows().length, 4, 'la lista completa vuelve'); assert.strictEqual(els.searchClearBtn.hidden, true, 'sin texto la papelera se oculta'); assert.strictEqual(els.cedula.focused, true);
+  // (c) acreditar deja la caja VACÍA, haya o no buscado antes
+  global.__checkinResult = { result: 'SÍ', data: { id: '10123', first_name: 'Luis', last_name: 'Mora' } }; checkins.length = 0;
+  type(els.cedula, 'luis'); enter(els.cedula, '10123'); await tick(); await tick(); await advance(10);
+  assert.deepStrictEqual(checkins, ['10123']); assert.strictEqual(els.cedula.value, '', 'tras acreditar la caja queda vacía (buscando antes)');
+  assert.strictEqual(rows().length, 4, 'y la lista vuelve completa');
+  els.cedula.value = ''; enter(els.cedula, '1012345678'); await tick(); await tick();
+  assert.strictEqual(els.cedula.value, '', 'tras acreditar la caja queda vacía (sin buscar antes)');
+  global.__checkinResult = { result: 'FOUND_PENDING', data: { id: '10123', first_name: 'Luis', last_name: 'Mora' } };
+  enter(els.cedula, '10123'); await tick(); await tick();
+  assert.strictEqual(els.cedula.value, '10123', 'sin acreditar (modo autoregistro apagado) se queda filtrando a la persona');
+  delete global.__checkinResult;
 
   d.clearFilters(); assert.strictEqual(rows().length, 4);
 

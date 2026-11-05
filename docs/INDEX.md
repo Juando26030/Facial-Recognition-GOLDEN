@@ -36,4 +36,5 @@ runbooks ni los espejos del proyecto de Claude. Abajo dice cuál es cuál.
 - [`legal/`](legal/): textos de la auditora, política de privacidad, decisiones y pendientes (empezar por `DECISIONES_Y_PENDIENTES.md`). Los textos legales son literales y no se editan.
 - [`ux/`](ux/): análisis de flujo y UX, plan de la fase 1 visual, pendientes post-piloto.
 - `comp_de_check.py.txt`: script de comprobación de impresión guardado como texto (histórico).
+- **Cierre de las Fases 0 y 1 (5-nov-2026):** `CIERRE_FASES_0_1.md`.
 - Fase 0A/0B: `0B_inventario.md`, `0B_ramas_borradas.md` (+ lista) — limpieza del repositorio.

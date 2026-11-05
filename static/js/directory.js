@@ -26,7 +26,7 @@
     return locals.concat(served.map((x) => x[0]), rest);
   }
   function isRecentRow(u, newest) { const t = recentMs(u); if (t !== null) return newest !== null && newest - t < RECENT_WINDOW_MS; return Recent.has(u.id); }
-  const ORIGINS = { base: { icon: '', label: 'Base (Excel)' }, manual: { icon: '', label: 'Alta manual' }, autoregistro: { icon: '', label: 'Autoregistro' }, desconocido: { icon: '', label: 'Desconocido' } };
+  const ORIGINS = { base: { icon: '', label: 'Base (Excel)' }, manual: { icon: '', label: 'Creado nuevo' }, autoregistro: { icon: '', label: 'Autoregistro' }, desconocido: { icon: '', label: 'Desconocido' } };
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
   }
@@ -575,7 +575,7 @@
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
               });
               if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
-              else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
+              else { const ed = await st.json().catch(() => ({})); const dd = ed.detail && typeof ed.detail === 'object' ? ed.detail.message : ed.detail; showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado' + (dd ? ': ' + dd : ''), 'error'); }
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
           showToast('Cambios guardados', 'success');
@@ -692,7 +692,7 @@
       const editBtn = actBtn('Editar', 'edit', 'gw-btn gw-btn--secondary btn-table-action', 'Editar persona', 'Editar a ' + (who || 'la persona'));
       editBtn.addEventListener('click', () => buildEditModal(user));
       actionTd.appendChild(editBtn);
-      if (!user.__local) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));
+      if (!user.__local && canManageStatus) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));          // eliminar es de coordinador en adelante: el digitador (temporal o no) no ve ni «Más»
     }
 
     tr.appendChild(actionTd);
@@ -812,12 +812,16 @@
 
     function updateCounterLabel() {
       if (!counterBtn) return;
-      const total = allUsers.length;
-      const count = allUsers.filter(u => u.status === 'No registrado').length;
+      const real = allUsers.filter(u => !u.test);                     // la persona de prueba del evento no cuenta en los contadores
+      const origin = originSelect && originSelect.value;
+      const scoped = origin ? real.filter(u => (u.origin || 'desconocido') === origin) : real;          // las cifras siguen el filtro de origen (no la búsqueda)
+      const total = scoped.length;
+      const count = scoped.filter(u => u.status === 'No registrado').length;
       const registered = total - count;
       counterBtn.innerText = `${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
       counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : '';
-      if (totalCounterEl) totalCounterEl.innerText = `${registered} registrados de ${total}`;
+      const scope = origin && ORIGINS[origin] ? ORIGINS[origin].label : 'Total';
+      if (totalCounterEl) totalCounterEl.innerText = `${scope}: ${registered} registrados de ${total}`;
     }
 
     /* Buscador rápido (antes, cada tecla re-normalizaba a TODAS las personas y redibujaba TODAS las filas: 180-230 ms por tecla con
@@ -872,8 +876,9 @@
         const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
         if (!td) return;
         const b = document.createElement('span');
-        b.className = 'gw-badge gw-recent-tag';
-        b.textContent = 'Recién registrado';
+        const created = u.origin === 'manual';                         // alta manual («Registrar nuevo»): «Recién creado» (azul); acreditar a alguien de la base: «Recién registrado» (verde)
+        b.className = created ? 'gw-badge gw-recent-tag gw-recent-tag--new' : 'gw-badge gw-recent-tag';
+        b.textContent = created ? 'Recién creado' : 'Recién registrado';
         td.appendChild(b);
       });
       if (unified) {                                                   // el motivo vive en la fila en caché: se quita el anterior y se pone el actual (no se duplican filas)
@@ -923,6 +928,7 @@
 
     function setHint(text) { if (hintEl) hintEl.textContent = text; }
     function applyUnified() {
+      syncClearBtn();
       const q = SC.classifyQuery(cedulaInput.value || '');
       const base = allUsers.filter((u) => {
         if (onlyNotRegistered && u.status !== 'No registrado') return false;
@@ -977,7 +983,22 @@
       drawRows();
     }
 
+    /* Vacía la caja de búsqueda y vuelve a mostrar la lista completa; el foco queda en la caja para la siguiente persona. Lo usan acreditar y el botón de la papelera. */
+    function clearSearchBox() {
+      if (!cedulaInput) return;
+      cedulaInput.value = '';
+      if (!unified) { if (nombreInput) nombreInput.value = ''; if (entidadInput) entidadInput.value = ''; }
+      pageIdx = 0;
+      applyFilters();
+      syncClearBtn();
+      if (!cedulaInput.disabled) { try { cedulaInput.focus(); } catch (_) { /* sin foco en pruebas */ } }
+    }
+    const clearBtn = unified ? document.getElementById('searchClearBtn') : null;           // la papelera junto a la caja (solo con el buscador único)
+    function syncClearBtn() { if (clearBtn) clearBtn.hidden = !(cedulaInput && cedulaInput.value); }
+    if (clearBtn) clearBtn.addEventListener('click', clearSearchBox);
+
     function onSearchInput() {
+      syncClearBtn();
       clearTimeout(searchTimer);
       pageIdx = 0;
       searchTimer = setTimeout(applyFilters, SEARCH_DELAY_MS);
@@ -1240,8 +1261,8 @@
     accreditHooks.push((found) => {
       const u = allUsers.find((x) => (found.cedula && x.id === found.cedula) || (x.__h && x.__h === found.person.h));
       if (u) { u.status = 'Registrado'; rowCache.delete(u); }
-      if (cedulaInput && found.cedula) { cedulaInput.value = found.cedula; localHashes.set(found.cedula.toLowerCase(), found.person.h); }
-      applyFilters();
+      if (found.cedula) localHashes.set(found.cedula.toLowerCase(), found.person.h);
+      clearSearchBox();                                                  // sin red también: acreditar deja la caja vacía
     });
     async function offlineCheckin(GC, cedula, method, cid) {
       if (await GC.autoRegister()) { await offlineAccredit(GC, { cedula }, method, cid); return; }
@@ -1323,7 +1344,7 @@
           applyFlags(data);
           if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print });
           await reload();
-          if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
+          clearSearchBox();                                         // 5-nov-2026: acreditar deja la caja vacía (antes dejaba la cédula escrita)
           return;
         }
         if (data.result === 'FOUND_PENDING') {
@@ -1406,6 +1427,7 @@
             fastCheckin(raw, false, null);
           }
           cedulaInput.value = '';
+          syncClearBtn();
         }
       });
     }

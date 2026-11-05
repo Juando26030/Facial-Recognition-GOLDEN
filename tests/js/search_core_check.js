@@ -40,7 +40,8 @@ con(juan, ' 1016100329 ', 'Cédula exacta');
 con(juan, '1016100', 'Cédula (empieza por 1016100…)');                           // con red: predictivo por prefijo
 con(juan, '101', 'Cédula (empieza por 101…)');
 con(juan, '1.016', 'Cédula (empieza por 1016…)');
-sin(juan, '16100329');                                                           // subcadena (no prefijo): NO
+con(juan, '16100329', 'Cédula (contiene 16100329)');                              // los últimos dígitos / un tramo: SÍ, después de las que empiezan igual
+sin(juan, '1016100328');                                                           // un dígito distinto: NO
 sin(juan, '10161003290');                                                        // más larga que la cédula: NO
 sin(juan, '1016100328');
 sin(juan, '12345');
@@ -109,7 +110,7 @@ con(local, '101', 'Cédula (empieza por 101…)', { cedulaPlain: '1016100329' })
 con(local, '1016100329', 'Cédula exacta', { cedulaPlain: '1016100329' });
 con(local, '1.016.100', 'Cédula (empieza por 1016100…)', { cedulaPlain: '1016100329' });
 sin(local, '102', { cedulaPlain: '1016100329' });
-sin(local, '16100', { cedulaPlain: '1016100329' });
+con(local, '16100', 'Cédula (contiene 16100)', { cedulaPlain: '1016100329' });      // con la cédula en claro también se busca por un tramo
 con(local, '101', 'Cédula (empieza por 101…)', { cedulaOf: () => '1016100329' });
 assert.strictEqual(local.id_plain, undefined);                                   // el módulo no deja cédulas en la persona
 const pl = ['1016100329', '10161003291', '1016200000'];
@@ -157,4 +158,18 @@ assert.ok(mp(rep, '123456-2').coincide, 'el serial se encuentra por su cédula c
 assert.strictEqual(mp(pegada, '123456-2').coincide, false, '«1234562» no es «123456-2»');
 assert.strictEqual(mp(rep, '1234562').coincide, false, '«123456-2» no es «1234562»');
 assert.ok(mp(rep, '123456').coincide, 'la cédula sin serial encuentra también a sus repetidas (predictivo por prefijo)');
+// Pedido de Juan David (5-nov-2026): la búsqueda de nombres perdona errores de tipeo (como el buscador de tres cajas) y la cédula también se busca por sus últimos dígitos
+con(juan, 'jaun david', 'Nombre');                                               // letras cambiadas de lugar
+con(juan, 'yuan', 'Nombre');                                                     // una letra distinta
+con(juan, 'david ramirez', 'Nombre');                                            // sin tilde, en el orden que sea
+con(juan, 'jaun daivd ramirez', 'Nombre');                                       // dos palabras con error
+con(maria, 'maira', 'Nombre');                                                   // transposición, 5 letras
+con(juan, 'compania nanez', 'Empresa');
+sin(juan, 'pedro');
+sin(juan, 'jon');                                                                // menos de 4 letras: sin tolerancia
+sin(pasaporte, '123457');                                                        // los números no se «corrigen»
+const exactos = SC.search([{ id: '1', first_name: 'Yuan', last_name: 'Li', entity: '' }, { id: '2', first_name: 'Juan', last_name: 'Pérez', entity: '' }], 'juan');
+assert.deepStrictEqual(exactos.map((r) => r.persona.id), ['2', '1'], 'lo escrito bien sale antes que lo corregido');
+const porCedula = SC.search([{ id: '9990123', first_name: 'A', last_name: 'B', entity: '' }, { id: '1237777', first_name: 'C', last_name: 'D', entity: '' }, { id: '123', first_name: 'E', last_name: 'F', entity: '' }], '123');
+assert.deepStrictEqual(porCedula.map((r) => r.persona.id), ['123', '1237777', '9990123'], 'exacta, luego empieza por, luego contiene');
 console.log('search_core_check OK');
