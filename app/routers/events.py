@@ -318,19 +318,18 @@ def delete_saved_color(color_id: int, db: Session = Depends(get_db), staff: Staf
 
 @router.post("/events")
 def create_event(
-    data: EventIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("comercial"))
+    data: EventIn, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role("coordinador"))
 ):
-    """Sprint 2.4, 2026-09-16 (pedido explícito): crear eventos pasó a ser comercial+ — antes era
-    coordinador+, ahora coordinador ya NO puede (solo comercial/admin/super_admin). Editar un
-    evento ya existente (update_event, abajo) sigue en coordinador+, sin cambios — un coordinador
-    sigue pudiendo operar/cambiar estado/gestionar los eventos que ya existen."""
+    """Crear eventos: coordinador+. Historia: antes del 16-sep-2026 era coordinador+; ese día pasó a
+    comercial+; el 4-nov-2026 Juan David (dueño) decidió que los COORDINADORES vuelven a poder crear.
+    Un coordinador «puro» (sin rol comercial ni admin) solo puede crear eventos donde él es el
+    coordinador (si manda otro id, 403: no puede crear un evento y quedarse sin verlo); la comercial
+    es opcional para él (la columna admite NULL). Comercial, doble rol y admin+ siguen igual."""
     if not db.query(Tenant).filter(Tenant.id == data.tenant_id).first():
         raise HTTPException(status_code=404, detail="Cliente (tenant) no encontrado")
-    coordinator = db.query(StaffUser).filter(
-        StaffUser.id == data.coordinator_staff_id, StaffUser.role == "coordinador"
-    ).first()
-    if not coordinator:
-        raise HTTPException(status_code=400, detail="El coordinador asignado no es válido")
+    pure_coordinator = not ({"comercial", "admin", "super_admin"} & effective_roles(staff))
+    if pure_coordinator and data.coordinator_staff_id != staff.id:
+        raise HTTPException(status_code=403, detail="Un coordinador solo puede crear eventos asignados a sí mismo")
     if db.query(Event).filter(Event.event_code == data.event_code).first():
         raise HTTPException(status_code=400, detail=f"Ya existe un evento con el código '{data.event_code}'")
     # Solo eventos NUEVOS (orden del 21-oct-2026): el código va en direcciones públicas (/aceptar/<código>, QR y enlaces personales). Los existentes no se tocan.
@@ -348,9 +347,13 @@ def create_event(
     if commercial_id is None:
         if "comercial" in effective_roles(staff):
             commercial_id = staff.id
+        elif pure_coordinator:
+            commercial_id = None          # coordinador puro: la comercial es opcional (columna nullable)
         else:
             raise HTTPException(status_code=400, detail="Debes asignar una comercial para este evento")
     else:
+        if pure_coordinator:
+            raise HTTPException(status_code=403, detail="Un coordinador no asigna la comercial: la define un comercial o un administrador")
         commercial = db.query(StaffUser).filter(
             StaffUser.id == commercial_id,
             or_(StaffUser.role == "comercial", StaffUser.secondary_role == "comercial"),

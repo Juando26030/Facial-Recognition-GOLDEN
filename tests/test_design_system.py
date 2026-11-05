@@ -54,7 +54,7 @@ TEXT_PAIRS = [
     ("--gw-on-danger", "--gw-danger", 4.5),
     ("--gw-secondary-text", "--gw-secondary-bg", 4.5),
     ("--gw-ok-text", "--gw-ok-bg", 4.5), ("--gw-ok-bg", "--gw-ok-text", 4.5), ("--gw-warn-text", "--gw-warn-bg", 4.5), ("--gw-err-text", "--gw-err-bg", 4.5), ("--gw-info-text", "--gw-info-bg", 4.5),
-    ("--gw-err-text", "--gw-surface", 4.5),                                                             # mensaje de error de un campo
+    ("--gw-err-text", "--gw-surface", 4.5), ("--gw-err-text", "--gw-surface-2", 4.5), ("--gw-secondary-text", "--gw-surface-2", 4.5),                                                             # mensaje de error de un campo
     ("--gw-nav-text", "--gw-nav-bg", 4.5), ("--gw-nav-accent", "--gw-nav-bg", 4.5),
 ]
 NON_TEXT_PAIRS = [

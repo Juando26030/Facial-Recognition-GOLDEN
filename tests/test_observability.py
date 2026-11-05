@@ -15,7 +15,7 @@ from tests.conftest import login
 # ------------------------------- enmascarado de datos personales -------------------------------
 @pytest.mark.parametrize("raw, forbidden", [
     ("registró a 1016100329 con ana.perez@example.com", ["1016100329", "ana.perez@example.com"]),
-    ("teléfono +57 317 427 6073 confirmado", ["317 427 6073"]),
+    ("teléfono +57 318 098 1752 confirmado", ["318 098 1752"]),
     ("token=" + "A" * 40, ["A" * 40]),
     ("encoding [" + ", ".join(["0.1234"] * 128) + "]", ["0.1234"]),
 ])

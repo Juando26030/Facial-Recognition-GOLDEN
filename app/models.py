@@ -243,6 +243,7 @@ class Event(Base):
     roster_uploaded = Column(Boolean, default=False, nullable=False)  # 2026-09-21: true desde la primera vez que bulk_register cargó al menos una fila para este evento. Sirve para bloquear un RE-upload accidental mientras el evento ya está en_proceso (ver bulk_register) — evita pisar registros que ya se hicieron en vivo.
     auto_print_badge = Column(Boolean, default=False, nullable=False)  # 2026-09-15 (Sprint 2, Historia 2.2): si está prendido, guardar un registro exitoso (cualquier método) dispara la impresión de la escarapela sola, sin que el digitador toque el botón. Apagado por default a propósito — el brief es explícito en que la impresión NO es automática salvo que se active este switch.
     shared_print_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # impresión compartida (22-oct-2026, 0069): APAGADA por defecto; app/routers/shared_print.py
+    reprint_disabled = Column(Boolean, default=False, server_default='false', nullable=False)   # 0083 (Fase 1B): true = reimprimir a quien ya se imprimió exige permiso del coordinador (app/reprint.py); solo admin+ lo cambia
     print_settings_json = Column(Text, nullable=True)   # valores de impresión de escarapelas del evento (0070, app/routers/print_settings.py); NULL = de fábrica
     super_event_id = Column(Integer, ForeignKey('super_events.id'), nullable=True)  # ítem 19: superevento al que pertenece (NULL = evento suelto)
     certificates_enabled = Column(Boolean, default=False, server_default='false', nullable=False)  # ítem 5: módulo de certificados activado desde Parámetros
@@ -1068,3 +1069,48 @@ class EventStatusChange(Base):
     reason = Column(String(500), nullable=True)
     attendees_count = Column(Integer, nullable=False, default=0, server_default='0')
     access_logs_count = Column(Integer, nullable=False, default=0, server_default='0')
+
+
+class ReprintRequest(Base):
+    """Fase 1B (0083): solicitud de permiso para reimprimir la escarapela de alguien que ya se imprimió, en un evento con la reimpresión DESHABILITADA (app/reprint.py).
+    Estados: pending → approved | denied | expired; approved → used | expired. Las transiciones son UPDATE atómicos condicionados al estado. `expires_at` es el límite vigente:
+    mientras está pendiente, el de la solicitud; al aprobar, el del permiso (REPRINT_APPROVAL_MINUTES)."""
+    __tablename__ = 'reprint_requests'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    requested_by_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    approver_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)   # el coordinador del evento al pedirla (NULL = no tenía: decide un admin)
+    status = Column(String(12), nullable=False, default='pending', server_default='pending')
+    requested_at = Column(DateTime, nullable=False, default=utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    screen_seen_at = Column(DateTime, nullable=True)      # la pantalla del coordinador la mostró (así se sabe que tiene sesión activa)
+    email_sent_at = Column(DateTime, nullable=True)       # se decidió enviar el correo de respaldo (reserva atómica)
+    decided_at = Column(DateTime, nullable=True)
+    decided_by_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    decided_channel = Column(String(10), nullable=True)   # screen | email
+    used_at = Column(DateTime, nullable=True)
+    used_channel = Column(String(12), nullable=True)      # shared | local
+
+
+class ReprintLink(Base):
+    """Enlace de correo de UN SOLO USO: solo el hash SHA-256 del token; ligado a una solicitud y a un destinatario."""
+    __tablename__ = 'reprint_links'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(Integer, ForeignKey('reprint_requests.id', ondelete='CASCADE'), nullable=False)
+    staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='CASCADE'), nullable=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    used_at = Column(DateTime, nullable=True)
+
+
+class ReprintAudit(Base):
+    """Auditoría de la reimpresión: una fila por hecho (requested, screen, email, approved, denied, expired, used). Solo se agregan filas."""
+    __tablename__ = 'reprint_audit'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(Integer, ForeignKey('reprint_requests.id', ondelete='CASCADE'), nullable=False)
+    at = Column(DateTime, nullable=False, default=utcnow)
+    kind = Column(String(16), nullable=False)
+    staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    channel = Column(String(12), nullable=True)

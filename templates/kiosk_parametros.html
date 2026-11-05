@@ -1,11 +1,22 @@
+{# Parámetros del evento (reingeniería visual, 2026-11-05): pestañas por sección (una visible a la vez), un solo «Guardar cambios» fijo abajo, ayuda en «?» y recorrido de primera vez.
+   Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). La lógica, los ids y los nombres de campo son los de siempre: lo que lee el JS no cambió. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{# Ayuda «?»: el detalle largo va aquí y bajo el control queda una sola línea. #}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+{% set can_change_reprint = ('admin' in staff_role) %}
+{% set is_admin_plus = staff_role in ["admin", "super_admin"] %}
+{% set n_categories = ((event.categories | fromjson) | length) if event.categories else 0 %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parámetros del Evento | GoldenWeb 2.0</title>
+    <title>Parámetros del evento | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/parametros.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
@@ -13,17 +24,8 @@
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
-    <style>
-        .params-table { width:100%; border-collapse:collapse; }
-        .params-table th, .params-table td { padding:0.7rem 0.6rem; border-bottom:1px solid #eee; vertical-align:top; text-align:left; font-size:0.9rem; }
-        .params-table th { color:var(--gw-text-muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; }
-        .params-table select, .params-table textarea { width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:6px 8px; font-size:0.88rem; font-family:inherit; }
-        .params-table textarea { min-height:60px; }
-        .params-table tr.dragging { opacity:0.4; background:#fff8e1; }
-        .params-field-name { font-weight:700; color:var(--golden-dark); }
-    </style>
 </head>
-<body class="has-sidebar">
+<body class="gw-page gw-parametros has-sidebar">
 {% include "_sidebar.html" %}
 
 <header class="golden-header">
@@ -31,10 +33,11 @@
     <a href="#" class="golden-logo">
       {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
     </a>
-    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <span style="color:var(--gw-text-muted); font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-parametros__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post" class="gw-parametros__logout">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -47,349 +50,466 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.EVENT_ID = {{ event.id }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};</script>
+<script>window.PUBLIC_BASE = {{ public_base_url()|tojson }}; window.EVENT_ID = {{ event.id }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};
+window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.gwIcon = function (n) { return '<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="' + window.GW_ICONS + '#i-' + n + '"/></svg>'; };</script>
 
 <main class="golden-main">
-  <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%);">
-    <div class="golden-container">
-      <div class="golden-section-title">
-        <span>{{ company_name|upper }}</span>
-        <h2>Parámetros del <span class="gradient-text">Evento</span></h2>
+  <div class="golden-container gw-parametros__wrap" data-gw-tour="parametros" data-gw-tour-auto>
+    <div class="gw-row gw-row--between">
+      <div>
+        <p class="gw-parametros__kicker">{{ company_name|upper }}</p>
+        <h1 class="gw-title">Parámetros del evento</h1>
+      </div>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="parametros">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+    </div>
+
+    {# Guía de 3 pasos (cada uno con su «?»). #}
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige la sección</span>
+        {% call ayuda('ay_paso1', 'Elige la sección') %}Cada pestaña agrupa un tema del evento. Debajo del nombre ves, en una línea, cómo está esa sección.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Cambia lo que necesites</span>
+        {% call ayuda('ay_paso2', 'Cambia lo que necesites') %}Lo que cambies queda pendiente: la pestaña muestra «Sin guardar». Los botones marcados «Al instante» actúan en el momento y los de borrado piden confirmación.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Guarda los cambios</span>
+        {% call ayuda('ay_paso3', 'Guarda los cambios') %}El botón «Guardar cambios» de abajo guarda todo lo pendiente de todas las pestañas. Si algo no se guarda, te dice qué y lo demás sí queda guardado.{% endcall %}</li>
+    </ol>
+
+    <div class="gw-tabs" id="paramsRoot">
+      <div class="gw-tablist" role="tablist" aria-label="Secciones de parámetros" aria-orientation="vertical" data-gw-tour-step="1" data-gw-tour-title="1. Elige la sección" data-gw-tour-text="Cada pestaña agrupa un tema. Debajo del nombre ves cómo está esa sección.">
+        <button type="button" class="gw-tab" role="tab" id="tab_registro" data-tab="registro" aria-controls="grp_registro" aria-selected="true">{{ ic('users', 'gw-tab__icon') }}<span class="gw-tab__name">Registro y pantalla</span><span class="gw-tab__sum">{{ event.directory_page_size or 50 }} filas · sesión {{ event.idle_minutes or idle_general_minutes }} min</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_facial" data-tab="facial" aria-controls="grp_facial" aria-selected="false" tabindex="-1">{{ ic('face', 'gw-tab__icon') }}<span class="gw-tab__name">Reconocimiento facial</span><span class="gw-tab__sum">{% if event.facial_enabled %}Usa rostro{% else %}No usa rostro{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_invitaciones" data-tab="invitaciones" aria-controls="grp_invitaciones" aria-selected="false" tabindex="-1">{{ ic('mail', 'gw-tab__icon') }}<span class="gw-tab__name">Invitaciones</span><span class="gw-tab__sum">{% if event.aceptar_enabled %}Aceptación desde el celular activa{% else %}Aceptación desde el celular apagada{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_impresion" data-tab="impresion" aria-controls="grp_impresion" aria-selected="false" tabindex="-1">{{ ic('printer', 'gw-tab__icon') }}<span class="gw-tab__name">Impresión y reimpresión</span><span class="gw-tab__sum">Reimpresión {% if event.reprint_disabled %}deshabilitada{% else %}habilitada{% endif %}{% if event.shared_print_enabled %} · compartida{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_escarapelas" data-tab="escarapelas" aria-controls="grp_escarapelas" aria-selected="false" tabindex="-1">{{ ic('badge', 'gw-tab__icon') }}<span class="gw-tab__name">Escarapelas y certificados</span><span class="gw-tab__sum">Digital {% if event.digital_badge_enabled %}activa{% else %}apagada{% endif %} · certificados {% if event.certificates_enabled %}activos{% else %}apagados{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_zonas" data-tab="zonas" aria-controls="grp_zonas" aria-selected="false" tabindex="-1">{{ ic('inbox', 'gw-tab__icon') }}<span class="gw-tab__name">Zonas e inventario</span><span class="gw-tab__sum">Zonas {% if event.areas_enabled %}activas{% else %}apagadas{% endif %} · inventario {% if event.inventory_enabled %}activo{% else %}apagado{% endif %}</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_campos" data-tab="campos" aria-controls="grp_campos" aria-selected="false" tabindex="-1">{{ ic('form', 'gw-tab__icon') }}<span class="gw-tab__name">Campos</span><span class="gw-tab__sum">{{ n_categories }} categoría{{ '' if n_categories == 1 else 's' }} · campos de la persona</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
+        <button type="button" class="gw-tab" role="tab" id="tab_privacidad" data-tab="privacidad" aria-controls="grp_privacidad" aria-selected="false" tabindex="-1">{{ ic('lock', 'gw-tab__icon') }}<span class="gw-tab__name">Privacidad</span><span class="gw-tab__sum">Borrado de rostros y solicitudes</span><span class="gw-badge gw-badge--warn gw-tab__flag" data-group-pending hidden>{{ ic('alert') }}Sin guardar</span></button>
       </div>
 
-      <div class="app-container" id="paramsRoot">
-        <details class="gw-group" data-group="registro" id="grp_registro">
-          <summary class="gw-group__sum"><span class="gw-group__title">Registro y pantalla</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Filas por página y cierre de sesión por inactividad.</span></summary>
-          <div class="gw-group__body">
-        <!-- Filas por página de la tabla del directorio (en vivo y lista local). -->
-        <div class="gw-group__item">
-          <h4>Filas por página</h4>
-          <label data-psave="page" style="display:flex; gap:8px; align-items:center;">Filas por página de la tabla de registros:
-            <select id="directoryPageSize" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
-              {% for n in (10, 20, 50, 100, 200) %}<option value="{{ n }}" {% if (event.directory_page_size or 50) == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
-            </select></label>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior / Siguiente» y «Ir a la página» llegan a cualquier fila.</p>
-        </div>
-        <!-- Plan 7: quién ve el engranaje «Configuración del registro» (solo visual; app/registro_gear.py). -->
-        <div class="gw-group__item">
-          <h4>Configuración del registro</h4>
-          <label data-psave="reggear" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <input type="checkbox" id="regGearDig" {% if registro_gear_dig %}checked{% endif %}> Mostrar configuración del registro a digitadores</label>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Apagada por defecto: en la pantalla de Registro, coordinador y administradores siempre ven el engranaje (impresora, autoregistro y auto-impresión); el digitador solo si esto está encendido. Si la apagas, lo ya configurado se conserva: solo se oculta el engranaje.</p>
-        </div>
-        <!-- Cierre de sesión por inactividad (app/idle.py, docs/22): tiempo propio de este evento, solo mientras está en proceso. -->
-        <div class="gw-group__item">
-          <h4>Cierre de sesión por inactividad</h4>
-          <label data-psave="idle" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">Minutos sin uso antes de cerrar la sesión del personal:
-            <input type="number" id="idleMinutes" min="5" max="60" step="1" value="{{ event.idle_minutes if event.idle_minutes else '' }}" placeholder="General: {{ idle_general_minutes }}" style="width:110px; padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
-            <button type="button" id="idleMinutesSave" class="small-btn" hidden>Guardar</button></label>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">De 5 a 60 minutos. Déjalo vacío para usar el general ({{ idle_general_minutes }} minutos). Solo rige mientras el evento está «En proceso» y para quienes trabajan en él; si no está en proceso, rige el general. Cuenta el uso real (clics, teclas, toques, scroll): lo que la pantalla refresca sola no mantiene la sesión abierta. Un minuto antes aparece un aviso con «Seguir conectado». Los ingresos hechos sin conexión no se pierden.</p>
-        </div>
+      <div class="gw-tabpanels" data-gw-tour-step="2" data-gw-tour-title="2. Cambia lo que necesites" data-gw-tour-text="Lo que cambies queda pendiente y la pestaña dice «Sin guardar». Lo marcado «Al instante» actúa en el momento.">
+
+        {# ====================================================================================== REGISTRO Y PANTALLA #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_registro" data-group="registro" aria-labelledby="tab_registro">
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Registro y pantalla</h2><p class="gw-tabpanel__lead">Cómo se ve y se comporta el registro en la puerta.</p></div>
+
+          <div class="gw-group__item" data-psave="page">
+            <div class="gw-item-head"><h4>Filas por página</h4>{% call ayuda('ay_filas', 'Filas por página') %}Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior», «Siguiente» e «Ir a la página» llegan a cualquier fila.{% endcall %}</div>
+            <div class="gw-field">
+              <label class="gw-label" for="directoryPageSize">Filas de la tabla de registros</label>
+              <select class="gw-select" id="directoryPageSize">
+                {% for n in (10, 20, 50, 100, 200) %}<option value="{{ n }}" {% if (event.directory_page_size or 50) == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+              </select>
+              <p class="gw-hint">Con 50 o menos la tabla carga más rápido en celulares.</p>
+            </div>
           </div>
-        </details>
-        <details class="gw-group" data-group="facial" id="grp_facial">
-          <summary class="gw-group__sum"><span class="gw-group__title">Reconocimiento facial y privacidad</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Si el evento usa rostro, la autorización, la privacidad de los datos y las solicitudes de los titulares.</span></summary>
-          <div class="gw-group__body">
-        <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
-        <div class="gw-group__item">
-          <h4>Reconocimiento facial: paso guiado</h4>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
-          <div data-psave="cc" style="display:grid; gap:8px; max-width:560px;">
-            <fieldset style="border:0; padding:0; margin:0; display:grid; gap:8px;">
-              <legend style="font-weight:700; margin-bottom:4px;">¿Este evento usa reconocimiento facial?</legend>
-              <!-- Única fuente de verdad (Fase 0): aquí y solo aquí se decide si el evento usa rostro. Las dos opciones se guardan como facial_enabled / biometrics_locked. -->
-              <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled %}checked{% endif %} style="width:20px; height:20px; margin-top:2px;"> <span><b>Usa rostro.</b> Quien acepte podrá entrar con su rostro; quien no, entra por cédula o QR.</span></label>
-              <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled %}checked{% endif %} style="width:20px; height:20px; margin-top:2px;"> <span><b>No usa rostro (bloqueado).</b> Nadie podrá activar el rostro ni subir fotos: todo el mundo entra por cédula o QR.</span></label>
+
+          <!-- Plan 7: quién ve el engranaje «Configuración del registro» (solo visual; app/registro_gear.py). -->
+          <div class="gw-group__item" data-psave="reggear">
+            <div class="gw-item-head"><h4>Configuración del registro</h4>{% call ayuda('ay_gear', 'Engranaje del registro') %}Apagada por defecto: en la pantalla de Registro, el coordinador y los administradores siempre ven el engranaje (impresora, autoregistro e impresión automática); el digitador solo si esto está encendido. Si la apagas, lo ya configurado se conserva: solo se oculta el engranaje.{% endcall %}</div>
+            <label class="gw-check"><input type="checkbox" id="regGearDig" {% if registro_gear_dig %}checked{% endif %}> Mostrar la configuración del registro a los digitadores</label>
+            <p class="gw-hint">Apagada: solo coordinador y administradores ven el engranaje.</p>
+          </div>
+
+          <!-- Cierre de sesión por inactividad (app/idle.py, docs/22): tiempo propio de este evento, solo mientras está en proceso. -->
+          <div class="gw-group__item" data-psave="idle">
+            <div class="gw-item-head"><h4>Cierre de sesión por inactividad</h4>{% call ayuda('ay_idle', 'Cierre por inactividad') %}De 5 a 60 minutos. Déjalo vacío para usar el general ({{ idle_general_minutes }} minutos). Solo rige mientras el evento está «En proceso» y para quienes trabajan en él; si no está en proceso, rige el general. Cuenta el uso real (clics, teclas, toques, desplazamiento): lo que la pantalla refresca sola no mantiene la sesión abierta. Un minuto antes aparece un aviso con «Seguir conectado». Los ingresos hechos sin conexión no se pierden.{% endcall %}</div>
+            <div class="gw-field">
+              <label class="gw-label" for="idleMinutes">Minutos sin uso antes de cerrar la sesión del personal</label>
+              <input class="gw-input gw-input--short" type="number" id="idleMinutes" min="5" max="60" step="1" value="{{ event.idle_minutes if event.idle_minutes else '' }}" placeholder="General: {{ idle_general_minutes }}">
+              <p class="gw-hint">De 5 a 60. Vacío = el general ({{ idle_general_minutes }} minutos).</p>
+            </div>
+            <button type="button" id="idleMinutesSave" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Guardar</button>
+          </div>
+
+          <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE evento. Se aplica con el «Guardar» de abajo (subir una imagen es inmediato). -->
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Logo del evento</h4>{% call ayuda('ay_logo', 'Logo del evento') %}Al subir una imagen se activa «Usar logo propio» (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia las pantallas de este evento; los demás siguen con el logo de Golden.{% endcall %}</div>
+            <fieldset class="gw-fieldset" id="logoOptions" data-psave="logo">
+              <legend class="gw-label">Qué logo se muestra</legend>
+              <label class="gw-choice"><input type="radio" name="logoMode" value="default" {% if event.logo_mode == "default" %}checked{% endif %}> <span class="gw-choice__text">Logo de Golden</span></label>
+              <label class="gw-choice"><input type="radio" name="logoMode" value="hidden" {% if event.logo_mode == "hidden" %}checked{% endif %}> <span class="gw-choice__text">Sin logo</span></label>
+              <label class="gw-choice"><input type="radio" name="logoMode" value="custom" {% if event.logo_mode == "custom" %}checked{% endif %} {% if not event.logo_path %}disabled{% endif %}> <span class="gw-choice__text">Logo propio</span></label>
             </fieldset>
-            <b>Paso 1. ¿Quién es el Responsable de los datos?</b>
-            <label>Responsable del tratamiento
-              <select id="ccMode"><option value="golden" {% if event.controller_mode == "golden" %}selected{% endif %}>Evento propio de Golden (Golden es el Responsable)</option><option value="tercero" {% if event.controller_mode == "tercero" %}selected{% endif %}>Evento de un tercero (Golden es el Encargado)</option></select></label>
-            <div id="ccOrg" style="display:{{ 'grid' if event.controller_mode == 'tercero' else 'none' }}; gap:8px;">
-              <label>Razón social del organizador <input type="text" id="ccName" value="{{ event.organizer_name or '' }}"></label>
-              <label>NIT del organizador <input type="text" id="ccNit" value="{{ event.organizer_nit or '' }}"></label>
-              <label>Correo de privacidad del organizador <input type="email" id="ccEmail" value="{{ event.organizer_privacy_email or '' }}"></label>
+            <div id="logoSize" data-psave="logo" class="gw-form-grid" {% if event.logo_mode != 'custom' %}hidden{% endif %}>
+              <div class="gw-field"><label class="gw-label" for="logoH">Alto del logo: <span id="logoHv">{{ event.logo_height }}</span> px</label>
+                <input type="range" id="logoH" min="30" max="80" step="5" value="{{ event.logo_height }}"></div>
+              <fieldset class="gw-fieldset"><legend class="gw-label">Cómo se acomoda</legend>
+                <label class="gw-choice"><input type="radio" name="logoFit" value="logo" {% if event.logo_fit != "banner" %}checked{% endif %}> <span class="gw-choice__text">Logo completo</span></label>
+                <label class="gw-choice"><input type="radio" name="logoFit" value="banner" {% if event.logo_fit == "banner" %}checked{% endif %}> <span class="gw-choice__text">Banner<span>Llena de lado a lado y recorta lo que sobre.</span></span></label>
+              </fieldset>
             </div>
-            <b>Paso 2. ¿El cliente entregará fotos de los asistentes ANTES del evento?</b>
-            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsSource" id="bsSourceSelfie" value="selfie" {% if not event.client_photos_before %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span><b>B.</b> Cada persona se toma una selfie (por su enlace, el formulario o el QR del cartel, o en la puerta). Se guarda cifrada y el rostro se calcula cuando la persona acepta.</span></label>
-            <label style="display:flex; gap:8px; align-items:flex-start;"><input type="radio" name="bsSource" id="bsPhotos" value="client" {% if event.client_photos_before %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span><b>A.</b> El cliente entrega las fotos de los asistentes antes del evento (en el zip de la carga). Se guardan cifradas y el rostro se calcula cuando la persona acepta; no se le pide selfie.</span></label>
-            <b>Paso 3. Opciones (apagadas por defecto)</b>
-            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %} style="width:18px; height:18px;"> Permitir aceptar el reconocimiento facial y dar la selfie desde el celular antes del evento</label>
-            <div id="aceptarBox" style="display:{{ 'block' if event.aceptar_enabled else 'none' }};">
-              <label style="display:flex; gap:8px; align-items:flex-start; margin:4px 0 8px;"><input type="checkbox" id="ccAcceptLink" {% if event.accept_link_email %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Enviar por correo, al inscribirse por formulario, el <b>enlace personal</b> para autorizar. (Como el correo lo escribe la propia persona, su aceptación igual queda «por verificar».)</span></label>
-              <p style="font-size:0.8rem; margin:0 0 6px;">Enlace (para el correo): <b id="aceptarUrl"></b></p>
-              <div id="aceptarQr" style="width:180px; height:180px;"></div>
-              <button type="button" id="aceptarPrint" class="golden-btn" style="width:auto; margin-top:6px;">Imprimir póster con el QR</button>
-              {% if event.controller_mode == "golden" %}
-              <div id="amBox" data-pnodirty style="margin:10px 0; padding:10px 12px; border:1px solid #d9dce6; border-radius:12px; font-size:0.86rem;">
-                <b>Enviar el enlace personal por correo a las personas del listado</b>
-                <p style="margin:4px 0 6px; color:var(--gw-text-muted);">Máximo 25 correos por minuto. Solo adultos con correo, a quienes no se les ha enviado y que no se inscribieron por formulario. Nunca se envía dos veces a la misma persona.</p>
-                <div id="amStatus" role="status" aria-live="polite" style="margin:4px 0 8px;"></div>
-                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-                  <input type="email" id="amTo" placeholder="Correo para la prueba" style="min-width:210px;">
-                  <button type="button" id="amTest" class="golden-btn" style="width:auto;">Enviar prueba</button>
-                </div>
-                <div id="amPending" style="margin:6px 0;"></div>
-                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-                  <button type="button" id="amRefresh" class="golden-btn" style="width:auto;">Actualizar vista previa</button>
-                  <button type="button" id="amStart" class="golden-btn golden-btn-primary" style="width:auto;">Iniciar envío</button>
-                  <button type="button" id="amStop" class="golden-btn" style="width:auto;">Detener envío</button>
-                  <a class="golden-btn" style="width:auto;" href="/api/events/{{ event.id }}/accept-links.csv">Descargar enlaces (CSV)</a>
-                  <a class="golden-btn" style="width:auto;" href="/api/events/{{ event.id }}/accept-mail/log.csv">Descargar registro (CSV)</a>
-                </div>
-                <p style="margin:6px 0 0; color:#a12631; font-size:0.8rem;">🔒 <b>El CSV de enlaces es confidencial:</b> cada enlace es la llave personal de una persona. No lo compartas, no lo subas a carpetas abiertas y bórralo cuando termines. Cada descarga queda registrada (quién y cuándo).</p>
+            <div class="gw-field">
+              <label class="gw-label" for="logoFile">Subir un logo nuevo <span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span></label>
+              <input type="file" id="logoFile" class="gw-input" data-pnodirty accept="image/*">
+            </div>
+          </div>
+        </section>
+
+        {# ====================================================================================== RECONOCIMIENTO FACIAL #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_facial" data-group="facial" aria-labelledby="tab_facial" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Reconocimiento facial</h2><p class="gw-tabpanel__lead">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR.</p></div>
+
+          <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Reconocimiento facial: paso guiado</h4>{% call ayuda('ay_facial', 'Cómo funciona') %}Responde las preguntas de abajo y, al final, verás en palabras simples qué pasará en la puerta y qué falta por hacer.{% endcall %}</div>
+            <div data-psave="cc" class="gw-stack">
+              <fieldset class="gw-fieldset">
+                <legend class="gw-label">¿Este evento usa reconocimiento facial?</legend>
+                <!-- Única fuente de verdad (Fase 0): aquí y solo aquí se decide si el evento usa rostro. Las dos opciones se guardan como facial_enabled / biometrics_locked. -->
+                <label class="gw-choice"><input type="radio" name="bsUse" id="bsFacial" value="on" {% if event.facial_enabled %}checked{% endif %}> <span class="gw-choice__text"><b>Usa rostro.</b><span>Quien acepte entra con su rostro; quien no, por cédula o QR.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsUse" id="bsLocked" value="off" {% if not event.facial_enabled %}checked{% endif %}> <span class="gw-choice__text"><b>No usa rostro (bloqueado).</b><span>Nadie puede activar el rostro ni subir fotos.</span></span></label>
+              </fieldset>
+
+              <div class="gw-field">
+                <label class="gw-label" for="ccMode">¿Quién es el responsable de los datos?</label>
+                <select class="gw-select" id="ccMode"><option value="golden" {% if event.controller_mode == "golden" %}selected{% endif %}>Evento propio de Golden (Golden es el Responsable)</option><option value="tercero" {% if event.controller_mode == "tercero" %}selected{% endif %}>Evento de un tercero (Golden es el Encargado)</option></select>
               </div>
-              {% endif %}
-              <p style="color:var(--gw-text-muted); font-size:0.78rem;">Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en puerta con el documento o el QR.</p>
+              <div id="ccOrg" class="gw-form-grid" {% if event.controller_mode != 'tercero' %}hidden{% endif %}>
+                <div class="gw-field"><label class="gw-label" for="ccName">Razón social del organizador</label><input class="gw-input" type="text" id="ccName" value="{{ event.organizer_name or '' }}"></div>
+                <div class="gw-field"><label class="gw-label" for="ccNit">NIT del organizador</label><input class="gw-input" type="text" id="ccNit" value="{{ event.organizer_nit or '' }}"></div>
+                <div class="gw-field"><label class="gw-label" for="ccEmail">Correo de privacidad del organizador</label><input class="gw-input" type="email" id="ccEmail" value="{{ event.organizer_privacy_email or '' }}"></div>
+              </div>
+
+              <fieldset class="gw-fieldset">
+                <legend class="gw-label">¿De dónde salen las fotos de los asistentes?</legend>
+                <label class="gw-choice"><input type="radio" name="bsSource" id="bsSourceSelfie" value="selfie" {% if not event.client_photos_before %}checked{% endif %}> <span class="gw-choice__text"><b>Cada persona se toma una selfie.</b><span>Por su enlace, el formulario, el QR del cartel o en la puerta.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="bsSource" id="bsPhotos" value="client" {% if event.client_photos_before %}checked{% endif %}> <span class="gw-choice__text"><b>El cliente entrega las fotos antes del evento.</b><span>Vienen en el zip de la carga; no se pide selfie.</span></span></label>
+                {% call ayuda('ay_fotos', 'De dónde salen las fotos') %}Con selfie, la foto se guarda cifrada y el rostro se calcula cuando la persona acepta. Con fotos del cliente, se guardan cifradas y el rostro también se calcula solo cuando la persona acepta.{% endcall %}
+              </fieldset>
+
+              <div class="gw-setting"><div class="gw-setting__main">
+                <label class="gw-check"><input type="checkbox" id="ccFaceDoor" {% if event.face_door_enabled %}checked{% endif %}> Entrada con rostro sin ayuda («Entrar con mi rostro»)</label>
+                <p class="gw-hint">La persona mira a la cámara y, si la coincidencia es clara, el ingreso se registra solo.</p>
+                <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/{{ event.id }}/rostro">{{ ic('face', 'gw-icon--sm') }} Abrir pantalla de la puerta</a>
+              </div>{% call ayuda('ay_puerta', 'Entrada con rostro sin ayuda') %}La persona pulsa el botón y mira a la cámara; con una coincidencia clara el ingreso se registra solo y el personal lo supervisa.{% endcall %}</div>
+              {% if event.face_door_enabled %}<div id="faceDoorNoLiveness" class="gw-alert gw-alert--warn" role="alert">{{ ic('alert') }}<div class="gw-alert__body"><b>Sin prueba de vida: requiere supervisión constante.</b> Regla del día del evento: siempre una persona frente a la pantalla de la puerta.</div></div>{% endif %}
+
+              <div class="gw-field">
+                <label class="gw-label" for="ccPrompt">Cuándo se pide la autorización</label>
+                <select class="gw-select" id="ccPrompt"><option value="once" {% if event.consent_prompt_mode == "once" %}selected{% endif %}>Una sola vez por persona y evento (recomendado)</option><option value="every_scan" {% if event.consent_prompt_mode == "every_scan" %}selected{% endif %}>Antes de cada uso (botones cortos)</option></select>
+              </div>
+              <button type="button" id="ccSave" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Guardar y revisar</button>
             </div>
-            <label style="display:flex; gap:8px; align-items:flex-start; margin:4px 0 8px;"><input type="checkbox" id="ccFaceDoor" {% if event.face_door_enabled %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Entrada con rostro en autoservicio («Entrar con mi rostro»): la persona pulsa el botón y mira a la cámara; con una coincidencia clara el ingreso se registra solo y el personal lo supervisa. <a href="/kiosk/{{ event.id }}/rostro">Abrir la pantalla de la puerta</a></span></label>
-            {% if event.face_door_enabled %}<p id="faceDoorNoLiveness" role="alert" style="margin:0 0 8px; padding:8px 10px; border-radius:8px; background:#fdecea; color:#a12631; font-weight:700;">⚠️ Sin prueba de vida: requiere supervisión constante. Regla del día del evento: siempre una persona frente a la pantalla de la puerta.</p>{% endif %}
-            <label>Cuándo se pide la autorización
-              <select id="ccPrompt"><option value="once" {% if event.consent_prompt_mode == "once" %}selected{% endif %}>Una sola vez por persona y evento (recomendado)</option><option value="every_scan" {% if event.consent_prompt_mode == "every_scan" %}selected{% endif %}>Antes de cada uso (botones cortos)</option></select></label>
-            <button type="button" id="ccSave" class="golden-btn golden-btn-primary" style="width:auto;" hidden>Guardar y revisar</button>
+            <div id="bsSummary" class="gw-alert" role="status" aria-live="polite"></div>
           </div>
-          <div id="bsSummary" role="status" aria-live="polite" style="margin-top:1rem; padding:12px 14px; border-radius:12px; background:#f6f7fb; font-size:0.86rem; line-height:1.5;"></div>
+
           {% if staff_role == "super_admin" %}
-          <hr style="margin:1rem 0;">
-          <h5 style="margin:0 0 0.4rem;">Foto biométrica en la escarapela (solo super administrador)</h5>
-          <label data-psave="bbp" style="display:flex; gap:8px; align-items:flex-start; margin:0 0 1rem;"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Permitir imprimir la foto biométrica en la escarapela. <b>Apagado</b> (recomendado mientras la auditora no lo apruebe): el elemento «foto» de la escarapela sale como un recuadro vacío, en la impresa y en la digital.</span></label>
-          <h5 style="margin:0 0 0.4rem;">Pre-cálculo de vectores faciales (solo super administrador)</h5>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.5rem;">Solo con el anexo firmado (declaraciones, garantías e indemnidad). Permite que la persona entre por rostro en su primera entrada con un clic en la pantalla de autorización.</p>
-          <div data-psave="pc" style="display:grid; gap:8px; max-width:560px;">
-            <label>Referencia del anexo firmado <input type="text" id="pcRef" value="{{ event.precalculo_anexo_ref or '' }}"></label>
-            <label>Fecha del anexo <input type="date" id="pcDate" value="{{ event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else '' }}"></label>
-            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="pcGarantia" {% if event.precalculo_garantia %}checked{% endif %} style="width:18px; height:18px;"> El cliente garantiza (por escrito) que cada titular dio su autorización previa, expresa e informada, y asume la indemnidad</label>
-            <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="pcOn" {% if event.precalculo_autorizado %}checked{% endif %} style="width:18px; height:18px;"> Pre-cálculo autorizado en este evento</label>
-            <button type="button" id="pcSave" class="golden-btn" style="width:auto;" hidden>Guardar pre-cálculo</button>
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Opciones solo para el súper administrador</h4></div>
+            <div data-psave="bbp">
+              <label class="gw-check gw-check--top"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %}> <span>Permitir imprimir la foto del rostro en la escarapela</span></label>
+              <p class="gw-hint">Apagado (recomendado): el recuadro de la foto sale vacío, en la impresa y en la digital.</p>
+            </div>
+            <div class="gw-sub gw-item-head"><h5>Pre-cálculo de vectores faciales</h5>{% call ayuda('ay_precalculo', 'Pre-cálculo de rostros') %}Solo con el anexo firmado (declaraciones, garantías e indemnidad). Permite que la persona entre por rostro en su primera entrada con un clic en la pantalla de autorización.{% endcall %}</div>
+            <div data-psave="pc" class="gw-stack">
+              <div class="gw-form-grid">
+                <div class="gw-field"><label class="gw-label" for="pcRef">Referencia del anexo firmado</label><input class="gw-input" type="text" id="pcRef" value="{{ event.precalculo_anexo_ref or '' }}"></div>
+                <div class="gw-field"><label class="gw-label" for="pcDate">Fecha del anexo</label><input class="gw-input" type="date" id="pcDate" value="{{ event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else '' }}"></div>
+              </div>
+              <label class="gw-check gw-check--top"><input type="checkbox" id="pcGarantia" {% if event.precalculo_garantia %}checked{% endif %}> <span>El cliente garantiza por escrito que cada titular dio su autorización previa, expresa e informada, y asume la indemnidad</span></label>
+              <label class="gw-check"><input type="checkbox" id="pcOn" {% if event.precalculo_autorizado %}checked{% endif %}> Pre-cálculo autorizado en este evento</label>
+              <button type="button" id="pcSave" class="gw-btn gw-btn--secondary gw-btn--sm" hidden>Guardar pre-cálculo</button>
+            </div>
           </div>
           {% endif %}
-        </div>
-        {% if event.facial_enabled %}
-        <!-- Privacidad de datos biométricos (Ley 1581 de 2012: dato sensible). -->
-        <div id="privacyCard" class="gw-group__item">
-          <h4>🔒 Privacidad de datos biométricos</h4>
-          <p id="privInfo" style="font-size:0.85rem; margin:0 0 0.5rem;">Cargando…</p>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.8rem;">💡 Para autorizar el uso del rostro en los formularios web, crea (más abajo, en los campos del evento) un campo <b>de consentimiento aparte</b> y usa «Insertar texto tipo → Autorización del dato biométrico». Debe ser una casilla separada de la autorización general de datos.</p>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-            <input type="text" id="privCedula" placeholder="Cédula de la persona" aria-label="Cédula de la persona a la que se le borrará el rostro" style="padding:8px; border:1px solid #ccc; border-radius:8px; max-width:200px;">
-            <button type="button" id="privPerson" style="padding:8px 14px;">Borrar solo el rostro de esta persona</button>
-            {% if staff_role in ["admin", "super_admin"] %}<button type="button" id="privRevoke" style="padding:8px 14px;" title="Revocación: borra vector y fotos y deja constancia; la persona sigue entrando por cédula o QR">Revocar autorización (borrar rostro y dejar constancia)</button>
-            <button type="button" id="privAll" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px;">Suprimir TODOS los datos de esta persona</button>{% endif %}
-            {% if staff_role in ["admin", "super_admin"] %}<button type="button" id="privEvent" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px;">Borrar los datos biométricos de TODO el evento</button>{% endif %}
+        </section>
+
+        {# ====================================================================================== INVITACIONES #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_invitaciones" data-group="invitaciones" aria-labelledby="tab_invitaciones" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Invitaciones</h2><p class="gw-tabpanel__lead">Que las personas acepten y se tomen la selfie desde su celular, antes de llegar.</p></div>
+          <div class="gw-group__item" data-psave="cc">
+            <div class="gw-item-head"><h4>Aceptación desde el celular</h4>{% call ayuda('ay_aceptar', 'Aceptación desde el celular') %}Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en la puerta con el documento o el QR.{% endcall %}</div>
+            <label class="gw-check"><input type="checkbox" id="ccAceptar" {% if event.aceptar_enabled %}checked{% endif %}> Permitir aceptar y dar la selfie desde el celular antes del evento</label>
+            <p class="gw-hint">Apagado por defecto.</p>
           </div>
-          <div id="privStatus" role="status" aria-live="polite" style="font-size:0.82rem; margin-top:8px;"></div>
-        </div>
-        {% endif %}
-        <!-- Solicitudes de privacidad (consultas y reclamos de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles y bandera «reclamo en trámite». -->
-        {% if staff_role in ["admin", "super_admin"] %}
-        <div class="gw-group__item">
-          <h4>Solicitudes de privacidad (consultas y reclamos)</h4>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.6rem;">Consulta: 10 días hábiles. Reclamo: 15 días hábiles. La bandera «reclamo en trámite» se activa en máximo 2 días hábiles. Correo de privacidad: soporteit@goldenlogisticas.com.</p>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-bottom:0.8rem;">
-            <label>Canal <select id="prCanal"><option value="email">Correo</option><option value="presencial">Presencial</option><option value="web">Web</option><option value="telefono">Teléfono</option><option value="otro">Otro</option></select></label>
-            <label>Tipo <select id="prTipo"><option value="consulta">Consulta</option><option value="reclamo">Reclamo</option><option value="actualizacion">Actualización</option><option value="supresion">Supresión</option><option value="revocacion">Revocación</option><option value="prueba_autorizacion">Prueba de la autorización</option></select></label>
-            <label>Titular <input type="text" id="prNombre" style="width:170px;"></label>
-            <label>Cédula <input type="text" id="prCedula" style="width:120px;"></label>
-            <button type="button" id="prCrear" class="golden-btn golden-btn-primary" style="width:auto;">Radicar</button>
+          <div id="aceptarBox" {% if not event.aceptar_enabled %}hidden{% endif %}>
+          <div class="gw-group__item" data-psave="cc">
+            <div class="gw-setting"><div class="gw-setting__main">
+                <label class="gw-check gw-check--top"><input type="checkbox" id="ccAcceptLink" {% if event.accept_link_email %}checked{% endif %}> <span>Enviar por correo el enlace personal al inscribirse por formulario</span></label>
+                <p class="gw-hint">Como el correo lo escribe la propia persona, su aceptación queda «por verificar».</p>
+              </div>{% call ayuda('ay_enlace', 'Enlace personal por correo') %}Cada persona recibe un enlace propio para autorizar y tomarse la selfie. Como el correo lo escribe ella misma al inscribirse, la aceptación igual queda «por verificar» hasta la puerta.{% endcall %}</div>
           </div>
-          <div style="overflow-x:auto;"><table id="prTabla" style="width:100%; font-size:0.82rem; border-collapse:collapse;"></table></div>
-        </div>
-        {% endif %}
+          <div class="gw-group__item" data-pnodirty>
+            <div class="gw-item-head"><h4>Cartel con código QR</h4><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span>{% call ayuda('ay_cartel', 'Cartel con QR') %}El QR lleva a la página pública de aceptación de este evento. Se imprime en un cartel para que cada persona lo escanee con su celular.{% endcall %}</div>
+            <p class="gw-hint">Enlace para el correo: <b id="aceptarUrl"></b></p>
+            <div id="aceptarQr" class="gw-pm-qr"></div>
+            <button type="button" id="aceptarPrint" class="gw-btn gw-btn--secondary">{{ ic('printer', 'gw-icon--sm') }} Imprimir cartel con el QR</button>
           </div>
-        </details>
-        <details class="gw-group" data-group="impresion" id="grp_impresion">
-          <summary class="gw-group__sum"><span class="gw-group__title">Impresión y escarapela</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Impresión compartida, puestos de impresión y valores de la impresora del evento.</span></summary>
-          <div class="gw-group__body">
-        <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
-        <div id="sharedPrintCard" class="gw-group__item">
-          <h4>Impresión compartida</h4>
-          <label data-psave="sharedprint" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="sharedPrintEnabled" {% if event.shared_print_enabled %}checked{% endif %} style="width:22px; height:22px;"> Activar la impresión compartida y por USB (Brother QL-800 conectada a un Android con Chrome)</label>
-          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin:0.5rem 0 0;">Apagada, todo imprime como siempre. Encendida, cada equipo que abre el Registro de este evento reporta si tiene la impresora conectada; aquí eliges, para cada usuario, si imprime en su propio equipo o en el equipo de otro usuario que tenga impresora (sin límite; con más de 6 en una misma impresora puede haber espera). La escarapela llega sola a ese equipo y se imprime sin que nadie acepte nada. Lo que no se imprime en 5 minutos queda en la «Cola» de quien registró, para reimprimir.</p>
-          <div id="sharedPrintTable" data-psave="sharedprint" style="margin-top:0.8rem;"{% if not event.shared_print_enabled %} hidden{% endif %}></div>
-        </div>
-        <!-- Puestos de impresión (26-oct-2026): configuración por cuenta, guardada en el SERVIDOR. app/routers/print_stations.py -->
-        <div id="stationsCard" class="gw-group__item">
-          <h4>Puestos de impresión</h4>
-          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin:0 0 0.8rem;">Por cada cuenta: si es <b>Puesto de impresión</b>, si usa <b>solo lector</b> en «Registro touch» y si en su Registro se <b>muestra o esconde</b> el menú de impresión (⚙️, Conectar impresora, Cola). La etiqueta sale con los valores del evento (más abajo) y lo que se ajuste en ⚙️ de cada computador. A qué cuentas atiende cada puesto se elige en «Impresión compartida».</p>
-          <div id="stationsTable" data-psave="stations">Cargando…</div>
-        </div>
-        <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel «⚙️ Impresión» del Registro. app/routers/print_settings.py -->
-        <div id="printSettingsCard" class="gw-group__item">
-          <h4>Impresión de escarapelas en la QL-800 (valores del evento)</h4>
-          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin:0 0 0.8rem;">Cinta puesta, giro, recorte y corte para todos los equipos de este evento. La cinta de siempre es la <b>continua de 62 mm (DK-22205)</b>. Cada equipo puede cambiarlos solo para sí en el botón «⚙️ Impresión» del Registro, y «Restablecer» lo devuelve a estos valores.</p>
-          <div id="psForm" data-psave="ps" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px 18px; align-items:end;">
-            <label>Ancho de la cinta<br><select id="ps_tapeWidth" style="min-height:40px; width:100%;"></select></label>
-            <label>Tipo de cinta<br><select id="ps_tapeType" style="min-height:40px; width:100%;"><option value="continuous">Continua</option><option value="diecut">Troquelada (largo fijo)</option></select></label>
-            <label id="ps_lengthRow">Largo de la etiqueta (mm)<br><input type="number" id="ps_lengthMm" min="10" max="1000" step="1" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
-            <label>Giro<br><select id="ps_rotation" style="min-height:40px; width:100%;"><option value="auto">Automático (el lado largo a lo largo de la cinta)</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
-            <label id="ps_cropRow"><input type="checkbox" id="ps_crop"> Recortar al contenido, con margen (mm)<br><input type="number" id="ps_cropMarginMm" min="0" max="30" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
-            <label>Margen de avance (mm)<br><input type="number" id="ps_feedMm" min="0" max="10" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
-            <label><input type="checkbox" id="ps_cut"> Cortar al final de cada etiqueta</label>
-            <label><input type="checkbox" id="ps_mirror"> Espejo</label>
-            <label><input type="checkbox" id="ps_invert"> Invertir (negativo)</label>
-          </div>
-          <div style="margin-top:0.9rem; display:flex; gap:10px; flex-wrap:wrap;">
-            <button type="button" class="golden-btn golden-btn-primary" id="psSave" style="width:auto; padding:0.5rem 1.4rem;" hidden>Guardar valores del evento</button>
-            <button type="button" class="golden-btn" id="psReset" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">↺ Volver a los de fábrica</button>
-          </div>
-        </div>
-          </div>
-        </details>
-        <details class="gw-group" data-group="correo" id="grp_correo">
-          <summary class="gw-group__sum"><span class="gw-group__title">Correo, escarapela digital y certificados</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Escarapela digital con su correo, y módulo de certificados.</span></summary>
-          <div class="gw-group__body">
-        <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
-        <div class="gw-group__item">
-          <h4>Escarapela digital</h4>
-          <label data-psave="digital" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo y el SMS salen solo si el envío está configurado en el sistema; si no, el mensaje no le llega a nadie (pregunta al equipo técnico si tienes dudas).</p>
-          {% if event.digital_badge_enabled %}
-          <div id="mailEditor" data-psave="mail" style="margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
-            <h5 style="margin:0 0 0.4rem;">✉️ Correo que recibe la persona</h5>
-            <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.5rem;">Escribe el correo como quieras (negritas, enlaces, imágenes). Las <b>variables</b> se reemplazan por los datos de cada persona. Debe llevar el <b>Botón</b> o el <b>Enlace</b> a la escarapela.</p>
-            <input type="text" id="mailSubject" placeholder="Asunto" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; margin-bottom:6px;">
-            <div id="mailBar" data-pnodirty style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-bottom:4px;">
-              <button type="button" data-cmd="bold" title="Negrita"><b>B</b></button><button type="button" data-cmd="italic" title="Cursiva"><i>I</i></button><button type="button" data-cmd="underline" title="Subrayado"><u>U</u></button>
-              <button type="button" data-cmd="insertUnorderedList" title="Lista">• Lista</button><button type="button" data-cmd="justifyCenter" title="Centrar">↔ Centrar</button>
-              <input type="color" id="mailColor" title="Color del texto" value="#222222" style="width:32px; height:28px; padding:0; border:1px solid #ccc; border-radius:6px;">
-              <button type="button" id="mailLink">🔗 Enlace</button><button type="button" id="mailImg">🖼️ Imagen</button><input type="file" id="mailImgFile" accept="image/*" hidden>
-              <select id="mailVar" style="padding:5px; border:1px solid #ccc; border-radius:6px;"><option value="">+ Insertar variable…</option></select>
+
+          {% if event.controller_mode == "golden" %}
+          <div class="gw-group__item" id="amBox" data-pnodirty>
+            <div class="gw-item-head"><h4>Enviar el enlace por correo a la lista</h4><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span>{% call ayuda('ay_envio', 'Envío del enlace a la lista') %}Máximo 25 correos por minuto. Solo adultos con correo, a quienes no se les ha enviado y que no se inscribieron por formulario. Nunca se envía dos veces a la misma persona.{% endcall %}</div>
+            <p class="gw-hint">Primero envíate una prueba y revisa la vista previa.</p>
+            <div id="amStatus" class="gw-msg" role="status" aria-live="polite"></div>
+            <div class="gw-actions">
+              <div class="gw-field gw-field--inline"><label class="gw-label" for="amTo">Correo para la prueba</label><input class="gw-input" type="email" id="amTo"></div>
+              <button type="button" id="amTest" class="gw-btn gw-btn--secondary">Enviar prueba</button>
             </div>
-            <div id="mailBody" contenteditable="true" style="min-height:200px; border:1px solid #ccc; border-radius:8px; padding:12px; background:#fff; font-family:Arial,sans-serif; font-size:15px; line-height:1.5;"></div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;">
-              <button type="button" id="mailSave" style="padding:8px 16px; font-weight:700;" hidden>Guardar correo</button>
-              <button type="button" id="mailPreview" style="padding:8px 14px;">👁 Vista previa</button>
-              <button type="button" id="mailReset" style="padding:8px 14px;">Volver al texto por defecto</button>
-              <input type="email" id="mailTo" data-pnodirty placeholder="correo para la prueba" style="padding:7px; border:1px solid #ccc; border-radius:8px;"><button type="button" id="mailTest" style="padding:8px 14px;">Enviar prueba</button>
+            <div id="amPending" class="gw-stack"></div>
+            <div class="gw-actions">
+              <button type="button" id="amRefresh" class="gw-btn gw-btn--secondary">{{ ic('undo', 'gw-icon--sm') }} Actualizar vista previa</button>
+              <button type="button" id="amStart" class="gw-btn gw-btn--secondary">{{ ic('mail', 'gw-icon--sm') }} Iniciar envío</button>
+              <button type="button" id="amStop" class="gw-btn gw-btn--secondary">Detener envío</button>
+              <a class="gw-btn gw-btn--secondary" href="/api/events/{{ event.id }}/accept-links.csv">{{ ic('download', 'gw-icon--sm') }} Descargar enlaces (CSV)</a>
+              <a class="gw-btn gw-btn--secondary" href="/api/events/{{ event.id }}/accept-mail/log.csv">{{ ic('download', 'gw-icon--sm') }} Descargar registro (CSV)</a>
             </div>
-            <div id="mailStatus" style="font-size:0.8rem; margin-top:6px;"></div>
-            <iframe id="mailFrame" sandbox="" style="display:none; width:100%; height:420px; border:1px solid #ddd; border-radius:8px; margin-top:8px; background:#fff;"></iframe>
+            <div class="gw-alert gw-alert--err">{{ ic('lock') }}<div class="gw-alert__body"><b>El CSV de enlaces es confidencial:</b> cada enlace es la llave personal de una persona. No lo compartas, no lo subas a carpetas abiertas y bórralo cuando termines. Cada descarga queda registrada (quién y cuándo).</div></div>
           </div>
           {% endif %}
-        </div>
-        <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
-        <div class="gw-group__item">
-          <h4>Certificados</h4>
-          <label data-psave="cert" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
-        </div>
           </div>
-        </details>
-        <details class="gw-group" data-group="areas" id="grp_areas">
-          <summary class="gw-group__sum"><span class="gw-group__title">Áreas e inventario</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Control de entrada y salida por zonas y reparto de insumos.</span></summary>
-          <div class="gw-group__body">
-        <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
-        <div class="gw-group__item">
-          <h4>Control de Áreas</h4>
-          <label data-psave="mod_areas" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de entrada/salida por zonas</label>
-          <div id="areasConfig" style="display:{{ 'block' if event.areas_enabled else 'none' }}; margin-top:0.8rem;">
-            <table class="params-table"><thead><tr><th>Zona</th><th style="width:150px;">Permitir reingresos</th><th style="width:90px;"></th></tr></thead><tbody id="areasBody"></tbody></table>
-            <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:0.8rem;">
-              <input type="text" id="newAreaName" placeholder="Nombre de la zona (ej. VIP, Backstage, Comedor)" style="flex:1; min-width:220px; border:1px solid #ccc; border-radius:8px; padding:0.55rem 0.8rem;">
-              <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
-              <button type="button" id="addAreaBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar zona</button>
+        </section>
+
+        {# ====================================================================================== IMPRESIÓN Y REIMPRESIÓN #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_impresion" data-group="impresion" aria-labelledby="tab_impresion" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Impresión y reimpresión</h2><p class="gw-tabpanel__lead">Quién imprime las escarapelas y qué pasa si alguien pide otra.</p></div>
+
+          <!-- Reimpresión de escarapelas (Fase 1B, app/reprint.py): habilitada por defecto; deshabilitada exige permiso del coordinador del evento. Solo admin+ la cambia. -->
+          <div class="gw-group__item" id="reprintCard">
+            <div class="gw-item-head"><h4>Reimpresión de escarapelas</h4>{% call ayuda('ay_reimpresion', 'Reimpresión de escarapelas') %}Habilitada: si la persona ya se imprimió, solo se avisa «ya se imprimió» y quien registra decide. Deshabilitada: no se puede reimprimir a quien ya se imprimió, salvo una emergencia autorizada. El digitador pide permiso y lo aprueba el coordinador de este evento (o un administrador si no tiene coordinador). Cada permiso vale una sola reimpresión y vence en {{ reprint_approval_minutes }} minutos.{% endcall %}</div>
+            <div data-psave="reprint">
+              <fieldset class="gw-fieldset">
+                <legend class="gw-label">Qué pasa si se pide otra escarapela</legend>
+                <label class="gw-choice"><input type="radio" name="reprintMode" value="enabled" {% if not event.reprint_disabled %}checked{% endif %} {% if not can_change_reprint %}disabled{% endif %}> <span class="gw-choice__text"><b>Habilitada</b><span>Solo se avisa «ya se imprimió» y quien registra decide.</span></span></label>
+                <label class="gw-choice"><input type="radio" name="reprintMode" value="disabled" {% if event.reprint_disabled %}checked{% endif %} {% if not can_change_reprint %}disabled{% endif %}> <span class="gw-choice__text"><b>Deshabilitada</b><span>Solo con permiso del coordinador; vale una vez y vence en {{ reprint_approval_minutes }} minutos.</span></span></label>
+              </fieldset>
             </div>
-            <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Con "permitir reingresos" apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula/QR/facial) usa el "Modo autoregistro" del evento. <a href="/kiosk/{{ event.id }}/areas" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Áreas →</a></p>
+            {% if not can_change_reprint %}<p class="gw-alert" role="note">{{ ic('lock') }}<span class="gw-alert__body">Solo un administrador cambia esta opción.</span></p>{% endif %}
+            <div class="gw-sub"><h5>Solicitudes de permiso de este evento</h5></div>
+            <div id="reprintHistory" aria-live="polite"><p class="gw-msg">Cargando…</p></div>
           </div>
-        </div>
-        <div class="gw-group__item">
-          <h4>Control de Inventario</h4>
-          <label data-psave="mod_inventory" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de inventario (repartir insumos)</label>
-          <div id="inventoryConfig" style="display:{{ 'block' if event.inventory_enabled else 'none' }}; margin-top:0.8rem;">
-            <table class="params-table"><thead><tr><th>Ítem</th><th style="width:130px;">Cantidad inicial</th><th style="width:170px;">Varias unidades a la vez</th><th style="width:140px;">Entregado / Disponible</th><th style="width:90px;"></th></tr></thead><tbody id="itemsBody"></tbody></table>
-            <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:0.8rem;">
-              <input type="text" id="newItemName" placeholder="Ítem (ej. Empanadas, Gaseosas)" style="flex:1; min-width:200px; border:1px solid #ccc; border-radius:8px; padding:0.55rem 0.8rem;">
-              <input type="number" id="newItemQty" min="0" placeholder="Cantidad" style="width:110px; border:1px solid #ccc; border-radius:8px; padding:0.55rem 0.8rem;">
-              <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
-              <button type="button" id="addItemBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar ítem</button>
+
+          <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
+          <div id="sharedPrintCard" class="gw-group__item">
+            <div class="gw-item-head"><h4>Impresión compartida</h4>{% call ayuda('ay_compartida', 'Impresión compartida') %}Apagada, todo imprime como siempre. Encendida, cada equipo que abre el Registro de este evento avisa si tiene la impresora conectada; aquí eliges, para cada usuario, si imprime en su propio equipo o en el equipo de otro usuario que tenga impresora (sin límite; con más de 6 en una misma impresora puede haber espera). La escarapela llega sola a ese equipo y se imprime sin que nadie acepte nada. Lo que no se imprime en 5 minutos queda en la «Cola» de quien registró, para reimprimir.{% endcall %}</div>
+            <label class="gw-check" data-psave="sharedprint"><input type="checkbox" id="sharedPrintEnabled" {% if event.shared_print_enabled %}checked{% endif %}> Activar la impresión compartida y por USB (impresora Brother QL-800 en un Android con Chrome)</label>
+            <p class="gw-hint">Apagada, cada equipo imprime como siempre.</p>
+            <div id="sharedPrintTable" data-psave="sharedprint" {% if not event.shared_print_enabled %}hidden{% endif %}></div>
+          </div>
+
+          <!-- Puestos de impresión (26-oct-2026): configuración por cuenta, guardada en el SERVIDOR. app/routers/print_stations.py -->
+          <div id="stationsCard" class="gw-group__item">
+            <div class="gw-item-head"><h4>Puestos de impresión</h4>{% call ayuda('ay_puestos', 'Puestos de impresión') %}Por cada cuenta: si es «Puesto de impresión», si usa «Solo lector» en «Registro touch» y si en su Registro se muestra o se esconde el menú de impresión (Conectar impresora, Cola). La etiqueta sale con los valores del evento (más abajo) y lo que se ajuste en cada computador. A qué cuentas atiende cada puesto se elige en «Impresión compartida».{% endcall %}</div>
+            <p class="gw-hint">Elige qué cuentas son puesto de impresión y qué ven en su Registro.</p>
+            <div id="stationsTable" data-psave="stations">Cargando…</div>
+          </div>
+
+          <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel de impresión del Registro. app/routers/print_settings.py -->
+          <div id="printSettingsCard" class="gw-group__item">
+            <div class="gw-item-head"><h4>Impresión de escarapelas en la QL-800 (valores del evento)</h4>{% call ayuda('ay_qlvalores', 'Valores de la impresora') %}Cinta puesta, giro, recorte y corte para todos los equipos de este evento. La cinta de siempre es la continua de 62 mm (DK-22205). Cada equipo puede cambiarlos solo para sí en el botón de impresión del Registro, y «Restablecer» lo devuelve a estos valores.{% endcall %}</div>
+            <p class="gw-hint">Cinta continua de 62 mm (DK-22205). Cada equipo puede ajustarlos solo para sí.</p>
+            <div id="psForm" data-psave="ps" class="gw-form-grid">
+              <div class="gw-field"><label class="gw-label" for="ps_tapeWidth">Ancho de la cinta</label><select class="gw-select" id="ps_tapeWidth"></select></div>
+              <div class="gw-field"><label class="gw-label" for="ps_tapeType">Tipo de cinta</label><select class="gw-select" id="ps_tapeType"><option value="continuous">Continua</option><option value="diecut">Troquelada (largo fijo)</option></select></div>
+              <div class="gw-field" id="ps_lengthRow"><label class="gw-label" for="ps_lengthMm">Largo de la etiqueta (mm)</label><input class="gw-input" type="number" id="ps_lengthMm" min="10" max="1000" step="1"></div>
+              <div class="gw-field"><label class="gw-label" for="ps_rotation">Giro</label><select class="gw-select" id="ps_rotation"><option value="auto">Automático (el lado largo a lo largo de la cinta)</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></div>
+              <div class="gw-field" id="ps_cropRow"><label class="gw-check"><input type="checkbox" id="ps_crop"> Recortar al contenido</label><label class="gw-label" for="ps_cropMarginMm">Margen del recorte (mm)</label><input class="gw-input" type="number" id="ps_cropMarginMm" min="0" max="30" step="0.5"></div>
+              <div class="gw-field"><label class="gw-label" for="ps_feedMm">Margen de avance (mm)</label><input class="gw-input" type="number" id="ps_feedMm" min="0" max="10" step="0.5"></div>
+              <label class="gw-check"><input type="checkbox" id="ps_cut"> Cortar al final de cada etiqueta</label>
+              <label class="gw-check"><input type="checkbox" id="ps_mirror"> Espejo</label>
+              <label class="gw-check"><input type="checkbox" id="ps_invert"> Invertir (negativo)</label>
             </div>
-            <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Al entregar, el disponible se descuenta solo. <a href="/kiosk/{{ event.id }}/inventario" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Inventario →</a></p>
+            <div class="gw-actions">
+              <button type="button" class="gw-btn gw-btn--secondary" id="psSave" hidden>Guardar valores del evento</button>
+              <button type="button" class="gw-btn gw-btn--secondary" id="psReset">{{ ic('undo', 'gw-icon--sm') }} Volver a los de fábrica</button>
+            </div>
           </div>
-        </div>
+        </section>
+
+        {# ====================================================================================== ESCARAPELAS Y CERTIFICADOS #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_escarapelas" data-group="escarapelas" aria-labelledby="tab_escarapelas" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Escarapelas y certificados</h2><p class="gw-tabpanel__lead">La escarapela digital que llega por correo y los certificados al terminar el evento.</p></div>
+
+          <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Escarapela digital</h4>{% call ayuda('ay_digital', 'Escarapela digital') %}Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo y el mensaje de texto salen solo si el envío está configurado; si no, el aviso no le llega a nadie (pregunta al equipo de soporte si tienes dudas).{% endcall %}</div>
+            <div data-psave="digital">
+              <label class="gw-check"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %}> Activar la escarapela digital en este evento</label>
+              <p class="gw-hint">Cada persona recibe el enlace a su escarapela por correo o celular.</p>
+            </div>
+            {% if event.digital_badge_enabled %}
+            <div id="mailEditor" data-psave="mail" class="gw-stack">
+              <div class="gw-sub gw-item-head"><h5>{{ ic('mail', 'gw-icon--sm') }} Correo que recibe la persona</h5>{% call ayuda('ay_correo', 'Correo de la escarapela') %}Escribe el correo como quieras (negritas, enlaces, imágenes). Las variables se reemplazan por los datos de cada persona. Debe llevar el Botón o el Enlace a la escarapela.{% endcall %}</div>
+              <div class="gw-field"><label class="gw-label" for="mailSubject">Asunto</label><input class="gw-input" type="text" id="mailSubject"></div>
+              <div id="mailBar" data-pnodirty class="gw-actions" role="toolbar" aria-label="Formato del correo">
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cmd="bold" aria-label="Negrita"><b>B</b></button>
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cmd="italic" aria-label="Cursiva"><i>I</i></button>
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cmd="underline" aria-label="Subrayado"><u>U</u></button>
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cmd="insertUnorderedList">Lista</button>
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-cmd="justifyCenter">Centrar</button>
+                <input type="color" id="mailColor" class="gw-pm-color" aria-label="Color del texto">
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="mailLink">{{ ic('link', 'gw-icon--sm') }} Enlace</button>
+                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="mailImg">{{ ic('image', 'gw-icon--sm') }} Imagen</button><input type="file" id="mailImgFile" accept="image/*" aria-label="Elegir una imagen" hidden>
+                <select id="mailVar" class="gw-select gw-select--auto" aria-label="Insertar una variable"><option value="">+ Insertar variable…</option></select>
+              </div>
+              <div id="mailBody" class="gw-no-theme gw-pm-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Texto del correo"></div>
+              <div class="gw-actions">
+                <button type="button" id="mailSave" class="gw-btn gw-btn--secondary" hidden>Guardar correo</button>
+                <button type="button" id="mailPreview" class="gw-btn gw-btn--secondary">{{ ic('eye', 'gw-icon--sm') }} Vista previa</button>
+                <button type="button" id="mailReset" class="gw-btn gw-btn--secondary">{{ ic('undo', 'gw-icon--sm') }} Volver al texto por defecto</button>
+              </div>
+              <div class="gw-actions" data-pnodirty>
+                <div class="gw-field gw-field--inline"><label class="gw-label" for="mailTo">Correo para la prueba</label><input class="gw-input" type="email" id="mailTo"></div>
+                <button type="button" id="mailTest" class="gw-btn gw-btn--secondary">Enviar prueba</button>
+              </div>
+              <div id="mailStatus" class="gw-msg" role="status" aria-live="polite"></div>
+              <iframe id="mailFrame" class="gw-pm-frame" title="Vista previa del correo" sandbox="" hidden></iframe>
+            </div>
+            {% endif %}
           </div>
-        </details>
-        <details class="gw-group" data-group="campos" id="grp_campos">
-          <summary class="gw-group__sum"><span class="gw-group__title">Categorías y campos</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Categorías de las personas y cómo se llama, se ordena y se pide cada campo.</span></summary>
-          <div class="gw-group__body">
-        <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar
-             y las plantillas de escarapela por categoría (editor de escarapelas). -->
-        <div class="gw-group__item">
-          <h4>Categorías del evento</h4>
-          <textarea id="categoriesBox" data-psave="categories" rows="3" placeholder="Una categoría por línea (ej. VIP, Prensa, Staff)" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-family:inherit;">{{ (event.categories | fromjson) | join("\n") if event.categories else "" }}</textarea>
-          <div hidden style="display:flex; justify-content:flex-end; margin-top:0.5rem;"><button type="button" id="saveCategoriesBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">Guardar categorías</button></div>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.3rem 0 0;">Al haber categorías aparece el campo "Categoría" (casillas, se puede marcar más de una) en Registrar/Editar, una columna en el reporte y la columna "categoria" en la carga de base; en el editor de escarapelas podrás usar una plantilla distinta por categoría.</p>
-        </div>
-        <div class="gw-group__item gw-scroll-x">
-          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
-            Define, para cada campo de este evento: cómo se llama (solo aquí, no cambia el nombre en otros eventos), en qué orden aparece en "Registrar nuevo" y "Editar persona" (arrastra las filas con ☰), si es obligatorio, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (nombres, apellidos, cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.
-          </p>
-          <table class="params-table">
-            <thead>
-              <tr>
-                <th style="width:34px;" title="Arrastra para reordenar"></th>
-                <th style="min-width:180px;">Campo (nombre en este evento)</th>
-                <th style="width:100px;">Obligatorio</th>
-                <th style="min-width:160px;">Tipo de campo</th>
-                <th style="min-width:180px;">Opciones (lista desplegable)</th>
-                <th style="width:130px;">Generar estadística</th>
-                <th style="min-width:140px;">Tipo de gráfico</th>
-                <th style="width:110px;"></th>
-              </tr>
-            </thead>
-            <tbody id="paramsTableBody" data-psave="fields"></tbody>
-          </table>
-          <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:1.2rem; padding-top:1.2rem; border-top:1px solid #eee;">
-            <input type="text" id="newOptionalFieldName" placeholder="Nombre del campo nuevo (ej. Alergias, Talla de camisa...)" style="flex:1; min-width:240px; border:1px solid #ccc; border-radius:8px; padding:0.6rem 0.8rem; font-size:0.9rem;">
-            <button type="button" id="addOptionalFieldBtn" class="golden-btn" style="width:auto; padding:0.6rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar campo opcional</button>
+
+          <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Certificados</h4>{% call ayuda('ay_certificados', 'Certificados') %}Al activarlo aparece el campo «Certificado» (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección «Certificados» para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% endcall %}</div>
+            <div data-psave="cert">
+              <label class="gw-check"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %}> Activar los certificados en este evento</label>
+              <p class="gw-hint">Al terminar el evento se descargan en un ZIP de PDFs.</p>
+            </div>
+            {% if event.certificates_enabled %}<a class="gw-btn gw-btn--secondary" href="/kiosk/{{ event.id }}/certificado">{{ ic('badge', 'gw-icon--sm') }} Abrir el diseñador de certificado</a>{% endif %}
           </div>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin-top:0.5rem;">El campo nuevo queda disponible de una en el formulario de alta manual y, si se configura con estadística, en Estadísticas — y siempre aparece como columna en el reporte Excel.</p>
-          <div hidden style="display:flex; justify-content:flex-end; margin-top:1.5rem;">
-            <button type="button" id="saveParamsBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Guardar cambios</button>
+        </section>
+
+        {# ====================================================================================== ZONAS E INVENTARIO #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_zonas" data-group="zonas" aria-labelledby="tab_zonas" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Zonas e inventario</h2><p class="gw-tabpanel__lead">Control de entrada y salida por zonas, y reparto de insumos.</p></div>
+
+          <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Control de áreas</h4>{% call ayuda('ay_areas', 'Control de áreas') %}Con «permitir reingresos» apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula, QR o rostro) usa el «Modo autoregistro» del evento.{% endcall %}</div>
+            <div data-psave="mod_areas">
+              <label class="gw-check"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %}> Activar el control de entrada y salida por zonas</label>
+            </div>
+            <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
+              <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
+              <div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody"></tbody></table></div>
+              <div class="gw-actions" data-pnodirty>
+                <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
+                <label class="gw-check"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
+                <button type="button" id="addAreaBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar zona</button>
+              </div>
+              <p class="gw-hint"><a href="/kiosk/{{ event.id }}/areas">Ir a Control de áreas</a></p>
+            </div>
           </div>
-        </div>
-        {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y para admin+; si no, este bloque no existe. Se registra en el Guardar global (clave «personform»; static/js/person-form-designer.js, app/personform.py). #}
-        {% if person_form_can_design %}
-        <div class="gw-group__item" id="personFormCard">
-          <h4 id="personFormTitle">Formulario de persona</h4>
-          <p class="gw-hint">Así se ven «Registrar nuevo» y «Editar» en el quiosco: orden, columnas, grupos, obligatorios arriba y a la vista, y cómo se escribe cada texto. Funciona igual sin conexión. Se guarda con el botón «Guardar» de abajo.</p>
-          <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">Cargando…</div>
-        </div>
-        <script src="{{ url_for('static', path='js/person-form-designer.js') }}"></script>
-        <script>PersonFormDesigner.mount(document.getElementById('personFormEditor'), { eventId: window.EVENT_ID });</script>
-        {% endif %}
+
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Control de inventario</h4>{% call ayuda('ay_inventario', 'Control de inventario') %}Al entregar un ítem, el disponible se descuenta solo. «Varias unidades a la vez» permite entregar más de una por persona en cada entrega.{% endcall %}</div>
+            <div data-psave="mod_inventory">
+              <label class="gw-check"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %}> Activar el control de inventario (repartir insumos)</label>
+            </div>
+            <div id="inventoryConfig" class="gw-stack" {% if not event.inventory_enabled %}hidden{% endif %}>
+              <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
+              <div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody"></tbody></table></div>
+              <div class="gw-actions" data-pnodirty>
+                <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
+                <div class="gw-field"><label class="gw-label" for="newItemQty">Cantidad</label><input class="gw-input gw-input--short" type="number" id="newItemQty" min="0"></div>
+                <label class="gw-check"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
+                <button type="button" id="addItemBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar ítem</button>
+              </div>
+              <p class="gw-hint"><a href="/kiosk/{{ event.id }}/inventario">Ir a Control de inventario</a></p>
+            </div>
           </div>
-        </details>
-        <details class="gw-group" data-group="marca" id="grp_marca">
-          <summary class="gw-group__sum"><span class="gw-group__title">Logo del evento</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Qué logo se muestra en las pantallas de este evento.</span></summary>
-          <div class="gw-group__body">
-        <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE
-             evento; los demás eventos siguen con el logo de Golden. Se aplica con el «Guardar» de abajo (subir una imagen es inmediato). -->
-        <div class="gw-group__item">
-          <h4>Logo del evento</h4>
-          <div style="display:flex; gap:1.2rem; flex-wrap:wrap; align-items:center;" id="logoOptions" data-psave="logo">
-            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="default" {% if event.logo_mode == "default" %}checked{% endif %}> Mostrar logo de Golden</label>
-            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="hidden" {% if event.logo_mode == "hidden" %}checked{% endif %}> Ocultar logo</label>
-            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="custom" {% if event.logo_mode == "custom" %}checked{% endif %} {% if not event.logo_path %}disabled{% endif %}> Usar logo propio</label>
-            <input type="file" id="logoFile" data-pnodirty accept="image/*" style="max-width:240px;">
+        </section>
+
+        {# ====================================================================================== CAMPOS #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_campos" data-group="campos" aria-labelledby="tab_campos" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Campos</h2><p class="gw-tabpanel__lead">Categorías de las personas y cómo se llama, se ordena y se pide cada dato.</p></div>
+
+          <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar y las plantillas de escarapela por categoría (editor de escarapelas). -->
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Categorías del evento</h4>{% call ayuda('ay_categorias', 'Categorías del evento') %}Al haber categorías aparece el campo «Categoría» (casillas; se puede marcar más de una) en Registrar y Editar, una columna en el reporte y la columna «categoria» en la carga de base. En el editor de escarapelas podrás usar una plantilla distinta por categoría.{% endcall %}</div>
+            <div class="gw-field">
+              <label class="gw-label" for="categoriesBox">Una categoría por línea</label>
+              <textarea class="gw-textarea" id="categoriesBox" data-psave="categories" rows="3" placeholder="Por ejemplo: VIP, Prensa, Staff">{{ (event.categories | fromjson) | join("\n") if event.categories else "" }}</textarea>
+            </div>
+            <div hidden><button type="button" id="saveCategoriesBtn" class="gw-btn gw-btn--secondary">Guardar categorías</button></div>
           </div>
-          <div id="logoSize" data-psave="logo" style="display:{{ 'flex' if event.logo_mode == 'custom' else 'none' }}; gap:1.2rem; flex-wrap:wrap; align-items:center; margin-top:0.7rem;">
-            <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;">Alto del logo: <b id="logoHv">{{ event.logo_height }}</b> px
-              <input type="range" id="logoH" min="30" max="80" step="5" value="{{ event.logo_height }}" style="width:180px;"></label>
-            <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="logo" {% if event.logo_fit != "banner" %}checked{% endif %}> Logo completo</label>
-            <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="banner" {% if event.logo_fit == "banner" %}checked{% endif %}> Banner (rellena de lado a lado, recorta lo que sobre)</label>
+
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Campos de la persona</h4>{% call ayuda('ay_campos', 'Campos de la persona') %}Para cada campo de este evento defines cómo se llama (solo aquí; no cambia el nombre en otros eventos), en qué orden aparece en «Registrar nuevo» y «Editar persona» (arrastra las filas con el ícono de la izquierda), si es obligatorio, qué tipo de campo es y si debe generar su gráfico al entrar a Estadísticas. La identidad (nombres, apellidos y cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.{% endcall %}</div>
+            <p class="gw-hint">Arrastra las filas para cambiar el orden.</p>
+            <div class="gw-table-wrap">
+              <table class="gw-table gw-table--fields">
+                <caption class="gw-sr-only">Campos del evento</caption>
+                <thead>
+                  <tr>
+                    <th scope="col"><span class="gw-sr-only">Mover</span></th>
+                    <th scope="col">Campo (nombre en este evento)</th>
+                    <th scope="col">Obligatorio</th>
+                    <th scope="col">Tipo de campo</th>
+                    <th scope="col">Opciones</th>
+                    <th scope="col">Estadística</th>
+                    <th scope="col">Gráfico</th>
+                    <th scope="col"><span class="gw-sr-only">Borrar</span></th>
+                  </tr>
+                </thead>
+                <tbody id="paramsTableBody" data-psave="fields"></tbody>
+              </table>
+            </div>
+            <div class="gw-actions" data-pnodirty>
+              <div class="gw-field gw-field--grow"><label class="gw-label" for="newOptionalFieldName">Campo nuevo</label><input class="gw-input" type="text" id="newOptionalFieldName" placeholder="Por ejemplo: Alergias, Talla de camisa"></div>
+              <button type="button" id="addOptionalFieldBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar campo opcional</button>
+            </div>
+            <p class="gw-hint">El campo nuevo queda disponible al instante en el alta manual y en el reporte de Excel.</p>
+            <div hidden><button type="button" id="saveParamsBtn" class="gw-btn gw-btn--secondary">Guardar campos</button></div>
           </div>
-          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Al subir una imagen se activa "Usar logo propio" (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia este evento.</p>
-        </div>
+          {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y para admin+; si no, este bloque no existe. Se registra en el Guardar global (clave «personform»; static/js/person-form-designer.js, app/personform.py). #}
+          {% if person_form_can_design %}
+          <div class="gw-group__item" id="personFormCard">
+            <h4 id="personFormTitle">Formulario de persona</h4>
+            <p class="gw-hint">Así se ven «Registrar nuevo» y «Editar» en el quiosco: orden, columnas, grupos y textos. Funciona igual sin conexión. Se guarda con «Guardar cambios».</p>
+            <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">Cargando…</div>
           </div>
-        </details>
-        <div class="gw-savebar" id="paramsSaveBar" data-state="idle">
-          <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
-          <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar</button>
-          <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
-        </div>
+          <script src="{{ url_for('static', path='js/person-form-designer.js') }}"></script>
+          <script>PersonFormDesigner.mount(document.getElementById('personFormEditor'), { eventId: window.EVENT_ID });</script>
+          {% endif %}
+        </section>
+
+        {# ====================================================================================== PRIVACIDAD #}
+        <section class="gw-tabpanel" role="tabpanel" id="grp_privacidad" data-group="privacidad" aria-labelledby="tab_privacidad" hidden>
+          <div class="gw-tabpanel__head"><h2 class="gw-tabpanel__title">Privacidad</h2><p class="gw-tabpanel__lead">Borrado de rostros y solicitudes de los titulares. Lo que está en rojo actúa al instante y pide confirmación.</p></div>
+          {% if event.facial_enabled %}
+          <!-- Privacidad de datos biométricos (Ley 1581 de 2012: dato sensible). -->
+          <div id="privacyCard" class="gw-group__item">
+            <div class="gw-item-head"><h4>Datos del rostro</h4>{% call ayuda('ay_privacidad', 'Datos del rostro') %}El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan. Para autorizar el rostro en los formularios web, crea en «Campos» un campo de consentimiento aparte y en «Insertar texto tipo» elige «Autorización del dato biométrico»; debe ser una casilla separada de la autorización general de datos.{% endcall %}</div>
+            <p id="privInfo" class="gw-msg" role="status">Cargando…</p>
+            <div class="gw-danger-zone">
+              <h4>{{ ic('alert') }} Borrar rostros (no se puede deshacer)</h4>
+              <div class="gw-field"><label class="gw-label" for="privCedula">Cédula de la persona a la que se le borrará el rostro</label><input class="gw-input" type="text" id="privCedula" aria-label="Cédula de la persona a la que se le borrará el rostro"></div>
+              <div class="gw-actions">
+                <button type="button" id="privPerson" class="gw-btn gw-btn--danger-outline">{{ ic('trash', 'gw-icon--sm') }} Borrar solo el rostro de esta persona</button>
+                {% if is_admin_plus %}<button type="button" id="privRevoke" class="gw-btn gw-btn--danger-outline" title="La persona sigue entrando por cédula o QR">{{ ic('trash', 'gw-icon--sm') }} Revocar autorización (borrar rostro y dejar constancia)</button>
+                <button type="button" id="privAll" class="gw-btn gw-btn--danger">{{ ic('trash', 'gw-icon--sm') }} Suprimir TODOS los datos de esta persona</button>
+                <button type="button" id="privEvent" class="gw-btn gw-btn--danger">{{ ic('trash', 'gw-icon--sm') }} Borrar los datos del rostro de TODO el evento</button>{% endif %}
+              </div>
+              <div id="privStatus" class="gw-msg" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+          {% else %}
+          <div class="gw-group__item"><p class="gw-alert" role="note">{{ ic('info') }}<span class="gw-alert__body">Este evento no usa reconocimiento facial, así que no hay rostros guardados que borrar.</span></p></div>
+          {% endif %}
+          <!-- Solicitudes de privacidad (consultas y reclamos de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles y bandera «reclamo en trámite». -->
+          {% if is_admin_plus %}
+          <div class="gw-group__item">
+            <div class="gw-item-head"><h4>Solicitudes de privacidad (consultas y reclamos)</h4><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span>{% call ayuda('ay_solicitudes', 'Plazos de las solicitudes') %}Consulta: 10 días hábiles. Reclamo: 15 días hábiles. La bandera «reclamo en trámite» se activa en máximo 2 días hábiles. Correo de privacidad: soporteit@goldenlogisticas.com.{% endcall %}</div>
+            <p class="gw-hint">Consulta: 10 días hábiles. Reclamo: 15 días hábiles.</p>
+            <div class="gw-form-grid" data-pnodirty>
+              <div class="gw-field"><label class="gw-label" for="prCanal">Canal</label><select class="gw-select" id="prCanal"><option value="email">Correo</option><option value="presencial">Presencial</option><option value="web">Web</option><option value="telefono">Teléfono</option><option value="otro">Otro</option></select></div>
+              <div class="gw-field"><label class="gw-label" for="prTipo">Tipo</label><select class="gw-select" id="prTipo"><option value="consulta">Consulta</option><option value="reclamo">Reclamo</option><option value="actualizacion">Actualización</option><option value="supresion">Supresión</option><option value="revocacion">Revocación</option><option value="prueba_autorizacion">Prueba de la autorización</option></select></div>
+              <div class="gw-field"><label class="gw-label" for="prNombre">Titular</label><input class="gw-input" type="text" id="prNombre"></div>
+              <div class="gw-field"><label class="gw-label" for="prCedula">Cédula</label><input class="gw-input" type="text" id="prCedula"></div>
+            </div>
+            <div class="gw-actions"><button type="button" id="prCrear" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Radicar solicitud</button></div>
+            <div class="gw-table-wrap"><table id="prTabla" class="gw-table"></table></div>
+          </div>
+          {% endif %}
+        </section>
       </div>
     </div>
-  </section>
+
+    <div class="gw-savebar" id="paramsSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}" data-gw-tour-step="3" data-gw-tour-title="3. Guarda los cambios" data-gw-tour-text="Un solo botón guarda todo lo pendiente de todas las pestañas.">
+      <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+      <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar cambios</button>
+      <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -439,19 +559,19 @@
     (function () {
         const table = document.getElementById('prTabla'); if (!table) return;
         const call = (url, method, body) => fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
-        const cell = (tr, text, style) => { const td = document.createElement('td'); td.textContent = text; td.style.cssText = 'padding:4px 6px; border-bottom:1px solid #eee;' + (style || ''); tr.appendChild(td); return td; };
+        const cell = (tr, text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); return td; };
         async function load() {
             const r = await call('/api/privacy-requests', 'GET'); table.replaceChildren();
             if (!r.ok) return;
-            const head = document.createElement('tr'); ['Radicado', 'Tipo', 'Titular', 'Límite', 'Estado', 'Reclamo en trámite', ''].forEach((h) => { const th = document.createElement('th'); th.textContent = h; th.style.cssText = 'text-align:left; padding:4px 6px;'; head.appendChild(th); }); table.appendChild(head);
+            const head = document.createElement('tr'); ['Radicado', 'Tipo', 'Titular', 'Límite', 'Estado', 'Reclamo en trámite', 'Acciones'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; th.scope = 'col'; head.appendChild(th); }); table.appendChild(head);
             r.data.forEach((q) => {
                 const tr = document.createElement('tr');
                 cell(tr, q.radicado); cell(tr, q.request_type); cell(tr, q.holder_name);
-                cell(tr, q.due_date + (q.overdue ? ' · VENCIDA' : ''), q.overdue ? 'color:#a12631; font-weight:700;' : '');
+                cell(tr, q.due_date + (q.overdue ? ' · VENCIDA' : ''), q.overdue ? 'gw-cell--err' : '');
                 cell(tr, q.status);
-                const flag = cell(tr, q.claim_flag ? 'SÍ' : (q.claim_flag_overdue ? 'falta activarla (venció el plazo)' : (q.claim_flag_due ? 'activar antes de ' + q.claim_flag_due : '—')), q.claim_flag ? 'font-weight:700;' : (q.claim_flag_overdue ? 'color:#a12631;' : ''));
-                const act = document.createElement('td'); act.style.cssText = 'padding:4px 6px; border-bottom:1px solid #eee; white-space:nowrap;';
-                const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.style.cssText = 'margin-right:4px; padding:2px 8px;'; b.addEventListener('click', fn); act.appendChild(b); };
+                const flag = cell(tr, q.claim_flag ? 'SÍ' : (q.claim_flag_overdue ? 'falta activarla (venció el plazo)' : (q.claim_flag_due ? 'activar antes de ' + q.claim_flag_due : '—')), q.claim_flag ? 'gw-cell--strong' : (q.claim_flag_overdue ? 'gw-cell--err' : ''));
+                const act = document.createElement('td'); act.className = 'gw-cell--actions';
+                const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.className = 'gw-btn gw-btn--secondary gw-btn--sm'; b.addEventListener('click', fn); act.appendChild(b); };
                 if (q.status === 'recibida' || q.status === 'en_tramite') {
                     if (q.request_type !== 'consulta') btn(q.claim_flag ? 'Quitar bandera' : 'Activar bandera', async () => { const x = await call(`/api/privacy-requests/${q.id}/claim-flag`, 'PUT', { active: !q.claim_flag }); if (!x.ok) showToast(x.data.detail || 'No se pudo', 'error'); load(); });
                     btn('Resolver', async () => { if (await showConfirm('¿Marcar la solicitud ' + q.radicado + ' como resuelta?')) { await call(`/api/privacy-requests/${q.id}/status`, 'PUT', { status: 'resuelta' }); load(); } });
@@ -477,7 +597,7 @@
     ['areas', 'inventory'].forEach(mod => {
         // Plan 6: activar/desactivar queda PENDIENTE hasta el «Guardar» global; el panel se muestra de una para poder configurarlo.
         document.getElementById(mod + 'Enabled').addEventListener('change', (e) => {
-            document.getElementById(mod + 'Config').style.display = e.target.checked ? 'block' : 'none';
+            document.getElementById(mod + 'Config').hidden = !e.target.checked;
         });
         GWParams.register({ key: 'mod_' + mod, label: mod === 'areas' ? 'Control de Áreas' : 'Control de Inventario', order: mod === 'areas' ? 65 : 66, save: async () => {
             await must(await jsonPut(`${base}/modules`, { [mod + '_enabled']: document.getElementById(mod + 'Enabled').checked }), 'No se pudo cambiar el módulo');
@@ -487,10 +607,10 @@
     async function loadAreas() {
         const areas = await api(`${base}/areas`);
         document.getElementById('areasBody').innerHTML = areas.length ? areas.map(a => `
-            <tr data-area="${a.id}"><td><input type="text" class="area-name" value="${esc(a.name)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
-            <td><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} style="width:18px; height:18px;"></td>
-            <td><button type="button" class="area-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
-            : '<tr><td colspan="3" style="color:var(--gw-text-muted);">Todavía no hay zonas.</td></tr>';
+            <tr data-area="${a.id}"><td><input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}"></td>
+            <td><label class="gw-check"><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} aria-label="Permitir reingresos en ${esc(a.name)}"></label></td>
+            <td><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm area-del" aria-label="Eliminar la zona ${esc(a.name)}">${gwIcon('trash')} Eliminar</button></td></tr>`).join('')
+            : '<tr><td colspan="3">Todavía no hay zonas. Agrega la primera abajo.</td></tr>';
     }
     document.getElementById('areasBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-area]'); if (!tr) return;
@@ -513,12 +633,12 @@
     async function loadItems() {
         const items = await api(`${base}/inventory`);
         document.getElementById('itemsBody').innerHTML = items.length ? items.map(i => `
-            <tr data-item="${i.id}"><td><input type="text" class="item-name" value="${esc(i.name)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
-            <td><input type="number" class="item-qty" min="${i.delivered}" value="${i.initial_qty}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
-            <td><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} style="width:18px; height:18px;"></td>
+            <tr data-item="${i.id}"><td><input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}"></td>
+            <td><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}"></td>
+            <td><label class="gw-check"><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} aria-label="Varias unidades a la vez de ${esc(i.name)}"></label></td>
             <td>${i.delivered} / <strong>${i.available}</strong></td>
-            <td><button type="button" class="item-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
-            : '<tr><td colspan="5" style="color:var(--gw-text-muted);">Todavía no hay ítems.</td></tr>';
+            <td><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm item-del" aria-label="Eliminar el ítem ${esc(i.name)}">${gwIcon('trash')} Eliminar</button></td></tr>`).join('')
+            : '<tr><td colspan="5">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
     }
     document.getElementById('itemsBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
@@ -555,11 +675,11 @@
         const card = document.getElementById('privacyCard');
         if (!card) return;
         const base = `/api/events/${window.EVENT_ID}`;
-        const say = (t, err) => { const el = document.getElementById('privStatus'); el.style.color = err ? '#c0392b' : '#1e7e34'; el.textContent = t; };
+        const say = (t, err) => { const el = document.getElementById('privStatus'); el.className = 'gw-msg ' + (err ? 'gw-msg--err' : 'gw-msg--ok'); el.textContent = t; };
         async function load() {
             const d = await (await fetch(`${base}/privacy`)).json();
             const ret = `Retención automática: ${d.after_event_days} días después de que todos los eventos de la persona estén finalizados (máximo ${d.max_days} días desde la captura).`;
-            document.getElementById('privInfo').innerHTML = `<b>${d.with_biometrics}</b> de ${d.attendees} personas tienen rostro guardado (<b>${d.with_consent}</b> con constancia de autorización, <b>${d.without_consent}</b> sin constancia — anteriores a este control). ${ret} Cifrado del rostro en reposo: <b>${d.encrypted ? 'activo' : 'NO activo (falta FACE_ENCRYPTION_KEY)'}</b>.${d.purged_at ? ' Último borrado: ' + d.purged_at.slice(0, 10) + '.' : ''}`;
+            document.getElementById('privInfo').innerHTML = `<b>${d.with_biometrics}</b> de ${d.attendees} personas tienen rostro guardado (<b>${d.with_consent}</b> con constancia de autorización, <b>${d.without_consent}</b> sin constancia — anteriores a este control). ${ret} Cifrado del rostro en reposo: <b>${d.encrypted ? 'activo' : 'NO activo (avisa a soporte)'}</b>.${d.purged_at ? ' Último borrado: ' + d.purged_at.slice(0, 10) + '.' : ''}`;
         }
         load();
         document.getElementById('privPerson').addEventListener('click', async () => {
@@ -594,7 +714,7 @@
         if (!box) return;
         const api = `/api/events/${window.EVENT_ID}/digital-email`;
         const body = document.getElementById('mailBody'), subj = document.getElementById('mailSubject'), status = document.getElementById('mailStatus');
-        const say = (t, err) => { status.style.color = err ? '#c0392b' : '#1e7e34'; status.textContent = t; };
+        const say = (t, err) => { status.className = 'gw-msg ' + (err ? 'gw-msg--err' : 'gw-msg--ok'); status.textContent = t; };
         const post = async (url, data) => { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; };
         const current = () => ({ subject: subj.value, body: body.innerHTML });
         fetch(api).then((r) => r.json()).then((d) => {
@@ -633,7 +753,7 @@
             GWParams.markClean('mail');                      // el reinicio se aplica de una (acción inmediata con confirmación)
         });
         document.getElementById('mailPreview').addEventListener('click', async () => {
-            try { const d = await post(`${api}/preview`, current()); const fr = document.getElementById('mailFrame'); fr.style.display = 'block'; fr.srcdoc = `<div style="font:14px Arial;padding:6px 10px;background:#f1f3f4;">Asunto: <b>${d.subject.replace(/</g, '&lt;')}</b></div>` + d.html; } catch (e) { say(e.message, true); }
+            try { const d = await post(`${api}/preview`, current()); const fr = document.getElementById('mailFrame'); fr.hidden = false; fr.srcdoc = `<p><b>Asunto:</b> ${d.subject.replace(/</g, '&lt;')}</p><hr>` + d.html; } catch (e) { say(e.message, true); }
         });
         document.getElementById('mailTest').addEventListener('click', async () => {
             try { const d = await post(`${api}/test`, { ...current(), to: document.getElementById('mailTo').value }); say(d.sent ? d.detail : 'No se envió: ' + d.detail, !d.sent); } catch (e) { say(e.message, true); }
@@ -650,21 +770,48 @@
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/idle-minutes`, { value: raw === '' ? null : Number(raw) }), 'No se pudo guardar el tiempo de inactividad');
     } });
     document.getElementById('idleMinutesSave').addEventListener('click', () => GWParams.saveKey('idle'));
+    GWParams.register({ key: 'reprint', label: 'Reimpresión de escarapelas', order: 11, save: async () => {
+        const off = (document.querySelector('input[name="reprintMode"]:checked') || {}).value === 'disabled';
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/reprint-mode`, { disabled: off }), 'No se pudo guardar la opción de reimpresión');
+    } });
+    (async function loadReprintHistory() {         // historial de solicitudes con su auditoría (solo quien decide en este evento; para otros queda el aviso)
+        const box = document.getElementById('reprintHistory'); if (!box) return;
+        const STATUS = { pending: 'Esperando', approved: 'Aprobada', denied: 'Negada', expired: 'Vencida', used: 'Usada', cancelled: 'Cancelada' };
+        const KIND = { requested: 'Solicitada', screen: 'Vista en pantalla', email: 'Correo enviado', email_none: 'Sin correo para enviar', approved: 'Aprobada', denied: 'Negada', expired: 'Vencida', used: 'Reimpresa' };
+        const CH = { screen: 'pantalla', email: 'correo', shared: 'cola compartida', local: 'este equipo' };
+        const hhmm = (iso) => new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+        try {
+            const r = await fetch(`/api/events/${window.EVENT_ID}/reprint-requests`, { cache: 'no-store' });
+            if (!r.ok) { box.textContent = 'Solo el coordinador de este evento o un administrador ve el historial.'; return; }
+            const d = await r.json(); box.replaceChildren();
+            if (!d.requests.length) { box.innerHTML = '<p class="gw-msg">Todavía no hay solicitudes de permiso en este evento.</p>'; return; }
+            const BADGE = { pending: ['info', 'info'], approved: ['ok', 'check'], denied: ['err', 'error'], expired: ['warn', 'alert'], used: ['ok', 'check'], cancelled: ['', 'close'] };
+            const rows = d.requests.map((q) => {
+                const b = BADGE[q.status] || ['', 'info'];
+                const chain = q.audit.map((a) => `${KIND[a.kind] || a.kind}${a.by ? ' (' + a.by + ')' : ''}${a.channel ? ' · ' + (CH[a.channel] || a.channel) : ''}`).join(' · ');
+                return `<tr><td>${esc(hhmm(q.requested_at))}</td><td>${esc(q.requested_by)}</td><td>${esc(q.person)}</td><td><span class="gw-badge${b[0] ? ' gw-badge--' + b[0] : ''}">${gwIcon(b[1])}${esc(STATUS[q.status] || q.status)}</span></td><td>${esc(chain)}</td></tr>`;
+            }).join('');
+            box.innerHTML = `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Solicitudes de permiso para reimprimir</caption><thead><tr><th scope="col">Hora</th><th scope="col">Pidió</th><th scope="col">Para</th><th scope="col">Estado</th><th scope="col">Qué pasó</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        } catch (e) { box.textContent = 'No se pudo cargar el historial.'; }
+    })();
     // Paso guiado de biometría: el resumen sale del servidor (lo que protege lo valida el servidor; esto solo guía).
     function renderSummary(d) {
         const box = document.getElementById('bsSummary'); if (!box) return;
         box.replaceChildren();
-        const h = document.createElement('b'); h.textContent = d.headline || (d.ready ? '✅ Listo: así funcionará en la puerta' : '⚠️ Falta algo antes del evento'); box.appendChild(h);
-        const ul = document.createElement('ul'); ul.style.margin = '6px 0 0 18px';
-        (d.missing || []).forEach((m) => { const li = document.createElement('li'); li.textContent = m; li.style.color = '#a12631'; ul.appendChild(li); });
+        box.className = 'gw-alert ' + (d.ready ? 'gw-alert--ok' : 'gw-alert--warn');
+        box.insertAdjacentHTML('afterbegin', gwIcon(d.ready ? 'check' : 'alert'));
+        const body = document.createElement('div'); body.className = 'gw-alert__body';
+        const h = document.createElement('b'); h.textContent = String(d.headline || (d.ready ? 'Listo: así funcionará en la puerta' : 'Falta algo antes del evento')).replace(/^[^\p{L}\p{N}]+/u, ''); body.appendChild(h);
+        const ul = document.createElement('ul'); ul.className = 'gw-pm-list';
+        (d.missing || []).forEach((m) => { const li = document.createElement('li'); li.textContent = m; ul.appendChild(li); });
         (d.door || []).forEach((m) => { const li = document.createElement('li'); li.textContent = m; ul.appendChild(li); });
-        box.appendChild(ul);
+        body.appendChild(ul); box.appendChild(body);
     }
     if (document.getElementById('bsSummary')) fetch(`/api/events/${window.EVENT_ID}/biometric-setup`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) renderSummary(d); });
     // Autorización del reconocimiento facial (L1).
     const ccMode = document.getElementById('ccMode');
     if (ccMode) {
-        ccMode.addEventListener('change', () => { document.getElementById('ccOrg').style.display = ccMode.value === 'tercero' ? 'grid' : 'none'; });
+        ccMode.addEventListener('change', () => { document.getElementById('ccOrg').hidden = ccMode.value !== 'tercero'; });
         const lockBox = document.getElementById('bsLocked');
         const applyUse = () => {                 // «No usa rostro (bloqueado)»: lo biométrico se apaga en pantalla, como antes con la casilla del candado
             if (!lockBox || !lockBox.checked) return;
@@ -688,8 +835,8 @@
         const refresh = async () => {
             const box = document.getElementById('amStatus'); const res = await am(''); if (!res.ok) { box.textContent = 'No se pudo leer el estado.'; return; }
             const d = await res.json(); box.replaceChildren();
-            const line = (t, color) => { const p = document.createElement('div'); p.textContent = t; if (color) p.style.color = color; box.appendChild(p); };
-            if (d.blocked) { line(d.blocked, '#a12631'); return; }
+            const line = (t, isErr) => { const p = document.createElement('div'); p.textContent = t; if (isErr) p.className = 'gw-msg gw-msg--err'; box.appendChild(p); };
+            if (d.blocked) { line(d.blocked, true); return; }
             line(`Recibirían el correo: ${d.will_send} personas (unos ${d.minutes} min). Se omiten ${d.omitted_total}.`);
             d.omitted.forEach((o) => line(`   · ${o.count}: ${o.reason}`));
             if (d.no_birth_date) line(`De ellas, ${d.no_birth_date} no tienen fecha de nacimiento registrada: se invitan igual (la página la pide y bloquea a los menores).`);
@@ -700,9 +847,9 @@
                 const pr = await am('/pending'); const pd = pr.ok ? await pr.json() : { pending: [] };
                 const h = document.createElement('div'); h.textContent = 'Sin confirmar (no se sabe si su correo salió). Reenvía solo si la persona lo pide o no lo encuentra:'; pend.appendChild(h);
                 pd.pending.forEach((x) => {
-                    const row = document.createElement('div'); row.style.cssText = 'display:flex; gap:8px; align-items:center; margin:2px 0;';
+                    const row = document.createElement('div'); row.className = 'gw-actions';
                     const t = document.createElement('span'); t.textContent = `${x.user_id} · ${x.name}`; row.appendChild(t);
-                    const b = document.createElement('button'); b.type = 'button'; b.className = 'golden-btn'; b.style.width = 'auto'; b.textContent = 'Reenviar'; b.dataset.uid = x.user_id; row.appendChild(b); pend.appendChild(row);
+                    const b = document.createElement('button'); b.type = 'button'; b.className = 'gw-btn gw-btn--secondary gw-btn--sm'; b.textContent = 'Reenviar'; b.dataset.uid = x.user_id; row.appendChild(b); pend.appendChild(row);
                 });
             }
         };
@@ -734,12 +881,12 @@
     const aceptarUrl = `${window.PUBLIC_BASE || location.origin}/aceptar/{{ event.event_code }}`;          // el QR del cartel lleva la dirección PÚBLICA, no la del panel desde el que se abrió
     if (document.getElementById('aceptarUrl')) {
         document.getElementById('aceptarUrl').textContent = aceptarUrl;
-        const drawQr = () => { try { const qr = qrcode(0, 'M'); qr.addData(aceptarUrl + '?c=qr'); qr.make(); document.getElementById('aceptarQr').innerHTML = qr.createSvgTag({ scalable: true }); const s = document.querySelector('#aceptarQr svg'); if (s) { s.style.width = '180px'; s.style.height = '180px'; } } catch (e) { /* sin QR: queda el enlace */ } };
+        const drawQr = () => { try { const qr = qrcode(0, 'M'); qr.addData(aceptarUrl + '?c=qr'); qr.make(); document.getElementById('aceptarQr').innerHTML = qr.createSvgTag({ scalable: true }); } catch (e) { /* sin QR: queda el enlace */ } };
         if (typeof qrcode !== 'undefined') drawQr();
-        document.getElementById('ccAceptar').addEventListener('change', (e) => { document.getElementById('aceptarBox').style.display = e.target.checked ? 'block' : 'none'; });
+        document.getElementById('ccAceptar').addEventListener('change', (e) => { document.getElementById('aceptarBox').hidden = !e.target.checked; });
         document.getElementById('aceptarPrint').addEventListener('click', () => {
             const w = window.open('', '_blank'); if (!w) return;
-            w.document.write(`<title>Reconocimiento facial</title><body style="font-family:sans-serif;text-align:center;padding:40px"><h1>¿Quieres entrar con tu rostro?</h1><p style="font-size:1.4rem">Escanea el QR desde tu celular y acepta antes de llegar.<br>Es voluntario: sin hacerlo, entras con tu cédula o QR.</p><div style="width:420px;margin:30px auto">${document.getElementById('aceptarQr').innerHTML}</div><p>${aceptarUrl}</p>`);
+            w.document.write(`<title>Reconocimiento facial</title><style>body{font-family:sans-serif;text-align:center;padding:40px}p.big{font-size:1.4rem}div.qr{width:420px;margin:30px auto}</style><h1>¿Quieres entrar con tu rostro?</h1><p class="big">Escanea el QR desde tu celular y acepta antes de llegar.<br>Es voluntario: sin hacerlo, entras con tu cédula o QR.</p><div class="qr">${document.getElementById('aceptarQr').innerHTML}</div><p>${aceptarUrl}</p>`);
             w.document.close(); w.print();
         });
     }
@@ -770,7 +917,7 @@
     const logoH0 = logoH ? logoH.value : null;
     if (logoH) logoH.addEventListener('input', () => { document.getElementById('logoHv').textContent = logoH.value; });
     document.querySelectorAll('input[name="logoMode"]').forEach((radio) => radio.addEventListener('change', () => {
-        document.getElementById('logoSize').style.display = radio.value === 'custom' ? 'flex' : 'none';
+        document.getElementById('logoSize').hidden = radio.value !== 'custom';
     }));
     GWParams.register({ key: 'logo', label: 'Logo del evento', order: 70, reload: true, save: async () => {
         const url = `/api/events/${window.EVENT_ID}/logo`;
@@ -789,7 +936,7 @@
         // Hay otros cambios sin guardar: no se recarga (se perderían). El servidor ya dejó «logo propio»; se refleja aquí y se recarga tras el próximo «Guardar».
         const custom = document.querySelector('input[name="logoMode"][value="custom"]');
         if (custom) { custom.disabled = false; custom.checked = true; }
-        document.getElementById('logoSize').style.display = 'flex';
+        document.getElementById('logoSize').hidden = false;
         GWParams.requestReload();
         showToast('Logo subido. Pulsa «Guardar» para ver el cambio en el encabezado.', 'success');
     });
@@ -803,7 +950,7 @@
         try { const r = await fetch(`${base}/usage`, { cache: 'no-store' }); u = r.ok ? await r.json() : null; } catch (e) { u = null; }
         if (!u) { showToast('No se pudo consultar el uso del campo', 'error'); return; }
         if (!u.deletable) { showToast(u.reason || 'Este campo no se puede borrar', 'error'); return; }
-        const lines = [`⚠️ Vas a BORRAR el campo «${esc(u.label)}» de este evento.`,
+        const lines = [`Vas a BORRAR el campo «${esc(u.label)}» de este evento.`,
             `• ${u.people} persona(s) tienen dato en este campo: ese dato se borra.`,
             `• Plantillas de escarapela que lo usan: ${u.templates.length ? esc(u.templates.join(', ')) : 'ninguna'} (se quita la variable).`,
             `• Formularios que lo usan: ${u.forms.length ? esc(u.forms.join(', ')) : 'ninguno'} (la pregunta deja de alimentar la base).`,
@@ -826,17 +973,20 @@
         const defaultLabel = cfg.default_label || cfg.label;
         const customLabel = cfg.label !== defaultLabel ? cfg.label : '';
         tr.innerHTML = `
-            <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:var(--gw-text-muted); text-align:center;">☰</td>
-            <td><input type="text" class="cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
-            <td><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} style="width:18px; height:18px;"></td>
-            <td><select class="cfg-field-type">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
-            <td><textarea class="cfg-options" placeholder="Una opción por línea" style="display:${cfg.field_type === 'select' ? 'block' : 'none'};">${esc((cfg.options || []).join('\n'))}</textarea>
-                <textarea class="cfg-help" placeholder="Texto de la política / consentimiento (se muestra junto al check o a la firma)" style="display:${['consent', 'signature'].includes(cfg.field_type) ? 'block' : 'none'};">${esc(cfg.help_text || '')}</textarea>
-                <select class="cfg-tpl" aria-label="Insertar un texto de autorización tipo" style="display:${['consent'].includes(cfg.field_type) ? 'block' : 'none'}; margin-top:4px; max-width:100%;"><option value="">Insertar texto tipo…</option><option value="general">Autorización de datos personales</option><option value="bio">Autorización del dato biométrico (rostro) — usar en un campo aparte</option></select></td>
-            <td><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} style="width:18px; height:18px;"></td>
-            <td><select class="cfg-chart-type" style="display:${cfg.default_stat_enabled ? 'block' : 'none'};">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
-            <td>${!locked && (DELETABLE_FIXED.includes(cfg.key) || cfg.key.startsWith('opcional_')) ? `<button type="button" class="small-btn cfg-delete" style="color:#a12631; border-color:#a12631;">🗑️ Borrar campo</button>` : ''}</td>
+            <td class="gw-drag drag-handle" title="Arrastra para reordenar">${gwIcon('grip')}</td>
+            <td><input type="text" class="gw-input cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" aria-label="Nombre del campo ${esc(defaultLabel)} en este evento"></td>
+            <td><label class="gw-check"><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} aria-label="Obligatorio: ${esc(defaultLabel)}"></label></td>
+            <td><select class="gw-select cfg-field-type" aria-label="Tipo del campo ${esc(defaultLabel)}">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
+            <td><textarea class="gw-textarea cfg-options" placeholder="Una opción por línea" aria-label="Opciones de la lista de ${esc(defaultLabel)}">${esc((cfg.options || []).join('\n'))}</textarea>
+                <textarea class="gw-textarea cfg-help" placeholder="Texto de la política o del consentimiento (se muestra junto a la casilla o la firma)" aria-label="Texto de política de ${esc(defaultLabel)}">${esc(cfg.help_text || '')}</textarea>
+                <select class="gw-select cfg-tpl" aria-label="Insertar un texto de autorización tipo"><option value="">Insertar texto tipo…</option><option value="general">Autorización de datos personales</option><option value="bio">Autorización del dato biométrico (rostro) — usar en un campo aparte</option></select></td>
+            <td><label class="gw-check"><input type="checkbox" class="cfg-stat-enabled" ${cfg.default_stat_enabled ? 'checked' : ''} aria-label="Generar estadística de ${esc(defaultLabel)}"></label></td>
+            <td><select class="gw-select cfg-chart-type" aria-label="Tipo de gráfico de ${esc(defaultLabel)}">${optionsHtml(CHART_TYPE_OPTIONS, cfg.default_chart_type || 'bar')}</select></td>
+            <td>${!locked && (DELETABLE_FIXED.includes(cfg.key) || cfg.key.startsWith('opcional_')) ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm cfg-delete" aria-label="Borrar el campo ${esc(defaultLabel)}">${gwIcon('trash')} Borrar campo</button>` : ''}</td>
         `;
+        const shown = (sel, on) => { const el = tr.querySelector(sel); if (el) el.style.display = on ? '' : 'none'; };      // se muestra solo lo que aplica al tipo de campo
+        shown('.cfg-options', cfg.field_type === 'select'); shown('.cfg-help', ['consent', 'signature'].includes(cfg.field_type));
+        shown('.cfg-tpl', cfg.field_type === 'consent'); shown('.cfg-chart-type', !!cfg.default_stat_enabled);
         const del = tr.querySelector('.cfg-delete');
         if (del) del.addEventListener('click', () => deleteField(cfg, tr));
         if (locked) {
@@ -858,15 +1008,15 @@
             helpBox.value = text;
         });
         typeSelect.addEventListener('change', () => {
-            optionsBox.style.display = typeSelect.value === 'select' ? 'block' : 'none';
+            optionsBox.style.display = typeSelect.value === 'select' ? '' : 'none';
             if (optionsBox._otWrap) optionsBox._otWrap.style.display = typeSelect.value === 'select' ? '' : 'none';
-            helpBox.style.display = ['consent', 'signature'].includes(typeSelect.value) ? 'block' : 'none';
-            if (tplBox) tplBox.style.display = typeSelect.value === 'consent' ? 'block' : 'none';
+            helpBox.style.display = ['consent', 'signature'].includes(typeSelect.value) ? '' : 'none';
+            if (tplBox) tplBox.style.display = typeSelect.value === 'consent' ? '' : 'none';
         });
         const statCheck = tr.querySelector('.cfg-stat-enabled');
         const chartSelect = tr.querySelector('.cfg-chart-type');
         statCheck.addEventListener('change', () => {
-            chartSelect.style.display = statCheck.checked ? 'block' : 'none';
+            chartSelect.style.display = statCheck.checked ? '' : 'none';
         });
         return tr;
     }
@@ -955,11 +1105,11 @@
   const pending = {};          // Plan 6: cambios de «a qué equipo imprime» sin guardar (staff_id -> printer_staff_id | null); mientras haya, la tabla no se vuelve a pintar sola
   let savedEnabled = chk.checked;
   function deviceText(d) {
-    if (!d) return '<span style="color:var(--gw-text-muted);">sin señal todavía (abra el Registro en ese equipo)</span>';
+    if (!d) return '<span class="gw-hint">Sin señal todavía: abre el Registro en ese equipo.</span>';
     const ago = d.seconds_ago < 60 ? `${d.seconds_ago} s` : `${Math.round(d.seconds_ago / 60)} min`;
-    const state = d.online ? '<b style="color:#1e7e34;">conectado</b>' : '<b style="color:#a12631;">desconectado</b>';
-    const printer = d.printer_connected ? `🖨️ ${esc(d.printer_name || 'impresora')}` : 'sin impresora';
-    return `${esc(d.platform || '?')} · ${esc(d.browser || '?')} · ${printer} · ${state} (última señal hace ${ago})`;
+    const state = d.online ? `<span class="gw-badge gw-badge--ok">${gwIcon('check')}Conectado</span>` : `<span class="gw-badge gw-badge--err">${gwIcon('error')}Desconectado</span>`;
+    const printer = d.printer_connected ? `${gwIcon('printer')} ${esc(d.printer_name || 'impresora')}` : 'sin impresora';
+    return `${esc(d.platform || '?')} · ${esc(d.browser || '?')} · ${printer} ${state} <span class="gw-hint">(última señal hace ${ago})</span>`;
   }
   async function load(force) {
     clearTimeout(timer);
@@ -972,18 +1122,18 @@
     const printers = data.users.filter((u) => u.eligible_printer && !u.printer_staff_id);
     const rows = data.users.map((u) => {
       const opts = [`<option value="">En su propio equipo</option>`].concat(printers.filter((p) => p.staff_id !== u.staff_id).map((p) =>
-        `<option value="${p.staff_id}" ${u.printer_staff_id === p.staff_id ? 'selected' : ''} >En el equipo de ${esc(p.name)} (${p.serving} usuario${p.serving === 1 ? '' : 's'}${p.serving > data.warn_per_printer ? ' · ⚠️ puede haber espera' : ''})</option>`));
+        `<option value="${p.staff_id}" ${u.printer_staff_id === p.staff_id ? 'selected' : ''} >En el equipo de ${esc(p.name)} (${p.serving} usuario${p.serving === 1 ? '' : 's'}${p.serving > data.warn_per_printer ? ' · puede haber espera' : ''})</option>`));
       if (u.printer_staff_id && !printers.some((p) => p.staff_id === u.printer_staff_id)) {
         const cur = data.users.find((x) => x.staff_id === u.printer_staff_id);
-        opts.push(`<option value="${u.printer_staff_id}" selected>En el equipo de ${esc(cur ? cur.name : '?')} (⚠️ sin impresora ahora)</option>`);
+        opts.push(`<option value="${u.printer_staff_id}" selected>En el equipo de ${esc(cur ? cur.name : '?')} (sin impresora ahora)</option>`);
       }
-      const serving = u.serving ? `<br><small>Imprime para ${u.serving} usuario(s)</small>` + (u.serving > data.warn_per_printer ? `<br><small data-sp-wait style="color:#b26a00; font-weight:600;">⚠️ Más de ${data.warn_per_printer} equipos en esta impresora: puede haber espera de impresión.</small>` : '') : '';
-      return `<tr><td style="padding:6px; border-bottom:1px solid #eee;"><b>${esc(u.name)}</b><br><small>${esc(u.username)} · ${esc(u.role)}</small>${serving}</td>
-        <td style="padding:6px; border-bottom:1px solid #eee; font-size:0.85rem;">${deviceText(u.device)}</td>
-        <td style="padding:6px; border-bottom:1px solid #eee;"><select data-route="${u.staff_id}" style="min-height:44px; max-width:100%;" ${u.serving ? 'disabled title="Atiende a otros usuarios"' : ''}>${opts.join('')}</select></td></tr>`;
+      const serving = u.serving ? `<br><span class="gw-hint">Imprime para ${u.serving} usuario(s)</span>` + (u.serving > data.warn_per_printer ? `<br><span class="gw-badge gw-badge--warn" data-sp-wait>${gwIcon('alert')}Más de ${data.warn_per_printer} equipos en esta impresora: puede haber espera de impresión.</span>` : '') : '';
+      return `<tr><td><b>${esc(u.name)}</b><br><span class="gw-hint">${esc(u.username)} · ${esc(u.role)}</span>${serving}</td>
+        <td>${deviceText(u.device)}</td>
+        <td><select class="gw-select" data-route="${u.staff_id}" aria-label="Dónde imprime ${esc(u.name)}" ${u.serving ? 'disabled title="Atiende a otros usuarios"' : ''}>${opts.join('')}</select></td></tr>`;
     }).join('');
-    box.innerHTML = data.users.length ? `<table style="width:100%; border-collapse:collapse;"><tr><th style="text-align:left; padding:6px;">Usuario</th><th style="text-align:left; padding:6px;">Equipo</th><th style="text-align:left; padding:6px;">Imprime</th></tr>${rows}</table>`
-      : '<p>Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
+    box.innerHTML = data.users.length ? `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Dónde imprime cada usuario</caption><thead><tr><th scope="col">Usuario</th><th scope="col">Equipo</th><th scope="col">Imprime</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : '<p class="gw-msg">Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
     timer = setTimeout(() => { if (window.GW && window.GW.idle) window.GW.onResume(() => load(), true); else load(); }, 5000);      // sin uso 60 s el sondeo se detiene y retoma al volver
   }
   box.addEventListener('change', (e) => {
@@ -1004,7 +1154,7 @@
     for (const id of Object.keys(pending)) {
       const res = await fetch(`${api}/route`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_user_id: Number(id), printer_staff_id: pending[id] }) });
       const out = await res.json().catch(() => ({}));
-      if (res.ok) { delete pending[id]; if (out.warning) showToast('⚠️ ' + out.warning, 'warning'); }
+      if (res.ok) { delete pending[id]; if (out.warning) showToast(out.warning, 'warning'); }
       else errors.push(typeof out.detail === 'string' ? out.detail : 'No se pudo guardar un equipo');
     }
     load(true);
@@ -1026,26 +1176,25 @@
   let users = [];
   function rowHtml(u) {
     const c = u.station || {};
-    const num = (k, w, min, max, step) => `<input type="number" data-k="${k}" value="${esc(v(c, k, ''))}" min="${min}" max="${max}" step="${step}" style="width:${w}px; min-height:36px;">`;
-    return `<details data-staff="${u.staff_id}" style="border:1px solid #e1e4ec; border-radius:12px; padding:8px 12px; margin-bottom:8px;"${u.station || u.print_station ? ' open' : ''}>
-      <summary style="cursor:pointer; font-weight:700;">${esc(u.name)} <small style="font-weight:400;">${esc(u.username)} · ${esc(u.role)}</small>${u.print_station ? ' <span style="color:#1e7e34;">· 🖨️ puesto</span>' : ''}${u.station ? ' <span style="color:#2b6cb0;">· con configuración</span>' : ''}</summary>
-      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px 16px; margin-top:8px; align-items:end;">
-        ${IS_ADMIN ? `<label><input type="checkbox" data-k="print_station" ${u.print_station ? 'checked' : ''}> Cuenta de <b>Puesto de impresión</b> (protegida: un segundo inicio de sesión se rechaza)</label>` : ''}
-        <label>Mostrar la configuración de impresión en el Registro<br><select data-k="showConfig" style="min-height:36px;"><option value="">Mostrar (por defecto)</option><option value="0" ${c.showConfig === false ? 'selected' : ''}>Esconder</option></select><br><small style="color:var(--gw-text-muted);">Mostrar: en ese computador se ven ⚙️ Impresión, Conectar impresora y la Cola (lo que cambien allí vale solo para ese computador). Esconder: solo la línea de estado; la impresión sigue igual.</small></label>
-        <label><input type="checkbox" data-k="readerOnly" ${c.readerOnly ? 'checked' : ''}> <b>Solo lector</b> en «Registro touch» (lector de códigos USB/Bluetooth: la cédula no abre el teclado; un ícono ⌨️ junto al campo lo abre)</label>
+    return `<details class="gw-form-group" data-staff="${u.staff_id}"${u.station || u.print_station ? ' open' : ''}>
+      <summary class="gw-form-group__summary">${esc(u.name)} <span class="gw-hint">${esc(u.username)} · ${esc(u.role)}</span>${u.print_station ? ` <span class="gw-badge gw-badge--ok">${gwIcon('printer')}Puesto de impresión</span>` : ''}${u.station ? ' <span class="gw-badge gw-badge--info">Con configuración</span>' : ''}</summary>
+      <div class="gw-form-group__body"><div class="gw-form-grid">
+        ${IS_ADMIN ? `<div class="gw-field"><label class="gw-check"><input type="checkbox" data-k="print_station" ${u.print_station ? 'checked' : ''}> Cuenta de puesto de impresión</label><p class="gw-hint">Protegida: un segundo inicio de sesión se rechaza.</p></div>` : ''}
+        <div class="gw-field"><label class="gw-label" for="sc_${u.staff_id}">Menú de impresión en el Registro</label><select class="gw-select" id="sc_${u.staff_id}" data-k="showConfig"><option value="">Mostrar (por defecto)</option><option value="0" ${c.showConfig === false ? 'selected' : ''}>Esconder</option></select><p class="gw-hint">Esconder deja solo la línea de estado; la impresión sigue igual.</p></div>
+        <div class="gw-field"><label class="gw-check"><input type="checkbox" data-k="readerOnly" ${c.readerOnly ? 'checked' : ''}> Solo lector en «Registro touch»</label><p class="gw-hint">Para lector de códigos USB o Bluetooth: la cédula no abre el teclado.</p></div>
       </div>
-      <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button type="button" class="golden-btn" data-save="${u.staff_id}" hidden>Guardar</button>
-        <button type="button" class="golden-btn" data-clear="${u.staff_id}" style="background:#eee; color:#333;">Quitar configuración (usar lo de siempre)</button>
-        ${IS_ADMIN && u.print_station ? `<button type="button" class="golden-btn" data-release="${u.staff_id}" style="background:#fff6e5; color:#7a4a00;">Liberar cuenta (forzar el cambio de dispositivo)</button>` : ''}
-      </div></details>`;
+      <div class="gw-actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-save="${u.staff_id}" hidden>Guardar</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-clear="${u.staff_id}">${gwIcon('undo')} Quitar configuración (usar lo de siempre)</button>
+        ${IS_ADMIN && u.print_station ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-release="${u.staff_id}">Liberar cuenta (forzar el cambio de dispositivo)</button>` : ''}
+      </div></div></details>`;
   }
   async function load() {
     let data = null;
     try { const r = await fetch(`${api}/shared-print`, { cache: 'no-store' }); data = r.ok ? await r.json() : null; } catch (e) { data = null; }
     if (!data) { box.textContent = 'No se pudo leer la lista de cuentas.'; return; }
     users = data.users;
-    box.innerHTML = users.length ? users.map(rowHtml).join('') : '<p>Aún no hay cuentas asignadas a este evento.</p>';
+    box.innerHTML = users.length ? users.map(rowHtml).join('') : '<p class="gw-msg">Aún no hay cuentas asignadas a este evento.</p>';
   }
   function read(d) {
     const get = (k) => d.querySelector(`[data-k="${k}"]`);

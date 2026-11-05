@@ -443,7 +443,10 @@
       try {
         const res = await fetch(`/api/events/${EID}/print-jobs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, request_id: requestId, reprint: !!reprint, prefs: prefs() }) });      // con los parámetros YA resueltos de este equipo
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) { toast(`⚠️ No se pudo enviar la escarapela a imprimir: ${body.detail || res.status}`, 'error'); return false; }
+        if (!res.ok) {
+          if (res.status === 403 && window.GWReprint && String(body.detail || '').startsWith('No se puede reimprimir')) { window.GWReprint.open(userId); return false; }       // Fase 1B: la puerta del servidor
+          toast(`⚠️ No se pudo enviar la escarapela a imprimir: ${body.detail || res.status}`, 'error'); return false;
+        }
         job = body;
       } catch (e) { await sleep(800); }
     }
@@ -479,7 +482,13 @@
       if (e.target.closest('[data-close]')) { panel.remove(); return; }
       const btn = e.target.closest('[data-reprint]');
       if (!btn) return;
-      if (!(await window.showConfirm(`¿Reimprimir la escarapela de ${window.escapeHtml(btn.dataset.reprint)}?`, { confirmLabel: 'Sí, reimprimir' }))) return;
+      let approved = false;
+      if (window.GWReprint) {                                       // Fase 1B: reimprimir desde la Cola también pide permiso si el evento lo exige (solo para escarapelas ya impresas)
+        const g = await window.GWReprint.check(btn.dataset.reprint, null, { explicit: true });
+        if (!g.ok) return;
+        approved = g.approved;
+      }
+      if (!approved && !(await window.showConfirm(`¿Reimprimir la escarapela de ${window.escapeHtml(btn.dataset.reprint)}?`, { confirmLabel: 'Sí, reimprimir' }))) return;
       btn.disabled = true;
       await printFor(btn.dataset.reprint, false, true);
       panel.remove();
@@ -555,7 +564,13 @@
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`);
           const c = r.ok ? await r.json() : { times_printed: 0 };
           if (c.times_printed > 0) explicit = true;
-          if (c.times_printed > 0 && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
+          let approved = false;
+          if (c.times_printed > 0 && window.GWReprint) {            // Fase 1B: con la reimpresión deshabilitada pide permiso; el servidor gasta el permiso al crear el trabajo
+            const g = await window.GWReprint.check(userId, c);
+            if (!g.ok) return false;
+            approved = g.approved;
+          }
+          if (c.times_printed > 0 && !approved && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
             { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return false;
         } catch (e) { /* si falla la consulta, no bloquea */ }
       }
@@ -566,11 +581,19 @@
     }
     if (usb.ok) {
       try {
+        if (auto && window.GWReprint && !(await window.GWReprint.auto(userId))) return false;       // Fase 1B: la autoimpresión por USB tampoco reimprime sola con la reimpresión deshabilitada
         if (!auto && !confirmed && original.openPrintWindow) { /* el aviso de reimpresión de siempre */
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`).catch(() => null);
           const c = r && r.ok ? await r.json() : { times_printed: 0 };
-          if (c.times_printed > 0 && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
+          let approved = false;
+          if (c.times_printed > 0 && window.GWReprint) {            // Fase 1B: reimpresión deshabilitada → pedir permiso
+            const g = await window.GWReprint.check(userId, c);
+            if (!g.ok) return false;
+            approved = g.approved;
+          }
+          if (c.times_printed > 0 && !approved && !(await window.showConfirm(`⚠️ Ya se ha impreso esta escarapela (${c.times_printed} ${c.times_printed === 1 ? 'vez' : 'veces'}).<br><br>¿Deseas imprimir de nuevo?`,
             { variant: 'warning', confirmLabel: 'Sí, imprimir de nuevo' }))) return false;
+          if (c.times_printed > 0 && window.GWReprint && !(await window.GWReprint.use(userId, c.reprint_locked))) return false;      // gasta el permiso (una sola reimpresión)
         }
         if (original.dropPrimed) original.dropPrimed();          // USB no abre ventana
         await printUsb(userId);

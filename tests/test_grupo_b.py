@@ -68,13 +68,13 @@ def test_only_coordinator_or_more_can_delete_fields(client, factory, db):
 
 def test_parametros_page_has_the_delete_button():
     html = pathlib.Path("templates/kiosk_parametros.html").read_text(encoding="utf-8")
-    assert "🗑️ Borrar campo" in html and "/usage" in html and "Escribe <b>" in html
+    assert "Borrar campo" in html and "cfg-delete" in html and "/usage" in html and "Escribe <b>" in html
 
 
 # ---------------------------------------------------------------------------------------------------- B3
 def test_new_cedula_is_a_checkbox_and_the_scan_goes_in_the_same_id_field():
     reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
-    assert 'id="regNewCedulaChk"' in reg and 'id="regNewCedulaBox" hidden' in reg and "📎 Adjuntar imagen" in reg and "📸 Usar cámara" in reg
+    assert 'id="regNewCedulaChk"' in reg and 'id="regNewCedulaBox" hidden' in reg and "Adjuntar imagen" in reg and "Usar cámara" in reg
     assert 'id="regScanCedulaInput"' not in reg                                                     # un solo campo de cédula
     assert "const regScanCedulaInput = document.getElementById('manualIdField');" in reg
     js = pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")

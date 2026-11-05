@@ -122,7 +122,7 @@ const rows = () => els.tbody.children.filter((tr) => !/directory-(local-note|mor
 const rowOf = (id) => rows().find((tr) => tr.dataset.userId === id);
 const btnOf = (tr, f) => tr.children[0].children.find(f);
 const accBtn = (tr) => btnOf(tr, (b) => /btn-accredit-row/.test(b.className));
-const printBtn = (tr) => btnOf(tr, (b) => b.title === 'Imprimir escarapela');
+const printBtn = (tr) => btnOf(tr, (b) => b.title === 'Imprimir escarapela');          // Plan 8 (corrección): Acreditar, Imprimir y Editar siempre a la vista en la fila
 const editBtn = (tr) => btnOf(tr, (b) => b.innerText === 'Editar');
 const typeIn = async (text) => { els.cedula.value = text; els.cedula.listeners.input(); await advance(250); };
 const enter = (text) => { els.cedula.value = text; return els.cedula.listeners.keydown({ key: 'Enter', preventDefault() {}, stopPropagation() {} }); };
@@ -243,13 +243,13 @@ const ENTRIES = {
   for (const tr of rows()) {
     assert.ok(accBtn(tr), 'botón Acreditar presente');
     const pb = printBtn(tr), eb = editBtn(tr);
-    assert.ok(pb && eb, 'la fila ' + tr.dataset.userId + ' conserva «🖨️» y «Editar»');
-    assert.strictEqual(pb.innerText, '🖨️'); assert.strictEqual(pb.disabled, false); assert.notStrictEqual(pb.style.display, 'none');
+    assert.ok(pb && eb, 'la fila ' + tr.dataset.userId + ' conserva «Imprimir» y «Editar» a la vista');
+    assert.strictEqual(pb.innerText, 'Imprimir'); assert.strictEqual(pb.disabled, false); assert.notStrictEqual(pb.style.display, 'none');
     assert.strictEqual(eb.disabled, false); assert.notStrictEqual(eb.style.display, 'none');
   }
   const tr0 = rows()[0], id0 = tr0.dataset.userId;
   reset(); printBtn(tr0).listeners.click(); await advance(10);                       // el botón manual sigue abriendo la ventana de impresión de siempre
-  assert.strictEqual(anyPrint(), 1, 'el botón 🖨️ imprime: ' + events.join(' | '));
+  assert.strictEqual(anyPrint(), 1, 'el botón «Imprimir» imprime: ' + events.join(' | '));
   assert.ok(events.includes('open:' + printUrl(id0)) || events.includes('nav:' + printUrl(id0)));
   assert.strictEqual(wins[0].name, 'goldenweb_print'); assert.strictEqual(wins[0].features, 'width=480,height=720');
   const before = body.children.length; editBtn(rows()[1]).listeners.click();

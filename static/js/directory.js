@@ -26,7 +26,7 @@
     return locals.concat(served.map((x) => x[0]), rest);
   }
   function isRecentRow(u, newest) { const t = recentMs(u); if (t !== null) return newest !== null && newest - t < RECENT_WINDOW_MS; return Recent.has(u.id); }
-  const ORIGINS = { base: { icon: '📄', label: 'Base (Excel)' }, manual: { icon: '✍️', label: 'Alta manual' }, autoregistro: { icon: '🌐', label: 'Autoregistro' }, desconocido: { icon: '❔', label: 'Desconocido' } };
+  const ORIGINS = { base: { icon: '', label: 'Base (Excel)' }, manual: { icon: '', label: 'Alta manual' }, autoregistro: { icon: '', label: 'Autoregistro' }, desconocido: { icon: '', label: 'Desconocido' } };
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
   }
@@ -288,6 +288,26 @@
      exigía el backend en DELETE /users/{id}/logs. Cada una de las dos dispara su propia
      confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
+  /* Eliminar a una persona del evento (con confirmación; la usan «Editar persona» y el menú «Más» de la fila). done() corre solo si se eliminó. */
+  async function deletePerson(user, done) {
+    const GCd = window.GoldenContingency && window.GoldenContingency.instance;
+    if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+    const ok = await showConfirm(`Atención: esto elimina COMPLETAMENTE a ${window.escapeHtml(fullName || 'esta persona')} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
+    if (!ok) return;
+    try {
+      const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Persona eliminada', 'success');
+        if (done) done();
+        if (window.directorySearch) window.directorySearch.reload();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.detail || 'No se pudo eliminar', 'error');
+      }
+    } catch (e) { showToast('Error de red', 'error'); }
+  }
+
   function buildEditModal(user, opts) {
     const GCm = window.GoldenContingency && window.GoldenContingency.instance;
     if (GCm && GCm.active()) return buildOfflinePersonEditModal(user, GCm) || buildOfflineEditModal(user, GCm);          // sin red: con el formulario de persona se edita y se encola; si no, modal limitado (solo estado de registro)
@@ -363,8 +383,8 @@
       <div id="editModalNotice" role="alert" style="display:none; background:#fff6e5; border-left:4px solid #b26a00; color:#7a4a00; padding:8px 12px; border-radius:8px; margin-bottom:0.8rem; font-weight:600;"></div>
       <label style="display:flex; gap:8px; align-items:center; font-weight:600; margin-bottom:0.6rem;"><input type="checkbox" id="editNewCedulaChk" style="width:20px; height:20px;"> ¿Es cédula nueva?</label>
       <div id="editNewCedulaBox" hidden style="margin-bottom:0.8rem; padding:0.6rem; background:#faf8f0; border-radius:10px; display:flex; gap:6px; flex-wrap:wrap;">
-        <button type="button" id="editMrzFileBtn" class="small-btn">📎 Adjuntar imagen</button>
-        <button type="button" id="editMrzCamBtn" class="small-btn">📸 Usar cámara</button>
+        <button type="button" id="editMrzFileBtn" class="small-btn">Adjuntar imagen</button>
+        <button type="button" id="editMrzCamBtn" class="small-btn">Usar cámara</button>
         <input type="file" id="editMrzInput" accept="image/*" style="display:none;">
       </div>
       <form id="editModalForm">
@@ -380,7 +400,7 @@
         </select>
         <p style="font-size:0.72rem; color:#aaa; margin:4px 0 0;">Se aplica junto con el resto de cambios al pulsar "Guardar cambios" — ya no hace falta un botón aparte.</p>
       </div>
-      <button type="button" id="editModalDelete" class="btn-table-delete" style="width:100%; padding:10px; font-size:0.85rem;">🗑️ Eliminar de este evento</button>
+      <button type="button" id="editModalDelete" class="btn-table-delete" style="width:100%; padding:10px; font-size:0.85rem;">Eliminar de este evento</button>
       ` : ''}
     `;
     overlay.appendChild(box);
@@ -543,7 +563,7 @@
         if (res.ok) {
           try {
             const info = await res.clone().json();
-            if (info.digital) showToast(`📲 Escarapela digital: ${info.digital.detail}`, 'success');
+            if (info.digital) showToast(`Escarapela digital: ${info.digital.detail}`, 'success');
           } catch (e) { /* sin detalle de envío */ }
           try { await window.FieldRender.saveSignatures(box, currentId); }
           catch (e) { showToast(e.message, 'error'); }
@@ -583,28 +603,59 @@
     });
 
     if (canManageStatus) {
-      box.querySelector('#editModalDelete').addEventListener('click', async () => {
-        const GCd = window.GoldenContingency && window.GoldenContingency.instance;
-        if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
-        const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-        const ok = await showConfirm(`⚠️ Esto elimina COMPLETAMENTE a ${window.escapeHtml(fullName || 'esta persona')} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
-        if (!ok) return;
-        try {
-          const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });
-          if (res.ok) {
-            showToast('Persona eliminada', 'success');
-            close();
-            if (window.directorySearch) window.directorySearch.reload();
-          } else {
-            const data = await res.json().catch(() => ({}));
-            showToast(data.detail || 'No se pudo eliminar', 'error');
-          }
-        } catch (e) { showToast('Error de red', 'error'); }
-      });
+      box.querySelector('#editModalDelete').addEventListener('click', () => deletePerson(user, close));
     }
   }
 
-  let rowAccredit = null;          // lo fija mountSearch cuando quien mira puede acreditar (digitador o más): botón «✅ Acreditar» en TODAS las filas
+  /* Botón de acción de una fila: ícono del sprite + texto corto (en pantallas muy estrechas el CSS deja solo el ícono; el nombre accesible y el tooltip siguen). Sin DOM de SVG (pruebas), queda el texto. */
+  function actBtn(label, icon, cls, title, aria) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerText = label;
+    if (title) b.title = title;
+    if (aria) b.setAttribute('aria-label', aria);
+    if (icon && document.createElementNS) {
+      const NS = 'http://www.w3.org/2000/svg', s = document.createElementNS(NS, 'svg'), u = document.createElementNS(NS, 'use'), tx = document.createElement('span');
+      s.setAttribute('class', 'gw-icon'); s.setAttribute('aria-hidden', 'true'); u.setAttribute('href', (window.GW_ICON_URL || '/static/img/icons.svg') + '#i-' + icon); s.appendChild(u);
+      tx.className = 'gw-act__t'; tx.textContent = label;
+      b.textContent = ''; b.appendChild(s); b.appendChild(tx);
+    }
+    return b;
+  }
+
+  /* Menú «Más» de una fila (Plan 8): botón + panel con las acciones secundarias. Se cierra con Esc, al elegir o al hacer clic afuera; si no cabe abajo, se abre hacia arriba. */
+  let openMenu = null, menuWired = false;
+  function closeMenu() { if (openMenu) { openMenu.panel.hidden = true; openMenu.btn.setAttribute('aria-expanded', 'false'); openMenu = null; } }
+  function wireMenuClose() {
+    if (menuWired || typeof document.addEventListener !== 'function') return;
+    menuWired = true;
+    document.addEventListener('click', (e) => { if (openMenu && !(e.target && e.target.closest && e.target.closest('.gw-menu'))) closeMenu(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && openMenu) { const b = openMenu.btn; closeMenu(); if (b.focus) b.focus(); } });
+  }
+  function buildMoreMenu(items, who) {
+    wireMenuClose();
+    const wrap = document.createElement('div'); wrap.className = 'gw-menu';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gw-btn gw-btn--secondary btn-table-action gw-menu__btn'; btn.innerText = 'Más'; btn.title = 'Más opciones';
+    btn.setAttribute('aria-haspopup', 'true'); btn.setAttribute('aria-expanded', 'false'); btn.setAttribute('aria-label', 'Más acciones' + (who ? ' de ' + who : ''));
+    const panel = document.createElement('div'); panel.className = 'gw-menu__panel'; panel.hidden = true; panel.setAttribute('role', 'group');
+    items.forEach((it) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'gw-menu__item' + (it.danger ? ' gw-menu__item--danger' : ''); b.innerText = it.label;
+      b.addEventListener('click', () => { closeMenu(); it.run(); });
+      panel.appendChild(b);
+    });
+    btn.addEventListener('click', (e) => {
+      if (e.stopPropagation) e.stopPropagation();
+      const wasOpen = openMenu && openMenu.panel === panel; closeMenu();
+      if (wasOpen) return;
+      panel.hidden = false; btn.setAttribute('aria-expanded', 'true'); openMenu = { panel, btn };
+      const box = wrap.closest && wrap.closest('.gw-workarea__list'), r = btn.getBoundingClientRect ? btn.getBoundingClientRect() : null, lim = box && box.getBoundingClientRect ? box.getBoundingClientRect() : null;
+      wrap.className = r && lim && r.bottom + panel.offsetHeight > lim.bottom && r.top - panel.offsetHeight > lim.top ? 'gw-menu gw-menu--up' : 'gw-menu';
+      const first = panel.firstChild; if (first && first.focus) first.focus();
+    });
+    wrap.appendChild(btn); wrap.appendChild(panel);
+    return wrap;
+  }
+
+  function pollSignal(ok) { try { window.dispatchEvent(new CustomEvent('gw:poll', { detail: { ok: !!ok } })); } catch (e) { /* sin ventana de eventos (pruebas): nada */ } }          // la pantalla muestra «Sin conexión» si el último sondeo falló
+  let rowAccredit = null;          // lo fija mountSearch cuando quien mira puede acreditar (digitador o más): botón «Acreditar» en TODAS las filas
   function buildRow(user) {
     const tr = document.createElement('tr');
     tr.className = user.status === 'No registrado' ? 'row-noregistrado' : 'row-registrado';        // B1: el color sigue el ESTADO (el alta manual ya no es otro color: es un origen)
@@ -618,44 +669,30 @@
     const actionTd = document.createElement('td');
     actionTd.className = 'action-cell';
 
-    /* «✅ Acreditar» en CADA fila (docs/16, 7a): un clic acredita, con «Deshacer» ~8 s (el servidor lo permite solo a quien acreditó y hasta 15 s). La fila ya acreditada muestra «Acreditado» sin acción. */
+    /* «Acreditar» en CADA fila (docs/16, 7a): un clic acredita, con «Deshacer» ~8 s (el servidor lo permite solo a quien acreditó y hasta 15 s). La fila ya acreditada muestra «Acreditado» sin acción. */
     if (rowAccredit) {
       const done = user.status === 'Registrado' || user.status === 'Nuevo';
-      const acc = document.createElement('button');
-      acc.type = 'button'; acc.className = 'golden-btn btn-table-action btn-accredit-row'; acc.disabled = done;
-      acc.innerText = done ? '✔ Acreditado' : '✅ Acreditar';
+      const acc = actBtn(done ? 'Acreditado' : 'Acreditar', 'check', 'gw-btn gw-btn--secondary btn-table-action btn-accredit-row' + (done ? ' is-done' : ''), done ? 'Ya acreditado' : 'Acreditar a esta persona', (done ? 'Ya acreditado: ' : 'Acreditar a ') + ([user.first_name, user.last_name].filter(Boolean).join(' ') || 'la persona'));
+      acc.disabled = done;
       if (!done) acc.addEventListener('click', () => rowAccredit(user, acc));
       actionTd.appendChild(acc);
     }
 
-    /* Botón de impresión persistente por fila (Historia 2.2) — vive siempre en la fila para
-       poder reimprimir a cualquiera en cualquier momento, no solo recién registrado. cliente es
-       de solo lectura; 'comercial' excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito:
-       "la comercial no debe poder imprimir en directorio en vivo") — el backend ya lo bloquea
-       (require_role_excluding en badges.py), esto evita mostrarle un botón que le va a fallar. */
+    /* Regla de frecuencia (Plan 8, corrección): lo que se hace con CADA persona va a la vista en una sola línea: [Acreditar] [Imprimir] [Editar]. «Más» queda solo para lo raro y
+       destructivo (eliminar, con confirmación). Imprimir: cliente es de solo lectura y 'comercial' no imprime (el backend ya lo bloquea con require_role_excluding en badges.py);
+       la lista local (sin red) no tiene la cédula, así que tampoco imprime. */
     const PRINT_HIDDEN_ROLES = ['cliente', 'comercial'];
-    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local) {          // la lista local no tiene la cédula (y sin red no se imprime)
-      const printBtn = document.createElement('button');
-      printBtn.type = 'button';
-      printBtn.innerText = '🖨️';
-      printBtn.title = 'Imprimir escarapela';
-      printBtn.className = 'golden-btn btn-table-action';
-      printBtn.addEventListener('click', () => {
-        if (window.BadgePrint) BadgePrint.openPrintWindow(user.id);
-      });
+    const who = [user.first_name, user.last_name].filter(Boolean).join(' ');
+    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local) {
+      const printBtn = actBtn('Imprimir', 'printer', 'gw-btn gw-btn--secondary btn-table-action', 'Imprimir escarapela', 'Imprimir escarapela' + (who ? ' de ' + who : ''));
+      printBtn.addEventListener('click', () => { if (window.BadgePrint) BadgePrint.openPrintWindow(user.id); });
       actionTd.appendChild(printBtn);
     }
-
-    /* Botones que quedan en la fila (2026-09-16): imprimir + editar, y ya — "Acreditar" como
-       botón suelto desaparece (acreditar ahora pasa por el flujo de escaneo/búsqueda con
-       confirmación, o por "Cambiar estado de registro" dentro de Editar para admin+). */
     if (canEdit) {
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.innerText = 'Editar';
-      editBtn.className = 'golden-btn btn-table-action';
+      const editBtn = actBtn('Editar', 'edit', 'gw-btn gw-btn--secondary btn-table-action', 'Editar persona', 'Editar a ' + (who || 'la persona'));
       editBtn.addEventListener('click', () => buildEditModal(user));
       actionTd.appendChild(editBtn);
+      if (!user.__local) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));
     }
 
     tr.appendChild(actionTd);
@@ -670,13 +707,12 @@
     const statusTd = document.createElement('td');
     statusTd.dataset.field = 'status';
     statusTd.innerText = user.status === 'No registrado' ? 'No registrado' : 'Registrado';
-    statusTd.style.fontWeight = 'bold';
+    statusTd.className = 'gw-registro__status';
     const og = ORIGINS[user.origin];
     if (og && user.origin !== 'desconocido') {                      // B1: el ORIGEN de carga, aparte del estado (no cambia al registrar o quitar el registro)
       const tag = document.createElement('span');
-      tag.className = 'gw-origin'; tag.dataset.origin = user.origin; tag.textContent = og.icon + ' ' + og.label; tag.title = 'Origen de carga: ' + og.label;
-      tag.style.cssText = 'display:inline-block; margin-left:6px; font-size:0.72rem; font-weight:600; color:#555; border:1px solid #ccc; border-radius:999px; padding:0 6px; white-space:nowrap;';
-      statusTd.appendChild(tag);
+      tag.className = 'gw-origin'; tag.dataset.origin = user.origin; tag.textContent = og.label; tag.title = 'Origen de carga: ' + og.label;
+            statusTd.appendChild(tag);
     }
     tr.appendChild(statusTd);
 
@@ -693,7 +729,7 @@
     const tbody = document.getElementById(tbodyId);
     tbody.innerHTML = '';
     if (users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty">Sin resultados con esa búsqueda.</td></tr>';
       return;
     }
     users.forEach(user => tbody.appendChild(buildRow(user)));
@@ -701,14 +737,14 @@
 
   async function loadRows(tbodyId) {
     const tbody = document.getElementById(tbodyId);
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
     try {
       const res = await fetch(withEvent('/api/users'));
       const users = await res.json();
       renderRows(tbodyId, users);
       return users;
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty gw-registro__empty--err" role="alert">No se pudo conectar con el servidor. Revisa la red e inténtalo de nuevo.</td></tr>';
       return [];
     }
   }
@@ -747,29 +783,31 @@
     let totalCounterEl = null;
     let originSelect = null;
     if (tableEl && tableEl.parentNode) {
+      const summaryHost = document.getElementById('gwDirSummary');            // Plan 8: los contadores y el filtro viven en la franja fija de arriba (si la página la trae)
+      const place = (el) => {
+        if (summaryHost) { const ref = document.getElementById('clearFiltersBtn'); summaryHost.insertBefore(el, ref && ref.parentNode === summaryHost ? ref : null); return; }
+        const anchor = (tableEl.closest && tableEl.closest('.gw-reg__list')) || tableEl; anchor.parentNode.insertBefore(el, anchor);
+      };
       counterBtn = document.createElement('button');
       counterBtn.type = 'button';
-      counterBtn.className = 'not-registered-counter';
-      counterBtn.style.cssText = 'display:inline-block; margin-bottom:1rem; margin-right:0.6rem; border:1px solid #dc3545; background:#fbe9ea; color:#a12631; border-radius:20px; padding:6px 16px; font-weight:700; font-size:0.85rem; cursor:pointer;';
+      counterBtn.className = 'not-registered-counter gw-chip gw-chip--err';
+      counterBtn.setAttribute('aria-pressed', 'false');
       counterBtn.addEventListener('click', () => {
         onlyNotRegistered = !onlyNotRegistered;
-        counterBtn.style.background = onlyNotRegistered ? '#dc3545' : '#fbe9ea';
-        counterBtn.style.color = onlyNotRegistered ? 'white' : '#a12631';
+        counterBtn.setAttribute('aria-pressed', onlyNotRegistered ? 'true' : 'false');
         applyFilters();
       });
-      tableEl.parentNode.insertBefore(counterBtn, tableEl);
+      place(counterBtn);
 
       totalCounterEl = document.createElement('span');
-      totalCounterEl.className = 'total-registered-counter';
-      totalCounterEl.style.cssText = 'display:inline-block; margin-bottom:1rem; border:1px solid #28a745; background:#eaf6ec; color:#1c7a34; border-radius:20px; padding:6px 16px; font-weight:700; font-size:0.85rem;';
-      tableEl.parentNode.insertBefore(totalCounterEl, tableEl);
+      totalCounterEl.className = 'total-registered-counter gw-chip gw-chip--ok';
+      place(totalCounterEl);
       originSelect = document.createElement('select');                 // B1: filtro por origen de carga
-      originSelect.className = 'origin-filter';
+      originSelect.className = 'origin-filter gw-chip';
       originSelect.setAttribute('aria-label', 'Filtrar por origen de carga');
-      originSelect.style.cssText = 'margin:0 0 1rem 0.6rem; border:1px solid #ccc; border-radius:20px; padding:6px 12px; font-weight:600; min-height:36px;';
-      originSelect.innerHTML = '<option value="">Origen: todos</option>' + Object.keys(ORIGINS).map((k) => `<option value="${k}">${ORIGINS[k].icon} ${ORIGINS[k].label}</option>`).join('');
+      originSelect.innerHTML = '<option value="">Origen: todos</option>' + Object.keys(ORIGINS).map((k) => `<option value="${k}">${ORIGINS[k].label}</option>`).join('');
       originSelect.addEventListener('change', () => { pageIdx = 0; applyFilters(); });
-      tableEl.parentNode.insertBefore(originSelect, tableEl);
+      place(originSelect);
     }
 
     function updateCounterLabel() {
@@ -777,9 +815,9 @@
       const total = allUsers.length;
       const count = allUsers.filter(u => u.status === 'No registrado').length;
       const registered = total - count;
-      counterBtn.innerText = `⚠️ ${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
-      counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : 'inline-block';
-      if (totalCounterEl) totalCounterEl.innerText = `✅ ${registered} registrados de ${total}`;
+      counterBtn.innerText = `${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
+      counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : '';
+      if (totalCounterEl) totalCounterEl.innerText = `${registered} registrados de ${total}`;
     }
 
     /* Buscador rápido (antes, cada tecla re-normalizaba a TODAS las personas y redibujaba TODAS las filas: 180-230 ms por tecla con
@@ -814,10 +852,10 @@
 
     function drawRows() {
       const tbody = document.getElementById(opts.tbodyId);
-      // El «✅ Acreditar» puntual (FOUND_PENDING) vive en una fila reutilizada: como antes, se va al volver a dibujar.
+      // El «Acreditar» puntual (FOUND_PENDING) vive en una fila reutilizada: como antes, se va al volver a dibujar.
       tbody.querySelectorAll('.btn-accredit-pending').forEach(b => b.remove());
       if (!lastFiltered.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#888;">Sin resultados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty">Sin resultados con esa búsqueda.</td></tr>';
         if (localMode) tbody.insertBefore(localNoteRow(), tbody.children[0] || null);
         return;
       }
@@ -865,18 +903,18 @@
       tr.className = 'directory-more';
       const td = document.createElement('td');
       td.colSpan = 6;
-      td.style.cssText = 'text-align:center; padding:0.8rem; color:#555;';
+      td.className = 'gw-registro__pager';
       td.innerText = `Mostrando ${pageIdx * size + 1}-${Math.min(total, (pageIdx + 1) * size)} de ${total} · Página ${pageIdx + 1} de ${pages}. `;
       const btn = (label, onClick, disabled) => {
         const b = document.createElement('button');
-        b.type = 'button'; b.className = 'golden-btn btn-table-action'; b.innerText = label; b.disabled = !!disabled;
+        b.type = 'button'; b.className = 'gw-btn gw-btn--secondary gw-btn--sm btn-table-action'; b.innerText = label; b.disabled = !!disabled;
         b.addEventListener('click', onClick); td.appendChild(b); return b;
       };
       btn('‹ Anterior', () => goToPage(pageIdx - 1, pages), pageIdx === 0);
       btn('Siguiente ›', () => goToPage(pageIdx + 1, pages), pageIdx >= pages - 1);
       const input = document.createElement('input');
       input.type = 'number'; input.min = '1'; input.max = String(pages); input.placeholder = 'Ir a la página'; input.setAttribute('aria-label', 'Ir a la página');
-      input.style.cssText = 'width:7.5rem; margin:0 6px; padding:5px 8px; border:1px solid #ccc; border-radius:8px;';
+      input.className = 'gw-input gw-registro__goto';
       td.appendChild(input);
       btn('Ir', () => { const n = parseInt(input.value, 10); if (n >= 1) goToPage(n - 1, pages); }, false);
       tr.appendChild(td);
@@ -995,8 +1033,7 @@
       const tr = document.createElement('tr'); tr.className = 'directory-local-note';
       const td = document.createElement('td'); td.colSpan = 6;
       const s = localStats, bad = !s || s.total == null || s.total !== s.n;
-      const colors = !s || s.total == null ? ['#fff8e1', '#7a5b00'] : (bad ? ['#ffebee', '#b71c1c'] : ['#e8f5e9', '#1b5e20']);
-      td.style.cssText = `text-align:center; padding:0.6rem; background:${colors[0]}; color:${colors[1]}; font-weight:600;`;
+      td.className = 'gw-registro__localnote ' + (!s || s.total == null ? 'is-warn' : (bad ? 'is-err' : 'is-ok'));
       td.innerText = `${localCounterText()}. Sin conexión: se muestra la copia local (nombre, categorías y estado). La cédula, la entidad y demás datos no están en esta copia: busca por nombre o escribe la cédula exacta.`;
       tr.appendChild(td);
       return tr;
@@ -1009,7 +1046,7 @@
       const GC0 = GCref();
       if (GC0) { await GC0.ready; if (GC0.active() && await loadFromLocalCopy()) return; }          // ya en contingencia: ni se intenta la red
       if (localMode) { setLocalMode(false); allUsers = []; }
-      if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando base de datos...</td></tr>';
+      if (!allUsers.length) tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty" role="status">Cargando la lista de personas…</td></tr>';
       T('directory:loading-row-shown');
       try {
         // El cursor se toma ANTES de leer las páginas: lo que cambie mientras tanto llega en el siguiente incremental.
@@ -1030,11 +1067,13 @@
         }
         allUsers = [...byId.values()];
         cursor = nextCursor;
+        pollSignal(true);
         { const GCt = GCref(); if (GCt && GCt.noteServerTotal) GCt.noteServerTotal(allUsers.length); }          // total del servidor: lo usa el contador «LISTA LOCAL: N de N»
       } catch (err) {
         T('directory:fetch-failed', { error: String((err && err.name) || err) });
+        pollSignal(false);
         if (await loadFromLocalCopy()) { T('directory:local-list-shown'); return; }           // sin red: la lista local en vez de «Error conectando al servidor»
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:red;">Error conectando al servidor</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="gw-registro__empty gw-registro__empty--err" role="alert">No se pudo conectar con el servidor. Revisa la red e inténtalo de nuevo.</td></tr>';
         return;
       }
       applyFilters();
@@ -1046,6 +1085,7 @@
         const res = await fetch(withEvent('/api/users/changes?cursor=' + encodeURIComponent(cursor)));
         if (!res.ok) return;
         const delta = await res.json();
+        pollSignal(true);
         applyFlags(delta.flags);
         cursor = delta.cursor;
         { const GCt = GCref(); if (GCt && GCt.noteServerTotal && Number.isInteger(delta.total)) GCt.noteServerTotal(delta.total); }
@@ -1056,7 +1096,7 @@
         }
         if (allUsers.length !== delta.total) return reload();
         if (delta.users.length) applyFilters();
-      } catch (err) { /* sin red: se reintenta en el siguiente ciclo */ }
+      } catch (err) { pollSignal(false); /* sin red: se reintenta en el siguiente ciclo */ }
     }
 
     function reload() {
@@ -1076,7 +1116,7 @@
       if (!incompleteBar && table) {
         incompleteBar = document.createElement('div');
         incompleteBar.setAttribute('role', 'status');
-        incompleteBar.style.cssText = 'display:none; margin:0 0 10px; padding:10px 14px; border-radius:10px; background:#fff6e5; border-left:5px solid #b26a00; color:#7a4a00; font-weight:600;';
+        incompleteBar.className = 'gw-alert gw-alert--warn gw-registro__incomplete'; incompleteBar.style.display = 'none';
         const host = table.closest('table') || table;
         host.parentNode.insertBefore(incompleteBar, host);
         incompleteBar.addEventListener('click', async (e) => {
@@ -1087,11 +1127,11 @@
       }
       if (!incompleteBar) return;
       incompleteBar.__people = data.people;
-      incompleteBar.style.display = data.count ? 'block' : 'none';
+      incompleteBar.style.display = data.count ? 'flex' : 'none';
       if (!data.count) return;
       const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-      incompleteBar.innerHTML = `⚠️ ${data.count} persona(s) registradas con datos obligatorios por completar. <button type="button" data-toggle class="small-btn" style="margin-left:8px;">Ver lista</button>
-        <div data-list hidden style="margin-top:8px; font-weight:400;">${data.people.map((p) => `<div style="display:flex; gap:8px; align-items:center; padding:4px 0; border-top:1px solid #f0d9b5;"><span style="flex:1;">${esc(p.first_name)} ${esc(p.last_name)} — falta: ${esc(p.missing.map((m) => m.label).join(', '))}</span><button type="button" class="small-btn" data-complete="${esc(p.id)}">Completar</button></div>`).join('')}</div>`;
+      incompleteBar.innerHTML = `<div class="gw-registro__grow"><b>${data.count} persona(s) registradas con datos obligatorios por completar.</b> <button type="button" data-toggle class="gw-btn gw-btn--secondary gw-btn--sm">Ver lista</button>
+        <div data-list hidden class="gw-registro__incomplete-list">${data.people.map((p) => `<div class="gw-rowact"><span class="gw-registro__grow">${esc(p.first_name)} ${esc(p.last_name)} — falta: ${esc(p.missing.map((m) => m.label).join(', '))}</span><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-complete="${esc(p.id)}">Completar</button></div>`).join('')}</div></div>`;
     }
 
     {
@@ -1129,7 +1169,7 @@
        /api/checkin-cedula: `replayed`). Mientras reintenta se muestra un aviso discreto y el operador no tiene que hacer nada. */
     const CHECKIN_TIMEOUT_MS = 10000;
     const UNDO_MS = 8000;           // cuánto se ofrece «Deshacer» en pantalla (el servidor lo permite hasta 15 s)
-    /* Botón «✅ Acreditar» de una fila: acredita como el botón puntual (confirmando) y ofrece «Deshacer». Sin red usa la lista local (la fila local no tiene la cédula: se acredita por huella). */
+    /* Botón «Acreditar» de una fila: acredita como el botón puntual (confirmando) y ofrece «Deshacer». Sin red usa la lista local (la fila local no tiene la cédula: se acredita por huella). */
     async function acreditarFila(user, btn) {
       const cid = newClientId(), GC = window.GoldenContingency && window.GoldenContingency.instance;
       btn.disabled = true; btn.innerText = 'Acreditando...';
@@ -1139,7 +1179,7 @@
         else await fastCheckin(user.id, false, null, true, undefined, cid);
       } finally {
         if (lastAccredit && lastAccredit.cid === cid) offerUndo(lastAccredit);
-        else { btn.disabled = false; btn.innerText = '✅ Acreditar'; }
+        else { btn.disabled = false; btn.innerText = 'Acreditar'; }
       }
     }
     function offerUndo(acc) {
@@ -1169,7 +1209,7 @@
       if (retryNote) return;
       retryNote = document.createElement('div');
       retryNote.setAttribute('role', 'status'); retryNote.setAttribute('aria-live', 'polite');
-      retryNote.style.cssText = 'position:fixed; bottom:12px; right:12px; z-index:9998; background:#fff8e1; color:#7a5b00; border-left:4px solid #f0ad4e; padding:6px 12px; border-radius:8px; font-size:.8rem; opacity:.95;';
+      retryNote.className = 'gw-alert gw-alert--warn gw-registro__retry';
       retryNote.textContent = 'Conexión lenta: reintentando, no hace falta volver a escanear…';
       document.body.appendChild(retryNote);
     }
@@ -1214,7 +1254,7 @@
       const actionTd = row ? row.querySelector('.action-cell') : null;
       if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
         const btn = document.createElement('button');
-        btn.type = 'button'; btn.innerText = '✅ Acreditar'; btn.className = 'golden-btn btn-table-action btn-accredit-pending';
+        btn.type = 'button'; btn.innerText = 'Acreditar'; btn.className = 'gw-btn gw-btn--secondary btn-table-action btn-accredit-pending';
         btn.addEventListener('click', async () => { btn.disabled = true; btn.innerText = 'Acreditando...'; await offlineAccredit(GC, { cedula: found.cedula }, method, newClientId()); });
         actionTd.appendChild(btn);
       }
@@ -1278,7 +1318,7 @@
           Recent.add(data.data.id);
           lastAccredit = { cid, id: data.data.id, name: `${data.data.first_name} ${data.data.last_name}`.trim(), offline: false, at: Date.now() };
           if (data.data.sibling_events && data.data.sibling_events.length) {
-            showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
+            showToast(`Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos se vincularon, no hizo falta capturarlos de nuevo`, 'success');
           }
           applyFlags(data);
           if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print });
@@ -1298,8 +1338,8 @@
           if (actionTd && !actionTd.querySelector('.btn-accredit-pending')) {
             const acreditarBtn = document.createElement('button');
             acreditarBtn.type = 'button';
-            acreditarBtn.innerText = '✅ Acreditar';
-            acreditarBtn.className = 'golden-btn btn-table-action btn-accredit-pending';
+            acreditarBtn.innerText = 'Acreditar';
+            acreditarBtn.className = 'gw-btn gw-btn--secondary btn-table-action btn-accredit-pending';
             acreditarBtn.addEventListener('click', async () => {
               acreditarBtn.disabled = true; acreditarBtn.innerText = 'Acreditando...';
               await fastCheckin(data.data.id, false, null, true, method);
@@ -1308,7 +1348,7 @@
           }
           showToast(`${data.data.first_name} ${data.data.last_name} encontrado(a) — confirma con "Acreditar" en la fila`, 'success');
           if (data.data.sibling_events && data.data.sibling_events.length) {
-            showToast(`ℹ️ Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos ya están guardados`, 'success');
+            showToast(`Ya asistió a ${data.data.sibling_events.join(', ')} (mismo superevento) — sus datos ya están guardados`, 'success');
           }
           return;
         }
@@ -1389,7 +1429,7 @@
         onlyNotRegistered = false;
         if (originSelect) originSelect.value = '';
         pageIdx = 0;
-        if (counterBtn) { counterBtn.style.background = '#fbe9ea'; counterBtn.style.color = '#a12631'; }
+        if (counterBtn) counterBtn.setAttribute('aria-pressed', 'false');
         applyFilters();
       },
     };

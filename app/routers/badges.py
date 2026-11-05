@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app import crypto
+from app import crypto, reprint
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
@@ -336,7 +336,9 @@ def get_print_count(
     count = db.query(PrintLog).filter(
         PrintLog.event_id == event.id, PrintLog.user_id == user_id, PrintLog.tenant_id == event.tenant_id
     ).count()
-    return {"times_printed": count}
+    state = reprint.state_for(db, event, staff, user_id)
+    db.commit()                                         # deja anotado un vencimiento, si lo hubo
+    return {"times_printed": count, **state}
 
 
 @router.post("/users/{user_id}/print-log")
@@ -350,6 +352,10 @@ def log_print(
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
+    # Fase 1B: con la reimpresión deshabilitada, registrar la impresión de alguien ya impreso exige haber gastado un permiso hace un momento (la impresión local la hace el navegador:
+    # esto es lo que el servidor puede hacer cumplir; ver docs/1B_reimpresion_permisos.md «control de pantalla»).
+    if reprint.is_locked_for(event, staff) and reprint.already_printed(db, event, user_id) and not reprint.recently_used(db, event, staff, user_id):
+        raise HTTPException(status_code=403, detail=reprint.DENIED_DETAIL)
     db.add(PrintLog(
         tenant_id=event.tenant_id, user_id=user_id, event_id=event.id, printed_by_staff_id=staff.id,
     ))
