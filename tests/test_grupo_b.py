@@ -74,7 +74,7 @@ def test_parametros_page_has_the_delete_button():
 # ---------------------------------------------------------------------------------------------------- B3
 def test_new_cedula_is_a_checkbox_and_the_scan_goes_in_the_same_id_field():
     reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
-    assert 'id="regNewCedulaChk"' in reg and 'id="regNewCedulaBox" hidden' in reg and "📎 Adjuntar imagen" in reg and "📸 Usar cámara" in reg
+    assert 'id="regNewCedulaChk"' in reg and 'id="regNewCedulaBox" hidden' in reg and "Adjuntar imagen" in reg and "Usar cámara" in reg
     assert 'id="regScanCedulaInput"' not in reg                                                     # un solo campo de cédula
     assert "const regScanCedulaInput = document.getElementById('manualIdField');" in reg
     js = pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")
