@@ -383,6 +383,20 @@
   <div class="g-icons" id="gIconos"></div>
 </section>
 
+<section class="g-sec" id="carga">
+  <h2 class="gw-title">Carga por pasos y avance</h2>
+  <p class="gw-lead">Para pantallas donde se sube un archivo: tarjetas numeradas <code class="g-code">.gw-step</code> (1 Elige, 2 Revisa, 3 Carga), un solo botón principal y la barra de avance <code class="g-code">.gw-pbar</code> (<code class="g-code">--ok</code> / <code class="g-code">--err</code>). Auxiliares: <code class="g-code">.gw-list</code>, <code class="g-code">.gw-checklist</code>, <code class="g-code">.gw-check--top</code>, <code class="g-code">.gw-fieldset</code>, <code class="g-code">.gw-container--narrow</code>; <code class="g-code">.gw-shell</code> en el <code class="g-code">&lt;body&gt;</code> da cabecera y franja del evento con tokens.</p>
+  <div class="gw-stack" style="max-width:560px">
+    <div class="gw-step"><div class="gw-step__head"><span class="gw-step__num" aria-hidden="true">1</span><h3 class="gw-step__title">Elige el archivo</h3></div>
+      <div class="gw-step__body"><div class="gw-field"><label class="gw-label" for="gArch">Archivo de la lista (.xlsx o .csv)</label><input class="gw-input" id="gArch" type="file"></div>
+      <label class="gw-check gw-check--top" for="gOpc"><input type="checkbox" id="gOpc"><span>Casilla con texto largo que se ve bien en varias líneas.</span></label>
+      <div class="gw-checklist"><label class="gw-check"><input type="checkbox"><span>Evento anterior A</span></label><label class="gw-check"><input type="checkbox"><span>Evento anterior B</span></label></div></div></div>
+    <div class="gw-pbar" role="status"><div class="gw-pbar__head"><span>Cargando la lista</span><span>42%</span></div><div class="gw-progress"><div class="gw-progress__bar" style="width:42%"></div></div><div class="gw-pbar__stage">Guardando personas…</div><div class="gw-pbar__time">Transcurrido 0:12 · Tiempo restante estimado: ~1 min</div></div>
+    <div class="gw-pbar gw-pbar--ok" role="status"><div class="gw-pbar__head"><span>Cargando la lista</span><span>100%</span></div><div class="gw-progress"><div class="gw-progress__bar" style="width:100%"></div></div><div class="gw-pbar__stage">Listo: 200 personas</div></div>
+    <div class="gw-pbar gw-pbar--err" role="status"><div class="gw-pbar__head"><span>Cargando la lista</span><span>42%</span></div><div class="gw-progress"><div class="gw-progress__bar" style="width:42%"></div></div><div class="gw-pbar__stage">No se pudo completar la carga</div></div>
+  </div>
+</section>
+
 </main>
 <script>
   /* Solo para esta guía: dibuja la rejilla de íconos a partir del sprite copiado arriba. */

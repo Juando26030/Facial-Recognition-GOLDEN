@@ -34,6 +34,7 @@ Uso del color: azul marino = identidad y acción; dorado = acento y fondo de én
 
 ## 3. Componentes que ya existen (reutilizar, no reinventar)
 Botón `.gw-btn` · mosaico por tarea `.gw-tile/.gw-tiles` · tarjeta `.gw-card` · campos `.gw-field/.gw-label/.gw-input/.gw-textarea/.gw-check/.gw-hint/.gw-error` · tabla `.gw-table` · insignia `.gw-badge` · aviso `.gw-alert` · estado de pantalla (vacío/cargando/error) `.gw-state/.gw-spinner` · ventana `.gw-modal` · asistente por pasos `.gw-wizard/.gw-progress` · navegación `.gw-nav` · interruptor de tema `.gw-theme-toggle` · ayuda en contexto `.gw-help/.gw-popover` · recorrido `.gw-tour` · grupo desplegable `.gw-group` (+ `__sum/__title/__hint/__body/__item`) y barra de guardado global `.gw-savebar` (+ `__status/__fail`) · grupos plegables del formulario de persona y filas en columnas `.gw-form-group/.gw-form-group__summary/.gw-form-group__body/.gw-fields-row--1..4` (heredan color y fondo de la pantalla donde se usen; distintos de `.gw-group`, que es el de Parámetros).
+Carga de listas por pasos (Adjuntar Base de Datos): tarjetas numeradas `.gw-step` (`__head/__num/__title/__body`), avance `.gw-pbar` (`--ok/--err`; la usa `progress-bar.js`), `.gw-list`, `.gw-checklist`, `.gw-check--top`, `.gw-fieldset`, `.gw-container--narrow` y `.gw-shell` (cabecera y franja del evento con tokens en pantallas con menú lateral).
 Si necesitas algo que no está: primero se agrega a `design-system.css` **y** a `guia_visual.html` (con su par de contraste en `test_design_system.py`), después se usa.
 
 ## 4. Patrones de pantalla

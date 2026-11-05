@@ -21,12 +21,13 @@
   function create(container, opts) {
     opts = opts || {};
     const box = document.createElement('div');
-    box.style.cssText = 'background:#e7f1ff; border:1px solid #b6d4fe; color:#084298; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-bottom:0.8rem;';
+    box.className = 'gw-pbar';
+    box.setAttribute('role', 'status');
     box.innerHTML = `
-      <div style="display:flex; justify-content:space-between; gap:10px; font-weight:700;"><span class="pb-title"></span><span class="pb-pct">0%</span></div>
-      <div style="height:12px; background:#cfe2ff; border-radius:8px; overflow:hidden; margin:8px 0;"><div class="pb-fill" style="height:100%; width:0%; background:#0d6efd; border-radius:8px; transition:width .4s;"></div></div>
-      <div class="pb-stage" style="font-size:0.82rem;"></div>
-      <div class="pb-time" style="font-size:0.78rem; color:#3b6ab8; margin-top:2px;"></div>`;
+      <div class="gw-pbar__head"><span class="pb-title"></span><span class="pb-pct">0%</span></div>
+      <div class="gw-progress"><div class="gw-progress__bar pb-fill"></div></div>
+      <div class="gw-pbar__stage pb-stage"></div>
+      <div class="gw-pbar__time pb-time"></div>`;
     container.appendChild(box);
     const q = (c) => box.querySelector(c);
     q('.pb-title').textContent = opts.title || 'Procesando';
@@ -53,14 +54,13 @@
       q('.pb-time').textContent = `Transcurrido ${fmtClock(elapsed)} · Tiempo restante estimado: ${fmtEta(eta)}`;
     }
     function finish(message) {
-      box.style.background = '#d1e7dd'; box.style.borderColor = '#a3cfbb'; box.style.color = '#0a3622';
-      q('.pb-fill').style.background = '#198754'; q('.pb-fill').style.width = '100%'; q('.pb-pct').textContent = '100%';
+      box.classList.remove('gw-pbar--err'); box.classList.add('gw-pbar--ok');
+      q('.pb-fill').style.width = '100%'; q('.pb-pct').textContent = '100%';
       q('.pb-stage').textContent = message || 'Listo';
       q('.pb-time').textContent = `Terminó en ${fmtClock((Date.now() - started) / 1000)}`;
     }
     function fail(message) {
-      box.style.background = '#f8d7da'; box.style.borderColor = '#f1aeb5'; box.style.color = '#842029';
-      q('.pb-fill').style.background = '#dc3545';
+      box.classList.remove('gw-pbar--ok'); box.classList.add('gw-pbar--err');
       q('.pb-stage').textContent = message || 'No se pudo completar';
       q('.pb-time').textContent = '';
     }
