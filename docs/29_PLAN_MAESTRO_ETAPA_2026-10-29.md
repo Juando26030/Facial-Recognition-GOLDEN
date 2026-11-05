@@ -340,11 +340,11 @@ Respaldos (copias a las 3 am activas, alerta de borrado masivo, copia semanal fu
 
 | Fase | Estado | Cierre confirmado por Juan David |
 |---|---|---|
-| 0A · Cierre del piloto | ✔ hecha (30-oct) | ☐ pendiente de tu «sí» |
-| 0B · Limpieza y orden del repo | ✔ hecha (2-nov; ver `docs/0B_inventario.md`) | ☐ pendiente de tu «sí» |
-| 0C · Línea base de seguridad | ✔ hecha (ver `docs/0C_cierre.md`) | ☐ pendiente de tu «sí» |
-| 1A · Puerta rápida | ◐ en curso: base de diseño hecha (3-nov); PR #26 autoimpresión abierto, falta prueba física Brother; faltan buscador único, cola compartida y formulario de persona | ☐ |
-| 1B · Impresión con permisos | ☐ | ☐ |
+| 0A · Cierre del piloto | ✔ hecha (30-oct) | ✔ 5-nov-2026 |
+| 0B · Limpieza y orden del repo | ✔ hecha (2-nov; ver `docs/0B_inventario.md`) | ✔ 5-nov-2026 |
+| 0C · Línea base de seguridad | ✔ hecha (ver `docs/0C_cierre.md`) | ✔ 5-nov-2026 |
+| 1A · Puerta rápida | ✔ hecha (pruebas reales y medición de tiempos de Juan David OK) | ✔ 5-nov-2026 |
+| 1B · Impresión con permisos | ✔ hecha (prueba física con la Brother OK) | ✔ 5-nov-2026 |
 | 2 · Diseño y calendario | ☐ | ☐ |
 | 3 · CRUD completo (+ L7 en diciembre) | ☐ | ☐ |
 | 4 · Equipo del evento | ☐ | ☐ |

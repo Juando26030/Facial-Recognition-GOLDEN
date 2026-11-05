@@ -285,7 +285,7 @@ def get_badge_asset(
 
 def _require_printable(event, user_id: str) -> None:
     """5-nov-2026: con el evento en «creado» no se imprime la escarapela de nadie (igual que no se registra); la persona de prueba es la única excepción, para ensayar la impresión."""
-    if event.status == "creado" and not testperson.is_test(user_id):
+    if event.status == "creado" and not testperson.bypasses_gate(event, user_id):
         raise HTTPException(status_code=403, detail="El evento está en modo «creado»: la escarapela se imprime cuando el evento esté en proceso.")
 
 

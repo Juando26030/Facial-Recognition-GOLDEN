@@ -1,5 +1,7 @@
 # Handoff — migración a Cloud Run + Neon (estado al 2026-09-29)
 
+> **ESTADO ACTUAL (5-nov-2026): las Fases 0 y 1 (0A, 0B, 0C, 1A, 1B) están CERRADAS por Juan David** — ver [`CIERRE_FASES_0_1.md`](CIERRE_FASES_0_1.md). Producción corre en Cloud Run + Neon (`app.golden-eventos.com`), desplegada con el workflow manual `cloudrun.yml` (confirm=DESPLEGAR). Lo siguiente es la **Fase 2** (diseño y calendario; plan en `29_PLAN_MAESTRO…`). **Lo que sigue abajo es el estado de la migración al 29-sep-2026 y se conserva como historia: la VM y la rama `migra/fase1-2` ya no son el camino de producción.** Lo vigente: `CLAUDE.md`, `15_MIGRACION.md` (progreso), `13_RUNBOOK_PRODUCCION.md`, `19_GUIA_PRODUCCION.md`.
+
 Documento para que una sesión nueva retome sin perder contexto. Complementa (no reemplaza) a [`docs/15_MIGRACION.md`](15_MIGRACION.md)
 (progreso pieza por pieza), [`docs/13_ARQUITECTURA_ESCALABILIDAD.md`](13_ARQUITECTURA_ESCALABILIDAD.md) (plan, §15-§16 = decisiones
 de la migración) y [`docs/14_FASE0_RESULTADOS.md`](14_FASE0_RESULTADOS.md) (carga y reconocimiento facial). Reglas técnicas del código:

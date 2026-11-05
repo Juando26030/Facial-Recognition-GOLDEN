@@ -40,3 +40,9 @@ def ensure_for_event(db: Session, event: Event) -> Optional[str]:
         db.add(EventAttendee(event_id=event.id, user_id=TEST_ID, tenant_id=event.tenant_id, origin=TEST_ORIGIN))
         db.flush()
     return TEST_ID
+
+
+def bypasses_gate(event, user_id) -> bool:
+    """La persona de prueba se registra/imprime también con el evento en «creado» (para eso existe). NUNCA en un evento finalizado ni en cualquier otro estado distinto de «creado»:
+    en «en proceso» ya pasa por la puerta normal y «finalizado» sigue bloqueado."""
+    return is_test(user_id) and getattr(event, "status", None) == "creado"

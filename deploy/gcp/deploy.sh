@@ -78,7 +78,7 @@ env_file() {   # $1 = archivo de salida; el resto «CLAVE=valor» propios del co
   cp deploy/gcp/env/common.yaml "$out"
   {
     echo "DEPLOY_ENV: \"$GOLDEN_ENV\""
-    if [ "$GOLDEN_ENV" = "staging" ]; then echo "PERSON_FORM_ENABLED: \"1\""; fi   # Plan 4 (formulario de persona): se prueba SOLO en staging; en producción queda apagado hasta que Juan David lo pida
+    echo "PERSON_FORM_ENABLED: \"1\""   # Plan 4 (formulario de persona): encendido en staging y producción (5-nov-2026, orden de Juan David). Cada evento lo activa aparte en su diseño: sin activarlo, nada cambia.
     echo "PUBLIC_BASE_URL: \"$PUBLIC_BASE_URL\""
     echo "STORAGE_BACKEND: \"gcs\""
     echo "GCS_BUCKET: \"$APP_BUCKET\""

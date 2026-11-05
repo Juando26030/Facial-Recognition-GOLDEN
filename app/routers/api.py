@@ -813,7 +813,7 @@ def checkin_cedula(
     cedula = cedula.strip()
     client_id = client_id.strip()[:64]
     event = get_event_for_staff(event_id, db, staff)
-    if not testperson.is_test(cedula):
+    if not testperson.bypasses_gate(event, cedula):
         require_event_in_progress(event)          # la persona de prueba es la ÚNICA excepción: se ensaya el flujo y la impresión aun con el evento en «creado»
     if client_id:
         replay = _replayed_checkin(db, event, client_id)
@@ -886,7 +886,7 @@ def undo_accreditation(event_id: int, body: dict, db: Session = Depends(get_db),
     if not client_id:
         raise HTTPException(status_code=400, detail="Falta el identificador de la acreditación")
     log = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.client_id == client_id, AccessLog.record_type != "Actualizado").first()
-    if not (log and testperson.is_test(log.user_id)):
+    if not (log and testperson.bypasses_gate(event, log.user_id)):
         require_event_in_progress(event)
     if not log:
         raise HTTPException(status_code=404, detail="Esa acreditación no existe (o ya se deshizo)")
@@ -1604,7 +1604,7 @@ def update_registration_status(
 
     was_registered = _already_checked_in(db, event_id, user_id)
     deleted_logs = 0
-    if new_status == "registrado" and not was_registered and not testperson.is_test(user_id):
+    if new_status == "registrado" and not was_registered and not testperson.bypasses_gate(event, user_id):
         require_event_in_progress(event)          # 5-nov-2026: «Editar → Estado de registro → Guardar» tampoco registra con el evento en «creado» (antes sí, y dejaba imprimir)
     if new_status == "registrado" and not was_registered:
         missing = person_missing_required(db, event, user)

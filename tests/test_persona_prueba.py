@@ -91,3 +91,12 @@ def test_when_the_event_is_in_progress_everyone_registers_and_prints_as_always(c
     assert client.patch(f"/api/events/{ev.id}/users/1001/status", json={"status": "registrado"}).status_code == 200
     assert client.get(f"/api/users/1001/badge-print-data?event_id={ev.id}").status_code == 200
     assert client.post(f"/api/users/1001/print-log?event_id={ev.id}").status_code == 200
+
+
+def test_the_test_person_is_not_a_back_door_in_a_finished_event(client, factory, db):
+    _admin(client, factory)
+    ev = factory.event("finalizado")
+    testperson.ensure_for_event(db, ev)
+    db.commit()
+    assert client.post("/api/checkin-cedula", data={"event_id": ev.id, "cedula": "PRUEBA", "confirm": "true"}).status_code == 403
+    assert client.patch(f"/api/events/{ev.id}/users/PRUEBA/status", json={"status": "registrado"}).status_code == 403
