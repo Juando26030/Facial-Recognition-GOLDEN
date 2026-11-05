@@ -141,10 +141,25 @@ def invalidate_quota_keys(db: Session, form: WebForm) -> None:
 
 
 def rebuild_quota_keys(db: Session, form: WebForm, rules: list) -> None:
-    """Recalcula las llaves de las inscripciones que no las tienen (inscripciones anteriores a esta versión, o reglas editadas)."""
-    for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None):  # noqa: E711
-        sub.quota_keys = quota_keys_for(rules, json.loads(sub.data_json))
+    """Recalcula las llaves de las inscripciones que no las tienen (inscripciones anteriores a esta versión, o reglas editadas).
+    Va por lotes y sin crear un objeto ORM por inscripción: con miles de inscripciones el modo anterior (uno por uno) tardaba más de 60 s y el guardado del
+    formulario terminaba en 502."""
+    rows = db.query(FormSubmission.id, FormSubmission.data_json).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None).all()  # noqa: E711
+    for i in range(0, len(rows), 500):
+        batch = []
+        for sid, raw in rows[i:i + 500]:
+            try:
+                keys = quota_keys_for(rules, json.loads(raw or "{}"))
+            except (ValueError, TypeError):
+                keys = ""
+            batch.append({"id": sid, "quota_keys": keys})
+        db.bulk_update_mappings(FormSubmission, batch)
     db.flush()
+
+
+def quota_sig_map(form: WebForm) -> dict:
+    """{id del cupo: firma}. Si no cambia entre dos guardados, las llaves de las inscripciones siguen valiendo (el mensaje, el límite y el nombre NO entran en la firma)."""
+    return {r["id"]: rule_sig(r) for r in quota_rules(form)}
 
 
 def quota_counts(db: Session, form: WebForm, rules: list) -> dict:

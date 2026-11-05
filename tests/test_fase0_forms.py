@@ -89,6 +89,25 @@ def test_quota_counts_use_stored_keys_and_rebuild_them_when_missing_or_when_rule
     assert _submit(client, ev, f, {**_who(4), "cat": "General"}, sid="d").status_code == 409
 
 
+def test_saving_only_quota_message_or_limit_does_not_invalidate_stored_keys(client, factory, monkeypatch):
+    """Guardar el formulario cambiando solo el mensaje, el límite o el nombre de un cupo NO borra las llaves de las inscripciones (antes las borraba siempre y el
+    guardado con miles de inscripciones terminaba en 502); cambiar una condición o agregar un cupo sí las invalida."""
+    factory.staff("coordinador", "coord1")
+    ev = factory.event("en_proceso")
+    login(client, "coord1")
+    f = _create(client, ev)
+    cat = {"id": "cat", "type": "select", "label": "Categoría", "options": ["VIP", "General"]}
+    rule = {"id": "rule01", "label": "VIP", "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "VIP"}], "limit": 2, "message": ""}
+    assert _put(client, ev, f, design=_design(_basic_fields() + [cat]), settings={"quotas": {"rules": [rule]}}).status_code == 200
+    calls = []
+    real = formsvc.invalidate_quota_keys
+    monkeypatch.setattr(formsvc, "invalidate_quota_keys", lambda *a, **k: calls.append(1) or real(*a, **k))
+    assert _put(client, ev, f, settings={"quotas": {"rules": [{**rule, "message": ".", "limit": 5, "label": "VIP 2"}]}}).status_code == 200
+    assert calls == []                                                                              # mensaje, límite y nombre no invalidan
+    assert _put(client, ev, f, settings={"quotas": {"rules": [{**rule, "conds": [{"field": "cat", "op": "equals", "value": "General"}]}]}}).status_code == 200
+    assert calls == [1]                                                                             # la condición cambió: sí
+
+
 def test_public_state_is_cached_for_a_few_seconds_and_edits_clear_it(client, factory, monkeypatch):
     ev = _event(client, factory)
     f = _create(client, ev)
