@@ -104,7 +104,8 @@ def test_form_link_shows_only_that_form_and_not_the_event_page(client, env):
     assert client.get(f"/ver/e/{token}").status_code == 404
 
 
-def test_only_coordinators_up_create_and_only_for_their_event(client, env, factory):
+def test_only_coordinators_up_create_and_only_for_their_event(client, env, factory, monkeypatch):
+    monkeypatch.setenv("ENFORCE_STAFF_TENANT", "1")      # el aislamiento por cliente es opcional en la plataforma; aquí se enciende
     _anon(client)
     login(client, "dig1")
     assert client.post(f"/api/events/{env.id}/stats-links", json={"scope": "event"}).status_code == 403
