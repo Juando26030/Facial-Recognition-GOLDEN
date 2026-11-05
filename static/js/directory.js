@@ -872,8 +872,9 @@
         const td = (tr.querySelector && tr.querySelector('td[data-field="first_name"]')) || (tr.cells && tr.cells[2]);
         if (!td) return;
         const b = document.createElement('span');
-        b.className = 'gw-badge gw-recent-tag';
-        b.textContent = 'Recién registrado';
+        const created = u.origin === 'manual';                         // alta manual («Registrar nuevo»): «Recién creado» (azul); acreditar a alguien de la base: «Recién registrado» (verde)
+        b.className = created ? 'gw-badge gw-recent-tag gw-recent-tag--new' : 'gw-badge gw-recent-tag';
+        b.textContent = created ? 'Recién creado' : 'Recién registrado';
         td.appendChild(b);
       });
       if (unified) {                                                   // el motivo vive en la fila en caché: se quita el anterior y se pone el actual (no se duplican filas)
@@ -923,6 +924,7 @@
 
     function setHint(text) { if (hintEl) hintEl.textContent = text; }
     function applyUnified() {
+      syncClearBtn();
       const q = SC.classifyQuery(cedulaInput.value || '');
       const base = allUsers.filter((u) => {
         if (onlyNotRegistered && u.status !== 'No registrado') return false;
@@ -977,7 +979,22 @@
       drawRows();
     }
 
+    /* Vacía la caja de búsqueda y vuelve a mostrar la lista completa; el foco queda en la caja para la siguiente persona. Lo usan acreditar y el botón de la papelera. */
+    function clearSearchBox() {
+      if (!cedulaInput) return;
+      cedulaInput.value = '';
+      if (!unified) { if (nombreInput) nombreInput.value = ''; if (entidadInput) entidadInput.value = ''; }
+      pageIdx = 0;
+      applyFilters();
+      syncClearBtn();
+      if (!cedulaInput.disabled) { try { cedulaInput.focus(); } catch (_) { /* sin foco en pruebas */ } }
+    }
+    const clearBtn = unified ? document.getElementById('searchClearBtn') : null;           // la papelera junto a la caja (solo con el buscador único)
+    function syncClearBtn() { if (clearBtn) clearBtn.hidden = !(cedulaInput && cedulaInput.value); }
+    if (clearBtn) clearBtn.addEventListener('click', clearSearchBox);
+
     function onSearchInput() {
+      syncClearBtn();
       clearTimeout(searchTimer);
       pageIdx = 0;
       searchTimer = setTimeout(applyFilters, SEARCH_DELAY_MS);
@@ -1240,8 +1257,8 @@
     accreditHooks.push((found) => {
       const u = allUsers.find((x) => (found.cedula && x.id === found.cedula) || (x.__h && x.__h === found.person.h));
       if (u) { u.status = 'Registrado'; rowCache.delete(u); }
-      if (cedulaInput && found.cedula) { cedulaInput.value = found.cedula; localHashes.set(found.cedula.toLowerCase(), found.person.h); }
-      applyFilters();
+      if (found.cedula) localHashes.set(found.cedula.toLowerCase(), found.person.h);
+      clearSearchBox();                                                  // sin red también: acreditar deja la caja vacía
     });
     async function offlineCheckin(GC, cedula, method, cid) {
       if (await GC.autoRegister()) { await offlineAccredit(GC, { cedula }, method, cid); return; }
@@ -1323,7 +1340,7 @@
           applyFlags(data);
           if (window.BadgePrint) BadgePrint.maybeAutoPrint(data.data.id, { auto: data.auto_print });
           await reload();
-          if (cedulaInput) { cedulaInput.value = data.data.id; applyFilters(); }
+          clearSearchBox();                                         // 5-nov-2026: acreditar deja la caja vacía (antes dejaba la cédula escrita)
           return;
         }
         if (data.result === 'FOUND_PENDING') {
@@ -1406,6 +1423,7 @@
             fastCheckin(raw, false, null);
           }
           cedulaInput.value = '';
+          syncClearBtn();
         }
       });
     }

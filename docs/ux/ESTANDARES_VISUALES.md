@@ -68,3 +68,7 @@ Impresión de escarapelas (`docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`: 62 × 99,
 
 ## 8. Dónde se aplica en el plan
 Base ya construida (Fase 1A pieza 0, 3-nov). El rediseño de pantallas existentes es la **Fase 2** del plan maestro (`docs/29`); mientras tanto, toda pantalla que se toque en otras fases (1A, 1B, 3…) **ya sale con estos estándares** y no se reabre después.
+
+### Buscador del registro y píldoras de la fila (5-nov-2026)
+- Papelera del buscador: `.gw-search__row` (caja + botón) y `.gw-search__clear` (icono `#i-trash`, nombre accesible «Borrar lo escrito»; aparece solo si hay texto).
+- Píldora sólida de la fila: `.gw-recent-tag` (verde, «Recién registrado»: se acreditó a alguien de la base) y `.gw-recent-tag--new` (azul, «Recién creado»: alta manual con «Registrar nuevo»).

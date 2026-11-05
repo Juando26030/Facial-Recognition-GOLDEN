@@ -87,7 +87,7 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
   // 3) lo encolado sin red cuenta como «Registrado» en la lista y en los contadores
   healthOk = false; await GC.checkHealth(); await GC.checkHealth(); assert.strictEqual(GC.active(), true);
   await d.submitScannedCedula('1003'); await advance(10);
-  assert.deepStrictEqual(names(), ['Eva Ríos'], 'tras acreditar se resalta a la persona (filtra por su cédula)'); assert.strictEqual(rows()[0].children[5].innerText, 'Registrado'); await type(els.cedula, '');
+  assert.strictEqual(els.cedula.value, '', 'tras acreditar la caja de búsqueda queda VACÍA (5-nov-2026)'); assert.strictEqual(rows().find((tr) => tr.children[2].innerText.includes('Eva')).children[5].innerText, 'Registrado'); await type(els.cedula, '');
   assert.deepStrictEqual(rows().map((tr) => tr.children[5].innerText), ['No registrado', 'Registrado', 'Registrado']);
   assert.ok(/1 sin registrar/.test(counters[0].innerText) && /2 registrados de 3/.test(counters[1].innerText));
   assert.strictEqual((await GC.queueList()).length, 1);
