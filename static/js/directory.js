@@ -199,6 +199,87 @@
     return { overlay, box, notice, name, select, save, cancel, close };
   }
 
+
+  /* Editar SIN red con el FORMULARIO DE PERSONA (Fase 1A, pieza 5; solo si el evento lo tiene prendido y la bandeja de salida funciona): la persona se edita igual que con red, sin ver sus datos guardados, así
+     que se escribe SOLO lo que cambia (lo que va en blanco queda como estaba) y se encola una operación `edit_person` con la versión del formulario (outbox.js). Cédula, fecha de nacimiento, firmas/consentimientos y
+     el envío de la escarapela digital piden conexión (quedan deshabilitados con el motivo). El «Estado de registro» se encola como siempre. Devuelve los controles (para las pruebas) o null si no aplica. */
+  const OFFLINE_BLOCKED_TYPES = ['signature', 'consent', 'date', 'digital_contact'];
+  function buildOfflinePersonEditModal(user, GC) {
+    const pfDef = window.PERSON_FORM && window.PersonForm ? window.PERSON_FORM : null;
+    const box = window.GoldenOutbox && window.GoldenOutbox.instance;
+    if (!pfDef || !box || !box.supported || !window.FieldRender) return null;
+    const cfgs = window.FIELD_CONFIGS || [];
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const blocked = (cfg) => cfg.key === 'id' || OFFLINE_BLOCKED_TYPES.includes(cfg.field_type) || cfg.key === 'birth_date';
+    const wrap = (cfg, control) => `<div class="badge-input-group" data-field-key="${esc(cfg.key)}"><label>${esc(cfg.label)}</label>${control}</div>`;
+    const fieldsHtml = cfgs.map((cfg) => {
+      if (cfg.key === 'id') return wrap(cfg, `<input type="text" name="id_readonly" value="${esc(user.id || '')}" disabled>`);
+      if (cfg.field_type === 'categories') return wrap(cfg, window.FieldRender.renderControl(cfg, user.categories));
+      if (cfg.field_type === 'certificate') return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
+      if (cfg.field_type === 'digital_contact' || cfg.field_type === 'date' || cfg.field_type === 'signature' || cfg.field_type === 'consent') return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
+      return wrap(cfg, window.FieldRender.renderControl(cfg, ''));
+    }).join('');
+    const overlay = document.createElement('div');
+    overlay.className = 'gw-modal-backdrop'; overlay.setAttribute('data-open', 'true');
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', 'Editar persona sin conexión');
+    const name = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+    overlay.innerHTML = `<div class="gw-modal">
+      <div class="gw-modal__head"><h4 class="gw-modal__title">Editar persona</h4></div>
+      <div class="gw-modal__body">
+        <div class="gw-alert gw-alert--warn" role="status"><div><div class="gw-alert__title">Sin conexión</div><div class="gw-alert__body"></div></div></div>
+        <p class="gw-label" data-pf-who></p>
+        <form id="offlineEditForm" novalidate><div id="offlineEditFields">${fieldsHtml}</div></form>
+        <div class="gw-field"><label class="gw-label" for="offlineEditStatus">Estado de registro</label>
+          <select class="gw-select" id="offlineEditStatus"><option value="no_registrado">No registrado</option><option value="registrado" selected>Registrado</option></select></div>
+      </div>
+      <div class="gw-modal__foot"><button type="button" class="gw-btn gw-btn--secondary" data-pf-cancel>Cancelar</button><button type="button" class="gw-btn gw-btn--primary" data-pf-save>Guardar cambios</button></div>
+    </div>`;
+    overlay.querySelector('.gw-alert__body').textContent = 'Escribe solo lo que cambia: lo que dejes en blanco queda como estaba. Se guarda en este dispositivo y se envía solo al volver la red. La cédula, la fecha de nacimiento y las firmas piden conexión.';
+    overlay.querySelector('[data-pf-who]').textContent = name ? `Persona: ${name}` : 'Persona de la lista local';
+    document.body.appendChild(overlay);
+    const form = overlay.querySelector('#offlineEditForm'), fieldsBox = overlay.querySelector('#offlineEditFields');
+    const ctl = window.PersonForm.mount(fieldsBox, pfDef, { disableKeys: cfgs.filter(blocked).map((c) => c.key), disabledHint: 'Requiere conexión' });
+    fieldsBox.querySelectorAll('[required]').forEach((n) => n.removeAttribute('required'));          // en blanco = como estaba: nada se exige sin red (el servidor revisa lo obligatorio al recibirlo)
+    fieldsBox.querySelectorAll('label').forEach((l) => { if (l.children.length === 0) l.textContent = l.textContent.replace(/\s*\*\s*$/, ''); });
+    const close = () => { ctl.destroy(); overlay.remove(); };
+    const collect = () => {
+      ctl.applyAll();
+      const fields = {}, extras = {};
+      cfgs.filter((c) => !blocked(c)).forEach((cfg) => {
+        if (cfg.field_type === 'categories') { const cats = Array.from(form.querySelectorAll('input[name="categories"]:checked')).map((i) => i.value); if (cats.length) fields.categories = cats; return; }
+        if (cfg.field_type === 'certificate') { if (form.querySelector('input[name="certificate"]:checked')) fields.certificate = 'true'; return; }
+        const el = Array.from(form.elements).find((e) => e.name === cfg.key);
+        const v = el && el.value ? String(el.value).trim() : '';
+        if (!v) return;
+        if (/^opcional_\d+$/.test(cfg.key)) extras[cfg.key] = v; else fields[cfg.key] = v;
+      });
+      if (Object.keys(extras).length) fields.extra_fields = extras;
+      return fields;
+    };
+    const save = overlay.querySelector('[data-pf-save]');
+    overlay.querySelector('[data-pf-cancel]').addEventListener('click', close);
+    save.addEventListener('click', async () => {
+      if (!GC.active()) { close(); showToast('Volvió la conexión: abre Editar de nuevo para ver todos los campos', 'success'); return; }
+      const fields = collect(), status = overlay.querySelector('#offlineEditStatus').value;
+      if (status !== 'registrado' && !Object.keys(fields).length) { showToast('Sin conexión: escribe lo que cambia, o deja «Registrado» para acreditarla', 'error'); return; }
+      save.disabled = true;
+      try {
+        const target = user.__h ? { h: user.__h } : { cedula: user.id };
+        if (Object.keys(fields).length) {
+          if (user.__h) fields.h = user.__h; else fields.id = user.id;
+          const pf = window.PERSON_FORM;
+          PersonForm.applyCase(fields, pf);
+          await box.enqueue(fields, `Edición: ${name || 'persona'}`, { type: 'edit_person', form_version: pf.form_version, form_sig: pf.form_sig });
+          showToast('Cambios guardados en este dispositivo: se envían solos al volver la red', 'success');
+        }
+        if (status === 'registrado') { const found = await offlineAccredit(GC, target, 'manual'); if (!found && !Object.keys(fields).length) return; }
+        close();
+      } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); }
+      finally { save.disabled = false; }
+    });
+    return { overlay, form, ctl, save, close, collect };
+  }
+
   /* Modal flotante de edición (2026-09-16, reemplaza la edición inline contentEditable de antes —
      con 10 columnas en pantalla no cabía nada sin scroll horizontal). Mismos campos que el alta
      manual (incluidos los opcionales dinámicos de este evento, vía window.OPTIONAL_VARIABLES,
@@ -209,7 +290,7 @@
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
   function buildEditModal(user, opts) {
     const GCm = window.GoldenContingency && window.GoldenContingency.instance;
-    if (GCm && GCm.active()) return buildOfflineEditModal(user, GCm);          // sin red: modal limitado (solo estado de registro)
+    if (GCm && GCm.active()) return buildOfflinePersonEditModal(user, GCm) || buildOfflineEditModal(user, GCm);          // sin red: con el formulario de persona se edita y se encola; si no, modal limitado (solo estado de registro)
     opts = opts || {};       // { method: 'biometrico' (el ingreso viene de una verificación facial), onSaved(id) }
     // Parámetros del Evento (2026-09-16): las 5 variables fijas + cada opcional_N ya rotulado,
     // con el tipo de control/obligatoriedad/opciones que se haya definido en
@@ -248,7 +329,9 @@
 
     // Todos los campos en el orden definido en Parámetros del Evento (ítems 3a/4): la identidad
     // (nombres/apellidos/cédula) entra en la misma lista, con la etiqueta propia del evento.
-    const configuredHtml = fieldConfigs.map((cfg) => {
+    const pfDef = window.PERSON_FORM && window.PersonForm ? window.PERSON_FORM : null;          // formulario de persona diseñado (apagado por defecto: sin él, nada cambia)
+    const keyed = (cfg, html) => (pfDef ? `<div data-field-key="${esc(cfg.key)}">${html}</div>` : html);
+    const configuredHtml = fieldConfigs.map((cfg) => keyed(cfg, (() => {
       if (cfg.key === 'id') return cedulaRow(cfg.label);
       if (cfg.field_type === 'categories') return configuredFieldRow(cfg, user.categories);
       if (cfg.field_type === 'certificate') return configuredFieldRow(cfg, user.certificate ? 'true' : '');
@@ -260,7 +343,7 @@
       </div>`;
       if (cfg.locked) return fieldRow(cfg.label, cfg.key, user[cfg.key]);
       return configuredFieldRow(cfg);
-    }).join('');
+    })())).join('');
     const isRegistered = user.status !== 'No registrado';
     const originalStatus = isRegistered ? 'registrado' : 'no_registrado';
     // 2026-09-23, pedido explícito: al darle Editar a alguien que aún no llegó, "Registrado" queda
@@ -302,6 +385,7 @@
     `;
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+    const pfCtl = pfDef ? window.PersonForm.mount(box.querySelector('#editModalForm'), pfDef) : null;          // grupos, columnas, obligatorios y «Texto al escribir» del formulario de persona
     window.FieldRender.watchEmail(box, () => user.id);
     window.FieldRender.watchEmailDeliverable(box);
     window.FieldRender.initSignatures(box, {
@@ -345,6 +429,7 @@
       const GCs = window.GoldenContingency && window.GoldenContingency.instance;
       if (GCs && GCs.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }          // se cortó la red con el modal abierto: aviso claro, no «Error de red»
       const form = box.querySelector('#editModalForm');
+      if (pfCtl) pfCtl.applyAll();          // «Texto al escribir» también en lo que se llenó por lector o por foto de la cédula
       const dataChanged = snapshot() !== initialData || (opts && opts.missing && opts.missing.length);
       if (dataChanged && !form.reportValidity()) return;
 

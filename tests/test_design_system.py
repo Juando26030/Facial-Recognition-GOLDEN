@@ -189,6 +189,38 @@ def test_first_time_tour_is_once_per_device_with_restart_and_no_external_depende
     assert not re.search(r"\b(alert|confirm|prompt)\(", JS)
 
 
+def _rule(selector):
+    """Declaraciones de la primera regla cuyo selector empieza EXACTAMENTE por `selector {`."""
+    i = CSS.index(selector + " {")
+    return CSS[CSS.index("{", i) + 1:CSS.index("}", i)]
+
+
+def test_group_and_savebar_components_use_only_verified_token_pairs_and_the_44px_target():
+    """Plan 6 (Parámetros agrupado): el título del grupo (texto sobre superficie y sobre superficie-2 al abrir/pasar), la ayuda, la lista de fallos y las insignias de estado de la barra
+    usan pares ya verificados arriba, en claro y en oscuro; el título del grupo es un objetivo táctil de 44 px."""
+    for cls in (".gw-group", ".gw-group__sum", ".gw-group__body", ".gw-group__item", ".gw-savebar", ".gw-savebar__status", ".gw-savebar__fail"):
+        assert cls + " {" in CSS, cls
+    assert "min-height: var(--gw-tap)" in _rule(".gw-group__sum")
+    pairs = {(fg, bg) for fg, bg, _ in TEXT_PAIRS}
+    assert "color: var(--gw-text)" in _rule(".gw-group") and "background: var(--gw-surface)" in _rule(".gw-group") and ("--gw-text", "--gw-surface") in pairs
+    assert "background: var(--gw-surface-2)" in CSS[CSS.index(".gw-group[open] > .gw-group__sum {"):] and ("--gw-text", "--gw-surface-2") in pairs
+    assert "color: var(--gw-text-muted)" in _rule(".gw-group__hint") and ("--gw-text-muted", "--gw-surface") in pairs and ("--gw-text-muted", "--gw-surface-2") in pairs
+    fail = _rule(".gw-savebar__fail")
+    assert "color: var(--gw-err-text)" in fail and "background: var(--gw-err-bg)" in fail and ("--gw-err-text", "--gw-err-bg") in pairs
+    bar = _rule(".gw-savebar")
+    assert "color: var(--gw-text)" in bar and "background: var(--gw-surface)" in bar and "position: sticky" in bar and "bottom: 0" in bar
+    # los bordes de estado de la barra son los de las insignias (>= 3:1 sobre su fondo, ya verificados)
+    for state, line in (("dirty", "warn"), ("saved", "ok"), ("error", "err")):
+        assert f'.gw-savebar[data-state="{state}"] {{ border-color: var(--gw-{line}-line); }}' in CSS
+    assert ("--gw-warn-line", "--gw-warn-bg", 3) in NON_TEXT_PAIRS and ("--gw-ok-line", "--gw-ok-bg", 3) in NON_TEXT_PAIRS and ("--gw-err-line", "--gw-err-bg", 3) in NON_TEXT_PAIRS
+    # fuera del CSS de la base, ni un color suelto en estos componentes
+    block = CSS[CSS.index("Grupo desplegable (<details"):]
+    assert not re.search(r"#[0-9a-fA-F]{3,6}\b|rgba?\(", block), "solo tokens --gw-*"
+    # y la guía los muestra
+    for needle in ("gw-group", "gw-savebar", 'data-state="dirty"', 'data-state="saved"', 'data-state="error"'):
+        assert needle in GUIDE, needle
+
+
 def test_wizard_and_state_components_exist_and_leave_the_search_slot_unbuilt():
     for cls in (".gw-wizard__foot", ".gw-progress", ".gw-state--error", ".gw-spinner", ".gw-tile", ".gw-modal", ".gw-nav", ".gw-badge--ok", ".gw-alert--err", ".gw-table", ".gw-field--error"):
         assert cls in CSS, cls
@@ -212,7 +244,7 @@ def test_every_template_loads_static_files_only_through_url_for_and_the_base():
     for t in TEMPLATES:
         text = t.read_text(encoding="utf-8")
         if "css/style.css" in text:
-            assert "css/design-system.css" in text, f"{t.name} carga style.css pero no la base visual (el menú lateral compartido la necesita)"
+            assert ("css/design-system.css" in text or "_gw_head.html" in text), f"{t.name} carga style.css pero no la base visual (el menú lateral compartido la necesita)"
     for name in ("login.html", "_gw_head.html", "_gw_theme_toggle.html", "_sidebar.html", "_kiosk_top.html"):
         text = pathlib.Path("templates", name).read_text(encoding="utf-8")
         assert not re.search(r'(?:href|src)="/static/', text), name
@@ -237,8 +269,28 @@ def test_the_kiosk_precaches_what_the_pages_load_so_the_base_works_offline():
     """El service worker del quiosco guarda los /static/* que la página efectivamente cargó (performance.getEntriesByType): la base entra sola si la página la enlaza."""
     for name in ("kiosk_registro.html", "kiosk_rostro.html"):
         text = pathlib.Path("templates", name).read_text(encoding="utf-8")
-        assert "css/design-system.css" in text, name
+        assert "css/design-system.css" in text or "_gw_head.html" in text, name        # Registro (Plan 7) la trae por _gw_head.html
     reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
     assert "performance.getEntriesByType('resource')" in reg and "startsWith(location.origin + '/static/')" in reg
     sw = pathlib.Path("static/js/kiosk-sw.js").read_text(encoding="utf-8")
     assert "url.pathname.startsWith('/static/')" in sw
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------ formulario de persona (Fase 1A, pieza 5)
+def test_person_form_groups_and_columns_are_in_the_base_the_guide_and_the_standards():
+    """Componente nuevo `.gw-form-group` / `.gw-fields-row`: en design-system.css, en la guía visual y en ESTANDARES_VISUALES.md; solo tokens (sin colores sueltos), con el objetivo táctil de 44 px,
+    el color y el fondo heredados (así sirve en una pantalla clara u oscura: los pares de contraste son los de superficie y texto ya probados) y sin animación con movimiento reducido."""
+    standards = pathlib.Path("docs/ux/ESTANDARES_VISUALES.md").read_text(encoding="utf-8")
+    for cls in ("gw-form-group", "gw-form-group__summary", "gw-form-group__body", "gw-fields-row"):
+        assert f".{cls}" in CSS and cls in GUIDE and cls in standards, cls
+    block = CSS[CSS.index("/* ============================================================ Grupos plegables"):CSS.index("/* ============================================================ Recorrido de primera vez")]
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", re.sub(r"/\*.*?\*/", "", block, flags=re.S)), "nada de colores sueltos: solo --gw-*"
+    assert "var(--gw-tap)" in block and "prefers-reduced-motion" in block, "44 px, movimiento reducido"
+    # sin desbordes: columnas minmax(0,1fr), hijos con min-width:0, border-box dentro del grupo y una columna en ancho de celular
+    assert re.search(r"\.gw-fields-row \{[^}]*grid-template-columns: minmax\(0, 1fr\)", block)
+    for n in (2, 3, 4):
+        assert f"repeat({n}, minmax(0, 1fr))" in block
+    assert re.search(r"\.gw-fields-row > \* \{ min-width: 0", block)
+    assert re.search(r"\.gw-form-group \*[^{]*\{ box-sizing: border-box", block)
+    assert re.search(r"@media \(max-width: 480px\)[^}]*\{[^}]*\.gw-fields-row--2[^}]*grid-template-columns: minmax\(0, 1fr\)", block)
+    assert "background" not in re.sub(r"/\*.*?\*/", "", block, flags=re.S), "sin fondo propio: hereda de la pantalla"

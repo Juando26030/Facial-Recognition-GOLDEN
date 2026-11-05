@@ -145,4 +145,16 @@ assert.strictEqual(hLoc.length, 1000);                                          
 assert.ok(ms < 50, `10.000 filas locales con cédula en claro: ${ms.toFixed(1)} ms`);
 assert.ok(ms < 50, `dos búsquedas en caliente: ${ms.toFixed(1)} ms`);
 
+// Plan 5 («No eliminar repetidos»): el serial «123456-2» conserva el guion y NO choca con «1234562»
+const rep = { id: '123456-2', first_name: 'Ana', last_name: 'Repetida', entity: '' };
+const pegada = { id: '1234562', first_name: 'Beto', last_name: 'Otro', entity: '' };
+assert.strictEqual(SC.cedulaKey('123456-2'), '123456-2');
+assert.notStrictEqual(SC.cedulaKey('123456-2'), SC.cedulaKey('1234562'));
+assert.strictEqual(SC.cedulaKey('1.016.100-329'), '1016100329');                  // guion con 3 dígitos detrás: separador de siempre
+assert.strictEqual(SC.cedulaKey('ab123456-12'), 'ab123456-12');                   // pasaporte con serial
+assert.strictEqual(cq('123456-2').cedula, '123456-2');
+assert.ok(mp(rep, '123456-2').coincide, 'el serial se encuentra por su cédula con guion');
+assert.strictEqual(mp(pegada, '123456-2').coincide, false, '«1234562» no es «123456-2»');
+assert.strictEqual(mp(rep, '1234562').coincide, false, '«123456-2» no es «1234562»');
+assert.ok(mp(rep, '123456').coincide, 'la cédula sin serial encuentra también a sus repetidas (predictivo por prefijo)');
 console.log('search_core_check OK');

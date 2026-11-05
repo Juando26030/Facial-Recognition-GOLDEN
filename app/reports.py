@@ -1,5 +1,5 @@
 from app.storage import get_storage, key_of
-from app.xlsafe import safe_frame
+from app.xlsafe import safe_cell, safe_frame
 from app.timeutil import to_local
 import io
 import os
@@ -203,7 +203,7 @@ class ReportManager:
             ]
             for i, text in enumerate(title_lines, start=1):
                 ws.merge_cells(f"A{i}:{last_col_letter}{i}")
-                cell = ws.cell(row=i, column=1, value=text)
+                cell = ws.cell(row=i, column=1, value=safe_cell(text))
                 cell.font = TITLE_FONT
                 cell.alignment = Alignment(horizontal="left", vertical="center")
                 if i == 1:

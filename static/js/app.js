@@ -467,10 +467,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             setButtonLoading(btn, true, "Guardando...");
+            if (window.regPersonForm) window.regPersonForm.applyAll();          // formulario de persona: «Texto al escribir» también en lo que se llenó por lector o por foto de la cédula
             const formData = new FormData(e.target);
             formData.append('event_id', EVENT_ID);
 
-            // Los campos opcionales dinámicos (opcional_1..opcional_30, ver "+ Agregar campo
+            // Los campos opcionales dinámicos (opcional_1..opcional_N, ver "+ Agregar campo
             // opcional") viven como inputs sueltos en el <form> — el backend espera un solo JSON
             // en 'extra_fields', igual que bulk_register por fila.
             const extras = {};
@@ -511,11 +512,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const f = {};
             for (const key of ['id', 'first_name', 'last_name', 'role', 'entity', 'phone', 'email', 'opt_1', 'certificate', 'digital_contact']) { const v = formData.get(key); if (v != null && String(v).trim() !== '') f[key] = String(v).trim(); }
             for (const key of ['extra_fields', 'categories', 'field_labels']) { const v = formData.get(key); if (v) { try { f[key] = JSON.parse(v); } catch (e) { /* se ignora un JSON roto */ } } }
-            if (!f.id || !f.first_name || !f.last_name) { showToast('Escribe la cédula, los nombres y los apellidos.', 'error'); return; }
+            if (!f.id || !f.first_name) { showToast('Escribe la cédula y los nombres.', 'error'); return; }
+            const pf = window.PERSON_FORM && window.PersonForm ? window.PERSON_FORM : null;          // formulario de persona: la alta lleva la versión del formulario con que se hizo
+            if (pf) PersonForm.applyCase(f, pf);
             const photo = formData.get('file');
             const tm = window.RegTimer ? RegTimer.payload() : null;          // 1A: el tiempo viaja en la bandeja y se envía al sincronizar
             if (tm) { f.took_ms = tm.took_ms; f.ui_flow = tm.ui_flow; }
-            try { await box.enqueue(f, `${f.first_name} ${f.last_name}`); } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); return; }
+            try { await box.enqueue(f, `${f.first_name} ${f.last_name || ''}`.trim(), pf ? { form_version: pf.form_version, form_sig: pf.form_sig } : undefined); } catch (e) { showToast(e.message || 'No se pudo guardar en este dispositivo', 'error'); return; }
             if (window.RegTimer) RegTimer.done();
             showToast(`Guardado en este dispositivo${photo && photo.size ? ' (la foto no se guarda sin conexión: agrégala después)' : ''}. Se enviará solo al volver la red.`, 'success');
             regForm.reset();

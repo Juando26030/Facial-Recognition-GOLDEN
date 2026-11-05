@@ -196,6 +196,28 @@
   &lt;span class="gw-error-msg" id="correoError"&gt;Escribe el correo completo, por ejemplo ana@correo.com.&lt;/span&gt;
 &lt;/div&gt;</pre>
 
+  <h3 class="gw-subtitle">Grupos plegables y filas en columnas (formulario de persona)</h3>
+  <p class="gw-lead">Los campos de una persona se agrupan; lo obligatorio va en un grupo abierto y el resto en grupos que se despliegan. Una fila reparte hasta 4 campos en columnas (en el celular, una sola).</p>
+  <details class="gw-form-group" open>
+    <summary class="gw-form-group__summary">Datos principales</summary>
+    <div class="gw-form-group__body">
+      <div class="gw-fields-row gw-fields-row--2">
+        <div class="gw-field"><label class="gw-label" for="g-pf1">Nombres *</label><input class="gw-input" id="g-pf1" type="text" value="Ana María"></div>
+        <div class="gw-field"><label class="gw-label" for="g-pf2">Apellidos</label><input class="gw-input" id="g-pf2" type="text"></div>
+      </div>
+    </div>
+  </details>
+  <details class="gw-form-group">
+    <summary class="gw-form-group__summary">Más datos</summary>
+    <div class="gw-form-group__body"><p class="gw-hint">Cargo, entidad, teléfono y los campos opcionales del evento.</p></div>
+  </details>
+  <pre class="g-pre">&lt;details class="gw-form-group" open&gt;
+  &lt;summary class="gw-form-group__summary"&gt;Datos principales&lt;/summary&gt;
+  &lt;div class="gw-form-group__body"&gt;
+    &lt;div class="gw-fields-row gw-fields-row--2"&gt; …campos… &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/details&gt;</pre>
+
   <h3 class="gw-subtitle">Tabla e insignias de estado</h3>
   <div class="gw-table-wrap">
     <table class="gw-table">
@@ -250,6 +272,31 @@
   &lt;div data-gw-wizard-panel&gt;paso 1&lt;/div&gt; &lt;div data-gw-wizard-panel hidden&gt;paso 2&lt;/div&gt;
   &lt;button data-gw-wizard-prev&gt;Atrás&lt;/button&gt; &lt;button data-gw-wizard-next data-label="Siguiente" data-label-last="Terminar"&gt;&lt;/button&gt;
 &lt;/div&gt;</pre>
+
+  <h3 class="gw-subtitle">Grupo desplegable y barra de guardado global</h3>
+  <p class="gw-lead">Para pantallas de ajustes largas (hoy «Parámetros del evento»): varias tarjetas se agrupan en <code class="g-code">&lt;details class="gw-group"&gt;</code> (teclado: Enter/Espacio en el título). Solo el primero va abierto; la pantalla recuerda lo abierto por usuario (comodidad, con <code class="g-code">try/catch</code>). Los campos NO guardan solos: la barra <code class="g-code">.gw-savebar</code> es el único «Guardar», avisa «Cambios sin guardar», informa «Guardado ✓» o cuáles bloques fallaron (lo demás sí se guardó). Las acciones destructivas siguen inmediatas con confirmación.</p>
+  <div class="g-demo gw-stack">
+    <details class="gw-group" open>
+      <summary class="gw-group__sum"><span class="gw-group__title">Registro y pantalla</span><span class="gw-badge gw-badge--warn gw-group__pending"><svg class="gw-icon" aria-hidden="true"><use href="#i-alert"/></svg>Cambios sin guardar</span><span class="gw-group__hint">Filas por página y cierre de sesión por inactividad.</span></summary>
+      <div class="gw-group__body">
+        <div class="gw-group__item"><h4>Filas por página</h4><div class="gw-field"><label class="gw-label" for="gGrpFilas">Filas de la tabla de registros</label><select class="gw-select" id="gGrpFilas"><option>50</option><option>100</option></select></div></div>
+        <div class="gw-group__item"><h4>Cierre de sesión por inactividad</h4><p class="gw-text-sm gw-muted">Cada tarjeta es un <code class="g-code">.gw-group__item</code>.</p></div>
+      </div>
+    </details>
+    <details class="gw-group"><summary class="gw-group__sum"><span class="gw-group__title">Impresión y escarapela</span><span class="gw-group__hint">Cerrado por defecto.</span></summary><div class="gw-group__body"><div class="gw-group__item">Contenido…</div></div></details>
+    <div class="gw-savebar" data-state="dirty">
+      <div class="gw-savebar__status" role="status"><span class="gw-badge gw-badge--warn">⚠ Cambios sin guardar</span><span class="gw-text-sm gw-muted">En: Filas por página</span></div>
+      <button type="button" class="gw-btn gw-btn--primary">Guardar</button>
+    </div>
+    <div class="gw-savebar" data-state="saved"><div class="gw-savebar__status" role="status"><span class="gw-badge gw-badge--ok">Guardado ✓</span></div><button type="button" class="gw-btn gw-btn--primary" disabled>Guardar</button></div>
+    <div class="gw-savebar" data-state="error"><div class="gw-savebar__status" role="status"><span class="gw-badge gw-badge--err">✕ No todo se guardó</span></div><button type="button" class="gw-btn gw-btn--primary">Guardar</button><ul class="gw-savebar__fail" role="alert"><li>Cierre por inactividad: Debe estar entre 5 y 60 minutos.</li><li>Lo demás sí se guardó. Corrige lo anterior y pulsa «Guardar» otra vez.</li></ul></div>
+  </div>
+  <pre class="g-pre">&lt;div id="paramsRoot"&gt;
+  &lt;details class="gw-group" data-group="registro"&gt;&lt;summary class="gw-group__sum"&gt;&lt;span class="gw-group__title"&gt;Título&lt;/span&gt;&lt;span class="gw-group__hint"&gt;Ayuda corta&lt;/span&gt;&lt;/summary&gt;
+    &lt;div class="gw-group__body"&gt;&lt;div class="gw-group__item" data-psave="clave"&gt;…campos…&lt;/div&gt;&lt;/div&gt;&lt;/details&gt;
+  &lt;div class="gw-savebar" id="paramsSaveBar"&gt;…estado, botón «Guardar», lista de fallos…&lt;/div&gt;
+&lt;/div&gt;
+/* static/js/params-save.js: GWParams.register({ key, label, order, save, reload }); [data-psave] marca lo pendiente; [data-pnodirty] lo excluye. */</pre>
 
   <h3 class="gw-subtitle">Barra de navegación y buscador futuro</h3>
   <p class="gw-lead">La barra de arriba ES el componente <code class="g-code">.gw-nav</code>: en celular se pliega tras «Menú». Reserva el hueco <code class="g-code">&lt;div class="gw-nav__search" data-gw-search-slot hidden&gt;</code> para el buscador «¿qué quieres hacer?» de la Fase 2 (hoy no existe y está oculto). La barra lateral actual (<code class="g-code">templates/_sidebar.html</code>) ya usa los íconos y el tamaño táctil de la base.</p>

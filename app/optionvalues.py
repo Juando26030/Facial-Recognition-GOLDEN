@@ -17,7 +17,7 @@ _IDENTIFYING = re.compile(r"c[eé]dula|documento|identific|nombre|apellido|corre
 
 def check_key(key: str, label: str = "") -> None:
     """Lanza ValueError (mensaje en español) si el campo no se puede consultar."""
-    if not (key in ALLOWED_FIXED or re.fullmatch(r"opcional_\d{1,2}", key or "")):
+    if not (key in ALLOWED_FIXED or re.fullmatch(r"opcional_\d+", key or "")):
         raise ValueError(BLOCKED_MESSAGE)
     if key.startswith("opcional_") and _IDENTIFYING.search(label or ""):
         raise ValueError(BLOCKED_MESSAGE)

@@ -11,11 +11,12 @@
     <script src="{{ url_for('static', path='js/option-tools.js') }}"></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <style>
         .params-table { width:100%; border-collapse:collapse; }
         .params-table th, .params-table td { padding:0.7rem 0.6rem; border-bottom:1px solid #eee; vertical-align:top; text-align:left; font-size:0.9rem; }
-        .params-table th { color:#666; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; }
+        .params-table th { color:var(--gw-text-muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.5px; }
         .params-table select, .params-table textarea { width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:6px 8px; font-size:0.88rem; font-family:inherit; }
         .params-table textarea { min-height:60px; }
         .params-table tr.dragging { opacity:0.4; background:#fff8e1; }
@@ -31,7 +32,7 @@
       {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
     </a>
     <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
+      <span style="color:var(--gw-text-muted); font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post" style="margin:0;">
         <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
       </form>
@@ -56,29 +57,44 @@
         <h2>Parámetros del <span class="gradient-text">Evento</span></h2>
       </div>
 
-      <div class="app-container">
+      <div class="app-container" id="paramsRoot">
+        <details class="gw-group" data-group="registro" id="grp_registro">
+          <summary class="gw-group__sum"><span class="gw-group__title">Registro y pantalla</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Filas por página y cierre de sesión por inactividad.</span></summary>
+          <div class="gw-group__body">
         <!-- Filas por página de la tabla del directorio (en vivo y lista local). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Filas por página</h4>
-          <label style="display:flex; gap:8px; align-items:center;">Filas por página de la tabla de registros:
+        <div class="gw-group__item">
+          <h4>Filas por página</h4>
+          <label data-psave="page" style="display:flex; gap:8px; align-items:center;">Filas por página de la tabla de registros:
             <select id="directoryPageSize" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
               {% for n in (10, 20, 50, 100, 200) %}<option value="{{ n }}" {% if (event.directory_page_size or 50) == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
             </select></label>
-          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior / Siguiente» y «Ir a la página» llegan a cualquier fila.</p>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior / Siguiente» y «Ir a la página» llegan a cualquier fila.</p>
+        </div>
+        <!-- Plan 7: quién ve el engranaje «Configuración del registro» (solo visual; app/registro_gear.py). -->
+        <div class="gw-group__item">
+          <h4>Configuración del registro</h4>
+          <label data-psave="reggear" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="checkbox" id="regGearDig" {% if registro_gear_dig %}checked{% endif %}> Mostrar configuración del registro a digitadores</label>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Apagada por defecto: en la pantalla de Registro, coordinador y administradores siempre ven el engranaje (impresora, autoregistro y auto-impresión); el digitador solo si esto está encendido. Si la apagas, lo ya configurado se conserva: solo se oculta el engranaje.</p>
         </div>
         <!-- Cierre de sesión por inactividad (app/idle.py, docs/22): tiempo propio de este evento, solo mientras está en proceso. -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Cierre de sesión por inactividad</h4>
-          <label style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">Minutos sin uso antes de cerrar la sesión del personal:
+        <div class="gw-group__item">
+          <h4>Cierre de sesión por inactividad</h4>
+          <label data-psave="idle" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">Minutos sin uso antes de cerrar la sesión del personal:
             <input type="number" id="idleMinutes" min="5" max="60" step="1" value="{{ event.idle_minutes if event.idle_minutes else '' }}" placeholder="General: {{ idle_general_minutes }}" style="width:110px; padding:6px 10px; border-radius:8px; border:1px solid #ccc;">
-            <button type="button" id="idleMinutesSave" class="small-btn">Guardar</button></label>
-          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">De 5 a 60 minutos. Déjalo vacío para usar el general ({{ idle_general_minutes }} minutos). Solo rige mientras el evento está «En proceso» y para quienes trabajan en él; si no está en proceso, rige el general. Cuenta el uso real (clics, teclas, toques, scroll): lo que la pantalla refresca sola no mantiene la sesión abierta. Un minuto antes aparece un aviso con «Seguir conectado». Los ingresos hechos sin conexión no se pierden.</p>
+            <button type="button" id="idleMinutesSave" class="small-btn" hidden>Guardar</button></label>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">De 5 a 60 minutos. Déjalo vacío para usar el general ({{ idle_general_minutes }} minutos). Solo rige mientras el evento está «En proceso» y para quienes trabajan en él; si no está en proceso, rige el general. Cuenta el uso real (clics, teclas, toques, scroll): lo que la pantalla refresca sola no mantiene la sesión abierta. Un minuto antes aparece un aviso con «Seguir conectado». Los ingresos hechos sin conexión no se pierden.</p>
         </div>
+          </div>
+        </details>
+        <details class="gw-group" data-group="facial" id="grp_facial">
+          <summary class="gw-group__sum"><span class="gw-group__title">Reconocimiento facial y privacidad</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Si el evento usa rostro, la autorización, la privacidad de los datos y las solicitudes de los titulares.</span></summary>
+          <div class="gw-group__body">
         <!-- Autorización biométrica (L1): quién es el Responsable del tratamiento y cada cuánto se pide la autorización. SIN CONSTANCIA de la auditora hasta que emita la suya. -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Reconocimiento facial: paso guiado</h4>
-          <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
-          <div style="display:grid; gap:8px; max-width:560px;">
+        <div class="gw-group__item">
+          <h4>Reconocimiento facial: paso guiado</h4>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.8rem;">El rostro es voluntario: quien no quiera, entra siempre por cédula o QR. Responde los pasos y abajo verás, en palabras simples, qué pasará en la puerta y qué falta.</p>
+          <div data-psave="cc" style="display:grid; gap:8px; max-width:560px;">
             <fieldset style="border:0; padding:0; margin:0; display:grid; gap:8px;">
               <legend style="font-weight:700; margin-bottom:4px;">¿Este evento usa reconocimiento facial?</legend>
               <!-- Única fuente de verdad (Fase 0): aquí y solo aquí se decide si el evento usa rostro. Las dos opciones se guardan como facial_enabled / biometrics_locked. -->
@@ -104,9 +120,9 @@
               <div id="aceptarQr" style="width:180px; height:180px;"></div>
               <button type="button" id="aceptarPrint" class="golden-btn" style="width:auto; margin-top:6px;">Imprimir póster con el QR</button>
               {% if event.controller_mode == "golden" %}
-              <div id="amBox" style="margin:10px 0; padding:10px 12px; border:1px solid #d9dce6; border-radius:12px; font-size:0.86rem;">
+              <div id="amBox" data-pnodirty style="margin:10px 0; padding:10px 12px; border:1px solid #d9dce6; border-radius:12px; font-size:0.86rem;">
                 <b>Enviar el enlace personal por correo a las personas del listado</b>
-                <p style="margin:4px 0 6px; color:#555;">Máximo 25 correos por minuto. Solo adultos con correo, a quienes no se les ha enviado y que no se inscribieron por formulario. Nunca se envía dos veces a la misma persona.</p>
+                <p style="margin:4px 0 6px; color:var(--gw-text-muted);">Máximo 25 correos por minuto. Solo adultos con correo, a quienes no se les ha enviado y que no se inscribieron por formulario. Nunca se envía dos veces a la misma persona.</p>
                 <div id="amStatus" role="status" aria-live="polite" style="margin:4px 0 8px;"></div>
                 <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
                   <input type="email" id="amTo" placeholder="Correo para la prueba" style="min-width:210px;">
@@ -123,105 +139,37 @@
                 <p style="margin:6px 0 0; color:#a12631; font-size:0.8rem;">🔒 <b>El CSV de enlaces es confidencial:</b> cada enlace es la llave personal de una persona. No lo compartas, no lo subas a carpetas abiertas y bórralo cuando termines. Cada descarga queda registrada (quién y cuándo).</p>
               </div>
               {% endif %}
-              <p style="color:#666; font-size:0.78rem;">Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en puerta con el documento o el QR.</p>
+              <p style="color:var(--gw-text-muted); font-size:0.78rem;">Solo pueden aceptar las personas ya inscritas en el evento. Su aceptación queda «por verificar» hasta que el personal confirme su identidad en puerta con el documento o el QR.</p>
             </div>
             <label style="display:flex; gap:8px; align-items:flex-start; margin:4px 0 8px;"><input type="checkbox" id="ccFaceDoor" {% if event.face_door_enabled %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Entrada con rostro en autoservicio («Entrar con mi rostro»): la persona pulsa el botón y mira a la cámara; con una coincidencia clara el ingreso se registra solo y el personal lo supervisa. <a href="/kiosk/{{ event.id }}/rostro">Abrir la pantalla de la puerta</a></span></label>
             {% if event.face_door_enabled %}<p id="faceDoorNoLiveness" role="alert" style="margin:0 0 8px; padding:8px 10px; border-radius:8px; background:#fdecea; color:#a12631; font-weight:700;">⚠️ Sin prueba de vida: requiere supervisión constante. Regla del día del evento: siempre una persona frente a la pantalla de la puerta.</p>{% endif %}
             <label>Cuándo se pide la autorización
               <select id="ccPrompt"><option value="once" {% if event.consent_prompt_mode == "once" %}selected{% endif %}>Una sola vez por persona y evento (recomendado)</option><option value="every_scan" {% if event.consent_prompt_mode == "every_scan" %}selected{% endif %}>Antes de cada uso (botones cortos)</option></select></label>
-            <button type="button" id="ccSave" class="golden-btn golden-btn-primary" style="width:auto;">Guardar y revisar</button>
+            <button type="button" id="ccSave" class="golden-btn golden-btn-primary" style="width:auto;" hidden>Guardar y revisar</button>
           </div>
           <div id="bsSummary" role="status" aria-live="polite" style="margin-top:1rem; padding:12px 14px; border-radius:12px; background:#f6f7fb; font-size:0.86rem; line-height:1.5;"></div>
           {% if staff_role == "super_admin" %}
           <hr style="margin:1rem 0;">
           <h5 style="margin:0 0 0.4rem;">Foto biométrica en la escarapela (solo super administrador)</h5>
-          <label style="display:flex; gap:8px; align-items:flex-start; margin:0 0 1rem;"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Permitir imprimir la foto biométrica en la escarapela. <b>Apagado</b> (recomendado mientras la auditora no lo apruebe): el elemento «foto» de la escarapela sale como un recuadro vacío, en la impresa y en la digital.</span></label>
+          <label data-psave="bbp" style="display:flex; gap:8px; align-items:flex-start; margin:0 0 1rem;"><input type="checkbox" id="badgeBioPhoto" {% if event.badge_bio_photo_allowed %}checked{% endif %} style="width:18px; height:18px; margin-top:2px;"> <span>Permitir imprimir la foto biométrica en la escarapela. <b>Apagado</b> (recomendado mientras la auditora no lo apruebe): el elemento «foto» de la escarapela sale como un recuadro vacío, en la impresa y en la digital.</span></label>
           <h5 style="margin:0 0 0.4rem;">Pre-cálculo de vectores faciales (solo super administrador)</h5>
-          <p style="color:#666; font-size:0.78rem; margin:0 0 0.5rem;">Solo con el anexo firmado (declaraciones, garantías e indemnidad). Permite que la persona entre por rostro en su primera entrada con un clic en la pantalla de autorización.</p>
-          <div style="display:grid; gap:8px; max-width:560px;">
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.5rem;">Solo con el anexo firmado (declaraciones, garantías e indemnidad). Permite que la persona entre por rostro en su primera entrada con un clic en la pantalla de autorización.</p>
+          <div data-psave="pc" style="display:grid; gap:8px; max-width:560px;">
             <label>Referencia del anexo firmado <input type="text" id="pcRef" value="{{ event.precalculo_anexo_ref or '' }}"></label>
             <label>Fecha del anexo <input type="date" id="pcDate" value="{{ event.precalculo_anexo_fecha.isoformat() if event.precalculo_anexo_fecha else '' }}"></label>
             <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="pcGarantia" {% if event.precalculo_garantia %}checked{% endif %} style="width:18px; height:18px;"> El cliente garantiza (por escrito) que cada titular dio su autorización previa, expresa e informada, y asume la indemnidad</label>
             <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="pcOn" {% if event.precalculo_autorizado %}checked{% endif %} style="width:18px; height:18px;"> Pre-cálculo autorizado en este evento</label>
-            <button type="button" id="pcSave" class="golden-btn" style="width:auto;">Guardar pre-cálculo</button>
-          </div>
-          {% endif %}
-        </div>
-        <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Certificados</h4>
-          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
-          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
-        </div>
-        <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
-        <div id="sharedPrintCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Impresión compartida</h4>
-          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="sharedPrintEnabled" {% if event.shared_print_enabled %}checked{% endif %} style="width:22px; height:22px;"> Activar la impresión compartida y por USB (Brother QL-800 conectada a un Android con Chrome)</label>
-          <p style="color:#555; font-size:0.85rem; margin:0.5rem 0 0;">Apagada, todo imprime como siempre. Encendida, cada equipo que abre el Registro de este evento reporta si tiene la impresora conectada; aquí eliges, para cada usuario, si imprime en su propio equipo o en el equipo de otro usuario que tenga impresora (sin límite; con más de 6 en una misma impresora puede haber espera). La escarapela llega sola a ese equipo y se imprime sin que nadie acepte nada. Lo que no se imprime en 5 minutos queda en la «Cola» de quien registró, para reimprimir.</p>
-          <div id="sharedPrintTable" style="margin-top:0.8rem;"{% if not event.shared_print_enabled %} hidden{% endif %}></div>
-        </div>
-        <!-- Puestos de impresión (26-oct-2026): configuración por cuenta, guardada en el SERVIDOR. app/routers/print_stations.py -->
-        <div id="stationsCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Puestos de impresión</h4>
-          <p style="color:#555; font-size:0.85rem; margin:0 0 0.8rem;">Por cada cuenta: si es <b>Puesto de impresión</b>, si usa <b>solo lector</b> en «Registro touch» y si en su Registro se <b>muestra o esconde</b> el menú de impresión (⚙️, Conectar impresora, Cola). La etiqueta sale con los valores del evento (más abajo) y lo que se ajuste en ⚙️ de cada computador. A qué cuentas atiende cada puesto se elige en «Impresión compartida».</p>
-          <div id="stationsTable">Cargando…</div>
-        </div>
-        <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel «⚙️ Impresión» del Registro. app/routers/print_settings.py -->
-        <div id="printSettingsCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Impresión de escarapelas en la QL-800 (valores del evento)</h4>
-          <p style="color:#555; font-size:0.85rem; margin:0 0 0.8rem;">Cinta puesta, giro, recorte y corte para todos los equipos de este evento. La cinta de siempre es la <b>continua de 62 mm (DK-22205)</b>. Cada equipo puede cambiarlos solo para sí en el botón «⚙️ Impresión» del Registro, y «Restablecer» lo devuelve a estos valores.</p>
-          <div id="psForm" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px 18px; align-items:end;">
-            <label>Ancho de la cinta<br><select id="ps_tapeWidth" style="min-height:40px; width:100%;"></select></label>
-            <label>Tipo de cinta<br><select id="ps_tapeType" style="min-height:40px; width:100%;"><option value="continuous">Continua</option><option value="diecut">Troquelada (largo fijo)</option></select></label>
-            <label id="ps_lengthRow">Largo de la etiqueta (mm)<br><input type="number" id="ps_lengthMm" min="10" max="1000" step="1" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
-            <label>Giro<br><select id="ps_rotation" style="min-height:40px; width:100%;"><option value="auto">Automático (el lado largo a lo largo de la cinta)</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
-            <label id="ps_cropRow"><input type="checkbox" id="ps_crop"> Recortar al contenido, con margen (mm)<br><input type="number" id="ps_cropMarginMm" min="0" max="30" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
-            <label>Margen de avance (mm)<br><input type="number" id="ps_feedMm" min="0" max="10" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
-            <label><input type="checkbox" id="ps_cut"> Cortar al final de cada etiqueta</label>
-            <label><input type="checkbox" id="ps_mirror"> Espejo</label>
-            <label><input type="checkbox" id="ps_invert"> Invertir (negativo)</label>
-          </div>
-          <div style="margin-top:0.9rem; display:flex; gap:10px; flex-wrap:wrap;">
-            <button type="button" class="golden-btn golden-btn-primary" id="psSave" style="width:auto; padding:0.5rem 1.4rem;">Guardar valores del evento</button>
-            <button type="button" class="golden-btn" id="psReset" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">↺ Volver a los de fábrica</button>
-          </div>
-        </div>
-        <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Escarapela digital</h4>
-          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
-          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo y el SMS salen solo si el envío está configurado en el sistema; si no, el mensaje no le llega a nadie (pregunta al equipo técnico si tienes dudas).</p>
-          {% if event.digital_badge_enabled %}
-          <div id="mailEditor" style="margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
-            <h5 style="margin:0 0 0.4rem;">✉️ Correo que recibe la persona</h5>
-            <p style="color:#666; font-size:0.78rem; margin:0 0 0.5rem;">Escribe el correo como quieras (negritas, enlaces, imágenes). Las <b>variables</b> se reemplazan por los datos de cada persona. Debe llevar el <b>Botón</b> o el <b>Enlace</b> a la escarapela.</p>
-            <input type="text" id="mailSubject" placeholder="Asunto" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; margin-bottom:6px;">
-            <div id="mailBar" style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-bottom:4px;">
-              <button type="button" data-cmd="bold" title="Negrita"><b>B</b></button><button type="button" data-cmd="italic" title="Cursiva"><i>I</i></button><button type="button" data-cmd="underline" title="Subrayado"><u>U</u></button>
-              <button type="button" data-cmd="insertUnorderedList" title="Lista">• Lista</button><button type="button" data-cmd="justifyCenter" title="Centrar">↔ Centrar</button>
-              <input type="color" id="mailColor" title="Color del texto" value="#222222" style="width:32px; height:28px; padding:0; border:1px solid #ccc; border-radius:6px;">
-              <button type="button" id="mailLink">🔗 Enlace</button><button type="button" id="mailImg">🖼️ Imagen</button><input type="file" id="mailImgFile" accept="image/*" hidden>
-              <select id="mailVar" style="padding:5px; border:1px solid #ccc; border-radius:6px;"><option value="">+ Insertar variable…</option></select>
-            </div>
-            <div id="mailBody" contenteditable="true" style="min-height:200px; border:1px solid #ccc; border-radius:8px; padding:12px; background:#fff; font-family:Arial,sans-serif; font-size:15px; line-height:1.5;"></div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;">
-              <button type="button" id="mailSave" style="padding:8px 16px; font-weight:700;">Guardar correo</button>
-              <button type="button" id="mailPreview" style="padding:8px 14px;">👁 Vista previa</button>
-              <button type="button" id="mailReset" style="padding:8px 14px;">Volver al texto por defecto</button>
-              <input type="email" id="mailTo" placeholder="correo para la prueba" style="padding:7px; border:1px solid #ccc; border-radius:8px;"><button type="button" id="mailTest" style="padding:8px 14px;">Enviar prueba</button>
-            </div>
-            <div id="mailStatus" style="font-size:0.8rem; margin-top:6px;"></div>
-            <iframe id="mailFrame" sandbox="" style="display:none; width:100%; height:420px; border:1px solid #ddd; border-radius:8px; margin-top:8px; background:#fff;"></iframe>
+            <button type="button" id="pcSave" class="golden-btn" style="width:auto;" hidden>Guardar pre-cálculo</button>
           </div>
           {% endif %}
         </div>
         {% if event.facial_enabled %}
         <!-- Privacidad de datos biométricos (Ley 1581 de 2012: dato sensible). -->
-        <div id="privacyCard" style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">🔒 Privacidad de datos biométricos</h4>
+        <div id="privacyCard" class="gw-group__item">
+          <h4>🔒 Privacidad de datos biométricos</h4>
           <p id="privInfo" style="font-size:0.85rem; margin:0 0 0.5rem;">Cargando…</p>
-          <p style="color:#666; font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
-          <p style="color:#555; font-size:0.78rem; margin:0 0 0.8rem;">💡 Para autorizar el uso del rostro en los formularios web, crea (más abajo, en los campos del evento) un campo <b>de consentimiento aparte</b> y usa «Insertar texto tipo → Autorización del dato biométrico». Debe ser una casilla separada de la autorización general de datos.</p>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.8rem;">El rostro (foto y datos del rostro) es un dato sensible: solo se guarda con la autorización expresa de la persona (queda constancia de cuándo y cómo) y quien no la da se registra por cédula. Puedes borrarlo aquí cuando ya no se necesite. Las personas que siguen en otro evento activo del mismo cliente se conservan.</p>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.8rem;">💡 Para autorizar el uso del rostro en los formularios web, crea (más abajo, en los campos del evento) un campo <b>de consentimiento aparte</b> y usa «Insertar texto tipo → Autorización del dato biométrico». Debe ser una casilla separada de la autorización general de datos.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <input type="text" id="privCedula" placeholder="Cédula de la persona" aria-label="Cédula de la persona a la que se le borrará el rostro" style="padding:8px; border:1px solid #ccc; border-radius:8px; max-width:200px;">
             <button type="button" id="privPerson" style="padding:8px 14px;">Borrar solo el rostro de esta persona</button>
@@ -234,9 +182,9 @@
         {% endif %}
         <!-- Solicitudes de privacidad (consultas y reclamos de habeas data): radicado AÑO-CONSECUTIVO, fecha límite en días hábiles y bandera «reclamo en trámite». -->
         {% if staff_role in ["admin", "super_admin"] %}
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.4rem; color:var(--golden-dark);">Solicitudes de privacidad (consultas y reclamos)</h4>
-          <p style="color:#666; font-size:0.78rem; margin:0 0 0.6rem;">Consulta: 10 días hábiles. Reclamo: 15 días hábiles. La bandera «reclamo en trámite» se activa en máximo 2 días hábiles. Correo de privacidad: soporteit@goldenlogisticas.com.</p>
+        <div class="gw-group__item">
+          <h4>Solicitudes de privacidad (consultas y reclamos)</h4>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.6rem;">Consulta: 10 días hábiles. Reclamo: 15 días hábiles. La bandera «reclamo en trámite» se activa en máximo 2 días hábiles. Correo de privacidad: soporteit@goldenlogisticas.com.</p>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-bottom:0.8rem;">
             <label>Canal <select id="prCanal"><option value="email">Correo</option><option value="presencial">Presencial</option><option value="web">Web</option><option value="telefono">Teléfono</option><option value="otro">Otro</option></select></label>
             <label>Tipo <select id="prTipo"><option value="consulta">Consulta</option><option value="reclamo">Reclamo</option><option value="actualizacion">Actualización</option><option value="supresion">Supresión</option><option value="revocacion">Revocación</option><option value="prueba_autorizacion">Prueba de la autorización</option></select></label>
@@ -247,10 +195,93 @@
           <div style="overflow-x:auto;"><table id="prTabla" style="width:100%; font-size:0.82rem; border-collapse:collapse;"></table></div>
         </div>
         {% endif %}
+          </div>
+        </details>
+        <details class="gw-group" data-group="impresion" id="grp_impresion">
+          <summary class="gw-group__sum"><span class="gw-group__title">Impresión y escarapela</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Impresión compartida, puestos de impresión y valores de la impresora del evento.</span></summary>
+          <div class="gw-group__body">
+        <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
+        <div id="sharedPrintCard" class="gw-group__item">
+          <h4>Impresión compartida</h4>
+          <label data-psave="sharedprint" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="sharedPrintEnabled" {% if event.shared_print_enabled %}checked{% endif %} style="width:22px; height:22px;"> Activar la impresión compartida y por USB (Brother QL-800 conectada a un Android con Chrome)</label>
+          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin:0.5rem 0 0;">Apagada, todo imprime como siempre. Encendida, cada equipo que abre el Registro de este evento reporta si tiene la impresora conectada; aquí eliges, para cada usuario, si imprime en su propio equipo o en el equipo de otro usuario que tenga impresora (sin límite; con más de 6 en una misma impresora puede haber espera). La escarapela llega sola a ese equipo y se imprime sin que nadie acepte nada. Lo que no se imprime en 5 minutos queda en la «Cola» de quien registró, para reimprimir.</p>
+          <div id="sharedPrintTable" data-psave="sharedprint" style="margin-top:0.8rem;"{% if not event.shared_print_enabled %} hidden{% endif %}></div>
+        </div>
+        <!-- Puestos de impresión (26-oct-2026): configuración por cuenta, guardada en el SERVIDOR. app/routers/print_stations.py -->
+        <div id="stationsCard" class="gw-group__item">
+          <h4>Puestos de impresión</h4>
+          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin:0 0 0.8rem;">Por cada cuenta: si es <b>Puesto de impresión</b>, si usa <b>solo lector</b> en «Registro touch» y si en su Registro se <b>muestra o esconde</b> el menú de impresión (⚙️, Conectar impresora, Cola). La etiqueta sale con los valores del evento (más abajo) y lo que se ajuste en ⚙️ de cada computador. A qué cuentas atiende cada puesto se elige en «Impresión compartida».</p>
+          <div id="stationsTable" data-psave="stations">Cargando…</div>
+        </div>
+        <!-- Impresión de escarapelas: valores del EVENTO (orden B, 23-oct-2026). Cada equipo puede sobrescribirlos en su panel «⚙️ Impresión» del Registro. app/routers/print_settings.py -->
+        <div id="printSettingsCard" class="gw-group__item">
+          <h4>Impresión de escarapelas en la QL-800 (valores del evento)</h4>
+          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin:0 0 0.8rem;">Cinta puesta, giro, recorte y corte para todos los equipos de este evento. La cinta de siempre es la <b>continua de 62 mm (DK-22205)</b>. Cada equipo puede cambiarlos solo para sí en el botón «⚙️ Impresión» del Registro, y «Restablecer» lo devuelve a estos valores.</p>
+          <div id="psForm" data-psave="ps" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px 18px; align-items:end;">
+            <label>Ancho de la cinta<br><select id="ps_tapeWidth" style="min-height:40px; width:100%;"></select></label>
+            <label>Tipo de cinta<br><select id="ps_tapeType" style="min-height:40px; width:100%;"><option value="continuous">Continua</option><option value="diecut">Troquelada (largo fijo)</option></select></label>
+            <label id="ps_lengthRow">Largo de la etiqueta (mm)<br><input type="number" id="ps_lengthMm" min="10" max="1000" step="1" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label>Giro<br><select id="ps_rotation" style="min-height:40px; width:100%;"><option value="auto">Automático (el lado largo a lo largo de la cinta)</option><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
+            <label id="ps_cropRow"><input type="checkbox" id="ps_crop"> Recortar al contenido, con margen (mm)<br><input type="number" id="ps_cropMarginMm" min="0" max="30" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label>Margen de avance (mm)<br><input type="number" id="ps_feedMm" min="0" max="10" step="0.5" style="min-height:40px; width:100%; box-sizing:border-box;"></label>
+            <label><input type="checkbox" id="ps_cut"> Cortar al final de cada etiqueta</label>
+            <label><input type="checkbox" id="ps_mirror"> Espejo</label>
+            <label><input type="checkbox" id="ps_invert"> Invertir (negativo)</label>
+          </div>
+          <div style="margin-top:0.9rem; display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="golden-btn golden-btn-primary" id="psSave" style="width:auto; padding:0.5rem 1.4rem;" hidden>Guardar valores del evento</button>
+            <button type="button" class="golden-btn" id="psReset" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">↺ Volver a los de fábrica</button>
+          </div>
+        </div>
+          </div>
+        </details>
+        <details class="gw-group" data-group="correo" id="grp_correo">
+          <summary class="gw-group__sum"><span class="gw-group__title">Correo, escarapela digital y certificados</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Escarapela digital con su correo, y módulo de certificados.</span></summary>
+          <div class="gw-group__body">
+        <!-- Escarapela digital (ítem 17, reunión 2026-09-21). -->
+        <div class="gw-group__item">
+          <h4>Escarapela digital</h4>
+          <label data-psave="digital" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="digitalEnabled" {% if event.digital_badge_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar la escarapela digital en este evento</label>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Agrega un campo para pedir el correo o celular de la persona (se valida). Al guardar a la persona con ese dato se le envía automáticamente un enlace a su escarapela en una página propia, con una animación y un reloj en vivo que evitan que se pase una captura de pantalla. El correo y el SMS salen solo si el envío está configurado en el sistema; si no, el mensaje no le llega a nadie (pregunta al equipo técnico si tienes dudas).</p>
+          {% if event.digital_badge_enabled %}
+          <div id="mailEditor" data-psave="mail" style="margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
+            <h5 style="margin:0 0 0.4rem;">✉️ Correo que recibe la persona</h5>
+            <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0 0 0.5rem;">Escribe el correo como quieras (negritas, enlaces, imágenes). Las <b>variables</b> se reemplazan por los datos de cada persona. Debe llevar el <b>Botón</b> o el <b>Enlace</b> a la escarapela.</p>
+            <input type="text" id="mailSubject" placeholder="Asunto" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; margin-bottom:6px;">
+            <div id="mailBar" data-pnodirty style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-bottom:4px;">
+              <button type="button" data-cmd="bold" title="Negrita"><b>B</b></button><button type="button" data-cmd="italic" title="Cursiva"><i>I</i></button><button type="button" data-cmd="underline" title="Subrayado"><u>U</u></button>
+              <button type="button" data-cmd="insertUnorderedList" title="Lista">• Lista</button><button type="button" data-cmd="justifyCenter" title="Centrar">↔ Centrar</button>
+              <input type="color" id="mailColor" title="Color del texto" value="#222222" style="width:32px; height:28px; padding:0; border:1px solid #ccc; border-radius:6px;">
+              <button type="button" id="mailLink">🔗 Enlace</button><button type="button" id="mailImg">🖼️ Imagen</button><input type="file" id="mailImgFile" accept="image/*" hidden>
+              <select id="mailVar" style="padding:5px; border:1px solid #ccc; border-radius:6px;"><option value="">+ Insertar variable…</option></select>
+            </div>
+            <div id="mailBody" contenteditable="true" style="min-height:200px; border:1px solid #ccc; border-radius:8px; padding:12px; background:#fff; font-family:Arial,sans-serif; font-size:15px; line-height:1.5;"></div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;">
+              <button type="button" id="mailSave" style="padding:8px 16px; font-weight:700;" hidden>Guardar correo</button>
+              <button type="button" id="mailPreview" style="padding:8px 14px;">👁 Vista previa</button>
+              <button type="button" id="mailReset" style="padding:8px 14px;">Volver al texto por defecto</button>
+              <input type="email" id="mailTo" data-pnodirty placeholder="correo para la prueba" style="padding:7px; border:1px solid #ccc; border-radius:8px;"><button type="button" id="mailTest" style="padding:8px 14px;">Enviar prueba</button>
+            </div>
+            <div id="mailStatus" style="font-size:0.8rem; margin-top:6px;"></div>
+            <iframe id="mailFrame" sandbox="" style="display:none; width:100%; height:420px; border:1px solid #ddd; border-radius:8px; margin-top:8px; background:#fff;"></iframe>
+          </div>
+          {% endif %}
+        </div>
+        <!-- Módulo de certificados (ítem 5, reunión 2026-09-21). -->
+        <div class="gw-group__item">
+          <h4>Certificados</h4>
+          <label data-psave="cert" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="certificatesEnabled" {% if event.certificates_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el módulo de certificados en este evento</label>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Al activarlo aparece el campo "Certificado" (Sí/No, por defecto No; aquí solo se cambia su posición y si es obligatorio), un diseñador de certificado en el menú del evento y, cuando el evento esté Finalizado, la sección "Certificados" para descargar el ZIP de PDFs de quienes tengan Certificado = Sí.{% if event.certificates_enabled %} <a href="/kiosk/{{ event.id }}/certificado" style="color:var(--golden-primary); font-weight:600;">Ir al diseñador de certificado →</a>{% endif %}</p>
+        </div>
+          </div>
+        </details>
+        <details class="gw-group" data-group="areas" id="grp_areas">
+          <summary class="gw-group__sum"><span class="gw-group__title">Áreas e inventario</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Control de entrada y salida por zonas y reparto de insumos.</span></summary>
+          <div class="gw-group__body">
         <!-- Control de Áreas y de Inventario (ítem 9, reunión 2026-09-21): cada módulo se activa aquí y su configuración aparece debajo. -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Áreas</h4>
-          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de entrada/salida por zonas</label>
+        <div class="gw-group__item">
+          <h4>Control de Áreas</h4>
+          <label data-psave="mod_areas" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="areasEnabled" {% if event.areas_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de entrada/salida por zonas</label>
           <div id="areasConfig" style="display:{{ 'block' if event.areas_enabled else 'none' }}; margin-top:0.8rem;">
             <table class="params-table"><thead><tr><th>Zona</th><th style="width:150px;">Permitir reingresos</th><th style="width:90px;"></th></tr></thead><tbody id="areasBody"></tbody></table>
             <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:0.8rem;">
@@ -258,12 +289,12 @@
               <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
               <button type="button" id="addAreaBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar zona</button>
             </div>
-            <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Con "permitir reingresos" apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula/QR/facial) usa el "Modo autoregistro" del evento. <a href="/kiosk/{{ event.id }}/areas" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Áreas →</a></p>
+            <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Con "permitir reingresos" apagado, la persona solo puede entrar una vez a esa zona (un segundo intento da alerta roja). El registro (cédula/QR/facial) usa el "Modo autoregistro" del evento. <a href="/kiosk/{{ event.id }}/areas" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Áreas →</a></p>
           </div>
         </div>
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Control de Inventario</h4>
-          <label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de inventario (repartir insumos)</label>
+        <div class="gw-group__item">
+          <h4>Control de Inventario</h4>
+          <label data-psave="mod_inventory" style="display:flex; gap:8px; align-items:center;"><input type="checkbox" id="inventoryEnabled" {% if event.inventory_enabled %}checked{% endif %} style="width:18px; height:18px;"> Activar el control de inventario (repartir insumos)</label>
           <div id="inventoryConfig" style="display:{{ 'block' if event.inventory_enabled else 'none' }}; margin-top:0.8rem;">
             <table class="params-table"><thead><tr><th>Ítem</th><th style="width:130px;">Cantidad inicial</th><th style="width:170px;">Varias unidades a la vez</th><th style="width:140px;">Entregado / Disponible</th><th style="width:90px;"></th></tr></thead><tbody id="itemsBody"></tbody></table>
             <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:0.8rem;">
@@ -272,37 +303,24 @@
               <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="checkbox" id="newItemMulti"> Varias unidades a la vez</label>
               <button type="button" id="addItemBtn" class="golden-btn" style="width:auto; padding:0.55rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar ítem</button>
             </div>
-            <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al entregar, el disponible se descuenta solo. <a href="/kiosk/{{ event.id }}/inventario" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Inventario →</a></p>
+            <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Al entregar, el disponible se descuenta solo. <a href="/kiosk/{{ event.id }}/inventario" style="color:var(--golden-primary); font-weight:600;">Ir a Control de Inventario →</a></p>
           </div>
         </div>
-        <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE
-             evento; los demás eventos siguen con el logo de Golden. Se aplica al elegir, sin "Guardar cambios". -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Logo del evento</h4>
-          <div style="display:flex; gap:1.2rem; flex-wrap:wrap; align-items:center;" id="logoOptions">
-            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="default" {% if event.logo_mode == "default" %}checked{% endif %}> Mostrar logo de Golden</label>
-            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="hidden" {% if event.logo_mode == "hidden" %}checked{% endif %}> Ocultar logo</label>
-            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="custom" {% if event.logo_mode == "custom" %}checked{% endif %} {% if not event.logo_path %}disabled{% endif %}> Usar logo propio</label>
-            <input type="file" id="logoFile" accept="image/*" style="max-width:240px;">
           </div>
-          <div id="logoSize" style="display:{{ 'flex' if event.logo_mode == 'custom' else 'none' }}; gap:1.2rem; flex-wrap:wrap; align-items:center; margin-top:0.7rem;">
-            <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;">Alto del logo: <b id="logoHv">{{ event.logo_height }}</b> px
-              <input type="range" id="logoH" min="30" max="80" step="5" value="{{ event.logo_height }}" style="width:180px;"></label>
-            <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="logo" {% if event.logo_fit != "banner" %}checked{% endif %}> Logo completo</label>
-            <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="banner" {% if event.logo_fit == "banner" %}checked{% endif %}> Banner (rellena de lado a lado, recorta lo que sobre)</label>
-          </div>
-          <p style="color:#666; font-size:0.78rem; margin:0.5rem 0 0;">Al subir una imagen se activa "Usar logo propio" (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia este evento.</p>
-        </div>
+        </details>
+        <details class="gw-group" data-group="campos" id="grp_campos">
+          <summary class="gw-group__sum"><span class="gw-group__title">Categorías y campos</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Categorías de las personas y cómo se llama, se ordena y se pide cada campo.</span></summary>
+          <div class="gw-group__body">
         <!-- Categorías del evento (ítem 14): de aquí salen las casillas de "Categoría" en Registrar/Editar
              y las plantillas de escarapela por categoría (editor de escarapelas). -->
-        <div style="background: white; padding: 1.4rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-bottom:1.2rem;">
-          <h4 style="margin:0 0 0.6rem; color:var(--golden-dark);">Categorías del evento</h4>
-          <textarea id="categoriesBox" rows="3" placeholder="Una categoría por línea (ej. VIP, Prensa, Staff)" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-family:inherit;">{{ (event.categories | fromjson) | join("\n") if event.categories else "" }}</textarea>
-          <div style="display:flex; justify-content:flex-end; margin-top:0.5rem;"><button type="button" id="saveCategoriesBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">Guardar categorías</button></div>
-          <p style="color:#666; font-size:0.78rem; margin:0.3rem 0 0;">Al haber categorías aparece el campo "Categoría" (casillas, se puede marcar más de una) en Registrar/Editar, una columna en el reporte y la columna "categoria" en la carga de base; en el editor de escarapelas podrás usar una plantilla distinta por categoría.</p>
+        <div class="gw-group__item">
+          <h4>Categorías del evento</h4>
+          <textarea id="categoriesBox" data-psave="categories" rows="3" placeholder="Una categoría por línea (ej. VIP, Prensa, Staff)" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:8px; padding:8px 10px; font-family:inherit;">{{ (event.categories | fromjson) | join("\n") if event.categories else "" }}</textarea>
+          <div hidden style="display:flex; justify-content:flex-end; margin-top:0.5rem;"><button type="button" id="saveCategoriesBtn" class="golden-btn" style="width:auto; padding:0.5rem 1.4rem; background:#f0f0f0; color:var(--golden-dark);">Guardar categorías</button></div>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.3rem 0 0;">Al haber categorías aparece el campo "Categoría" (casillas, se puede marcar más de una) en Registrar/Editar, una columna en el reporte y la columna "categoria" en la carga de base; en el editor de escarapelas podrás usar una plantilla distinta por categoría.</p>
         </div>
-        <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow-x: auto;">
-          <p style="color:#666; font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
+        <div class="gw-group__item gw-scroll-x">
+          <p style="color:var(--gw-text-muted); font-size:0.85rem; margin-top:-0.3rem; margin-bottom:1.2rem;">
             Define, para cada campo de este evento: cómo se llama (solo aquí, no cambia el nombre en otros eventos), en qué orden aparece en "Registrar nuevo" y "Editar persona" (arrastra las filas con ☰), si es obligatorio, qué tipo de campo es, y si debe generar su gráfico solo al entrar a Estadísticas. La identidad (nombres, apellidos, cédula) siempre es texto corto obligatorio: de ella solo se cambian el nombre y la posición.
           </p>
           <table class="params-table">
@@ -318,16 +336,56 @@
                 <th style="width:110px;"></th>
               </tr>
             </thead>
-            <tbody id="paramsTableBody"></tbody>
+            <tbody id="paramsTableBody" data-psave="fields"></tbody>
           </table>
           <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-top:1.2rem; padding-top:1.2rem; border-top:1px solid #eee;">
             <input type="text" id="newOptionalFieldName" placeholder="Nombre del campo nuevo (ej. Alergias, Talla de camisa...)" style="flex:1; min-width:240px; border:1px solid #ccc; border-radius:8px; padding:0.6rem 0.8rem; font-size:0.9rem;">
             <button type="button" id="addOptionalFieldBtn" class="golden-btn" style="width:auto; padding:0.6rem 1.2rem; background:#f0f0f0; color:var(--golden-dark);">+ Agregar campo opcional</button>
           </div>
-          <p style="color:#666; font-size:0.78rem; margin-top:0.5rem;">El campo nuevo queda disponible de una en el formulario de alta manual y, si se configura con estadística, en Estadísticas — y siempre aparece como columna en el reporte Excel.</p>
-          <div style="display:flex; justify-content:flex-end; margin-top:1.5rem;">
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin-top:0.5rem;">El campo nuevo queda disponible de una en el formulario de alta manual y, si se configura con estadística, en Estadísticas — y siempre aparece como columna en el reporte Excel.</p>
+          <div hidden style="display:flex; justify-content:flex-end; margin-top:1.5rem;">
             <button type="button" id="saveParamsBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.7rem 2rem;">Guardar cambios</button>
           </div>
+        </div>
+        {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y para admin+; si no, este bloque no existe. Se registra en el Guardar global (clave «personform»; static/js/person-form-designer.js, app/personform.py). #}
+        {% if person_form_can_design %}
+        <div class="gw-group__item" id="personFormCard">
+          <h4 id="personFormTitle">Formulario de persona</h4>
+          <p class="gw-hint">Así se ven «Registrar nuevo» y «Editar» en el quiosco: orden, columnas, grupos, obligatorios arriba y a la vista, y cómo se escribe cada texto. Funciona igual sin conexión. Se guarda con el botón «Guardar» de abajo.</p>
+          <div id="personFormEditor" class="gw-stack" data-psave="personform" aria-labelledby="personFormTitle">Cargando…</div>
+        </div>
+        <script src="{{ url_for('static', path='js/person-form-designer.js') }}"></script>
+        <script>PersonFormDesigner.mount(document.getElementById('personFormEditor'), { eventId: window.EVENT_ID });</script>
+        {% endif %}
+          </div>
+        </details>
+        <details class="gw-group" data-group="marca" id="grp_marca">
+          <summary class="gw-group__sum"><span class="gw-group__title">Logo del evento</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Qué logo se muestra en las pantallas de este evento.</span></summary>
+          <div class="gw-group__body">
+        <!-- Logo del evento (ítem 1, reunión 2026-09-21): solo afecta el header de las pantallas de ESTE
+             evento; los demás eventos siguen con el logo de Golden. Se aplica con el «Guardar» de abajo (subir una imagen es inmediato). -->
+        <div class="gw-group__item">
+          <h4>Logo del evento</h4>
+          <div style="display:flex; gap:1.2rem; flex-wrap:wrap; align-items:center;" id="logoOptions" data-psave="logo">
+            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="default" {% if event.logo_mode == "default" %}checked{% endif %}> Mostrar logo de Golden</label>
+            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="hidden" {% if event.logo_mode == "hidden" %}checked{% endif %}> Ocultar logo</label>
+            <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="logoMode" value="custom" {% if event.logo_mode == "custom" %}checked{% endif %} {% if not event.logo_path %}disabled{% endif %}> Usar logo propio</label>
+            <input type="file" id="logoFile" data-pnodirty accept="image/*" style="max-width:240px;">
+          </div>
+          <div id="logoSize" data-psave="logo" style="display:{{ 'flex' if event.logo_mode == 'custom' else 'none' }}; gap:1.2rem; flex-wrap:wrap; align-items:center; margin-top:0.7rem;">
+            <label style="display:flex; gap:8px; align-items:center; font-size:0.85rem;">Alto del logo: <b id="logoHv">{{ event.logo_height }}</b> px
+              <input type="range" id="logoH" min="30" max="80" step="5" value="{{ event.logo_height }}" style="width:180px;"></label>
+            <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="logo" {% if event.logo_fit != "banner" %}checked{% endif %}> Logo completo</label>
+            <label style="display:flex; gap:6px; align-items:center; font-size:0.85rem;"><input type="radio" name="logoFit" value="banner" {% if event.logo_fit == "banner" %}checked{% endif %}> Banner (rellena de lado a lado, recorta lo que sobre)</label>
+          </div>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Al subir una imagen se activa "Usar logo propio" (PNG, JPG, WebP, GIF o SVG, hasta 3 MB). Solo cambia este evento.</p>
+        </div>
+          </div>
+        </details>
+        <div class="gw-savebar" id="paramsSaveBar" data-state="idle">
+          <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+          <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar</button>
+          <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
         </div>
       </div>
     </div>
@@ -362,11 +420,20 @@
 
     const tbody = document.getElementById('paramsTableBody');
 
-    document.getElementById('saveCategoriesBtn').addEventListener('click', async () => {
+    /* ---- Guardado global (Plan 6): cada bloque se registra en GWParams (static/js/params-save.js) y el «Guardar» de abajo corre los pendientes en orden.
+       Los botones «Guardar» de cada bloque siguen en el DOM, ocultos, y llaman al mismo guardado. Las funciones lanzan Error(mensaje) si fallan. */
+    const jsonPut = (url, body) => fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    async function must(res, fallback) {
+        if (res.ok) return res.json().catch(() => ({}));
+        let m = fallback; try { m = (await res.json()).detail || fallback; } catch (e) { /* sin detalle */ }
+        throw new Error(typeof m === 'string' ? m : fallback);
+    }
+    window.GWParamsHelpers = { jsonPut, must };
+    GWParams.register({ key: 'categories', label: 'Categorías', order: 80, reload: true, save: async () => {
         const categories = document.getElementById('categoriesBox').value.split('\n').map(s => s.trim()).filter(Boolean);
-        const res = await fetch(`/api/events/${window.EVENT_ID}/categories`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categories }) });
-        if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudieron guardar las categorías', 'error');
-    });
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/categories`, { categories }), 'No se pudieron guardar las categorías');
+    } });
+    document.getElementById('saveCategoriesBtn').addEventListener('click', () => GWParams.saveKey('categories'));
 
     // ---- Solicitudes de privacidad (radicados y bandera «reclamo en trámite»)
     (function () {
@@ -408,13 +475,13 @@
     }
     const base = `/api/events/${window.EVENT_ID}`;
     ['areas', 'inventory'].forEach(mod => {
-        document.getElementById(mod + 'Enabled').addEventListener('change', async (e) => {
-            try {
-                await api(`${base}/modules`, 'PUT', { [mod + '_enabled']: e.target.checked });
-                document.getElementById(mod + 'Config').style.display = e.target.checked ? 'block' : 'none';
-                showToast(e.target.checked ? 'Módulo activado — ya aparece en el menú del evento' : 'Módulo desactivado', 'success');
-            } catch (err) { e.target.checked = !e.target.checked; }
+        // Plan 6: activar/desactivar queda PENDIENTE hasta el «Guardar» global; el panel se muestra de una para poder configurarlo.
+        document.getElementById(mod + 'Enabled').addEventListener('change', (e) => {
+            document.getElementById(mod + 'Config').style.display = e.target.checked ? 'block' : 'none';
         });
+        GWParams.register({ key: 'mod_' + mod, label: mod === 'areas' ? 'Control de Áreas' : 'Control de Inventario', order: mod === 'areas' ? 65 : 66, save: async () => {
+            await must(await jsonPut(`${base}/modules`, { [mod + '_enabled']: document.getElementById(mod + 'Enabled').checked }), 'No se pudo cambiar el módulo');
+        } });
     });
 
     async function loadAreas() {
@@ -423,7 +490,7 @@
             <tr data-area="${a.id}"><td><input type="text" class="area-name" value="${esc(a.name)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
             <td><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td><button type="button" class="area-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
-            : '<tr><td colspan="3" style="color:#666;">Todavía no hay zonas.</td></tr>';
+            : '<tr><td colspan="3" style="color:var(--gw-text-muted);">Todavía no hay zonas.</td></tr>';
     }
     document.getElementById('areasBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-area]'); if (!tr) return;
@@ -438,6 +505,7 @@
     document.getElementById('addAreaBtn').addEventListener('click', async () => {
         const name = document.getElementById('newAreaName').value.trim();
         if (!name) { showToast('Escribe el nombre de la zona', 'error'); return; }
+        await GWParams.flush('mod_areas');                    // agregar es inmediato: si el módulo se acaba de activar, primero se guarda eso
         await api(`${base}/areas`, 'POST', { name, allow_reentry: document.getElementById('newAreaReentry').checked });
         document.getElementById('newAreaName').value = ''; loadAreas();
     });
@@ -450,7 +518,7 @@
             <td><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} style="width:18px; height:18px;"></td>
             <td>${i.delivered} / <strong>${i.available}</strong></td>
             <td><button type="button" class="item-del" style="border:1px solid #e5b8bd; color:#a12631; background:white; border-radius:14px; padding:4px 10px; cursor:pointer;">Eliminar</button></td></tr>`).join('')
-            : '<tr><td colspan="5" style="color:#666;">Todavía no hay ítems.</td></tr>';
+            : '<tr><td colspan="5" style="color:var(--gw-text-muted);">Todavía no hay ítems.</td></tr>';
     }
     document.getElementById('itemsBody').addEventListener('change', async (e) => {
         const tr = e.target.closest('tr[data-item]'); if (!tr) return;
@@ -469,6 +537,7 @@
     document.getElementById('addItemBtn').addEventListener('click', async () => {
         const name = document.getElementById('newItemName').value.trim();
         if (!name) { showToast('Escribe el nombre del ítem', 'error'); return; }
+        await GWParams.flush('mod_inventory');
         await api(`${base}/inventory`, 'POST', { name, initial_qty: document.getElementById('newItemQty').value || 0, allow_multiple: document.getElementById('newItemMulti').checked });
         document.getElementById('newItemName').value = ''; document.getElementById('newItemQty').value = ''; loadItems();
     });
@@ -551,14 +620,17 @@
             e.target.value = ''; if (!r.ok) return say(d.detail || 'No se pudo subir la imagen', true);
             body.focus(); document.execCommand('insertImage', false, d.url); say('Imagen agregada.');
         });
-        document.getElementById('mailSave').addEventListener('click', async () => {
+        GWParams.register({ key: 'mail', label: 'Correo de la escarapela', order: 60, save: async () => {
             const r = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(current()) }); const d = await r.json().catch(() => ({}));
-            r.ok ? say('Correo guardado. Se usará para las próximas escarapelas que se envíen.') : say(d.detail || 'No se pudo guardar', true);
-        });
+            if (!r.ok) { say(d.detail || 'No se pudo guardar', true); throw new Error(d.detail || 'No se pudo guardar el correo'); }
+            say('Correo guardado. Se usará para las próximas escarapelas que se envíen.');
+        } });
+        document.getElementById('mailSave').addEventListener('click', () => GWParams.saveKey('mail'));
         document.getElementById('mailReset').addEventListener('click', async () => {
             if (!(await showConfirm('¿Volver al texto por defecto? Se pierde el correo que escribiste.'))) return;
             await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) });
             const d = await (await fetch(api)).json(); subj.value = d.subject; body.innerHTML = d.body; say('Se restauró el texto por defecto.');
+            GWParams.markClean('mail');                      // el reinicio se aplica de una (acción inmediata con confirmación)
         });
         document.getElementById('mailPreview').addEventListener('click', async () => {
             try { const d = await post(`${api}/preview`, current()); const fr = document.getElementById('mailFrame'); fr.style.display = 'block'; fr.srcdoc = `<div style="font:14px Arial;padding:6px 10px;background:#f1f3f4;">Asunto: <b>${d.subject.replace(/</g, '&lt;')}</b></div>` + d.html; } catch (e) { say(e.message, true); }
@@ -567,16 +639,17 @@
             try { const d = await post(`${api}/test`, { ...current(), to: document.getElementById('mailTo').value }); say(d.sent ? d.detail : 'No se envió: ' + d.detail, !d.sent); } catch (e) { say(e.message, true); }
         });
     })();
-    document.getElementById('directoryPageSize').addEventListener('change', async (e) => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/directory-page-size`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: Number(e.target.value) }) });
-        if (res.ok) showToast('Filas por página guardado', 'success'); else showToast('No se pudo guardar las filas por página', 'error');
-    });
-    document.getElementById('idleMinutesSave').addEventListener('click', async () => {
+    GWParams.register({ key: 'page', label: 'Filas por página', order: 5, save: async () => {
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/directory-page-size`, { value: Number(document.getElementById('directoryPageSize').value) }), 'No se pudo guardar las filas por página');
+    } });
+    GWParams.register({ key: 'reggear', label: 'Configuración del registro', order: 12, save: async () => {
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/registro-gear-digitadores`, { enabled: document.getElementById('regGearDig').checked }), 'No se pudo guardar la opción del engranaje');
+    } });
+    GWParams.register({ key: 'idle', label: 'Cierre por inactividad', order: 10, save: async () => {
         const raw = document.getElementById('idleMinutes').value.trim();
-        const res = await fetch(`/api/events/${window.EVENT_ID}/idle-minutes`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: raw === '' ? null : Number(raw) }) });
-        if (res.ok) showToast(raw === '' ? 'Se usará el tiempo general' : 'Tiempo de inactividad guardado', 'success');
-        else { let m = 'No se pudo guardar el tiempo de inactividad'; try { m = (await res.json()).detail || m; } catch (e) { /* sin detalle */ } showToast(m, 'error'); }
-    });
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/idle-minutes`, { value: raw === '' ? null : Number(raw) }), 'No se pudo guardar el tiempo de inactividad');
+    } });
+    document.getElementById('idleMinutesSave').addEventListener('click', () => GWParams.saveKey('idle'));
     // Paso guiado de biometría: el resumen sale del servidor (lo que protege lo valida el servidor; esto solo guía).
     function renderSummary(d) {
         const box = document.getElementById('bsSummary'); if (!box) return;
@@ -599,11 +672,14 @@
             ['ccAceptar', 'ccAcceptLink', 'ccFaceDoor'].forEach((id) => { const el = document.getElementById(id); if (el) el.checked = false; });
         };
         document.querySelectorAll('input[name="bsUse"]').forEach((r) => r.addEventListener('change', applyUse));
-        document.getElementById('ccSave').addEventListener('click', async () => {
+        GWParams.register({ key: 'cc', label: 'Reconocimiento facial', order: 20, save: async () => {
             const body = { biometrics_locked: document.getElementById('bsLocked').checked, facial_enabled: document.getElementById('bsFacial').checked, client_photos_before: document.getElementById('bsPhotos').checked, accept_link_email: document.getElementById('ccAcceptLink') ? document.getElementById('ccAcceptLink').checked : false, face_door_enabled: (document.getElementById('ccFaceDoor') || {}).checked === true, controller_mode: ccMode.value, organizer_name: document.getElementById('ccName').value, organizer_nit: document.getElementById('ccNit').value, organizer_privacy_email: document.getElementById('ccEmail').value, consent_prompt_mode: document.getElementById('ccPrompt').value, aceptar_enabled: document.getElementById('ccAceptar').checked };
             const res = await fetch(`/api/events/${window.EVENT_ID}/biometric-setup`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            const out = await res.json().catch(() => ({})); if (res.ok) { showToast('Guardado', 'success'); renderSummary(out); } else showToast(out.detail || 'No se pudo guardar', 'error');
-        });
+            const out = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(typeof out.detail === 'string' ? out.detail : 'No se pudo guardar');
+            renderSummary(out);
+        } });
+        document.getElementById('ccSave').addEventListener('click', () => GWParams.saveKey('cc'));
     }
     // Envío masivo del enlace personal (app/acceptmail.py): la vista previa, la prueba y el control salen del servidor.
     if (document.getElementById('amBox')) {
@@ -668,44 +744,54 @@
         });
     }
     const bbp = document.getElementById('badgeBioPhoto');
-    if (bbp) bbp.addEventListener('change', async () => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/badge-bio-photo`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: bbp.checked }) });
-        if (res.ok) showToast('Guardado', 'success'); else { bbp.checked = !bbp.checked; showToast('No se pudo guardar', 'error'); }
-    });
+    if (bbp) GWParams.register({ key: 'bbp', label: 'Foto biométrica en la escarapela', order: 25, save: async () => {
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/badge-bio-photo`, { enabled: bbp.checked }), 'No se pudo guardar la foto biométrica en la escarapela');
+    } });
     const pcSave = document.getElementById('pcSave');
-    if (pcSave) pcSave.addEventListener('click', async () => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/precalculo-autorizado`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: document.getElementById('pcOn').checked, anexo_ref: document.getElementById('pcRef').value, anexo_fecha: document.getElementById('pcDate').value, garantia: document.getElementById('pcGarantia').checked }) });
-        if (res.ok) showToast('Guardado', 'success'); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo guardar', 'error');
-    });
-
-    document.getElementById('digitalEnabled').addEventListener('change', async (e) => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/digital-badge-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
-        if (res.ok) location.reload(); else { e.target.checked = !e.target.checked; showToast('No se pudo cambiar la escarapela digital', 'error'); }
-    });
-
-    // Módulo de certificados (ítem 5): activar agrega el campo "Certificado" y el diseñador.
-    document.getElementById('certificatesEnabled').addEventListener('change', async (e) => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/certificates-enabled`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) });
-        if (res.ok) location.reload(); else { e.target.checked = !e.target.checked; showToast('No se pudo cambiar el módulo', 'error'); }
-    });
-
-    // Logo del evento: se aplica al elegir/subir (recarga para ver el header nuevo).
-    document.querySelectorAll('input[name="logoMode"]').forEach(radio => radio.addEventListener('change', async () => {
-        const res = await fetch(`/api/events/${window.EVENT_ID}/logo`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: radio.value }) });
-        if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo cambiar el logo', 'error');
-    }));
-    const sizePut = (body) => fetch(`/api/events/${window.EVENT_ID}/logo`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const logoH = document.getElementById('logoH');
-    if (logoH) {
-        logoH.addEventListener('input', () => { document.getElementById('logoHv').textContent = logoH.value; });
-        logoH.addEventListener('change', async () => { const r = await sizePut({ height: +logoH.value }); if (r.ok) showToast('Alto del logo guardado', 'success'); else showToast('No se pudo guardar', 'error'); });
-        document.querySelectorAll('input[name="logoFit"]').forEach((r) => r.addEventListener('change', async () => { const x = await sizePut({ fit: r.value }); if (x.ok) showToast(r.value === 'banner' ? 'Logo en modo banner' : 'Logo completo', 'success'); else showToast('No se pudo guardar', 'error'); }));
+    if (pcSave) {
+        GWParams.register({ key: 'pc', label: 'Pre-cálculo de vectores', order: 30, save: async () => {
+            await must(await jsonPut(`/api/events/${window.EVENT_ID}/precalculo-autorizado`, { enabled: document.getElementById('pcOn').checked, anexo_ref: document.getElementById('pcRef').value, anexo_fecha: document.getElementById('pcDate').value, garantia: document.getElementById('pcGarantia').checked }), 'No se pudo guardar el pre-cálculo');
+        } });
+        pcSave.addEventListener('click', () => GWParams.saveKey('pc'));
     }
+
+    // Escarapela digital y certificados: activar/desactivar queda pendiente; al guardar se recarga la pantalla (aparece el editor del correo, el campo «Certificado», el diseñador...).
+    GWParams.register({ key: 'digital', label: 'Escarapela digital', order: 36, reload: true, save: async () => {
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/digital-badge-enabled`, { enabled: document.getElementById('digitalEnabled').checked }), 'No se pudo cambiar la escarapela digital');
+    } });
+    GWParams.register({ key: 'cert', label: 'Certificados', order: 35, reload: true, save: async () => {
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/certificates-enabled`, { enabled: document.getElementById('certificatesEnabled').checked }), 'No se pudo cambiar el módulo de certificados');
+    } });
+
+    // Logo del evento (modo, alto y ajuste): pendiente hasta el «Guardar» global, que recarga para ver el encabezado nuevo. Subir una imagen es inmediato (es un archivo).
+    const logoMode0 = (document.querySelector('input[name="logoMode"]:checked') || {}).value;
+    const logoFit0 = (document.querySelector('input[name="logoFit"]:checked') || {}).value;
+    const logoH = document.getElementById('logoH');
+    const logoH0 = logoH ? logoH.value : null;
+    if (logoH) logoH.addEventListener('input', () => { document.getElementById('logoHv').textContent = logoH.value; });
+    document.querySelectorAll('input[name="logoMode"]').forEach((radio) => radio.addEventListener('change', () => {
+        document.getElementById('logoSize').style.display = radio.value === 'custom' ? 'flex' : 'none';
+    }));
+    GWParams.register({ key: 'logo', label: 'Logo del evento', order: 70, reload: true, save: async () => {
+        const url = `/api/events/${window.EVENT_ID}/logo`;
+        const mode = (document.querySelector('input[name="logoMode"]:checked') || {}).value;
+        if (mode && mode !== logoMode0) await must(await jsonPut(url, { mode }), 'No se pudo cambiar el logo');
+        if (logoH && logoH.value !== logoH0) await must(await jsonPut(url, { height: +logoH.value }), 'No se pudo guardar el alto del logo');
+        const fit = (document.querySelector('input[name="logoFit"]:checked') || {}).value;
+        if (fit && fit !== logoFit0) await must(await jsonPut(url, { fit }), 'No se pudo guardar el ajuste del logo');
+    } });
     document.getElementById('logoFile').addEventListener('change', async (e) => {
         if (!e.target.files.length) return;
         const fd = new FormData(); fd.append('file', e.target.files[0]);
         const res = await fetch(`/api/events/${window.EVENT_ID}/logo/upload`, { method: 'POST', body: fd });
-        if (res.ok) location.reload(); else showToast((await res.json().catch(() => ({}))).detail || 'No se pudo subir el logo', 'error');
+        if (!res.ok) { showToast((await res.json().catch(() => ({}))).detail || 'No se pudo subir el logo', 'error'); return; }
+        if (!GWParams.hasDirty()) { location.reload(); return; }
+        // Hay otros cambios sin guardar: no se recarga (se perderían). El servidor ya dejó «logo propio»; se refleja aquí y se recarga tras el próximo «Guardar».
+        const custom = document.querySelector('input[name="logoMode"][value="custom"]');
+        if (custom) { custom.disabled = false; custom.checked = true; }
+        document.getElementById('logoSize').style.display = 'flex';
+        GWParams.requestReload();
+        showToast('Logo subido. Pulsa «Guardar» para ver el cambio en el encabezado.', 'success');
     });
 
     /* B2 (26-oct-2026): borrar un campo de ESTE evento (también uno de la base original). Confirmación fuerte: cuántas personas tienen dato, qué plantillas y formularios lo usan, y
@@ -740,7 +826,7 @@
         const defaultLabel = cfg.default_label || cfg.label;
         const customLabel = cfg.label !== defaultLabel ? cfg.label : '';
         tr.innerHTML = `
-            <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:#666; text-align:center;">☰</td>
+            <td class="drag-handle" title="Arrastra para reordenar" style="cursor:grab; user-select:none; color:var(--gw-text-muted); text-align:center;">☰</td>
             <td><input type="text" class="cfg-label" maxlength="60" ${cfg.label_fixed ? 'disabled' : ''} value="${esc(customLabel)}" placeholder="${esc(defaultLabel)}" style="width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:8px; padding:6px 8px;"></td>
             <td><input type="checkbox" class="cfg-required" ${cfg.required || (locked && !['certificate', 'digital_contact', 'birth_date'].includes(cfg.key)) ? 'checked' : ''} ${locked && !['certificate', 'digital_contact'].includes(cfg.key) ? 'disabled' : ''} style="width:18px; height:18px;"></td>
             <td><select class="cfg-field-type">${optionsHtml(cfg.key.startsWith('opcional_') ? FIELD_TYPE_OPTIONS.concat(EXTRA_TYPE_OPTIONS) : FIELD_TYPE_OPTIONS, cfg.field_type)}</select></td>
@@ -817,17 +903,15 @@
                 options: [], default_stat_enabled: false, default_chart_type: null,
             }));
             input.value = '';
-            showToast(`Campo "${data.label}" agregado — recuerda "Guardar cambios" si le cambias el tipo/obligatoriedad`, 'success');
+            showToast(`Campo "${data.label}" agregado — si le cambias el tipo u obligatoriedad, pulsa «Guardar»`, 'success');
         } catch (e) {
             showToast(e.message || 'Error de red', 'error');
         }
         setButtonLoading(btn, false);
     });
 
-    document.getElementById('saveParamsBtn').addEventListener('click', async () => {
-        const btn = document.getElementById('saveParamsBtn');
-        setButtonLoading(btn, true, 'Guardando...');
-        try {
+    GWParams.register({ key: 'fields', label: 'Campos del evento', order: 90, save: async () => {
+        {
             const rows = Array.from(tbody.querySelectorAll('tr'));
             for (const [position, tr] of rows.entries()) {
                 const key = tr.dataset.key;
@@ -849,15 +933,14 @@
                 });
                 if (!res.ok) {
                     const data = await res.json().catch(() => ({}));
-                    throw new Error(data.detail || `No se pudo guardar "${key}"`);
+                    throw new Error((typeof data.detail === 'string' && data.detail) || `No se pudo guardar "${key}"`);
                 }
             }
-            showToast('Parámetros guardados', 'success');
-        } catch (e) {
-            showToast(e.message || 'Error de red al guardar', 'error');
         }
-        setButtonLoading(btn, false);
-    });
+    } });
+    document.getElementById('saveParamsBtn').addEventListener('click', () => GWParams.saveKey('fields'));
+    // Reordenar arrastrando también deja los campos pendientes.
+    tbody.addEventListener('dragend', () => GWParams.markDirty('fields'));
 })();
 </script>
 <script>
@@ -869,17 +952,20 @@
   const api = `/api/events/${window.EVENT_ID}/shared-print`;
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let timer = null;
+  const pending = {};          // Plan 6: cambios de «a qué equipo imprime» sin guardar (staff_id -> printer_staff_id | null); mientras haya, la tabla no se vuelve a pintar sola
+  let savedEnabled = chk.checked;
   function deviceText(d) {
-    if (!d) return '<span style="color:#666;">sin señal todavía (abra el Registro en ese equipo)</span>';
+    if (!d) return '<span style="color:var(--gw-text-muted);">sin señal todavía (abra el Registro en ese equipo)</span>';
     const ago = d.seconds_ago < 60 ? `${d.seconds_ago} s` : `${Math.round(d.seconds_ago / 60)} min`;
     const state = d.online ? '<b style="color:#1e7e34;">conectado</b>' : '<b style="color:#a12631;">desconectado</b>';
     const printer = d.printer_connected ? `🖨️ ${esc(d.printer_name || 'impresora')}` : 'sin impresora';
     return `${esc(d.platform || '?')} · ${esc(d.browser || '?')} · ${printer} · ${state} (última señal hace ${ago})`;
   }
-  async function load() {
+  async function load(force) {
     clearTimeout(timer);
     if (!chk.checked) { box.hidden = true; return; }
     box.hidden = false;
+    if (!force && Object.keys(pending).length) { timer = setTimeout(() => load(), 5000); return; }
     let data;
     try { const r = await fetch(api, { cache: 'no-store' }); data = r.ok ? await r.json() : null; } catch (e) { data = null; }
     if (!data) { box.textContent = 'No se pudo leer el estado de los equipos.'; return; }
@@ -898,24 +984,32 @@
     }).join('');
     box.innerHTML = data.users.length ? `<table style="width:100%; border-collapse:collapse;"><tr><th style="text-align:left; padding:6px;">Usuario</th><th style="text-align:left; padding:6px;">Equipo</th><th style="text-align:left; padding:6px;">Imprime</th></tr>${rows}</table>`
       : '<p>Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
-    timer = setTimeout(() => { if (window.GW && window.GW.idle) window.GW.onResume(load, true); else load(); }, 5000);      // sin uso 60 s el sondeo se detiene y retoma al volver
+    timer = setTimeout(() => { if (window.GW && window.GW.idle) window.GW.onResume(() => load(), true); else load(); }, 5000);      // sin uso 60 s el sondeo se detiene y retoma al volver
   }
-  box.addEventListener('change', async (e) => {
+  box.addEventListener('change', (e) => {
     const sel = e.target.closest('select[data-route]');
     if (!sel) return;
-    clearTimeout(timer);
-    const res = await fetch(`${api}/route`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ staff_user_id: Number(sel.dataset.route), printer_staff_id: sel.value ? Number(sel.value) : null }) });
-    const out = await res.json().catch(() => ({}));
-    showToast(res.ok ? (out.warning ? 'Guardado. ⚠️ ' + out.warning : 'Guardado') : (out.detail || 'No se pudo guardar'), res.ok ? (out.warning ? 'warning' : 'success') : 'error');
-    load();
+    pending[sel.dataset.route] = sel.value ? Number(sel.value) : null;      // queda pendiente hasta el «Guardar» global
   });
-  chk.addEventListener('change', async () => {
-    const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: chk.checked }) });
-    if (!res.ok) { chk.checked = !chk.checked; showToast('No se pudo cambiar la impresión compartida', 'error'); return; }
-    showToast(chk.checked ? 'Impresión compartida ACTIVADA: abre (o recarga) el Registro en cada equipo.' : 'Impresión compartida apagada: todo imprime como siempre.', 'success');
-    load();
-  });
+  chk.addEventListener('change', () => load(true));                           // solo muestra/oculta la tabla; se guarda con el «Guardar» global
+  /* Guardado (Plan 6): primero el interruptor, luego cada cambio de equipo; lo que falle se informa y sigue pendiente. */
+  GWParams.register({ key: 'sharedprint', label: 'Impresión compartida', order: 40, save: async () => {
+    if (chk.checked !== savedEnabled) {
+      const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: chk.checked }) });
+      if (!res.ok) throw new Error('No se pudo cambiar la impresión compartida');
+      savedEnabled = chk.checked;
+      showToast(chk.checked ? 'Impresión compartida ACTIVADA: abre (o recarga) el Registro en cada equipo.' : 'Impresión compartida apagada: todo imprime como siempre.', 'success');
+    }
+    const errors = [];
+    for (const id of Object.keys(pending)) {
+      const res = await fetch(`${api}/route`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_user_id: Number(id), printer_staff_id: pending[id] }) });
+      const out = await res.json().catch(() => ({}));
+      if (res.ok) { delete pending[id]; if (out.warning) showToast('⚠️ ' + out.warning, 'warning'); }
+      else errors.push(typeof out.detail === 'string' ? out.detail : 'No se pudo guardar un equipo');
+    }
+    load(true);
+    if (errors.length) throw new Error(errors.join(' · '));
+  } });
   load();
 })();
 </script>
@@ -937,11 +1031,11 @@
       <summary style="cursor:pointer; font-weight:700;">${esc(u.name)} <small style="font-weight:400;">${esc(u.username)} · ${esc(u.role)}</small>${u.print_station ? ' <span style="color:#1e7e34;">· 🖨️ puesto</span>' : ''}${u.station ? ' <span style="color:#2b6cb0;">· con configuración</span>' : ''}</summary>
       <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px 16px; margin-top:8px; align-items:end;">
         ${IS_ADMIN ? `<label><input type="checkbox" data-k="print_station" ${u.print_station ? 'checked' : ''}> Cuenta de <b>Puesto de impresión</b> (protegida: un segundo inicio de sesión se rechaza)</label>` : ''}
-        <label>Mostrar la configuración de impresión en el Registro<br><select data-k="showConfig" style="min-height:36px;"><option value="">Mostrar (por defecto)</option><option value="0" ${c.showConfig === false ? 'selected' : ''}>Esconder</option></select><br><small style="color:#666;">Mostrar: en ese computador se ven ⚙️ Impresión, Conectar impresora y la Cola (lo que cambien allí vale solo para ese computador). Esconder: solo la línea de estado; la impresión sigue igual.</small></label>
+        <label>Mostrar la configuración de impresión en el Registro<br><select data-k="showConfig" style="min-height:36px;"><option value="">Mostrar (por defecto)</option><option value="0" ${c.showConfig === false ? 'selected' : ''}>Esconder</option></select><br><small style="color:var(--gw-text-muted);">Mostrar: en ese computador se ven ⚙️ Impresión, Conectar impresora y la Cola (lo que cambien allí vale solo para ese computador). Esconder: solo la línea de estado; la impresión sigue igual.</small></label>
         <label><input type="checkbox" data-k="readerOnly" ${c.readerOnly ? 'checked' : ''}> <b>Solo lector</b> en «Registro touch» (lector de códigos USB/Bluetooth: la cédula no abre el teclado; un ícono ⌨️ junto al campo lo abre)</label>
       </div>
       <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-        <button type="button" class="golden-btn" data-save="${u.staff_id}">Guardar</button>
+        <button type="button" class="golden-btn" data-save="${u.staff_id}" hidden>Guardar</button>
         <button type="button" class="golden-btn" data-clear="${u.staff_id}" style="background:#eee; color:#333;">Quitar configuración (usar lo de siempre)</button>
         ${IS_ADMIN && u.print_station ? `<button type="button" class="golden-btn" data-release="${u.staff_id}" style="background:#fff6e5; color:#7a4a00;">Liberar cuenta (forzar el cambio de dispositivo)</button>` : ''}
       </div></details>`;
@@ -960,18 +1054,37 @@
     if (get('showConfig').value === '0') out.showConfig = false;
     return out;
   }
+  /* Plan 6: editar un puesto lo deja PENDIENTE (dirtyIds) hasta el «Guardar» global; «Quitar configuración» y «Liberar cuenta» siguen inmediatos con confirmación. */
+  const dirtyIds = new Set();
+  const bodyOf = (d) => { const body = { settings: read(d) }; const ps = d.querySelector('[data-k="print_station"]'); if (ps) body.print_station = ps.checked; return body; };
+  const snap = () => { const o = {}; dirtyIds.forEach((id) => { const d = box.querySelector(`details[data-staff="${id}"]`); if (!d) return; const g = (k) => d.querySelector(`[data-k="${k}"]`); o[id] = { ps: g('print_station') ? g('print_station').checked : null, ro: g('readerOnly').checked, sc: g('showConfig').value }; }); return o; };
+  async function reloadKeepingPending() {      // vuelve a pintar la lista sin perder lo que otros puestos tienen sin guardar
+    const keep = snap(); await load();
+    Object.keys(keep).forEach((id) => { const d = box.querySelector(`details[data-staff="${id}"]`); if (!d) { dirtyIds.delete(id); return; } const g = (k) => d.querySelector(`[data-k="${k}"]`); if (g('print_station') && keep[id].ps !== null) g('print_station').checked = keep[id].ps; g('readerOnly').checked = keep[id].ro; g('showConfig').value = keep[id].sc; d.open = true; });
+  }
+  box.addEventListener('change', (e) => { const d = e.target.closest('details[data-staff]'); if (d) dirtyIds.add(d.dataset.staff); });
   async function put(id, body, ok) {
     const res = await fetch(`${api}/print-stations/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const out = await res.json().catch(() => ({}));
     showToast(res.ok ? ok : (out.detail || 'No se pudo guardar'), res.ok ? 'success' : 'error');
-    if (res.ok) load();
+    if (res.ok) { dirtyIds.delete(String(id)); reloadKeepingPending(); }
   }
+  GWParams.register({ key: 'stations', label: 'Puestos de impresión', order: 100, save: async () => {
+    const errors = [];
+    for (const id of Array.from(dirtyIds)) {
+      const d = box.querySelector(`details[data-staff="${id}"]`);
+      if (!d) { dirtyIds.delete(id); continue; }
+      const res = await fetch(`${api}/print-stations/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyOf(d)) });
+      const out = await res.json().catch(() => ({}));
+      if (res.ok) dirtyIds.delete(id); else errors.push((typeof out.detail === 'string' ? out.detail : 'No se pudo guardar') + ' (' + (d.querySelector('summary').firstChild.textContent || '').trim() + ')');
+    }
+    await reloadKeepingPending();
+    if (errors.length) throw new Error(errors.join(' · '));
+  } });
   box.addEventListener('click', async (e) => {
     const save = e.target.closest('[data-save]'), clear = e.target.closest('[data-clear]'), rel = e.target.closest('[data-release]');
     if (save) {
-      const d = save.closest('details'), body = { settings: read(d) };
-      const ps = d.querySelector('[data-k="print_station"]'); if (ps) body.print_station = ps.checked;
-      put(save.dataset.save, body, 'Puesto guardado. El equipo lo aplica al recargar el Registro.');
+      put(save.dataset.save, bodyOf(save.closest('details')), 'Puesto guardado. El equipo lo aplica al recargar el Registro.');
     } else if (clear) {
       if (await showConfirm('¿Quitar la configuración de este puesto? Volverá a imprimir como siempre.', { confirmLabel: 'Sí, quitar' })) put(clear.dataset.clear, { settings: null }, 'Configuración quitada.');
     } else if (rel) {
@@ -1023,17 +1136,19 @@
     fill(d.settings);
   }
   $('ps_tapeType').addEventListener('change', toggle);
-  $('psSave').addEventListener('click', async () => {
+  /* Plan 6: mismo PUT de siempre; ahora lo dispara el «Guardar» global (el botón de este bloque queda oculto y llama al mismo guardado). */
+  GWParams.register({ key: 'ps', label: 'Impresión de escarapelas (QL-800)', order: 50, save: async () => {
     const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: read() }) });
     const out = await res.json().catch(() => ({}));
-    if (!res.ok) { showToast(out.detail || 'No se pudo guardar', 'error'); return; }
+    if (!res.ok) throw new Error(typeof out.detail === 'string' ? out.detail : 'No se pudo guardar los valores de impresión');
     fill(out.settings);
-    showToast('Valores de impresión del evento guardados. Los equipos los toman al recargar el Registro.', 'success');
-  });
+  } });
+  $('psSave').addEventListener('click', () => GWParams.saveKey('ps'));
   $('psReset').addEventListener('click', async () => {
     const res = await fetch(api, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: {} }) });
     if (!res.ok) { showToast('No se pudo restablecer', 'error'); return; }
     fill({});
+    GWParams.markClean('ps');
     showToast('Valores de fábrica restablecidos.', 'success');
   });
   load();

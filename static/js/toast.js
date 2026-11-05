@@ -171,7 +171,7 @@
     );
   };
 
-  /* Modal para preguntar a qué corresponde cada campo "opcional_N" nuevo (hasta 30 posibles) —
+  /* Modal para preguntar a qué corresponde cada campo "opcional_N" nuevo (sin límite práctico) —
      usado por kiosk_roster.html (carga de Excel/CSV), 2026-09-22. Devuelve {opcional_1: "Talla de
      camisa", ...} o null si el operador cancela.
      `examples` (2026-09-16, pedido explícito, opcional): {opcional_1: ["Talla M", "Talla L"]} —
