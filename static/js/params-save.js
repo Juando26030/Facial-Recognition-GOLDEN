@@ -119,12 +119,7 @@
         select(typeof saved === 'string' ? saved : (tabs[0] && tabs[0].dataset.tab));
         const tabsOf = (key) => tabs.filter((t) => { const p = panelOf(t); return !!(p && p.querySelector('[data-psave="' + key + '"]')); });
 
-        const icon = (name) => {
-            const ns = 'http://www.w3.org/2000/svg';
-            const svg = doc.createElementNS(ns, 'svg'); svg.setAttribute('class', 'gw-icon'); svg.setAttribute('aria-hidden', 'true');
-            const use = doc.createElementNS(ns, 'use'); use.setAttribute('href', ICONS + '#i-' + name); svg.appendChild(use);
-            return svg;
-        };
+        const iconHtml = (name) => '<svg class="gw-icon" aria-hidden="true"><use href="' + ICONS.replace(/"/g, '') + '#i-' + name + '"></use></svg>';
 
         function render(s) {
             bar.dataset.state = s.state;
@@ -133,7 +128,7 @@
             const badge = doc.createElement('span');
             badge.className = 'gw-badge' + ({ dirty: ' gw-badge--warn', saved: ' gw-badge--ok', error: ' gw-badge--err', saving: ' gw-badge--info' }[s.state] || '');
             const ico = { dirty: 'alert', saved: 'check', error: 'error' }[s.state];
-            if (ico && ICONS) badge.appendChild(icon(ico));
+            if (ico && ICONS) badge.insertAdjacentHTML('afterbegin', iconHtml(ico));
             badge.appendChild(doc.createTextNode({ dirty: 'Cambios sin guardar', saving: 'Guardando…', saved: 'Guardado', error: 'No todo se guardó' }[s.state] || 'Sin cambios pendientes'));
             statusEl.replaceChildren(badge);
             if (s.state === 'dirty' && s.labels.length) { const t = doc.createElement('span'); t.className = 'gw-text-sm gw-muted'; t.textContent = 'En: ' + s.labels.join(', '); statusEl.appendChild(t); }
