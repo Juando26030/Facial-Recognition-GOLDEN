@@ -68,7 +68,7 @@ def test_only_coordinator_or_more_can_delete_fields(client, factory, db):
 
 def test_parametros_page_has_the_delete_button():
     html = pathlib.Path("templates/kiosk_parametros.html").read_text(encoding="utf-8")
-    assert "🗑️ Borrar campo" in html and "/usage" in html and "Escribe <b>" in html
+    assert "Borrar campo" in html and "cfg-delete" in html and "/usage" in html and "Escribe <b>" in html
 
 
 # ---------------------------------------------------------------------------------------------------- B3
