@@ -24,6 +24,7 @@ from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebFor
 from app.routers import print_stations, shared_print
 from app import reprint as reprint_core
 from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
+from app.routers import stats_links as stats_links_router      # enlaces de solo lectura a las estadísticas
 from app.routers import print_settings
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
@@ -289,6 +290,8 @@ _include(roulette.router, prefix="/api")
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
 _include(reprint_router.router, prefix="/api")      # reimpresión con permisos del coordinador (Fase 1B)
+_include(stats_links_router.router, prefix="/api")      # crear/ver/revocar enlaces de estadísticas (coordinador+)
+_include(stats_links_router.public_router)      # /ver/e/<token>, /ver/f/<token> y /api/ver/<token>/...: solo lectura, sin sesión
 _include(reprint_router.public_router)      # /reimpresion/<token>: enlace de correo de un solo uso (el GET solo muestra)
 _include(print_settings.router, prefix="/api")   # valores de impresión de escarapelas por evento (cinta, giro, recorte)
 _include(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
@@ -704,7 +707,7 @@ def kiosk_form_stats(event_id: int, form_id: int, request: Request, db: Session 
         return RedirectResponse(f"/kiosk/{event_id}/formularios", status_code=302)
     return templates.TemplateResponse(request=request, name="form_stats.html", context={
         "api_url": f"/api/events/{event.id}/forms/{form.id}/stats", "form_name": form.name, "event_name": event.name, "staff_name": staff_user.full_name or staff_user.username,
-        "back_url": f"/kiosk/{event.id}/formularios/{form.id}", "back_label": "Volver al formulario", "client_view": False})
+        "back_url": f"/kiosk/{event.id}/formularios/{form.id}", "back_label": "Volver al formulario", "client_view": False, "form_id": form.id, "event_id": event.id})
 
 
 @app.get("/mi-formulario")
