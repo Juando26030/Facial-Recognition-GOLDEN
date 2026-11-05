@@ -179,7 +179,8 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
         db.rollback()
         raise HTTPException(status_code=400, detail="Para bloquear inscripciones repetidas elige el campo identificador (cédula, correo, teléfono u otro) o agrega un campo de cédula al formulario")
     if ("design" in data or "settings" in data) and formsvc.quota_sig_map(form) != quota_before:
-        formsvc.invalidate_quota_keys(db, form)          # solo si cambió alguna condición de los cupos (no el mensaje, el límite ni el nombre): las llaves guardadas se recalculan solas
+        formsvc.invalidate_quota_keys(db, form)
+        formsvc.rebuild_quota_keys(db, form, formsvc.quota_rules(form))          # se recalculan aquí, una vez y guardadas con este mismo guardado (no en cada visita pública)
     db.commit()
     formsvc.invalidate_public_cache()
     return _detail(db, form, request)

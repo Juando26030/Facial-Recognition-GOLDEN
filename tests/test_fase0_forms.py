@@ -78,11 +78,14 @@ def test_quota_counts_use_stored_keys_and_rebuild_them_when_missing_or_when_rule
     db.query(FormSubmission).filter_by(form_id=f["id"]).update({"quota_keys": None})                # inscripciones anteriores a esta versión
     db.commit()
     assert _state(client, ev, f)["quota"]["left"] == {"cat": {"VIP": 1}}                             # se recalculan solas y el conteo sigue bien
-    assert db.query(FormSubmission).filter(FormSubmission.form_id == f["id"], FormSubmission.quota_keys == None).count() == 0  # noqa: E711
+    db.expire_all()
+    assert db.query(FormSubmission).filter(FormSubmission.form_id == f["id"], FormSubmission.quota_keys == None).count() == 2  # noqa: E711  # el formulario público cuenta pero NO escribe (evita bloqueos entre visitas)
 
     login(client, "coord1")                                                                          # el coordinador cambia la regla: ahora cuenta General
     rules["quotas"]["rules"][0]["conds"][0]["value"] = "General"
     assert _put(client, ev, f, settings=rules).status_code == 200
+    db.expire_all()
+    assert db.query(FormSubmission).filter(FormSubmission.form_id == f["id"], FormSubmission.quota_keys == None).count() == 0  # noqa: E711  # el guardado las dejó escritas, una sola vez
     client.post("/logout")
     assert _state(client, ev, f)["quota"]["left"] == {"cat": {"General": 1}}
     assert _submit(client, ev, f, {**_who(3), "cat": "General"}, sid="c").status_code == 200
