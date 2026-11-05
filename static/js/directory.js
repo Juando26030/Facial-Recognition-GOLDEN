@@ -26,7 +26,7 @@
     return locals.concat(served.map((x) => x[0]), rest);
   }
   function isRecentRow(u, newest) { const t = recentMs(u); if (t !== null) return newest !== null && newest - t < RECENT_WINDOW_MS; return Recent.has(u.id); }
-  const ORIGINS = { base: { icon: '', label: 'Base (Excel)' }, manual: { icon: '', label: 'Alta manual' }, autoregistro: { icon: '', label: 'Autoregistro' }, desconocido: { icon: '', label: 'Desconocido' } };
+  const ORIGINS = { base: { icon: '', label: 'Base (Excel)' }, manual: { icon: '', label: 'Creado nuevo' }, autoregistro: { icon: '', label: 'Autoregistro' }, desconocido: { icon: '', label: 'Desconocido' } };
   function withEvent(url) {
     return url + (url.includes('?') ? '&' : '?') + 'event_id=' + window.EVENT_ID;
   }
@@ -706,7 +706,7 @@
 
     const statusTd = document.createElement('td');
     statusTd.dataset.field = 'status';
-    statusTd.innerText = user.status === 'No registrado' ? 'No registrado' : (user.status === 'Nuevo' ? 'Creado nuevo' : 'Registrado');          // quien se dio de alta en el evento («Registrar nuevo») queda «Creado nuevo»
+    statusTd.innerText = user.status === 'No registrado' ? 'No registrado' : 'Registrado';
     statusTd.className = 'gw-registro__status';
     const og = ORIGINS[user.origin];
     if (og && user.origin !== 'desconocido') {                      // B1: el ORIGEN de carga, aparte del estado (no cambia al registrar o quitar el registro)

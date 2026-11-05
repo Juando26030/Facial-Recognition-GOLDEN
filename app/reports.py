@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app import testperson
 from app.models import User, AccessLog, EventAttendee, Event, EventFieldConfig, StaffUser
 
-ORIGIN_LABELS = {"base": "Base (Excel)", "manual": "Alta manual", "autoregistro": "Autoregistro"}      # B1 (0073); sin dato = «Desconocido»
+ORIGIN_LABELS = {"base": "Base (Excel)", "manual": "Creado nuevo", "autoregistro": "Autoregistro"}      # B1 (0073); sin dato = «Desconocido»
 
 # Sprint 2.4 Fase 16 (2026-09-17, pedido explícito): reemplaza el reporte de formato fijo/legacy
 # (columnas "Tipo_Pago"/"usuario"/etc, pensadas para un integrador externo que ya no aplica) por
@@ -167,7 +167,7 @@ class ReportManager:
             log = row["log"]
             origin = origin_by_user.get(row["id"]) or ("manual" if row["id"] in new_by_user else None)
             out["Origen de carga"] = ORIGIN_LABELS.get(origin, "Desconocido")                    # B1: el origen no cambia con el estado
-            out["Estado"] = ("Creado nuevo" if row["id"] in new_by_user else "Registrado") if log else "No registrado"
+            out["Estado"] = "Registrado" if log else "No registrado"
             out["Registrado por"] = staff_names.get(log.registered_by_staff_id, "") if log and log.registered_by_staff_id else ""
             if log:
                 out["Tipo de Registro"] = REGISTRATION_METHOD_LABELS.get(log.registration_method, log.registration_method or "Sin especificar")

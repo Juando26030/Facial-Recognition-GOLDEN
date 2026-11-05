@@ -25,7 +25,7 @@ _FIXED_VARIABLES = [
     ("role", "Cargo"),
     ("opt_1", "Tipo de Asistente"),
     ("status", "Estado de registro"),
-    ("origin", "Origen de carga"),          # B1 (0073): Base (Excel) / Alta manual / Autoregistro / Desconocido, aparte del estado
+    ("origin", "Origen de carga"),          # B1 (0073): Base (Excel) / Creado nuevo / Autoregistro / Desconocido, aparte del estado
 ]
 
 _MAX_CATEGORIES = 15  # más allá de esto, se agrupa en "Otros" para que el gráfico siga siendo legible
@@ -52,7 +52,7 @@ def _status_of(db: Session, event_id: int, user_id: str) -> str:
     ).all()
     if not logs:
         return "No registrado"
-    return "Creado nuevo" if any(lg.record_type == "Nuevo" for lg in logs) else "Registrado"          # quien se dio de alta en el evento («Registrar nuevo») queda «Creado nuevo»
+    return "Registrado"                     # B1: el estado es solo Registrado / No registrado; el alta manual se ve en «Origen de carga»
 
 
 def _origin_of(db: Session, event_id: int, user_id: str) -> str:
