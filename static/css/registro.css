@@ -68,3 +68,9 @@ body.gw-registro.touch-mode .gw-btn { min-height: 52px; }
   .gw-registro .tab { flex: 1 1 100%; text-align: center; }
   .gw-registro .golden-event-strip { padding: .6rem var(--gw-sp-3); }
 }
+
+/* Tema oscuro: style.css fija las filas con colores claros (!important); aquí se reponen con tokens para que el texto claro sea legible. */
+html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-noregistrado { background-color: var(--gw-surface) !important; }
+html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado { background-color: var(--gw-ok-bg) !important; }
+html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado td:last-child:not(.touch-only),
+html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado td[data-field=status] { color: var(--gw-ok-text); }
