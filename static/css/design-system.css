@@ -574,3 +574,10 @@
 .gw-select--auto { width: auto; max-width: 100%; }
 .gw-field--grow { flex: 1 1 16rem; }
 .gw-field--inline { flex: 0 1 18rem; }
+
+/* Celular: la zona de trabajo no puede quedarse sin lista. En pantallas angostas la barra de búsqueda y los filtros
+   ocupan casi todo el alto, así que la altura deja de ser fija: la página crece y la lista tiene su propio alto mínimo. */
+@media (max-width: 720px) {
+  .gw-workarea { height: auto; min-height: 0; overflow: visible; }
+  .gw-workarea__list { flex: none; min-height: 60dvh; max-height: none; }
+}
