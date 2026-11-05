@@ -130,9 +130,9 @@
                 </div>
 
                 <div class="gw-stack">
-                  <label class="gw-check gw-check--top" for="overwriteBirth">
-                    <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" aria-describedby="overwriteBirthHelp">
-                    <span>{{ overwrite_birth_label }}</span>
+                  <label for="overwriteBirth" class="gw-check gw-check--top">
+                    <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" aria-labelledby="overwriteBirthText" aria-describedby="overwriteBirthHelp">
+                    <span id="overwriteBirthText">{{ overwrite_birth_label }}</span>
                   </label>
                   <p id="overwriteBirthHelp" class="gw-hint">Si no la marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren.</p>
                 </div>
