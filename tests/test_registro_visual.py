@@ -143,3 +143,9 @@ def test_three_step_guide_first_time_tour_and_purposeful_animations():
 def test_frequency_and_guide_rules_are_in_the_standards():
     assert "Regla de frecuencia" in STANDARDS and "nunca esconder en un menú la acción más usada" in STANDARDS.lower()
     assert "guía de 3 pasos" in STANDARDS and "250 ms" in STANDARDS
+
+
+def test_celular_la_lista_no_queda_sin_alto():
+    css = (ROOT / "static/css/design-system.css").read_text(encoding="utf-8")
+    bloque = css.split("@media (max-width: 720px) {\n  .gw-workarea {")[1].split("}")[0]
+    assert "height: auto" in bloque, "en celular la zona de trabajo no tiene alto fijo"
