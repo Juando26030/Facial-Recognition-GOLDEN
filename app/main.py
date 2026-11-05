@@ -392,15 +392,17 @@ def clientes_page(request: Request):
 def nuevo_evento_page(tenant_id: str, request: Request, db: Session = Depends(get_db)):
     """Sprint 2.4 Fase 1 (2026-09-16, pedido explícito): "Crear evento" pasa a ser una pantalla
     dedicada en vez del formulario inline que aparecía bajo el cliente expandido en /clientes —
-    mismo formulario/JS de siempre (createEvent), reubicado. comercial+ solamente, mismo mínimo
-    que POST /api/events."""
-    redirect = _require_page_role(request, "comercial")
+    mismo formulario/JS de siempre (createEvent), reubicado. coordinador+, mismo mínimo
+    que POST /api/events (el coordinador puro queda fijado como coordinador y sin elegir comercial)."""
+    redirect = _require_page_role(request, "coordinador")      # 4-nov-2026: el coordinador también crea eventos
     if redirect:
         return redirect
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
     if not tenant:
         return RedirectResponse("/clientes", status_code=302)
+    _roles = {request.session.get("staff_role")} | {request.session.get("staff_secondary_role")}
     return templates.TemplateResponse(request=request, name="nuevo_evento.html", context={
+        "pure_coordinator": not ({"comercial", "admin", "super_admin"} & _roles),
         "staff_name": request.session.get("staff_name"),
         "staff_role": _display_role(request.session.get("staff_role"), request.session.get("staff_secondary_role")),
         "staff_id": request.session.get("staff_user_id"),

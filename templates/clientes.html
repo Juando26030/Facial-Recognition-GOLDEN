@@ -87,9 +87,9 @@
 <script>
 const isAdmin = "{{ staff_role }}" === "admin" || "{{ staff_role }}" === "super_admin";
 const isSuper = "{{ staff_role }}" === "super_admin";
-// Sprint 2.4, 2026-09-16 (pedido explícito): crear clientes/eventos pasó a ser comercial+ — un
-// coordinador ya NO puede (sí puede seguir editando/gestionando los que ya existen).
-const canCreate = "{{ staff_role }}" !== "coordinador";
+// 4-nov-2026 (decisión del dueño): el coordinador también crea EVENTOS (en su cliente); crear
+// CLIENTES sigue siendo comercial+ (la ruta de crear cliente no está en esta pantalla).
+const canCreate = true;
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
 function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
