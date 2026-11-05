@@ -43,6 +43,13 @@ Un PR por pantalla o grupo pequeño, desde `main`. Tamaño: S (≤ 1 día), M (1
 | 4 · Páginas públicas | **APLAZADA** (congeladas, ver §0): formulario público, consentimiento, escarapela digital, certificado, legales, proyector. Se decide aparte cuando no haya formulario activo | — |
 Razón del orden: primero lo que se usa EL DÍA DEL EVENTO (donde el digitador no puede equivocarse), luego lo que arma el evento y por último administración. Lo público queda aplazado y quieto.
 
+### Avance de la Ola 0 (5-nov-2026, rama `ux/fase-1-5`, sale del #58)
+- [x] Candados: `tests/test_publico_congelado.py` (huellas de lo público y de impresión) y `tests/test_visual_global.py` (lista `MIGRADAS` = Registro, Adjuntar base, Parámetros).
+- [x] `GW.busy` (`static/js/gw-busy.js`, cargado desde `_gw_head.html`, prueba `tests/js/gw_busy_check.js`).
+- [x] Ctrl/⌘+S en la barra de guardado (`params-save.js`) y parcial `_gw_savebar.html`; la pestaña recordada es por pantalla (`data-tabs-key`).
+- [x] Componentes compartidos en `design-system.css`: `.gw-page-head`, `.gw-empty`, `.gw-skeleton`, `.gw-cards`/`.gw-card-row`, `.gw-table-cards`, hoja completa de los `.gw-modal` en celular; documentados en la guía y en `ESTANDARES_VISUALES.md` §9.
+- [ ] Falta de la Ola 0: `toast.js` (`showConfirm`/`showPrompt`) a `.gw-modal`; menú lateral y marco (`_sidebar.html`, `_kiosk_top.html`) a 44 px y plegable; `static/js/tours.js`; usar `GW.busy` en los botones de Parámetros y Registro; llevar el modo touch de `shared-print.js` a la pieza global sin cambiar el Registro.
+
 ### Cómo se entrega (decisión 4)
 - **Rama de integración `ux/fase-1-5`** (sale de `main` apenas se fusione el #58). Cada pieza es una rama `ux/<pantalla>` con su PR hacia `ux/fase-1-5` (pruebas en verde).
 - **Staging, por piezas:** al terminar una pieza (o un lote), `ux/fase-1-5` se empuja a `migra/fase1-2` (la rama que despliega staging solo) y Juan la revisa en `https://golden-staging-298291650070.web.app`. No se crean recursos nuevos.
