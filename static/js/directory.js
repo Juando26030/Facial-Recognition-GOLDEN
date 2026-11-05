@@ -288,6 +288,26 @@
      exigía el backend en DELETE /users/{id}/logs. Cada una de las dos dispara su propia
      confirmación aparte del botón "Guardar cambios" de arriba (pedido explícito: "cada vez que
      vaya a hacer una de estas dos salga la notificación de confirmación"). */
+  /* Eliminar a una persona del evento (con confirmación; la usan «Editar persona» y el menú «Más» de la fila). done() corre solo si se eliminó. */
+  async function deletePerson(user, done) {
+    const GCd = window.GoldenContingency && window.GoldenContingency.instance;
+    if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
+    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+    const ok = await showConfirm(`Atención: esto elimina COMPLETAMENTE a ${window.escapeHtml(fullName || 'esta persona')} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
+    if (!ok) return;
+    try {
+      const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Persona eliminada', 'success');
+        if (done) done();
+        if (window.directorySearch) window.directorySearch.reload();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.detail || 'No se pudo eliminar', 'error');
+      }
+    } catch (e) { showToast('Error de red', 'error'); }
+  }
+
   function buildEditModal(user, opts) {
     const GCm = window.GoldenContingency && window.GoldenContingency.instance;
     if (GCm && GCm.active()) return buildOfflinePersonEditModal(user, GCm) || buildOfflineEditModal(user, GCm);          // sin red: con el formulario de persona se edita y se encola; si no, modal limitado (solo estado de registro)
@@ -583,25 +603,22 @@
     });
 
     if (canManageStatus) {
-      box.querySelector('#editModalDelete').addEventListener('click', async () => {
-        const GCd = window.GoldenContingency && window.GoldenContingency.instance;
-        if (GCd && GCd.active()) { showToast(OFFLINE_EDIT_NOTICE, 'error'); return; }
-        const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-        const ok = await showConfirm(`Atención: esto elimina COMPLETAMENTE a ${window.escapeHtml(fullName || 'esta persona')} de la base de este evento (y de la base general si no pertenece a ningún otro evento de este cliente). No se puede deshacer. ¿Continuar?`, { confirmLabel: 'Eliminar' });
-        if (!ok) return;
-        try {
-          const res = await fetch(withEvent(`/api/users/${user.id}`), { method: 'DELETE' });
-          if (res.ok) {
-            showToast('Persona eliminada', 'success');
-            close();
-            if (window.directorySearch) window.directorySearch.reload();
-          } else {
-            const data = await res.json().catch(() => ({}));
-            showToast(data.detail || 'No se pudo eliminar', 'error');
-          }
-        } catch (e) { showToast('Error de red', 'error'); }
-      });
+      box.querySelector('#editModalDelete').addEventListener('click', () => deletePerson(user, close));
     }
+  }
+
+  /* Botón de acción de una fila: ícono del sprite + texto corto (en pantallas muy estrechas el CSS deja solo el ícono; el nombre accesible y el tooltip siguen). Sin DOM de SVG (pruebas), queda el texto. */
+  function actBtn(label, icon, cls, title, aria) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerText = label;
+    if (title) b.title = title;
+    if (aria) b.setAttribute('aria-label', aria);
+    if (icon && document.createElementNS) {
+      const NS = 'http://www.w3.org/2000/svg', s = document.createElementNS(NS, 'svg'), u = document.createElementNS(NS, 'use'), tx = document.createElement('span');
+      s.setAttribute('class', 'gw-icon'); s.setAttribute('aria-hidden', 'true'); u.setAttribute('href', (window.GW_ICON_URL || '/static/img/icons.svg') + '#i-' + icon); s.appendChild(u);
+      tx.className = 'gw-act__t'; tx.textContent = label;
+      b.textContent = ''; b.appendChild(s); b.appendChild(tx);
+    }
+    return b;
   }
 
   /* Menú «Más» de una fila (Plan 8): botón + panel con las acciones secundarias. Se cierra con Esc, al elegir o al hacer clic afuera; si no cabe abajo, se abre hacia arriba. */
@@ -616,11 +633,11 @@
   function buildMoreMenu(items, who) {
     wireMenuClose();
     const wrap = document.createElement('div'); wrap.className = 'gw-menu';
-    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gw-btn gw-btn--secondary btn-table-action gw-menu__btn'; btn.innerText = 'Más';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gw-btn gw-btn--secondary btn-table-action gw-menu__btn'; btn.innerText = 'Más'; btn.title = 'Más opciones';
     btn.setAttribute('aria-haspopup', 'true'); btn.setAttribute('aria-expanded', 'false'); btn.setAttribute('aria-label', 'Más acciones' + (who ? ' de ' + who : ''));
     const panel = document.createElement('div'); panel.className = 'gw-menu__panel'; panel.hidden = true; panel.setAttribute('role', 'group');
     items.forEach((it) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'gw-menu__item'; b.innerText = it.label;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'gw-menu__item' + (it.danger ? ' gw-menu__item--danger' : ''); b.innerText = it.label;
       b.addEventListener('click', () => { closeMenu(); it.run(); });
       panel.appendChild(b);
     });
@@ -655,25 +672,28 @@
     /* «Acreditar» en CADA fila (docs/16, 7a): un clic acredita, con «Deshacer» ~8 s (el servidor lo permite solo a quien acreditó y hasta 15 s). La fila ya acreditada muestra «Acreditado» sin acción. */
     if (rowAccredit) {
       const done = user.status === 'Registrado' || user.status === 'Nuevo';
-      const acc = document.createElement('button');
-      acc.type = 'button'; acc.className = 'gw-btn gw-btn--secondary btn-table-action btn-accredit-row'; acc.disabled = done;
-      acc.innerText = done ? 'Acreditado' : 'Acreditar';
+      const acc = actBtn(done ? 'Acreditado' : 'Acreditar', 'check', 'gw-btn gw-btn--secondary btn-table-action btn-accredit-row' + (done ? ' is-done' : ''), done ? 'Ya acreditado' : 'Acreditar a esta persona', (done ? 'Ya acreditado: ' : 'Acreditar a ') + ([user.first_name, user.last_name].filter(Boolean).join(' ') || 'la persona'));
+      acc.disabled = done;
       if (!done) acc.addEventListener('click', () => rowAccredit(user, acc));
       actionTd.appendChild(acc);
     }
 
-    /* Botón de impresión persistente por fila (Historia 2.2) — vive siempre en la fila para
-       poder reimprimir a cualquiera en cualquier momento, no solo recién registrado. cliente es
-       de solo lectura; 'comercial' excluido explícitamente (Sprint 2.4 Fase 6, pedido explícito:
-       "la comercial no debe poder imprimir en directorio en vivo") — el backend ya lo bloquea
-       (require_role_excluding en badges.py), esto evita mostrarle un botón que le va a fallar. */
+    /* Regla de frecuencia (Plan 8, corrección): lo que se hace con CADA persona va a la vista en una sola línea: [Acreditar] [Imprimir] [Editar]. «Más» queda solo para lo raro y
+       destructivo (eliminar, con confirmación). Imprimir: cliente es de solo lectura y 'comercial' no imprime (el backend ya lo bloquea con require_role_excluding en badges.py);
+       la lista local (sin red) no tiene la cédula, así que tampoco imprime. */
     const PRINT_HIDDEN_ROLES = ['cliente', 'comercial'];
-    /* Plan 8: UNA acción principal por fila («Acreditar»); imprimir y editar van en el menú «Más» de la fila (sin repetir botones grandes). */
-    const canPrint = !PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local;          // la lista local no tiene la cédula (y sin red no se imprime)
-    const moreItems = [];
-    if (canPrint) moreItems.push({ label: 'Imprimir escarapela', run: () => { if (window.BadgePrint) BadgePrint.openPrintWindow(user.id); } });
-    if (canEdit) moreItems.push({ label: 'Editar', run: () => buildEditModal(user) });
-    if (moreItems.length) actionTd.appendChild(buildMoreMenu(moreItems, [user.first_name, user.last_name].filter(Boolean).join(' ')));
+    const who = [user.first_name, user.last_name].filter(Boolean).join(' ');
+    if (!PRINT_HIDDEN_ROLES.includes(window.STAFF_ROLE) && !user.__local) {
+      const printBtn = actBtn('Imprimir', 'printer', 'gw-btn gw-btn--secondary btn-table-action', 'Imprimir escarapela', 'Imprimir escarapela' + (who ? ' de ' + who : ''));
+      printBtn.addEventListener('click', () => { if (window.BadgePrint) BadgePrint.openPrintWindow(user.id); });
+      actionTd.appendChild(printBtn);
+    }
+    if (canEdit) {
+      const editBtn = actBtn('Editar', 'edit', 'gw-btn gw-btn--secondary btn-table-action', 'Editar persona', 'Editar a ' + (who || 'la persona'));
+      editBtn.addEventListener('click', () => buildEditModal(user));
+      actionTd.appendChild(editBtn);
+      if (!user.__local) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));
+    }
 
     tr.appendChild(actionTd);
 

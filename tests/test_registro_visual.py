@@ -113,6 +113,33 @@ def test_new_components_are_in_the_css_the_guide_and_the_standards():
     assert "var(--gw-tap)" in block
 
 
-def test_row_actions_have_one_main_button_and_a_more_menu():
-    assert "buildMoreMenu" in DIR_JS and "'Acreditar'" in DIR_JS and "btn-accredit-row" in DIR_JS
-    assert "aria-label', 'Más acciones" in DIR_JS and "innerText = '🖨" not in DIR_JS
+def test_row_actions_are_visible_in_one_line_and_more_is_only_for_the_rare_destructive():
+    """Regla de frecuencia: Acreditar + Imprimir + Editar a la vista en cada fila; «Más» solo con eliminar (con confirmación)."""
+    row = DIR_JS[DIR_JS.index("function buildRow"):DIR_JS.index("function renderRows")]
+    for label in ("'Imprimir'", "'Editar'", "'Acreditado' : 'Acreditar'"):
+        assert label in row, label
+    assert "actBtn('Imprimir', 'printer'" in row and "actBtn('Editar', 'edit'" in row and "'Imprimir escarapela'" in row
+    more = row[row.index("buildMoreMenu(["):]
+    assert "Eliminar de este evento" in more and "Imprimir" not in more.split("who));")[0] and "Editar" not in more.split("who));")[0], "«Más» no esconde imprimir ni editar"
+    assert "async function deletePerson" in DIR_JS and "showConfirm(" in DIR_JS[DIR_JS.index("async function deletePerson"):DIR_JS.index("function buildEditModal")]
+    assert "btn-table-action" in row and "btn-accredit-row" in row and "is-done" in row, "clases para el modo touch y el estado «Acreditado»"
+    assert re.search(r"\.gw-registro \.action-cell \{[^}]*flex-wrap: nowrap", REG_CSS), "una sola línea"
+    assert re.search(r"\.gw-registro \.action-cell \.gw-btn \{[^}]*min-height: var\(--gw-tap\)", REG_CSS), "44 px"
+    assert "gw-act__t" in REG_CSS and "gw-act__t" in DIR_JS, "texto con ícono; solo ícono en pantallas muy estrechas"
+
+
+def test_three_step_guide_first_time_tour_and_purposeful_animations():
+    assert 'data-gw-tour="registro"' in TPL and "data-gw-tour-auto" in TPL
+    steps = re.findall(r'data-gw-tour-step="(\d)"', TPL + BUSC)
+    assert sorted(steps) == ["1", "2", "3"]
+    assert 'data-gw-tour-restart="registro"' in BUSC and "Busca" in TPL and "Acredita" in TPL and "Imprime la escarapela" in TPL
+    assert "window.GW_ICON_URL" in TPL
+    assert "prefers-reduced-motion: no-preference" in REG_CSS
+    for m in re.finditer(r"animation:\s*[\w-]+\s+(\d+)ms", REG_CSS):
+        assert int(m.group(1)) <= 250, m.group(0)
+    assert "is-done .gw-icon" in REG_CSS and "gw-reason" in REG_CSS and "gw-regcfg__panel:not([hidden])" in REG_CSS
+
+
+def test_frequency_and_guide_rules_are_in_the_standards():
+    assert "Regla de frecuencia" in STANDARDS and "nunca esconder en un menú la acción más usada" in STANDARDS.lower()
+    assert "guía de 3 pasos" in STANDARDS and "250 ms" in STANDARDS
