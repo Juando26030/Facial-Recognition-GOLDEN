@@ -166,7 +166,7 @@
         rootEl.addEventListener('input', onEdit);
         rootEl.addEventListener('change', onEdit);
 
-        // Ctrl/⌘ + S guarda (igual que el botón); si no hay nada pendiente, no hace nada pero tampoco abre «Guardar página como…»
+        // Ctrl o Cmd + S guarda (igual que el botón); si no hay nada pendiente, no hace nada pero tampoco abre «Guardar página como…»
         doc.addEventListener('keydown', (e) => {
             if (!(e.ctrlKey || e.metaKey) || e.altKey || String(e.key).toLowerCase() !== 's') return;
             e.preventDefault();

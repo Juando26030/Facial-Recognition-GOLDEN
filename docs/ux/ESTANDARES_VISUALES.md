@@ -74,7 +74,7 @@ Base ya construida (Fase 1A pieza 0, 3-nov). El rediseño de pantallas existente
 - Píldora sólida de la fila: `.gw-recent-tag` (verde, «Recién registrado»: se acreditó a alguien de la base) y `.gw-recent-tag--new` (azul, «Recién creado»: alta manual con «Registrar nuevo»).
 
 ## 9. Fase 1.5 · piezas compartidas (docs/ux/FASE_1_5_PLAN.md)
-- **Barra de guardado única** `.gw-savebar` (`templates/_gw_savebar.html`, motor `static/js/params-save.js`): botón + Ctrl/⌘+S, «Cambios sin guardar», aviso al salir; el contenedor lleva `id="paramsRoot"`. Una por pantalla.
+- **Barra de guardado única** `.gw-savebar` (`templates/_gw_savebar.html`, motor `static/js/params-save.js`): botón + Ctrl o Cmd + S, «Cambios sin guardar», aviso al salir; el contenedor lleva `id="paramsRoot"`. Una por pantalla.
 - **Botón que trabaja:** `GW.busy(boton, trabajo)` (`static/js/gw-busy.js`) pone la rueda (`aria-busy`), bloquea el doble clic y avisa si tarda. Todo botón que dispara una petición lo usa.
 - **Encabezado de página** `.gw-page-head` (`__text`, `__title`, `__sub`, `__actions`); **vacío** `.gw-empty`; **cargando** `.gw-skeleton`.
 - **Lista en tarjetas** `.gw-cards` + `.gw-card-row` (`__head`, `__title`, `__meta`, `__actions`): las acciones van SIEMPRE dentro de la tarjeta, a la vista. **Tabla que se vuelve tarjetas en celular:** `<table class="gw-table-cards">`, `td[data-label]` y `td.gw-table-cards__actions`.
