@@ -1082,3 +1082,11 @@ Decisión de Juan David (1-nov-2026): cuando `POST /api/register` llega con foto
 
 ## Cupo en 0 = cerrado temporalmente (2026-11-04)
 Antes un cupo con máximo 0 se borraba al guardar; ahora se conserva, deshabilita la opción en la página pública y el servidor responde 409 con el mensaje del cupo (o un texto de «cerrado» por defecto). Sin migración; `form_reserve_slot` ya lo rechazaba (`0 >= 0`).
+
+## Fase 1B · Reimpresión con permisos (2026-11-05, rama `feat/1b-reimpresion-permisos`)
+Parámetro por evento (habilitada / deshabilitada); deshabilitada exige un permiso de UN solo uso que aprueba el coordinador de ESE evento, por pantalla o por correo. Porqués y decisiones: `docs/1B_reimpresion_permisos.md`.
+- **No hay «visto por última vez» del personal** (la sesión vive en la cookie): la presencia del coordinador se deduce de que su pantalla muestre la solicitud en 25 s (una sola escritura por solicitud); si no, correo.
+- **Los escáneres de correo abren enlaces:** el GET del enlace solo muestra; decide un POST. Todos los enlaces de una solicitud mueren al decidirse (por pantalla o por correo).
+- **Un solo permiso, dos equipos:** el gasto es un UPDATE condicionado (`status='approved' AND used_at IS NULL AND expires_at > ahora`); en la cola compartida va en la misma transacción que crea el trabajo.
+- **Coordinadores:** la 1A (alcance de evento apagado) deja entrar a todos los coordinadores a todos los eventos, pero decidir (y no necesitar permiso) es solo del coordinador asignado o admin+; los demás piden permiso como un digitador.
+- Límite conocido: la impresión automática al registrar no pide permiso (es la primera impresión).

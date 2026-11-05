@@ -127,6 +127,8 @@ def _fresh_public_limiter(monkeypatch):
     from app.routers import aceptar
     from app.ttlcache import SlidingLimiter
     monkeypatch.setattr(aceptar, "_limiter", SlidingLimiter())
+    from app.routers import reprint as reprint_router
+    monkeypatch.setattr(reprint_router, "_limiter", SlidingLimiter())
 
 
 @pytest.fixture(autouse=True)
@@ -170,6 +172,7 @@ def outbox(monkeypatch):
     monkeypatch.setattr("app.acceptlink.send_mail", fake_send_mail)
     monkeypatch.setattr("app.acceptmail.send_mail", fake_send_mail)
     monkeypatch.setattr("app.consent_receipt.send_mail", fake_send_mail)
+    monkeypatch.setattr("app.reprint.send_mail", fake_send_mail)
     return sent
 
 

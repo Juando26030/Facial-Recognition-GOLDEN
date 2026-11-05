@@ -22,6 +22,8 @@ from app import form_client, appmode, bulk_jobs, crypto, faces, idle, jobs, obs,
 from app.database import get_db
 from app.models import Event, EventStaffAuthorization, StaffUser, Tenant, WebForm
 from app.routers import print_stations, shared_print
+from app import reprint as reprint_core
+from app.routers import reprint as reprint_router      # Fase 1B: reimpresión con permisos
 from app.routers import print_settings
 from app.routers import api, areas_inventory, auth as auth_router, badges, calendar as calendar_router, cedula, aceptar as aceptar_router, door as door_router, consents as consents_router, privacy_requests as privacy_requests_router, certificates_public, analytics, digital_public, form_client as form_client_router, form_payments, form_refunds, forms, forms_public, ops as ops_router, roulette, event_docs, event_report, event_states, events, legal_public, parametros, privacy as privacy_router, signatures, staff, stats, super_events, tenants, uploads as uploads_router
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff
@@ -286,6 +288,8 @@ _include(form_payments.router)  # cotización y confirmación del pago Wompi + w
 _include(roulette.router, prefix="/api")
 _include(print_stations.router, prefix="/api")     # puestos de impresión configurados desde Parámetros y política de sesiones (0072)
 _include(shared_print.router, prefix="/api")   # impresión compartida de escarapelas (apagada por defecto, por evento)
+_include(reprint_router.router, prefix="/api")      # reimpresión con permisos del coordinador (Fase 1B)
+_include(reprint_router.public_router)      # /reimpresion/<token>: enlace de correo de un solo uso (el GET solo muestra)
 _include(print_settings.router, prefix="/api")   # valores de impresión de escarapelas por evento (cinta, giro, recorte)
 _include(roulette.public_router)  # /r/<token>, pantalla del proyector (sin login)
 _include(certificates_public.router)  # /c/<token>, público (sin login) a propósito
@@ -655,7 +659,7 @@ def kiosk_parametros(event_id: int, request: Request, db: Session = Depends(get_
     entrar a Estadísticas. Mismo mínimo de rol que Adjuntar Base de Datos/Usuarios del Evento.
     'comercial' excluido explícitamente (Sprint 2.4 Fase 6, 2026-09-16, pedido explícito) — queda
     por ENCIMA de 'coordinador' en STAFF_ROLES, así que min_role solo no alcanza para bloquearlo."""
-    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"], extra_context={"idle_general_minutes": idle.general_minutes(), "registro_gear_dig": registro_gear.digitadores_enabled(db, event_id)})
+    return _resolve_kiosk_page(event_id, request, db, "kiosk_parametros.html", min_role="coordinador", exclude_roles=["comercial"], extra_context={"idle_general_minutes": idle.general_minutes(), "reprint_approval_minutes": reprint_core.approval_minutes(), "registro_gear_dig": registro_gear.digitadores_enabled(db, event_id)})
 
 
 @app.get("/kiosk/{event_id}/documentos")

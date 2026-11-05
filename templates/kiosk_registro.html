@@ -43,6 +43,7 @@
   </div>
 </div>
 <script>window.UI_FLOW = "1a"; window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};{% if person_form_json != "null" %} window.PERSON_FORM = {{ person_form_json | safe }};{% endif %}</script>
+<script>window.EVENT_REPRINT_DISABLED = {{ "true" if event.reprint_disabled else "false" }};</script>{# Fase 1B: reimpresión con permisos (static/js/reprint.js) #}
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
 {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y el evento con él prendido; si no, nada de esto se carga y la pantalla es la de siempre. #}
 {% if person_form_json != "null" %}<script src="{{ url_for('static', path='js/form-render.js') }}"></script>
@@ -344,6 +345,7 @@
   </section>
 </main>
 
+<script src="{{ url_for('static', path='js/reprint.js') }}"></script>
 <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
 {# Barra de Registro (27-oct-2026): la impresión es la del domingo 25-oct 18:00 (c10c3d2). Los scripts se cargan en todos los eventos (salvo cliente y comercial, que no imprimen) por el
    modo touch, «solo lector», la barra y el menú; con «Impresión compartida» APAGADA, shared-print.js no toca la impresión (la ventana de siempre). #}

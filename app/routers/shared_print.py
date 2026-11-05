@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import reprint
 from app.auth import get_event_for_staff, require_role_excluding
 from app.routers import print_settings
 from app.routers.print_stations import read_station
@@ -239,6 +240,7 @@ def create_job(event_id: int, data: JobIn, db: Session = Depends(get_db), staff:
             return {**_job_out(db, recent), "duplicate": True, "printer_ready": _printer_ready(dev)}
     else:
         log.info("impresión compartida: REIMPRESIÓN explícita (evento %s, usuario %s)", event.id, staff.id)
+    reprint.gate(db, event, staff, attendee.user_id, "shared")        # Fase 1B: con la reimpresión deshabilitada, una persona ya impresa exige permiso aprobado (se gasta aquí, de forma atómica; 403 si no)
     prefs = print_settings.job_prefs(data.prefs)
     job = PrintJob(event_id=event.id, attendee_id=attendee.id, requested_by_staff_id=staff.id, printer_staff_id=printer_id, request_id=request_id,
                    status="queued", created_at=utcnow(), prefs_json=json.dumps(prefs) if prefs else None)

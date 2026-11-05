@@ -339,7 +339,13 @@
       const countRes = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${window.EVENT_ID}`);
       if (countRes.ok) {
         const countData = await countRes.json();
-        if (countData.times_printed > 0) {
+        let approved = false;
+        if (countData.times_printed > 0 && window.GWReprint) {          // Fase 1B: reimpresión deshabilitada → «No se puede reimprimir» + «Solicitar permiso» (static/js/reprint.js)
+          const g = await window.GWReprint.check(userId, countData);
+          if (!g.ok) return;
+          approved = g.approved;
+        }
+        if (countData.times_printed > 0 && !approved) {
           const timesText = `${countData.times_printed} ${countData.times_printed === 1 ? 'vez' : 'veces'}`;
           const proceed = await window.showConfirm(
             `⚠️ Ya se ha realizado impresión de esta escarapela (${timesText}).<br><br>¿Deseas imprimir de nuevo?`,
@@ -349,6 +355,7 @@
         }
       }
     } catch (e) { /* si falla la consulta del conteo, no bloquea la impresión */ }
+    if (window.GWReprint && !(await window.GWReprint.use(userId))) return;          // Fase 1B: gasta el permiso aprobado (solo si el evento tiene la reimpresión deshabilitada)
     await logPrint(userId);
     openPrintTab(printWindowUrl(userId));
   }
@@ -410,8 +417,10 @@
     setTimeout(() => manualBusy.delete(userId), 3000);
     return true;
   }
-  function printNow(userId) {
-    return logPrint(userId).then(() => openPrintTab(printWindowUrl(userId)));       // devuelve la ventana (null = el navegador la bloqueó)
+  async function printNow(userId) {
+    if (window.GWReprint && !(await window.GWReprint.auto(userId))) return null;     // Fase 1B: reimpresión deshabilitada → la autoimpresión no repite sola a quien ya se imprimió (null = no se imprimió)
+    await logPrint(userId);
+    return openPrintTab(printWindowUrl(userId));                                     // devuelve la ventana (null = el navegador la bloqueó)
   }
   /* Banderas del evento que decide el SERVIDOR (PR3, causa A): `window.EVENT_AUTO_PRINT` ya no es la verdad (la página lo escribe una vez al cargar). Cada respuesta de checkin-cedula, register, PATCH
      status y undo trae `auto_print`/`auto_register`, y cada sondeo del directorio (/users/changes) trae `flags`: aquí se copian a las variables de la página y se avisa (gw:flags) para repintar
