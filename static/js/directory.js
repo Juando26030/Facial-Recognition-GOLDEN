@@ -706,7 +706,7 @@
 
     const statusTd = document.createElement('td');
     statusTd.dataset.field = 'status';
-    statusTd.innerText = user.status === 'No registrado' ? 'No registrado' : 'Registrado';
+    statusTd.innerText = user.status === 'No registrado' ? 'No registrado' : (user.status === 'Nuevo' ? 'Creado nuevo' : 'Registrado');          // quien se dio de alta en el evento («Registrar nuevo») queda «Creado nuevo»
     statusTd.className = 'gw-registro__status';
     const og = ORIGINS[user.origin];
     if (og && user.origin !== 'desconocido') {                      // B1: el ORIGEN de carga, aparte del estado (no cambia al registrar o quitar el registro)
@@ -813,12 +813,15 @@
     function updateCounterLabel() {
       if (!counterBtn) return;
       const real = allUsers.filter(u => !u.test);                     // la persona de prueba del evento no cuenta en los contadores
-      const total = real.length;
-      const count = real.filter(u => u.status === 'No registrado').length;
+      const origin = originSelect && originSelect.value;
+      const scoped = origin ? real.filter(u => (u.origin || 'desconocido') === origin) : real;          // las cifras siguen el filtro de origen (no la búsqueda)
+      const total = scoped.length;
+      const count = scoped.filter(u => u.status === 'No registrado').length;
       const registered = total - count;
       counterBtn.innerText = `${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
       counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : '';
-      if (totalCounterEl) totalCounterEl.innerText = `${registered} registrados de ${total}`;
+      const scope = origin && ORIGINS[origin] ? ORIGINS[origin].label : 'Total';
+      if (totalCounterEl) totalCounterEl.innerText = `${scope}: ${registered} registrados de ${total}`;
     }
 
     /* Buscador rápido (antes, cada tecla re-normalizaba a TODAS las personas y redibujaba TODAS las filas: 180-230 ms por tecla con

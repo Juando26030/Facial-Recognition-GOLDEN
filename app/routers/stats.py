@@ -52,7 +52,7 @@ def _status_of(db: Session, event_id: int, user_id: str) -> str:
     ).all()
     if not logs:
         return "No registrado"
-    return "Registrado"                     # B1: el estado es solo Registrado / No registrado; el alta manual se ve en «Origen de carga»
+    return "Creado nuevo" if any(lg.record_type == "Nuevo" for lg in logs) else "Registrado"          # quien se dio de alta en el evento («Registrar nuevo») queda «Creado nuevo»
 
 
 def _origin_of(db: Session, event_id: int, user_id: str) -> str:

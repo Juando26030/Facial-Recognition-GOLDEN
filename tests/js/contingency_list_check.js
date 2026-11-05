@@ -73,7 +73,7 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
   assert.ok(/LISTA LOCAL: 3 de \?/.test(note.children[0].innerText), 'sin total del servidor conocido: «3 de ?» (no se hace pasar por la lista completa): ' + note.children[0].innerText);
   assert.deepStrictEqual(rows().map((tr) => tr.children[4].innerText), ['VIP', '', 'Prensa, Staff'], 'categorías');
   assert.deepStrictEqual(rows().map((tr) => tr.children[5].innerText), ['No registrado', 'Registrado', 'No registrado'], 'estado');
-  const counters = table.parentNode.children.filter((c) => /counter/.test(c.className)); assert.ok(/2 sin registrar/.test(counters[0].innerText) && /1 registrados de 3/.test(counters[1].innerText), 'contadores: ' + counters.map((c) => c.innerText));
+  const counters = table.parentNode.children.filter((c) => /counter/.test(c.className)); assert.ok(/2 sin registrar/.test(counters[0].innerText) && /Total: 1 registrados de 3/.test(counters[1].innerText), 'contadores: ' + counters.map((c) => c.innerText));
   assert.strictEqual(els.entidad.disabled, true); assert.ok(/No disponible sin conexión/.test(els.entidad.placeholder), 'filtro de entidad desactivado con aviso');
 
   // 2) búsqueda por nombre (sobre el roster) y por cédula EXACTA (huella)
@@ -89,7 +89,7 @@ const type = async (el, text) => { el.value = text; el.listeners.input(); await 
   await d.submitScannedCedula('1003'); await advance(10);
   assert.strictEqual(els.cedula.value, '', 'tras acreditar la caja de búsqueda queda VACÍA (5-nov-2026)'); assert.strictEqual(rows().find((tr) => tr.children[2].innerText.includes('Eva')).children[5].innerText, 'Registrado'); await type(els.cedula, '');
   assert.deepStrictEqual(rows().map((tr) => tr.children[5].innerText), ['No registrado', 'Registrado', 'Registrado']);
-  assert.ok(/1 sin registrar/.test(counters[0].innerText) && /2 registrados de 3/.test(counters[1].innerText));
+  assert.ok(/1 sin registrar/.test(counters[0].innerText) && /Total: 2 registrados de 3/.test(counters[1].innerText));
   assert.strictEqual((await GC.queueList()).length, 1);
 
   // 4) recargar la página YA EN CONTINGENCIA: ni se intenta la red; la lista sale de la copia (y de la cola)
