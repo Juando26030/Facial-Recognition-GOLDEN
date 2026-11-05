@@ -1,0 +1,8 @@
+{# Barra de guardado ÚNICA de la pantalla (Fase 1.5, R1): pegajosa abajo, dice «Cambios sin guardar» / «Guardando…» / «Guardado» / qué falló, con la rueda girando mientras guarda y
+   Ctrl/⌘+S. La maneja static/js/params-save.js (GWParams): cada bloque se registra con GWParams.register({ key, label, order, save }); lo editado dentro de [data-psave="clave"] queda
+   pendiente. Uso: el contenedor de la pantalla lleva id="paramsRoot" (y data-tabs-key="nombre" si tiene pestañas); luego  {% include "_gw_savebar.html" %}  y  <script src="{{ url_for('static', path='js/params-save.js') }}"></script>  (los ids son fijos). #}
+<div class="gw-savebar" id="paramsSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}">
+  <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+  <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar cambios</button>
+  <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
+</div>

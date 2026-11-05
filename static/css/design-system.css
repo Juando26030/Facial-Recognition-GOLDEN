@@ -586,3 +586,36 @@
   .gw-workarea { height: auto; min-height: 0; overflow: visible; }
   .gw-workarea__list { flex: none; min-height: 60dvh; max-height: none; }
 }
+
+/* ============================================================ Fase 1.5 · piezas compartidas (docs/ux/FASE_1_5_PLAN.md §2)
+   Encabezado de página, vacío/cargando, tabla que se vuelve tarjetas en el celular y tarjeta de fila con las acciones SIEMPRE a la vista (sin desplazar). Todo detrás de clases .gw-*. */
+.gw-page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3) var(--gw-sp-4); margin: var(--gw-sp-5) 0 var(--gw-sp-4); }
+.gw-page-head__text { min-width: 0; flex: 1 1 16rem; }
+.gw-page-head__title { font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
+.gw-page-head__sub { margin-top: var(--gw-sp-1); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-page-head__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.gw-empty { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-3); padding: var(--gw-sp-7) var(--gw-sp-4); text-align: center; color: var(--gw-text-muted); background: var(--gw-surface); border: 1px dashed var(--gw-border-strong); border-radius: var(--gw-radius-md); }
+.gw-skeleton { display: block; min-height: 1rem; border-radius: var(--gw-radius-sm); background: var(--gw-surface-2); animation: gw-skeleton 1.2s ease-in-out infinite alternate; }
+@keyframes gw-skeleton { from { opacity: 0.55; } to { opacity: 1; } }
+.gw-cards { display: grid; gap: var(--gw-sp-3); grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); }
+.gw-card-row { display: flex; flex-direction: column; gap: var(--gw-sp-3); padding: var(--gw-sp-4); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
+.gw-card-row__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); }
+.gw-card-row__title { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
+.gw-card-row__meta { margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-card-row__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-card-row__actions .gw-btn { flex: 1 1 auto; }
+@media (max-width: 768px) {
+  .gw-table-cards thead { display: none; }
+  .gw-table-cards, .gw-table-cards tbody, .gw-table-cards tr, .gw-table-cards td { display: block; width: 100%; }
+  .gw-table-cards tr { margin-bottom: var(--gw-sp-3); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
+  .gw-table-cards td { padding: var(--gw-sp-1) 0; border: 0; }
+  .gw-table-cards td[data-label]::before { content: attr(data-label) ": "; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+  .gw-table-cards td.gw-table-cards__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); padding-top: var(--gw-sp-3); }
+  .gw-page-head__actions { width: 100%; }
+  .gw-page-head__actions .gw-btn { flex: 1 1 auto; }
+  .gw-savebar { padding-bottom: calc(var(--gw-sp-3) + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 640px) {
+  .gw-modal-backdrop { padding: 0; align-items: stretch; }
+  .gw-modal { max-width: none; max-height: none; min-height: 100%; border-radius: 0; }
+}
