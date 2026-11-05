@@ -11,7 +11,7 @@
        · en el equipo de Y → se crea un trabajo (con un id propio: un reintento no duplica) y se sigue su estado; «Impreso en Y», o el aviso y la cola visible.
    - El equipo Y imprime lo que el servidor le reserva (nunca dos veces: el servidor no vuelve a entregar un trabajo reservado) y confirma impreso/fallido.
    - Reconexión de la impresora sin pedir permiso de nuevo (navigator.usb.getDevices), pantalla siempre encendida (Wake Lock) y avisos si se pierde la conexión.
-   - «Registro touch» (recordado en este equipo): botones grandes y los TRES buscadores; la cédula abre el teclado numérico. «Solo lector» (opción del PUESTO en Parámetros, para lectores
+   - «Registro touch» (AUTOMÁTICO en celular o tableta, static/js/touch-detect.js): botones grandes y los TRES buscadores; la cédula abre el teclado numérico. «Solo lector» (opción del PUESTO en Parámetros, para lectores
      USB/Bluetooth): la cédula no abre teclado, conserva el foco y un ícono ⌨️ pegado al campo lo abre.
    - Menú de impresión (⚙️, Conectar, Cola): para TODO el personal; el interruptor del puesto en Parámetros («Mostrar» por defecto) lo esconde y deja solo la línea de estado.
    - Trabajos de otros equipos: los reclama SOLO la ventana que puede imprimir sin confirmar (la dueña de la impresora USB); sin ella esperan en «Imprimir pendientes», que reclama al tocarlo. */
@@ -70,7 +70,6 @@
     '<button type="button" class="sp-btn" id="spPending" hidden>🖨️ Imprimir pendientes</button>' +
     '<button type="button" class="sp-btn" id="spQueue">🧾 Cola</button>' +
     '<button type="button" class="sp-btn" id="spPrefs">⚙️ Impresión</button>' +
-    '<button type="button" class="sp-btn" id="spTouch" aria-pressed="false">📱 Registro touch</button>' +
     '<button type="button" class="sp-btn" id="spKeyboard" hidden>⌨️ Teclado</button>';
   const style = document.createElement('style');
   style.textContent = [
@@ -122,6 +121,8 @@
   document.head.appendChild(style);
 
   function mount() {
+    const host = document.getElementById('gwRegCfgBar');                       // Plan 7: dentro del panel del engranaje de Registro (cerrado por defecto)
+    if (host) { host.appendChild(bar); return; }
     const anchor = document.querySelector('.golden-container .tabs');        // encima de las pestañas: se ve en todas (Registro, Escáner, Directorio)
     if (anchor) anchor.parentNode.insertBefore(bar, anchor); else (document.querySelector('main') || document.body).prepend(bar);
   }
@@ -603,7 +604,7 @@
 
   /* ------------------------------------------------------------------ Registro touch */
   const READER_IDS = ['searchCedula', 'regScanCedulaInput', 'bioCedula'];
-  let touch = store.get('gw_touch_mode', '0') === '1';
+  let touch = !!(window.GWTouchDetect && GWTouchDetect.fromWindow(window));        // Plan 7: automático (celular o tableta); ya no hay interruptor manual
   let keyboard = false;
   const readerOnly = () => !!(stationCfg && stationCfg.readerOnly);        // opción del PUESTO (Parámetros): solo lector de códigos, sin teclado en pantalla
   function readerField() { return READER_IDS.map((id) => document.getElementById(id)).find((el) => el && el.offsetParent !== null) || null; }
@@ -620,9 +621,6 @@
   }
   function applyTouch() {
     document.body.classList.toggle('touch-mode', touch);
-    const tbtn = bar.querySelector('#spTouch');
-    tbtn.setAttribute('aria-pressed', touch ? 'true' : 'false');
-    tbtn.textContent = touch ? '📱 Registro touch: ACTIVADO' : '📱 Registro touch';
     bar.querySelector('#spKeyboard').hidden = true;                            // el botón lejano de la barra ya no se usa: el ícono va pegado al campo
     const lector = touch && readerOnly();
     READER_IDS.forEach((id) => {
@@ -635,7 +633,11 @@
       else { const w = el.parentNode; if (w && w.classList && w.classList.contains('sp-kbd-wrap')) w.querySelector('.sp-kbd').hidden = true; }
     });
   }
-  bar.querySelector('#spTouch').addEventListener('click', () => { touch = !touch; keyboard = false; store.set('gw_touch_mode', touch ? '1' : '0'); applyTouch(); const f = readerField(); if (touch && readerOnly() && f) f.focus(); });
+  if (window.matchMedia && window.GWTouchDetect) ['(pointer: coarse)', '(hover: none)'].forEach((q) => {           // p. ej. al acoplar o quitar un mouse en una tableta
+    const mq = window.matchMedia(q);
+    const onChange = () => { const next = GWTouchDetect.fromWindow(window); if (next !== touch) { touch = next; keyboard = false; applyTouch(); } };
+    if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
+  });
   bar.querySelector('#spKeyboard').addEventListener('click', () => { keyboard = !keyboard; applyTouch(); const f = readerField(); if (f) { f.blur(); setTimeout(() => f.focus(), 50); } });
   document.addEventListener('focusout', () => {                                   // solo lector: el campo del lector recupera el foco (salvo que se esté usando otro campo o un diálogo)
     if (!touch || !readerOnly()) return;

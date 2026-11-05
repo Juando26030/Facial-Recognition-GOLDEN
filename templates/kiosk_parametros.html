@@ -70,6 +70,13 @@
             </select></label>
           <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Vale para la tabla en vivo y para la lista local sin conexión. Con 50 o menos la tabla es más ligera en celulares y iPad. La búsqueda y los contadores siempre cubren a todas las personas del evento, y los botones «Anterior / Siguiente» y «Ir a la página» llegan a cualquier fila.</p>
         </div>
+        <!-- Plan 7: quién ve el engranaje «Configuración del registro» (solo visual; app/registro_gear.py). -->
+        <div class="gw-group__item">
+          <h4>Configuración del registro</h4>
+          <label data-psave="reggear" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="checkbox" id="regGearDig" {% if registro_gear_dig %}checked{% endif %}> Mostrar configuración del registro a digitadores</label>
+          <p style="color:var(--gw-text-muted); font-size:0.78rem; margin:0.5rem 0 0;">Apagada por defecto: en la pantalla de Registro, coordinador y administradores siempre ven el engranaje (impresora, autoregistro y auto-impresión); el digitador solo si esto está encendido. Si la apagas, lo ya configurado se conserva: solo se oculta el engranaje.</p>
+        </div>
         <!-- Cierre de sesión por inactividad (app/idle.py, docs/22): tiempo propio de este evento, solo mientras está en proceso. -->
         <div class="gw-group__item">
           <h4>Cierre de sesión por inactividad</h4>
@@ -634,6 +641,9 @@
     })();
     GWParams.register({ key: 'page', label: 'Filas por página', order: 5, save: async () => {
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/directory-page-size`, { value: Number(document.getElementById('directoryPageSize').value) }), 'No se pudo guardar las filas por página');
+    } });
+    GWParams.register({ key: 'reggear', label: 'Configuración del registro', order: 12, save: async () => {
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/registro-gear-digitadores`, { enabled: document.getElementById('regGearDig').checked }), 'No se pudo guardar la opción del engranaje');
     } });
     GWParams.register({ key: 'idle', label: 'Cierre por inactividad', order: 10, save: async () => {
         const raw = document.getElementById('idleMinutes').value.trim();

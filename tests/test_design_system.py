@@ -244,7 +244,7 @@ def test_every_template_loads_static_files_only_through_url_for_and_the_base():
     for t in TEMPLATES:
         text = t.read_text(encoding="utf-8")
         if "css/style.css" in text:
-            assert "css/design-system.css" in text, f"{t.name} carga style.css pero no la base visual (el menú lateral compartido la necesita)"
+            assert ("css/design-system.css" in text or "_gw_head.html" in text), f"{t.name} carga style.css pero no la base visual (el menú lateral compartido la necesita)"
     for name in ("login.html", "_gw_head.html", "_gw_theme_toggle.html", "_sidebar.html", "_kiosk_top.html"):
         text = pathlib.Path("templates", name).read_text(encoding="utf-8")
         assert not re.search(r'(?:href|src)="/static/', text), name
@@ -269,7 +269,7 @@ def test_the_kiosk_precaches_what_the_pages_load_so_the_base_works_offline():
     """El service worker del quiosco guarda los /static/* que la página efectivamente cargó (performance.getEntriesByType): la base entra sola si la página la enlaza."""
     for name in ("kiosk_registro.html", "kiosk_rostro.html"):
         text = pathlib.Path("templates", name).read_text(encoding="utf-8")
-        assert "css/design-system.css" in text, name
+        assert "css/design-system.css" in text or "_gw_head.html" in text, name        # Registro (Plan 7) la trae por _gw_head.html
     reg = pathlib.Path("templates/kiosk_registro.html").read_text(encoding="utf-8")
     assert "performance.getEntriesByType('resource')" in reg and "startsWith(location.origin + '/static/')" in reg
     sw = pathlib.Path("static/js/kiosk-sw.js").read_text(encoding="utf-8")
