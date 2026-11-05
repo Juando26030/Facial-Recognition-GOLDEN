@@ -162,13 +162,36 @@ def quota_sig_map(form: WebForm) -> dict:
     return {r["id"]: rule_sig(r) for r in quota_rules(form)}
 
 
-def quota_counts(db: Session, form: WebForm, rules: list) -> dict:
-    """{id de la regla: inscripciones que la cumplen}: confirmadas reales + las que están pagando ahora (30 min), sin pruebas. Una sola consulta."""
+def _quota_counts_in_memory(db: Session, form: WebForm, rules: list, hold) -> dict:
+    """Cuenta SIN escribir: para cuando faltan llaves y quien pregunta es el formulario público. Escribirlas desde cada visita hacía que muchas visitas a la vez
+    se pelearan por las mismas filas (bloqueos) y la base dejaba de responder (503 en todo el sitio)."""
+    rows = db.query(FormSubmission.quota_keys, FormSubmission.data_json).filter(
+        FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
+        or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold))).all()
+    sigs = {r["id"]: f"|{rule_sig(r)}|" for r in rules}
+    counts = {r["id"]: 0 for r in rules}
+    for keys, raw in rows:
+        if keys is None:
+            try:
+                keys = quota_keys_for(rules, json.loads(raw or "{}"))
+            except (ValueError, TypeError):
+                keys = ""
+        for rid, sig in sigs.items():
+            if sig in keys:
+                counts[rid] += 1
+    return counts
+
+
+def quota_counts(db: Session, form: WebForm, rules: list, persist: bool = True) -> dict:
+    """{id de la regla: inscripciones que la cumplen}: confirmadas reales + las que están pagando ahora (30 min), sin pruebas. Una sola consulta.
+    `persist=False` (formulario público): si faltan llaves cuenta en memoria y NO escribe nada."""
     if not rules:
         return {}
-    if db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None).first():  # noqa: E711
-        rebuild_quota_keys(db, form, rules)
     hold = utcnow() - PENDING_HOLD
+    if db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None).first():  # noqa: E711
+        if not persist:
+            return _quota_counts_in_memory(db, form, rules, hold)
+        rebuild_quota_keys(db, form, rules)
     cols = [func.count(FormSubmission.id).filter(func.strpos(FormSubmission.quota_keys, f"|{rule_sig(r)}|") > 0) for r in rules]
     row = db.query(*cols).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False,  # noqa: E712
                                  or_(FormSubmission.status == "confirmed", and_(FormSubmission.status == PENDING, FormSubmission.created_at > hold))).one()
@@ -187,7 +210,7 @@ def quota_public(db: Session, form: WebForm) -> dict:
     rules = quota_rules(form)
     if not rules:
         return {"left": {}, "full": []}
-    counts = quota_counts(db, form, rules)
+    counts = quota_counts(db, form, rules, persist=False)       # público: nunca escribe llaves (ver _quota_counts_in_memory)
     left: dict = {}
     full = []
     for r in rules:
