@@ -28,7 +28,7 @@ Cierre confirmado por Juan David por escrito (conversación del 5-nov-2026, 15:3
 - Pendientes de seguridad que NO bloquean (con dueño): CSP completa y revisión de `X-Content-Type-Options` en una ruta estática (Fase 3); `ENFORCE_STAFF_TENANT` a 1 con dos clientes antes del SaaS; límites por IP en memoria por proceso (documentado; Neon/Redis si se escala).
 
 ## Orden del repositorio
-- Ramas fusionadas a `main` borradas el 5-nov (lista y SHA en `0B_ramas_borradas.md`, sección «5-nov»). Las que tienen commits propios sin fusionar se conservan.
+- Ramas: GitHub tiene 68; 18 están totalmente fusionadas y listas para borrar (lista y SHA en `0B_ramas_borradas.md`, sección «5-nov»; las borra Juan David, la sesión no tiene permiso de escritura sobre ramas). Las que tienen commits propios sin fusionar se conservan.
 - Documentación al día: este archivo, tablero del plan maestro (`29_PLAN_MAESTRO…` §18), `15_MIGRACION.md`, `HANDOFF.md`, `INDEX.md`, `CLAUDE.md`.
 
 ## Lo que queda abierto fuera de las fases (decisiones de Juan David)
