@@ -33,14 +33,14 @@
 Uso del color: azul marino = identidad y acción; dorado = acento y fondo de énfasis; verde/ámbar/rojo/azul-info **solo** para estados, y siempre acompañados de ícono o texto (no depender solo del color).
 
 ## 3. Componentes que ya existen (reutilizar, no reinventar)
-Botón `.gw-btn` · mosaico por tarea `.gw-tile/.gw-tiles` · tarjeta `.gw-card` · campos `.gw-field/.gw-label/.gw-input/.gw-textarea/.gw-check/.gw-hint/.gw-error` · tabla `.gw-table` · insignia `.gw-badge` · aviso `.gw-alert` · estado de pantalla (vacío/cargando/error) `.gw-state/.gw-spinner` · ventana `.gw-modal` · asistente por pasos `.gw-wizard/.gw-progress` · navegación `.gw-nav` · interruptor de tema `.gw-theme-toggle` · ayuda en contexto `.gw-help/.gw-popover` · recorrido `.gw-tour`.
+Botón `.gw-btn` · mosaico por tarea `.gw-tile/.gw-tiles` · tarjeta `.gw-card` · campos `.gw-field/.gw-label/.gw-input/.gw-textarea/.gw-check/.gw-hint/.gw-error` · tabla `.gw-table` · insignia `.gw-badge` · aviso `.gw-alert` · estado de pantalla (vacío/cargando/error) `.gw-state/.gw-spinner` · ventana `.gw-modal` · asistente por pasos `.gw-wizard/.gw-progress` · navegación `.gw-nav` · interruptor de tema `.gw-theme-toggle` · ayuda en contexto `.gw-help/.gw-popover` · recorrido `.gw-tour` · grupo desplegable `.gw-group` (+ `__sum/__title/__hint/__body/__item`) y barra de guardado global `.gw-savebar` (+ `__status/__fail`).
 Si necesitas algo que no está: primero se agrega a `design-system.css` **y** a `guia_visual.html` (con su par de contraste en `test_design_system.py`), después se usa.
 
 ## 4. Patrones de pantalla
 - **Una cosa por paso:** una decisión por pantalla en flujos largos; botón «Continuar».
 - **Revelación progresiva:** lo frecuente arriba, lo avanzado aparte, máximo 2 niveles.
-- **Interruptor** = efecto inmediato sin «Guardar»; **casilla/radio** = se aplica al guardar. No mezclarlos en la misma sección.
-- **Parámetros** en pestañas con **un Guardar por pestaña** y aviso «Cambios sin guardar»; **Privacidad** aparte con acciones destructivas en rojo.
+- **Interruptor** = efecto inmediato sin «Guardar»; **casilla/radio** = se aplica al guardar. No mezclarlos en la misma sección. (Excepción de Parámetros: ahí todo queda pendiente hasta el Guardar global.)
+- **Parámetros** en grupos desplegables (`.gw-group`, solo el primero abierto, lo abierto se recuerda por usuario) con **UN Guardar global** (`.gw-savebar`, decisión del dueño, Plan 6, 2026-11-04; antes «un Guardar por pestaña»): los campos, casillas e interruptores son cambios pendientes hasta guardar; la barra dice «Cambios sin guardar» / «Guardado ✓» o qué bloque falló (lo demás sí se guarda) y la pantalla avisa al salir con cambios. **Privacidad** y toda acción destructiva (borrar campo, purgar, borrar puesto) siguen inmediatas, en rojo y con confirmación. Esto vale solo para Parámetros; el resto de pantallas conserva su botón propio.
 - **No pedir dos veces** un dato ya dado (autocompletar). Decir antes qué se va a pedir.
 - **Los 3 estados siempre:** cada lista o carga tiene vacío, cargando y error diseñados, con qué hacer.
 - **Inicio por rol:** mosaicos grandes por tarea, ordena sin esconder; los principios aplican también al super_admin.

@@ -383,3 +383,34 @@
 .gw-search .gw-hint:empty { display: none; }
 .gw-scroll-x { overflow-x: auto; }
 .gw-reason { display: flex; width: fit-content; max-width: 100%; margin-top: var(--gw-sp-1); border-radius: var(--gw-radius-md); }
+
+/* ============================================================ Grupo desplegable (<details class="gw-group">) y barra de guardado global (Plan 6, «Parámetros del evento»).
+   El grupo agrupa varias tarjetas de ajustes; la barra (`.gw-savebar`) es el ÚNICO botón «Guardar» de la pantalla: pegajosa abajo, dice «Cambios sin guardar» / «Guardado» / qué falló. */
+.gw-group { background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm); margin-bottom: var(--gw-sp-4); }
+.gw-group__sum { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gw-sp-3); min-height: var(--gw-tap); padding: var(--gw-sp-3) var(--gw-sp-5); list-style: none; cursor: pointer; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); border-radius: var(--gw-radius-lg); }
+.gw-group__sum::-webkit-details-marker { display: none; }
+.gw-group__sum::before { content: ""; flex: none; width: 0.55em; height: 0.55em; border-right: 3px solid currentColor; border-bottom: 3px solid currentColor; transform: rotate(-45deg); transition: transform var(--gw-dur); }
+.gw-group[open] > .gw-group__sum { background: var(--gw-surface-2); border-bottom: 1px solid var(--gw-border); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.gw-group[open] > .gw-group__sum::before { transform: rotate(45deg); }
+.gw-group__sum:hover { background: var(--gw-surface-2); }
+.gw-group__sum:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-group__title { margin-right: auto; }
+.gw-group__hint { flex-basis: 100%; margin-left: calc(0.55em + var(--gw-sp-3)); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); }
+.gw-group__body { padding: var(--gw-sp-2) var(--gw-sp-5) var(--gw-sp-4); }
+.gw-group__item { padding: var(--gw-sp-4) 0; border-bottom: 1px solid var(--gw-border); }
+.gw-group__item:last-child { border-bottom: 0; }
+.gw-group__item > h4 { margin: 0 0 var(--gw-sp-2); font-size: var(--gw-fs-lg); color: var(--gw-text); }
+.gw-group__pending[hidden], .gw-group [hidden] { display: none !important; }   /* los botones «Guardar» por bloque siguen en el DOM, ocultos y funcionales */
+
+.gw-savebar { position: sticky; bottom: 0; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); margin-top: var(--gw-sp-4); padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-lg); }
+.gw-savebar[data-state="dirty"] { border-color: var(--gw-warn-line); }
+.gw-savebar[data-state="saved"] { border-color: var(--gw-ok-line); }
+.gw-savebar[data-state="error"] { border-color: var(--gw-err-line); }
+.gw-savebar__status { margin-right: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); }
+.gw-savebar__fail { flex-basis: 100%; margin: 0; padding: var(--gw-sp-3) var(--gw-sp-4) var(--gw-sp-3) var(--gw-sp-6); background: var(--gw-err-bg); color: var(--gw-err-text); border: 1px solid var(--gw-err-line); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
+.gw-savebar__fail[hidden] { display: none; }
+@media (max-width: 520px) {
+  .gw-savebar { flex-direction: column; align-items: stretch; }
+  .gw-savebar__status { margin-right: 0; }
+  .gw-group__sum, .gw-group__body { padding-left: var(--gw-sp-4); padding-right: var(--gw-sp-4); }
+}
