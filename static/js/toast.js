@@ -73,37 +73,78 @@
     return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   };
 
+  /* Cuadros de diálogo con el diseño nuevo (Fase 1.5, Ola 0): .gw-modal de design-system.css. Los tres comparten esta base: foco al abrir y al cerrar,
+     Tab que no se sale del cuadro, role="dialog" y animación corta (sin ella con «reducir movimiento»). Se conservan los id de los botones. */
+  function openDialog(cfg) {
+    const prevFocus = document.activeElement;
+    const backdrop = document.createElement("div");
+    backdrop.className = "gw-modal-backdrop gw-modal-backdrop--top";
+    backdrop.setAttribute("data-open", "true");
+    const dlg = document.createElement("div");
+    dlg.className = "gw-modal gw-modal--dialog" + (cfg.warning ? " gw-modal--warn" : "");
+    dlg.setAttribute("role", "dialog");
+    dlg.setAttribute("aria-modal", "true");
+    dlg.setAttribute("aria-label", cfg.title);
+    dlg.innerHTML =
+      '<div class="gw-modal__head"><h2 class="gw-modal__title"></h2></div>' +
+      '<div class="gw-modal__body"></div>' +
+      '<div class="gw-modal__foot"></div>';
+    dlg.querySelector(".gw-modal__title").textContent = cfg.title;
+    dlg.querySelector(".gw-modal__body").innerHTML = cfg.bodyHtml;
+    const foot = dlg.querySelector(".gw-modal__foot");
+    cfg.buttons.forEach((b) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.id = b.id;
+      btn.className = "gw-btn " + b.cls;
+      btn.textContent = b.label;
+      foot.appendChild(btn);
+    });
+    backdrop.appendChild(dlg);
+    document.body.appendChild(backdrop);
+    function close() {
+      backdrop.remove();
+      document.removeEventListener("keydown", onKey, true);
+      if (prevFocus && prevFocus.focus && document.contains(prevFocus)) { try { prevFocus.focus(); } catch (e) { /* el elemento ya no existe */ } }
+    }
+    function onKey(e) {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (cfg.onEscape) cfg.onEscape(); return; }
+      if (e.key !== "Tab") return;
+      const f = Array.from(dlg.querySelectorAll("button, input, select, textarea, a[href]")).filter((x) => !x.disabled);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (!dlg.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    document.addEventListener("keydown", onKey, true);
+    if (cfg.onBackdrop) backdrop.addEventListener("click", (e) => { if (e.target === backdrop) cfg.onBackdrop(); });
+    return { backdrop, dlg, close };
+  }
+  window.openGwDialog = openDialog;
+
+  /* showConfirm(message, { variant: "danger" (default: botón rojo, para borrar/sobrescribir) | "warning" (aviso amarillo: «¿seguro?» sin ser destructivo),
+     confirmLabel, title }). Devuelve Promise<boolean>. Hacer clic afuera o Esc = cancelar (no es un formulario de datos). */
   window.showConfirm = function (message, opts) {
     opts = opts || {};
     const isWarning = opts.variant === "warning";
-    const palette = isWarning
-      ? { boxBg: "#fff8e1", border: "3px solid #f0ad4e", text: "#7a5b00", btnBg: "#f0ad4e", btnText: "#3a2a00" }
-      : { boxBg: "white", border: "none", text: "#333", btnBg: "#dc3545", btnText: "white" };
-    const confirmLabel = opts.confirmLabel || "Confirmar";
-
     return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.style.cssText = `
-        position: fixed; inset: 0; background: rgba(10,14,46,0.45); z-index: 9998;
-        display: flex; align-items: center; justify-content: center;
-      `;
-      const box = document.createElement("div");
-      box.style.cssText = `
-        background: ${palette.boxBg}; border: ${palette.border}; border-radius: 16px; padding: 1.8rem; max-width: 420px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);
-      `;
-      box.innerHTML = `
-        <p style="color:${palette.text}; margin-bottom:1.4rem; line-height:1.4; font-size:${isWarning ? "1.05rem" : "1rem"}; ${isWarning ? "font-weight:600;" : ""}">${message}</p>
-        <div style="display:flex; justify-content:flex-end; gap:10px;">
-          <button id="toastConfirmCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-          <button id="toastConfirmOk" style="border:none; background:${palette.btnBg}; color:${palette.btnText}; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${window.escapeHtml(confirmLabel)}</button>
-        </div>
-      `;
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      box.querySelector("#toastConfirmCancel").addEventListener("click", () => { overlay.remove(); resolve(false); });
-      box.querySelector("#toastConfirmOk").addEventListener("click", () => { overlay.remove(); resolve(true); });
-      overlay.addEventListener("click", (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+      let d;
+      const done = (v) => { d.close(); resolve(v); };
+      d = openDialog({
+        title: opts.title || (isWarning ? "Ten en cuenta" : "Confirmar"),
+        warning: isWarning,
+        bodyHtml: '<p class="gw-modal__text">' + message + "</p>",
+        buttons: [
+          { id: "toastConfirmCancel", cls: "gw-btn--secondary", label: "Cancelar" },
+          { id: "toastConfirmOk", cls: isWarning ? "gw-btn--primary" : "gw-btn--danger", label: opts.confirmLabel || "Confirmar" },
+        ],
+        onEscape: () => done(false),
+        onBackdrop: () => done(false),
+      });
+      d.dlg.querySelector("#toastConfirmCancel").addEventListener("click", () => done(false));
+      d.dlg.querySelector("#toastConfirmOk").addEventListener("click", () => done(true));
+      d.dlg.querySelector("#toastConfirmCancel").focus();
     });
   };
 
@@ -114,46 +155,28 @@
      si cancela o si el campo queda vacío). opts: { defaultValue, placeholder, confirmLabel }. */
   window.showPrompt = function (message, opts) {
     opts = opts || {};
-    const defaultValue = opts.defaultValue || "";
-    const confirmLabel = opts.confirmLabel || "Guardar";
-    const placeholder = opts.placeholder || "";
-
     return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.style.cssText = `
-        position: fixed; inset: 0; background: rgba(10,14,46,0.45); z-index: 9998;
-        display: flex; align-items: center; justify-content: center;
-      `;
-      const box = document.createElement("div");
-      box.style.cssText = `
-        background: white; border-radius: 16px; padding: 1.8rem; max-width: 420px; width: 90%;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif);
-      `;
-      const escapedDefault = String(defaultValue).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-      const escapedPlaceholder = String(placeholder).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-      box.innerHTML = `
-        <p style="color:#333; margin-bottom:1rem; line-height:1.4;">${message}</p>
-        <input id="toastPromptInput" type="text" value="${escapedDefault}" placeholder="${escapedPlaceholder}"
-               style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:10px; padding:10px 12px; font-size:1rem; margin-bottom:1.4rem;">
-        <div style="display:flex; justify-content:flex-end; gap:10px;">
-          <button id="toastPromptCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-          <button id="toastPromptOk" style="border:none; background:var(--golden-primary, #D4AF37); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">${window.escapeHtml(confirmLabel)}</button>
-        </div>
-      `;
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      const input = box.querySelector("#toastPromptInput");
+      let d;
+      const done = (v) => { d.close(); resolve(v); };
+      d = openDialog({
+        title: opts.title || "Escribe un dato",
+        bodyHtml: '<div class="gw-field"><label class="gw-label" for="toastPromptInput">' + message + '</label>' +
+                  '<input id="toastPromptInput" class="gw-input" type="text"></div>',
+        buttons: [
+          { id: "toastPromptCancel", cls: "gw-btn--secondary", label: "Cancelar" },
+          { id: "toastPromptOk", cls: "gw-btn--primary", label: opts.confirmLabel || "Guardar" },
+        ],
+        onEscape: () => done(null),   // sin onBackdrop a propósito: un campo de texto no se cierra al hacer clic afuera (2026-09-16)
+      });
+      const input = d.dlg.querySelector("#toastPromptInput");
+      input.value = opts.defaultValue || "";
+      input.placeholder = opts.placeholder || "";
+      const ok = () => done(input.value.trim() || null);
+      d.dlg.querySelector("#toastPromptCancel").addEventListener("click", () => done(null));
+      d.dlg.querySelector("#toastPromptOk").addEventListener("click", ok);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ok(); } });
       input.focus();
       input.select();
-      function finish(value) { overlay.remove(); resolve(value); }
-      box.querySelector("#toastPromptCancel").addEventListener("click", () => finish(null));
-      box.querySelector("#toastPromptOk").addEventListener("click", () => finish(input.value.trim() || null));
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") { e.preventDefault(); finish(input.value.trim() || null); }
-        else if (e.key === "Escape") { finish(null); }
-      });
-      // 2026-09-16 (Sprint 2.4 Fase 3, pedido explícito): ya NO se cierra al hacer clic afuera —
-      // solo con "Cancelar" o el botón de confirmar (o Escape, que ya era explícito).
     });
   };
 
@@ -165,7 +188,7 @@
     const name = data ? `${data.first_name || ""} ${data.last_name || ""}`.trim() : "";
     const timesText = times ? ` (ya lo hizo ${times} ${times === 1 ? "vez" : "veces"})` : "";
     return window.showConfirm(
-      `⚠️ ${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento${timesText}.<br><br>` +
+      `${name ? `<strong>${name}</strong>` : "Esta persona"} ya había sido registrada/acreditada en este evento${timesText}.<br><br>` +
       `¿Seguro que deseas registrarla de nuevo? Hazlo solo si fue un error o realmente necesitas repetir el ingreso.`,
       { variant: "warning", confirmLabel: "Sí, registrar de nuevo" }
     );
@@ -179,49 +202,40 @@
      y ubicar a qué corresponde a simple vista. */
   window.promptOptionalLabels = function (fields, examples) {
     examples = examples || {};
+    const esc = window.escapeHtml;
     return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.style.cssText = `position:fixed; inset:0; background:rgba(10,14,46,0.45); z-index:9998; display:flex; align-items:center; justify-content:center; padding:1rem;`;
-      const box = document.createElement("div");
-      box.style.cssText = `background:white; border-radius:16px; padding:1.8rem; max-width:460px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family: var(--font-body, sans-serif); max-height:80vh; overflow-y:auto;`;
-
-      const rowsHtml = fields.map(f => {
+      const rowsHtml = fields.map((f) => {
         const n = f.split("_")[1];
         const ex = examples[f] || [];
         const exHtml = ex.length
-          ? `<p style="font-size:0.78rem; color:#888; margin:4px 0 0;">Ejemplo${ex.length > 1 ? "s" : ""} en el archivo: <strong>${ex.map(v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")).join(", ")}</strong></p>`
+          ? '<p class="gw-hint">Ejemplo' + (ex.length > 1 ? "s" : "") + " en el archivo: <strong>" + ex.map((v) => esc(v)).join(", ") + "</strong></p>"
           : "";
-        return `<div class="badge-input-group" style="margin-top:0.8rem;">
-                <label>¿A qué corresponde "Opcional ${n}"?</label>
-                <input type="text" data-field="${f}" placeholder="Ej. Talla de camisa, Grupo, Restricción alimentaria...">
-                ${exHtml}
-            </div>`;
+        return '<div class="gw-field gw-modal__row"><label class="gw-label">¿A qué corresponde "Opcional ' + esc(n) + '"?</label>' +
+               '<input class="gw-input" type="text" data-field="' + esc(f) + '" placeholder="Ej. Talla de camisa, Grupo, Restricción alimentaria...">' + exHtml + "</div>";
       }).join("");
-
-      box.innerHTML = `
-            <p style="color:#333; margin-bottom:0.5rem; line-height:1.4;">
-                <strong>Encontramos ${fields.length} campo(s) opcional(es) nuevo(s)</strong>.
-                Dinos a qué corresponde cada uno para poder identificarlos más adelante (en reportes, etc.).
-            </p>
-            ${rowsHtml}
-            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:1.5rem;">
-                <button id="optLabelsCancel" style="border:1px solid #ccc; background:white; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:600;">Cancelar</button>
-                <button id="optLabelsOk" style="border:none; background: var(--golden-primary); color:#1a1200; border-radius:20px; padding:8px 18px; cursor:pointer; font-weight:700;">Guardar y continuar</button>
-            </div>
-        `;
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-
-      box.querySelector("#optLabelsCancel").addEventListener("click", () => { overlay.remove(); resolve(null); });
-      box.querySelector("#optLabelsOk").addEventListener("click", () => {
+      let d;
+      const done = (v) => { d.close(); resolve(v); };
+      d = openDialog({
+        title: "Campos opcionales nuevos",
+        bodyHtml: '<p class="gw-modal__text"><strong>Encontramos ' + fields.length + " campo(s) opcional(es) nuevo(s)</strong>. " +
+                  "Dinos a qué corresponde cada uno para poder identificarlos más adelante (en reportes, etc.).</p>" + rowsHtml,
+        buttons: [
+          { id: "optLabelsCancel", cls: "gw-btn--secondary", label: "Cancelar" },
+          { id: "optLabelsOk", cls: "gw-btn--primary", label: "Guardar y continuar" },
+        ],
+        onEscape: () => done(null),
+      });
+      d.dlg.querySelector("#optLabelsCancel").addEventListener("click", () => done(null));
+      d.dlg.querySelector("#optLabelsOk").addEventListener("click", () => {
         const labels = {};
-        box.querySelectorAll("input[data-field]").forEach(input => {
+        d.dlg.querySelectorAll("input[data-field]").forEach((input) => {
           const val = input.value.trim();
           if (val) labels[input.dataset.field] = val;
         });
-        overlay.remove();
-        resolve(labels);
+        done(labels);
       });
+      const first = d.dlg.querySelector("input[data-field]");
+      if (first) first.focus();
     });
   };
 
