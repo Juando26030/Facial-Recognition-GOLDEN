@@ -58,7 +58,7 @@ def required_editable(cfg: dict) -> bool:
 def _signature(configs: list) -> str:
     """Huella de lo que el evento define para cada campo (clave, nombre, tipo, obligatorio, opciones): si cambia en Parámetros, un dispositivo con la copia anterior lo sabe."""
     raw = json.dumps([[c["key"], c.get("label"), c.get("field_type"), bool(c.get("required")), c.get("options") or []] for c in configs], ensure_ascii=False, sort_keys=True)
-    return hashlib.sha1(raw.encode()).hexdigest()[:10]
+    return hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:10]  # huella de versión, no de seguridad
 
 
 # ------------------------------------------------------------------ diseño por defecto
