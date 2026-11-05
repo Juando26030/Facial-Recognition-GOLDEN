@@ -70,15 +70,17 @@
         <div class="badge-input-row">
           <div class="badge-input-group" style="min-width:100%;">
             <label>Coordinador asignado *</label>
-            <input type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar...">
+            <input type="text" name="coordinator_label" list="coordinatorList" required autocomplete="off" placeholder="Escribe para buscar..."{% if pure_coordinator %} readonly title="Como coordinador, el evento queda asignado a ti"{% endif %}>
           </div>
         </div>
+        {% if not pure_coordinator %}
         <div class="badge-input-row">
           <div class="badge-input-group" style="min-width:100%;">
             <label>Comercial asignada *</label>
             <input type="text" name="commercial_label" list="commercialList" required autocomplete="off" placeholder="Escribe para buscar...">
           </div>
         </div>
+        {% endif %}
         <div class="badge-input-row">
           <div class="badge-input-group" style="min-width:100%;">
             <label>Superevento (opcional — agrupa eventos hermanos de este cliente)</label>
@@ -114,6 +116,7 @@
 <script>
 const TENANT_ID = "{{ tenant_id }}";
 const STAFF_ROLE = "{{ staff_role }}";
+const PURE_COORDINATOR = {{ 'true' if pure_coordinator else 'false' }};
 const STAFF_ID = {{ staff_id if staff_id is not none else 'null' }};
 const COUNTRIES = ["Colombia","México","Argentina","Chile","Perú","Ecuador","Venezuela","Bolivia","Paraguay","Uruguay","Brasil","Panamá","Costa Rica","Guatemala","Honduras","El Salvador","Nicaragua","República Dominicana","Cuba","Puerto Rico","España","Estados Unidos","Canadá","Francia","Alemania","Italia","Reino Unido","Portugal","Países Bajos","Bélgica","Suiza","China","Japón","Corea del Sur","India","Australia"];
 document.getElementById("countryList").innerHTML = COUNTRIES.map(c => `<option value="${c}">`).join("");
@@ -144,6 +147,10 @@ async function loadCoordinatorOptions() {
     coordinatorsByLabel[label] = c.id;
     return `<option value="${label}">`;
   }).join("");
+  if (PURE_COORDINATOR) {          // coordinador puro: el evento queda a su nombre
+    const self = coords.find(c => c.id === STAFF_ID);
+    if (self) document.querySelector('input[name="coordinator_label"]').value = `${self.full_name || self.username} (${self.username})`;
+  }
 }
 loadCoordinatorOptions();
 
@@ -168,7 +175,7 @@ async function loadCommercialOptions() {
     }
   }
 }
-loadCommercialOptions();
+if (!PURE_COORDINATOR) loadCommercialOptions();
 
 async function loadSuperEvents(selectedId) {
   const res = await fetch(`/api/super-events?tenant_id=${encodeURIComponent(TENANT_ID)}`);
@@ -204,12 +211,14 @@ document.getElementById("newEventForm").addEventListener("submit", async (ev) =>
   payload.coordinator_staff_id = coordinatorId;
   delete payload.coordinator_label;
 
-  const commercialId = commercialsByLabel[payload.commercial_label];
-  if (!commercialId) {
-    showToast("Selecciona una comercial válida de la lista.", "error");
-    return;
+  if (!PURE_COORDINATOR) {
+    const commercialId = commercialsByLabel[payload.commercial_label];
+    if (!commercialId) {
+      showToast("Selecciona una comercial válida de la lista.", "error");
+      return;
+    }
+    payload.commercial_staff_id = commercialId;
   }
-  payload.commercial_staff_id = commercialId;
   delete payload.commercial_label;
 
   const btn = form.querySelector('button[type="submit"]');
