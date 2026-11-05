@@ -339,7 +339,13 @@
       const countRes = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${window.EVENT_ID}`);
       if (countRes.ok) {
         const countData = await countRes.json();
-        if (countData.times_printed > 0) {
+        let approved = false;
+        if (countData.times_printed > 0 && window.GWReprint) {          // Fase 1B: reimpresión deshabilitada → «No se puede reimprimir» + «Solicitar permiso» (static/js/reprint.js)
+          const g = await window.GWReprint.check(userId, countData);
+          if (!g.ok) return;
+          approved = g.approved;
+        }
+        if (countData.times_printed > 0 && !approved) {
           const timesText = `${countData.times_printed} ${countData.times_printed === 1 ? 'vez' : 'veces'}`;
           const proceed = await window.showConfirm(
             `⚠️ Ya se ha realizado impresión de esta escarapela (${timesText}).<br><br>¿Deseas imprimir de nuevo?`,
@@ -349,6 +355,7 @@
         }
       }
     } catch (e) { /* si falla la consulta del conteo, no bloquea la impresión */ }
+    if (window.GWReprint && !(await window.GWReprint.use(userId))) return;          // Fase 1B: gasta el permiso aprobado (solo si el evento tiene la reimpresión deshabilitada)
     await logPrint(userId);
     openPrintTab(printWindowUrl(userId));
   }

@@ -200,6 +200,18 @@
         <details class="gw-group" data-group="impresion" id="grp_impresion">
           <summary class="gw-group__sum"><span class="gw-group__title">Impresión y escarapela</span><span class="gw-badge gw-badge--warn gw-group__pending" data-group-pending hidden>⚠ Cambios sin guardar</span><span class="gw-group__hint">Impresión compartida, puestos de impresión y valores de la impresora del evento.</span></summary>
           <div class="gw-group__body">
+        <!-- Reimpresión de escarapelas (Fase 1B, app/reprint.py): habilitada por defecto; deshabilitada exige permiso del coordinador del evento. Solo admin+ la cambia. -->
+        {% set can_change_reprint = ('admin' in staff_role) %}
+        <div class="gw-group__item" id="reprintCard">
+          <h4>Reimpresión de escarapelas</h4>
+          <div data-psave="reprint" style="display:grid; gap:8px; max-width:560px;">
+            <label style="display:flex; gap:10px; align-items:flex-start; min-height:44px;"><input type="radio" name="reprintMode" value="enabled" {% if not event.reprint_disabled %}checked{% endif %} {% if not can_change_reprint %}disabled{% endif %} style="width:22px; height:22px; margin-top:2px;"> <span><b>Habilitada</b><br><span style="color:var(--gw-text-muted); font-size:0.875rem;">Si la persona ya se imprimió, solo se avisa «ya se imprimió» y quien registra decide.</span></span></label>
+            <label style="display:flex; gap:10px; align-items:flex-start; min-height:44px;"><input type="radio" name="reprintMode" value="disabled" {% if event.reprint_disabled %}checked{% endif %} {% if not can_change_reprint %}disabled{% endif %} style="width:22px; height:22px; margin-top:2px;"> <span><b>Deshabilitada</b><br><span style="color:var(--gw-text-muted); font-size:0.875rem;">No se puede reimprimir a quien ya se imprimió, salvo una emergencia autorizada: el digitador pide permiso y lo aprueba el coordinador de este evento (o un administrador si no tiene coordinador). Cada permiso vale una sola reimpresión y vence en {{ reprint_approval_minutes }} minutos.</span></span></label>
+          </div>
+          {% if not can_change_reprint %}<p class="gw-alert" role="note" style="margin:0.6rem 0 0;"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-lock"/></svg><span class="gw-alert__body">Solo un administrador cambia esta opción.</span></p>{% endif %}
+          <details style="margin-top:0.8rem;"><summary style="cursor:pointer; min-height:44px; display:flex; align-items:center;">Solicitudes de permiso de este evento</summary>
+            <div id="reprintHistory" style="font-size:0.9rem;" aria-live="polite">Cargando…</div></details>
+        </div>
         <!-- Impresión compartida (22-oct-2026): APAGADA por defecto. app/routers/shared_print.py y static/js/shared-print.js -->
         <div id="sharedPrintCard" class="gw-group__item">
           <h4>Impresión compartida</h4>
@@ -650,6 +662,30 @@
         await must(await jsonPut(`/api/events/${window.EVENT_ID}/idle-minutes`, { value: raw === '' ? null : Number(raw) }), 'No se pudo guardar el tiempo de inactividad');
     } });
     document.getElementById('idleMinutesSave').addEventListener('click', () => GWParams.saveKey('idle'));
+    GWParams.register({ key: 'reprint', label: 'Reimpresión de escarapelas', order: 11, save: async () => {
+        const off = (document.querySelector('input[name="reprintMode"]:checked') || {}).value === 'disabled';
+        await must(await jsonPut(`/api/events/${window.EVENT_ID}/reprint-mode`, { disabled: off }), 'No se pudo guardar la opción de reimpresión');
+    } });
+    (async function loadReprintHistory() {         // historial de solicitudes con su auditoría (solo quien decide en este evento; para otros queda el aviso)
+        const box = document.getElementById('reprintHistory'); if (!box) return;
+        const STATUS = { pending: 'Esperando', approved: 'Aprobada', denied: 'Negada', expired: 'Vencida', used: 'Usada', cancelled: 'Cancelada' };
+        const KIND = { requested: 'Solicitada', screen: 'Vista en pantalla', email: 'Correo enviado', email_none: 'Sin correo para enviar', approved: 'Aprobada', denied: 'Negada', expired: 'Vencida', used: 'Reimpresa' };
+        const CH = { screen: 'pantalla', email: 'correo', shared: 'cola compartida', local: 'este equipo' };
+        const hhmm = (iso) => new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+        try {
+            const r = await fetch(`/api/events/${window.EVENT_ID}/reprint-requests`, { cache: 'no-store' });
+            if (!r.ok) { box.textContent = 'Solo el coordinador de este evento o un administrador ve el historial.'; return; }
+            const d = await r.json(); box.replaceChildren();
+            if (!d.requests.length) { box.textContent = 'Todavía no hay solicitudes.'; return; }
+            d.requests.forEach((q) => {
+                const item = document.createElement('div'); item.style.cssText = 'padding:6px 0; border-top:1px solid var(--gw-border);';
+                const head = document.createElement('div'); head.textContent = `${hhmm(q.requested_at)} · ${q.requested_by} pidió para ${q.person} · ${STATUS[q.status] || q.status}`; head.style.fontWeight = '700'; item.appendChild(head);
+                const chain = document.createElement('div'); chain.style.color = 'var(--gw-text-muted)';
+                chain.textContent = q.audit.map((a) => `${KIND[a.kind] || a.kind}${a.by ? ' (' + a.by + ')' : ''}${a.channel ? ' · ' + (CH[a.channel] || a.channel) : ''}`).join(' → '); item.appendChild(chain);
+                box.appendChild(item);
+            });
+        } catch (e) { box.textContent = 'No se pudo cargar el historial.'; }
+    })();
     // Paso guiado de biometría: el resumen sale del servidor (lo que protege lo valida el servidor; esto solo guía).
     function renderSummary(d) {
         const box = document.getElementById('bsSummary'); if (!box) return;

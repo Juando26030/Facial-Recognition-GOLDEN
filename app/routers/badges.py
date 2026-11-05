@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app import crypto
+from app import crypto, reprint
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
@@ -336,7 +336,9 @@ def get_print_count(
     count = db.query(PrintLog).filter(
         PrintLog.event_id == event.id, PrintLog.user_id == user_id, PrintLog.tenant_id == event.tenant_id
     ).count()
-    return {"times_printed": count}
+    state = reprint.state_for(db, event, staff, user_id)
+    db.commit()                                         # deja anotado un vencimiento, si lo hubo
+    return {"times_printed": count, **state}
 
 
 @router.post("/users/{user_id}/print-log")

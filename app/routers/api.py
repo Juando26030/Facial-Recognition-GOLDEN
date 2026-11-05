@@ -1535,11 +1535,11 @@ def delete_user_from_event(
     # 26-oct-2026 (A2): TODO lo de la persona en este evento, sin dejar huérfanos. Antes quedaban el historial de impresión (print_logs, con llave hacia la persona: al borrarla del todo
     # el servidor fallaba), los trabajos de impresión compartida, movimientos de áreas, entregas de inventario, envíos de enlaces y el historial de cambios. Lo legal (aceptación de la
     # persona: audit_consent_logs y web_acceptances) NO se toca: es un registro inmutable con su propia retención (app/consent.py, app/privacy.py).
-    from app.models import AcceptMailLog, AreaMovement, InventoryDelivery, PersonChange, PrintJob, PrintLog
+    from app.models import AcceptMailLog, AreaMovement, InventoryDelivery, PersonChange, PrintJob, PrintLog, ReprintRequest
     att_ids = [a for (a,) in db.query(EventAttendee.id).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id)]
     if att_ids:
         db.query(PrintJob).filter(PrintJob.event_id == event_id, PrintJob.attendee_id.in_(att_ids)).delete(synchronize_session=False)
-    for model in (PrintLog, AreaMovement, InventoryDelivery, AcceptMailLog, PersonChange):
+    for model in (PrintLog, AreaMovement, InventoryDelivery, AcceptMailLog, PersonChange, ReprintRequest):
         db.query(model).filter(model.event_id == event_id, model.user_id == user_id).delete(synchronize_session=False)
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
     db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
