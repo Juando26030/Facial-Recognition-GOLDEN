@@ -97,7 +97,7 @@ def test_saving_only_quota_message_or_limit_does_not_invalidate_stored_keys(clie
     login(client, "coord1")
     f = _create(client, ev)
     cat = {"id": "cat", "type": "select", "label": "Categoría", "options": ["VIP", "General"]}
-    rule = {"id": "r1", "label": "VIP", "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "VIP"}], "limit": 2, "message": ""}
+    rule = {"id": "rule01", "label": "VIP", "match": "all", "conds": [{"field": "cat", "op": "equals", "value": "VIP"}], "limit": 2, "message": ""}
     assert _put(client, ev, f, design=_design(_basic_fields() + [cat]), settings={"quotas": {"rules": [rule]}}).status_code == 200
     calls = []
     real = formsvc.invalidate_quota_keys
