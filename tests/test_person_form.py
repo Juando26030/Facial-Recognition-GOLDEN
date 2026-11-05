@@ -257,13 +257,15 @@ def test_edit_person_op_validates_email_and_required_but_only_warns_when_the_cop
     db.add(EventFieldConfig(event_id=ev.id, field_key="role", required=True, field_type="text_short"))          # el cargo es obligatorio (parámetros del evento)
     db.add(EventFieldConfig(event_id=ev.id, field_key="email", required=False, field_type="email"))
     db.commit()
-    d = _design(ev, client).json()["definition"]
+    old_v = _design(ev, client).json()["definition"]["form_version"]
+    d = _design(ev, client, fields={"first_name": {"text_case": "upper"}}).json()["definition"]          # el diseño cambia: la versión sube y la copia anterior queda vieja
+    assert d["form_version"] > old_v
     factory.person(ev, "6500", "Carla", "Vacía")
     bad = _sync(client, ev, _op("e5", "edit_person", version=d["form_version"], id="6500", role="Jefe", email="no-es-correo")).json()["results"][0]
     assert bad["result"] == "error" and "Correo" in bad["detail"]
     missing = _sync(client, ev, _op("e6", "edit_person", version=d["form_version"], id="6500", phone="3001")).json()["results"][0]
     assert missing["result"] == "error" and "obligatorios" in missing["detail"], "role sigue vacío"
-    old = _sync(client, ev, _op("e7", "edit_person", version=max(d["form_version"] - 1, 1), id="6500", phone="3001")).json()["results"][0]
+    old = _sync(client, ev, _op("e7", "edit_person", version=old_v, id="6500", phone="3001")).json()["results"][0]
     assert old["result"] == "ok" and old["warnings"], "copia vieja: se guarda y avisa"
     assert db.query(User).filter_by(id="6500").one().phone == "3001"
 
