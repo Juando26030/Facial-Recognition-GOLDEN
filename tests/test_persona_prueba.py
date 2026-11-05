@@ -51,15 +51,16 @@ def test_the_test_person_never_counts_in_reports_stats_or_the_event_state(client
     ev_id = _create(client, factory)
     ev = db.get(Event, ev_id)
     assert report_people(db, ev_id, "acme") == [] and stats_people(db, ev_id, "acme") == []
-    assert registro_dashboard(db, ev)["total"] == 0
+    kpis = {k["label"]: k["value"] for k in registro_dashboard(db, ev)["kpis"]}
+    assert kpis["Base del evento"] == 0 and kpis["Registrados"] == 0
     # aun acreditada con el evento en proceso, no se cuenta (ni en reportes, ni estadísticas, ni «devolver a creado»)
     ev.status = "en_proceso"
     db.commit()
     r = client.post("/api/checkin-cedula", data={"event_id": ev_id, "cedula": "PRUEBA", "confirm": "true"})
     assert r.status_code == 200 and r.json()["result"] == "SÍ"
     assert report_people(db, ev_id, "acme") == [] and stats_people(db, ev_id, "acme") == []
-    dash = registro_dashboard(db, db.get(Event, ev_id))
-    assert dash["total"] == 0 and dash["done"] == 0
+    kpis = {k["label"]: k["value"] for k in registro_dashboard(db, db.get(Event, ev_id))["kpis"]}
+    assert kpis["Base del evento"] == 0 and kpis["Registrados"] == 0 and kpis["Pendientes"] == 0
     info = client.get(f"/api/events/{ev_id}/revert-to-created").json()
     assert info["attendees"] == 0 and info["access_logs"] == 0
 
