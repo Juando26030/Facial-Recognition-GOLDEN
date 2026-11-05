@@ -78,3 +78,98 @@ Recuperar: `git branch <nombre> <sha>`. Las que dicen «en main» ya estaban 100
 | `producto/fecha-nacimiento-sin-rostro` | `10a8cff72779` | archivo |
 | `producto/impresion-compartida` | `b56afce43edc` | archivo |
 | `sprint2/reverify-fixes-and-badges` | `0aede4bb2420` | archivo |
+
+## 5-nov-2026 · cierre de las Fases 0 y 1 (ramas ya fusionadas a `main`, borradas desde GitHub con orden de Juan David; SHA para recuperarlas)
+
+Se conservan: `migra/fase1-2` (despliega staging), `corte/main`, `feat/visual-parametros` (PR #52 abierto), `fix/registro-busqueda` (PR #58) y las que tienen commits propios sin fusionar (`candidato/produccion-23oct`, `candidato/produccion-25oct`, `fix/legal-1-1-borrador`, `fix/offline-recarga`, `producto/constancia-puerta`, `producto/eventos-flujo`, `producto/fecha-nacimiento-sin-rostro`, `producto/impresion-ajustes`, `producto/impresion-compartida`, `sprint2/reverify-fixes-and-badges`, `ux/fase1-visual`, `archivo/*`).
+
+```
+cand28 5ff752b
+candidato/formularios-p1 3ab6f68
+candidato/produccion-28oct 5ff752b
+candidato/produccion-29oct 979f2ae
+docs/correo-rbac e5b19e0
+docs/correo-rbac-v2 fc4bb06
+docs/etapa-0a 12fcac5
+docs/etapa-0b-inventario 1a736ad
+docs/h1-guias 1cc5898
+feat/1b-reimpresion-permisos 805af21
+feat/coordinador-crea-eventos 3c20a24
+feat/cupo-mensaje 1d1309c
+feat/visual-registro efaf5e0
+feat/visual-roster 9dfef87
+fix/cupos-sin-tope-30 874ab1b
+fix/impresion-compartida-29oct bc4a19d
+fix/impresion-horizontal 282f460
+fix/legal-1-0 fb50118
+fix/telefono-contacto 9cafaf6
+fix/test-privacy-flaky 13c771e
+integracion/piloto-legal a82a485
+integracion/staging-ajustes 9e19ec4
+integracion/staging-final-24oct 9c4a657
+integracion/staging-impresion bb3b37e
+perf/fase0-carga 8dfca14
+producto/aceptar-mejoras a94929f
+producto/ajustes-puerta 0e66ea1
+producto/ajustes-sabado17 3509cc3
+producto/arreglo-corte 3a6207b
+producto/arreglos-impresion ba2847c
+producto/b1-entrar-rostro 0304cd0
+producto/b2d-prueba-vida 14a67ee
+producto/bootstrap-iam-reintentos ace073d
+producto/carga-avance-inmediato a83e84e
+producto/carga-base-titulos 0949f5e
+producto/carga-por-pasos ffb5b26
+producto/codigo-protegido cbf514a
+producto/config-impresion-puesto 5a4e854
+producto/directorio-touch-dos-filas f68205e
+producto/editor-manijas-y-prioridad 6a0b2ff
+producto/enlace-personal f48431c
+producto/envio-enlaces e928f78
+producto/escarapela-editor-pro b2cda83
+producto/escarapela-mayusculas c10c3d2
+producto/escarapela-texto-ajuste 739da4e
+producto/estados-evento 1e78e12
+producto/exportar-evento eb64535
+producto/exportar-formulario 9385d5f
+producto/fase0-ux 39ea532
+producto/fecha-en-carga 3aa23de
+producto/form-cliente-stats 229a4d3
+producto/form-ya-inscrito ff13743
+producto/formularios-ajustes 4f2ab40
+producto/fuentes-propias 72bf63d
+producto/grupo-a 97c8509
+producto/grupo-b 32027c4
+producto/guia-h1-bloque2 07654c3
+producto/hotfix-kiosk 200b2c9
+producto/impresion-controlador-siempre eca4f5b
+producto/impresion-domingo a074aa2
+producto/impresion-plantilla-fresca 3c0be91
+producto/impresion-por-controlador f70ffad
+producto/impresion-prefs-espejo 76e3a60
+producto/impresion-rotados-completos 85a644e
+producto/impresora-conectar a19e0b7
+producto/legal-piloto 3be2918
+producto/login-password-ux adaa9c7
+producto/neon-role-base-vacia ff5a87f
+producto/nombre-reporte fd1f0eb
+producto/piloto 5e8c04d
+producto/plantilla-carga 42d386a
+producto/politica-produccion c74aebd
+producto/produccion-manual aa3a3a4
+producto/puerta-sin-red ee7ec2f
+producto/puesto-reclamo 4797531
+producto/puestos-sesiones 63a2a8a
+producto/rendimiento-reporte-carga 155d365
+producto/row-accredit-determinista 9ab390a
+producto/segunda-salida b2d315a
+producto/segunda-salida-v2 360cfe5
+producto/sesion-inactividad 05ec3d8
+producto/sin-biometria 0c2baaa
+producto/test-minors-estable e0d4375
+producto/trabajos-huerfanos ade9bdf
+producto/warmup-por-actividad 7eae02c
+sprint5/ruleta-formularios eccde82
+pr/47 
+pr/50 
+```
