@@ -40,10 +40,16 @@
   }
 
   /* Clave de comparación de una cédula: sin puntos, espacios ni guiones, y sin ceros a la izquierda si es numérica
-     («0001.016.100-329» -> «1016100329»). Un documento con letras (pasaporte) solo pierde separadores y mayúsculas. */
+     («0001.016.100-329» -> «1016100329»). Un documento con letras (pasaporte) solo pierde separadores y mayúsculas.
+     Excepción (Plan 5, «No eliminar repetidos»): un SERIAL de cédula repetida, «123456-2» (documento de 5 o más caracteres + guion + 1 o 2 dígitos),
+     conserva el guion: «123456-2» y «1234562» son personas distintas. Un guion con 3 o más dígitos detrás («1.016.100-329») sigue siendo solo separador. */
+  const SERIAL_RE = /^([0-9a-z]{5,})-(\d{1,2})$/;
+  function baseKey(s) { return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s; }
   function cedulaKey(raw) {
-    const s = String(raw == null ? '' : raw).replace(/[\s.\-]/g, '').toLowerCase();
-    return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s;
+    const s = String(raw == null ? '' : raw).replace(/[\s.]/g, '').toLowerCase();
+    const m = SERIAL_RE.exec(s);
+    if (m) return baseKey(m[1]) + '-' + m[2];
+    return baseKey(s.replace(/-/g, ''));
   }
 
   /* Cédula vieja (código de barras): CSV «cedula,nombre1,nombre2,apellido1,apellido2,AAAAMMDD». Devuelve la cédula o null. */
@@ -78,7 +84,8 @@
       }
       if (digits.length >= MIN_PREFIX_DIGITS) {
         const completa = digits.length >= MIN_CEDULA_DIGITS;
-        return { kind: 'cedula', raw, cedula: cedulaKey(digits), words: [], completa };
+        const typed = cedulaKey(text);
+        return { kind: 'cedula', raw, cedula: typed.includes('-') ? typed : cedulaKey(digits), words: [], completa };
       }
     }
     return { kind: 'texto', raw, words: wordsOf(text), normalized: normalize(text), compact: cedulaKey(text), completa: false };

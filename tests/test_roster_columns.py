@@ -69,7 +69,10 @@ def test_slots_do_not_collide_with_explicit_optional_columns_or_existing_labels_
     assert labels == {"opcional_3": "Ciudad"} and new_rows[0]["opcional_1"] == "x" and new_rows[0]["opcional_3"] == "Cali"
     full = {f"opcional_{n}": f"Campo {n}" for n in range(1, 31)}
     _, _, report, labels = roster_columns.canonicalize({"id": "A", "nuevo": "B"}, [{"id": "1", "nuevo": "v"}], full)
-    assert labels == {} and "30 campos opcionales" in report["unused"][0]["reason"]
+    assert labels == {"opcional_31": "Nuevo"} and report["unused"] == []                                    # Plan 5: el tope de 30 se quitó (un evento puede pedir 60 o más)
+    ceiling = {f"opcional_{n}": f"Campo {n}" for n in range(1, roster_columns.MAX_OPTIONAL_FIELDS + 1)}
+    _, _, report, labels = roster_columns.canonicalize({"id": "A", "nuevo": "B"}, [{"id": "1", "nuevo": "v"}], ceiling)
+    assert labels == {} and "techo técnico" in report["unused"][0]["reason"]                               # solo el techo técnico (500) contra archivos dañados
 
 
 def test_a_second_column_for_the_same_field_is_reported_not_silently_dropped():
@@ -256,7 +259,7 @@ def test_the_template_has_the_birth_date_column_right_after_the_email_and_explai
     from openpyxl import load_workbook
     wb = load_workbook(TEMPLATE)
     header = [c.value for c in wb["Base de Asistentes"][1]]
-    assert header[:9] == ["id", "nombres", "apellidos", "cargo", "entidad", "telefono", "correo", "fecha de nacimiento", "tipo de asistente"] and header[-1] == "opcional_30" and len(header) == 40
+    assert header[:9] == ["id", "nombres", "apellidos", "cargo", "entidad", "telefono", "correo", "fecha de nacimiento", "tipo de asistente"] and header[-1] == "opcional_5" and len(header) == 15          # solo ejemplos: la plantilla no sugiere ningún tope de campos opcionales
     unused = roster_columns.canonicalize({h: "A" for h in header}, [], {})[2]["unused"]
     assert all(u["title"].startswith("opcional_") for u in unused)                                         # la única "no usada" son las opcionales vacías: la fecha y las demás se reconocen
     rows = {r[0].value: r[1].value for r in wb["Instrucciones"].iter_rows(min_row=2) if r[0].value and r[1].value}

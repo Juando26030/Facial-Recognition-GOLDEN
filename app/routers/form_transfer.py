@@ -26,6 +26,7 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app import formlib, formsvc, safe_limits
+from app.roster_columns import MAX_OPTIONAL_FIELDS
 from app.auth import ROLE_HIERARCHY, effective_roles, get_event_for_staff, require_role
 from app.database import get_db
 from app.models import Event, StaffUser, WebForm
@@ -281,9 +282,9 @@ def plan_import(db: Session, event: Event, package: dict, images: dict) -> dict:
             if labels[key] not in reused:
                 reused.append(labels[key])
         else:
-            slot = next((n for n in range(1, 31) if n not in used), None)
+            slot = next((n for n in range(1, MAX_OPTIONAL_FIELDS + 1) if n not in used), None)
             if slot is None:
-                _bad("el evento destino ya usa sus 30 campos opcionales.")
+                _bad(f"el evento destino llegó al techo técnico de {MAX_OPTIONAL_FIELDS} campos opcionales.")
             used.add(slot)
             key = f"opcional_{slot}"
             labels[key] = name

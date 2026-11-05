@@ -29,6 +29,7 @@ from app.reports import ReportManager
 from app.auth import ROLE_HIERARCHY, effective_roles, get_current_staff, get_event_for_staff, require_event_in_progress, require_role, require_role_excluding, require_role_or_client
 from app import formsvc, status_changes, regtime, roster_append, biometric_setup, bulk_jobs, bulk_steps, crypto, event_rules, faces_version, minors, privacy, roster_columns, security, digital_badge, faces, heavy, legal_texts, uploads, safe_limits
 from app import consent as consent_mod
+from app import roster_dups, roster_text
 from app.storage import get_storage, photo_key
 from app.email_check import check_email
 from app.routers import parametros, signatures
@@ -110,6 +111,17 @@ def _cell_text(cell) -> str:
     return str(cell).strip()
 
 
+def _unique_headers(headers: list) -> list:
+    """Una 2.ª, 3.ª… columna con el MISMO título se marca (`roster_columns.DUP_MARK`) para no pisar a la primera en silencio: se usa la primera y la repetida sale en el informe de columnas."""
+    seen, out = {}, []
+    for h in headers:
+        n = seen.get(h, 0) if h else 0
+        if h:
+            seen[h] = n + 1
+        out.append(h if n == 0 else f"{h}{roster_columns.DUP_MARK}{n + 1}")
+    return out
+
+
 def _read_roster_rows(filename: str, content: bytes):
     """Lee un roster en .csv o .xlsx y devuelve (header_columns, rows): filas normalizadas
     (claves en minúscula, sin espacios) sin importar el formato de origen, y un mapeo
@@ -120,7 +132,7 @@ def _read_roster_rows(filename: str, content: bytes):
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         ws = wb.active
         rows_iter = ws.iter_rows(values_only=True)
-        headers = [str(h).strip().lower() if h is not None else "" for h in next(rows_iter, [])]
+        headers = _unique_headers([str(h).strip().lower() if h is not None else "" for h in next(rows_iter, [])])
         header_columns = {h: get_column_letter(i + 1) for i, h in enumerate(headers) if h}
         rows = []
         for row in rows_iter:
@@ -134,17 +146,17 @@ def _read_roster_rows(filename: str, content: bytes):
     else:
         decoded = content.decode("utf-8-sig")
         delimiter = ";" if ";" in decoded.split("\n", 1)[0] else ","
-        reader = csv.DictReader(io.StringIO(decoded), delimiter=delimiter)
-        headers = [h.strip().lower() if h else "" for h in (reader.fieldnames or [])]
+        reader = csv.reader(io.StringIO(decoded), delimiter=delimiter)
+        headers = _unique_headers([h.strip().lower() if h else "" for h in next(reader, [])])
         header_columns = {h: get_column_letter(i + 1) for i, h in enumerate(headers) if h}
         rows = [
-            {k.strip().lower() if k else "": (v or "").strip() for k, v in row.items() if k}
-            for row in reader
+            {headers[i]: (v or "").strip() for i, v in enumerate(row) if i < len(headers) and headers[i]}
+            for row in reader if row
         ]
         return header_columns, rows
 
-MAX_OPTIONAL_FIELDS = 30
-_OPTIONAL_FIELD_RE = re.compile(r"^opcional[\s_]*([0-9]{1,2})$")
+MAX_OPTIONAL_FIELDS = roster_columns.MAX_OPTIONAL_FIELDS          # techo técnico (500), no un límite de producto
+_OPTIONAL_FIELD_RE = re.compile(r"^opcional[\s_]*([0-9]{1,3})$")
 
 
 def _normalize_optional_key(raw_key: str):
@@ -279,6 +291,14 @@ def _send_digital(db: Session, event: Event, user: User, request: Optional[Reque
 
 def _truthy(value) -> bool:
     return str(value).strip().lower() in ("true", "1", "si", "sí", "x", "yes")
+
+
+def _text_case_or_400(value) -> str:
+    """Selector «Texto» de la carga (app/roster_text.py): '' = como viene, 'upper', 'lower'. Cualquier otro valor es un error del cliente."""
+    mode = roster_text.parse_mode(value)
+    if mode is None:
+        raise HTTPException(status_code=400, detail="El selector de texto debe ser «como viene», «MAYÚSCULAS» o «minúsculas».")
+    return mode
 
 
 def _send_now(value) -> bool:
@@ -1032,8 +1052,8 @@ def _outbox_create_person(db: Session, event: Event, staff: StaffUser, op_id: st
     (ya estaba registrada en este evento: no se hace nada) o `error` (con el motivo, para corregirlo en el dispositivo). Idempotente por `op_id` (= `AccessLog.client_id`)."""
     person_id = str(f.get("id") or "").strip()
     first, last = str(f.get("first_name") or "").strip(), str(f.get("last_name") or "").strip()
-    if not person_id or not first or not last:
-        return {"op_id": op_id, "result": "error", "detail": "Faltan la cédula, los nombres o los apellidos"}
+    if not person_id or not first:          # los apellidos no se exigen (pueden ir junto con los nombres)
+        return {"op_id": op_id, "result": "error", "detail": "Faltan la cédula o los nombres"}
     if event.status != "en_proceso" and not (event.sync_revert and event.sync_revert[1]):      # `require_event_in_progress`, salvo lo anterior a un retroceso a «Creado» (la hora ya se verificó)
         return {"op_id": op_id, "result": "error", "detail": "El evento ya no está abierto para registrar personas nuevas"}
     extras = f.get("extra_fields") if isinstance(f.get("extra_fields"), dict) else {}
@@ -1509,7 +1529,7 @@ def update_registration_status(
 
 @router.post("/register")
 def manual_register(
-    event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(...),
+    event_id: int = Form(...), id: str = Form(...), first_name: str = Form(...), last_name: str = Form(""),
     role: str = Form(""), entity: str = Form(""), phone: str = Form(""),
     email: str = Form(""), opt_1: str = Form(""), extra_fields: str = Form(None), categories: str = Form(None), certificate: str = Form(None), digital_contact: str = Form(None), send_digital_now: str = Form(None),
     request: Request = None,
@@ -1711,17 +1731,19 @@ def _carry_source_event(db: Session, event: Event, source_event_id: int, staff: 
 def bulk_roster(
     event_id: int = Form(...), roster_file: UploadFile = File(None), field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(True),
     roster_upload: str = Form(None), overwrite_birth: str = Form(None), append_only: str = Form(None),
+    keep_duplicates: str = Form(None), text_case: str = Form(None), dup_offsets: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga de SOLO la base (Excel/CSV, sin fotos). Es la misma carga que `bulk_register`, pero esta ruta la sirve el servicio WEB (sin dlib): `bulk_register` vive en el servicio de BIOMETRÍA (ver
     app/appmode.py), que se apaga cuando no se usa y al arrancar carga el modelo facial: ese arranque en frío (~15 s) lo pagaba hasta una carga de una sola persona."""
     return bulk_register(event_id=event_id, roster_file=roster_file, zip_file=None, field_labels=field_labels, source_event_id=source_event_id, background=background, photos_authorized=None,
-                         roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, append_only=append_only, db=db, staff=staff)
+                         roster_upload=roster_upload, zip_upload=None, overwrite_birth=overwrite_birth, append_only=append_only,
+                         keep_duplicates=keep_duplicates, text_case=text_case, dup_offsets=dup_offsets, db=db, staff=staff)
 
 
 @router.post("/bulk_roster/preview")
 def bulk_roster_preview(
-    event_id: int = Form(...), roster_file: UploadFile = File(None), roster_upload: str = Form(None),
+    event_id: int = Form(...), roster_file: UploadFile = File(None), roster_upload: str = Form(None), keep_duplicates: str = Form(None), text_case: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Vista previa de «solo agregar personas nuevas» (app/roster_append.py): lee y valida la hoja y cuenta qué pasaría, SIN escribir nada. Mismos permisos que la carga. No borra el archivo subido:
@@ -1734,7 +1756,8 @@ def bulk_roster_preview(
     if content is None:
         raise HTTPException(status_code=400, detail=roster_append.NEEDS_FILE)
     name = roster_up.filename if roster_up else roster_file.filename
-    res = _bulk_register_impl(db, staff, event_id=event_id, roster_filename=name, content=content, zip_bytes=None, field_labels=None, source_event_id=None, step={"phase": "prepare"}, append_only=True)
+    res = _bulk_register_impl(db, staff, event_id=event_id, roster_filename=name, content=content, zip_bytes=None, field_labels=None, source_event_id=None, step={"phase": "prepare", "preview": True}, append_only=True,
+                           keep_duplicates=_truthy(keep_duplicates), text_case=_text_case_or_400(text_case))
     db.rollback()          # nada se escribe; si algo quedó abierto, se descarta
     return roster_append.preview(db, event, res["prepared"])
 
@@ -1744,6 +1767,7 @@ def bulk_register(
     event_id: int = Form(...), roster_file: UploadFile = File(None), zip_file: UploadFile = File(None),
     field_labels: str = Form(None), source_event_id: List[int] = Form(None), background: bool = Form(False), photos_authorized: str = Form(None),
     roster_upload: str = Form(None), zip_upload: str = Form(None), overwrite_birth: str = Form(None), append_only: str = Form(None),
+    keep_duplicates: str = Form(None), text_case: str = Form(None), dup_offsets: str = Form(None),
     db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_excluding("coordinador", ("comercial",))),
 ):
     """Carga masiva de la base del evento (ver `_bulk_register_impl` para las reglas). Con `background=true`
@@ -1751,6 +1775,7 @@ def bulk_register(
     corre en un hilo, con avance consultable en `GET /api/bulk_jobs/{job_id}`; sin `background` procesa dentro de
     la petición y devuelve el resultado, como siempre."""
     event = get_event_for_staff(event_id, db, staff)  # 403/404 de acceso, de inmediato
+    case_mode, keep_dups = _text_case_or_400(text_case), _truthy(keep_duplicates)          # Plan 5: «Texto» y «No eliminar repetidos» (app/roster_text.py, app/roster_dups.py)
     append = _truthy(append_only)          # «solo agregar personas nuevas» (app/roster_append.py): se valida ANTES de leer nada
     if append and (zip_upload or (zip_file is not None and bool(zip_file.filename))):
         raise HTTPException(status_code=400, detail=roster_append.ZIP_REJECTED)
@@ -1779,7 +1804,7 @@ def bulk_register(
         log.info("carga masiva: camino=%s motivo=%s backend=%s evento=%s", "pasos" if use_steps else ("job" if bulk_jobs.uses_cloud_run() else "hilo"), why,
                  os.getenv("BULK_BACKEND", "thread"), event.id)
     if background and bulk_jobs.uses_cloud_run() and not use_steps:      # el Job de Cloud Run: cargas con fotos; la base sola va por pasos (app/bulk_steps.py)
-        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored, _truthy(overwrite_birth))
+        return _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored, _truthy(overwrite_birth), case_mode, keep_dups, dup_offsets)
     # Archivos grandes: llegan ya subidos al almacenamiento (`*_upload`, ver app/uploads.py); los chicos pueden seguir viniendo en la petición.
     roster_up = uploads.fetch(roster_upload, "bulk_roster", {"e": event_id})
     zip_up = uploads.fetch(zip_upload, "bulk_zip", {"e": event_id})
@@ -1787,7 +1812,8 @@ def bulk_register(
     roster_filename = roster_up.filename if roster_up else (roster_file.filename if content is not None else None)
     zip_bytes = zip_up.content if zip_up else (zip_file.file.read() if (zip_file is not None and zip_file.filename) else None)
     args = dict(event_id=event_id, roster_filename=roster_filename,
-                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth), append_only=append)
+                content=content, zip_bytes=zip_bytes, field_labels=field_labels, source_event_id=source_event_id, zip_ignored=zip_ignored, overwrite_birth=_truthy(overwrite_birth), append_only=append,
+                text_case=case_mode, keep_duplicates=keep_dups, dup_offsets=dup_offsets)
 
     def cleanup(result):
         # NEEDS_LABELS: el navegador reenvía la MISMA carga con los nombres de las columnas; los archivos temporales tienen que seguir ahí.
@@ -1814,7 +1840,7 @@ def bulk_register(
     return {"background": True, "job_id": job_id, "mode": "thread", "reason": why}
 
 
-def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored=False, overwrite_birth=False) -> dict:
+def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_upload, zip_upload, field_labels, source_event_id, zip_ignored=False, overwrite_birth=False, text_case="", keep_duplicates=False, dup_offsets=None) -> dict:
     """BULK_BACKEND=cloudrun: la carga la ejecuta un Cloud Run Job. Aquí NO se descargan los archivos (un ZIP de 2 GB no cabe en el
     servicio web): solo se guardan sus tokens; los que vinieron en la petición se dejan antes en el almacenamiento (`uploads.stash`)."""
     scope = {"e": event.id}
@@ -1828,7 +1854,8 @@ def _launch_bulk_cloud_run(db, event, staff, roster_file, zip_file, roster_uploa
         return None
 
     spec = {"roster": token(roster_upload, roster_file, "bulk_roster"), "zip": token(zip_upload, zip_file, "bulk_zip"),
-            "field_labels": field_labels, "source_event_id": source_event_id, "zip_ignored": zip_ignored, "overwrite_birth": overwrite_birth}
+            "field_labels": field_labels, "source_event_id": source_event_id, "zip_ignored": zip_ignored, "overwrite_birth": overwrite_birth,
+            "text_case": text_case, "keep_duplicates": keep_duplicates, "dup_offsets": dup_offsets}
     if bulk_jobs.active_job(db, event.id):
         raise HTTPException(status_code=409, detail="Ya hay una carga en curso para este evento — espera a que termine.")
     job_id = bulk_jobs.create_job(db, event.id, staff.id, spec)
@@ -1850,7 +1877,8 @@ def run_bulk_spec(db: Session, job, progress) -> dict:
     result = _bulk_register_impl(
         db, staff, event_id=event_id, roster_filename=roster_up.filename if roster_up else None, content=roster_up.content if roster_up else None,
         zip_bytes=zip_up.content if zip_up else None, field_labels=spec.get("field_labels"), source_event_id=spec.get("source_event_id"), progress=progress,
-        zip_ignored=bool(spec.get("zip_ignored")), overwrite_birth=bool(spec.get("overwrite_birth")))
+        zip_ignored=bool(spec.get("zip_ignored")), overwrite_birth=bool(spec.get("overwrite_birth")),
+        text_case=spec.get("text_case") or "", keep_duplicates=bool(spec.get("keep_duplicates")), dup_offsets=spec.get("dup_offsets"))
     if not (isinstance(result, dict) and result.get("result") == "NEEDS_LABELS"):     # NEEDS_LABELS: la misma carga vuelve con los nombres
         uploads.discard(roster_up, zip_up)
     return result
@@ -1902,8 +1930,31 @@ def bulk_job_status(
     return bulk_jobs.serialize(job, db)
 
 
+ROSTER_HIDDEN_MARK = "carga_base"          # marca (en help_text) de un campo fijo oculto por la carga; uno que el usuario borró a mano NO la lleva y no se vuelve a mostrar solo
+_FIXED_BY_COLUMN = {"cargo": "role", "entidad": "entity", "telefono": "phone", "correo": "email", "tipo de asistente": "opt_1"}      # columna canónica → campo fijo de Parámetros (DELETABLE_FIXED)
+
+
+def _reset_event_fields(db: Session, event: Event, header_columns: dict, kept_labels: dict) -> None:
+    """Plan 5 (carga flexible), SOLO para un evento sin personas: los campos del evento salen de lo que trae el Excel. (1) Las etiquetas de campos opcionales de cargas anteriores se borran (salvo las que alguien configuró a propósito
+    en Parámetros: tienen fila propia en event_field_configs); las del Excel de ahora se crean después. (2) Un campo fijo (cargo, entidad, teléfono, correo, tipo de asistente) cuya columna NO viene queda
+    oculto en Parámetros con el mecanismo de siempre (fila DELETED_TYPE: ningún formulario ni estadística lo muestra); si ahora SÍ viene y estaba oculto por una carga anterior, se vuelve a mostrar.
+    Un campo fijo que alguien ya configuró a mano (fila propia que no es DELETED_TYPE) no se toca."""
+    from app.models import EventFieldConfig
+    event.set_optional_labels(dict(kept_labels))
+    rows = {r.field_key: r for r in db.query(EventFieldConfig).filter(EventFieldConfig.event_id == event.id, EventFieldConfig.field_key.in_(list(parametros.DELETABLE_FIXED)))}
+    for column, key in _FIXED_BY_COLUMN.items():
+        row = rows.get(key)
+        if column in header_columns:
+            if row is not None and row.field_type == parametros.DELETED_TYPE and row.help_text == ROSTER_HIDDEN_MARK:
+                db.delete(row)
+        elif row is None:
+            db.add(EventFieldConfig(event_id=event.id, field_key=key, field_type=parametros.DELETED_TYPE, help_text=ROSTER_HIDDEN_MARK))
+    db.flush()
+
+
 def _bulk_register_impl(
     db: Session, staff: StaffUser, event_id: int, roster_filename, content, zip_bytes, field_labels, source_event_id, progress=None, zip_ignored: bool = False, overwrite_birth: bool = False, step: Optional[dict] = None, append_only: bool = False,
+    text_case: str = "", keep_duplicates: bool = False, dup_offsets=None,
 ):
     """Carga la base de asistentes esperados para el evento — sirve para CUALQUIER método de
     registro (cédula, facial, QR futuro), no es exclusiva de facial. roster_file acepta .csv o
@@ -1914,7 +1965,7 @@ def _bulk_register_impl(
     fila no abortan la carga completa, se reportan al final. No se permite cargar sobre un evento
     ya 'finalizado' (sí sobre 'creado' o 'en_proceso' — es preparación previa al evento).
 
-    Campos dinámicos "opcional_1".."opcional_30" (2026-09-20): además de las columnas fijas
+    Campos dinámicos "opcional_1"..."opcional_N" (2026-09-20): además de las columnas fijas
     (id, nombres, apellidos, cargo, entidad, telefono, correo, "tipo de asistente"), el roster
     puede traer hasta 30 columnas "opcional_N" — se interpretan las que de verdad vengan usadas
     (con al menos un valor no vacío en alguna fila), el resto se ignoran. Si el archivo trae
@@ -1968,7 +2019,16 @@ def _bulk_register_impl(
         if len(rows) > ROSTER_MAX_ROWS:
             raise HTTPException(status_code=400, detail=f"El archivo tiene {len(rows):,} filas y el máximo es {ROSTER_MAX_ROWS:,} por carga. Divídelo en varios archivos y cárgalos uno tras otro.".replace(",", "."))
         # Columnas por TÍTULO: conocidas → su campo; con título propio → campo opcional nuevo (o el existente del mismo nombre); ninguna se ignora en silencio (informe `columns`).
-        header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, event.get_optional_labels(), create_fields=not append_only)
+        # Plan 5 (carga flexible): en un evento SIN personas todavía, los campos opcionales salen SOLO de lo que trae este Excel (se limpian las etiquetas de cargas o pruebas anteriores); con personas se conservan
+        # (cada persona tiene guardados sus valores en esos campos) y se reutilizan por título.
+        fresh_event = (not append_only) and not db.query(EventAttendee.id).filter(EventAttendee.event_id == event.id).first()
+        known_labels = event.get_optional_labels()
+        if fresh_event:          # se conservan solo las etiquetas con configuración propia en Parámetros (alguien las armó a propósito: tipo firma, obligatoria…); el resto se limpia
+            from app.models import EventFieldConfig
+            configured = {k for (k,) in db.query(EventFieldConfig.field_key).filter(EventFieldConfig.event_id == event.id, EventFieldConfig.field_key.like("opcional\\_%", escape="\\"))}
+            known_labels = {k: v for k, v in known_labels.items() if k in configured}
+        header_columns, rows, columns_report, auto_labels = roster_columns.canonicalize(header_columns, rows, known_labels, create_fields=not append_only)
+        rows = roster_text.apply(rows, roster_text.parse_mode(text_case))
         phases.mark("columnas")
         # La fecha de nacimiento solo sirve para el control de menores del reconocimiento facial: sin rostro (y sin fotos que lo vayan a encender) la columna se ignora, con aviso.
         birth_used = bool(event.facial_enabled)          # una sola fuente de verdad: el paso guiado de Parámetros (la carga ya no enciende ni apaga el rostro)
@@ -1982,18 +2042,38 @@ def _bulk_register_impl(
         # ninguna columna reconocida traía nada), pero la carga "completaba" con 0 perfiles sin dejar
         # claro que el problema real era el FORMATO del archivo, no los datos. Ahora se valida de una
         # que las columnas mínimas de la plantilla estén presentes antes de procesar ninguna fila.
+        # Plan 5: el Excel se acepta como venga. Lo ÚNICO indispensable es la cédula (sin ella no hay a quién guardar); nombres, apellidos y el resto pueden faltar (cada fila vacía se avisa, no se rechaza).
         has_id_col = any(k in header_columns for k in _ID_KEYS)
-        has_nombres_col = any(k in header_columns for k in ('nombres', 'nombre'))
-        has_apellidos_col = any(k in header_columns for k in ('apellidos', 'apellido'))
-        if not rows or not (has_id_col and has_nombres_col and has_apellidos_col):
+        if not rows or not has_id_col:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Este archivo no tiene el formato esperado — deben venir al menos las columnas "
-                    "'id' (o 'cédula'), 'nombres' y 'apellidos'. Descarga y usa la plantilla oficial "
-                    "de carga de asistentes en vez de un archivo con otras columnas."
+                    "Este archivo no tiene el formato esperado — debe traer al menos la columna de la cédula "
+                    "('id', 'cédula', 'documento'…) y una fila de datos. Las demás columnas (nombres, apellidos, cargo, correo, ciudad…) "
+                    "se toman como vengan; si no tienes el formato, descarga la plantilla de carga de asistentes."
                 ),
             )
+
+        # «No eliminar repetidos» (app/roster_dups.py): el serial se decide AQUÍ, una vez, por el orden del archivo (y de los lotes anteriores: `dup_offsets`); los pasos reciben las filas ya con su serial.
+        dup_notes = []
+        if keep_duplicates:
+            offsets = roster_dups.parse_offsets(dup_offsets)
+            if dup_offsets and not offsets and str(dup_offsets).strip() not in ("{}", "null"):
+                dup_notes.append(roster_dups.OFFSETS_IGNORED_NOTE)
+            if roster_dups.has_repeats(rows, offsets):
+                taken_slots = set(known_labels) | set(auto_labels) | {k for k in header_columns if k.startswith("opcional_")}
+                original_slot = next((k for k, v in known_labels.items() if roster_columns.norm(v) == roster_columns.norm(roster_columns.ORIGINAL_ID_LABEL)), None)
+                if original_slot is None:          # también en «solo agregar»: el campo «Cédula original» se crea solo si el evento aún no lo tiene (cupo permitiendo)
+                    original_slot = roster_columns.free_slot({}, taken_slots)
+                    if original_slot is not None:
+                        auto_labels[original_slot] = roster_columns.ORIGINAL_ID_LABEL
+                res_dups = roster_dups.assign(rows, offsets, original_slot)
+                dup_notes.append(f"ℹ️ «No eliminar repetidos»: {res_dups['serials']} fila(s) con cédula repetida ({res_dups['ids']} cédula(s)) recibieron un serial (cédula-2, cédula-3…); la primera aparición conserva su cédula.")
+                if original_slot is None:
+                    dup_notes.append(f"⚠️ No se guardó la «{roster_columns.ORIGINAL_ID_LABEL}» de las filas con serial: el evento llegó al techo técnico de {roster_columns.MAX_OPTIONAL_FIELDS} campos opcionales.")
+                if res_dups["collisions"]:
+                    dup_notes.append(f"⚠️ {len(res_dups['collisions'])} serial(es) generados ya existían como cédula en el archivo: esas filas se combinan en una sola.")
+                dup_notes.append(roster_dups.NOTE_RELOAD)
 
         used_optional_keys = set()
         for row in rows:
@@ -2002,7 +2082,7 @@ def _bulk_register_impl(
                 if norm and (value or "").strip():
                     used_optional_keys.add(norm)
 
-        missing = used_optional_keys - set(event.get_optional_labels().keys()) - set(auto_labels)          # los de título propio ya traen su nombre: no se pregunta
+        missing = used_optional_keys - set(known_labels.keys()) - set(auto_labels)          # los de título propio ya traen su nombre: no se pregunta
         if missing and not field_labels:
             # 2026-09-16, pedido explícito: hasta 2 valores de ejemplo por campo (tal como vienen en
             # el archivo) para que el operador identifique a qué corresponde sin tener que abrir el
@@ -2022,8 +2102,11 @@ def _bulk_register_impl(
                 labels_to_apply = {}
         for slot, title in auto_labels.items():
             labels_to_apply.setdefault(slot, title)
-        if labels_to_apply:
+        if fresh_event:
+            _reset_event_fields(db, event, header_columns, known_labels)          # Plan 5: etiquetas viejas fuera y campos fijos sin columna ocultos (solo en un evento sin personas)
+        if labels_to_apply and not (step and step.get("preview")):          # la vista previa de «solo agregar» no escribe NADA
             _apply_optional_labels(event, used_optional_keys, json.dumps(labels_to_apply))
+        if labels_to_apply or fresh_event:
             db.commit()
 
         source_name = ""
@@ -2033,7 +2116,7 @@ def _bulk_register_impl(
         # Se declara acá (antes solo existía más abajo, en el pre-escaneo) para que el bloque del zip
         # de abajo pueda reportar en la misma lista — mismo criterio de prefijos (❌/⚠️/ℹ️) que el
         # resto del archivo, sin inventar un campo nuevo que el frontend no sepa mostrar.
-        errors = []
+        errors = list(dup_notes)
         if zip_ignored:
             errors.append("⚠️ Este evento no usa biometría (bloqueado): el zip de fotos se ignoró, no se guardó ninguna foto y el reconocimiento facial no se activó.")
         # identificador -> encoding ya calculada al leer el zip (2026-09-22): antes se calculaba acá
@@ -2123,7 +2206,7 @@ def _bulk_register_impl(
             phases.emit(len(rows))
             return {"prepared": {"header_columns": header_columns, "rows": rows, "columns_report": columns_report, "birth_used": birth_used, "birth_ignored_rows": birth_ignored_rows,
                                  **({"dup_rows": roster_append.duplicate_rows(row_infos)} if append_only else {})},
-                    "state": {**({"append_only": True, "append": roster_append.new_state()} if append_only else {}), "pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
+                    "state": {**({"append_only": True, "append": {**roster_append.new_state(), "messages": list(errors)}} if append_only else {}), "pos": 0, "errors": errors, "count": 0, "birth_bad_rows": [], "birth_kept_rows": [], "birth_completed": 0, "birth_replaced": 0,
                               "carried_ids": sorted(carried_ids), "source_name": source_name, "overwrite_birth": bool(overwrite_birth)}}
     else:
         # Reanudación: lo preparado y el avance vienen del paso anterior (guardados cifrados); aquí solo se arman las filas de ESTE paso.
@@ -2229,9 +2312,7 @@ def _bulk_register_impl(
                         nombres, nombres_cell = _field_lookup(clean_row, header_columns, row_num, 'nombres', 'nombre')
                         if not nombres:
                             errors.append(f"⚠️ Fila {row_num} ({nombres_cell or 'sin columna de nombres'}): falta el nombre.")
-                        apellidos, apellidos_cell = _field_lookup(clean_row, header_columns, row_num, 'apellidos', 'apellido')
-                        if not apellidos:
-                            errors.append(f"⚠️ Fila {row_num} ({apellidos_cell or 'sin columna de apellidos'}): falta el apellido.")
+                        apellidos, _apellidos_cell = _field_lookup(clean_row, header_columns, row_num, 'apellidos', 'apellido')      # los apellidos NO se exigen: pueden venir juntos en «nombres» o no venir (queda vacío, sin aviso)
                         correo, correo_cell = _field_lookup(clean_row, header_columns, row_num, 'correo', 'e-mail corporativo')
                         if correo and not _EMAIL_RE.match(correo):
                             errors.append(f"⚠️ Fila {row_num} ({correo_cell}): el correo '{correo}' no parece válido — se guardó igual, revísalo.")
@@ -2399,7 +2480,7 @@ def _bulk_register_impl(
     message += " " + roster_columns.summary(columns_report)
     phases.mark("resumen")
     phases.emit(row_total)
-    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels(), "columns": columns_report, "birth": birth_summary}
+    return {"message": message, "count": count, "errors": errors, "optional_labels": event.get_optional_labels(), **roster_columns.public(columns_report), "birth": birth_summary}
 
 @router.get("/report")
 def download_report(

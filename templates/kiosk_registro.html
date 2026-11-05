@@ -294,14 +294,14 @@
                     <div id="dynamicFieldsContainer">
                         {% for cfg in field_configs %}
                         <div class="badge-input-group" data-field-key="{{ cfg.key }}" style="margin-top:0.8rem;">
-                            <label>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.field_type not in ("categories", "certificate", "digital_contact", "date")) %} *{% endif %}</label>
+                            <label>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.key != "last_name" and cfg.field_type not in ("categories", "certificate", "digital_contact", "date")) %} *{% endif %}</label>
                             {% if cfg.field_type in ("categories", "certificate", "digital_contact") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "date" %}
                             <input type="date" name="{{ cfg.key }}" id="regBirth" style="max-width:220px;">
                             <small style="display:block; color:#666; margin-top:3px;">Con ella se sabe si es menor de 18 años: un menor no pasa por el reconocimiento facial (solo cédula o QR).{% if event.facial_enabled %} Obligatoria si se sube foto.{% endif %}</small>
                             {% elif cfg.locked %}
-                            <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField" inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %} required>
+                            <input type="text" name="{{ cfg.key }}" {% if cfg.key == "id" %}id="manualIdField" inputmode="numeric" autocomplete="off" placeholder="Escribe o escanea la cédula (lector o QR)"{% endif %}{% if cfg.key != "last_name" %} required{% endif %}>
                             {% elif cfg.field_type in ("consent", "signature", "email") %}
                             <div data-render-control="{{ cfg.key }}"></div>
                             {% elif cfg.field_type == "text_long" %}
