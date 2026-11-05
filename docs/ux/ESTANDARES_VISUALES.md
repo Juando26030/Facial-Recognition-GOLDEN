@@ -8,7 +8,7 @@
 - Pruebas que lo hacen cumplir: `tests/test_design_system.py` (contraste WCAG AA por código). Si cambias un color, corre esa prueba.
 - Razones y fuentes externas (NN/g, GOV.UK, WCAG 2.2, Apple HIG, Material): `docs/ux/PLAN_FASE1_UX.md` y `claude/26_ANALISIS_UX_Y_FLUJO_FACIAL.md` §3.
 
-## 1. Reglas de oro (las 10 que no se negocian)
+## 1. Reglas de oro (las 12 que no se negocian)
 1. **Solo tokens y clases `.gw-*`.** Prohibido escribir colores, tamaños, radios o sombras sueltos (`#777`, `13px`, `border-radius:6px`). Si falta un valor, se agrega como token, no se improvisa.
 2. **Páginas nuevas o rediseñadas:** `<body class="gw-page">`, incluir `_gw_head.html` y cargar el CSS con `url_for('static', ...)`.
 3. **Un solo botón principal por vista** (`.gw-btn` primario), verbos claros («Guardar cambios», «Cargar lista»). Lo destructivo va en rojo (`--gw-danger`), nunca es el principal y pide confirmación; las muy graves, escribir el código del evento.
@@ -19,6 +19,8 @@
 8. **Fuente única:** Agrandir con Montserrat de respaldo, sin CDN ni fuentes externas. Peso normal = 600 (el 400 de Agrandir es «Thin», ilegible).
 9. **Lenguaje:** español, frases cortas, palabras de quien usa la pantalla, sin jerga técnica (nada de «SMTP», «encoding», «.env»). Errores breves que dicen qué hacer. Un concepto = un nombre en toda la app.
 10. **Avisos y confirmaciones con `showToast`/`showConfirm`/`showPrompt`** (`toast.js`); nunca `alert`/`confirm`/`prompt`. Sin `onclick` inline; delegación de eventos.
+11. **Regla de frecuencia:** lo que se hace con cada persona o ítem va visible, a un clic y en una línea compacta (en Registro: Acreditar, Imprimir, Editar); lo que se hace una vez por evento o es destructivo se esconde (menú «Más», con confirmación). Nunca esconder en un menú la acción más usada.
+12. **Guía y animación:** toda pantalla principal trae su guía de 3 pasos con «?» y recorrido de primera vez (`.gw-tour`, una vez por dispositivo); las animaciones solo con propósito (confirmar, mostrar el motivo, abrir un panel), de 250 ms como máximo y con alternativa de movimiento reducido (`prefers-reduced-motion`).
 
 ## 2. Tokens (resumen; el valor exacto vive en el CSS)
 | Tema | Tokens |

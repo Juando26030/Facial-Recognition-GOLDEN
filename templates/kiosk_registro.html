@@ -42,7 +42,7 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
-<script>window.UI_FLOW = "1a"; window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};{% if person_form_json != "null" %} window.PERSON_FORM = {{ person_form_json | safe }};{% endif %}</script>
+<script>window.GW_ICON_URL = "{{ url_for('static', path='img/icons.svg') }}"; window.UI_FLOW = "1a"; window.EVENT_ID = {{ event.id }}; window.STAFF_ROLE = "{{ staff_role }}"; window.FACIAL_ENABLED = {{ "true" if event.facial_enabled else "false" }}; window.EVENT_AUTO_PRINT = {{ "true" if event.auto_print_badge else "false" }}; window.EVENT_AUTO_REGISTER = {{ "true" if event.auto_register else "false" }}; window.DIRECTORY_PAGE_SIZE = {{ event.directory_page_size or 50 }}; window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }}; window.FIELD_CONFIGS = {{ field_configs_json | safe }};{% if person_form_json != "null" %} window.PERSON_FORM = {{ person_form_json | safe }};{% endif %}</script>
 <script src="{{ url_for('static', path='js/field-render.js') }}"></script>
 {# Formulario de persona diseñado por el admin (Fase 1A, pieza 5): solo con PERSON_FORM_ENABLED y el evento con él prendido; si no, nada de esto se carga y la pantalla es la de siempre. #}
 {% if person_form_json != "null" %}<script src="{{ url_for('static', path='js/form-render.js') }}"></script>
@@ -56,6 +56,7 @@
         <div class="golden-section-title gw-registro__title">
           <span>{{ company_name }}</span>
           <h2>Registro y acceso</h2>
+          {% if staff_role != "cliente" %}<p class="gw-hint gw-registro__steps"><b>1</b> Busca por cédula, nombre o empresa · <b>2</b> Acredita · <b>3</b> Imprime la escarapela</p>{% endif %}
         </div>
         {% if staff_role != "cliente" %}
         {# Plan 7 (Registro limpio): TODA la configuración del registro (impresora, «Impresión», autoregistro, auto-impresión) vive en este panel, cerrado por defecto. El panel SIEMPRE existe (la barra de impresión se monta aquí aunque la persona no vea el engranaje); el engranaje solo lo ve quien corresponda (app/registro_gear.py). Solo visual: no cambia permisos ni lo ya configurado. #}
@@ -208,8 +209,8 @@
 
         <!-- PESTAÑA: REGISTRO (Plan 8, reingeniería visual): arriba, FIJO, el buscador único con autofoco y UN botón principal «Registrar nuevo»; el directorio ocupa el resto de la altura con desplazamiento
              interno. Escanear (QR / cédula nueva) agrupa lo que antes eran 3 botones sueltos, con los mismos ids. La acción principal de cada fila («Acreditar») la arma directory.js; lo demás va en su menú «Más». -->
-        <div id="directorio" class="section{% if not event.facial_enabled %} active{% endif %}">
-            {% set off = event.status != "en_proceso" %}
+        <div id="directorio" class="section{% if not event.facial_enabled %} active{% endif %}" data-gw-tour="registro"{% if not event.facial_enabled %} data-gw-tour-auto{% endif %}>
+            {% set busq_tour = true %}{% set off = event.status != "en_proceso" %}
             <div class="gw-workarea" id="gwWorkarea">
                 <div class="gw-workarea__bar">
                     <div class="gw-toolbar">
@@ -242,11 +243,11 @@
                     {% endif %}
                 </div>
                 <div class="gw-workarea__summary" id="gwDirSummary"><button type="button" id="clearFiltersBtn" class="gw-chip">Limpiar filtros</button></div>
-                <div class="gw-workarea__list gw-reg__list">
+                <div class="gw-workarea__list gw-reg__list" data-gw-tour-step="3" data-gw-tour-title="3. Imprime la escarapela" data-gw-tour-text="En la misma fila pulsa «Imprimir». Con «Editar» corriges los datos de la persona.">
                     <table class="golden-table">
                         <thead>
                             <tr>
-                                <th scope="col">Acción</th><th scope="col">{{ field_labels.id }}</th><th scope="col">{{ field_labels.first_name }}</th><th scope="col">{{ field_labels.last_name }}</th><th scope="col">{{ field_labels.opt_1 }}</th><th scope="col">Estado</th>
+                                <th scope="col" data-gw-tour-step="2" data-gw-tour-title="2. Acredita" data-gw-tour-text="Cuando aparezca la persona, pulsa «Acreditar» en su fila. Si te equivocas, tienes unos segundos para deshacer.">Acción</th><th scope="col">{{ field_labels.id }}</th><th scope="col">{{ field_labels.first_name }}</th><th scope="col">{{ field_labels.last_name }}</th><th scope="col">{{ field_labels.opt_1 }}</th><th scope="col">Estado</th>
                             </tr>
                         </thead>
                         <tbody id="directoryTableBody"></tbody>
@@ -546,6 +547,9 @@
         if (window.GoldenContingency && window.GoldenContingency.instance && window.GoldenContingency.instance.onChange) window.GoldenContingency.instance.onChange(update);
         update();
     })();
+
+    /* Guía de 3 pasos: «Ver la guía paso a paso» (dentro del «?» del buscador) cierra la ayuda y la gw-ui abre el recorrido. */
+    document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-gw-tour-restart="registro"]') && window.GW && window.GW.help) window.GW.help.close(); }, true);
 
     /* Plan 8: menú «Escanear» (QR / cédula nueva): abre y cierra; los botones de adentro conservan sus ids y su lógica. */
     (function () {

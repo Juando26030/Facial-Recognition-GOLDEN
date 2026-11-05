@@ -152,3 +152,26 @@ html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado td[da
   .gw-registro .golden-table { font-size: var(--gw-fs-sm); }
 }
 .gw-registro .btn-table-delete { min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-4); border: 0; border-radius: var(--gw-radius-sm); font: inherit; font-weight: var(--gw-fw-bold); cursor: pointer; }
+
+/* ---- Corrección Plan 8: acciones de fila a la vista en UNA línea, filas compactas ---- */
+.gw-registro .golden-table th, .gw-registro .golden-table td { padding: var(--gw-sp-1) var(--gw-sp-3); }
+.gw-registro .action-cell { flex-wrap: nowrap; gap: var(--gw-sp-1); min-width: 0; white-space: nowrap; }
+.gw-registro .action-cell .gw-btn { flex: none; padding: 0 var(--gw-sp-3); min-height: var(--gw-tap); gap: var(--gw-sp-1); font-size: var(--gw-fs-sm); }
+.gw-registro .action-cell .gw-menu__btn { min-width: var(--gw-tap); }
+.gw-registro .btn-accredit-row.is-done:disabled { opacity: 1; background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
+.gw-registro__steps { margin: var(--gw-sp-1) 0 0; }
+/* pantallas muy estrechas: solo el ícono (el nombre accesible y el tooltip siguen) */
+@media (max-width: 520px) {
+  .gw-registro .action-cell .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .gw-registro .action-cell .gw-btn { min-width: var(--gw-tap); padding: 0 var(--gw-sp-2); }
+}
+/* microanimaciones con propósito (≤ 250 ms; sin movimiento si la persona lo pidió) */
+@keyframes gw-reg-pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes gw-reg-flash { from { box-shadow: inset 0 0 0 999px var(--gw-ok-bg); } to { box-shadow: inset 0 0 0 999px transparent; } }
+@keyframes gw-reg-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .gw-registro .btn-accredit-row.is-done .gw-icon { animation: gw-reg-pop 200ms ease-out; }
+  .gw-registro .golden-table tbody tr[data-recent="1"] { animation: gw-reg-flash 250ms ease-out; }
+  .gw-registro .gw-reason { animation: gw-reg-in 160ms ease-out; }
+  .gw-regcfg__panel:not([hidden]) { animation: gw-reg-in 180ms ease-out; }
+}
