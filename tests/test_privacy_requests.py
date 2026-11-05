@@ -83,7 +83,8 @@ def test_export_person_data_is_a_map_of_what_exists_with_no_values_and_no_cedula
     assert ops_runner.main("export-person-data") == 0
     out = capsys.readouterr().out
     line0 = next(l for l in out.splitlines() if l.startswith('{"ops"'))
-    line0 = re.sub(r'"fecha": "[^"]*"', '"fecha": "-"', line0)                                 # las fechas llevan microsegundos al azar («0.1» sale cuando el segundo termina en 0)
+    line0 = re.sub(r'"fecha": "[^"]*"', '"fecha": "-"', line0)
+    line0 = re.sub(r"\d{4}-\d{2}-\d{2}[T ][\d:.+Z-]+", "-", line0)                                   # cualquier otra hora ISO: sus microsegundos al azar a veces contienen «0.1»                                 # las fechas llevan microsegundos al azar («0.1» sale cuando el segundo termina en 0)
     assert "1001" not in line0 and "Ana" not in line0 and "ana@x.test" not in line0 and "3001112233" not in line0 and "0.1" not in line0          # ni valores personales ni la cédula ni el vector
     line = next(l for l in out.splitlines() if l.startswith('{"ops"'))                               # el resto pueden ser líneas de log de otras pruebas
     data = json.loads(json.loads(line)["results"]["export-person-data"]["detail"])
