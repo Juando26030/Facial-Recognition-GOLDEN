@@ -24,4 +24,6 @@ def safe_workbook(wb):
 
 def safe_frame(df):
     """Lo mismo para un DataFrame de pandas antes de `to_excel`."""
-    return df.astype(object).apply(lambda col: col.map(safe_cell))
+    out = df.astype(object).apply(lambda col: col.map(safe_cell))
+    out.columns = [safe_cell(c) if isinstance(c, str) else c for c in out.columns]      # los títulos de columna también: las etiquetas de los campos opcionales salen del Excel que cargó el cliente
+    return out

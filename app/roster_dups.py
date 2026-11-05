@@ -29,22 +29,34 @@ def serial_for(base: str, occurrence: int) -> str:
     return base if occurrence == 0 else f"{base}-{occurrence + 1}"
 
 
+MAX_OFFSET_KEYS = 5000          # tope de cédulas distintas que el navegador puede mandar en `offsets`
+MAX_OFFSET_KEY_LEN = 64
+MAX_OFFSET_VALUE = 100000
+OFFSETS_IGNORED_NOTE = "⚠️ «No eliminar repetidos»: se ignoraron datos de conteo inválidos o excesivos que mandó el navegador."
+
+
 def parse_offsets(raw) -> dict:
-    """JSON {cédula: veces que ya apareció en lotes anteriores} que manda el navegador; lo inválido se ignora."""
+    """JSON {cédula: veces que ya apareció en lotes anteriores} que manda el navegador; lo inválido se ignora (a lo sumo 5000 claves de máx. 64 caracteres, valores enteros 0..100000)."""
     if isinstance(raw, dict):
         data = raw
     else:
         try:
             data = json.loads(raw) if raw else {}
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             return {}
+    if not isinstance(data, dict):
+        return {}
     out = {}
-    for k, v in (data or {}).items():
+    for i, (k, v) in enumerate(data.items()):
+        if i >= MAX_OFFSET_KEYS:
+            break
+        if isinstance(v, bool) or not isinstance(k, str) or len(k) > MAX_OFFSET_KEY_LEN:
+            continue
         try:
             n = int(v)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
-        if n > 0:
+        if 0 < n <= MAX_OFFSET_VALUE:
             out[clean_id(k)] = n
     return out
 
