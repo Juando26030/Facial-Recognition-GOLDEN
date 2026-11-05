@@ -1134,8 +1134,12 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     if not person_id and SYNC_HASH_RE.match(h):
         person_id = _roster_map(db, event).get(h) or _roster_map(db, event, force=True).get(h) or ""
     user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first() if person_id else None
+    if user and not db.query(EventAttendee.user_id).filter_by(event_id=event.id, user_id=user.id).first():
+        user = None          # solo se edita a quien es asistente DE ESTE evento (la cédula sola no basta); mismo resultado que «no existe» para no revelar nada
     if not user:
         return {"op_id": op_id, "result": "error", "detail": "No se encontró a la persona que se editó sin conexión"}
+    if privacy.is_suppressed(db, event.tenant_id, user.id):
+        return {"op_id": op_id, "result": "error", "detail": SUPPRESSED_MSG}          # L4: quien pidió la supresión/revocación no se edita desde la bandeja
     f = dict(f)
     if isinstance(f.get("extra_fields"), dict):
         f["extra_fields"] = dict(f["extra_fields"])
@@ -2154,6 +2158,8 @@ def _bulk_register_impl(
         dup_notes = []
         if keep_duplicates:
             offsets = roster_dups.parse_offsets(dup_offsets)
+            if dup_offsets and not offsets and str(dup_offsets).strip() not in ("{}", "null"):
+                dup_notes.append(roster_dups.OFFSETS_IGNORED_NOTE)
             if roster_dups.has_repeats(rows, offsets):
                 taken_slots = set(known_labels) | set(auto_labels) | {k for k in header_columns if k.startswith("opcional_")}
                 original_slot = next((k for k, v in known_labels.items() if roster_columns.norm(v) == roster_columns.norm(roster_columns.ORIGINAL_ID_LABEL)), None)
