@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ event.name }} — Base de Datos | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/direct-upload.js') }}"></script>
@@ -17,17 +17,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='vendor/jszip-3.10.1.min.js') }}"></script>
 </head>
-<body class="has-sidebar">
+<body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
     </a>
-    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -43,122 +44,162 @@
 <script>window.EVENT_ID = {{ event.id }};</script>
 
 <main class="golden-main">
-  <div class="golden-container" style="max-width: 640px;">
-    <div class="golden-section-title">
-      <span>{{ company_name|upper }}</span>
-      <h2>Adjuntar <span class="gradient-text">Base de Datos</span></h2>
+  <div class="gw-container gw-container--narrow gw-stack-lg">
+    <div class="gw-stack">
+      <p class="gw-eyebrow">{{ company_name }}</p>
+      <h1 class="gw-title">Adjuntar base de datos</h1>
+      <p class="gw-lead">Sube la lista de personas esperadas en tres pasos. Sirve para cualquier forma de registro: cédula, rostro o QR.</p>
     </div>
 
     {% if roster_blocked %}
-    <div id="rosterBlocked" role="alert" style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:0.9rem 1.2rem; border-radius:12px; font-size:0.95rem; line-height:1.5; text-align:left; margin-bottom:1.5rem;">
-      ⚠️ {{ roster_blocked }}
+    <div id="rosterBlocked" role="alert" class="gw-alert gw-alert--warn">
+      <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-alert"/></svg>
+      <div>{{ roster_blocked }}</div>
     </div>
     {% endif %}
 
-    <form id="rosterForm" class="golden-badge-builder">
-      <fieldset {% if roster_blocked %}disabled{% endif %} style="border:none; padding:0; margin:0;">
-        <div class="badge-form-title">Cargar asistentes esperados</div>
-        <p style="text-align:center; color:#666; font-size:0.85rem; margin-bottom:1.5rem;">
-          Sube el Excel (.xlsx) o CSV con los datos de las personas. Sirve para cualquier método de registro —
-          cédula, facial o QR. No es necesario volver a subir un archivo distinto por cada método.
-        </p>
+    <form id="rosterForm" class="gw-stack-lg">
+      <fieldset {% if roster_blocked %}disabled {% endif %}class="gw-fieldset gw-stack-lg">
+        <legend class="gw-sr-only">Cargar la lista de asistentes esperados</legend>
 
         <!-- Fase 0: el uso del rostro y el origen de la foto se eligen SOLO en Parámetros; aquí solo se muestran. -->
-        <div id="facialState" role="note" style="margin:0 0 1rem; padding:12px 14px; border-radius:12px; font-size:0.95rem; line-height:1.5; background:{{ '#eef6ee' if event.facial_enabled else '#fff4e5' }}; border:1px solid {{ '#b7d8b7' if event.facial_enabled else '#f0c36d' }};">
-          {% if event.facial_enabled %}
-          <b>Este evento usa reconocimiento facial</b> — {{ 'fotos entregadas por el cliente (origen A): adjunta el zip abajo.' if event.client_photos_before else 'cada persona se toma una selfie (origen B): no hace falta zip.' }}
-          La fecha de nacimiento del archivo se guarda.
-          {% else %}
-          <b>Este evento NO usa reconocimiento facial.</b> La columna «fecha de nacimiento» del archivo <b>no se guardará</b>.
-          {% endif %}
-          <a href="/kiosk/{{ event.id }}/parametros" style="font-weight:600;">Cambiar en Parámetros</a>
-        </div>
-
-        <!-- Ítem 18 (reunión 2026-09-21): traer a todas las personas de otro evento DEL MISMO CLIENTE. -->
-        <div class="badge-input-group" style="display:flex; align-items:center; gap:10px;">
-          <input type="checkbox" id="useSourceEvent" style="width:auto;">
-          <label for="useSourceEvent" style="margin:0;">Tener en cuenta la base de datos de otro evento de este cliente</label>
-        </div>
-        <div id="sourceEventGroup" class="badge-input-group" style="display:none; margin:0.6rem 0 1rem;">
-          <label>Eventos de los que traer a las personas (solo eventos de {{ event.tenant.name }}) — marca uno o varios</label>
-          <div id="sourceEventList" style="max-height:220px; overflow:auto; border:1px solid #ddd; border-radius:10px; padding:0.5rem 0.8rem;"></div>
-          <p style="font-size:0.78rem; color:#666; margin-top:0.4rem;">Entran todas como "No registrado". Si una persona está en varios eventos, o se repite en el Excel, queda un solo registro con los datos del evento anterior. Puedes usar solo esta opción, sin Excel.</p>
-        </div>
-
-        <div class="badge-input-group">
-          <label>Archivo de base (.xlsx o .csv)</label>
-          <input type="file" name="roster_file" id="rosterFileInput" accept=".xlsx,.csv" required>
-          <p style="font-size:0.8rem; margin-top:0.4rem;">
-            ¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download style="color: var(--golden-primary); font-weight:600;">Descarga la plantilla de Excel</a>.
-          </p>
-          <p style="font-size:0.78rem; color:#666; margin-top:0.4rem;">Columna opcional <b>«Registrado en formulario»</b> (sí / no): con «sí» la persona queda como <b>ya inscrita</b> en los formularios de este evento y no podrá inscribirse otra vez; no ocupa cupo. Se aplica a los formularios que ya existan al cargar la base.</p>
-          <p style="font-size:0.78rem; color:#666; margin-top:0.4rem;">Para bases grandes (miles de personas con foto), no hace falta partir el archivo a mano: si el Excel + el zip juntos pesan mucho, el sistema los divide solo en varios envíos seguidos, sin que muevas nada.</p>
-        </div>
-
-        <label for="overwriteBirth" style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; margin-top:0.6rem;">
-          <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" aria-labelledby="overwriteBirthText" style="width:20px; height:20px; margin-top:3px;">
-          <span id="overwriteBirthText">{{ overwrite_birth_label }} (si no lo marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren).</span>
-        </label>
-
-        <!-- Plan 5 (carga flexible): repetidos con serial y mayúsculas/minúsculas (app/roster_dups.py, app/roster_text.py) -->
-        <div class="gw-stack" style="margin-top:1rem;">
-          <label class="gw-check" for="keepDuplicates">
-            <input type="checkbox" name="keep_duplicates" id="keepDuplicates" value="true" aria-describedby="keepDuplicatesHelp">
-            <span>No eliminar repetidos</span>
-          </label>
-          <p id="keepDuplicatesHelp" class="gw-hint" style="margin:0;">Apagado: si una cédula se repite, queda la última fila. Encendido: las repetidas se guardan con serial (<code>123456-2</code>, <code>123456-3</code>…) y la cédula original queda en el campo «Cédula original». El serial depende del orden de las filas.</p>
-          <div class="gw-field">
-            <label class="gw-label" for="textCase">Texto</label>
-            <select class="gw-input" name="text_case" id="textCase" aria-describedby="textCaseHelp">
-              <option value="" selected>Como viene</option>
-              <option value="upper">MAYÚSCULAS</option>
-              <option value="lower">minúsculas</option>
-            </select>
-            <p id="textCaseHelp" class="gw-hint" style="margin:0;">Aplica a nombres, apellidos y campos de texto. Nunca cambia la cédula ni el teléfono; el correo siempre va en minúsculas.</p>
+        {% if event.facial_enabled %}
+        <div id="facialState" role="note" class="gw-alert gw-alert--ok">
+          <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-face"/></svg>
+          <div>
+            <div class="gw-alert__title">Este evento usa reconocimiento facial</div>
+            <div class="gw-alert__body">{{ 'Las fotos las entrega el cliente (origen A): adjunta el zip en el paso 1.' if event.client_photos_before else 'Cada persona se toma una selfie (origen B): no hace falta zip.' }}
+              La fecha de nacimiento del archivo se guarda. <a href="/kiosk/{{ event.id }}/parametros">Cambiar en Parámetros</a></div>
           </div>
         </div>
-
-        {% if event.facial_enabled and event.client_photos_before %}
-        <div id="facialZipGroup" class="badge-input-group" style="margin-top:0.8rem;">
-          <label>Fotos de las personas (.zip, cada foto nombrada como la cédula, ej. 123456.jpg)</label>
-          <input type="file" name="zip_file" accept=".zip">
-          <label style="display:flex; gap:8px; align-items:flex-start; font-size:0.85rem; line-height:1.4; margin-top:10px; background:#fff8e1; padding:10px 12px; border-radius:10px;">
-            <input type="checkbox" name="photos_authorized" id="photosAuthorized" value="true" style="width:auto; margin-top:3px;">
-            <span><b>Declaro que cuento con la autorización previa, expresa e informada de cada persona</b> para tratar su fotografía y su rostro (dato biométrico sensible, Ley 1581 de 2012) para identificarla en este evento, y que las personas que no la dieron no están en el zip (se registran por cédula). <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
-          </label>
+        {% else %}
+        <div id="facialState" role="note" class="gw-alert gw-alert--warn">
+          <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-alert"/></svg>
+          <div>
+            <div class="gw-alert__title">Este evento NO usa reconocimiento facial</div>
+            <div class="gw-alert__body">La columna «fecha de nacimiento» del archivo <b>no se guardará</b>. <a href="/kiosk/{{ event.id }}/parametros">Cambiar en Parámetros</a></div>
+          </div>
         </div>
         {% endif %}
 
-        <button type="submit" id="rosterSubmit" class="golden-btn golden-btn-primary" style="margin-top: 1.5rem;"{% if roster_blocked %} disabled aria-disabled="true"{% endif %}>Cargar Base de Datos</button>
+        <section class="gw-step" aria-labelledby="stepTitle1">
+          <div class="gw-step__head"><span class="gw-step__num" aria-hidden="true">1</span><h2 class="gw-step__title" id="stepTitle1">Elige el archivo</h2></div>
+          <div class="gw-step__body">
+            <div class="gw-field">
+              <label class="gw-label" for="rosterFileInput">Archivo de la lista (.xlsx o .csv)</label>
+              <input class="gw-input" type="file" name="roster_file" id="rosterFileInput" accept=".xlsx,.csv" required aria-describedby="rosterFileHelp">
+              <p id="rosterFileHelp" class="gw-hint">¿No tienes el formato? <a href="{{ url_for('static', path='templates/plantilla_carga_base_asistentes.xlsx') }}" download>Descarga la plantilla de Excel</a>.</p>
+            </div>
+            <p class="gw-hint">Columna opcional <b>«Registrado en formulario»</b> (sí / no): con «sí» la persona queda como <b>ya inscrita</b> en los formularios de este evento y no podrá inscribirse otra vez; no ocupa cupo. Se aplica a los formularios que ya existan al cargar la lista.</p>
+            <p class="gw-hint">Si la lista tiene miles de personas con foto, no hace falta partir el archivo: el sistema lo envía solo en varios grupos seguidos.</p>
+
+            {% if event.facial_enabled and event.client_photos_before %}
+            <div id="facialZipGroup" class="gw-stack">
+              <div class="gw-field">
+                <label class="gw-label" for="zipFileInput">Fotos de las personas (.zip, cada foto con el nombre de la cédula, por ejemplo 123456.jpg)</label>
+                <input class="gw-input" type="file" name="zip_file" id="zipFileInput" accept=".zip">
+              </div>
+              <div class="gw-alert gw-alert--warn">
+                <label class="gw-check gw-check--top" for="photosAuthorized">
+                  <input type="checkbox" name="photos_authorized" id="photosAuthorized" value="true">
+                  <span><b>Declaro que cuento con la autorización previa, expresa e informada de cada persona</b> para tratar su fotografía y su rostro (dato biométrico sensible, Ley 1581 de 2012) para identificarla en este evento, y que las personas que no la dieron no están en el zip (se registran por cédula). <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a></span>
+                </label>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </section>
+
+        <section class="gw-step" aria-labelledby="stepTitle2">
+          <div class="gw-step__head"><span class="gw-step__num" aria-hidden="true">2</span><h2 class="gw-step__title" id="stepTitle2">Revisa</h2></div>
+          <div class="gw-step__body">
+            <p id="rosterFileInfo" class="gw-text-sm" role="status" aria-live="polite">Todavía no elegiste un archivo.</p>
+
+            <details class="gw-form-group">
+              <summary class="gw-form-group__summary">Opciones de la carga (normalmente no hace falta cambiarlas)</summary>
+              <div class="gw-form-group__body gw-stack">
+                <!-- Ítem 18 (reunión 2026-09-21): traer a todas las personas de otro evento DEL MISMO CLIENTE. -->
+                <label class="gw-check" for="useSourceEvent">
+                  <input type="checkbox" id="useSourceEvent" aria-controls="sourceEventGroup">
+                  <span>Traer también a las personas de otro evento de este cliente</span>
+                </label>
+                <div id="sourceEventGroup" class="gw-stack" hidden>
+                  <p class="gw-label" id="sourceEventLabel">Marca uno o varios eventos de {{ event.tenant.name }}</p>
+                  <div id="sourceEventList" class="gw-checklist" role="group" aria-labelledby="sourceEventLabel"></div>
+                  <p class="gw-hint">Entran todas como «No registrado». Si una persona está en varios eventos, o se repite en el archivo, queda un solo registro con los datos del evento anterior. Puedes usar solo esta opción, sin archivo.</p>
+                </div>
+
+                <div class="gw-stack">
+                  <label class="gw-check gw-check--top" for="overwriteBirth">
+                    <input type="checkbox" name="overwrite_birth" id="overwriteBirth" value="true" aria-describedby="overwriteBirthHelp">
+                    <span>{{ overwrite_birth_label }}</span>
+                  </label>
+                  <p id="overwriteBirthHelp" class="gw-hint">Si no la marcas, una recarga solo completa las fechas que faltan y avisa de las que difieren.</p>
+                </div>
+
+                <!-- Plan 5 (carga flexible): repetidos con serial y mayúsculas/minúsculas (app/roster_dups.py, app/roster_text.py) -->
+                <div class="gw-stack">
+                  <label class="gw-check" for="keepDuplicates">
+                    <input type="checkbox" name="keep_duplicates" id="keepDuplicates" value="true" aria-describedby="keepDuplicatesHelp">
+                    <span>No eliminar repetidos</span>
+                  </label>
+                  <p id="keepDuplicatesHelp" class="gw-hint">Apagado: si una cédula se repite, queda la última fila. Encendido: las repetidas se guardan con un número al final (<b>123456-2</b>, <b>123456-3</b>…) y la cédula original queda en el campo «Cédula original». Ese número depende del orden de las filas.</p>
+                </div>
+                <div class="gw-field">
+                  <label class="gw-label" for="textCase">Cómo guardar los textos</label>
+                  <select class="gw-input" name="text_case" id="textCase" aria-describedby="textCaseHelp">
+                    <option value="" selected>Como vienen en el archivo</option>
+                    <option value="upper">MAYÚSCULAS</option>
+                    <option value="lower">minúsculas</option>
+                  </select>
+                  <p id="textCaseHelp" class="gw-hint">Aplica a nombres, apellidos y campos de texto. Nunca cambia la cédula ni el teléfono; el correo siempre va en minúsculas.</p>
+                </div>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section class="gw-step" aria-labelledby="stepTitle3">
+          <div class="gw-step__head"><span class="gw-step__num" aria-hidden="true">3</span><h2 class="gw-step__title" id="stepTitle3">Cargar</h2></div>
+          <div class="gw-step__body">
+            <p class="gw-hint">Verás el avance en pantalla. No cierres esta página hasta que termine.</p>
+            <button type="submit" id="rosterSubmit" class="gw-btn gw-btn--primary gw-btn--block"{% if roster_blocked %} disabled aria-disabled="true"{% endif %}>
+              <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-upload"/></svg>Cargar lista
+            </button>
+          </div>
+        </section>
       </fieldset>
     </form>
 
+    <div id="rosterResult" class="gw-stack" role="status" aria-live="polite"></div>
 
     {% if append_available %}
-    <form id="appendForm" class="golden-badge-builder" style="margin-top:1.5rem;">
-      <div class="badge-form-title">Solo agregar personas nuevas</div>
-      <p style="color:#666; font-size:0.85rem; line-height:1.5; margin-bottom:1rem;">
-        Sirve para sumar gente a un evento que ya está en curso <b>sin afectar el registro en vivo</b>. No se toca a nadie que ya esté en el evento (ni sus datos, ni su foto, ni su autorización,
-        ni sus ingresos); solo se crean las personas nuevas. Si una cédula se repite en el archivo se usa la primera fila (salvo con «No eliminar repetidos»: entonces las repetidas reciben serial y se agregan). Las columnas que no sean un campo de este evento se ignoran
-        (no se crean campos ni categorías nuevas). No admite fotos (zip). Antes de guardar verás un resumen para confirmar.
-      </p>
-      <div class="badge-input-group">
-        <label>Archivo con las personas nuevas (.xlsx o .csv)</label>
-        <input type="file" name="roster_file" id="appendFileInput" accept=".xlsx,.csv" required>
+    <form id="appendForm" class="gw-step">
+      <div class="gw-step__head"><h2 class="gw-step__title">Solo agregar personas nuevas</h2></div>
+      <div class="gw-step__body">
+        <p>Sirve para sumar gente a un evento que ya está en curso <b>sin afectar el registro en vivo</b>. No se toca a nadie que ya esté en el evento (ni sus datos, ni su foto, ni su autorización, ni sus ingresos): solo se crean las personas nuevas.</p>
+        <ul class="gw-list gw-text-sm">
+          <li>Si una cédula se repite en el archivo se usa la primera fila (salvo con «No eliminar repetidos»: entonces las repetidas reciben un número al final y se agregan).</li>
+          <li>Las columnas que no sean un campo de este evento se ignoran: no se crean campos ni categorías nuevas.</li>
+          <li>No admite fotos (zip).</li>
+          <li>Antes de guardar verás un resumen para confirmar.</li>
+        </ul>
+        <div class="gw-field">
+          <label class="gw-label" for="appendFileInput">Archivo con las personas nuevas (.xlsx o .csv)</label>
+          <input class="gw-input" type="file" name="roster_file" id="appendFileInput" accept=".xlsx,.csv" required>
+        </div>
+        <label class="gw-check" for="appendKeepDuplicates">
+          <input type="checkbox" id="appendKeepDuplicates" value="true">
+          <span>No eliminar repetidos (las cédulas repetidas de la hoja reciben un número al final en vez de descartarse)</span>
+        </label>
+        <div class="gw-field">
+          <label class="gw-label" for="appendTextCase">Cómo guardar los textos</label>
+          <select class="gw-input" id="appendTextCase"><option value="" selected>Como vienen en el archivo</option><option value="upper">MAYÚSCULAS</option><option value="lower">minúsculas</option></select>
+        </div>
+        <button type="submit" id="appendSubmit" class="gw-btn gw-btn--secondary">Ver resumen y agregar</button>
       </div>
-      <label class="gw-check" for="appendKeepDuplicates" style="margin-top:0.6rem;">
-        <input type="checkbox" id="appendKeepDuplicates" value="true">
-        <span>No eliminar repetidos (las cédulas repetidas de la hoja reciben serial en vez de descartarse)</span>
-      </label>
-      <div class="gw-field" style="margin-top:0.6rem;">
-        <label class="gw-label" for="appendTextCase">Texto</label>
-        <select class="gw-input" id="appendTextCase"><option value="" selected>Como viene</option><option value="upper">MAYÚSCULAS</option><option value="lower">minúsculas</option></select>
-      </div>
-      <button type="submit" id="appendSubmit" class="golden-btn golden-btn-primary" style="margin-top:1rem;">Ver resumen y agregar</button>
     </form>
     {% endif %}
-
-    <div id="rosterResult" style="margin-top: 1.5rem;"></div>
   </div>
 </main>
 
@@ -171,16 +212,25 @@ const sourceEventGroup = document.getElementById("sourceEventGroup");
 const sourceEventList = document.getElementById("sourceEventList");
 const rosterFileInput = document.getElementById("rosterFileInput");
 let sourceEventsLoaded = false;
+// Paso 2 «Revisa»: dice qué archivo se eligió y cuánto pesa (solo informativo).
+function showRosterFileInfo() {
+    const info = document.getElementById("rosterFileInfo"), f = rosterFileInput.files && rosterFileInput.files[0];
+    if (!info) return;
+    const mb = f ? (f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(f.size / 1024)) + " KB") : "";
+    info.textContent = f ? "Archivo elegido: " + f.name + " (" + mb + "). Si es el correcto, pasa al paso 3." : (useSourceEvent.checked ? "No elegiste archivo: se cargarán solo las personas de los eventos marcados." : "Todavía no elegiste un archivo.");
+}
+rosterFileInput.addEventListener("change", showRosterFileInfo);
 useSourceEvent.addEventListener("change", async () => {
-    sourceEventGroup.style.display = useSourceEvent.checked ? "block" : "none";
+    sourceEventGroup.hidden = !useSourceEvent.checked;
     rosterFileInput.required = !useSourceEvent.checked;  // con un evento anterior el Excel pasa a ser opcional
+    showRosterFileInfo();
     if (useSourceEvent.checked && !sourceEventsLoaded) {
         const res = await fetch(`/api/events?tenant_id=${encodeURIComponent("{{ event.tenant_id }}")}`);
         const events = (res.ok ? await res.json() : []).filter(e => e.id !== window.EVENT_ID);
         const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         sourceEventList.innerHTML = events.length
-            ? events.map(e => `<label style="display:flex; gap:8px; align-items:center; font-weight:400; text-transform:none; margin:4px 0;"><input type="checkbox" name="source_event_id" value="${e.id}" style="width:auto;"> ${esc(e.name)} (${esc(e.event_code || "sin código")})</label>`).join("")
-            : '<p style="margin:0.3rem 0; color:#666;">Este cliente no tiene otros eventos</p>';
+            ? events.map(e => `<label class="gw-check"><input type="checkbox" name="source_event_id" value="${e.id}"><span>${esc(e.name)} (${esc(e.event_code || "sin código")})</span></label>`).join("")
+            : '<p class="gw-hint">Este cliente no tiene otros eventos.</p>';
         sourceEventsLoaded = true;
     }
 });
@@ -191,28 +241,31 @@ const rosterResult = document.getElementById("rosterResult");
 const EVENT_STATUS = "{{ event.status }}";
 const ROSTER_BLOCKED = {{ 'true' if roster_blocked else 'false' }};      // el servidor decide (app/event_rules.py roster_block_reason); aquí solo se muestra
 
-/* El backend prefija cada mensaje con ❌ (fila omitida por completo), ⚠️ (se guardó igual, pero
-   revisa el dato) o ℹ️ (corrección automática, ej. Excel volvió número una cédula) — los
-   separamos en cajas de color distinto para que de un vistazo se sepa la gravedad de cada uno. */
-const COLUMN_KIND_LABEL = { entendida: ["Entendida", "gw-badge--ok"], opcional: ["Campo opcional", "gw-badge--info"], ignorada: ["Ignorada", "gw-badge--warn"] };
+/* El backend prefija cada mensaje con una marca (X roja = fila omitida por completo; triángulo de aviso = se guardó igual, pero
+   revisa el dato; «i» = corrección automática, ej. Excel volvió número una cédula). Se escriben como códigos Unicode para no dejar emojis en la página:
+   los separamos en avisos de distinto color e ícono para que de un vistazo se sepa la gravedad de cada uno. */
+const MARK_OMITTED = "\u274C", MARK_REVIEW = "\u26A0\uFE0F", MARK_AUTO = "\u2139\uFE0F";
+const ICONS_URL = "{{ url_for('static', path='img/icons.svg') }}";
+const icon = (name) => `<svg class="gw-icon" aria-hidden="true"><use href="${ICONS_URL}#i-${name}"/></svg>`;
+const escHtml = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const COLUMN_KIND_LABEL = { entendida: ["Se cargó", "gw-badge--ok"], opcional: ["Campo opcional", "gw-badge--info"], ignorada: ["No se usó", "gw-badge--warn"] };
 // Informe columna por columna (Plan 5): cada título del archivo con lo que pasó con él.
-function columnDetailHtml(items, esc) {
+function columnDetailHtml(items) {
     if (!items || !items.length) return "";
     const rows = items.map(c => { const k = COLUMN_KIND_LABEL[c.kind] || COLUMN_KIND_LABEL.ignorada;
-        return `<li><span class="gw-badge ${k[1]}">${k[0]}</span> «${esc(c.title)}»${c.field ? " → " + esc(c.field) : ""}${c.reason ? ": " + esc(c.reason) : ""}</li>`; }).join("");
-    return `<div style="margin-top:0.6rem;"><b>Qué pasó con cada columna:</b><ul style="margin:0.3rem 0 0; padding-left:1.2rem; list-style:none;">${rows}</ul></div>`;
+        return `<tr><td>«${escHtml(c.title)}»</td><td><span class="gw-badge ${k[1]}">${k[0]}</span></td><td>${c.field ? escHtml(c.field) : ""}${c.reason ? (c.field ? ". " : "") + escHtml(c.reason) : ""}</td></tr>`; }).join("");
+    return `<div class="gw-table-wrap"><table class="gw-table"><caption>Qué pasó con cada columna</caption><thead><tr><th scope="col">Columna del archivo</th><th scope="col">Resultado</th><th scope="col">Detalle</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function columnsBoxHtml(columns, detail) {
     if (!columns) return "";
-    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const list = (items, fmt) => items.length ? `<ul style="margin:0.3rem 0 0; padding-left:1.2rem;">${items.map(i => `<li>${fmt(i)}</li>`).join("")}</ul>` : "";
-    return `<div style="background:#eef6ee; border:1px solid #b7dcb7; color:#1e5a1e; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
-        <strong>Columnas del archivo</strong>
-        <div style="margin-top:0.4rem;"><b>Campos reconocidos (${columns.recognized.length}):</b>${list(columns.recognized, c => `«${esc(c.title)}» → ${esc(c.field)}`) || " ninguno"}</div>
-        <div style="margin-top:0.4rem;"><b>Campos nuevos creados (${columns.created.length}):</b>${list(columns.created, c => `«${esc(c.title)}» → campo opcional «${esc(c.field)}» (ya está en Parámetros del evento)`) || " ninguno"}</div>
-        <div style="margin-top:0.4rem;"><b>Columnas no usadas (${columns.unused.length}):</b>${list(columns.unused, c => `«${esc(c.title)}»: ${esc(c.reason)}`) || " ninguna"}</div>
-        ${columnDetailHtml(detail, esc)}
-    </div>`;
+    const list = (items, fmt) => items.length ? `<ul class="gw-list">${items.map(i => `<li>${fmt(i)}</li>`).join("")}</ul>` : "";
+    return `<div class="gw-alert gw-alert--ok">${icon("check")}<div class="gw-stack">
+        <div class="gw-alert__title">Columnas del archivo</div>
+        <div class="gw-alert__body"><b>Columnas que se cargaron (${columns.recognized.length}):</b>${list(columns.recognized, c => `«${escHtml(c.title)}» → ${escHtml(c.field)}`) || " ninguna"}</div>
+        <div class="gw-alert__body"><b>Campos nuevos creados (${columns.created.length}):</b>${list(columns.created, c => `«${escHtml(c.title)}» → campo opcional «${escHtml(c.field)}» (ya está en Parámetros del evento)`) || " ninguno"}</div>
+        <div class="gw-alert__body"><b>Columnas que no se usaron (${columns.unused.length}):</b>${list(columns.unused, c => `«${escHtml(c.title)}»: ${escHtml(c.reason)}`) || " ninguna"}</div>
+        ${detail && detail.length ? `<details class="gw-form-group"><summary class="gw-form-group__summary">Ver el detalle columna por columna</summary><div class="gw-form-group__body">${columnDetailHtml(detail)}</div></details>` : ""}
+    </div></div>`;
 }
 
 // Une los informes de columnas de varios lotes (una columna es «nueva» si en algún lote se creó; «no usada» solo si en ningún lote se usó).
@@ -240,26 +293,27 @@ function renderRosterResult(data) {
     if (!data.errors || !data.errors.length) { rosterResult.innerHTML = columnsHtml; return; }
 
     const groups = [
-        { prefix: "❌", bg: "#fbe9ea", border: "#dc3545", text: "#a12631", title: "Filas omitidas" },
-        { prefix: "⚠️", bg: "#fff3cd", border: "#ffe69c", text: "#664d03", title: "Revisa estos datos (se guardaron igual)" },
-        { prefix: "ℹ️", bg: "#e7f1ff", border: "#b6d4fe", text: "#084298", title: "Correcciones automáticas" },
+        { prefix: MARK_OMITTED, cls: "gw-alert--err", ico: "error", title: "Filas que no se cargaron" },
+        { prefix: MARK_REVIEW, cls: "gw-alert--warn", ico: "alert", title: "Revisa estos datos (se guardaron igual)" },
+        { prefix: MARK_AUTO, cls: "", ico: "info", title: "Correcciones automáticas" },
     ];
 
     let html = columnsHtml;
     groups.forEach(g => {
         const items = data.errors.filter(e => e.startsWith(g.prefix));
         if (!items.length) return;
-        html += `<div style="background:${g.bg}; border:1px solid ${g.border}; color:${g.text}; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
-            <strong>${g.title} (${items.length}):</strong>
-            <ul style="margin:0.5rem 0 0; padding-left:1.2rem;">${items.map(err => `<li>${window.escapeHtml(err.replace(g.prefix, "").trim())}</li>`).join("")}</ul>
-        </div>`;
+        html += `<div class="gw-alert ${g.cls}">${icon(g.ico)}<div>
+            <div class="gw-alert__title">${g.title} (${items.length})</div>
+            <ul class="gw-list gw-alert__body">${items.map(err => `<li>${window.escapeHtml(err.replace(g.prefix, "").trim())}</li>`).join("")}</ul>
+        </div></div>`;
     });
     // cualquier mensaje que no traiga uno de los prefijos conocidos (por compatibilidad)
     const unprefixed = data.errors.filter(e => !groups.some(g => e.startsWith(g.prefix)));
     if (unprefixed.length) {
-        html += `<div style="background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:1rem 1.2rem; border-radius:12px; font-size:0.85rem; margin-top:0.8rem;">
-            <ul style="margin:0; padding-left:1.2rem;">${unprefixed.map(err => `<li>${window.escapeHtml(err)}</li>`).join("")}</ul>
-        </div>`;
+        html += `<div class="gw-alert gw-alert--warn">${icon("alert")}<div>
+            <div class="gw-alert__title">Avisos de la carga (${unprefixed.length})</div>
+            <ul class="gw-list gw-alert__body">${unprefixed.map(err => `<li>${window.escapeHtml(err)}</li>`).join("")}</ul>
+        </div></div>`;
     }
     rosterResult.innerHTML = html;
 }
@@ -415,11 +469,11 @@ function makeUi(bar, i, n, prefix) {
 
 async function submitRoster(formData) {
     rosterResult.innerHTML = "";
-    const bar = ProgressBar.create(rosterResult, { title: "Cargando base de datos", stage: "Preparando…" });
+    const bar = ProgressBar.create(rosterResult, { title: "Cargando la lista", stage: "Preparando…" });
     const data = await submitChunkWithLabels(formData, makeUi(bar, 0, 1));
     if (!data) { bar.fail("No se pudo completar la carga"); return; }
-    bar.finish(data.message || "Base cargada");
-    showToast(data.message || "Base cargada", "success");
+    bar.finish(data.message || "Lista cargada");
+    showToast(data.message || "Lista cargada", "success");
     const keep = bar.element;
     renderRosterResult(data);
     rosterResult.prepend(keep);
@@ -437,8 +491,8 @@ async function resumeSteps() {
         const bar = ProgressBar.create(rosterResult, { title: "Retomando la carga de la base", stage: "Continuando…" });
         const data = await runSteps(job, makeUi(bar, 0, 1));
         if (!data) { bar.fail("No se pudo completar la carga"); return; }
-        bar.finish(data.message || "Base cargada");
-        showToast(data.message || "Base cargada", "success");
+        bar.finish(data.message || "Lista cargada");
+        showToast(data.message || "Lista cargada", "success");
         const keep = bar.element;
         renderRosterResult(data);
         rosterResult.prepend(keep);
@@ -448,8 +502,9 @@ document.addEventListener("DOMContentLoaded", resumeSteps);
 
 function resetRosterForm() {
     rosterForm.reset();
-    sourceEventGroup.style.display = "none";
+    sourceEventGroup.hidden = true;
     rosterFileInput.required = true;
+    showRosterFileInfo();
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -584,7 +639,7 @@ async function buildBatchZip(zip, ids) {
 
 async function submitRosterAutoBatched(rosterFile, zipFile, sourceEventIds) {
     rosterResult.innerHTML = "";
-    const bar = ProgressBar.create(rosterResult, { title: "Cargando base de datos", stage: "Leyendo el archivo…" });
+    const bar = ProgressBar.create(rosterResult, { title: "Cargando la lista", stage: "Leyendo el archivo…" });
     const progressBox = bar.element;   // se conserva el nombre: abajo se quita/oculta igual que antes
 
     const { header, rows, kind } = await readRosterRows(rosterFile);
@@ -625,14 +680,14 @@ rosterForm.addEventListener("submit", async (e) => {
     if (ROSTER_BLOCKED) return;      // no se ofrece «cargar de todas formas»: el botón está deshabilitado y el servidor lo rechazaría igual
     if (EVENT_STATUS === "en_proceso") {      // primera carga de un evento que ya arrancó (permitida): solo se avisa del riesgo de pisar registros hechos en vivo
         const seguro = await showConfirm(
-            "⚠️ Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después esta carga normal quedará bloqueada. Para sumar más personas después, usa «Solo agregar personas nuevas», que no toca a quienes ya están. ¿Continuar?",
+            "Este evento ya está <strong>EN PROCESO</strong>.<br><br>Es su primera carga de base. Los registros que ya se hicieron en vivo no se borran, pero después esta carga normal quedará bloqueada. Para sumar más personas después, usa «Solo agregar personas nuevas», que no toca a quienes ya están. ¿Continuar?",
             { variant: "warning", confirmLabel: "Sí, cargar la base" }
         );
         if (!seguro) return;
     }
 
-    const btn = e.target.querySelector("button");
-    setButtonLoading(btn, true, "Cargando base de datos...");
+    const btn = document.getElementById("rosterSubmit");
+    setButtonLoading(btn, true, "Cargando la lista...");
     rosterResult.innerHTML = "";
 
     const formData = new FormData(e.target);
@@ -685,11 +740,9 @@ rosterForm.addEventListener("submit", async (e) => {
    Nada de cédulas, nombres ni correos en pantalla: solo conteos y títulos de columnas. */
 const appendForm = document.getElementById("appendForm");
 function appendSummaryHtml(a) {
-    const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const rows = [["Personas nuevas creadas", a.created], ["Ya existían en el cliente (solo se inscribieron en este evento)", a.enrolled_existing], ["Ignoradas porque ya estaban en el evento", a.existing],
                   ["Ignoradas por repetidas en el archivo", a.duplicates], ["Omitidas por supresión de datos", a.suppressed], ["Filas con error", a.errors], ["Columnas ignoradas", a.columns_ignored]];
-    return `<div style="background:#eef6ee; border:1px solid #b7dcb7; color:#1e5a1e; padding:1rem 1.2rem; border-radius:12px; font-size:0.9rem; margin-top:0.8rem;"><strong>Resultado de «Solo agregar»</strong>
-        <ul style="margin:0.4rem 0 0; padding-left:1.2rem;">${rows.map(([k, v]) => `<li>${esc(k)}: <b>${esc(v)}</b></li>`).join("")}</ul></div>`;
+    return `<div class="gw-table-wrap"><table class="gw-table"><caption>Resultado de «Solo agregar»</caption><tbody>${rows.map(([k, v]) => `<tr><th scope="row">${escHtml(k)}</th><td><b>${escHtml(v)}</b></td></tr>`).join("")}</tbody></table></div>`;
 }
 if (appendForm) appendForm.addEventListener("submit", async (e) => {
     e.preventDefault();
