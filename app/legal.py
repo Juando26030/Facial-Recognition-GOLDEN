@@ -46,7 +46,7 @@ def info() -> dict:
         "name": os.getenv("LEGAL_NAME", "GOLDEN EVENTOS Y LOGISTICA SAS"),
         "nit": company.nit_display(os.getenv("COMPANY_NIT") or os.getenv("LEGAL_NIT") or "901542833-2"),
         "address": os.getenv("LEGAL_ADDRESS", "Carrera 14a # 71a - 59, Bogotá, Colombia"),
-        "phone": os.getenv("LEGAL_PHONE", "+57 317 427 6073"),
+        "phone": os.getenv("LEGAL_PHONE", "+57 318 098 1752"),
         "email": email,
         "privacy_email": os.getenv("PRIVACY_EMAIL") or os.getenv("LEGAL_PRIVACY_EMAIL") or "soporteit@goldenlogisticas.com",      # PRIVACY_EMAIL es el único correo de privacidad; LEGAL_PRIVACY_EMAIL es un alias OBSOLETO (se lee solo si falta aquella)
         "retention": f"{days} días después de que finalice el evento (si participas en más de un evento, después de que hayan finalizado todos), y en ningún caso más de {cap} días desde que se captura",
