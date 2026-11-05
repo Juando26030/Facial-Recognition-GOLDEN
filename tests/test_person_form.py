@@ -83,8 +83,9 @@ def test_apply_case_only_touches_text_fields_and_lowercases_the_email():
 
 def test_stale_detection_uses_version_and_signature():
     eff = personform.effective({"form_version": 3}, CFG)
-    assert personform.is_stale(eff, 2) and personform.is_stale(eff, None) and not personform.is_stale(eff, 3)
-    assert personform.is_stale(eff, 3, "otra") and not personform.is_stale(eff, 3, eff["form_sig"])
+    assert personform.is_stale(eff, 2) and personform.is_stale(eff, "1") and not personform.is_stale(eff, 3)
+    assert not personform.is_stale(eff, None) and not personform.is_stale(eff, 0) and not personform.is_stale(eff, "abc") and not personform.is_stale(eff, 9) and not personform.is_stale(eff, True)
+    assert not personform.is_stale(eff, 3, "otra"), "la firma no decide: solo una versión entera menor"
 
 
 # ------------------------------------------------------------------------------------------------------------------ interruptores
@@ -262,6 +263,54 @@ def test_edit_person_op_validates_email_and_required_but_only_warns_when_the_cop
     assert bad["result"] == "error" and "Correo" in bad["detail"]
     missing = _sync(client, ev, _op("e6", "edit_person", version=d["form_version"], id="6500", phone="3001")).json()["results"][0]
     assert missing["result"] == "error" and "obligatorios" in missing["detail"], "role sigue vacío"
-    old = _sync(client, ev, _op("e7", "edit_person", version=0, id="6500", phone="3001")).json()["results"][0]
+    old = _sync(client, ev, _op("e7", "edit_person", version=max(d["form_version"] - 1, 1), id="6500", phone="3001")).json()["results"][0]
     assert old["result"] == "ok" and old["warnings"], "copia vieja: se guarda y avisa"
     assert db.query(User).filter_by(id="6500").one().phone == "3001"
+
+
+def test_outbox_without_form_version_or_with_garbage_is_strict_about_required(client, factory, db, pf_on):
+    _admin(client, factory)
+    ev = _event_with_labels(factory, db)
+    _design(ev, client, fields={"opcional_2": {"required": True}})
+    r = _sync(client, ev, _op("s1", id="6700", first_name="sin version", role="Jefe"), _op("s2", version="x", id="6701", first_name="basura", role="Jefe"), _op("s3", version=0, id="6702", first_name="cero", role="Jefe")).json()["results"]
+    assert all(x["result"] == "error" and "obligatorios" in x["detail"] for x in r)
+    assert db.query(User).filter(User.id.in_(["6700", "6701", "6702"])).count() == 0
+
+
+def test_outbox_with_an_old_integer_version_still_saves_with_warnings(client, factory, db, pf_on):
+    _admin(client, factory)
+    ev = _event_with_labels(factory, db)
+    _design(ev, client, fields={"opcional_2": {"required": True}})
+    _design(ev, client, fields={"opcional_2": {"required": True}, "entity": {"text_case": "upper"}})
+    r = _sync(client, ev, _op("v1", version=1, id="6710", first_name="vieja", role="Jefe")).json()["results"][0]
+    assert r["result"] == "ok" and any("obligatorios" in w for w in r["warnings"])
+    assert db.query(User).filter_by(id="6710").one() is not None
+
+
+def test_edit_person_op_rejects_a_person_of_another_event_without_revealing_it(client, factory, db, pf_on):
+    from app.routers.api import roster_fingerprint, roster_salt
+
+    _admin(client, factory)
+    ev = _event_with_labels(factory, db)
+    other = factory.event()
+    _design(ev, client, fields={"role": {"required": False}})
+    factory.person(other, "6800", "Otro", "Evento")
+    r = _sync(client, ev, _op("x1", "edit_person", id="6800", phone="3001"), _op("x2", "edit_person", h=roster_fingerprint(roster_salt(other), "6800"), phone="3001"), _op("x3", "edit_person", id="9998877", phone="3001")).json()["results"]
+    assert [x["result"] for x in r] == ["error"] * 3 and len({x["detail"] for x in r}) == 1, "misma respuesta exista o no"
+    assert db.query(User).filter_by(id="6800").one().phone != "3001"
+
+
+def test_edit_person_op_rejects_a_suppressed_person(client, factory, db, pf_on):
+    from app import consent
+    from app.models import SuppressedPerson
+    from app.routers.api import SUPPRESSED_MSG
+
+    _admin(client, factory)
+    ev = _event_with_labels(factory, db)
+    _design(ev, client, fields={"role": {"required": False}})
+    factory.person(ev, "6900", "Sup", "Primida")
+    db.add(SuppressedPerson(tenant_id=ev.tenant_id, cedula_hash=consent.cedula_hash("6900")))
+    db.commit()
+    r = _sync(client, ev, _op("x4", "edit_person", id="6900", phone="3001")).json()["results"][0]
+    assert r["result"] == "error" and r["detail"] == SUPPRESSED_MSG
+    assert db.query(User).filter_by(id="6900").one().phone != "3001"

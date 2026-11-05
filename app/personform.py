@@ -298,11 +298,12 @@ def apply_case(data: dict, definition: Optional[dict]) -> list:
 
 
 def is_stale(definition: dict, op_version, op_sig=None) -> bool:
-    """¿La operación de la bandeja se hizo con una copia ANTERIOR del formulario? Sin versión (dispositivo viejo) también cuenta."""
+    """¿La operación de la bandeja se hizo con una copia ANTERIOR del formulario? SOLO si trae una versión entera válida y MENOR que la vigente. Ausente, ilegible, 0, negativa o mayor
+    NO cuenta como vieja: la validación queda estricta (el cliente no puede debilitarla omitiendo la versión). `op_sig` se conserva por compatibilidad y no decide nada."""
+    if isinstance(op_version, bool) or not isinstance(op_version, (int, str)):
+        return False
     try:
         v = int(op_version)
-    except (TypeError, ValueError):
-        return True
-    if v < int(definition.get("form_version") or 1):
-        return True
-    return bool(op_sig) and op_sig != definition.get("form_sig")
+    except ValueError:
+        return False
+    return 1 <= v < int(definition.get("form_version") or 1)

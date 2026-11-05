@@ -1134,8 +1134,12 @@ def _outbox_edit_person(db: Session, event: Event, staff: StaffUser, op_id: str,
     if not person_id and SYNC_HASH_RE.match(h):
         person_id = _roster_map(db, event).get(h) or _roster_map(db, event, force=True).get(h) or ""
     user = db.query(User).filter(User.id == person_id, User.tenant_id == event.tenant_id).first() if person_id else None
+    if user and not db.query(EventAttendee.user_id).filter_by(event_id=event.id, user_id=user.id).first():
+        user = None          # solo se edita a quien es asistente DE ESTE evento (la cédula sola no basta); mismo resultado que «no existe» para no revelar nada
     if not user:
         return {"op_id": op_id, "result": "error", "detail": "No se encontró a la persona que se editó sin conexión"}
+    if privacy.is_suppressed(db, event.tenant_id, user.id):
+        return {"op_id": op_id, "result": "error", "detail": SUPPRESSED_MSG}          # L4: quien pidió la supresión/revocación no se edita desde la bandeja
     f = dict(f)
     if isinstance(f.get("extra_fields"), dict):
         f["extra_fields"] = dict(f["extra_fields"])
