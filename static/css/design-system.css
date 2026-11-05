@@ -297,6 +297,28 @@
   .gw-anim *, .gw-anim { animation: none !important; }
 }
 
+/* ============================================================ Grupos plegables y filas en columnas (formulario de persona, Fase 1A pieza 5): `.gw-form-group` (details) con `.gw-form-group__summary` y `.gw-form-group__body`; dentro, `.gw-fields-row--1..4` reparte los campos en columnas (una sola en el celular). */
+.gw-form-group { border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); margin-top: var(--gw-sp-3); }          /* sin fondo ni color propios: hereda de la pantalla o ventana donde se use (clara u oscura) */
+.gw-form-group__summary { display: flex; align-items: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); padding: 0 var(--gw-sp-4); cursor: pointer; list-style: none; font-weight: var(--gw-fw-bold); font-size: var(--gw-fs-md); }
+.gw-form-group__summary::-webkit-details-marker { display: none; }
+.gw-form-group__summary::before { content: ""; width: 0.5rem; height: 0.5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--gw-dur); }
+.gw-form-group[open] > .gw-form-group__summary::before { transform: rotate(45deg); }
+.gw-form-group__body { padding: 0 var(--gw-sp-4) var(--gw-sp-4); }
+.gw-form-group, .gw-form-group *, .gw-form-group *::before, .gw-form-group *::after { box-sizing: border-box; }   /* también fuera de .gw-page (ventanas del quiosco): el input al 100% cuenta su relleno y borde */
+.gw-form-group__body { min-width: 0; }
+.gw-fields-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 var(--gw-sp-4); max-width: 100%; }
+.gw-fields-row > * { min-width: 0; }                                                       /* un campo no puede ser más ancho que su columna */
+.gw-fields-row .gw-input, .gw-fields-row .gw-select, .gw-fields-row .gw-textarea { max-width: 100%; min-width: 0; }
+@media (min-width: 640px) {
+  .gw-fields-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gw-fields-row--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gw-fields-row--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .gw-fields-row--2, .gw-fields-row--3, .gw-fields-row--4 { grid-template-columns: minmax(0, 1fr); }   /* celular: una sola columna */
+}
+@media (prefers-reduced-motion: reduce) { .gw-form-group__summary::before { transition: none; } }
+
 /* ============================================================ Recorrido de primera vez (tour): resalta un elemento y explica en pasos. Una sola vez por dispositivo; «Ver recorrido de nuevo» lo repite. */
 .gw-tour { position: fixed; inset: 0; z-index: 4000; }
 .gw-tour__spot { position: fixed; border-radius: var(--gw-radius-md); box-shadow: 0 0 0 4px var(--gw-gold-2), 0 0 0 9999px var(--gw-overlay); pointer-events: none; transition: top var(--gw-dur), left var(--gw-dur), width var(--gw-dur), height var(--gw-dur); }

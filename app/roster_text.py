@@ -16,6 +16,13 @@ def parse_mode(value: Optional[str]) -> Optional[str]:
     return MODES.get(str(value or "").strip().lower().replace(" ", "_"))
 
 
+def convert(value: str, mode: Optional[str]) -> str:
+    """Un solo texto según el modo (el formulario de persona, app/personform.py, lo usa al guardar). Solo cambia mayúsculas/minúsculas; sin modo devuelve el texto tal cual."""
+    if not isinstance(value, str) or not value:
+        return value
+    return value.upper() if mode == UPPER else (value.lower() if mode == LOWER else value)
+
+
 def _is_optional(key: str) -> bool:
     return key.startswith("opcional_")
 
