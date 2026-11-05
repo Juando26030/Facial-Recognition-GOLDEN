@@ -155,6 +155,7 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     """Guarda nombre, dirección (slug), diseño y/o configuración. El diseño se valida completo en el servidor."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
+    quota_before = formsvc.quota_sig_map(form)
     if "name" in data:
         name = str(data["name"]).strip()[:120]
         if not name:
@@ -177,8 +178,8 @@ def update_form(event_id: int, form_id: int, data: dict, request: Request, db: S
     if ("design" in data or "settings" in data) and formsvc.get_settings(form)["block_repeats"]["enabled"] and not formsvc.repeat_target(formsvc.get_settings(form), formsvc.get_design(form)):
         db.rollback()
         raise HTTPException(status_code=400, detail="Para bloquear inscripciones repetidas elige el campo identificador (cédula, correo, teléfono u otro) o agrega un campo de cédula al formulario")
-    if "design" in data or "settings" in data:
-        formsvc.invalidate_quota_keys(db, form)          # los cupos por variables pudieron cambiar: las llaves guardadas se recalculan solas
+    if ("design" in data or "settings" in data) and formsvc.quota_sig_map(form) != quota_before:
+        formsvc.invalidate_quota_keys(db, form)          # solo si cambió alguna condición de los cupos (no el mensaje, el límite ni el nombre): las llaves guardadas se recalculan solas
     db.commit()
     formsvc.invalidate_public_cache()
     return _detail(db, form, request)
