@@ -2154,6 +2154,8 @@ def _bulk_register_impl(
         dup_notes = []
         if keep_duplicates:
             offsets = roster_dups.parse_offsets(dup_offsets)
+            if dup_offsets and not offsets and str(dup_offsets).strip() not in ("{}", "null"):
+                dup_notes.append(roster_dups.OFFSETS_IGNORED_NOTE)
             if roster_dups.has_repeats(rows, offsets):
                 taken_slots = set(known_labels) | set(auto_labels) | {k for k in header_columns if k.startswith("opcional_")}
                 original_slot = next((k for k, v in known_labels.items() if roster_columns.norm(v) == roster_columns.norm(roster_columns.ORIGINAL_ID_LABEL)), None)
