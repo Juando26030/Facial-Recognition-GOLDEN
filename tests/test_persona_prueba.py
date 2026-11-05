@@ -10,12 +10,16 @@ from app.routers.stats import _event_directory_users as stats_people
 from tests.conftest import login
 
 
-def _create(client, coord_id, name="Evento con prueba", code="PRB1"):
+def _create(client, factory, name="Evento con prueba", code="PRB1"):
+    """Crea el evento por la API como coordinador (así nace en producción) y vuelve a la sesión de administrador."""
+    coord = factory.staff("coordinador", f"coord{code.lower()}")
+    login(client, f"coord{code.lower()}")
     r = client.post("/api/events", json={"tenant_id": "acme", "event_code": code, "name": name, "location": "L", "address": "D", "country": "CO",
                                          "city": "Bogotá", "start_date": "2026-11-01", "end_date": "2026-11-02", "setup_date": "2026-10-31",
                                          "event_time_start": "08:00", "event_time_end": "18:00", "setup_time_start": "06:00",
-                                         "setup_time_end": "07:00", "coordinator_staff_id": coord_id})
+                                         "setup_time_end": "07:00", "coordinator_staff_id": coord.id})
     assert r.status_code == 200, r.text
+    login(client, "root")
     return r.json()["id"]
 
 
@@ -27,8 +31,8 @@ def _admin(client, factory):
 
 
 def test_new_event_comes_with_the_test_person_and_it_is_idempotent(client, factory, db):
-    sid = _admin(client, factory)
-    a, b = _create(client, sid, code="PRB1"), _create(client, sid, "Otro", "PRB2")
+    _admin(client, factory)
+    a, b = _create(client, factory, code="PRB1"), _create(client, factory, "Otro", "PRB2")
     u = db.query(User).filter_by(id=testperson.TEST_ID, tenant_id="acme").one()
     assert u.first_name == "Prueba" and u.last_name == "Prueba"
     assert all("prueba" in str(v).lower() for v in (u.role, u.entity, u.phone, u.email, u.opt_1)), "todos los campos dicen «prueba»"
@@ -43,8 +47,8 @@ def test_new_event_comes_with_the_test_person_and_it_is_idempotent(client, facto
 
 
 def test_the_test_person_never_counts_in_reports_stats_or_the_event_state(client, factory, db):
-    sid = _admin(client, factory)
-    ev_id = _create(client, sid)
+    _admin(client, factory)
+    ev_id = _create(client, factory)
     ev = db.get(Event, ev_id)
     assert report_people(db, ev_id, "acme") == [] and stats_people(db, ev_id, "acme") == []
     assert registro_dashboard(db, ev)["total"] == 0
