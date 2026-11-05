@@ -1543,6 +1543,7 @@ def delete_user_from_event(
         db.query(model).filter(model.event_id == event_id, model.user_id == user_id).delete(synchronize_session=False)
     db.query(EventAttendee).filter(EventAttendee.event_id == event_id, EventAttendee.user_id == user_id).delete()
     db.query(AccessLog).filter(AccessLog.event_id == event_id, AccessLog.user_id == user_id).delete()
+    log.info("persona eliminada del evento %s por el usuario %s (se borran también su historial de impresión y sus permisos de reimpresión)", event_id, staff.id)      # sin datos personales
     signatures.delete_signatures(event.tenant_id, event_id, user_id)
     db.flush()
 

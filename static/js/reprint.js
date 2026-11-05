@@ -147,6 +147,19 @@
     } catch (e) { toast(OFFLINE, 'error'); return false; }
   }
 
-  root.GWReprint = { check, use, open: (userId) => openDialog(userId, { status: 'none' }, {}) };
+  /* Impresión AUTOMÁTICA o local sin pantalla de confirmación (Fase 1B, revisión de seguridad): con la reimpresión deshabilitada, antes de imprimir se pregunta al servidor si la persona ya se imprimió.
+     Si ya se imprimió NO se reimprime sola: sale el cuadro «No se puede reimprimir» + «Solicitar permiso»; con permiso aprobado se gasta y se sigue. Sin red no se puede saber: sigue (control de pantalla;
+     ver docs/1B_reimpresion_permisos.md). Devuelve true = imprimir. */
+  async function auto(userId) {
+    if (!root.EVENT_REPRINT_DISABLED) return true;
+    let d = null;
+    try { const r = await root.fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${eid()}`, { cache: 'no-store' }); d = r.ok ? await r.json() : null; } catch (e) { d = null; }
+    if (!d || !d.reprint_locked || !(d.times_printed > 0)) return true;
+    const g = await check(userId, d);
+    if (!g.ok) return false;
+    return use(userId, true);
+  }
+
+  root.GWReprint = { check, use, auto, open: (userId) => openDialog(userId, { status: 'none' }, {}) };
   if (typeof module === 'object' && module.exports) module.exports = root.GWReprint;
 })(typeof window !== 'undefined' ? window : globalThis);

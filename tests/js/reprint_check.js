@@ -185,5 +185,32 @@ const json = (obj, status) => ({ ok: (status || 200) < 400, status: status || 20
   w.document.visibilityState = 'visible'; w.respond = () => json({}, 401); await w.GWReprintInbox.poll();
   const m = w._calls.length; await w.GWReprintInbox.poll(); assert.strictEqual(w._calls.length, m, 'sin sesión: no vuelve a preguntar');
 
+  // --- autoimpresión / deshacer + repetir: con la reimpresión deshabilitada NO se reimprime sola
+  assert(/GWReprint\.auto\(userId\)/.test(br) && /async function printNow/.test(br), 'badge-render.js: printNow (autoimpresión) consulta al servidor');
+  assert(/auto && window\.GWReprint && !\(await window\.GWReprint\.auto\(userId\)\)/.test(sp), 'shared-print.js: la autoimpresión por USB también');
+  w = load('static/js/reprint.js', newWindow({ EVENT_REPRINT_DISABLED: false }));
+  assert.strictEqual(await w.GWReprint.auto('1001'), true); assert.strictEqual(w._calls.length, 0, 'habilitada: no consulta');
+  w = load('static/js/reprint.js', newWindow());
+  w.respond = () => json({ times_printed: 0, reprint_locked: true });
+  assert.strictEqual(await w.GWReprint.auto('1001'), true, 'primera impresión sale sola');
+  w = load('static/js/reprint.js', newWindow());
+  w.respond = () => json({ times_printed: 1, reprint_locked: true, permit: false, request: null });       // deshacer + repetir: el conteo sobrevive
+  pending = w.GWReprint.auto('1001'); await tick();
+  assert(texts(w).includes('No se puede reimprimir'), 'ya impresa: sale el cuadro, no la escarapela');
+  button(w, 'close').click(); assert.strictEqual(await pending, false);
+  w = load('static/js/reprint.js', newWindow());
+  w.respond = (url, opts) => (opts.method === 'POST' ? json({ ok: true }) : json({ times_printed: 1, reprint_locked: true, permit: true, request: { status: 'approved' } }));
+  assert.strictEqual(await w.GWReprint.auto('1001'), true); assert(w._calls.some((c) => c.url.endsWith('/reprint-requests/use')), 'con permiso: lo gasta y sigue');
+  w = load('static/js/reprint.js', newWindow()); w.fetch = async () => { throw new Error('net'); };
+  assert.strictEqual(await w.GWReprint.auto('1001'), true, 'sin red no se puede saber: sigue (control de pantalla)');
+
+  // --- sondeo del coordinador: sin eventos con reimpresión deshabilitada deja de consultar; respeta el ritmo del servidor
+  w = newWindow(); load('static/js/reprint-inbox.js', w);
+  w.respond = () => json({ requests: [], watch: false, poll_ms: 30000 }); await w.GWReprintInbox.poll();
+  const c0 = w._calls.length; await w.GWReprintInbox.poll(); assert.strictEqual(w._calls.length, c0, 'watch=false: no vuelve a consultar');
+  w = newWindow(); load('static/js/reprint-inbox.js', w);
+  w.respond = () => json({ requests: [], watch: true, poll_ms: 30000 }); await w.GWReprintInbox.poll();
+  const c1 = w._calls.length; await w.GWReprintInbox.poll(); assert.strictEqual(w._calls.length, c1, 'respeta los 30 s del servidor');
+
   console.log('reprint_check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

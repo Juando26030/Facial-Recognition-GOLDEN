@@ -352,6 +352,10 @@ def log_print(
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
+    # Fase 1B: con la reimpresión deshabilitada, registrar la impresión de alguien ya impreso exige haber gastado un permiso hace un momento (la impresión local la hace el navegador:
+    # esto es lo que el servidor puede hacer cumplir; ver docs/1B_reimpresion_permisos.md «control de pantalla»).
+    if reprint.is_locked_for(event, staff) and reprint.already_printed(db, event, user_id) and not reprint.recently_used(db, event, staff, user_id):
+        raise HTTPException(status_code=403, detail=reprint.DENIED_DETAIL)
     db.add(PrintLog(
         tenant_id=event.tenant_id, user_id=user_id, event_id=event.id, printed_by_staff_id=staff.id,
     ))

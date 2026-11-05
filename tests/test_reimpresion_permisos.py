@@ -539,3 +539,92 @@ def test_the_coordinator_pages_load_the_inbox_script_and_the_digitador_does_not(
 def test_the_new_job_kinds_are_registered():
     assert {"reprint_notify", "reprint_mail"} <= set(jobs.GENERAL_KINDS)
     assert jobs.HANDLER_MODULES["reprint_notify"] == "app.reprint"
+
+
+# ---------------------------------------------------------------------------------------------------- revisión de seguridad
+def _print_log(client, env, uid):
+    return client.post(f"/api/users/{uid}/print-log", params={"event_id": env.ev.id})
+
+
+def test_undo_and_repeat_does_not_reprint_when_disabled(client, env, db):
+    """Deshacer una acreditación no borra el PrintLog: acreditar otra vez NO da otra escarapela sin permiso (ni por print-log ni por la cola compartida)."""
+    _disable(client, env)
+    _as(client, "dig")
+    assert _print_log(client, env, "1004").status_code == 200                 # primera impresión
+    db.add(AccessLog(tenant_id=env.ev.tenant_id, user_id="1004", event_id=env.ev.id, record_type="Existente", registration_method="tradicional", client_id="c-undo", registered_by_staff_id=env.dig.id, timestamp=utcnow()))
+    db.commit()
+    assert client.post(f"/api/events/{env.ev.id}/accreditations/undo", json={"client_id": "c-undo"}).status_code == 200
+    db.add(AccessLog(tenant_id=env.ev.tenant_id, user_id="1004", event_id=env.ev.id, record_type="Existente", registration_method="tradicional", client_id="c-again", registered_by_staff_id=env.dig.id, timestamp=utcnow()))
+    db.commit()
+    again = _print_log(client, env, "1004")
+    assert again.status_code == 403 and again.json()["detail"].startswith("No se puede reimprimir")
+    assert _job(client, env, "1004", False).status_code == 403
+    count = client.get("/api/users/1004/print-count", params={"event_id": env.ev.id}).json()
+    assert count["times_printed"] == 1 and count["reprint_locked"] is True       # lo que la pantalla usa para no reimprimir sola
+
+
+def test_print_log_needs_the_permission_that_was_just_spent(client, env):
+    _disable(client, env)
+    _as(client, "dig")
+    assert _print_log(client, env, "1001").status_code == 403
+    rid = _ask(client, env).json()["id"]
+    _decide(client, "coord", rid, "approve")
+    _as(client, "dig")
+    assert _print_log(client, env, "1001").status_code == 403                 # aprobada pero sin gastar: la pantalla la gasta primero
+    assert client.post(f"/api/events/{env.ev.id}/reprint-requests/use", json={"user_id": "1001"}).status_code == 200
+    assert _print_log(client, env, "1001").status_code == 200
+
+
+def test_print_log_is_untouched_when_reprint_is_enabled(client, env):
+    _as(client, "dig")
+    assert _print_log(client, env, "1001").status_code == 200
+
+
+def test_other_tenant_cannot_change_see_or_decide(client, env, factory):
+    factory.tenant("beta")
+    factory.staff("admin", "adm_b", tenant_id="beta")
+    factory.staff("coordinador", "coord_b", tenant_id="beta")
+    _as(client, "adm_b")
+    assert client.put(f"/api/events/{env.ev.id}/reprint-mode", json={"disabled": True}).status_code == 404
+    _disable(client, env)
+    rid = _ask(client, env).json()["id"]
+    for who in ("adm_b", "coord_b"):
+        _as(client, who)
+        body = client.get("/api/reprint-requests/inbox").json()
+        assert body["requests"] == [] and body["watch"] is False
+        assert client.post(f"/api/reprint-requests/{rid}/decision", json={"decision": "approve"}).status_code == 404
+        assert client.get(f"/api/events/{env.ev.id}/reprint-requests").status_code == 403
+    _as(client, "coord")
+    assert [r["id"] for r in client.get("/api/reprint-requests/inbox").json()["requests"]] == [rid]
+
+
+def test_inbox_only_asks_to_poll_when_there_is_something_to_watch(client, env):
+    _as(client, "coord")
+    quiet = client.get("/api/reprint-requests/inbox").json()
+    assert quiet["watch"] is False and quiet["requests"] == []               # habilitada: la pantalla deja de sondear
+    _disable(client, env)
+    _as(client, "coord")
+    idle = client.get("/api/reprint-requests/inbox").json()
+    assert idle["watch"] is True and idle["poll_ms"] == 30000                # deshabilitada, sin pendientes: 30 s
+    _as(client, "coord2")
+    assert client.get("/api/reprint-requests/inbox").json()["watch"] is False  # otro coordinador: no es suyo
+    _ask(client, env)
+    _as(client, "coord")
+    busy = client.get("/api/reprint-requests/inbox").json()
+    assert busy["poll_ms"] == 10000 and len(busy["requests"]) == 1           # con una pendiente: 10 s
+
+
+def test_email_link_paths_are_masked_in_logs():
+    from app import obs
+    assert obs.mask_url("/reimpresion/AbC_dEf-123456") == "/reimpresion/[token]"
+    assert "AbC" not in obs.mask_url("/reimpresion/AbC_dEf-123456?x=1")
+
+
+def test_the_email_link_is_rate_limited_per_ip(client, monkeypatch):
+    from app.routers import reprint as router
+    monkeypatch.setattr(router, "LINK_GET_MAX", 3)
+    monkeypatch.setattr(router, "LINK_POST_MAX", 2)
+    codes = [client.get("/reimpresion/nada").status_code for _ in range(5)]
+    assert codes[:3] == [410, 410, 410] and codes[3:] == [429, 429]
+    codes = [client.post("/reimpresion/nada", data={"decision": "approve"}).status_code for _ in range(4)]
+    assert codes == [410, 410, 429, 429]

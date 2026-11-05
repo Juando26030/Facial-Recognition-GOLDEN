@@ -28,7 +28,7 @@ from app.timeutil import to_local, utcnow
 
 log = logging.getLogger("golden.reprint")
 
-SCREEN_GRACE_SECONDS = 25        # si la pantalla del coordinador no la mostró en este tiempo, no tiene sesión activa: correo ya
+SCREEN_GRACE_SECONDS = 45        # si la pantalla del coordinador no la mostró en este tiempo (sondea cada 30 s cuando no hay pendientes), no tiene sesión activa: correo ya
 EMAIL_AFTER_SECONDS = 120        # sin respuesta en 2 minutos: correo
 MAX_PENDING = 3                  # solicitudes pendientes o aprobadas sin usar por persona del personal y evento
 MIN_GAP_SECONDS = 5              # ritmo: entre una solicitud y la siguiente de la misma persona del personal en un evento
@@ -64,6 +64,8 @@ def hash_token(token: str) -> str:
 # ------------------------------------------------------------------------------------------------ quién puede qué
 def can_decide(event: Event, staff: StaffUser) -> bool:
     """Decide (y no necesita permiso para reimprimir): admin o super_admin, o el coordinador ASIGNADO a este evento. Un coordinador de otro evento no."""
+    if staff.tenant_id is not None and staff.tenant_id != event.tenant_id:
+        return False                                                       # otro cliente (tenant): nunca decide aquí
     roles = effective_roles(staff)
     return bool(ADMIN_ROLES & roles) or (event.coordinator_staff_id is not None and staff.id == event.coordinator_staff_id and "coordinador" in roles)
 
@@ -114,6 +116,22 @@ def expire_due(db: Session, event_id: Optional[int] = None) -> int:
 
 def _kill_links(db: Session, request_id: int) -> None:
     db.execute(update(ReprintLink).where(ReprintLink.request_id == request_id, ReprintLink.used_at.is_(None)).values(used_at=utcnow()))
+
+
+def recently_used(db: Session, event: Event, staff: StaffUser, user_id: str, seconds: int = 120) -> bool:
+    """¿Esta persona del personal gastó un permiso para esta persona hace un momento? (la impresión local registra su print-log justo después de gastarlo)."""
+    return db.query(ReprintRequest.id).filter(ReprintRequest.event_id == event.id, ReprintRequest.requested_by_staff_id == staff.id, ReprintRequest.user_id == user_id,
+                                              ReprintRequest.status == "used", ReprintRequest.used_at > utcnow() - timedelta(seconds=seconds)).first() is not None
+
+
+def watching(db: Session, staff: StaffUser) -> bool:
+    """¿Esta persona tiene algún evento propio (que coordina; admin+: también sin coordinador) con la reimpresión deshabilitada y sin finalizar? Si no, su pantalla no necesita sondear."""
+    admin = bool(ADMIN_ROLES & effective_roles(staff))
+    scope = [Event.coordinator_staff_id == staff.id] + ([Event.coordinator_staff_id.is_(None)] if admin else [])
+    q = db.query(Event.id).filter(Event.reprint_disabled == True, Event.status != "finalizado", or_(*scope))      # noqa: E712
+    if staff.tenant_id is not None:
+        q = q.filter(Event.tenant_id == staff.tenant_id)
+    return q.first() is not None
 
 
 def active_request(db: Session, event_id: int, staff_id: int, user_id: str) -> Optional[ReprintRequest]:

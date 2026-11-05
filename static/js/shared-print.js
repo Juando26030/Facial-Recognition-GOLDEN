@@ -581,6 +581,7 @@
     }
     if (usb.ok) {
       try {
+        if (auto && window.GWReprint && !(await window.GWReprint.auto(userId))) return false;       // Fase 1B: la autoimpresión por USB tampoco reimprime sola con la reimpresión deshabilitada
         if (!auto && !confirmed && original.openPrintWindow) { /* el aviso de reimpresión de siempre */
           const r = await fetch(`/api/users/${encodeURIComponent(userId)}/print-count?event_id=${EID}`).catch(() => null);
           const c = r && r.ok ? await r.json() : { times_printed: 0 };

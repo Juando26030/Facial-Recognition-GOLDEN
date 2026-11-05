@@ -1,13 +1,13 @@
 /* Reimpresión con permisos, lado del coordinador (Fase 1B, docs/1B_reimpresion_permisos.md).
-   Cada pantalla del personal con menú lateral (coordinador o más) consulta cada 10 s, con el sondeo de siempre (GW.poll: se pausa cuando la pantalla está sin uso 60 s y retoma al volver),
-   si hay solicitudes de reimpresión pendientes PARA ESTA PERSONA (las de los eventos que coordina; admin+ también las de eventos sin coordinador). Sin WebSockets.
+   Cada pantalla del personal con menú lateral (coordinador o más) consulta, con el sondeo de siempre (GW.poll: se pausa cuando la pantalla está sin uso 60 s y retoma al volver),
+   si hay solicitudes de reimpresión pendientes PARA ESTA PERSONA (y solo si tiene algún evento propio con la reimpresión deshabilitada; si no, deja de consultar. 30 s sin pendientes, 10 s con alguna) (las de los eventos que coordina; admin+ también las de eventos sin coordinador). Sin WebSockets.
    Cuando hay una, muestra una tarjeta con quién pide, a quién reimprimir, la hora y los botones Aprobar / Negar. Consultar marca la solicitud como «vista en pantalla»: así el respaldo por correo sabe que
    esta sesión está activa. El sondeo va con X-Gw-Passive: no renueva la sesión por inactividad. Se prueba con Node (tests/js/reprint_check.js). */
 (function (root) {
   'use strict';
   if (root.GW_REPRINT_INBOX === false) return;
 
-  const POLL_MS = 10000;
+  const POLL_MS = 10000;                // cadencia del reloj (GW.poll); cuánto se consulta de verdad lo dice el servidor (`poll_ms`: 30 s sin pendientes, 10 s con alguna)
   const doc = () => root.document;
   const toast = (m, t) => { if (typeof root.showToast === 'function') root.showToast(m, t || 'info'); };
   let card = null;          // el cuadro abierto { back, id }
@@ -15,6 +15,8 @@
   let busy = false;
   let timer = null;
   let dead = false;
+  let gapMs = 0;            // espera mínima entre consultas, según el servidor
+  let last = 0;
 
   function el(tag, cls, text) { const e = doc().createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function icon(name) {
@@ -64,12 +66,16 @@
   }
 
   async function poll() {
-    if (dead || busy || (doc().visibilityState && doc().visibilityState !== 'visible')) return;
+    if (dead || busy || (doc().visibilityState && doc().visibilityState !== 'visible')) return;          // pestaña oculta: no consulta (con GW.idle, GW.poll tampoco corre)
+    if (Date.now() - last < gapMs - 500) return;
+    last = Date.now();
     try {
       const res = await root.fetch('/api/reprint-requests/inbox', { cache: 'no-store', headers: { 'X-Gw-Passive': '1' } });
       if (res.status === 401 || res.status === 403) { dead = true; if (timer) root.clearInterval(timer); return; }       // sin sesión o sin permiso: se deja de preguntar
       if (!res.ok) return;
       const d = await res.json();
+      if (d.watch === false) { dead = true; if (timer) root.clearInterval(timer); return; }            // no tiene eventos con la reimpresión deshabilitada: esta pantalla no vuelve a consultar
+      gapMs = Number(d.poll_ms) || 30000;
       queue = d.requests || [];
       if (!queue.length) { close(); return; }
       if (!card || !queue.some((q) => q.id === card.id)) show(queue[0], queue.length - 1);

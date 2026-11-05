@@ -127,6 +127,8 @@ def _fresh_public_limiter(monkeypatch):
     from app.routers import aceptar
     from app.ttlcache import SlidingLimiter
     monkeypatch.setattr(aceptar, "_limiter", SlidingLimiter())
+    from app.routers import reprint as reprint_router
+    monkeypatch.setattr(reprint_router, "_limiter", SlidingLimiter())
 
 
 @pytest.fixture(autouse=True)

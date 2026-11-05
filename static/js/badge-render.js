@@ -417,8 +417,10 @@
     setTimeout(() => manualBusy.delete(userId), 3000);
     return true;
   }
-  function printNow(userId) {
-    return logPrint(userId).then(() => openPrintTab(printWindowUrl(userId)));       // devuelve la ventana (null = el navegador la bloqueó)
+  async function printNow(userId) {
+    if (window.GWReprint && !(await window.GWReprint.auto(userId))) return null;     // Fase 1B: reimpresión deshabilitada → la autoimpresión no repite sola a quien ya se imprimió (null = no se imprimió)
+    await logPrint(userId);
+    return openPrintTab(printWindowUrl(userId));                                     // devuelve la ventana (null = el navegador la bloqueó)
   }
   /* Banderas del evento que decide el SERVIDOR (PR3, causa A): `window.EVENT_AUTO_PRINT` ya no es la verdad (la página lo escribe una vez al cargar). Cada respuesta de checkin-cedula, register, PATCH
      status y undo trae `auto_print`/`auto_register`, y cada sondeo del directorio (/users/changes) trae `flags`: aquí se copian a las variables de la página y se avisa (gw:flags) para repintar

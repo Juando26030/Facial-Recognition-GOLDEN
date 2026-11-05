@@ -7,20 +7,23 @@
 import logging
 from html import escape
 
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
-from app import reprint
-from app.auth import effective_roles, get_event_for_staff, require_role, require_role_excluding
+from app import reprint, security
+from app.auth import assert_event_tenant, effective_roles, get_event_for_staff, require_role, require_role_excluding
 from app.database import get_db
 from app.models import Event, EventAttendee, ReprintAudit, ReprintLink, ReprintRequest, StaffUser
 from app.timeutil import utcnow
+from app.ttlcache import SlidingLimiter
 
 log = logging.getLogger("golden.reprint")
 router = APIRouter()
 public_router = APIRouter()
+_limiter = SlidingLimiter()                                     # en memoria (por proceso), como las páginas públicas de formularios: frena a quien prueba enlaces
+LINK_GET_MAX, LINK_POST_MAX, LINK_WINDOW_S = 40, 12, 600
 
 OPERATOR = require_role_excluding("digitador", ("comercial",))
 DECIDER = require_role_excluding("coordinador", ("comercial",))
@@ -39,6 +42,8 @@ def _row(db: Session, r: ReprintRequest, event: Event = None) -> dict:
 def set_mode(event_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     """Reimpresión del evento: habilitada (por defecto) o deshabilitada. SOLO admin o super_admin."""
     event = get_event_for_staff(event_id, db, staff)
+    if not reprint.can_decide(event, staff):
+        raise HTTPException(status_code=404, detail="Evento no encontrado")      # otro cliente (tenant)
     value = data.get("disabled")
     if not isinstance(value, bool):
         raise HTTPException(status_code=400, detail="«disabled» debe ser verdadero o falso")
@@ -119,6 +124,8 @@ def inbox(db: Session = Depends(get_db), staff: StaffUser = Depends(DECIDER)):
     q = db.query(ReprintRequest).filter(ReprintRequest.status == "pending", ReprintRequest.expires_at > now)
     scope = [Event.coordinator_staff_id == staff.id] + ([Event.coordinator_staff_id.is_(None)] if admin else [])
     q = q.filter(ReprintRequest.event_id.in_(select(Event.id).where(or_(*scope))))
+    if staff.tenant_id is not None:
+        q = q.filter(ReprintRequest.tenant_id == staff.tenant_id)             # solo su cliente (tenant)
     rows = q.order_by(ReprintRequest.id).limit(20).all()
     fresh = [r.id for r in rows if r.screen_seen_at is None]
     for rid in fresh:
@@ -126,13 +133,16 @@ def inbox(db: Session = Depends(get_db), staff: StaffUser = Depends(DECIDER)):
             reprint.audit(db, rid, "screen", staff.id, "screen")
     if fresh:
         db.commit()
-    return {"requests": [_row(db, r) for r in rows]}
+    out = [_row(db, r) for r in rows]
+    watch = bool(out) or reprint.watching(db, staff)
+    return {"requests": out, "watch": watch, "poll_ms": 10000 if out else 30000}      # sin eventos con reimpresión deshabilitada la pantalla deja de sondear; 30 s sin pendientes, 10 s con alguna
 
 
 @router.post("/reprint-requests/{request_id}/decision")
 def decision(request_id: int, data: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(DECIDER)):
     req = db.get(ReprintRequest, request_id)
     event = db.get(Event, req.event_id) if req is not None else None
+    assert_event_tenant(event, staff) if event is not None else None
     if req is None or event is None or not reprint.can_decide(event, staff):
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")           # 404 también al coordinador de otro evento: no se confirma que existe
     choice = data.get("decision")
@@ -163,6 +173,15 @@ def _dead() -> HTMLResponse:
     return _page("Enlace no disponible", "<h1>Este enlace ya no está disponible</h1><p>Ya se usó, venció o la solicitud ya fue respondida. Si hace falta, pide una nueva desde el Registro.</p>", 410)
 
 
+def _limited(request: Request, kind: str, max_hits: int) -> bool:
+    ip = security.limit_ip(request)
+    return ip is not None and not _limiter.hit((kind, ip), max_hits, LINK_WINDOW_S)
+
+
+def _too_many() -> HTMLResponse:
+    return _page("Demasiados intentos", "<h1>Demasiados intentos seguidos</h1><p>Espera unos minutos e intenta de nuevo.</p>", 429)
+
+
 def _live_link(db: Session, token: str):
     link = db.query(ReprintLink).filter(ReprintLink.token_hash == reprint.hash_token(token)).first()
     if link is None or link.used_at is not None:
@@ -174,8 +193,10 @@ def _live_link(db: Session, token: str):
 
 
 @public_router.get("/reimpresion/{token}")
-def link_page(token: str, db: Session = Depends(get_db)):
+def link_page(token: str, request: Request, db: Session = Depends(get_db)):
     """SOLO muestra la solicitud y los dos botones. Nunca aprueba ni niega: los escáneres de correo abren los enlaces."""
+    if _limited(request, "get", LINK_GET_MAX):
+        return _too_many()
     link, req = _live_link(db, token)
     if link is None:
         return _dead()
@@ -191,8 +212,10 @@ def link_page(token: str, db: Session = Depends(get_db)):
 
 
 @public_router.post("/reimpresion/{token}")
-def link_decide(token: str, decision: str = Form(""), db: Session = Depends(get_db)):
+def link_decide(token: str, request: Request, decision: str = Form(""), db: Session = Depends(get_db)):
     """La decisión (POST; el Origin lo revisa el middleware CSRF). El enlace se gasta primero con un UPDATE atómico: dos clics o dos dispositivos no deciden dos veces."""
+    if _limited(request, "post", LINK_POST_MAX):
+        return _too_many()
     if decision not in ("approve", "deny"):
         return _dead()
     link, req = _live_link(db, token)
