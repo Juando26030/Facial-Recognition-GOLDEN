@@ -1114,3 +1114,22 @@ class ReprintAudit(Base):
     kind = Column(String(16), nullable=False)
     staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
     channel = Column(String(12), nullable=True)
+
+
+class StatsLink(Base):
+    """Enlace de SOLO LECTURA a las estadísticas de un evento o de un formulario: sin usuario ni contraseña, con vencimiento y revocable. Solo se guarda el hash
+    SHA-256 del token (nunca el token). Muestra únicamente agregados: no deja descargar nada ni ver personas."""
+    __tablename__ = 'stats_links'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    scope = Column(String(6), nullable=False)                 # event | form
+    event_id = Column(Integer, ForeignKey('events.id', ondelete='CASCADE'), nullable=False)
+    form_id = Column(Integer, ForeignKey('web_forms.id', ondelete='CASCADE'), nullable=True)
+    tenant_id = Column(String, nullable=False)
+    label = Column(String(80), nullable=True)
+    created_by_staff_id = Column(Integer, ForeignKey('staff_users.id', ondelete='SET NULL'), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+

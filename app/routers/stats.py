@@ -73,11 +73,8 @@ def _value_of(db: Session, event_id: int, user: User, variable: str):
     return getattr(user, variable, None)
 
 
-@router.get("/events/{event_id}/stats/variables")
-def list_stats_variables(
-    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador")),
-):
-    event = get_event_for_staff(event_id, db, staff)
+def variables_for(db: Session, event) -> list:
+    """Variables que ofrece el evento para graficar (las usa la pantalla del personal y el enlace de solo lectura)."""
     variables = list(_FIXED_VARIABLES)
     optional_labels = event.get_optional_labels()
     for key, label in sorted(optional_labels.items(), key=lambda kv: int(kv[0].split("_")[1])):
@@ -98,18 +95,22 @@ def list_stats_variables(
     return result
 
 
-@router.get("/events/{event_id}/stats/data")
-def get_stats_data(
-    event_id: int, variable: str, db: Session = Depends(get_db),
-    staff: StaffUser = Depends(require_role_or_client("coordinador")),
+@router.get("/events/{event_id}/stats/variables")
+def list_stats_variables(
+    event_id: int, db: Session = Depends(get_db), staff: StaffUser = Depends(require_role_or_client("coordinador")),
 ):
     event = get_event_for_staff(event_id, db, staff)
+    return variables_for(db, event)
+
+
+def data_for(db: Session, event, variable: str) -> dict:
+    """Conteos agregados de UNA variable del evento (sin nombres ni cédulas); los usa la pantalla del personal y el enlace de solo lectura."""
     valid_keys = {k for k, _ in _FIXED_VARIABLES} | set(event.get_optional_labels().keys())
     if variable not in valid_keys:
         raise HTTPException(status_code=400, detail="Variable no válida para este evento")
 
-    users = _event_directory_users(db, event_id, event.tenant_id)
-    raw_values = [_value_of(db, event_id, u, variable) for u in users]
+    users = _event_directory_users(db, event.id, event.tenant_id)
+    raw_values = [_value_of(db, event.id, u, variable) for u in users]
     non_empty = [str(v).strip() for v in raw_values if v is not None and str(v).strip() != ""]
 
     if not non_empty:
@@ -150,3 +151,12 @@ def get_stats_data(
     if rest_count:
         buckets.append({"label": "Otros", "count": rest_count})
     return {"type": "categorical", "buckets": buckets}
+
+
+@router.get("/events/{event_id}/stats/data")
+def get_stats_data(
+    event_id: int, variable: str, db: Session = Depends(get_db),
+    staff: StaffUser = Depends(require_role_or_client("coordinador")),
+):
+    event = get_event_for_staff(event_id, db, staff)
+    return data_for(db, event, variable)

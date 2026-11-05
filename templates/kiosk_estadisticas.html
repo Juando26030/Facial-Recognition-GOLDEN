@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
-    <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
-    <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>
+    {% if not public_view %}<script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
@@ -46,7 +46,8 @@
   </div>
 </div>
 {% endif %}
-<script>window.EVENT_ID = {{ event.id }};</script>
+<script>window.EVENT_ID = {{ event.id }}; window.STATS_BASE = {{ (stats_base or ("/api/events/" ~ event.id)) | tojson }};</script>
+{% if public_view %}<div class="gw-alert gw-alert--info" role="note" style="max-width:1100px; margin:1rem auto; padding:0.9rem 1.2rem;"><strong>{{ public_view.title }}</strong> · Vista de solo lectura. Este enlace vence el {{ public_view.until }}.</div>{% endif %}
 
 <main class="golden-main">
   <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%); {% if embed %}padding: 1.5rem 0;{% endif %}">
@@ -87,6 +88,8 @@
             <div id="timingBody" role="status" aria-live="polite" style="font-size:0.85rem; color:#666;">Cargando…</div>
         </div>
         {% endif %}
+        {% if staff_role != "cliente" and not public_view %}<div id="statsShare" class="gw-card" data-event-id="{{ event.id }}" data-scope="event" style="margin-bottom:1.5rem;"></div>
+        <script src="{{ url_for('static', path='js/stats-share.js') }}" defer></script>{% endif %}
         <div style="background:#f6f7fb; padding:1.5rem 1.6rem; border-radius:20px; margin-bottom:1.5rem;" id="analyticsRegistro"></div>
 
         <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;">
@@ -139,7 +142,7 @@
 </script>
 {% endif %}
 <script>
-AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `/api/events/${window.EVENT_ID}/analytics/registro`, { refreshSeconds: 30 });
+AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `${window.STATS_BASE}/analytics/registro`, { refreshSeconds: 30 });
 
 (function() {
     const purgeBtn = document.getElementById('purgePhotosBtn');
@@ -234,7 +237,7 @@ AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `/api/eve
 
     async function loadVariables() {
         try {
-            const res = await fetch(`/api/events/${window.EVENT_ID}/stats/variables`);
+            const res = await fetch(`${window.STATS_BASE}/stats/variables`);
             const list = await res.json();
             variableSelect.innerHTML = list.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
             // Parámetros del Evento (2026-09-16): las variables marcadas "Generar estadística"
@@ -303,7 +306,7 @@ AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `/api/eve
         });
 
         try {
-            const res = await fetch(`/api/events/${window.EVENT_ID}/stats/data?variable=${encodeURIComponent(key)}`);
+            const res = await fetch(`${window.STATS_BASE}/stats/data?variable=${encodeURIComponent(key)}`);
             const result = await res.json();
             if (!res.ok) { throw new Error(result.detail || 'Error'); }
 
