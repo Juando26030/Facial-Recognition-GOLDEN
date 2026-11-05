@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_event_for_staff, require_role_or_client
 from app.database import get_db
+from app import testperson
 from app.models import AccessLog, EventAttendee, StaffUser, User
 from app.routers.parametros import field_configs_for_event
 
@@ -36,7 +37,7 @@ def _event_directory_users(db: Session, event_id: int, tenant_id: str):
     evento, no todo el tenant."""
     attendee_ids = {a.user_id for a in db.query(EventAttendee).filter(EventAttendee.event_id == event_id)}
     log_ids = {l.user_id for l in db.query(AccessLog).filter(AccessLog.event_id == event_id)}
-    all_ids = attendee_ids | log_ids
+    all_ids = testperson.drop_test(attendee_ids | log_ids)          # la persona de prueba nunca cuenta en las estadísticas
     if not all_ids:
         return []
     return db.query(User).filter(User.tenant_id == tenant_id, User.id.in_(all_ids)).all()

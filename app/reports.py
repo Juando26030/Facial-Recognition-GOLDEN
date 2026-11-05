@@ -10,6 +10,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
+from app import testperson
 from app.models import User, AccessLog, EventAttendee, Event, EventFieldConfig, StaffUser
 
 ORIGIN_LABELS = {"base": "Base (Excel)", "manual": "Alta manual", "autoregistro": "Autoregistro"}      # B1 (0073); sin dato = «Desconocido»
@@ -59,7 +60,7 @@ def _event_directory_users(db: Session, event_id: int, tenant_id: str):
     app/routers/* (capas separadas a propósito en este proyecto)."""
     attendee_ids = {a.user_id for a in db.query(EventAttendee).filter(EventAttendee.event_id == event_id)}
     log_ids = {l.user_id for l in db.query(AccessLog).filter(AccessLog.event_id == event_id)}
-    all_ids = attendee_ids | log_ids
+    all_ids = testperson.drop_test(attendee_ids | log_ids)          # la persona de prueba nunca sale en el reporte
     if not all_ids:
         return []
     return db.query(User).filter(User.tenant_id == tenant_id, User.id.in_(all_ids)).all()

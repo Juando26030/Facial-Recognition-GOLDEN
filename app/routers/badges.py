@@ -10,6 +10,7 @@ from typing import Optional
 from app import crypto, reprint
 from app.storage import badge_asset_key, get_storage, photo_key
 from app.database import get_db
+from app import testperson
 from app.models import BadgeTemplate, EventAttendee, SavedBadgeTemplate, StaffUser, User, PrintLog
 from app.auth import get_current_staff, get_event_for_staff, require_role_excluding
 
@@ -282,6 +283,12 @@ def get_badge_asset(
     return get_storage().response(badge_asset_key(tenant_id, filename))         # nunca se confía en la ruta que manda el cliente
 
 
+def _require_printable(event, user_id: str) -> None:
+    """5-nov-2026: con el evento en «creado» no se imprime la escarapela de nadie (igual que no se registra); la persona de prueba es la única excepción, para ensayar la impresión."""
+    if event.status == "creado" and not testperson.is_test(user_id):
+        raise HTTPException(status_code=403, detail="El evento está en modo «creado»: la escarapela se imprime cuando el evento esté en proceso.")
+
+
 @router.get("/users/{user_id}/badge-print-data")
 def get_badge_print_data(
     user_id: str, event_id: int, db: Session = Depends(get_db),
@@ -290,6 +297,7 @@ def get_badge_print_data(
     """Datos completos de UNA persona para imprimir su escarapela — incluye extra_fields (los
     campos opcionales) y si tiene foto, que /api/users normal (el Directorio) no manda."""
     event = get_event_for_staff(event_id, db, staff)
+    _require_printable(event, user_id)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -349,6 +357,7 @@ def log_print(
     """Registra una impresión de escarapela — se llama justo antes de abrir la ventana de
     impresión, tras cualquier confirmación necesaria."""
     event = get_event_for_staff(event_id, db, staff)
+    _require_printable(event, user_id)
     user = db.query(User).filter(User.id == user_id, User.tenant_id == event.tenant_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Persona no encontrada")

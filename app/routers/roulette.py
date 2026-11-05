@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app import heavy, publicurl, security
 from app.auth import get_event_for_staff, require_role
 from app.database import get_db
+from app import testperson
 from app.models import AccessLog, Event, EventAttendee, RouletteConfig, RouletteDraw, StaffUser, User
 from app.routers.badges import ALLOWED_IMAGE_EXT
 from app.storage import badge_asset_key, get_storage
@@ -97,8 +98,8 @@ def _style(cfg) -> dict:
 
 def candidates(db: Session, event: Event) -> list:
     """La base del evento (EventAttendee ∪ quienes ya tienen un registro real), con lo necesario para filtrar."""
-    att = {a.user_id: a for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id)}
-    logs = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado").order_by(AccessLog.timestamp).all()
+    att = {a.user_id: a for a in db.query(EventAttendee).filter(EventAttendee.event_id == event.id, EventAttendee.user_id != testperson.TEST_ID)}
+    logs = db.query(AccessLog).filter(AccessLog.event_id == event.id, AccessLog.record_type != "Actualizado", AccessLog.user_id != testperson.TEST_ID).order_by(AccessLog.timestamp).all()
     first_log = {}
     for lg in logs:
         first_log.setdefault(lg.user_id, lg.timestamp)

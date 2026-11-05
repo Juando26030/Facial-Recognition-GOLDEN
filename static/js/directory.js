@@ -575,7 +575,7 @@
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ status: 'registrado', method: opts.method }, window.RegTimer ? RegTimer.payload() : null)),
               });
               if (st.ok) { if (window.RegTimer) RegTimer.done(); const sd = await jsonOf(st); applyFlags(sd); if (window.BadgePrint) BadgePrint.maybeAutoPrint(currentId, { auto: sd.auto_print }); }
-              else showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error');
+              else { const ed = await st.json().catch(() => ({})); const dd = ed.detail && typeof ed.detail === 'object' ? ed.detail.message : ed.detail; showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado' + (dd ? ': ' + dd : ''), 'error'); }
             } catch (e) { showToast('Se guardaron los cambios, pero no se pudo marcar como Registrado', 'error'); }
           }
           showToast('Cambios guardados', 'success');
@@ -692,7 +692,7 @@
       const editBtn = actBtn('Editar', 'edit', 'gw-btn gw-btn--secondary btn-table-action', 'Editar persona', 'Editar a ' + (who || 'la persona'));
       editBtn.addEventListener('click', () => buildEditModal(user));
       actionTd.appendChild(editBtn);
-      if (!user.__local) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));
+      if (!user.__local && canManageStatus) actionTd.appendChild(buildMoreMenu([{ label: 'Eliminar de este evento', danger: true, run: () => deletePerson(user) }], who));          // eliminar es de coordinador en adelante: el digitador (temporal o no) no ve ni «Más»
     }
 
     tr.appendChild(actionTd);
@@ -812,8 +812,9 @@
 
     function updateCounterLabel() {
       if (!counterBtn) return;
-      const total = allUsers.length;
-      const count = allUsers.filter(u => u.status === 'No registrado').length;
+      const real = allUsers.filter(u => !u.test);                     // la persona de prueba del evento no cuenta en los contadores
+      const total = real.length;
+      const count = real.filter(u => u.status === 'No registrado').length;
       const registered = total - count;
       counterBtn.innerText = `${count} sin registrar` + (onlyNotRegistered ? ' (filtrando)' : '');
       counterBtn.style.display = count === 0 && !onlyNotRegistered ? 'none' : '';
