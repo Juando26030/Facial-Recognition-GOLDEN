@@ -50,8 +50,11 @@ def optional_key(title):
     return f"opcional_{n}" if 1 <= n <= MAX_OPTIONAL_FIELDS else None
 
 
+MAX_LABEL_LEN = 80      # tope de la etiqueta de un campo opcional creada desde el título de una columna del Excel (el título viene del cliente, sin tope)
+
+
 def _pretty(title: str) -> str:
-    t = str(title).strip()
+    t = str(title).strip()[:MAX_LABEL_LEN].rstrip()
     return t[:1].upper() + t[1:]
 
 
@@ -109,7 +112,7 @@ def canonicalize(header_columns: dict, rows: list, event_labels: dict, create_fi
         if not has_data[h]:
             unused(h, "columna vacía")
             continue
-        slot = by_label.get(norm(h)) or next((k for k, v in new_labels.items() if norm(v) == norm(h)), None)
+        slot = by_label.get(norm(_pretty(h))) or next((k for k, v in new_labels.items() if norm(v) == norm(_pretty(h))), None)      # con el título ya truncado, para que el tope no rompa la unicidad
         created = False
         if slot is None and not create_fields:
             unused(h, "no corresponde a ningún campo de este evento: no se crean campos nuevos")
