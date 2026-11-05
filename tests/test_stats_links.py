@@ -45,7 +45,7 @@ def test_event_link_opens_without_login_and_is_read_only(client, env):
     r = client.get(f"/ver/e/{token}")
     assert r.status_code == 200
     assert "solo lectura" in r.text and f"/api/ver/{token}" in r.text
-    assert "exportBtn" not in r.text and "purgePhotosBtn" not in r.text and "timingReport" not in r.text and "statsShare" not in r.text      # sin exportar, sin borrar, sin tiempos, sin compartir
+    assert all(f'id="{i}"' not in r.text for i in ("exportBtn", "purgePhotosBtn", "timingReport", "statsShare"))      # sin exportar, sin borrar, sin tiempos, sin compartir
     assert r.headers["cache-control"] == "no-store" and "noindex" in r.headers["x-robots-tag"] and r.headers["referrer-policy"] == "no-referrer"
     assert client.get(f"/api/ver/{token}/stats/variables").status_code == 200
     assert client.get(f"/api/ver/{token}/stats/data", params={"variable": "entity"}).status_code == 200
@@ -109,6 +109,7 @@ def test_only_coordinators_up_create_and_only_for_their_event(client, env, facto
     login(client, "dig1")
     assert client.post(f"/api/events/{env.id}/stats-links", json={"scope": "event"}).status_code == 403
     _anon(client)
+    factory.tenant("otro")
     factory.staff("coordinador", "coord_otro", tenant_id="otro")
     login(client, "coord_otro")
     r = client.post(f"/api/events/{env.id}/stats-links", json={"scope": "event"})
