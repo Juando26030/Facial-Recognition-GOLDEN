@@ -3,7 +3,7 @@
    - Cualquier cambio en un campo dentro de [data-psave="clave"] deja esa clave PENDIENTE (GWParams.markDirty). Lo que esté dentro de [data-pnodirty] (campos de prueba, buscadores, "agregar") no cuenta.
    - saveAll() corre los bloques pendientes en orden, sigue aunque uno falle y reporta cuáles fallaron; los que salieron bien quedan limpios. Si alguno pide recargar (reload:true) y no hubo fallos, recarga al final.
    - Acciones destructivas (borrar campo, purgar, borrar puesto...) NO pasan por aquí: siguen inmediatas con showConfirm.
-   - Lo abierto/cerrado de cada grupo se recuerda por usuario solo como comodidad (localStorage dentro de try/catch; sin él, todo funciona).
+   - La pestaña (sección) que se estaba viendo se recuerda por dispositivo solo como comodidad (localStorage dentro de try/catch; sin él, todo funciona).
    La lógica (createController) no toca el DOM: se prueba con Node (tests/js/params_save_check.js). */
 (function (root) {
     'use strict';
@@ -85,22 +85,41 @@
         const btn = doc.getElementById('paramsSaveBtn');
         const statusEl = doc.getElementById('paramsSaveStatus');
         const failEl = doc.getElementById('paramsSaveFail');
-        const STORE = 'gw_params_groups';
+        const STORE = 'gw_params_tab';
+        const ICONS = bar.dataset.icons || '';
 
-        // ---- Grupos: abierto/cerrado recordado por usuario (comodidad). Sin nada guardado: solo el primero abierto.
-        const groups = Array.from(rootEl.querySelectorAll('details.gw-group[data-group]'));
+        // ---- Pestañas: una sección visible a la vez; la última vista se recuerda por dispositivo (comodidad; sin almacenamiento todo funciona igual).
+        const tabs = Array.from(rootEl.querySelectorAll('[role="tab"][data-tab]'));
+        const panelOf = (tab) => doc.getElementById(tab.getAttribute('aria-controls'));
         let saved = null;
         try { saved = JSON.parse(win.localStorage.getItem(STORE) || 'null'); } catch (e) { saved = null; }
-        groups.forEach((g, i) => {
-            g.open = saved && typeof saved[g.dataset.group] === 'boolean' ? saved[g.dataset.group] : i === 0;
-            g.addEventListener('toggle', () => {
-                let cur = {};
-                try { cur = JSON.parse(win.localStorage.getItem(STORE) || '{}') || {}; } catch (e) { cur = {}; }
-                cur[g.dataset.group] = g.open;
-                try { win.localStorage.setItem(STORE, JSON.stringify(cur)); } catch (e) { /* sin almacenamiento: no pasa nada */ }
+        function select(name, focus) {
+            const tab = tabs.find((t) => t.dataset.tab === name) || tabs[0];
+            if (!tab) return;
+            tabs.forEach((t) => {
+                const on = t === tab;
+                t.setAttribute('aria-selected', on ? 'true' : 'false');
+                t.tabIndex = on ? 0 : -1;
+                const p = panelOf(t);
+                if (p) p.hidden = !on;
+            });
+            if (focus) tab.focus();
+            try { win.localStorage.setItem(STORE, JSON.stringify(tab.dataset.tab)); } catch (e) { /* sin almacenamiento: no pasa nada */ }
+        }
+        tabs.forEach((t, i) => {
+            t.addEventListener('click', () => select(t.dataset.tab));
+            t.addEventListener('keydown', (e) => {                 // flechas, Inicio y Fin cambian de pestaña (teclado)
+                const k = e.key;
+                const to = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[k];
+                if (to === undefined) return;
+                e.preventDefault();
+                select(tabs[(to + tabs.length) % tabs.length].dataset.tab, true);
             });
         });
-        const groupOf = (key) => { const el = rootEl.querySelector('[data-psave="' + key + '"]'); return el ? el.closest('details.gw-group') : null; };
+        select(typeof saved === 'string' ? saved : (tabs[0] && tabs[0].dataset.tab));
+        const tabsOf = (key) => tabs.filter((t) => { const p = panelOf(t); return !!(p && p.querySelector('[data-psave="' + key + '"]')); });
+
+        const iconHtml = (name) => '<svg class="gw-icon" aria-hidden="true"><use href="' + ICONS.replace(/"/g, '') + '#i-' + name + '"></use></svg>';
 
         function render(s) {
             bar.dataset.state = s.state;
@@ -108,19 +127,22 @@
             if (s.busy) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
             const badge = doc.createElement('span');
             badge.className = 'gw-badge' + ({ dirty: ' gw-badge--warn', saved: ' gw-badge--ok', error: ' gw-badge--err', saving: ' gw-badge--info' }[s.state] || '');
-            badge.textContent = { dirty: '⚠ Cambios sin guardar', saving: 'Guardando…', saved: 'Guardado ✓', error: '✕ No todo se guardó' }[s.state] || 'Sin cambios pendientes';
+            const ico = { dirty: 'alert', saved: 'check', error: 'error' }[s.state];
+            if (ico && ICONS) badge.insertAdjacentHTML('afterbegin', iconHtml(ico));
+            badge.appendChild(doc.createTextNode({ dirty: 'Cambios sin guardar', saving: 'Guardando…', saved: 'Guardado', error: 'No todo se guardó' }[s.state] || 'Sin cambios pendientes'));
             statusEl.replaceChildren(badge);
             if (s.state === 'dirty' && s.labels.length) { const t = doc.createElement('span'); t.className = 'gw-text-sm gw-muted'; t.textContent = 'En: ' + s.labels.join(', '); statusEl.appendChild(t); }
             failEl.replaceChildren();
             if (s.state === 'error') {
                 s.failed.forEach((f) => { const li = doc.createElement('li'); li.textContent = f.label + ': ' + f.error; failEl.appendChild(li); });
-                const li = doc.createElement('li'); li.textContent = 'Lo demás sí se guardó. Corrige lo anterior y pulsa «Guardar» otra vez.'; failEl.appendChild(li);
+                const li = doc.createElement('li'); li.textContent = 'Lo demás sí se guardó. Corrige lo anterior y pulsa «Guardar cambios» otra vez.'; failEl.appendChild(li);
                 failEl.hidden = false;
-                s.failed.forEach((f) => { const g = groupOf(f.key); if (g) g.open = true; });
+                const first = s.failed.map((f) => tabsOf(f.key)[0]).find(Boolean);       // lleva a la primera pestaña con un fallo
+                if (first) select(first.dataset.tab);
             } else failEl.hidden = true;
-            groups.forEach((g) => {
-                const flag = g.querySelector('[data-group-pending]');
-                if (flag) flag.hidden = !s.dirty.some((k) => groupOf(k) === g);
+            tabs.forEach((t) => {
+                const flag = t.querySelector('[data-group-pending]');
+                if (flag) flag.hidden = !s.dirty.some((k) => tabsOf(k).includes(t));
             });
         }
 

@@ -1,4 +1,4 @@
-"""Plan 6: «Parámetros del evento» agrupado en bloques desplegables y con UN solo «Guardar» global (static/js/params-save.js).
+"""Plan 6 (+ reingeniería visual: pestañas): «Parámetros del evento» agrupado en secciones y con UN solo «Guardar» global (static/js/params-save.js).
 Los endpoints no cambian: aquí se verifica la estructura de la pantalla, que cada guardado existente siga registrado en el guardado global, que las acciones destructivas
 sigan inmediatas y que los ids que leen otras pruebas sigan en la página."""
 import pathlib
@@ -11,7 +11,7 @@ from tests.conftest import login
 TEMPLATE = pathlib.Path("templates/kiosk_parametros.html").read_text(encoding="utf-8")
 SAVE_JS = pathlib.Path("static/js/params-save.js").read_text(encoding="utf-8")
 
-GROUPS = ["registro", "facial", "impresion", "correo", "areas", "campos", "marca"]
+GROUPS = ["registro", "facial", "invitaciones", "impresion", "escarapelas", "zonas", "campos", "privacidad"]
 # clave del guardado global -> (id del botón por bloque que sigue en el DOM, oculto, o None si el bloque no tenía botón propio)
 BLOCKS = {"page": None, "idle": "idleMinutesSave", "cc": "ccSave", "bbp": None, "pc": "pcSave", "cert": None, "digital": None, "sharedprint": None, "ps": "psSave",
           "mail": "mailSave", "mod_areas": None, "mod_inventory": None, "logo": None, "categories": "saveCategoriesBtn", "fields": "saveParamsBtn", "stations": None}
@@ -23,11 +23,13 @@ def company_env(monkeypatch):
         monkeypatch.setenv(k, v)
 
 
-def test_the_template_has_seven_collapsible_groups_and_the_first_is_the_only_default_open_one():
-    found = re.findall(r'<details class="gw-group" data-group="(\w+)" id="grp_\w+">', TEMPLATE)
+def test_the_template_has_eight_tab_sections_and_only_the_first_is_visible_by_default():
+    found = re.findall(r'<section class="gw-tabpanel" role="tabpanel" id="grp_\w+" data-group="(\w+)"', TEMPLATE)
     assert found == GROUPS
-    assert all("open" not in t for t in re.findall(r'<details class="gw-group"[^>]*>', TEMPLATE)), "el abierto/cerrado lo decide params-save.js (primero abierto, o lo recordado)"
-    assert TEMPLATE.count('class="gw-group__sum"') == 7 and TEMPLATE.count("data-group-pending") == 7
+    tabs = re.findall(r'<button type="button" class="gw-tab" role="tab" id="tab_\w+" data-tab="(\w+)"', TEMPLATE)
+    assert tabs == GROUPS and TEMPLATE.count("data-group-pending") == 8
+    panels = re.findall(r'<section class="gw-tabpanel"[^>]*>', TEMPLATE)
+    assert [("hidden" in t) for t in panels] == [False] + [True] * 7, "una sola sección visible a la vez; la última vista la decide params-save.js"
     assert "background: white; padding: 1.4rem 2rem" not in TEMPLATE, "las tarjetas viejas con colores sueltos ya no están"
 
 
@@ -56,7 +58,7 @@ def test_the_buttons_of_each_block_stay_in_the_dom_hidden_and_call_the_same_save
 
 
 def test_destructive_and_immediate_actions_keep_their_confirmation():
-    assert "🗑️ Borrar campo" in TEMPLATE and "/usage" in TEMPLATE and "Escribe <b>" in TEMPLATE
+    assert "Borrar campo" in TEMPLATE and "cfg-delete" in TEMPLATE and "/usage" in TEMPLATE and "Escribe <b>" in TEMPLATE
     assert "showConfirm('¿Eliminar esta zona" in TEMPLATE and "showConfirm('¿Eliminar este ítem" in TEMPLATE and "purgeEventBiometrics" in TEMPLATE
     assert "¿Quitar la configuración de este puesto?" in TEMPLATE and "¿Liberar esta cuenta?" in TEMPLATE and "¿Volver al texto por defecto?" in TEMPLATE
     assert not re.search(r"\b(alert|confirm|prompt)\(", TEMPLATE.replace("showConfirm(", "").replace("showPrompt(", "")), "nada de alert/confirm/prompt del navegador"
@@ -92,7 +94,7 @@ def test_the_page_renders_with_groups_the_global_bar_and_every_old_id(client, fa
     ev = factory.event("en_proceso", facial_enabled=True)
     login(client, "root")
     page = client.get(f"/kiosk/{ev.id}/parametros").text
-    assert page.count('<details class="gw-group"') == 7 and 'id="paramsRoot"' in page and 'id="paramsSaveBar"' in page and 'data-state="idle"' in page
+    assert page.count('role="tabpanel"') == 8 and 'id="paramsRoot"' in page and 'id="paramsSaveBar"' in page and 'data-state="idle"' in page
     for ident in ("directoryPageSize", "idleMinutes", "idleMinutesSave", "ccMode", "ccSave", "pcSave", "badgeBioPhoto", "certificatesEnabled", "sharedPrintCard", "stationsCard",
                   "printSettingsCard", "psSave", "psReset", "digitalEnabled", "privacyCard", "prTabla", "areasEnabled", "inventoryEnabled", "logoFile", "categoriesBox",
                   "saveCategoriesBtn", "paramsTableBody", "saveParamsBtn", "addOptionalFieldBtn"):
@@ -102,12 +104,12 @@ def test_the_page_renders_with_groups_the_global_bar_and_every_old_id(client, fa
     factory.staff("coordinador", "coord")
     login(client, "coord")
     coord = client.get(f"/kiosk/{ev.id}/parametros").text
-    assert coord.count('<details class="gw-group"') == 7 and 'id="prTabla"' not in coord and 'id="pcSave"' not in coord and 'id="saveParamsBtn"' in coord
+    assert coord.count('role="tabpanel"') == 8 and 'id="prTabla"' not in coord and 'id="pcSave"' not in coord and 'id="saveParamsBtn"' in coord
 
 
 def test_the_person_form_card_lives_in_the_campos_group_and_registers_in_the_global_save():
-    """Unión Plan 4 + Plan 6: «Formulario de persona» es un .gw-group__item del grupo «Categorías y campos», se guarda con el Guardar global (clave `personform`)."""
+    """Unión Plan 4 + Plan 6: «Formulario de persona» es un .gw-group__item de la sección «Campos», se guarda con el Guardar global (clave `personform`)."""
     designer = pathlib.Path("static/js/person-form-designer.js").read_text(encoding="utf-8")
-    campos = TEMPLATE[TEMPLATE.index('data-group="campos"'):TEMPLATE.index('data-group="marca"')]
+    campos = TEMPLATE[TEMPLATE.index('data-group="campos"'):TEMPLATE.index('data-group="privacidad"')]
     assert 'id="personFormCard"' in campos and 'id="personFormEditor"' in campos and 'data-psave="personform"' in campos
     assert "register({ key: 'personform'" in designer and "markDirty('personform')" in designer and "id: 'pfSave'" in designer
