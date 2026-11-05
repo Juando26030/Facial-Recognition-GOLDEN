@@ -170,6 +170,4 @@ producto/test-minors-estable e0d4375
 producto/trabajos-huerfanos ade9bdf
 producto/warmup-por-actividad 7eae02c
 sprint5/ruleta-formularios eccde82
-pr/47 
-pr/50 
 ```
