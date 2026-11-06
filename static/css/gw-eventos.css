@@ -151,3 +151,6 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
   .gw-ev-shell .gw-steps__text { overflow-wrap: normal; word-break: normal; }
   .gw-ev-shell .gw-steps__guide { flex: 1 1 calc(50% - var(--gw-sp-1)); }
 }
+
+/* Filtros con 4 campos (admin): dos columnas parejas en escritorio, sin un cuarto campo solo en otra fila ni textos recortados. */
+@media (min-width: 641px) { .ev-filters:has(.gw-field:nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
