@@ -18,7 +18,7 @@ FROZEN = {
     "templates/legal_privacidad_v11.html": "4367004251dd59ae1e27c9b27bcfbb7038e9f7ccce156a0ee490af5bc6e12076",
     "templates/legal_reembolsos.html": "15bea23df9f8ed5e9b609d54ff9ae840ada3d3d5279696fadee263b9348dcd96",
     "templates/legal_terminos.html": "430e4be0d440b56ef7522a25aacd13c8ba01eac4d5565cf4d35e013fc6d0a85d",
-    "templates/roulette_display.html": "eb7071a847c66f32d3c90635348d2526c841e574cd9034d4cc39fd906cb6a1b6",
+    "templates/roulette_display.html": "434b88d72802742d43742a11dac347a273bdd4f0c687d4bb71b91264276b3917",
     "templates/badge_print.html": "9e48e3062df12c53bb46c747f49a21ba0168af4f2343928f48b64c7530c49655",
     "static/js/form-render.js": "a1fcdcd32671db38c71007a0e313d72117e12881ae523dc92776957cf20ef390",
     "static/js/rich-text.js": "98faba6a4a983a5d0a9cd0946236e4816b40ed29b4bb23931b22874cf5d57405",
@@ -27,7 +27,7 @@ FROZEN = {
     "static/css/fonts-propias.css": "ac7d385e4523d16f1e096040af3ec024beb81e283f04805597cd945821ec93f0",
     "static/js/cookie-notice.js": "3ba161fa3e997046272fdba4dbcab23582579669995ebc3a64bdd281cab33990",
     "static/js/badge-render.js": "56715ba99b3c11ba995bb43e40e66f2d8c15698358e858513a95fe2908a374e5",
-    "static/js/roulette-render.js": "5469a71b59d13a9e15829707b80fbbe09428469df3ec9eda294d7a05d05d6235",
+    "static/js/roulette-render.js": "73ae0ed6f3ee2b34c9265eba50cb04df1e9906df7b1a30094d0b3cc36d58abe4",
     "static/js/photo-capture.js": "d2d938ab04bba511f06b20981fb12e2a94321239e047a961d81eb41b88b55da4",
     "static/css/agrandir.css": "a3ca46e1a8b678f2f3a55b4663f529d6c975e81c9dc6bf5313b2c0c09ea4384d",
 }
