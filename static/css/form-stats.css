@@ -31,6 +31,7 @@
 .fs-cap__main small { font-size: var(--gw-fs-lg); color: var(--gw-text-muted); font-weight: var(--gw-fw-normal); }
 .fs-cap__left { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); }
 .fs-cap__title { margin: 0; font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); color: var(--gw-text); overflow-wrap: anywhere; }
+.fs-alert { margin: 0; align-self: flex-start; font-size: var(--gw-fs-lg); padding: var(--gw-sp-2) var(--gw-sp-4); }
 .fs-cap__rule { margin: 0; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); overflow-wrap: anywhere; }
 .fs-track { position: relative; height: 26px; border-radius: var(--gw-radius-pill); background: var(--gw-surface-2); border: 1px solid var(--gw-border); overflow: hidden; }
 .fs-fill { height: 100%; min-width: 0; border-radius: var(--gw-radius-pill); background: var(--gw-ok-line); transition: width var(--gw-dur); }

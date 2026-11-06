@@ -1144,6 +1144,8 @@ def rule_schedule_info(rule: dict, now_local: datetime) -> Optional[dict]:
     info = {"state": "abierto" if st == "activo" else st, "closes": None, "opens": None, "enforced": bool(rule.get("closes_enforce"))}
     if rule.get("closes_at") and st == "activo":
         info["closes"] = rule["closes_at"]       # aviso «Cierra el…» (también cuando no cierra por sí sola)
+    elif rule.get("closes_at") and st == "cerrado" and rule.get("closes_enforce"):
+        info["closes"] = rule["closes_at"]       # ya cerró por su fecha: se sigue mostrando (en rojo)
     if use:
         act = [t for t in sched if t.get("status") == "activo"]
         for t in act:
@@ -1152,4 +1154,6 @@ def rule_schedule_info(rule: dict, now_local: datetime) -> Optional[dict]:
         if st != "activo":
             nxt = [t for t in act if datetime.fromisoformat(t["from"]) > now_local]
             info["opens"] = nxt[0]["from"] if nxt else None
+    if info["closes"]:
+        info["days_left"] = round((datetime.fromisoformat(info["closes"]) - now_local).total_seconds() / 86400, 2)      # negativo = la fecha ya pasó
     return info
