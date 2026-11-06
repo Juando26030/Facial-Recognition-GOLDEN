@@ -57,12 +57,63 @@
         }
     }
 
+    /* Combobox «Asignar cuenta ya existente»: escribir filtra por usuario, nombre y rol; el id elegido va en #assignableValue (lo que lee el envío). */
+    const combo = { items: [], shown: [], active: -1 };
+    const cInput = document.getElementById('assignableSelect');
+    const cList = document.getElementById('assignableList');
+    const cValue = document.getElementById('assignableValue');
+    const norm = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const comboLabel = (s) => `${s.username}${s.full_name ? ' - ' + s.full_name : ''} (${s.role})`;
+
+    function comboOpen(open) {
+        cList.hidden = !open;
+        cInput.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (!open) { combo.active = -1; cInput.removeAttribute('aria-activedescendant'); }
+    }
+    function comboSetActive(i) {
+        const opts = cList.querySelectorAll('[role="option"]');
+        opts.forEach((o, k) => o.setAttribute('aria-selected', k === i ? 'true' : 'false'));
+        combo.active = i;
+        if (i >= 0 && opts[i]) { cInput.setAttribute('aria-activedescendant', opts[i].id); opts[i].scrollIntoView({ block: 'nearest' }); }
+        else cInput.removeAttribute('aria-activedescendant');
+    }
+    function comboRender() {
+        const q = norm(cInput.value).trim();
+        combo.shown = combo.items.filter((s) => !q || norm(`${s.username} ${s.full_name || ''} ${s.role} ${ROLES[s.role] || ''}`).includes(q));
+        cList.innerHTML = combo.shown.length
+            ? combo.shown.map((s, i) => `<li role="option" id="assignableOpt${i}" class="gw-combo__opt" data-i="${i}" aria-selected="false">${esc(comboLabel(s))}</li>`).join('')
+            : '<li class="gw-combo__empty" role="presentation">No hay usuarios que coincidan.</li>';
+        comboSetActive(-1);
+    }
+    function comboPick(i) {
+        const s = combo.shown[i];
+        if (!s) return;
+        cValue.value = s.id;
+        cInput.value = comboLabel(s);
+        comboOpen(false);
+    }
+    function comboInit() {
+        cInput.addEventListener('input', () => { cValue.value = ''; comboRender(); comboOpen(true); });
+        cInput.addEventListener('focus', () => { comboRender(); comboOpen(true); });
+        cInput.addEventListener('keydown', (ev) => {
+            const n = combo.shown.length;
+            if (ev.key === 'ArrowDown') { ev.preventDefault(); if (cList.hidden) { comboRender(); comboOpen(true); } if (n) comboSetActive((combo.active + 1) % n); }
+            else if (ev.key === 'ArrowUp') { ev.preventDefault(); if (cList.hidden) { comboRender(); comboOpen(true); } if (n) comboSetActive(combo.active <= 0 ? n - 1 : combo.active - 1); }
+            else if (ev.key === 'Enter') { if (!cList.hidden && combo.active >= 0) { ev.preventDefault(); comboPick(combo.active); } else if (!cList.hidden && n === 1 && cInput.value.trim()) { ev.preventDefault(); comboPick(0); } }
+            else if (ev.key === 'Escape') { if (!cList.hidden) { ev.preventDefault(); comboOpen(false); } }
+        });
+        cList.addEventListener('mousedown', (ev) => ev.preventDefault());      // el clic no le quita el foco al campo
+        cList.addEventListener('click', (ev) => { const o = ev.target.closest('[data-i]'); if (o) comboPick(Number(o.getAttribute('data-i'))); });
+        document.addEventListener('click', (ev) => { if (!ev.target.closest('#assignableCombo')) comboOpen(false); });
+        cInput.addEventListener('blur', () => comboOpen(false));
+    }
+
     async function loadAssignableOptions() {
         if (!assignForm) return;
         const res = await fetch('/api/staff/assignable');
         const list = await res.json();
-        document.getElementById('assignableSelect').innerHTML = list
-            .map((s) => `<option value="${esc(s.id)}">${esc(s.username)}${s.full_name ? ' - ' + esc(s.full_name) : ''} (${esc(s.role)})</option>`).join('');
+        combo.items = list.filter((s) => s.role !== 'cliente');          // las cuentas cliente de evento ya no se asignan: para eso están los enlaces con vencimiento
+        comboInit();
     }
 
     async function errDetail(res, fallback) {
@@ -88,12 +139,13 @@
         assignForm.addEventListener('submit', (ev) => {
             ev.preventDefault();
             const btn = assignForm.querySelector('button[type="submit"]');
-            const staffId = new FormData(ev.target).get('staff_id');
+            const staffId = cValue.value;
+            if (!staffId) { showToast('Elige un usuario de la lista', 'error'); cInput.focus(); return null; }
             return busy(btn, async () => {
                 const res = await fetch(`/api/events/${eventId}/staff-users/assign-existing`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ staff_id: Number(staffId) }),
                 });
-                if (res.ok) { loadTempUsers(); showToast('Cuenta asignada al evento', 'success'); }
+                if (res.ok) { cValue.value = ''; cInput.value = ''; loadTempUsers(); showToast('Cuenta asignada al evento', 'success'); }
                 else { const err = await res.json().catch(() => ({})); showToast(err.detail || 'No se pudo asignar', 'error'); }
             }).catch(() => showToast('No se pudo asignar. Revisa la conexión.', 'error'));
         });

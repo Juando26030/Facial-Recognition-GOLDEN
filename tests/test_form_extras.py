@@ -743,3 +743,10 @@ def test_quota_limit_zero_closes_the_option_and_rejects_with_409(client, factory
     assert r.status_code == 409 and r.json()["stage"] == "quota" and r.json()["detail"] == "Popayán está cerrada por ahora (Popayán)."
     r = _submit(client, ev, form, {**_who(2), "cat": "Cali"}, sid="b")
     assert r.status_code == 409 and r.json()["detail"] == "Por ahora no estamos recibiendo inscripciones de Cali. Elige otra opción."
+
+
+def test_quota_message_admite_formato_y_el_servidor_lo_manda_en_texto_plano():
+    rules = formlib._sanitize_quota_rules({"rules": [{"label": "VIP", "limit": 5, "conds": [{"field": "f_a", "op": "equals", "value": "x"}], "message": "Se acabó <b>{cupo}</b> <script>x</script>"}]})
+    assert rules and rules[0]["message"] == "Se acabó <b>{cupo}</b>"
+    assert formlib.quota_full_message(rules[0]["message"], "VIP", server=True) == "Se acabó VIP"
+    assert formlib.quota_full_message("Mensaje plano de {cupo}", "VIP") == "Mensaje plano de VIP"

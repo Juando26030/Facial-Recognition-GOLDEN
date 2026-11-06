@@ -491,10 +491,11 @@ def create_event_staff(
     Fase 15 (doble rol coordinador+comercial): ambas excepciones se evalúan sobre effective_roles,
     no sobre `staff.role` a secas — alguien coordinador+comercial SÍ puede crear digitador (porque
     también es coordinador de verdad), la exclusión es solo para quien es comercial pura."""
-    if data.role not in ("digitador", "cliente"):
-        raise HTTPException(status_code=400, detail="Rol inválido (debe ser 'digitador' o 'cliente')")
-    if data.role == "cliente" and not ({"comercial", "admin", "super_admin"} & effective_roles(staff)):
-        raise HTTPException(status_code=403, detail="Solo un comercial o Admin puede crear cuentas cliente")
+    if data.role == "cliente":
+        # 2026-11-05 (pedido de Juan David): ya no se crean cuentas «cliente» temporales de evento; para compartir estadísticas están los enlaces con vencimiento (/ver/e/{token}, stats_links.py). Las cuentas cliente existentes y el cliente de FORMULARIO (/mi-formulario) no se tocan.
+        raise HTTPException(status_code=400, detail="Ya no se crean cuentas de cliente para el evento. Para compartir las estadísticas usa un enlace con vencimiento.")
+    if data.role != "digitador":
+        raise HTTPException(status_code=400, detail="Rol inválido (debe ser 'digitador')")
     if data.role == "digitador" and effective_roles(staff).issubset({"comercial"}):
         raise HTTPException(status_code=403, detail="Un comercial no puede crear cuentas digitador")
 
@@ -539,6 +540,8 @@ def assign_existing_staff(
     ).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if target.role == "cliente":
+        raise HTTPException(status_code=400, detail="Ya no se asignan cuentas de cliente a un evento. Para compartir las estadísticas usa un enlace con vencimiento.")
     existing = db.query(EventStaffAuthorization).filter_by(staff_user_id=target.id, event_id=event_id).first()
     if existing:
         return {"message": "Ya estaba autorizado para este evento"}

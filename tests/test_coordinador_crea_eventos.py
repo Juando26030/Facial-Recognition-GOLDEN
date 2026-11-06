@@ -60,7 +60,7 @@ def test_coordinator_does_not_gain_other_permissions(client, factory):
     assert client.post("/api/tenants", json={"name": "Otro"}).status_code == 403
     assert client.get("/api/staff").status_code == 403
     assert client.get("/api/staff/commercials").status_code == 403
-    assert client.post(f"/api/events/{ev['id']}/staff-users", json={"role": "cliente", "username": "1234567", "password": "Clave#2026xy", "full_name": "C"}).status_code == 403
+    assert client.post(f"/api/events/{ev['id']}/staff-users", json={"role": "cliente", "username": "1234567", "password": "Clave#2026xy", "full_name": "C"}).status_code == 400       # el rol cliente de evento ya no se crea (se rechaza antes que el permiso); el coordinador sigue sin poder nada más
 
 
 @pytest.mark.parametrize("role", ["comercial", "admin", "super_admin"])
@@ -87,3 +87,25 @@ def test_double_role_coordinator_commercial_can_choose_coordinator(client, facto
     r = client.post("/api/events", json=_payload(other.id))
     assert r.status_code == 200, r.text
     assert r.json()["coordinator_staff_id"] == other.id and r.json()["commercial_staff_id"] == me.id
+
+
+@pytest.mark.parametrize("role", ["coordinador", "comercial", "admin", "super_admin"])
+def test_no_se_crean_cuentas_cliente_de_evento(client, factory, role):
+    """Las cuentas «cliente» temporales de evento se retiraron (para eso están los enlaces con vencimiento): crear una se rechaza con mensaje claro, sea cual sea el rol de quien pide."""
+    ev = factory.event("en_proceso")
+    factory.staff(role, "actor1")
+    login(client, "actor1")
+    r = client.post(f"/api/events/{ev.id}/staff-users", json={"role": "cliente", "username": "1234567", "password": "Clave#2026xy", "full_name": "C"})
+    assert r.status_code == 400 and "enlace con vencimiento" in r.json()["detail"]
+
+
+def test_assign_existing_rechaza_cliente_y_acepta_digitador(client, factory):
+    adm = factory.staff("admin", "adm1")
+    ev = factory.event("en_proceso")
+    factory.authorize(ev, adm)
+    cli = factory.staff("cliente", "cli1")
+    dig = factory.staff("digitador", "dig1")
+    login(client, "adm1")
+    r = client.post(f"/api/events/{ev.id}/staff-users/assign-existing", json={"staff_id": cli.id})
+    assert r.status_code == 400 and "enlace con vencimiento" in r.json()["detail"]
+    assert client.post(f"/api/events/{ev.id}/staff-users/assign-existing", json={"staff_id": dig.id}).status_code == 200

@@ -798,7 +798,7 @@ def _sanitize_quota_rules(q_in) -> list:
             rid = secrets.token_hex(3)
         used.add(rid)
         label = _text(r.get("label"), 120) or f"Cupo {len(out) + 1}"
-        out.append({"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit, "message": _text(r.get("message"), QUOTA_MESSAGE_MAX)})
+        out.append({"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit, "message": richtext.clean_text(r.get("message"), QUOTA_MESSAGE_MAX, basic=True)})   # admite negrilla, cursiva, subrayado y color como los demás mensajes
     return out
 
 
@@ -814,7 +814,7 @@ def quota_full_message(message, label, server: bool = False, closed: bool = Fals
     """Texto que ve la persona cuando su elección cae en un cupo lleno: el mensaje de la regla (o el de siempre si está vacío) con «{cupo}» → nombre del cupo. Con `closed` (máximo 0) el texto por defecto es el de CERRADO.
     Espejo en JS: `quotaFullMessage` de static/js/form-render.js."""
     default = QUOTA_CLOSED_MESSAGE if closed else (QUOTA_DEFAULT_MESSAGE_SERVER if server else QUOTA_DEFAULT_MESSAGE)   # `closed`: el máximo del cupo es 0
-    text = str(message or "").strip() or default
+    text = (richtext.to_plain(message) if server else str(message or "").strip()) or default       # el mensaje puede traer formato: en la respuesta del servidor (texto plano) se muestra sin etiquetas
     return text.replace("{cupo}", str(label or ""))
 
 

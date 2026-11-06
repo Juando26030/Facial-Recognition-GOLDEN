@@ -19,6 +19,7 @@
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-ruleta-display.css') }}">
     <script src="{{ url_for('static', path='js/roulette-render.js') }}"></script>
 </head>
 <body class="gw-page gw-shell gw-ruleta has-sidebar">
@@ -163,7 +164,7 @@ function paintPreview() {
   $('pTitle').textContent = style.title; $('pTitle').style.fontFamily = `'${style.title_font}', sans-serif`; $('pTitle').style.color = style.title_color;
   $('pLogo').hidden = !style.logo; if (style.logo) $('pLogo').src = staffAsset(style.logo);
   $('pStage').classList.toggle('gw-ruleta-preview__stage--wide', style.wheel_style === 'jackpot');
-  stage = RouletteRender.stage($('pStage'), style);
+  stage = RouletteRender.stage($('pStage'), style, { logoUrl: style.logo ? staffAsset(style.logo) : '' });
   stage.idle(SAMPLE);
 }
 function bindColor(id) { $(id).value = style[id]; $(id).addEventListener('input', () => { style[id] = $(id).value; paintPreview(); }); }
