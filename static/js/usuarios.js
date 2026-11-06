@@ -10,6 +10,8 @@
     const listEl = document.getElementById('tempUsersList');
     const statusEl = document.getElementById('tempUsersStatus');
     const eventId = window.EVENT_ID;
+    const iconsScript = document.querySelector('script[data-icons]');
+    const ICONS = (iconsScript && iconsScript.dataset.icons) || '/static/img/icons.svg';
 
     function setStatus(text, isErr) {
         statusEl.textContent = text || '';
@@ -28,10 +30,11 @@
                 <span class="gw-rowact"><span class="gw-badge gw-badge--info">${esc(rol)}</span>${estado}</span>
             </div>
             <p class="gw-card-row__meta">${esc(nombre)}</p>
-            <div class="gw-card-row__actions">
+            <div class="gw-card-row__actions gw-usr__actions">
                 ${reset}
                 <button type="button" class="gw-btn gw-btn--secondary" data-act="revoke" data-id="${esc(u.id)}">Quitar de este evento</button>
-                <button type="button" class="gw-btn gw-btn--danger-outline" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}">Borrar permanente</button>
+                <div class="gw-menu gw-usr__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.username)}"><svg class="gw-icon" aria-hidden="true"><use href="${esc(ICONS)}#i-more"/></svg></button>
+                    <div class="gw-menu__panel" role="menu" hidden><button type="button" class="gw-menu__item gw-menu__item--danger" role="menuitem" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${esc(ICONS)}#i-trash"/></svg><span>Borrar permanente</span></button></div></div>
             </div>
         </article>`;
     }
@@ -191,8 +194,29 @@
         if (first) first.focus({ preventScroll: true });
     });
 
+    // Menú «Más acciones» (Borrar permanente): se abre aquí y se cierra con clic afuera, Escape o al elegir.
+    function closeMenus(except) {
+        listEl.querySelectorAll('.gw-usr__more').forEach((m) => {
+            if (m === except) return;
+            m.querySelector('.gw-menu__panel').hidden = true;
+            m.querySelector('[data-menu]').setAttribute('aria-expanded', 'false');
+        });
+    }
+    document.addEventListener('click', (ev) => { if (!ev.target.closest('.gw-usr__more')) closeMenus(null); });
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenus(null); });
+
     listEl.addEventListener('click', (ev) => {
+        const tog = ev.target.closest('[data-menu]');
+        if (tog && listEl.contains(tog)) {
+            const wrap = tog.closest('.gw-usr__more'), panel = wrap.querySelector('.gw-menu__panel'), open = panel.hidden;
+            closeMenus(wrap);
+            panel.hidden = !open;
+            tog.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open && panel.firstElementChild) panel.firstElementChild.focus();
+            return;
+        }
         const btn = ev.target.closest('button[data-act]');
+        if (btn && btn.closest('.gw-usr__more')) closeMenus(null);
         if (!btn || !listEl.contains(btn)) return;
         const act = btn.getAttribute('data-act'), id = btn.getAttribute('data-id'), user = btn.getAttribute('data-username') || '';
         const run = act === 'reload' ? loadTempUsers()
