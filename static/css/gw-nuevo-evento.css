@@ -1,5 +1,6 @@
 /* Nuevo evento (Fase 1.5, Ola 2): solo lo que el asistente necesita además de design-system.css. Únicamente tokens --gw-*. */
 .gw-nuevo { max-width: 52rem; }
+@media (min-width: 901px) { .gw-nuevo { max-width: 84rem; } }
 .gw-nuevo__panel-title { margin: 0 0 var(--gw-sp-4); font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
 .gw-nuevo__panel-title:focus { outline: none; }
 .gw-nuevo__panel-title:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
@@ -30,3 +31,13 @@
 .gw-nuevo .cl-select, .gw-nuevo .cl-save, .gw-nuevo .cl-del { min-height: var(--gw-tap) !important; }
 .gw-nuevo .cl-del { min-width: var(--gw-tap); }
 .gw-nuevo .cl-save, .gw-nuevo .cl-del { display: inline-flex; align-items: center; justify-content: center; }
+
+/* Escritorio (≥ 901 px, Fase 1.7 ancho): el asistente aprovecha el ancho con 3-4 columnas para los campos cortos; en celular y tableta angosta sigue igual. */
+@media (min-width: 901px) {
+  .gw-nuevo .gw-fields-row.gw-nuevo__cols3 { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+  .gw-nuevo .gw-fields-row.gw-nuevo__cols4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .gw-nuevo .gw-wizard__panel > .gw-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--gw-sp-4); align-items: start; }
+  .gw-nuevo .gw-wizard__panel > .gw-stack > * + * { margin-top: 0; }
+  .gw-nuevo .gw-wizard__panel > .gw-stack > .gw-field:last-child { grid-column: 1 / -1; }
+  .gw-nuevo__summary { grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); }
+}

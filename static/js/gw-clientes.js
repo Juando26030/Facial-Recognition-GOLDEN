@@ -82,13 +82,15 @@
   // Búsqueda de eventos DENTRO de la tarjeta de un cliente/cuenta (2026-09-17): filtra en memoria sobre lo que ya trajo loadEventsForTenant.
   function renderEventRows(events, el) {
     if (!events.length) { el.innerHTML = emptyBox('Sin resultados', 'Ningún evento coincide con la búsqueda.'); return; }
-    el.innerHTML = '<div class="gw-event-list">' + events.map((e) => `
+    // Escritorio: cada evento es una fila delgada con columnas alineadas; el encabezado va dentro de la misma rejilla (gw-clientes en p-clientes.css). En celular no se ve.
+    const head = '<div class="p-cli__cols" aria-hidden="true"><span class="p-cli__c1">Evento</span><span class="p-cli__c2">Lugar</span><span class="p-cli__c3">Fecha</span><span class="p-cli__c4">Coordinador</span><span class="p-cli__c5">Estado</span><span class="p-cli__c6">Acciones</span></div>';
+    el.innerHTML = '<div class="gw-event-list">' + head + events.map((e) => `
       <div class="gw-card-row gw-event-card">
         <div class="gw-card-row__head">
-          <span class="gw-card-row__title">${window.reportBulbHtml ? reportBulbHtml(e) : ''} ${esc(e.name)} ${e.event_code ? `<span class="gw-event-code">(${esc(e.event_code)})</span>` : ''}</span>
+          <span class="gw-card-row__title" title="${esc(e.name)}${e.event_code ? ' (' + esc(e.event_code) + ')' : ''}">${window.reportBulbHtml ? `<span class="p-cli__rep p-cli__rep--full">${reportBulbHtml(e)}</span><span class="p-cli__rep p-cli__rep--dot">${reportBulbHtml(e, true)}</span>` : ''} <span class="p-cli__name">${esc(e.name)}</span> ${e.event_code ? `<span class="gw-event-code">(${esc(e.event_code)})</span>` : ''}</span>
           <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
         </div>
-        <p class="gw-card-row__meta">${esc(e.location) || ''}${e.city ? ' · ' + esc(e.city) : ''} · ${fmtDate(e.start_date)} · Coordinador: ${esc(e.coordinator_name) || '-'}</p>
+        <p class="gw-card-row__meta p-cli__meta"><span class="p-cli__loc" title="${esc([e.location, e.city].filter(Boolean).join(' · '))}">${esc(e.location) || ''}${e.city ? ' · ' + esc(e.city) : ''}</span><span class="p-cli__sep"> · </span><span class="p-cli__date">${fmtDate(e.start_date)}</span><span class="p-cli__sep"> · </span><span class="p-cli__coord" title="Coordinador: ${esc(e.coordinator_name) || '-'}"><span class="p-cli__pfx">Coordinador: </span>${esc(e.coordinator_name) || '-'}</span></p>
         <div class="gw-card-row__actions p-cli__acts">
           <a class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" href="/kiosk/${esc(e.id)}">${icon('home', 'gw-icon--sm')} Ingresar</a>
           <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${esc(e.id)}">${icon('edit', 'gw-icon--sm')} Editar</button>
