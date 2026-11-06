@@ -1,0 +1,18 @@
+/* Estadísticas (Fase 1.7, Ola 1C): cifras grandes arriba, gráficos a ancho completo, estados de carga/error. Solo tokens --gw-*.
+   El panel (analytics-dashboard.js) se monta con { stats: true }; el editor de formularios no usa este modo y no cambia. */
+.ad-state { padding: var(--gw-sp-5); text-align: center; color: var(--gw-text-muted); background: var(--gw-surface-2); border: 2px dashed var(--gw-border); border-radius: var(--gw-radius-lg); font-size: var(--gw-fs-md); }
+.ad-state[hidden] { display: none; }
+.ad-state--err { color: var(--gw-err-text); background: var(--gw-err-bg); border: 2px solid var(--gw-err-line); }
+.ad-kpis.ad-kpis--stats { display: flex; flex-direction: column; gap: var(--gw-sp-3); }
+.ad-kpis--stats .ad-kpis { margin-bottom: 0; }
+.ad-charts.ad-charts--wide { grid-template-columns: minmax(0, 1fr); }
+.ad-charts--wide .ad-box { height: 320px; }
+.gw-stats .gw-chart-grid { grid-template-columns: minmax(0, 1fr); }
+.gw-stats .gw-chart-card__box { height: 320px; }
+.gw-stats-filter .gw-select { min-height: var(--gw-tap); }
+.gw-stats-filter .gw-btn { min-height: var(--gw-tap); }
+@media (max-width: 768px) {
+  .ad-charts--wide .ad-box, .gw-stats .gw-chart-card__box { height: 260px; }
+  .gw-stats-filter { flex-direction: column; align-items: stretch; }
+  .gw-stats-filter .gw-btn { width: 100%; }
+}
