@@ -12,3 +12,10 @@
 /* Las tarjetas de evento: la insignia de estado y el botón «Entrar» siempre dentro de la tarjeta, centrados. */
 .gw-event-card .gw-badge { flex: none; align-self: center; }
 .gw-event-card .gw-card-row__actions .gw-btn { min-height: var(--gw-tap-lg); text-align: center; gap: var(--gw-sp-2); }
+
+/* Escritorio: «Entrar» de tamaño normal (no ancho completo), alineado abajo a la izquierda y en la misma línea en todas las tarjetas. */
+@media (min-width: 900px) {
+  .gw-event-card { justify-content: space-between; }
+  .gw-event-card .gw-card-row__actions { margin-top: auto; }
+  .gw-event-card .gw-card-row__actions .gw-btn { width: auto; flex: 0 0 auto; min-width: 12rem; min-height: var(--gw-tap); }
+}
