@@ -20,3 +20,6 @@
   .gw-steps.gw-leg-steps > li:nth-child(n) .gw-popover { left: 0; width: 100%; }
   .gw-steps.gw-leg-steps .gw-steps__text { display: block; -webkit-line-clamp: unset; overflow: visible; }
 }
+@media (min-width: 641px) {
+  #expList .gw-card-row__actions .gw-btn { flex: 0 0 auto; }      /* en escritorio «Eliminar» tiene su tamaño, no el ancho de toda la tarjeta */
+}
