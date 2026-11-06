@@ -293,7 +293,6 @@ def registered_template(event_id: int, form_id: int, db: Session = Depends(get_d
                  "Si una cédula ya está inscrita en este formulario NO se duplica ni se cambia su inscripción.",
                  "Para que resten de los cupos hay que elegir «Bloquear y ocupar cupo» y aceptar la pregunta de cupos al cargar."):
         info.append(["", line])
-    row = 3
     qids = registered_list.quota_field_ids(formsvc.quota_rules(form))
     info.append([])
     info.append(["Valores válidos", ""])
