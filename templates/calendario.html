@@ -268,7 +268,7 @@ function eventChip(e, big) {
 
 function noteChip(n, withAuthor) {
   const canDelete = n.created_by_id === STAFF_ID || ['admin', 'super_admin'].includes(STAFF_ROLE);
-  return `<div class="cal-note" data-note-id="${n.id}">
+  return `<div class="cal-note" data-note-id="${n.id}" title="${esc(n.text)}">
       <span class="cal-note__text">${icon('info', 'gw-icon--sm')}<span>${esc(n.text)}${withAuthor ? ` <em>— ${esc(n.created_by_name || '')}</em>` : ''}</span></span>
       ${canDelete ? `<button type="button" class="cal-note__del" data-note-del="${n.id}" aria-label="Eliminar el recordatorio: ${esc(n.text)}">${icon('close', 'gw-icon--sm')}</button>` : ''}
     </div>`;
