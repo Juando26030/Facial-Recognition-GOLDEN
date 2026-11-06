@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
@@ -786,16 +786,58 @@ def _display(value):
 
 
 @router.get("/events/{event_id}/forms/{form_id}/submissions")
-def list_submissions(event_id: int, form_id: int, include_tests: bool = True, db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+def list_submissions(event_id: int, form_id: int, include_tests: bool = True, page: int = 1, page_size: int = formlib.ANSWERS_DEFAULT_PAGE_SIZE, q: str = "", quota: str = "",
+                     db: Session = Depends(get_db), staff: StaffUser = Depends(STAFF)):
+    """Respuestas paginadas en el servidor (más recientes primero). `page_size`: 20, 50 o 100 (otro valor: 50; más de 100: 100). `q`: cédula (inicio) o nombre (inicio de cada palabra,
+    sin tildes ni mayúsculas; ver `formlib.answers_parse_query`). `quota`: id de una regla de cupo (mismas llaves `quota_keys` con que se cuenta el cupo).
+    `total` = con los filtros; `total_all` = todas las visibles (con o sin pruebas según `include_tests`), sin buscador ni cupo."""
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
     design = formsvc.get_design(form)
-    q = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
+    base = db.query(FormSubmission).filter(FormSubmission.form_id == form.id, FormSubmission.status == "confirmed")
     if not include_tests:
-        q = q.filter(FormSubmission.is_test == False)  # noqa: E712
-    rows = q.order_by(FormSubmission.id.desc()).limit(2000).all()
-    paid = _approved_by_submission(db, form)
-    return {"has_payment": bool(formlib.payment_field(design)), "columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)], "rows": [
+        base = base.filter(FormSubmission.is_test == False)  # noqa: E712
+    total_all = base.count()
+    rules = formsvc.quota_rules(form)
+    quotas = []
+    filtered = base
+    if rules:
+        if db.query(FormSubmission.id).filter(FormSubmission.form_id == form.id, FormSubmission.quota_keys == None).first():  # noqa: E711
+            formsvc.rebuild_quota_keys(db, form, rules)
+            db.commit()
+        groups = formlib.answers_quota_groups(rules, design)
+        cols = [func.count(FormSubmission.id).filter(func.strpos(FormSubmission.quota_keys, f"|{formsvc.rule_sig(r)}|") > 0) for r in rules]
+        counts = base.with_entities(*cols).one()
+        quotas = [{"id": r["id"], "label": r.get("label") or r["id"], "group": groups[r["id"]], "count": counts[i]} for i, r in enumerate(rules)]
+        if quota:
+            rule = next((r for r in rules if r["id"] == quota), None)
+            if rule is None:
+                raise HTTPException(status_code=400, detail="Ese cupo ya no existe en el formulario")
+            filtered = filtered.filter(func.strpos(FormSubmission.quota_keys, f"|{formsvc.rule_sig(rule)}|") > 0)
+    parsed = formlib.answers_parse_query(q)
+    if parsed is None:      # sin buscador: todo en SQL (conteo + OFFSET/LIMIT)
+        total = filtered.count()
+        pg = formlib.answers_paging(total, page, page_size)
+        rows = filtered.order_by(FormSubmission.id.desc()).offset(pg["offset"]).limit(pg["page_size"]).all()
+    else:
+        # La búsqueda sin tildes/mayúsculas y por inicio de palabra no se puede expresar con ILIKE (las tildes), ni hay `unaccent` garantizado en Neon: se filtra en Python
+        # leyendo solo (id, data_json, person_id) de las filas ya filtradas en SQL (con ~5.000 inscripciones son decenas de ms) y luego se trae la página completa.
+        fields = formlib.answers_search_fields(design)
+        hits = []
+        for sid, raw, pid in filtered.with_entities(FormSubmission.id, FormSubmission.data_json, FormSubmission.person_id).order_by(FormSubmission.id.desc()).yield_per(1000):
+            try:
+                data = json.loads(raw or "{}")
+            except ValueError:
+                continue
+            if formlib.answers_match(parsed, data, pid, fields):
+                hits.append(sid)
+        total = len(hits)
+        pg = formlib.answers_paging(total, page, page_size)
+        ids = hits[pg["offset"]:pg["offset"] + pg["page_size"]]
+        rows = base.filter(FormSubmission.id.in_(ids)).order_by(FormSubmission.id.desc()).all() if ids else []
+    paid = _approved_by_submission(db, form, [s.id for s in rows])
+    return {"has_payment": bool(formlib.payment_field(design)), "columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)],
+            "total": total, "total_all": total_all, "page": pg["page"], "page_size": pg["page_size"], "pages": pg["pages"], "quotas": quotas, "rows": [
         {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "source": s.source or "",
          "paid": paid[s.id].amount_cents // 100 if s.id in paid else None, "data": {k: _display(v) for k, v in json.loads(s.data_json).items()}} for s in rows]}
 
@@ -1003,8 +1045,14 @@ def report(event_id: int, form_id: int, include_tests: bool = False, request: Re
     return heavy.workbook_response(wb, f"Formulario_{form.slug}.xlsx")
 
 
-def _approved_by_submission(db: Session, form: WebForm) -> dict:
-    return {p.submission_id: p for p in db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "approved", FormPayment.submission_id != None)}  # noqa: E711
+def _approved_by_submission(db: Session, form: WebForm, submission_ids: Optional[list] = None) -> dict:
+    """Pagos aprobados por inscripción. Con `submission_ids` solo los de esas inscripciones (la página de respuestas); sin ellos, todos (reportes)."""
+    q = db.query(FormPayment).filter(FormPayment.form_id == form.id, FormPayment.status == "approved", FormPayment.submission_id != None)  # noqa: E711
+    if submission_ids is not None:
+        if not submission_ids:
+            return {}
+        q = q.filter(FormPayment.submission_id.in_(submission_ids))
+    return {p.submission_id: p for p in q}
 
 
 def _pay_cells(p: Optional[FormPayment]) -> list:
