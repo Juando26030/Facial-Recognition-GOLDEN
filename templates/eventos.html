@@ -117,6 +117,32 @@ function fmtRange(e) {
 }
 function metaRow(name, html) { return `<p class="ev-card__row">${icon(name, "gw-icon--sm")}<span>${html}</span></p>`; }
 
+// Acciones poco usadas (devolver, exportar): un solo botón de tres puntos con menú (data-* y handlers intactos).
+function moreMenu(e) {
+  const items = [];
+  if (CAN_REVERT && e.status === "en_proceso") items.push(`<button type="button" class="gw-menu__item" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">${icon("undo", "gw-icon--sm")} Devolver a Creado</button>`);
+  if (STAFF_ROLE === "super_admin") items.push(`<button type="button" class="gw-menu__item" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon("download", "gw-icon--sm")} Exportar</button>`);
+  if (!items.length) return "";
+  return `<div class="gw-menu ev-card__menu"><button type="button" class="gw-btn gw-btn--secondary ev-card__more" data-ev-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(e.name)}" title="Más acciones">${icon("more")}</button><div class="gw-menu__panel" role="group" hidden>${items.join("")}</div></div>`;
+}
+function closeEvMenus(except) {
+  document.querySelectorAll(".ev-card__menu").forEach((m) => {
+    if (m === except) return;
+    const p = m.querySelector(".gw-menu__panel"), b = m.querySelector("[data-ev-menu]");
+    if (p) p.hidden = true; if (b) b.setAttribute("aria-expanded", "false");
+  });
+}
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest && ev.target.closest("[data-ev-menu]");
+  const wrap = t ? t.closest(".ev-card__menu") : null;
+  closeEvMenus(wrap);
+  if (!t) return;
+  const panel = wrap.querySelector(".gw-menu__panel");
+  panel.hidden = !panel.hidden; t.setAttribute("aria-expanded", String(!panel.hidden));
+  if (!panel.hidden) { const f = panel.querySelector(".gw-menu__item"); if (f) f.focus(); }
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { const o = document.querySelector(".ev-card__more[aria-expanded='true']"); closeEvMenus(null); if (o) o.focus(); } });
+
 function eventCard(e) {
   const place = [e.city, e.country].filter(Boolean).map(esc).join(", ");
   return `
@@ -142,9 +168,8 @@ function eventCard(e) {
       </div>
       <div class="gw-card-row__actions ev-card__actions">
         <a class="gw-btn gw-btn--primary gw-btn--xl ev-card__enter" href="/kiosk/${e.id}">Ingresar ${icon("chevron", "gw-icon--sm")}</a>
-        <button type="button" class="gw-btn gw-btn--secondary" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
-        ${CAN_REVERT && e.status === "en_proceso" ? `<button type="button" class="gw-btn gw-btn--secondary" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">${icon("undo", "gw-icon--sm")} Devolver a Creado</button>` : ""}
-        ${STAFF_ROLE === "super_admin" ? `<button type="button" class="gw-btn gw-btn--secondary" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon("download", "gw-icon--sm")} Exportar</button>` : ""}
+        <button type="button" class="gw-btn gw-btn--secondary ev-card__edit" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
+        ${moreMenu(e)}
       </div>
     </article>
   `;

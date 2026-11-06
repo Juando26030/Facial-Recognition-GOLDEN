@@ -6,7 +6,8 @@
 .gw-nuevo__color { width: 100%; min-height: var(--gw-tap); padding: var(--gw-sp-1); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
 .gw-nuevo__color:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
 .gw-nuevo__combo { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: stretch; }
-.gw-nuevo__combo .gw-select { flex: 1 1 14rem; width: auto; }
+.gw-nuevo__combo .gw-select { flex: 1 1 14rem; width: auto; min-width: 0; max-width: 100%; }
+.gw-nuevo__combo .gw-btn { max-width: 100%; justify-content: center; text-align: center; }
 .gw-nuevo__section { margin: var(--gw-sp-5) 0 var(--gw-sp-2); font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); }
 .gw-nuevo__summary { display: grid; gap: var(--gw-sp-3); margin: 0 0 var(--gw-sp-4); }
 .gw-nuevo__sumcard { padding: var(--gw-sp-4); background: var(--gw-surface-2); color: var(--gw-text); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); }
@@ -16,3 +17,16 @@
 .gw-nuevo__dl dd { margin: 0 0 var(--gw-sp-2); overflow-wrap: anywhere; }
 .gw-nuevo__swatch { display: inline-block; width: 1.1em; height: 1.1em; vertical-align: -0.15em; margin-right: var(--gw-sp-2); border: 2px solid var(--gw-border-strong); border-radius: 50%; }
 @media (min-width: 640px) { .gw-nuevo__dl { grid-template-columns: 11rem minmax(0, 1fr); } .gw-nuevo__dl dd { margin-bottom: 0; } }
+
+/* Pasos 1·2·3 + Guía en celular: dos filas de dos, con el texto en palabras enteras (el compacto compartido lo partía a mitad de palabra). */
+@media (max-width: 640px) {
+  .gw-nuevo .gw-steps { flex-wrap: wrap; }
+  .gw-nuevo .gw-steps > li:not(.gw-steps__guide) { flex: 1 1 calc(50% - var(--gw-sp-1)); }
+  .gw-nuevo .gw-steps__text { overflow-wrap: normal; word-break: normal; }
+  .gw-nuevo .gw-steps__guide { flex: 1 1 calc(50% - var(--gw-sp-1)); }
+}
+
+/* Librería de colores (static/js/color-library.js, estilos en línea del componente compartido): objetivos táctiles de 44 px. */
+.gw-nuevo .cl-select, .gw-nuevo .cl-save, .gw-nuevo .cl-del { min-height: var(--gw-tap) !important; }
+.gw-nuevo .cl-del { min-width: var(--gw-tap); }
+.gw-nuevo .cl-save, .gw-nuevo .cl-del { display: inline-flex; align-items: center; justify-content: center; }
