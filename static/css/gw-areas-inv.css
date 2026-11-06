@@ -51,3 +51,28 @@
   .gw-ar .gw-row--between { flex-wrap: wrap; }
   .gw-ar #reportBtn { width: 100%; justify-content: center; }
 }
+
+/* Fase 1.7 (ancho): en escritorio los formularios de captura se reparten en columnas y las listas son filas delgadas de una línea; el celular (≤ 900 px) no cambia. */
+@media (min-width: 901px) {
+  .gw-ai__actions > .gw-btn { flex: 0 0 auto; min-width: 12rem; }
+  .gw-ai__item.gw-card-row { flex-direction: row; align-items: center; gap: var(--gw-sp-4); padding: var(--gw-sp-2) var(--gw-sp-4); }
+  .gw-ai__item .qty { min-height: var(--gw-tap); width: 6rem; font-size: var(--gw-fs-lg); }
+  .gw-ai__item .gw-check { min-height: var(--gw-tap); font-size: var(--gw-fs-md); }
+  .gw-ai__item .gw-check input { width: 1.5rem; height: 1.5rem; }
+  .gw-ai__avail-num { font-size: var(--gw-fs-xl); }
+}
+
+/* Áreas (escritorio): captura en dos columnas y personas en filas delgadas: inicial | nombre | cédula y hora | estado. */
+@media (min-width: 901px) {
+  .gw-ar #zoneSeg { flex-wrap: wrap; }
+  .gw-ar section[aria-labelledby="areasMovTitle"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gw-sp-4) var(--gw-sp-6); align-items: end; }
+  .gw-ar section[aria-labelledby="areasMovTitle"] > * { margin-top: 0; }
+  .gw-ar section[aria-labelledby="areasMovTitle"] > :is(h2, #banner, details, p) { grid-column: 1 / -1; }
+  .gw-ar #presBody { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-1); }
+  .gw-ar #presBody .gw-person { grid-template-columns: 2.25rem minmax(0, 1fr) auto; padding: var(--gw-sp-1) var(--gw-sp-4); gap: var(--gw-sp-4); border-left-width: 4px; border-radius: var(--gw-radius-md); }
+  .gw-ar #presBody .gw-person__photo { width: 2.25rem; height: 2.25rem; font-size: var(--gw-fs-md); }
+  .gw-ar #presBody .gw-person__body { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; gap: var(--gw-sp-4); }
+  .gw-ar #presBody .gw-person__name { font-size: var(--gw-fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-ar #presBody .gw-person__meta { margin-top: 0; font-size: var(--gw-fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw-ar #presBody .gw-person__status { grid-column: auto; min-width: 7rem; }
+}
