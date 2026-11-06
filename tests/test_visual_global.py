@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MIGRADAS = ["kiosk_registro.html", "kiosk_roster.html", "kiosk_parametros.html"]          # cada PR de la Fase 1.5 agrega las suyas
+MIGRADAS = ["kiosk_registro.html", "kiosk_roster.html", "kiosk_parametros.html", "kiosk_select.html"]          # cada PR de la Fase 1.5 agrega las suyas
 EMOJI = re.compile("[☀-➿\U0001F300-\U0001FAFF]")
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}(?![0-9a-zA-Z_-])")
 INLINE_HANDLER = re.compile(r"\son(?:click|change|submit|input|keydown|keyup|load|error)=", re.I)
