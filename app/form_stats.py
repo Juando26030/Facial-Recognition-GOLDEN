@@ -42,10 +42,14 @@ def _quotas(db: Session, form: WebForm, design: dict) -> list:
     counts = formsvc.quota_counts(db, form, rules)
     db.commit()                                         # `quota_counts` puede recalcular llaves de inscripciones antiguas: se guardan para no repetirlo
     out = []
+    now = formsvc.now_local()
     for r in rules:
         used = counts.get(r["id"], 0)
+        info = formlib.rule_schedule_info(r, now)
+        by_date = bool(info) and info["state"] != "abierto"
         out.append({"id": r["id"], "label": r["label"], "rule": _describe_rule(r, design), "limit": r["limit"], "used": used,
-                    "left": max(0, r["limit"] - used), "pct": 100 if r["limit"] == 0 else min(100, _pct(used, r["limit"])), "closed": r["limit"] == 0, "full": used >= r["limit"]})
+                    "left": 0 if by_date else max(0, r["limit"] - used), "pct": 100 if r["limit"] == 0 else min(100, _pct(used, r["limit"])), "closed": r["limit"] == 0 or by_date, "full": used >= r["limit"],
+                    "schedule": info})
     return out
 
 

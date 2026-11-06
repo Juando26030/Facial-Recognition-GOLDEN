@@ -1438,6 +1438,16 @@ function paintQuotas() {
       <select data-qo="${ri}.${ci}">${QOPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${qValueHtml(c, ri, ci)}
       ${r.conds.length > 1 ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-js-end" data-qcd="${ri}.${ci}">Quitar condición</button>` : ''}</div>`).join('')}
     ${r.conds.length < 6 ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-js-start" data-qca="${ri}">+ Otra condición</button>` : ''}
+    <div class="gwe-d-grid gwe-gap-sp-1 gwe-fs-fs-sm"><span class="gw-label">Estado de este cupo</span>
+      <select data-qst="${ri}" class="gwe-maxw-300px">${[['activo', 'Activo (recibe inscripciones)'], ['cerrado', 'Cerrado'], ['finalizado', 'Finalizado'], ['pruebas', 'En pruebas']].map(([v, l]) => `<option value="${v}" ${(r.status || 'activo') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <div class="sched"><div class="fld"><label>Fecha de cierre (opcional)</label><input type="datetime-local" data-qcl="${ri}" value="${esc(r.closes_at || '')}"></div>
+        <label class="gw-check"><input type="checkbox" data-qce="${ri}" ${r.closes_enforce ? 'checked' : ''}> Cerrar este cupo en esa fecha (si no, es solo un aviso: se ve en las estadísticas pero no cierra)</label></div>
+      <label class="gw-check"><input type="checkbox" data-qus="${ri}" ${r.use_schedule ? 'checked' : ''}> Programar el estado de este cupo por fechas (el estado de arriba se ignora)</label>
+      ${r.use_schedule ? `${(r.schedule || []).map((t, ti) => `<div class="sched"><div class="fld"><label>Estado</label><select data-qs="${ri}.${ti}" data-k="status">${['activo', 'cerrado', 'finalizado', 'pruebas'].map((v) => `<option ${t.status === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+        <div class="fld"><label>Desde</label><input type="datetime-local" data-qs="${ri}.${ti}" data-k="from" value="${esc(t.from)}"></div><div class="fld"><label>Hasta</label><input type="datetime-local" data-qs="${ri}.${ti}" data-k="to" value="${esc(t.to)}"></div>
+        <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-qsdel="${ri}.${ti}">Quitar</button></div>`).join('')}
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-js-start" data-qsadd="${ri}">+ Agregar tramo</button>` : ''}
+      <span class="hint">Igual que el formulario: con calendario, fuera de cualquier tramo el cupo queda cerrado. Si el formulario general está cerrado o finalizado, todo está cerrado aunque este cupo esté activo; y si este cupo se cierra, el formulario sigue abierto para los demás.</span></div>
     <div class="gwe-d-grid gwe-gap-sp-1 gwe-fs-fs-sm"><span class="gw-label">Mensaje cuando este cupo esté lleno</span><div data-qmsgrt="${ri}" class="gw-no-theme"></div>
       <span class="hint">Puedes usar {cupo} para el nombre. Si lo dejas vacío se usa el texto por defecto.</span>
       <span class="hint gwe-closed-help" data-qhelp="${ri}"${r.limit === 0 ? '' : ' hidden'}>0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></div></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
@@ -1454,6 +1464,13 @@ function paintQuotas() {
   quotaMounts.forEach((m) => m.destroy()); quotaMounts = [];
   box.querySelectorAll('[data-qmsgrt]').forEach((el) => { const i = +el.dataset.qmsgrt; quotaMounts.push(RichText.mount(el, { basic: true, value: R()[i].message || '', label: 'Mensaje cuando este cupo esté lleno', onChange: (v) => { R()[i].message = v; } })); });   // con formato: negrilla, cursiva, subrayado, color
   box.querySelectorAll('[data-qm]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qm].match = el.value; }));
+  box.querySelectorAll('[data-qcl]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qcl].closes_at = el.value; }));
+  box.querySelectorAll('[data-qce]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qce].closes_enforce = el.checked; }));
+  box.querySelectorAll('[data-qst]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qst].status = el.value; }));
+  box.querySelectorAll('[data-qus]').forEach((el) => el.addEventListener('change', () => { const r = R()[+el.dataset.qus]; r.use_schedule = el.checked; if (el.checked && !(r.schedule || []).length) r.schedule = [{ status: 'activo', from: '', to: '' }]; paintQuotas(); }));
+  box.querySelectorAll('[data-qs]').forEach((el) => el.addEventListener('input', () => { const [r, t] = ix(el.dataset.qs); R()[r].schedule[t][el.dataset.k] = el.value; }));
+  box.querySelectorAll('[data-qsdel]').forEach((el) => el.addEventListener('click', () => { const [r, t] = ix(el.dataset.qsdel); R()[r].schedule.splice(t, 1); paintQuotas(); }));
+  box.querySelectorAll('[data-qsadd]').forEach((el) => el.addEventListener('click', () => { const r = R()[+el.dataset.qsadd]; (r.schedule = r.schedule || []).push({ status: 'activo', from: '', to: '' }); paintQuotas(); }));
   box.querySelectorAll('[data-qdel]').forEach((el) => el.addEventListener('click', () => { R().splice(+el.dataset.qdel, 1); paintQuotas(); }));
   box.querySelectorAll('[data-qca]').forEach((el) => el.addEventListener('click', () => { R()[+el.dataset.qca].conds.push({ field: fields[0].id, op: 'equals', value: '' }); paintQuotas(); }));
   box.querySelectorAll('[data-qcd]').forEach((el) => el.addEventListener('click', () => { const [r, c] = ix(el.dataset.qcd); R()[r].conds.splice(c, 1); paintQuotas(); }));
@@ -1492,6 +1509,11 @@ const thRt = RichText.mount($('thTextRt'), { label: 'Mensaje de gracias', onChan
 const idRt = RichText.mount($('idTextRt'), { label: 'Texto del paso de identificación', onChange: (v) => { $('idText').value = v; } });
 const clRt = RichText.mount($('clTextRt'), { label: 'Mensaje de formulario cerrado', onChange: (v) => { $('clText').value = v; } });
 async function saveConfig(opts = {}) {
+  for (const r of ((settings.quotas || {}).rules || [])) {      // calendario de cada cupo: tramos completos y con fin posterior al inicio (si no, el servidor los descartaría sin avisar)
+    for (const t of (r.use_schedule ? (r.schedule || []) : [])) {
+      if (!t.from || !t.to || t.to <= t.from) { showToast(`El calendario del cupo «${r.label || 'sin nombre'}» tiene un tramo incompleto o con el cierre antes de la apertura`, 'error'); return false; }
+    }
+  }
   const payload = {
     security: { enabled: $('secOn').checked, type: $('secType').value, code: $('secCode').value },
     prefill: { mode: $('preMode').value, source: $('preSrc').value },
@@ -1513,7 +1535,7 @@ async function saveConfig(opts = {}) {
   paintSaveBar();
 }));
 $('pane-config').addEventListener('click', (e) => {   // los cupos se arman con clics (agregar, quitar, otra condición) y también quedan pendientes
-  if (e.target.closest && e.target.closest('#qAdd, #qQuick, [data-qdel], [data-qca], [data-qcd]')) { cfgDirty = true; paintSaveBar(); }
+  if (e.target.closest && e.target.closest('#qAdd, #qQuick, [data-qdel], [data-qca], [data-qcd], [data-qsadd], [data-qsdel], [data-qus]')) { cfgDirty = true; paintSaveBar(); }
 });
 $('feedNow').addEventListener('click', async () => {
   try { const r = await jpost(`${api}/feed-now`); $('feedInfo').textContent = `${r.fed} inscripción(es) cargadas a la base` + (r.problems.length ? ` · ${r.problems.length} con problema: ${r.problems[0]}` : ''); showToast(`${r.fed} cargadas a la base del evento`, r.problems.length ? 'error' : 'success'); } catch (e) { showToast(e.message, 'error'); }

@@ -53,6 +53,12 @@
     return card;
   }
 
+  function when(iso) {      // 'YYYY-MM-DDTHH:MM' en hora local → «7 nov 2026, 5:00 p. m.»
+    var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso || '');
+    if (!m) return iso || '';
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).toLocaleString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
   function quotaCard(q) {
     var card = el('div', 'gw-card fs-quota');
     card.appendChild(el('h3', 'fs-cap__title', q.label));
@@ -61,8 +67,11 @@
     var main = el('div', 'fs-cap__main', nf.format(q.used));
     main.appendChild(el('small', null, ' de ' + nf.format(q.limit) + ' (' + q.pct + '%)'));
     nums.appendChild(main);
-    nums.appendChild(el('div', 'fs-cap__left', q.limit === 0 ? 'Cerrado temporalmente' : q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
+    var sc = q.schedule, NAMES = { cerrado: 'Cerrado', finalizado: 'Finalizado', pruebas: 'En pruebas' };
+    nums.appendChild(el('div', 'fs-cap__left', q.limit === 0 && !(sc && sc.state !== 'abierto') ? 'Cerrado temporalmente' : (sc && sc.state !== 'abierto') ? NAMES[sc.state] : q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
     card.appendChild(nums);
+    if (sc && sc.state === 'abierto' && sc.closes) card.appendChild(el('p', 'fs-cap__rule', (sc.enforced === false ? 'Fecha de cierre prevista: ' : 'Cierra el ') + when(sc.closes)));
+    else if (sc && sc.state === 'cerrado') card.appendChild(el('p', 'fs-cap__rule', sc.opens ? 'Abre el ' + when(sc.opens) : 'Cerrado por ahora'));
     card.appendChild(track(q.pct, tone(q.pct, q.full), 'Cupo ' + q.label));
     return card;
   }
