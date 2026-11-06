@@ -1,0 +1,33 @@
+/* Configuración (templates/configuracion.html): ajustes de alineación y tamaño táctil para celular. Solo tokens --gw-*; lo común sale de design-system.css. */
+.gw-config__wrap .gw-tab { min-width: 0; }
+.gw-config__wrap .gw-tab__name, .gw-config__wrap .gw-tab__sum { min-width: 0; overflow-wrap: anywhere; }
+/* Selector de tipografía (static/js/font-picker.js, compartido con el diseñador de escarapela: allá no se toca): aquí toma tamaño táctil y los colores del tema */
+.gw-config__wrap .gfp-btn { min-height: var(--gw-tap); display: flex; align-items: center; background: var(--gw-surface); color: var(--gw-text); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); font: inherit; }
+.gw-config__wrap .gfp-btn::after { color: var(--gw-text-muted); }
+.gw-config__wrap .gfp-panel { background: var(--gw-surface); color: var(--gw-text); border-color: var(--gw-border-strong); }
+.gw-config__wrap .gfp-search { min-height: var(--gw-tap); background: var(--gw-surface); color: var(--gw-text); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); }
+.gw-config__wrap .gfp-item { min-height: var(--gw-tap); display: flex; align-items: center; }
+.gw-config__wrap .gfp-item:hover, .gw-config__wrap .gfp-item.act { background: var(--gw-surface-2); }
+.gw-config__wrap .gfp-empty { color: var(--gw-text-muted); }
+.gw-config__wrap .gw-actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+@media (max-width: 640px) {
+  /* Cabecera: el texto ocupa todo el ancho (sin «…») y el botón baja a su propia fila */
+  .gw-config__wrap .gw-page-head { flex-wrap: wrap; }
+  .gw-config__wrap .gw-page-head__text { flex: 1 1 100%; }
+  .gw-config__wrap .gw-page-head__sub { white-space: normal; overflow: visible; text-overflow: clip; }
+  .gw-config__wrap .gw-page-head__actions { flex: 1 1 100%; width: 100%; }
+  .gw-config__wrap .gw-page-head__actions .gw-btn { flex: 1 1 auto; }
+  /* Pasos: dos por fila para que «Elige la pestaña» se lea completo; la «Guía» queda junto al último */
+  .gw-config__wrap .gw-steps { flex-wrap: wrap; }
+  .gw-config__wrap .gw-steps > li:not(.gw-steps__guide) { flex: 1 1 calc(50% - var(--gw-sp-1)); }
+  .gw-config__wrap .gw-actions .gw-btn { flex: 1 1 auto; }
+}
+/* Pestañas: una debajo de otra mientras no cabe la columna lateral (el sistema la pone desde 900 px); ninguna queda fuera de la pantalla */
+@media (max-width: 899px) {
+  .gw-config__wrap .gw-tablist { flex-direction: column; overflow: visible; }
+  .gw-config__wrap .gw-tab { width: 100%; }
+}
+/* Con el menú lateral fijo (220 px, igual que style.css) la barra de guardado no puede quedar debajo de él: su estado quedaba tapado */
+@media (min-width: 901px) {
+  body.has-sidebar .gw-savebar { margin-left: calc(220px + var(--gw-sp-4)); margin-right: var(--gw-sp-4); }
+}

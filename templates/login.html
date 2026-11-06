@@ -6,20 +6,8 @@
     <title>Ingresar | GoldenWeb 2.0</title>
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/password-ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-acceso.css') }}">
     <script src="{{ url_for('static', path='js/password-policy.js') }}" data-icons="{{ url_for('static', path='img/icons.svg') }}" defer></script>
-    <style>
-        /* Solo la composición de esta pantalla; colores, tipografía y componentes salen de static/css/design-system.css */
-        .login { min-height: 100vh; display: flex; flex-direction: column; }
-        .login__top { display: flex; justify-content: flex-end; padding: var(--gw-sp-3) var(--gw-sp-4); }
-        .login__main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gw-sp-4); padding: var(--gw-sp-4); }
-        .login__card { width: 100%; max-width: 420px; padding: var(--gw-sp-6) var(--gw-sp-5); border-top: 6px solid var(--gw-gold-1); }
-        .login__brand { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-2); text-align: center; margin-bottom: var(--gw-sp-5); }
-        .login__logo { width: 96px; height: 96px; border-radius: 50%; background: #fff; padding: 4px; }
-        .login__brand .gw-title span { color: var(--gw-gold-text); }
-        .login__title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); margin-bottom: var(--gw-sp-3); }
-        .login__links { text-align: center; margin-top: var(--gw-sp-4); }
-        .login__links a { display: inline-flex; align-items: center; min-height: var(--gw-tap); font-weight: 700; }
-    </style>
 </head>
 <body class="gw-page">
 {% include "_env_badge.html" %}
@@ -46,7 +34,7 @@
                 </div>
             </div>
             {% if notice and not error %}
-            <div class="gw-alert gw-alert--warn" role="status" style="margin-bottom: var(--gw-sp-4);">
+            <div class="gw-alert gw-alert--warn login__alert" role="status">
                 <div>
                     <div class="gw-alert__title">{{ notice }}</div>
                     <div class="gw-alert__body">Tus ingresos hechos sin conexión siguen guardados en este dispositivo.</div>
@@ -54,7 +42,7 @@
             </div>
             {% endif %}
             {% if error %}
-            <div class="gw-alert gw-alert--err" role="alert" style="margin-bottom: var(--gw-sp-4);">
+            <div class="gw-alert gw-alert--err login__alert" role="alert">
                 <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-error"/></svg>
                 <div>
                     <div class="gw-alert__title">{{ error }}</div>
