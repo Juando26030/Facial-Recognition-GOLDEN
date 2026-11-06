@@ -59,6 +59,15 @@
     return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).toLocaleString('es-CO', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
 
+  // Alerta de la fecha de cierre de un cupo: verde si faltan más de 5 días, amarillo entre 2 y 5, rojo con 1 día o menos (o si ya pasó). El color nunca va solo: signo ⚠ y texto.
+  function closeAlert(sc) {
+    var d = sc.days_left, tone = d > 5 ? 'ok' : d > 1 ? 'warn' : 'err';
+    var txt = d < 0 ? 'Ya cerró el ' + when(sc.closes) : (sc.enforced === false ? 'Fecha de cierre prevista: ' : 'Cierra el ') + when(sc.closes) + ' · ' + (d < 1 ? 'falta menos de 1 día' : 'faltan ' + Math.ceil(d) + (Math.ceil(d) === 1 ? ' día' : ' días'));
+    var b = el('p', 'gw-badge gw-badge--' + tone + ' fs-alert', '⚠ ' + txt);
+    b.setAttribute('role', 'status');
+    return b;
+  }
+
   function quotaCard(q) {
     var card = el('div', 'gw-card fs-quota');
     card.appendChild(el('h3', 'fs-cap__title', q.label));
@@ -70,7 +79,7 @@
     var sc = q.schedule, NAMES = { cerrado: 'Cerrado', finalizado: 'Finalizado', pruebas: 'En pruebas' };
     nums.appendChild(el('div', 'fs-cap__left', q.limit === 0 && !(sc && sc.state !== 'abierto') ? 'Cerrado temporalmente' : (sc && sc.state !== 'abierto') ? NAMES[sc.state] : q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
     card.appendChild(nums);
-    if (sc && sc.state === 'abierto' && sc.closes) card.appendChild(el('p', 'fs-cap__rule', (sc.enforced === false ? 'Fecha de cierre prevista: ' : 'Cierra el ') + when(sc.closes)));
+    if (sc && sc.closes && typeof sc.days_left === 'number') card.appendChild(closeAlert(sc));
     else if (sc && sc.state === 'cerrado') card.appendChild(el('p', 'fs-cap__rule', sc.opens ? 'Abre el ' + when(sc.opens) : 'Cerrado por ahora'));
     card.appendChild(track(q.pct, tone(q.pct, q.full), 'Cupo ' + q.label));
     return card;

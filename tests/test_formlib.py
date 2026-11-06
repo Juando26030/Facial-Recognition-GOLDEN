@@ -219,7 +219,7 @@ def test_rule_with_calendar_follows_its_intervals_and_ignores_the_manual_state()
     r = _rule([{"status": "activo", "from": "2026-11-06T07:00", "to": "2026-11-07T17:00"}, {"status": "activo", "from": "2026-11-10T07:00", "to": "2026-11-11T07:00"}], status="cerrado", use=True)
     assert fl.rule_limit_now(r, datetime(2026, 11, 6, 6, 59)) == 0               # antes de abrir
     assert fl.rule_limit_now(r, datetime(2026, 11, 6, 7, 0)) == 50
-    assert fl.rule_schedule_info(r, datetime(2026, 11, 7, 10)) == {"state": "abierto", "closes": "2026-11-07T17:00", "opens": None, "enforced": False}
+    assert fl.rule_schedule_info(r, datetime(2026, 11, 7, 10)) == {"state": "abierto", "closes": "2026-11-07T17:00", "opens": None, "enforced": False, "days_left": 0.29}
     assert fl.rule_limit_now(r, datetime(2026, 11, 7, 17, 0)) == 0               # el fin es exclusivo, como el del formulario
     assert fl.rule_schedule_info(r, datetime(2026, 11, 8, 10)) == {"state": "cerrado", "closes": None, "opens": "2026-11-10T07:00", "enforced": False}
     assert fl.rule_schedule_info(r, datetime(2026, 11, 12)) == {"state": "cerrado", "closes": None, "opens": None, "enforced": False}
@@ -233,9 +233,18 @@ def test_rule_closing_date_is_only_a_notice_unless_enforced():
     aviso = _rule()
     aviso["closes_at"] = "2026-11-07T17:00"
     assert fl.rule_limit_now(aviso, n_after) == 50                                    # solo aviso: no cierra
-    assert fl.rule_schedule_info(aviso, n_before) == {"state": "abierto", "closes": "2026-11-07T17:00", "opens": None, "enforced": False}
+    assert fl.rule_schedule_info(aviso, n_before) == {"state": "abierto", "closes": "2026-11-07T17:00", "opens": None, "enforced": False, "days_left": 1.21}
     firme = {**aviso, "closes_enforce": True}
     assert fl.rule_limit_now(firme, n_before) == 50 and fl.rule_limit_now(firme, n_after) == 0
     assert fl.rule_schedule_info(firme, n_after)["state"] == "cerrado"
     kept = fl._sanitize_quota_rules({"rules": [{**firme, "closes_at": "2026-11-07T17:00"}, {**_rule(), "closes_at": "no es fecha"}]})
     assert kept[0]["closes_at"] == "2026-11-07T17:00" and kept[0]["closes_enforce"] is True and "closes_at" not in kept[1]
+
+
+def test_rule_closing_date_reports_days_left_for_the_alert_colors():
+    r = _rule()
+    r["closes_at"] = "2026-11-10T12:00"
+    assert fl.rule_schedule_info(r, datetime(2026, 11, 6, 12))["days_left"] == 4.0                 # amarillo (entre 2 y 5)
+    assert fl.rule_schedule_info(r, datetime(2026, 11, 9, 18))["days_left"] == 0.75                # rojo (1 día o menos)
+    assert fl.rule_schedule_info(r, datetime(2026, 11, 1, 12))["days_left"] == 9.0                 # verde (más de 5)
+    assert fl.rule_schedule_info(r, datetime(2026, 11, 11, 12))["days_left"] == -1.0               # ya pasó (solo aviso: sigue abierto)
