@@ -179,35 +179,50 @@ def test_schedule_validation():
         fl.parse_schedule([{"status": "activo"}])
 
 
-# ---- calendario propio de cada cupo
-def _rule(schedule=None, limit=50):
+# ---- estado y calendario propios de cada cupo
+def _rule(schedule=None, limit=50, status=None, use=None):
     r = {"id": "abc123", "label": "Barranquilla", "match": "all", "conds": [{"field": "ciudad", "op": "equals", "value": "Barranquilla"}], "limit": limit, "message": ""}
     if schedule is not None:
         r["schedule"] = schedule
+    if status:
+        r["status"] = status
+    if use is not None:
+        r["use_schedule"] = use
     return r
 
 
-def test_quota_rule_schedule_is_kept_validated_and_sorted_by_sanitize():
-    rules = fl._sanitize_quota_rules({"rules": [{**_rule(), "schedule": [
+def test_quota_rule_status_and_schedule_are_kept_validated_and_sorted_by_sanitize():
+    rules = fl._sanitize_quota_rules({"rules": [{**_rule(use=True, status="cerrado"), "schedule": [
         {"status": "activo", "from": "2026-11-08T07:00", "to": "2026-11-09T07:00"}, {"status": "activo", "from": "2026-11-06T07:00", "to": "2026-11-07T17:00"}]}]})
+    assert rules[0]["status"] == "cerrado" and rules[0]["use_schedule"] is True
     assert [t["from"] for t in rules[0]["schedule"]] == ["2026-11-06T07:00", "2026-11-08T07:00"]
-    bad = fl._sanitize_quota_rules({"rules": [{**_rule(), "schedule": [{"status": "activo", "from": "2026-11-07T17:00", "to": "2026-11-06T07:00"}]}]})
-    assert "schedule" not in bad[0]                                              # un tramo inválido se descarta entero
-    assert "schedule" not in fl._sanitize_quota_rules({"rules": [_rule()]})[0]
+    bad = fl._sanitize_quota_rules({"rules": [{**_rule(use=True), "schedule": [{"status": "activo", "from": "2026-11-07T17:00", "to": "2026-11-06T07:00"}]}]})
+    assert "schedule" not in bad[0] and "use_schedule" not in bad[0]            # un tramo inválido se descarta entero
+    plain = fl._sanitize_quota_rules({"rules": [_rule(status="activo"), _rule(status="nada")]})
+    assert all("status" not in r and "schedule" not in r for r in plain)         # «activo» es lo normal y no se guarda
 
 
-def test_rule_without_calendar_always_follows_the_form():
-    assert fl.rule_open_now(_rule(), datetime(2026, 11, 6, 12)) is True
-    assert fl.rule_schedule_info(_rule(), datetime(2026, 11, 6, 12)) is None
-    assert fl.rule_limit_now(_rule(limit=7), datetime(2026, 11, 6, 12)) == 7
+def test_rule_without_state_or_calendar_always_follows_the_form():
+    n = datetime(2026, 11, 6, 12)
+    assert fl.rule_open_now(_rule(), n) is True and fl.rule_schedule_info(_rule(), n) is None and fl.rule_limit_now(_rule(limit=7), n) == 7
 
 
-def test_rule_with_calendar_is_open_only_inside_its_active_intervals():
-    r = _rule([{"status": "activo", "from": "2026-11-06T07:00", "to": "2026-11-07T17:00"}, {"status": "activo", "from": "2026-11-10T07:00", "to": "2026-11-11T07:00"}])
+def test_rule_manual_state_closes_without_dates():
+    n = datetime(2026, 11, 6, 12)
+    for st in ("cerrado", "finalizado", "pruebas"):
+        r = _rule(status=st)
+        assert fl.rule_limit_now(r, n) == 0 and fl.rule_schedule_info(r, n) == {"state": st, "closes": None, "opens": None}
+    assert fl.rule_limit_now(_rule(status="cerrado", schedule=[], use=False), n) == 0
+
+
+def test_rule_with_calendar_follows_its_intervals_and_ignores_the_manual_state():
+    r = _rule([{"status": "activo", "from": "2026-11-06T07:00", "to": "2026-11-07T17:00"}, {"status": "activo", "from": "2026-11-10T07:00", "to": "2026-11-11T07:00"}], status="cerrado", use=True)
     assert fl.rule_limit_now(r, datetime(2026, 11, 6, 6, 59)) == 0               # antes de abrir
     assert fl.rule_limit_now(r, datetime(2026, 11, 6, 7, 0)) == 50
     assert fl.rule_schedule_info(r, datetime(2026, 11, 7, 10)) == {"state": "abierto", "closes": "2026-11-07T17:00", "opens": None}
     assert fl.rule_limit_now(r, datetime(2026, 11, 7, 17, 0)) == 0               # el fin es exclusivo, como el del formulario
     assert fl.rule_schedule_info(r, datetime(2026, 11, 8, 10)) == {"state": "cerrado", "closes": None, "opens": "2026-11-10T07:00"}
     assert fl.rule_schedule_info(r, datetime(2026, 11, 12)) == {"state": "cerrado", "closes": None, "opens": None}
-    assert fl.rule_open_now(_rule([{"status": "cerrado", "from": "2026-11-06T07:00", "to": "2026-11-09T07:00"}]), datetime(2026, 11, 7)) is False     # un tramo «cerrado» no abre
+    fin = _rule([{"status": "finalizado", "from": "2026-11-06T07:00", "to": "2026-11-09T07:00"}], use=True)
+    assert fl.rule_schedule_info(fin, datetime(2026, 11, 7))["state"] == "finalizado" and fl.rule_open_now(fin, datetime(2026, 11, 7)) is False
+    assert fl.rule_open_now(_rule([{"status": "activo", "from": "2026-11-06T07:00", "to": "2026-11-09T07:00"}], use=False), datetime(2026, 11, 7)) is True   # sin «programar», el calendario no cuenta

@@ -803,8 +803,12 @@ def _sanitize_quota_rules(q_in) -> list:
         except ValueError:
             sched = []
         item = {"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit, "message": richtext.clean_text(r.get("message"), QUOTA_MESSAGE_MAX, basic=True)}
+        if r.get("status") in STATUSES and r.get("status") != "activo":
+            item["status"] = r["status"]          # estado manual del cupo (como el del formulario); sin él = activo
         if sched:
             item["schedule"] = sched
+            if r.get("use_schedule") is True:
+                item["use_schedule"] = True
         out.append(item)   # admite negrilla, cursiva, subrayado y color como los demás mensajes
     return out
 
@@ -1102,29 +1106,36 @@ def effective_status(manual_status: str, use_schedule: bool, schedule: list, now
     return "cerrado"
 
 
-# ------------------------------------------------------------------ calendario propio de un cupo
+# ------------------------------------------------------------------ estado y calendario propios de un cupo
+def rule_state_now(rule: dict, now_local: datetime) -> str:
+    """Estado vigente del cupo, con la MISMA lógica del formulario: su estado manual (activo si no tiene) o, con «programar por fechas», el del tramo en curso (fuera de todo tramo =
+    cerrado). El estado del formulario general SIEMPRE prima: si el formulario está cerrado o finalizado nadie entra y esto ni se consulta; un cupo cerrado no cierra el formulario."""
+    return effective_status(rule.get("status") or "activo", bool(rule.get("use_schedule")), rule.get("schedule") or [], now_local)
+
+
 def rule_open_now(rule: dict, now_local: datetime) -> bool:
-    """¿Está abierto este cupo por su calendario? Sin calendario propio sigue al formulario (abierto). Con calendario, FUERA de todo tramo «activo» está cerrado. El estado del
-    formulario general SIEMPRE prima: si el formulario está cerrado, nada de esto se consulta (no entra nadie)."""
-    sched = rule.get("schedule") or []
-    if not sched:
-        return True
-    return effective_status("cerrado", True, sched, now_local) == "activo"
+    return rule_state_now(rule, now_local) == "activo"      # pruebas y finalizado tampoco reciben inscripciones del público
 
 
 def rule_limit_now(rule: dict, now_local: datetime) -> int:
-    """Máximo vigente: el del cupo, o 0 («cerrado») si su calendario lo tiene cerrado ahora."""
+    """Máximo vigente: el del cupo, o 0 («cerrado») si su estado/calendario no lo tiene activo ahora."""
     return rule["limit"] if rule_open_now(rule, now_local) else 0
 
 
 def rule_schedule_info(rule: dict, now_local: datetime) -> Optional[dict]:
-    """{state: 'abierto'|'cerrado', closes: 'YYYY-MM-DDTHH:MM'|None, opens: ...|None} o None si el cupo no tiene calendario propio. `closes` = fin del tramo activo en curso;
-    `opens` = inicio del próximo tramo activo (si está cerrado y aún hay uno)."""
-    sched = [t for t in (rule.get("schedule") or []) if t.get("status") == "activo"]
-    if not rule.get("schedule"):
+    """None si el cupo no tiene estado ni calendario propios (sigue al formulario). Si no: {state: 'abierto'|'cerrado'|'finalizado'|'pruebas', closes, opens} con `closes` = fin del tramo
+    activo en curso y `opens` = inicio del próximo tramo activo (solo con calendario)."""
+    sched, use = rule.get("schedule") or [], bool(rule.get("use_schedule"))
+    if not use and (rule.get("status") or "activo") == "activo":
         return None
-    for t in sched:
-        if datetime.fromisoformat(t["from"]) <= now_local < datetime.fromisoformat(t["to"]):
-            return {"state": "abierto", "closes": t["to"], "opens": None}
-    nxt = [t for t in sched if datetime.fromisoformat(t["from"]) > now_local]
-    return {"state": "cerrado", "closes": None, "opens": nxt[0]["from"] if nxt else None}
+    st = rule_state_now(rule, now_local)
+    info = {"state": "abierto" if st == "activo" else st, "closes": None, "opens": None}
+    if use:
+        act = [t for t in sched if t.get("status") == "activo"]
+        for t in act:
+            if datetime.fromisoformat(t["from"]) <= now_local < datetime.fromisoformat(t["to"]):
+                info["closes"] = t["to"]
+        if st != "activo":
+            nxt = [t for t in act if datetime.fromisoformat(t["from"]) > now_local]
+            info["opens"] = nxt[0]["from"] if nxt else None
+    return info

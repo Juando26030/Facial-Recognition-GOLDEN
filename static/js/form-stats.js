@@ -67,10 +67,11 @@
     var main = el('div', 'fs-cap__main', nf.format(q.used));
     main.appendChild(el('small', null, ' de ' + nf.format(q.limit) + ' (' + q.pct + '%)'));
     nums.appendChild(main);
-    var sc = q.schedule;
-    nums.appendChild(el('div', 'fs-cap__left', q.limit === 0 ? 'Cerrado temporalmente' : (sc && sc.state === 'cerrado') ? 'Cerrado' : q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
+    var sc = q.schedule, NAMES = { cerrado: 'Cerrado', finalizado: 'Finalizado', pruebas: 'En pruebas' };
+    nums.appendChild(el('div', 'fs-cap__left', q.limit === 0 && !(sc && sc.state !== 'abierto') ? 'Cerrado temporalmente' : (sc && sc.state !== 'abierto') ? NAMES[sc.state] : q.full ? 'Lleno' : 'Faltan ' + nf.format(q.left)));
     card.appendChild(nums);
-    if (sc) card.appendChild(el('p', 'fs-cap__rule', sc.state === 'abierto' ? 'Cierra el ' + when(sc.closes) : (sc.opens ? 'Cerrado. Abre el ' + when(sc.opens) : 'Cerrado: su calendario ya terminó')));
+    if (sc && sc.state === 'abierto' && sc.closes) card.appendChild(el('p', 'fs-cap__rule', 'Cierra el ' + when(sc.closes)));
+    else if (sc && sc.state === 'cerrado') card.appendChild(el('p', 'fs-cap__rule', sc.opens ? 'Abre el ' + when(sc.opens) : 'Cerrado por ahora'));
     card.appendChild(track(q.pct, tone(q.pct, q.full), 'Cupo ' + q.label));
     return card;
   }
