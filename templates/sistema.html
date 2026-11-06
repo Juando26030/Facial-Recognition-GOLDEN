@@ -1,3 +1,9 @@
+{# Estado del sistema (Fase 1.5, 2026-11-05): tarjetas de semáforo con texto e ícono (no solo color), guía de 3 pasos, «?» y recorrido de primera vez.
+   Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). Las rutas, los ids y el sondeo de siempre (cada 15 s, pausado con la pestaña oculta) no cambiaron: lo hace static/js/sistema.js. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,102 +11,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Estado del sistema | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-sistema.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
-    <style>
-        .small-btn { font-size:0.78rem; padding:6px 14px; border-radius:20px; border:1px solid #ccc; background:white; cursor:pointer; }
-        .sys-banner { display:flex; align-items:center; gap:1rem; padding:1.2rem 1.5rem; border-radius:16px; margin-bottom:1.2rem; color:#fff; }
-        .sys-banner.green { background:#1e7e46; } .sys-banner.yellow { background:#8a6100; } .sys-banner.red { background:#b3261e; }
-        .sys-banner strong { font-size:1.15rem; }
-        .sys-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:1rem; }
-        .sys-card { background:white; border-radius:14px; padding:1rem 1.2rem; box-shadow:0 4px 18px rgba(0,0,0,0.07); border-left:6px solid #999; }
-        .sys-card.green { border-left-color:#1e7e46; } .sys-card.yellow { border-left-color:#c98a00; } .sys-card.red { border-left-color:#b3261e; }
-        .sys-card h3 { margin:0 0 0.3rem; font-size:0.95rem; display:flex; align-items:center; gap:0.5rem; }
-        .dot { width:12px; height:12px; border-radius:50%; display:inline-block; background:#999; }
-        .dot.green { background:#1e7e46; } .dot.yellow { background:#c98a00; } .dot.red { background:#b3261e; }
-        .sys-value { font-weight:700; color:#222; }
-        .sys-reason { color:#555; font-size:0.85rem; margin-top:0.4rem; }
-        .sys-action { color:#444; font-size:0.85rem; margin-top:0.3rem; background:#f6f3e8; border-radius:8px; padding:0.4rem 0.6rem; }
-        .sys-meta { color:#666; font-size:0.8rem; margin:0.6rem 0 1rem; }
-    </style>
+    <script src="{{ url_for('static', path='js/sistema.js') }}" defer></script>
 </head>
-<body class="has-sidebar">
+<body class="gw-page gw-shell has-sidebar">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="/" class="golden-logo">
       <img src="{{ url_for('static', path='img/logo-golden.png') }}" alt="Logo de Golden Eventos y Logística">
     </a>
-    <nav style="display:flex; gap:14px; align-items:center;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;"><button type="submit" class="small-btn">Salir</button></form>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
+      </form>
     </nav>
   </div>
 </header>
 <div class="golden-content-spacer"></div>
 
 <main class="golden-main">
-  <div class="golden-container" style="padding: 3rem 2rem; max-width: 1200px;">
-    <div class="golden-section-title" style="text-align:left; margin-bottom:1rem;">
-      <span>PANEL</span>
-      <h2>Estado del sistema</h2>
+  <div class="gw-container gw-stack-lg" data-gw-tour="sistema" data-gw-tour-auto>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">Panel</p>
+        <h1 class="gw-page-head__title">Estado del sistema</h1>
+        <p class="gw-page-head__sub">Semáforos de la plataforma, con qué hacer si algo falla.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="sistema">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+        <button type="button" class="gw-btn gw-btn--primary" id="refreshBtn">Actualizar ahora</button>
+      </div>
     </div>
-    <div id="banner" class="sys-banner green" role="status" aria-live="polite"><span class="dot" style="background:#fff"></span><strong>Cargando…</strong></div>
-    <div id="deploy" class="sys-card green" style="margin-bottom:1rem;"></div>
-    <div class="sys-meta"><span id="updated">—</span> · se actualiza solo cada 15 segundos · <button type="button" class="small-btn" id="refreshBtn">Actualizar ahora</button></div>
-    <div id="grid" class="sys-grid"></div>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira los semáforos</span>
+        {% call ayuda('ay_sis1', 'Mira los semáforos') %}El resumen de arriba dice si todo está bien (verde), si hay algo por revisar (ámbar) o un problema (rojo). Cada estado trae su palabra, no solo el color.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Abre el detalle</span>
+        {% call ayuda('ay_sis2', 'Abre el detalle') %}Cada tarjeta muestra el valor medido y, si no está en verde, la razón. La pantalla se actualiza sola cada 15 segundos mientras la miras.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Si hay rojo, sigue «Qué hacer»</span>
+        {% call ayuda('ay_sis3', 'Qué hacer si hay rojo') %}Las tarjetas ámbar o rojas traen una indicación concreta. Antes de desplegar, revisa la tarjeta «¿Se puede desplegar ahora?».{% endcall %}</li>
+    </ol>
+
+    <section aria-label="Resumen" data-gw-tour-step="1" data-gw-tour-title="1. Mira los semáforos" data-gw-tour-text="Aquí ves el resumen: verde, atención o problema. Si algo no está en verde, aparece su nombre.">
+      <div id="banner" class="gw-alert" role="status" aria-live="polite">{{ ic('info') }}<div><p class="gw-alert__title">Cargando…</p><p class="gw-alert__body"><span class="gw-skeleton"></span></p></div></div>
+    </section>
+
+    <section aria-label="Despliegue">
+      <div id="deploy" class="gw-sistema__card" aria-live="polite"><span class="gw-skeleton gw-sistema__skeleton"></span></div>
+    </section>
+
+    <p class="gw-sistema__meta"><span id="updated" role="status">—</span><span>Se actualiza solo cada 15 segundos.</span></p>
+
+    <section aria-label="Chequeos" data-gw-tour-step="2" data-gw-tour-title="2. Abre el detalle" data-gw-tour-text="Cada tarjeta es un chequeo. Las que no están en verde dicen la razón y qué hacer.">
+      <div id="grid" class="gw-sistema__grid" data-icons="{{ url_for('static', path='img/icons.svg') }}"></div>
+    </section>
   </div>
 </main>
-
-<script>
-(function () {
-  const LABEL = { green: 'Todo bien', yellow: 'Atención', red: 'Problema' };
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  let last = null;
-
-  async function getJson(url) {
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return res.json();
-  }
-
-  function render(status, deploy) {
-    const banner = document.getElementById('banner');
-    banner.className = 'sys-banner ' + status.level;
-    const bad = status.items.filter((i) => i.level !== 'green');
-    banner.innerHTML = '<span class="dot" style="background:#fff"></span><strong>' + LABEL[status.level] + '</strong><span>' +
-      (bad.length ? bad.map((i) => esc(i.title)).join(' · ') : 'Todos los chequeos están en verde.') + '</span>';
-    document.getElementById('grid').innerHTML = status.items.map((i) =>
-      '<div class="sys-card ' + i.level + '"><h3><span class="dot ' + i.level + '"></span>' + esc(i.title) + '</h3>' +
-      '<div class="sys-value">' + esc(i.value) + '</div>' +
-      (i.reason ? '<div class="sys-reason">' + esc(i.reason) + '</div>' : '') +
-      (i.action ? '<div class="sys-action"><strong>Qué hacer:</strong> ' + esc(i.action) + '</div>' : '') + '</div>').join('');
-    const d = document.getElementById('deploy');
-    d.className = 'sys-card ' + (deploy.allowed ? 'green' : 'red');
-    d.innerHTML = '<h3><span class="dot ' + (deploy.allowed ? 'green' : 'red') + '"></span>¿Se puede desplegar ahora?</h3><div class="sys-value">' +
-      (deploy.allowed ? 'Sí: no hay eventos en curso ni aperturas en las próximas ' + deploy.hours + ' h.' : 'No, todavía.') + '</div>' +
-      (deploy.reasons.length ? '<div class="sys-reason">' + deploy.reasons.map(esc).join('<br>') + '</div>' : '');
-    last = Date.now();
-  }
-
-  async function refresh() {
-    try {
-      const [status, deploy] = await Promise.all([getJson('/api/ops/status'), getJson('/api/ops/deploy-allowed')]);
-      render(status, deploy);
-    } catch (e) {
-      const banner = document.getElementById('banner');
-      banner.className = 'sys-banner red';
-      banner.innerHTML = '<span class="dot" style="background:#fff"></span><strong>Problema</strong><span>No se pudo consultar el estado (' + esc(e.message) + '). Si esta pantalla no carga, la aplicación misma puede estar caída.</span>';
-    }
-  }
-
-  setInterval(() => { if (last) document.getElementById('updated').textContent = 'Actualizado hace ' + Math.round((Date.now() - last) / 1000) + ' s'; }, 1000);
-  document.getElementById('refreshBtn').addEventListener('click', refresh);
-  refresh();
-  if (window.GW && window.GW.poll) window.GW.poll(refresh, 15000); else setInterval(refresh, 15000);      // pausado mientras la pestaña no se usa (GW.idle)
-})();
-</script>
 </body>
 </html>

@@ -1,0 +1,13 @@
+/* Estado del sistema (/sistema): tarjetas de semáforo. Solo tokens --gw-*; el estado se dice con texto e ícono, no solo con color. */
+.gw-sistema__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: var(--gw-sp-4); }
+.gw-sistema__card { display: flex; flex-direction: column; gap: var(--gw-sp-2); padding: var(--gw-sp-4); background: var(--gw-surface); color: var(--gw-text); border: 1px solid var(--gw-border); border-left-width: 6px; border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
+.gw-sistema__card--green { border-left-color: var(--gw-ok-line); }
+.gw-sistema__card--yellow { border-left-color: var(--gw-warn-line); }
+.gw-sistema__card--red { border-left-color: var(--gw-err-line); }
+.gw-sistema__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-2); }
+.gw-sistema__title { font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); overflow-wrap: anywhere; }
+.gw-sistema__value { font-weight: var(--gw-fw-bold); overflow-wrap: anywhere; }
+.gw-sistema__reason { margin: 0; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-sistema__action { margin: 0; padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-surface-2); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
+.gw-sistema__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2) var(--gw-sp-3); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-sistema__skeleton { min-height: 6rem; }
