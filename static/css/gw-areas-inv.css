@@ -1,0 +1,27 @@
+/* Control de áreas y Control de inventario (Fase 1.5). Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md). */
+.gw-ai__wrap { padding-bottom: var(--gw-sp-7); }
+.gw-ai__dir { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); }
+.gw-ai__dir .dir-btn { cursor: pointer; }
+.gw-ai__dir .dir-btn.active, .gw-ai__dir .dir-btn[aria-pressed="true"] { background: var(--gw-navy); color: var(--gw-nav-text); border-color: var(--gw-navy); }
+.gw-ai__scan { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: flex-end; }
+.gw-ai__scan > .gw-field { flex: 1 1 14rem; min-width: 0; }
+.gw-ai__suggest { display: flex; flex-direction: column; gap: var(--gw-sp-2); margin-top: var(--gw-sp-2); }
+.gw-ai__suggest:empty { display: none; }
+.gw-ai__suggest button { text-align: left; min-height: var(--gw-tap); padding: var(--gw-sp-2) var(--gw-sp-4); font: inherit; font-size: var(--gw-fs-md); color: var(--gw-text); background: var(--gw-surface); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
+.gw-ai__suggest button:hover { background: var(--gw-surface-2); }
+.gw-ai__suggest button:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gw-ai__banner { margin-top: var(--gw-sp-3); }
+.gw-ai__banner .gw-btn { margin-left: var(--gw-sp-2); }
+.gw-ai__count { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); }
+.gw-ai__item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gw-sp-3); padding: var(--gw-sp-3) 0; border-bottom: 1px solid var(--gw-border); }
+.gw-ai__item:last-child { border-bottom: 0; }
+.gw-ai__item.empty { opacity: 0.6; }
+.gw-ai__item .qty { width: 6rem; }
+.gw-ai__avail { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-ai__foot { display: flex; justify-content: flex-end; margin-top: var(--gw-sp-4); }
+.gw-ai__foot .gw-btn { min-width: 12rem; }
+@media (max-width: 768px) {
+  .gw-ai__foot .gw-btn { width: 100%; }
+  .gw-ai__scan .gw-btn { flex: 1 1 100%; }
+}
+.gw-ai__wrap [hidden] { display: none !important; }
