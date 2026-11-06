@@ -68,3 +68,11 @@
 .fs-cap-one { margin-bottom: var(--gw-sp-4); }
 .fs-top a.gw-btn:hover, .fs-top .gw-btn--secondary:hover { background: var(--gw-nav-hover); }
 .fs-top__brand img { max-width: 40px; }
+
+/* Auditoría de botones (Fase 1.7): en celular «Actualizar» ocupa el ancho y las acciones quedan alineadas. */
+.fs-actions .gw-btn { min-height: var(--gw-tap); }
+@media (max-width: 520px) {
+  .fs-actions { width: 100%; }
+  .fs-actions .gw-btn { flex: 1 1 100%; }
+  .fs-top .gw-btn { max-width: 100%; white-space: normal; text-align: center; }
+}
