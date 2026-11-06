@@ -21,7 +21,7 @@
         const nombre = u.full_name || 'Sin nombre';
         const estado = u.is_active ? '<span class="gw-badge gw-badge--ok">Activo</span>' : '<span class="gw-badge gw-badge--warn">Inactivo</span>';
         const reset = u.role === 'digitador'
-            ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}">Restablecer contraseña</button>` : '';
+            ? `<button type="button" class="gw-btn gw-btn--secondary" data-act="reset" data-id="${esc(u.id)}" data-username="${esc(u.username)}">Restablecer contraseña</button>` : '';
         return `<article class="gw-card-row">
             <div class="gw-card-row__head">
                 <span class="gw-card-row__title">${esc(u.username)}</span>
@@ -30,8 +30,8 @@
             <p class="gw-card-row__meta">${esc(nombre)}</p>
             <div class="gw-card-row__actions">
                 ${reset}
-                <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-act="revoke" data-id="${esc(u.id)}">Quitar de este evento</button>
-                <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}">Borrar permanente</button>
+                <button type="button" class="gw-btn gw-btn--secondary" data-act="revoke" data-id="${esc(u.id)}">Quitar de este evento</button>
+                <button type="button" class="gw-btn gw-btn--danger-outline" data-act="delete" data-id="${esc(u.id)}" data-username="${esc(u.username)}">Borrar permanente</button>
             </div>
         </article>`;
     }
@@ -152,7 +152,7 @@
     }
 
     async function revokeTempUser(btn, staffId) {
-        if (!(await showConfirm('¿Quitar el acceso de este usuario a este evento?'))) return;
+        if (!(await showConfirm('¿Quitar a esta persona de este evento? Perderá el acceso aquí de inmediato; la cuenta sigue existiendo y se puede volver a asignar.', { confirmLabel: 'Quitar del evento' }))) return;
         await busy(btn, async () => {
             const res = await fetch(`/api/events/${eventId}/staff-users/${staffId}`, { method: 'DELETE' });
             loadTempUsers();
@@ -171,13 +171,25 @@
     }
 
     async function deleteTempUser(btn, staffId, username) {
-        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${window.escapeHtml(username)}"? Esto no es quitarlo del evento — se elimina de la base de datos y no se puede deshacer.`))) return;
+        if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${window.escapeHtml(username)}"? Se perderán su acceso a este y a todos los eventos y su contraseña. Esto no es quitarlo del evento: se elimina de la base de datos y no se puede deshacer.`, { confirmLabel: 'Borrar cuenta' }))) return;
         await busy(btn, async () => {
             const res = await fetch(`/api/staff/${staffId}`, { method: 'DELETE' });
             if (res.ok) { loadTempUsers(); showToast('Cuenta eliminada', 'success'); }
             else { const err = await res.json().catch(() => ({})); showToast(err.detail || 'No se pudo borrar', 'error'); }
         });
     }
+
+    // Acción principal de la pantalla: «Crear usuario» lleva al formulario (abierto) y deja el cursor en el primer campo.
+    document.addEventListener('click', (ev) => {
+        const go = ev.target.closest('[data-open-group]');
+        if (!go) return;
+        const grp = document.getElementById(go.getAttribute('data-open-group'));
+        if (!grp) return;
+        grp.open = true;
+        grp.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const first = grp.querySelector('input:not([type="hidden"])');
+        if (first) first.focus({ preventScroll: true });
+    });
 
     listEl.addEventListener('click', (ev) => {
         const btn = ev.target.closest('button[data-act]');
