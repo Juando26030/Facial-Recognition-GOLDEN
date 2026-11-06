@@ -22,11 +22,11 @@
   function card(e) {
     const place = [e.location, e.city].filter(Boolean).join(" · ");
     const when = fmtDate(e.start_date);
-    return '<article class="gw-card-row">' +
+    return '<article class="gw-card-row gw-event-card">' +
       '<div class="gw-card-row__head"><h2 class="gw-card-row__title">' + esc(e.name) + "</h2>" +
-      '<span class="gw-badge gw-badge--ok">En proceso</span></div>' +
+      '<span class="gw-badge gw-badge--ok">' + icon("check") + "En proceso</span></div>" +
       '<p class="gw-card-row__meta">' + esc([place, when].filter(Boolean).join(" · ")) + "</p>" +
-      '<div class="gw-card-row__actions"><a class="gw-btn gw-btn--primary" href="/kiosk/' + encodeURIComponent(e.id) + '" aria-label="Entrar al evento ' + esc(e.name) + '">Entrar</a></div>' +
+      '<div class="gw-card-row__actions"><a class="gw-btn gw-btn--primary gw-btn--xl" href="/kiosk/' + encodeURIComponent(e.id) + '" aria-label="Entrar al evento ' + esc(e.name) + '">Entrar' + icon("arrow-in") + "</a></div>" +
       "</article>";
   }
 

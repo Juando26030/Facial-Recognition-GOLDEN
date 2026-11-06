@@ -1,0 +1,5 @@
+/* Inicio (dashboard.html), Fase 1.7 Ola 1B: tarjetas de evento grandes, una por fila en celular. Solo tokens --gw-*. */
+.gw-event-card { gap: var(--gw-sp-4); padding: var(--gw-sp-5); border-width: 2px; }
+.gw-event-card .gw-card-row__title { font-size: var(--gw-fs-xl); }
+.gw-event-card .gw-card-row__meta { font-size: var(--gw-fs-md); }
+.gw-event-card .gw-card-row__actions .gw-btn { width: 100%; justify-content: center; }
