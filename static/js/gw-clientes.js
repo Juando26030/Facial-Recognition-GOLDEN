@@ -89,15 +89,21 @@
           <span class="gw-badge ${STATUS_BADGE[e.status] || ''}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
         </div>
         <p class="gw-card-row__meta">${esc(e.location) || ''}${e.city ? ' · ' + esc(e.city) : ''} · ${fmtDate(e.start_date)} · Coordinador: ${esc(e.coordinator_name) || '-'}</p>
-        <div class="gw-card-row__actions">
-          <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${esc(e.id)}">${icon('home', 'gw-icon--sm')} Ingresar</a>
-          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-edit-event="${esc(e.id)}">${icon('edit', 'gw-icon--sm')} Editar</button>
-          ${isAdmin && e.status === 'en_proceso' ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-revert-event="${esc(e.id)}" title="Devolver el evento a Creado (no se borra nada)">${icon('undo', 'gw-icon--sm')} Devolver a Creado</button>` : ''}
-          ${isSuper ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-export-event="${esc(e.id)}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon('download', 'gw-icon--sm')} Exportar</button>` : ''}
-          <select class="gw-select gw-select--auto" data-status-select data-event-id="${esc(e.id)}" aria-label="Estado de ${esc(e.name)}">
+        <div class="gw-card-row__actions p-cli__acts">
+          <a class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" href="/kiosk/${esc(e.id)}">${icon('home', 'gw-icon--sm')} Ingresar</a>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__act" data-edit-event="${esc(e.id)}">${icon('edit', 'gw-icon--sm')} Editar</button>
+          <select class="gw-select gw-select--auto p-cli__status" data-status-select data-event-id="${esc(e.id)}" aria-label="Estado de ${esc(e.name)}">
             ${Object.entries(STATUS_LABELS).map(([value, label]) => `<option value="${value}" ${value === e.status ? 'selected' : ''}>${label}</option>`).join('')}
           </select>
-          ${isAdmin ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delete-event="${esc(e.id)}" data-event-name="${esc(e.name)}" data-event-status="${esc(e.status)}">${icon('trash', 'gw-icon--sm')} Eliminar</button>` : ''}
+          ${isAdmin ? `<div class="gw-menu p-cli__more">
+            <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm p-cli__morebtn" data-menu-toggle aria-expanded="false" aria-haspopup="true" aria-label="Más acciones de ${esc(e.name)}" title="Más acciones">${icon('more')}<span class="p-cli__morelbl">Más acciones</span></button>
+            <div class="gw-menu__panel" role="group" hidden>
+              ${e.status === 'en_proceso' ? `<button type="button" class="gw-menu__item" data-revert-event="${esc(e.id)}" title="Devolver el evento a Creado (no se borra nada)">${icon('undo', 'gw-icon--sm')} Devolver a Creado</button>` : ''}
+              ${isSuper ? `<button type="button" class="gw-menu__item" data-export-event="${esc(e.id)}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon('download', 'gw-icon--sm')} Exportar</button>` : ''}
+              <hr class="gw-menu__sep">
+              <button type="button" class="gw-menu__item gw-menu__item--danger" data-delete-event="${esc(e.id)}" data-event-name="${esc(e.name)}" data-event-status="${esc(e.status)}">${icon('trash', 'gw-icon--sm')} Eliminar</button>
+            </div>
+          </div>` : ''}
         </div>
       </div>`).join('') + '</div>';
   }
@@ -125,7 +131,36 @@
     });
   }
 
+  // Menú «Más acciones» de cada evento: un solo menú abierto; se cierra al elegir, al tocar fuera o con Escape.
+  function closeMenus(except) {
+    listEl.querySelectorAll('.p-cli__more').forEach((m) => {
+      if (m === except) return;
+      const panel = m.querySelector('.gw-menu__panel');
+      if (panel) panel.hidden = true;
+      const t = m.querySelector('[data-menu-toggle]');
+      if (t) t.setAttribute('aria-expanded', 'false');
+    });
+  }
+  document.addEventListener('click', (e) => { if (!e.target.closest || !e.target.closest('.p-cli__more')) closeMenus(null); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(null); });
+
   listEl.addEventListener('click', async (e) => {
+    const menuBtn = e.target.closest('[data-menu-toggle]');
+    if (menuBtn) {
+      const wrap = menuBtn.closest('.p-cli__more');
+      const panel = wrap.querySelector('.gw-menu__panel');
+      const open = panel.hidden;
+      closeMenus(wrap);
+      panel.hidden = !open;
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {                                           // si no cabe hacia abajo, se abre hacia arriba
+        wrap.classList.remove('gw-menu--up');
+        const r = panel.getBoundingClientRect();
+        if (r.bottom > window.innerHeight && menuBtn.getBoundingClientRect().top > panel.offsetHeight) wrap.classList.add('gw-menu--up');
+      }
+      return;
+    }
+    if (e.target.closest('.gw-menu__item')) closeMenus(null);
     const retry = e.target.closest('[data-retry]');
     if (retry) {
       if (retry.dataset.retry === 'tenants') { loadTenants(); return; }

@@ -7,11 +7,11 @@
 
   function attach(colorInput, nameInput) {
     const box = document.createElement('div');
-    box.style.cssText = 'display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:6px 0 12px; min-width:100%;';
+    box.className = 'gw-actions';
     box.innerHTML = `
-      <select class="cl-select" style="flex:1 1 180px; padding:6px 8px; border:1px solid #ddd; border-radius:8px; font-size:0.82rem;"></select>
-      <button type="button" class="cl-save" style="border:1px solid #ccc; background:white; border-radius:16px; padding:5px 12px; font-size:0.78rem; cursor:pointer;">Guardar este color</button>
-      <button type="button" class="cl-del" title="Quitar de la librería" style="border:1px solid #ccc; background:white; border-radius:16px; padding:5px 10px; font-size:0.78rem; cursor:pointer;">🗑</button>`;
+      <select class="gw-select cl-select" aria-label="Colores guardados"></select>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm cl-save">Guardar este color</button>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm cl-del" title="Quitar de la librería" aria-label="Quitar de la librería"><svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="/static/img/icons.svg#i-trash"/></svg></button>`;
     // Va debajo de la fila que contiene el color y el nombre.
     const row = colorInput.closest('.badge-input-row, .ee-row') || colorInput.parentElement.parentElement;
     row.insertAdjacentElement('afterend', box);
