@@ -189,15 +189,15 @@
 .gwe-table-wrap { overflow-x: hidden; }
 table.gwe-fit { table-layout: fixed; width: 100%; }
 table.gwe-fit th, table.gwe-fit td { padding: var(--gw-sp-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: none; }
-table.gwe-fit th { white-space: normal; overflow-wrap: anywhere; vertical-align: bottom; line-height: var(--gw-lh-tight); position: static; }
+table.gwe-fit th { white-space: normal; overflow-wrap: break-word; hyphens: none; vertical-align: bottom; line-height: var(--gw-lh-tight); position: static; }
 table.gwe-fit td.gwe-cell-wrap { white-space: normal; overflow: visible; }
 table.gwe-fit td.gwe-cell-wrap .gw-btn { margin: 0 var(--gw-sp-1) var(--gw-sp-1) 0; }
-table.gwe-fit .gwe-col-id { width: 6.5rem; }
-table.gwe-fit .gwe-col-date { width: 9.5rem; }
+table.gwe-fit .gwe-col-id { width: 4.5rem; }
+table.gwe-fit .gwe-col-date { width: 8.5rem; }
 table.gwe-fit .gwe-col-amt { width: 6.5rem; }
-table.gwe-fit .gwe-col-src { width: 6rem; }
-table.gwe-fit .gwe-col-fed { width: 5rem; }
-table.gwe-fit .gwe-col-act { width: 6.5rem; }
+table.gwe-fit .gwe-col-src { width: 5.5rem; }
+table.gwe-fit .gwe-col-fed { width: 4.5rem; }
+table.gwe-fit .gwe-col-act { width: 5.5rem; }
 table.gwe-fit .gwe-col-state { width: 7rem; }
 table.gwe-fit .gwe-col-method { width: 6rem; }
 table.gwe-fit .gwe-col-ced { width: 7rem; }
