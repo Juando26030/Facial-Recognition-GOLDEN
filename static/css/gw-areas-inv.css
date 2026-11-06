@@ -32,3 +32,20 @@
   .gw-ai__scan .gw-btn { flex: 1 1 100%; }
 }
 .gw-ai__wrap [hidden] { display: none !important; }
+/* Auditoría de botones (Áreas; prefijo propio .gw-ar para no chocar con Inventario). */
+.gw-ar .gw-page-head__actions .gw-btn, .gw-ar .gw-steps__guide .gw-btn { min-height: 44px; }
+.gw-ar .gw-segment__opt { justify-content: center; text-align: center; overflow-wrap: break-word; }
+.gw-ar .gw-search__field .gw-input { text-overflow: ellipsis; }
+.gw-ar .gw-verdict__text .gw-btn { width: 100%; justify-content: center; }
+.gw-ar .gw-stat { min-width: 0; }
+.gw-ar .gw-stat__label { overflow-wrap: break-word; }
+.gw-ar .gw-person__status .gw-badge { white-space: nowrap; }
+.gw-ar #reportBtn { min-height: var(--gw-tap-lg); text-align: center; }
+@media (max-width: 480px) {
+  .gw-ar .gw-segment__opt { font-size: var(--gw-fs-md); padding-inline: var(--gw-sp-2); gap: var(--gw-sp-1); }
+  .gw-ar .gw-search__field .gw-input { font-size: var(--gw-fs-md); }
+  .gw-ar .gw-stats-row { gap: var(--gw-sp-2); }
+  .gw-ar .gw-stat__label { font-size: var(--gw-fs-sm); }
+  .gw-ar .gw-row--between { flex-wrap: wrap; }
+  .gw-ar #reportBtn { width: 100%; justify-content: center; }
+}
