@@ -159,7 +159,6 @@ html[data-theme="dark"] .gw-registro .golden-table tbody tr.row-registrado td[da
 .gw-registro .action-cell .gw-btn { flex: none; padding: 0 var(--gw-sp-3); min-height: var(--gw-tap); gap: var(--gw-sp-1); font-size: var(--gw-fs-sm); }
 .gw-registro .action-cell .gw-menu__btn { min-width: var(--gw-tap); }
 .gw-registro .btn-accredit-row.is-done:disabled { opacity: 1; background: var(--gw-ok-bg); color: var(--gw-ok-text); border-color: var(--gw-ok-line); }
-.gw-registro__steps { margin: var(--gw-sp-1) 0 0; }
 /* pantallas muy estrechas: solo el ícono (el nombre accesible y el tooltip siguen) */
 @media (max-width: 520px) {
   .gw-registro .action-cell .gw-act__t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -81,7 +81,7 @@ def test_mobile_page_scrolls_with_the_finger_no_nested_scroll_trap():
     block = css[css.index("@media (max-width: 720px), (pointer: coarse)"):]
     block = block[:block.index("}\n}")]
     assert "overflow: visible" in block and "overscroll-behavior: auto" in block and "height: auto" in block
-    assert "overscroll-behavior: contain" not in css
+    assert "overscroll-behavior: contain" not in re.sub(r"/\*.*?\*/", "", css, flags=re.S)
 
 
 def test_hardware_and_modes_stay_behind_the_single_gear_with_an_accessible_name():
@@ -145,7 +145,13 @@ def test_three_step_guide_first_time_tour_and_purposeful_animations():
     assert 'data-gw-tour="registro"' in TPL and "data-gw-tour-auto" in TPL
     steps = re.findall(r'data-gw-tour-step="(\d)"', TPL + BUSC)
     assert sorted(steps) == ["1", "2", "3"]
-    assert 'data-gw-tour-restart="registro"' in BUSC and "Busca" in TPL and "Acredita" in TPL and "Imprime la escarapela" in TPL
+    assert 'data-gw-tour-restart="registro"' not in BUSC, "la guía ya no vive dentro de la ayuda del buscador: es el 4.º chip del renglón de pasos"
+    steps = TPL[TPL.index('class="gw-steps gw-steps--compact"'):]
+    steps = steps[:steps.index("</ol>")]
+    assert steps.count("<li") == 4 and 'data-gw-tour-restart="registro"' in steps and "gw-registro__steps" not in TPL
+    for short in (">Busca<", ">Acredita<", ">Imprime<", ">Guía<"):
+        assert short in steps, short
+    assert "Imprime la escarapela" in TPL and steps.count("call ayuda(") == 3, "texto completo en el popover de cada paso"
     assert "window.GW_ICON_URL" in TPL
     assert "prefers-reduced-motion: no-preference" in REG_CSS
     for m in re.finditer(r"animation:\s*[\w-]+\s+(\d+)ms", REG_CSS):
@@ -216,3 +222,23 @@ def test_register_modal_keeps_ids_and_folds_only_simple_optional_fields():
     for ident in ("gwWorkarea", "directorio"):
         assert ids.count(ident) == 2, ident          # uno por rama (cliente / resto de roles): son excluyentes en el mismo render
     assert TPL.index("{% if staff_role == \"cliente\" %}\n        <!-- PESTAÑA: ESTADÍSTICAS") < TPL.index("{% else %}\n\n        {% if event.facial_enabled %}")
+
+
+def test_compact_mobile_first_screen_rules_without_nested_scroll():
+    css = pathlib.Path("static/css/p-registro-puerta.css").read_text(encoding="utf-8")
+    for needle in (".gw-steps--compact", "repeat(3, minmax(0, 1fr)) auto", "gw-registro__headside { flex-wrap: nowrap", ".gw-workarea__summary .gw-chip"):
+        assert needle in css, needle
+    assert "overscroll-behavior: contain" not in re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+
+def test_list_is_not_redrawn_under_the_finger_so_the_touch_scroll_is_not_cancelled():
+    """Causa real del atasco en el celular: el sondeo redibujaba las filas (replaceChildren) con el dedo encima y el navegador cancelaba el gesto de desplazar."""
+    js = pathlib.Path("static/js/directory.js").read_text(encoding="utf-8")
+    body = js[js.index("function drawRows()"):]
+    body = body[:body.index("\n    }\n")]
+    assert "if (gestureBusy()) { redrawSoon(); return; }" in body
+    assert "touchstart" in js and "touchcancel" in js and "passive: true" in js
+    assert "tbody.replaceChildren(...rows)" in body and "const same =" in body, "si las filas son las mismas no se toca el DOM"
+    css = pathlib.Path("static/css/p-registro-puerta.css").read_text(encoding="utf-8")
+    assert "touch-action: manipulation" in css
+    assert "preventDefault" not in "".join(l for l in js.splitlines() if "touchstart" in l or "touchmove" in l)
