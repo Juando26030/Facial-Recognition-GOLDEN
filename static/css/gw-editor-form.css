@@ -66,7 +66,6 @@
 .cband { display: flex; gap: var(--gw-sp-2); align-items: center; margin: var(--gw-sp-2) 0 var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-2); border-left: 4px solid var(--gw-info-line); background: var(--gw-info-bg); color: var(--gw-info-text); border-radius: var(--gw-radius-sm); font-size: var(--gw-fs-sm); }
 .sched { display: flex; gap: var(--gw-sp-2); flex-wrap: wrap; align-items: flex-end; margin-bottom: var(--gw-sp-2); }
 .test-row { background: var(--gw-warn-bg); }
-table.ans th, table.ans td { white-space: nowrap; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
 
 /* textos de ayuda, etiquetas y controles que arma el JS del editor (sin clases .gw-*) */
 .gwe-wrap .hint, .gwe-overlay .hint { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); line-height: var(--gw-lh-body); }
@@ -183,3 +182,48 @@ table.ans th, table.ans td { white-space: nowrap; max-width: 14rem; overflow: hi
 .gwe-maxh-56px { max-height: 56px; }
 .gwe-maxw-120px { max-width: 120px; }
 .gwe-w-150px { width: 150px; }
+
+/* ------------------------------------------------------------ tablas que se ajustan a la pantalla (Respuestas y Pagos): sin desplazamiento lateral
+   Columnas fijas compactas + celdas recortadas con «…» (el JS les pone el tooltip con el texto completo). En pantallas angostas (<= 768 px) pasan a tarjetas apiladas (.gw-table-cards del sistema);
+   con muchas columnas de datos (.gwe-many, lo pone el JS) son tarjetas en cualquier ancho. */
+.gwe-table-wrap { overflow-x: hidden; }
+table.gwe-fit { table-layout: fixed; width: 100%; }
+table.gwe-fit th, table.gwe-fit td { padding: var(--gw-sp-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: none; }
+table.gwe-fit th { white-space: normal; overflow-wrap: anywhere; vertical-align: bottom; line-height: var(--gw-lh-tight); position: static; }
+table.gwe-fit td.gwe-cell-wrap { white-space: normal; overflow: visible; }
+table.gwe-fit td.gwe-cell-wrap .gw-btn { margin: 0 var(--gw-sp-1) var(--gw-sp-1) 0; }
+table.gwe-fit .gwe-col-id { width: 6.5rem; }
+table.gwe-fit .gwe-col-date { width: 9.5rem; }
+table.gwe-fit .gwe-col-amt { width: 6.5rem; }
+table.gwe-fit .gwe-col-src { width: 6rem; }
+table.gwe-fit .gwe-col-fed { width: 5rem; }
+table.gwe-fit .gwe-col-act { width: 6.5rem; }
+table.gwe-fit .gwe-col-state { width: 7rem; }
+table.gwe-fit .gwe-col-method { width: 6rem; }
+table.gwe-fit .gwe-col-ced { width: 7rem; }
+table.gwe-fit .gwe-col-refund { width: 10rem; }
+table.gwe-fit tr.test-row td { background: var(--gw-warn-bg); }
+table.gwe-fit.gwe-many thead { display: none; }
+table.gwe-fit.gwe-many, table.gwe-fit.gwe-many tbody { display: block; width: 100%; }
+table.gwe-fit.gwe-many tbody { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: var(--gw-sp-3); padding: var(--gw-sp-3); }
+table.gwe-fit.gwe-many tr { display: block; padding: var(--gw-sp-3) var(--gw-sp-4); background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); box-shadow: var(--gw-shadow-sm); }
+table.gwe-fit.gwe-many td { display: block; width: auto; padding: var(--gw-sp-1) 0; border: 0; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+table.gwe-fit.gwe-many td[data-label]::before { content: attr(data-label) ": "; color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+table.gwe-fit.gwe-many td.gw-table-cards__actions { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); padding-top: var(--gw-sp-3); }
+@media (max-width: 768px) {
+  table.gwe-fit { table-layout: auto; }
+  table.gwe-fit tbody { padding: var(--gw-sp-3); }
+  table.gwe-fit td { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  table.gwe-fit td.gw-table-cards__actions { display: flex; }
+}
+.gwe-ans-bar { margin-bottom: var(--gw-sp-3); }
+.gwe-inline-help { display: inline-flex; align-items: center; gap: var(--gw-sp-1); }
+
+/* ------------------------------------------------------------ control de archivo propio (reemplaza el «Seleccionar archivo / Sin archivos seleccionados» del navegador)
+   El <input type="file"> sigue ahí (mismos id/data-*, foco por teclado) pero oculto; se ve un botón .gw-btn y el nombre, que se recorta con «…» y no desborda la caja. */
+.gwe-wrap label.gwe-file, .gwe-overlay label.gwe-file { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-2); width: 100%; max-width: 100%; min-width: 0; margin: 0; font-weight: var(--gw-fw-normal); cursor: pointer; }
+.gwe-file__input { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; opacity: 0; }
+.gwe-file__input:focus-visible + .gwe-file__btn { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gwe-file__btn { flex: 0 0 auto; }
+.gwe-file__name { flex: 1 1 8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
+.gwe-file:hover .gwe-file__btn { background: var(--gw-surface-2); }
