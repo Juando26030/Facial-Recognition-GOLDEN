@@ -68,19 +68,19 @@
       listEl.innerHTML = '<div class="gw-empty" role="status"><p><strong>Todavía no hay cuentas de staff</strong></p><p>Abre «Nueva cuenta» arriba para crear la primera.</p></div>';
       return;
     }
-    listEl.innerHTML = list.map((s) => {
+    listEl.innerHTML = '<div class="gw-rows__head gw-staff__colhead" aria-hidden="true"><span>Usuario</span><span>Nombre<span class="gw-rows__alt"> y correo</span></span><span class="gw-rows__wide">Correo</span><span>Rol<span class="gw-rows__alt"> y estado</span></span><span class="gw-rows__wide">Estado</span><span>Acciones</span></div>' + list.map((s) => {
       const roles = s.secondary_role ? `${roleLabel(s.role)} + ${roleLabel(s.secondary_role)}` : roleLabel(s.role);
       return `
-      <article class="gw-card-row">
-        <div class="gw-card-row__head">
-          <h3 class="gw-card-row__title gw-staff__who">${esc(s.username)}</h3>
-          <span class="gw-badge ${s.is_active ? 'gw-badge--ok' : 'gw-badge--err'}">${icon(s.is_active ? 'check' : 'error')}${s.is_active ? 'Activo' : 'Inactivo'}</span>
+      <article class="gw-card-row gw-staff__row">
+        <div class="gw-card-row__head gw-staff__head">
+          <h3 class="gw-card-row__title gw-staff__who gw-staff__c-user" title="${esc(s.username)}">${esc(s.username)}</h3>
+          <span class="gw-staff__c-state gw-badge ${s.is_active ? 'gw-badge--ok' : 'gw-badge--err'}">${icon(s.is_active ? 'check' : 'error')}${s.is_active ? 'Activo' : 'Inactivo'}</span>
         </div>
-        <p class="gw-card-row__meta">${esc(s.full_name || 'Sin nombre')}</p>
-        <p class="gw-card-row__meta gw-staff__mail"><span class="gw-staff__who">${s.email ? esc(s.email) : 'Sin correo'}</span>
+        <p class="gw-card-row__meta gw-staff__c-name" title="${esc(s.full_name || '')}">${esc(s.full_name || 'Sin nombre')}</p>
+        <p class="gw-card-row__meta gw-staff__mail gw-staff__c-mail"><span class="gw-staff__who">${s.email ? esc(s.email) : 'Sin correo'}</span>
           <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-staff-action="email" data-id="${esc(s.id)}" data-current="${esc(s.email || '')}" aria-label="Editar el correo de ${esc(s.username)}">${icon('edit', 'gw-icon--sm')}</button></p>
-        <p><span class="gw-badge gw-badge--info">${esc(roles)}</span></p>
-        <div class="gw-card-row__actions gw-staff__actions">${actionsHtml(s)}</div>
+        <p class="gw-staff__c-role"><span class="gw-badge gw-badge--info">${esc(roles)}</span></p>
+        <div class="gw-card-row__actions gw-staff__actions gw-staff__c-act">${actionsHtml(s)}</div>
       </article>`;
     }).join('');
   }

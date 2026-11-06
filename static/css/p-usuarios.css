@@ -12,3 +12,49 @@
 .gw-staff__mail > .gw-btn { flex: none; }
 /* las acciones se pegan al pie de la tarjeta: en escritorio (tarjetas en rejilla) las filas de botones quedan a la misma altura entre tarjetas vecinas */
 .gw-usr__actions, .gw-staff__actions { margin-top: auto; }
+
+/* Escritorio (>= 901 px): cuentas = filas delgadas de UNA línea, en columnas alineadas entre filas (subgrid; el encabezado de columnas va dentro de la misma lista) y acciones a la derecha.
+   Bajo 901 px siguen las tarjetas de siempre (celular sin cambios). */
+.gw-rows__head, .gw-rows__alt { display: none; }
+@media (min-width: 901px) {
+  .gw-rows { display: grid; gap: var(--gw-sp-2) var(--gw-sp-4); align-items: center; }
+  .gw-rows > .gw-empty, .gw-rows > .gw-alert { grid-column: 1 / -1; }
+  .gw-rows > .gw-rows__head { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: end; gap: var(--gw-sp-2) var(--gw-sp-4); padding: 0 calc(var(--gw-sp-3) + 1px); color: var(--gw-text-muted); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); }
+  .gw-rows__head > span { min-width: 0; white-space: nowrap; }
+  .gw-page .gw-rows > .gw-usr__row, .gw-page .gw-rows > .gw-staff__row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; gap: var(--gw-sp-2) var(--gw-sp-4); padding: var(--gw-sp-2) var(--gw-sp-3); }
+  .gw-usr__row > .gw-card-row__head, .gw-staff__row > .gw-card-row__head, .gw-usr__badges { display: contents; }
+  .gw-usr__c-user, .gw-usr__c-name, .gw-staff__c-user, .gw-staff__c-name, .gw-staff__c-mail > .gw-staff__who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+  .gw-usr__c-user, .gw-staff__c-user { font-size: var(--gw-fs-md); margin: 0; }
+  .gw-usr__c-name, .gw-staff__c-name, .gw-staff__c-mail { margin: 0; min-width: 0; }
+  .gw-staff__c-role, .gw-staff__c-state, .gw-usr__c-role, .gw-usr__c-state { margin: 0; white-space: nowrap; justify-self: start; }
+  .gw-staff__mail > .gw-btn { min-height: 0; min-width: 0; padding: var(--gw-sp-1); }
+  .gw-rows .gw-usr__actions, .gw-rows .gw-staff__actions { flex-wrap: nowrap; justify-content: flex-end; align-items: center; margin-top: 0; gap: var(--gw-sp-2); }
+  .gw-rows .gw-usr__actions > .gw-btn, .gw-rows .gw-staff__actions > .gw-btn { flex: none; white-space: nowrap; padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .gw-rows .gw-usr__actions > .gw-usr__more > .gw-btn, .gw-rows .gw-staff__actions > .gw-staff__more > .gw-btn { padding: 0; }
+  .gw-rows .gw-usr__more, .gw-rows .gw-staff__more { margin-left: 0; }
+  .gw-rows .gw-staff__actions > .gw-hint { margin: 0; white-space: nowrap; }
+
+  /* Usuarios del evento: usuario | nombre | rol | estado | acciones */
+  .gw-usr__list { grid-template-columns: minmax(6rem, 1fr) minmax(8rem, 1.6fr) max-content max-content max-content; }
+  .gw-usr__c-user { grid-column: 1; } .gw-usr__c-name { grid-column: 2; } .gw-usr__c-role { grid-column: 3; } .gw-usr__c-state { grid-column: 4; } .gw-usr__c-act { grid-column: 5; }
+  .gw-usr__row > * { grid-row: 1; }
+
+  /* Staff, vista media (901-1649 px): nombre y correo apilados en una celda, rol y estado apilados en otra; las acciones quedan en una línea */
+  .gw-staff__list { grid-template-columns: minmax(5rem, 1fr) minmax(8rem, 1.5fr) max-content max-content; }
+  .gw-rows__head .gw-rows__alt { display: inline; }
+  .gw-staff__colhead > .gw-rows__wide { display: none; }
+  .gw-staff__row { row-gap: 0; }
+  .gw-staff__c-name, .gw-staff__c-role { align-self: end; } .gw-staff__c-mail, .gw-staff__c-state { align-self: start; }
+  .gw-staff__c-user { grid-column: 1; grid-row: 1 / span 2; } .gw-staff__c-name { grid-column: 2; grid-row: 1; } .gw-staff__c-mail { grid-column: 2; grid-row: 2; }
+  .gw-staff__c-role { grid-column: 3; grid-row: 1; } .gw-staff__c-state { grid-column: 3; grid-row: 2; } .gw-staff__c-act { grid-column: 4; grid-row: 1 / span 2; }
+}
+/* Staff (>= 1650 px): todo en una sola línea, con el correo, el rol y el estado cada uno en su columna */
+@media (min-width: 1650px) {
+  .gw-staff__list { grid-template-columns: minmax(8rem, 1fr) minmax(9rem, 1.2fr) minmax(11rem, 1.5fr) max-content max-content max-content; }
+  .gw-rows__head .gw-rows__alt { display: none; }
+  .gw-staff__colhead > .gw-rows__wide { display: block; }
+  .gw-staff__row { row-gap: var(--gw-sp-2); }
+  .gw-staff__c-name, .gw-staff__c-role, .gw-staff__c-mail, .gw-staff__c-state { align-self: center; }
+  .gw-staff__c-user { grid-column: 1; grid-row: 1; } .gw-staff__c-name { grid-column: 2; grid-row: 1; } .gw-staff__c-mail { grid-column: 3; grid-row: 1; }
+  .gw-staff__c-role { grid-column: 4; grid-row: 1; } .gw-staff__c-state { grid-column: 5; grid-row: 1; } .gw-staff__c-act { grid-column: 6; grid-row: 1; }
+}
