@@ -854,7 +854,7 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
     "not_in_base_label": "texto"}`. Cambia inscripciones reales de personas que están en la base y cuyo valor en la base es uno de los valores de los cupos de ese campo; sin valor o con
     un valor sin cupo no se toca. Con `keep_not_in_base` ({\"cédula\": \"valor de un cupo\"}) quienes no están en la base y se listan quedan con ESE valor (cuentan en su cupo; decisión explícita del cliente). Si se da `not_in_base_label`, las inscripciones de personas que NO están en la base quedan con ese texto (dejan de contar en cualquier cupo). Las marcas de
     «Personas ya registradas» nunca se tocan (su ciudad la dio quien cargó la lista). **Nunca deja un cupo por encima de su límite**: si alguna corrección lo haría, no aplica nada y
-    lo informa (`would_exceed`, 409 al aplicar). Sin `apply` solo informa; con `detail` lista cédula, valor actual y nuevo."""
+    lo informa (`would_exceed`, 409 al aplicar) salvo que se pida expresamente `allow_over: true`. Sin `apply` solo informa; con `detail` lista cédula, valor actual y nuevo."""
     from app import value_unify
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
@@ -922,7 +922,8 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
     used = formsvc.quota_counts(db, form, rules)
     would_exceed = [{"quota": r["label"], "limit": r["limit"], "used": used[r["id"]], "after": used[r["id"]] + delta[r["id"]]} for r in rules
                     if delta[r["id"]] > 0 and used[r["id"]] + delta[r["id"]] > r["limit"]]
-    if do_apply and would_exceed:
+    allow_over = payload.get("allow_over") is True     # decisión explícita del cliente de pasarse del cupo; siempre queda dicho en `would_exceed`
+    if do_apply and would_exceed and not allow_over:
         db.rollback()
         raise HTTPException(status_code=409, detail="No se aplicó nada: " + "; ".join(f"«{w['quota']}» quedaría en {w['after']} de {w['limit']}" for w in would_exceed))
     if do_apply and batch:

@@ -123,3 +123,17 @@ def test_align_keeps_listed_people_outside_the_base_in_their_quota(client, facto
     rows = {s.person_id: json.loads(s.data_json)["ciudad"] for s in db.query(FormSubmission).filter(FormSubmission.form_id == f["id"]).all()}
     assert rows == {"6": "Bogotá", "8": "Se registró sin estar en base"}
     assert _used(client, ev, f) == {"Bogotá": 1, "Cali": 0}
+
+
+def test_align_can_exceed_a_quota_only_when_explicitly_allowed(client, factory, db):
+    ev, f = _form(client, factory, db)          # Bogotá con límite 10
+    for i in range(1, 11):
+        _add(db, ev, f, str(200 + i), "Bogotá")  # Bogotá llena
+    _add(db, ev, f, "6", "Se registró sin estar en base")
+    db.commit()
+    url = f"/api/events/{ev.id}/forms/{f['id']}/align-to-base"
+    body = {"field": "ciudad", "keep_not_in_base": {"6": "Bogotá"}, "apply": True}
+    assert client.post(url, json=body).status_code == 409
+    r = client.post(url, json={**body, "allow_over": True}).json()
+    assert r["changed"] == 1 and r["would_exceed"] == [{"quota": "Bogotá", "limit": 10, "used": 10, "after": 11}]
+    assert _used(client, ev, f)["Bogotá"] == 11
