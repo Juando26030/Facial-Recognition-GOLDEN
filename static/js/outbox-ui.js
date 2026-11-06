@@ -44,11 +44,11 @@
       const send = el('button', 'gw-btn gw-btn--secondary', 'Enviar ahora'); send.type = 'button';
       send.addEventListener('click', () => ui.sync(true)); panel.appendChild(send);
       if (!items.length) { panel.appendChild(el('p', 'gw-muted', 'No hay nada en la bandeja.')); return; }
-      const table = el('table', 'gw-table gw-outbox__table');
+      const table = el('table', 'gw-table gw-table-cards gw-outbox__table'); const COLS = ['Persona', 'Estado', 'Detalle', 'Edad / caduca', ''];
       const th = (t) => el('th', '', t);
       const hr = el('tr'); ['Persona', 'Estado', 'Detalle', 'Edad / caduca', ''].forEach((t) => hr.appendChild(th(t))); table.appendChild(hr);
       for (const it of items) {
-        const tr = el('tr'); const td = (t, css) => { const c = el('td', css || '', t); tr.appendChild(c); return c; };
+        const tr = el('tr'); const td = (t, css) => { const c = el('td', css || '', t); if (COLS[tr.children.length]) c.setAttribute('data-label', COLS[tr.children.length]); tr.appendChild(c); return c; };
         td(it.label || '(sin nombre)', 'gw-outbox__name');
         td(root.GoldenOutbox.statusLabel(it.status), { ok: 'gw-outbox__ok', error: 'gw-outbox__bad', caducada: 'gw-outbox__bad', revision: 'gw-outbox__warn', duplicado: 'gw-outbox__warn' }[it.status] || '');
         td(it.status === 'revision' ? `Ya existía como «${it.detail}»: sus datos NO se cambiaron; se registró para este evento. Revisa si es la misma persona.` : (it.status === 'duplicado' ? `Ya estaba registrada (${it.detail}).` : (it.detail || '')), '');

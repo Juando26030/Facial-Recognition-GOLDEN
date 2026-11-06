@@ -20,8 +20,9 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 .gw-parametros input[type="range"] { width: min(100%, 260px); min-height: var(--gw-tap); accent-color: var(--gw-navy); }
 .gw-parametros .gw-table input[type="checkbox"], .gw-parametros .gw-form-group input[type="checkbox"] { width: 1.5rem; height: 1.5rem; accent-color: var(--gw-navy); }
 :root[data-theme="dark"] .gw-parametros input[type="checkbox"], :root[data-theme="dark"] .gw-parametros input[type="range"] { accent-color: var(--gw-gold-2); }
-/* Tabla de campos: columnas con ancho suficiente para tocar con el dedo; se desplaza dentro de su caja en el celular */
-.gw-table--fields { min-width: 920px; }
+/* Tabla de campos: ocupa el ancho disponible (anchos por columna en gw-tablas.css); en pantallas angostas se desplaza dentro de su caja */
+.gw-table--fields { min-width: 0; }
+@media (max-width: 899px) { .gw-table--fields { min-width: 920px; table-layout: auto; } }
 .gw-table--fields td { vertical-align: top; }
 .gw-table--fields .gw-textarea { min-height: 72px; margin-bottom: var(--gw-sp-2); }
 .gw-table--fields .gw-drag { width: 3rem; }

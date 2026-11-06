@@ -37,7 +37,7 @@
       ".gwt-box .bad{background:#fdecea;border:1px solid #e0a19b;border-radius:10px;padding:10px 12px;margin:10px 0}" +
       ".gwt-box .good{background:#e8f6ec;border:1px solid #9fd4ad;border-radius:10px;padding:10px 12px;margin:10px 0}" +
       ".gwt-bar{height:14px;background:#eee;border-radius:8px;overflow:hidden;margin:10px 0}.gwt-bar i{display:block;height:100%;background:#D4AF37;width:0;transition:width .4s}" +
-      ".gwt-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:8px 0}.gwt-table th,.gwt-table td{border-bottom:1px solid #eee;padding:5px 6px;text-align:left}.gwt-table td.n,.gwt-table th.n{text-align:right}" +
+      ".gwt-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:8px 0}.gwt-table th,.gwt-table td{border-bottom:1px solid #eee;padding:5px 6px;text-align:left;overflow-wrap:anywhere}.gwt-table td.n,.gwt-table th.n{text-align:right}" +
       ".gwt-box ul{margin:6px 0 6px 18px;padding:0}.gwt-muted{color:#666;font-size:.82rem}.gwt-box details{margin-top:10px}";
     document.head.appendChild(st);
   }
