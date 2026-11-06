@@ -96,7 +96,7 @@
     </form>
 
     <section class="gw-card gw-stack" aria-labelledby="expListTitle" data-gw-tour-step="3" data-gw-tour-title="3. Revisa el total" data-gw-tour-text="Aquí ves cada gasto y el total del evento. El reporte en Excel se descarga con el botón de esta sección.">
-      <div class="gw-stats-row gw-stats-row--2">
+      <div class="gw-stats-row gw-stats-row--2 gw-leg-stats">
         <div class="gw-stat gw-stat--ok">{{ ic('chart', 'gw-stat__icon') }}<span class="gw-stat__value" id="totalAmount">0</span><span class="gw-stat__label">Total del evento</span></div>
         <div class="gw-stat">{{ ic('form', 'gw-stat__icon') }}<span class="gw-stat__value" id="expCount">0</span><span class="gw-stat__label">Gastos registrados</span></div>
       </div>
@@ -112,7 +112,7 @@
     <details class="gw-form-group">
       <summary class="gw-form-group__summary">¿Cómo funciona?</summary>
       <div class="gw-form-group__body">
-        <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+        <ol class="gw-steps gw-leg-steps" aria-label="Cómo se usa esta pantalla">
           <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Registra el gasto</span>
             {% call ayuda('ay_leg1', 'Registra el gasto') %}Escribe la categoría, quién respondió por el gasto y el valor. «A quién aplica» y la descripción son opcionales.{% endcall %}</li>
           <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Adjunta el soporte</span>
