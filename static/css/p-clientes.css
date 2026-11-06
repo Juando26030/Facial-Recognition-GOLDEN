@@ -17,8 +17,10 @@
 .p-cli__more .gw-menu__sep:first-child { display: none; }
 .p-cli__acts .gw-menu__item { white-space: normal; }
 @media (min-width: 40rem) {
-  .p-cli__acts { grid-template-columns: auto auto minmax(8rem, 1fr) auto; }
-  .p-cli__acts .p-cli__act { width: auto; }
+  .p-cli__acts { display: flex; flex-wrap: wrap; align-items: center; }
+  .p-cli__acts .p-cli__act { flex: 0 0 auto; width: auto; white-space: nowrap; }
+  .p-cli__acts .p-cli__status { flex: 1 1 8rem; }
+  .p-cli__more { flex: 0 0 auto; }
   .p-cli__status { grid-column: auto; }
   .p-cli__more { grid-column: auto; }
   .p-cli__morelbl { display: none; }
@@ -41,3 +43,6 @@
 .ee-modal input[type="file"]::file-selector-button { min-height: calc(var(--gw-tap) - var(--gw-sp-4)); margin-right: var(--gw-sp-3); padding: 0 var(--gw-sp-4); font: inherit; font-weight: var(--gw-fw-bold); color: var(--gw-secondary-text); background: var(--gw-secondary-bg); border: 1px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
 .ee-modal #eeReportDownload, .ee-modal #eeReportUpload { width: 100%; white-space: normal; }
 @media (min-width: 40rem) { .ee-modal #eeReportDownload, .ee-modal #eeReportUpload { width: auto; } }
+/* Escritorio: el nombre y el contacto de la cuenta van en líneas separadas; «Importar evento» no se estira a todo el ancho. */
+.gw-tenant__head .gw-card-row__title, .gw-tenant__head .gw-card-row__meta { display: block; }
+@media (min-width: 40rem) { .gw-tenant__body > .gw-card-row__actions .gw-btn { flex: 0 0 auto; } }
