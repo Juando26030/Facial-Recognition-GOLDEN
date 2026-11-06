@@ -12,6 +12,7 @@
     <title>Formularios Web | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-formularios.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -41,24 +42,27 @@
         {% call ayuda('ay_paso3', 'Activa y comparte el enlace') %}Cuando esté listo, ponlo en estado «Activo» desde «Editar» y usa «Copiar enlace». El formulario público solo abre cuando está Activo.{% endcall %}</li>
     </ol>
 
-    <section class="gw-stack" data-gw-tour-step="1" data-gw-tour-title="1. Crea o importa" data-gw-tour-text="Escribe un nombre y pulsa «Crear y editar». Si traes un formulario exportado, ábrelo en «Importar formulario».">
+    <section class="gw-stack" data-gw-tour-step="1" data-gw-tour-title="1. Crea o importa" data-gw-tour-text="Escribe un nombre y pulsa «Crear formulario». Si traes un formulario exportado, ábrelo en «Importar formulario».">
       <form id="newForm" class="gw-card-row" aria-labelledby="newFormTitle">
         <h2 class="gw-card-row__title" id="newFormTitle">Crear un formulario de inscripción</h2>
-        <div class="gw-fields-row">
-          <div class="gw-field gw-field--grow">
-            <label class="gw-label" for="newName">Nombre del formulario</label>
-            <input class="gw-input" type="text" id="newName" required maxlength="120" placeholder="Ej. Inscripción Feria 2026">
-          </div>
-          <div class="gw-field gw-field--grow">
-            <label class="gw-label" for="newTemplate">Empezar desde</label>
-            <select class="gw-select" id="newTemplate"><option value="">Formulario nuevo (cédula, nombres, apellidos, correo)</option></select>
-          </div>
+        <div class="gw-field">
+          <label class="gw-label" for="newName">Nombre del formulario</label>
+          <input class="gw-input" type="text" id="newName" required maxlength="120" placeholder="Ej. Inscripción Feria 2026">
         </div>
-        <div class="gw-row gw-row--end"><button type="submit" class="gw-btn gw-btn--primary" id="newBtn">Crear y editar</button></div>
+        <details class="gw-form-group">
+          <summary class="gw-form-group__summary">Empezar desde una plantilla (opcional)</summary>
+          <div class="gw-form-group__body">
+            <div class="gw-field">
+              <label class="gw-label" for="newTemplate">Empezar desde</label>
+              <select class="gw-select" id="newTemplate"><option value="">Formulario nuevo (cédula, nombres, apellidos, correo)</option></select>
+            </div>
+          </div>
+        </details>
+        <button type="submit" class="gw-btn gw-btn--primary gw-btn--block gw-forms-main" id="newBtn">{{ ic('plus') }} Crear formulario</button>
       </form>
 
       <details class="gw-form-group" id="importCard" hidden>
-        <summary class="gw-form-group__summary">Importar formulario</summary>
+        <summary class="gw-form-group__summary">Avanzado: importar un formulario exportado</summary>
         <div class="gw-form-group__body gw-stack">
           <p class="gw-hint">Trae un formulario exportado de otro entorno (por ejemplo, de staging) como un archivo .zip. Se crea una COPIA nueva «(importado)», en estado «En pruebas», sin cupo, sin calendario y sin clave: la revisas y la activas tú.</p>
           <div class="gw-fields-row">

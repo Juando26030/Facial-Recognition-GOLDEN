@@ -13,28 +13,34 @@
   async function j(url, opts) { const r = await fetch(url, opts); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || 'Error'); return d; }
 
   function card(f) {
-    const meta = [`Inscripciones: ${f.submissions}`];
-    if (f.test_submissions) meta.push(`+${f.test_submissions} de prueba`);
-    if (f.preregistered) meta.push(`+${f.preregistered} ya registradas desde la base`);
-    const cupo = f.capacity == null ? 'sin límite' : f.capacity;
+    const extra = [];
+    if (f.test_submissions) extra.push(`+${f.test_submissions} de prueba`);
+    if (f.preregistered) extra.push(`+${f.preregistered} ya registradas desde la base`);
+    const cupo = f.capacity == null ? 'Sin límite' : f.capacity;
     return `<article class="gw-card-row" data-form="${f.id}">
       <div class="gw-card-row__head">
         <a class="gw-card-row__title" href="/kiosk/${EV}/formularios/${f.id}">${esc(f.name)}</a>
         <span class="gw-badge ${BADGE[f.public_state] || ''}">${esc(LABELS[f.public_state] || f.public_state)}</span>
       </div>
       <p class="gw-card-row__meta">/${esc(f.slug)}${f.use_schedule ? ' · por calendario' : ''}</p>
-      <p class="gw-card-row__meta">${esc(meta.join(' · '))} · Cupo: ${esc(cupo)}</p>
+      <div class="gw-stats-row gw-stats-row--2">
+        <div class="gw-stat"><span class="gw-stat__value">${esc(f.submissions)}</span><span class="gw-stat__label">Inscripciones</span>${extra.length ? `<span class="gw-stat__hint">${esc(extra.join(' · '))}</span>` : ''}</div>
+        <div class="gw-stat"><span class="gw-stat__value">${esc(cupo)}</span><span class="gw-stat__label">Cupo</span></div>
+      </div>
       <div class="gw-card-row__actions">
-        <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}">${icon('edit')} Editar</a>
+        <a class="gw-btn gw-btn--primary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}">${icon('edit')} Editar</a>
         <a class="gw-btn gw-btn--secondary gw-btn--sm" href="/kiosk/${EV}/formularios/${f.id}/estadisticas">${icon('chart')} Estadísticas</a>
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-copy="${esc(f.public_url)}">${icon('link')} Copiar enlace</button>
       </div>
-      <div class="gw-card-row__actions">
-        <a class="gw-btn gw-btn--ghost gw-btn--sm" href="${esc(f.test_url)}" target="_blank" rel="noopener">${icon('eye')} Probar</a>
-        <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-dup="${f.id}">Duplicar</button>
-        ${canTransfer ? `<a class="gw-btn gw-btn--ghost gw-btn--sm" href="${api}/forms/${f.id}/export" data-export>${icon('download')} Exportar formulario</a>` : ''}
-        <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${f.id}" data-name="${esc(f.name)}">${icon('trash')} Eliminar</button>
-      </div>
+      <details class="gw-form-group gw-forms-more">
+        <summary class="gw-form-group__summary">Más acciones</summary>
+        <div class="gw-form-group__body gw-card-row__actions">
+          <a class="gw-btn gw-btn--ghost gw-btn--sm" href="${esc(f.test_url)}" target="_blank" rel="noopener">${icon('eye')} Probar</a>
+          <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-dup="${f.id}">Duplicar</button>
+          ${canTransfer ? `<a class="gw-btn gw-btn--ghost gw-btn--sm" href="${api}/forms/${f.id}/export" data-export>${icon('download')} Exportar formulario</a>` : ''}
+          <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${f.id}" data-name="${esc(f.name)}">${icon('trash')} Eliminar</button>
+        </div>
+      </details>
     </article>`;
   }
 
@@ -43,13 +49,14 @@
     box.setAttribute('aria-busy', 'true');
     try {
       const forms = await j(`${api}/forms`);
-      box.innerHTML = forms.map(card).join('') || `<div class="gw-empty" role="status"><p>Este evento todavía no tiene formularios.</p><p class="gw-hint">Crea el primero arriba con «Crear y editar»${canTransfer ? ' o impórtalo desde otro entorno' : ''}.</p></div>`;
+      box.innerHTML = forms.map(card).join('') || `<div class="gw-state" role="status"><p class="gw-state__title">Este evento todavía no tiene formularios</p><p class="gw-state__text">Crea el primero arriba con «Crear formulario»${canTransfer ? ' o impórtalo desde otro entorno' : ''}.</p></div>`;
     } catch (e) {
-      box.innerHTML = `<div class="gw-alert gw-alert--err" role="alert"><div>No se pudo cargar la lista: ${esc(e.message)}. Recarga la página; si sigue igual, avisa a un administrador.</div></div>`;
+      box.innerHTML = `<div class="gw-state gw-state--error" role="alert"><p class="gw-state__title">No se pudo cargar la lista</p><p class="gw-state__text">${esc(e.message)}. Inténtalo de nuevo; si sigue igual, avisa a un administrador.</p><button type="button" class="gw-btn gw-btn--secondary" data-retry>Reintentar</button></div>`;
     } finally { box.setAttribute('aria-busy', 'false'); }
   }
 
   $('body').addEventListener('click', async (e) => {
+    if (e.target.closest('[data-retry]')) { load(); return; }
     const copy = e.target.closest('[data-copy]');
     if (copy) {
       try { await navigator.clipboard.writeText(copy.dataset.copy); } catch (err) { /* sin portapapeles: se avisa igual */ }
