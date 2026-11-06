@@ -18,4 +18,5 @@
   .gw-page .gw-docs-steps .gw-steps__text { -webkit-line-clamp: unset; display: block; }
   .gw-page .gw-docs-steps .gw-popover { width: auto; left: 0; right: 0; }
 }
-.gw-docs-zip .gw-btn { width: 100%; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); text-align: center; line-height: var(--gw-lh-tight); }
+@media (max-width: 640px) { .gw-docs-zip .gw-btn { width: 100%; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); text-align: center; line-height: var(--gw-lh-tight); } }
+#docList .gw-card-row__actions { margin-top: auto; }
