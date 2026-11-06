@@ -1003,3 +1003,7 @@ Migración `0084_stats_links` (aditiva). Coordinador+ crea, ve y cancela enlaces
 - [x] `PERSON_FORM_ENABLED=1` también en producción (`deploy/gcp/deploy.sh`); cada evento lo activa aparte.
 - [x] Enlaces de solo lectura a estadísticas (`0084_stats_links`, PR #56/#57) en producción.
 - [x] Revisión de seguridad dirigida de 1B y de lo del 5-nov: ver `CIERRE_FASES_0_1.md`.
+
+## Fase 1.5 (rediseño visual) — integración de 16 ramas (2026-11-05)
+Ola 0 + 1 + 2 + 3 integradas en `ux/fase-1-5` (16 ramas `ux/f15-*`, una por pantalla o grupo). Pantallas nuevas agregadas al candado `MIGRADAS`.
+Pendiente de revisión visual en staging (nadie las vio en navegador): ver lista de cada rama. Páginas públicas siguen congeladas.
