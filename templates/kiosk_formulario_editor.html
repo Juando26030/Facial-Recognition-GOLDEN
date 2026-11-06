@@ -1427,7 +1427,7 @@ function qValueHtml(c, ri, ci) {
   return `<input type="text" data-qv="${ri}.${ci}" value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
 }
 let quotaMounts = [];
-function closeAlertHtml(v) {   // misma regla que en estadísticas: verde > 5 días, amarillo entre 2 y 5, rojo con 1 día o menos (o ya pasó); con ⚠ y texto, no solo color
+function closeAlertHtml(v) {   // misma regla que en estadísticas: verde > 5 días, amarillo entre 2 y 5, rojo con 1 día o menos (o ya pasó); con ícono y texto, no solo color
   const t = v ? new Date(v) : null; if (!t || isNaN(t)) return '';
   const d = (t - new Date()) / 864e5, tone = d > 5 ? 'ok' : d > 1 ? 'warn' : 'err', n = Math.ceil(d);
   return `<span class="gw-badge gw-badge--${tone}">${window.gwIcon('alert')} ${d < 0 ? 'La fecha ya pasó' : d < 1 ? 'Falta menos de 1 día' : `Faltan ${n} ${n === 1 ? 'día' : 'días'}`}</span>`;
