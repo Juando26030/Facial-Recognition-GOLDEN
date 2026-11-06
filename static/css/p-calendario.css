@@ -81,3 +81,16 @@
 .ee-modal .cl-select { min-height: var(--gw-tap) !important; font-size: var(--gw-fs-md) !important; border-radius: var(--gw-radius-md) !important; }
 .ee-modal .cl-save, .ee-modal .cl-del { min-height: var(--gw-tap); display: inline-flex; align-items: center; justify-content: center; font-size: var(--gw-fs-sm) !important; padding: 0 var(--gw-sp-4) !important; border-radius: var(--gw-radius-md) !important; background: var(--gw-secondary-bg) !important; color: var(--gw-text) !important; border-color: var(--gw-border-strong) !important; }
 .ee-modal div:has(> .cl-select) { gap: var(--gw-sp-2) !important; }
+
+/* Escritorio (1024 a 1920 px): pie de «Editar evento» en una sola fila, botones a su tamaño natural y «+ recordatorio» sin salirse de la celda */
+.cal-add { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 40.0625rem) {
+  .ee-modal .gw-modal__foot { flex-wrap: nowrap; gap: var(--gw-sp-3); }
+  .ee-modal .gw-modal__foot > .gw-btn { flex: 0 0 auto; }
+  .ee-modal__status { flex: 1 1 0; }
+  .ee-modal__actions { flex-wrap: nowrap; flex: 0 0 auto; }
+  .ee-report__row .gw-btn { flex: 0 1 auto; }
+}
+@media (min-width: 48.0625rem) and (max-width: 75rem) {
+  .cal-add { padding: 0 var(--gw-sp-1); }
+}
