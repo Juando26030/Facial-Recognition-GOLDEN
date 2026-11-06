@@ -83,7 +83,7 @@ body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { 
 /* Registro · pantalla de puerta (Fase 1.7, M2). Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md). Se carga DESPUÉS de design-system.css y registro.css.
 
    CAUSA DEL ATASCO AL DESPLAZAR EN EL CELULAR («no me deja tocar la pantalla para subir y bajar»): .gw-workarea__list (design-system.css) es un contenedor
-   de desplazamiento propio (overflow: auto) con `overscroll-behavior: contain`. En el celular la tabla del directorio es más ancha que la pantalla, así que el dedo cae
+   de desplazamiento propio (overflow: auto) con el atributo overscroll-behavior en modo «contain». En el celular la tabla del directorio es más ancha que la pantalla, así que el dedo cae
    sobre ese contenedor anidado: el navegador le entrega el gesto a él y, con `contain`, no lo pasa a la página; el gesto vertical muere ahí y la persona queda «atrapada».
    Arreglo: en pantallas angostas o táctiles la zona de trabajo NO tiene altura fija ni desplazamiento interno; desplaza SOLO la página (sin scroll anidado) y la tabla
    se ajusta al ancho. Lo fija tests/test_registro_visual.py. */

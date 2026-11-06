@@ -193,7 +193,7 @@ def test_one_hero_search_with_scan_next_to_it_and_the_unified_ids_intact():
     view = _directory_view()
     assert "{% set busq_hero = true %}" in TPL and "gw-search--hero" in BUSC and "gw-search__field" in BUSC and "#i-search" in BUSC
     assert view.count('id="searchCedula"') + BUSC.count('id="searchCedula"') >= 1 and TPL.count("_gw_buscador.html") == 2
-    assert 'id="gwScanMenuBtn" class="gw-btn gw-btn--secondary gw-btn--xl"' in view and "Registrar nuevo" in view
+    assert 'id="scanQrBtn" class="gw-btn gw-btn--secondary gw-btn--xl"' in view and "Registrar nuevo" in view
 
 
 def test_connection_and_verdict_pieces_exist_and_the_offline_alert_stays():
