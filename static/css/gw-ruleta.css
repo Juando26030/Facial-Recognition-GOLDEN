@@ -70,12 +70,13 @@ button.gw-ruleta-item:focus-visible { outline: 3px solid var(--gw-focus); outlin
 /* Revisión de botones (celular): cambio de pantallas en dos mitades iguales con texto centrado que puede partirse; pasos en filas completas (en 1/3 de fila el texto se cortaba a «Defi ne…»);
    botones del enlace del proyector repartidos de forma pareja; la lista de elegidos conserva sus botones sin salirse de su fila. */
 .gw-ruleta-nav .gw-btn { text-align: center; line-height: var(--gw-lh-tight); }
-.gw-ruleta-link .gw-btn { flex: 1 1 auto; }
+@media (min-width: 641px) { .gw-ruleta-link .gw-input { flex: 1 1 14rem; } .gw-ruleta-link .gw-btn { flex: none; } }
 @media (max-width: 640px) {
   .gw-ruleta-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .gw-ruleta-nav .gw-btn { min-width: 0; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); font-size: var(--gw-fs-sm); }
   .gw-ruleta .gw-steps { flex-wrap: wrap; }
   .gw-ruleta .gw-steps > li:not(.gw-steps__guide) { flex: 1 1 100%; }
   .gw-ruleta .gw-steps__text { -webkit-line-clamp: unset; }
+  .gw-ruleta-link .gw-btn { flex: 1 1 auto; }
   .gw-ruleta .gw-actions .gw-btn { flex: 1 1 auto; }
 }
