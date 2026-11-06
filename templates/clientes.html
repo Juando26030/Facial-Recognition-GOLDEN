@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-admin-pages.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-clientes.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/revert-event.js') }}"></script>
@@ -60,14 +61,14 @@
         {% call ayuda('ay_cli3', 'Crea el evento') %}Dentro de la cuenta abierta, «Nuevo evento» te lleva al asistente para crearlo. Crear un cliente nuevo está en el grupo de abajo.{% endcall %}</li>
     </ol>
 
-    <div class="gw-field" data-gw-tour-step="1" data-gw-tour-title="1. Busca la cuenta" data-gw-tour-text="Escribe parte del nombre del cliente o de la cuenta; la lista se filtra mientras escribes.">
-      <label class="gw-label" for="searchBox">Buscar por nombre de cliente/cuenta</label>
-      <input type="search" id="searchBox" class="gw-input" placeholder="Buscar por nombre de cliente/cuenta..." autocomplete="off">
+    <div class="gw-search gw-search--hero" data-gw-tour-step="1" data-gw-tour-title="1. Busca la cuenta" data-gw-tour-text="Escribe parte del nombre del cliente o de la cuenta; la lista se filtra mientras escribes.">
+      <label class="gw-sr-only" for="searchBox">Buscar por nombre de cliente/cuenta</label>
+      <div class="gw-search__row"><div class="gw-search__field">{{ ic('search', 'gw-search__icon') }}<input type="search" id="searchBox" class="gw-input" placeholder="Buscar cliente o cuenta..." autocomplete="off"></div></div>
     </div>
 
     {% if staff_role != "coordinador" %}
     <details class="gw-group" id="newTenantGroup">
-      <summary class="gw-group__sum">{{ ic('plus', 'gw-icon--sm') }} Nuevo cliente/cuenta</summary>
+      <summary class="gw-group__sum p-cli__sum">{{ ic('plus', 'gw-icon--sm') }} Nuevo cliente/cuenta</summary>
       <div class="gw-group__body">
         <form id="newTenantForm" class="gw-stack">
           <div class="gw-field">

@@ -8,7 +8,7 @@
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
   function toast(msg, kind) { if (window.showToast) window.showToast(msg, kind || 'info'); }
   function busy(btn, work) { return window.GW && window.GW.busy ? window.GW.busy(btn, work) : Promise.resolve(work()); }
-  var viz = window.GWViz || { palette: function () { return ['#1e2a6e', '#b8862b', '#0f766e', '#b3365a', '#6a3fa0', '#c25e00', '#2c7bb6', '#6b7a2c']; }, token: function () { return ''; }, onTheme: function () {} };
+  var viz = window.GWViz;          // lo define analytics-dashboard.js, que la plantilla carga antes
 
   /* ---------- Fotos y rostros del evento (solo admin) ---------- */
   var purgeBtn = $('purgePhotosBtn');

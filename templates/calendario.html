@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     {% include "_gw_head.html" %}
     <link rel="stylesheet" href="{{ url_for('static', path='css/gw-eventos.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/p-calendario.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
@@ -46,7 +47,7 @@
         <p class="gw-page-head__sub">Los eventos y recordatorios del equipo, por mes, semana o día.</p>
       </div>
       <div class="gw-page-head__actions">
-        <button type="button" class="gw-btn gw-btn--secondary" id="addNoteTodayBtn" data-gw-tour-step="3" data-gw-tour-title="3. Crea un recordatorio" data-gw-tour-text="Agrega una nota para una fecha. Puedes elegir a quién le llega o dejarla para todo el equipo.">{{ ic('plus', 'gw-icon--sm') }} Agregar recordatorio</button>
+        <button type="button" class="gw-btn gw-btn--primary gw-btn--xl" id="addNoteTodayBtn" data-gw-tour-step="3" data-gw-tour-title="3. Crea un recordatorio" data-gw-tour-text="Agrega una nota para una fecha. Puedes elegir a quién le llega o dejarla para todo el equipo.">{{ ic('plus', 'gw-icon--sm') }} Agregar recordatorio</button>
         <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-gw-tour-restart="calendario">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
       </div>
     </div>
@@ -62,15 +63,15 @@
 
     <div class="cal-toolbar" data-gw-tour-step="1" data-gw-tour-title="1. Mira el mes" data-gw-tour-text="Cambia de periodo con las flechas, vuelve con «Hoy» y elige Mes, Semana o Día. Toca un evento para editarlo.">
       <div class="cal-nav">
-        <button type="button" class="gw-btn gw-btn--secondary cal-prev" id="prevBtn" aria-label="Periodo anterior">{{ ic('chevron') }}</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl cal-prev" id="prevBtn" aria-label="Periodo anterior">{{ ic('chevron') }}</button>
         <h2 class="cal-nav__label" id="rangeLabel" aria-live="polite"></h2>
-        <button type="button" class="gw-btn gw-btn--secondary cal-next" id="nextBtn" aria-label="Periodo siguiente">{{ ic('chevron') }}</button>
-        <button type="button" class="gw-btn gw-btn--secondary" id="todayBtn">Hoy</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl cal-next" id="nextBtn" aria-label="Periodo siguiente">{{ ic('chevron') }}</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" id="todayBtn">Hoy</button>
       </div>
       <div class="cal-views" role="group" aria-label="Vista del calendario">
-        <button type="button" class="gw-btn gw-btn--secondary" data-view="month" aria-pressed="true">Mes</button>
-        <button type="button" class="gw-btn gw-btn--secondary" data-view="week" aria-pressed="false">Semana</button>
-        <button type="button" class="gw-btn gw-btn--secondary" data-view="day" aria-pressed="false">Día</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-view="month" aria-pressed="true">Mes</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-view="week" aria-pressed="false">Semana</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" data-view="day" aria-pressed="false">Día</button>
       </div>
     </div>
 
@@ -116,8 +117,8 @@
       </div>
     </div>
     <div class="gw-modal__foot">
-      <button type="button" class="gw-btn gw-btn--secondary" id="noteModalCancel">Cancelar</button>
-      <button type="button" class="gw-btn gw-btn--primary" id="noteModalSave">Guardar recordatorio</button>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--xl" id="noteModalCancel">Cancelar</button>
+      <button type="button" class="gw-btn gw-btn--primary gw-btn--xl" id="noteModalSave">Guardar recordatorio</button>
     </div>
   </div>
 </div>

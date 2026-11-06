@@ -1,0 +1,8 @@
+/* Clientes (Fase 1.7): tarjetas con mucho aire y «+ Nuevo evento» como acción principal grande. Solo tokens --gw-*. */
+.p-cli__sum { min-height: var(--gw-tap-lg); }
+.gw-cards--tenants { gap: var(--gw-sp-5); }
+.gw-cards--tenants .gw-card-row { padding: var(--gw-sp-5); gap: var(--gw-sp-4); }
+.gw-cards--tenants .gw-card-row__title { font-size: var(--gw-fs-xl); }
+.gw-cards--tenants .gw-tenant__head { min-height: var(--gw-tap-lg); }
+.p-cli__new { align-self: stretch; }
+@media (min-width: 40rem) { .p-cli__new { align-self: flex-start; } }

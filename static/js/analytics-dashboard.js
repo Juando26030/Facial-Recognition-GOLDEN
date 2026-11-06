@@ -79,8 +79,9 @@
         <div class="ad-tools"><span class="ad-updated" role="status" aria-live="polite"></span>
           <button type="button" class="ad-refresh">Actualizar</button></div>
       </div>
+      ${opts.stats ? '<p class="ad-state" role="status">Cargando las cifras…</p>' : ''}
       <div class="ad-kpis"></div>
-      <div class="ad-charts${opts.large ? ' ad-charts--large' : ''}"></div>
+      <div class="ad-charts${opts.large ? ' ad-charts--large' : ''}${opts.stats ? ' ad-charts--wide' : ''}"></div>
       <p class="ad-empty" hidden>Todavía no hay datos para mostrar. Aparecen aquí apenas llegue el primer registro.</p>`;
     const q = (c) => container.querySelector(c);
     const charts = {};
@@ -118,11 +119,25 @@
       });
     }
 
+    /* Modo { stats: true } (Estadísticas del evento): las 3 primeras cifras van grandes (.gw-stat dentro de .gw-stats-row) y las demás quedan como cifras pequeñas debajo. */
+    function paintStats(kpis) {
+      const icon = (n) => `<svg class="gw-icon gw-stat__icon" aria-hidden="true"><use href="${esc(opts.icons || '')}#i-${n}"/></svg>`;
+      const ICONS = ['users', 'check', 'clock'];
+      const big = kpis.slice(0, 3), rest = kpis.slice(3);
+      const cls = { good: ' gw-stat--ok', warn: ' gw-stat--warn', bad: ' gw-stat--err' };
+      q('.ad-kpis').className = 'ad-kpis ad-kpis--stats';
+      q('.ad-kpis').innerHTML = `<div class="gw-stats-row${big.length === 2 ? ' gw-stats-row--2' : ''}">` + big.map((k, i) => `<div class="gw-stat${cls[k.tone] || ''}">${icon(ICONS[i])}
+        <div class="gw-stat__value">${esc(k.value)}</div><div class="gw-stat__label">${esc(k.label)}</div><div class="gw-stat__hint">${esc(k.hint)}</div></div>`).join('') + '</div>'
+        + (rest.length ? '<div class="ad-kpis">' + rest.map((k) => `<div class="ad-kpi${TONE_CLASS[k.tone] || ''}"><div class="ad-kpi__label">${esc(k.label)}</div><div class="ad-kpi__value">${esc(k.value)}</div><div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('') + '</div>' : '');
+    }
+
     function paint(data) {
       lastData = data;
+      const st = q('.ad-state'); if (st) st.hidden = true;
       q('.ad-title').textContent = data.title || 'Panel de analítica';
       q('.ad-updated').textContent = 'Actualizado ' + new Date(data.generated_at).toLocaleTimeString();
-      q('.ad-kpis').innerHTML = data.kpis.map((k) => `<div class="ad-kpi${TONE_CLASS[k.tone] || ''}">
+      if (opts.stats) paintStats(data.kpis);
+      else q('.ad-kpis').innerHTML = data.kpis.map((k) => `<div class="ad-kpi${TONE_CLASS[k.tone] || ''}">
         <div class="ad-kpi__label">${esc(k.label)}</div>
         <div class="ad-kpi__value">${esc(k.value)}</div>
         <div class="ad-kpi__hint">${esc(k.hint)}</div></div>`).join('');
@@ -153,7 +168,10 @@
         const res = await fetch(url);
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'No se pudo cargar la analítica');
         paint(await res.json());
-      } catch (e) { q('.ad-updated').textContent = e.message; }
+      } catch (e) {
+        q('.ad-updated').textContent = e.message;
+        const st = q('.ad-state'); if (st && !lastData) { st.hidden = false; st.className = 'ad-state ad-state--err'; st.textContent = e.message + '. Usa «Actualizar» para intentar de nuevo.'; }
+      }
     }
     const refresh = q('.ad-refresh');
     refresh.addEventListener('click', () => { if (window.GW && window.GW.busy) window.GW.busy(refresh, load).catch(() => {}); else load(); });

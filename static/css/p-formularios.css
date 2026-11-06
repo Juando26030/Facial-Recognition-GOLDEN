@@ -1,0 +1,7 @@
+/* Formularios web (lista) · Fase 1.7: acción principal grande y cifras dentro de la tarjeta. Solo tokens --gw-*. */
+.gw-forms-main { min-height: var(--gw-tap-lg); font-size: var(--gw-fs-lg); }
+.gw-forms-main[hidden] { display: none; }
+.gw-forms-more { margin-top: 0; }
+.gw-forms-more .gw-card-row__actions { padding-bottom: var(--gw-sp-3); }
+.gw-card-row .gw-stats-row .gw-stat { padding: var(--gw-sp-3); border-width: 1px; box-shadow: none; }
+.gw-card-row .gw-stats-row .gw-stat__value { font-size: var(--gw-fs-2xl); }

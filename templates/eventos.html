@@ -64,7 +64,7 @@
     </ol>
 
     <section aria-label="Filtros de eventos">
-      <div class="ev-filters" data-gw-tour-step="1" data-gw-tour-title="1. Filtra" data-gw-tour-text="Busca por nombre o código y filtra por estado. La lista se actualiza sola mientras escribes.">
+      <div class="ev-filters gw-card-row" data-gw-tour-step="1" data-gw-tour-title="1. Filtra" data-gw-tour-text="Busca por nombre o código y filtra por estado. La lista se actualiza sola mientras escribes.">
         <div class="gw-field"><label class="gw-label" for="searchBox">Buscar</label>
           <input type="search" id="searchBox" class="gw-input" placeholder="Nombre o código de evento" autocomplete="off"></div>
         <div class="gw-field"><label class="gw-label" for="statusFilter">Estado</label>
@@ -108,19 +108,29 @@ function fmtDate(d) { return d ? new Date(d).toLocaleDateString() : "-"; }
 function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 const STATUS_LABELS = { creado: "Creado", en_proceso: "En Proceso", finalizado: "Finalizado" };
+const STATUS_ICON = { creado: "plus", en_proceso: "clock", finalizado: "check" };
 const STATUS_BADGE = { creado: "gw-badge--info", en_proceso: "gw-badge--ok", finalizado: "" };
 
+function fmtRange(e) {
+  const a = fmtDate(e.start_date);
+  return e.end_date && e.end_date !== e.start_date ? `${a} al ${fmtDate(e.end_date)}` : a;
+}
+function metaRow(name, html) { return `<p class="ev-card__row">${icon(name, "gw-icon--sm")}<span>${html}</span></p>`; }
+
 function eventCard(e) {
+  const place = [e.city, e.country].filter(Boolean).map(esc).join(", ");
   return `
     <article class="gw-card-row ev-card" aria-label="${esc(e.name)}">
-      <div class="gw-card-row__head">
+      <div class="gw-card-row__head ev-card__head">
         <h3 class="gw-card-row__title ev-card__title">${esc(e.name)} ${e.event_code ? `<span class="ev-card__code">(${esc(e.event_code)})</span>` : ""}</h3>
-        <span class="gw-badge ${STATUS_BADGE[e.status] || ""}">${esc(STATUS_LABELS[e.status] || e.status)}</span>
+        <span class="gw-badge ev-card__state ${STATUS_BADGE[e.status] || ""}">${icon(STATUS_ICON[e.status] || "info", "gw-icon--sm")} ${esc(STATUS_LABELS[e.status] || e.status)}</span>
       </div>
       <div class="ev-card__meta">
-        <p class="gw-card-row__meta">${esc(e.tenant_name)} · ${esc(e.city) || ""}${e.country ? ", " + esc(e.country) : ""} · ${fmtDate(e.start_date)}</p>
-        <p class="gw-card-row__meta">Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}${e.super_event_name ? ` · ${icon("link", "gw-icon--sm")} Superevento: ${esc(e.super_event_name)}` : ""}</p>
-        <p class="gw-card-row__meta">${reportBulbHtml(e)}</p>
+        ${metaRow("building", `<strong>${esc(e.tenant_name)}</strong>${place ? " · " + place : ""}`)}
+        ${metaRow("calendar", fmtRange(e))}
+        ${metaRow("users", `Comercial: ${esc(e.commercial_name) || "—"} · Coordinador: ${esc(e.coordinator_name) || "—"}`)}
+        ${e.super_event_name ? metaRow("link", `Superevento: ${esc(e.super_event_name)}`) : ""}
+        <p class="ev-card__row ev-card__row--plain">${reportBulbHtml(e)}</p>
       </div>
       <div class="ev-card__bar">
         <div class="gw-field"><label class="gw-label" for="st_${e.id}">Cambiar estado</label>
@@ -131,10 +141,10 @@ function eventCard(e) {
           </select></div>
       </div>
       <div class="gw-card-row__actions ev-card__actions">
+        <a class="gw-btn gw-btn--primary gw-btn--xl ev-card__enter" href="/kiosk/${e.id}">Ingresar ${icon("chevron", "gw-icon--sm")}</a>
         <button type="button" class="gw-btn gw-btn--secondary" data-edit-event="${e.id}">${icon("edit", "gw-icon--sm")} Editar</button>
         ${CAN_REVERT && e.status === "en_proceso" ? `<button type="button" class="gw-btn gw-btn--secondary" data-revert-event="${e.id}" title="Devolver el evento a Creado (no se borra nada)">${icon("undo", "gw-icon--sm")} Devolver a Creado</button>` : ""}
         ${STAFF_ROLE === "super_admin" ? `<button type="button" class="gw-btn gw-btn--secondary" data-export-event="${e.id}" data-event-name="${esc(e.name)}" title="Exportar el evento completo (paquete .zip)">${icon("download", "gw-icon--sm")} Exportar</button>` : ""}
-        <a class="gw-btn gw-btn--primary ev-card__enter" href="/kiosk/${e.id}">Ingresar ${icon("chevron", "gw-icon--sm")}</a>
       </div>
     </article>
   `;

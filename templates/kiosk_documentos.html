@@ -56,42 +56,54 @@
       </div>
     </div>
 
-    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
-      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Sube el archivo</span>
-        {% call ayuda('ay_doc1', 'Sube el archivo') %}Elige el archivo en tu equipo (PDF, Word, Excel, PowerPoint, texto o imagen; máximo 25 MB).{% endcall %}</li>
-      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Ponle nombre</span>
-        {% call ayuda('ay_doc2', 'Ponle nombre') %}El nombre o referencia es lo que verás en la lista; la descripción es opcional y ayuda a encontrarlo después.{% endcall %}</li>
-      <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Compártelo</span>
-        {% call ayuda('ay_doc3', 'Compártelo') %}Descarga un documento o todos juntos en un ZIP. Eliminar no se puede deshacer.{% endcall %}</li>
-    </ol>
-
-    <form id="docForm" class="gw-card gw-stack" data-gw-tour-step="1" data-gw-tour-title="1. Sube el archivo" data-gw-tour-text="Elige el archivo, ponle un nombre y pulsa «Adjuntar documento».">
-      <h2 class="gw-card__title">Adjuntar un documento</h2>
+    <form id="docForm" class="gw-card gw-stack" data-gw-tour-step="1" data-gw-tour-title="1. Sube el archivo" data-gw-tour-text="Elige el archivo, ponle un nombre y pulsa «Subir documento».">
+      <h2 class="gw-card__title">Subir un documento</h2>
       <div class="gw-fields-row gw-fields-row--2">
-        <div class="gw-field">
-          <label class="gw-label" for="docName">Nombre o referencia *</label>
-          <input class="gw-input" type="text" id="docName" name="name" required placeholder="Ej. Contrato de logística">
-        </div>
         <div class="gw-field">
           <label class="gw-label" for="docFile">Archivo *</label>
           <input class="gw-input" type="file" id="docFile" name="file" required aria-describedby="docFileHelp">
           <p id="docFileHelp" class="gw-hint">PDF, Word, Excel, PowerPoint, TXT o imágenes. Máximo 25 MB.</p>
         </div>
+        <div class="gw-field">
+          <label class="gw-label" for="docName">Nombre o referencia *</label>
+          <input class="gw-input" type="text" id="docName" name="name" required placeholder="Ej. Contrato de logística">
+        </div>
       </div>
-      <div class="gw-field">
-        <label class="gw-label" for="docDescription">Descripción</label>
-        <textarea class="gw-textarea" id="docDescription" name="description" rows="2" placeholder="De qué trata este documento"></textarea>
-      </div>
+      <details class="gw-form-group">
+        <summary class="gw-form-group__summary">Agregar una descripción (opcional)</summary>
+        <div class="gw-form-group__body">
+          <div class="gw-field">
+            <label class="gw-label" for="docDescription">Descripción</label>
+            <textarea class="gw-textarea" id="docDescription" name="description" rows="2" placeholder="De qué trata este documento"></textarea>
+          </div>
+        </div>
+      </details>
       <div class="gw-actions">
-        <button type="submit" class="gw-btn gw-btn--primary">Adjuntar documento</button>
+        <button type="submit" class="gw-btn gw-btn--primary gw-docs-main">{{ ic('upload') }} Subir documento</button>
       </div>
     </form>
 
-    <section class="gw-card gw-stack" aria-labelledby="docListTitle" data-gw-tour-step="3" data-gw-tour-title="3. Compártelo" data-gw-tour-text="Descarga cada documento o todos juntos en un ZIP.">
-      <div class="gw-row gw-row--between">
-        <h2 class="gw-card__title" id="docListTitle">Documentos adjuntos <span id="docCount" class="gw-muted"></span></h2>
-        <a id="zipBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/documents/zip" hidden>{{ ic('download', 'gw-icon--sm') }} Descargar todos (ZIP)</a>
+    <details class="gw-form-group">
+      <summary class="gw-form-group__summary">¿Cómo funciona?</summary>
+      <div class="gw-form-group__body">
+        <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+          <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Sube el archivo</span>
+            {% call ayuda('ay_doc1', 'Sube el archivo') %}Elige el archivo en tu equipo (PDF, Word, Excel, PowerPoint, texto o imagen; máximo 25 MB).{% endcall %}</li>
+          <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Ponle nombre</span>
+            {% call ayuda('ay_doc2', 'Ponle nombre') %}El nombre o referencia es lo que verás en la lista; la descripción es opcional y ayuda a encontrarlo después.{% endcall %}</li>
+          <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Compártelo</span>
+            {% call ayuda('ay_doc3', 'Compártelo') %}Descarga un documento o todos juntos en un ZIP. Eliminar no se puede deshacer.{% endcall %}</li>
+        </ol>
       </div>
+    </details>
+
+    <section class="gw-card gw-stack" aria-labelledby="docListTitle" data-gw-tour-step="3" data-gw-tour-title="3. Compártelo" data-gw-tour-text="Descarga cada documento o todos juntos en un ZIP.">
+      <div class="gw-stats-row gw-stats-row--2">
+        <div class="gw-stat">{{ ic('inbox', 'gw-stat__icon') }}<span class="gw-stat__value" id="docTotal">0</span><span class="gw-stat__label">Documentos</span></div>
+        <div class="gw-stat gw-docs-zip">{{ ic('download', 'gw-stat__icon') }}<span class="gw-stat__label">Todos juntos</span>
+          <a id="zipBtn" class="gw-btn gw-btn--secondary gw-btn--sm" href="/api/events/{{ event.id }}/documents/zip" hidden>Descargar (ZIP)</a></div>
+      </div>
+      <h2 class="gw-card__title" id="docListTitle">Documentos adjuntos <span id="docCount" class="gw-muted"></span></h2>
       <div id="docList" class="gw-cards" aria-live="polite" aria-busy="true">
         <span class="gw-skeleton" role="status"><span class="gw-sr-only">Cargando documentos…</span></span>
       </div>

@@ -26,19 +26,21 @@
       return;
     }
     $('totalAmount').textContent = money(data.total);
+    $('expCount').textContent = String(data.expenses.length);
     if (!data.expenses.length) {
-      setList('<div class="gw-empty">' + icon('form') + '<p>Todavía no hay gastos registrados.</p><p class="gw-hint">Agrega el primero con el formulario de arriba.</p></div>');
+      setList('<div class="gw-state">' + icon('form') + '<p class="gw-state__title">Todavía no hay gastos</p><p class="gw-state__text">Registra el primero con el botón «Registrar gasto» de arriba.</p></div>');
       return;
     }
     setList(data.expenses.map((x) => `
       <article class="gw-card-row">
         <div class="gw-card-row__head">
           <h3 class="gw-card-row__title">${esc(x.category)}</h3>
-          <span class="gw-badge">${money(x.amount)}</span>
+          <span class="gw-badge ${x.has_evidence ? 'gw-badge--ok' : 'gw-badge--warn'}">${x.has_evidence ? 'Con evidencia' : 'Sin evidencia'}</span>
         </div>
+        <p class="gw-card-row__amount">${money(x.amount)}</p>
         <p class="gw-card-row__meta">${x.created_at ? new Date(x.created_at + 'Z').toLocaleDateString() + ' · ' : ''}Responsable: ${esc(x.responsible)}${x.applies_to ? ' · Aplica a: ' + esc(x.applies_to) : ''}</p>
         ${x.description ? `<p class="gw-text-sm">${esc(x.description)}</p>` : ''}
-        ${x.has_evidence ? `<a href="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" target="_blank" rel="noopener" aria-label="Abrir la evidencia en una pestaña nueva"><img class="gw-card-row__thumb" src="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" alt="Evidencia del gasto" loading="lazy"></a>` : '<p class="gw-hint">Sin evidencia adjunta</p>'}
+        ${x.has_evidence ? `<a href="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" target="_blank" rel="noopener" aria-label="Abrir la evidencia en una pestaña nueva"><img class="gw-card-row__thumb" src="/api/events/${EVENT_ID}/expenses/${x.id}/evidence" alt="Evidencia del gasto" loading="lazy"></a>` : ''}
         <div class="gw-card-row__actions">
           <button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-del="${x.id}">${icon('trash')} Eliminar</button>
         </div>
@@ -55,7 +57,7 @@
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'No se pudo guardar el gasto');
     }).then(() => {
       form.reset();
-      showToast('Gasto agregado', 'success');
+      showToast('Gasto registrado', 'success');
       loadExpenses();
     }).catch((err) => showToast(err.message || 'No se pudo guardar el gasto', 'error'));
   });

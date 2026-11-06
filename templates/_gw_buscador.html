@@ -1,6 +1,6 @@
 {# Buscador único del directorio (Fase 1A, pieza 1). Una sola caja: cédula, nombre, empresa o lo que escupe el lector/QR. Mantiene id="searchCedula" para que el lector, el
    modo touch y shared-print.js sigan funcionando igual. Variable opcional: busq_disabled (verdadero = la caja se deshabilita). Solo tokens y clases .gw-*. #}
-<div class="gw-search" id="gwSearch" role="search"{% if busq_tour %} data-gw-tour-step="1" data-gw-tour-title="1. Busca a la persona" data-gw-tour-text="Escribe o escanea la cédula, el nombre o la empresa. Las coincidencias salen abajo, con el motivo."{% endif %}>
+<div class="gw-search{% if busq_hero %} gw-search--hero{% endif %}" id="gwSearch" role="search"{% if busq_tour %} data-gw-tour-step="1" data-gw-tour-title="1. Busca a la persona" data-gw-tour-text="Escribe o escanea la cédula, el nombre o la empresa. Las coincidencias salen abajo, con el motivo."{% endif %}>
   <div class="gw-row gw-row--between">
     <label class="gw-label" for="searchCedula">Buscar a la persona</label>
     <div class="gw-help">
@@ -16,8 +16,10 @@
     </div>
   </div>
   <div class="gw-search__row">
+    {% if busq_hero %}<div class="gw-search__field"><svg class="gw-icon gw-search__icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-search"/></svg>{% endif %}
     <input class="gw-input" type="text" id="searchCedula" inputmode="text" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus
            placeholder="Escribe o escanea: cédula, nombre o empresa" {% if busq_disabled %}disabled{% endif %}>
+    {% if busq_hero %}</div>{% endif %}
     <button type="button" class="gw-btn gw-btn--secondary gw-search__clear" id="searchClearBtn" aria-label="Borrar lo escrito" title="Borrar lo escrito" hidden><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-trash"></use></svg></button>
   </div>
   <p class="gw-hint" id="gwSearchHint" aria-live="polite"></p>

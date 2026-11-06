@@ -61,6 +61,8 @@
           <h2>Registro y acceso</h2>
           {% if staff_role != "cliente" %}<p class="gw-hint gw-registro__steps"><b>1</b> Busca por cédula, nombre o empresa · <b>2</b> Acredita · <b>3</b> Imprime la escarapela</p>{% endif %}
         </div>
+        <div class="gw-registro__headside">
+        <span id="gwConn" class="gw-conn" role="status" aria-live="polite"><svg class="gw-icon" aria-hidden="true"><use id="gwConnIcon" href="{{ url_for('static', path='img/icons.svg') }}#i-wifi"/></svg><span id="gwConnText">En línea</span></span>
         {% if staff_role != "cliente" %}
         {# Plan 7 (Registro limpio): TODA la configuración del registro (impresora, «Impresión», autoregistro, auto-impresión) vive en este panel, cerrado por defecto. El panel SIEMPRE existe (la barra de impresión se monta aquí aunque la persona no vea el engranaje); el engranaje solo lo ve quien corresponda (app/registro_gear.py). Solo visual: no cambia permisos ni lo ya configurado. #}
         <div class="gw-regcfg">
@@ -81,6 +83,7 @@
           </section>
         </div>
         {% endif %}
+        </div>
       </div>
       {% if event.face_door_enabled and event.facial_enabled %}
       <div id="doorStrip" class="gw-card gw-registro__door">
@@ -133,7 +136,7 @@
         <div id="directorio" class="section">
             <div class="gw-workarea" id="gwWorkarea">
                 <div class="gw-workarea__bar">
-                    {% if search_unified %}{% set busq_disabled = false %}{% include "_gw_buscador.html" %}{% else %}
+                    {% if search_unified %}{% set busq_disabled = false %}{% set busq_hero = true %}{% include "_gw_buscador.html" %}{% else %}
                     <div class="gw-toolbar">
                         <div class="gw-toolbar__grow"><label class="gw-label" for="searchCedula">Buscar por {{ field_labels.id|lower }}</label><input class="gw-input" type="text" id="searchCedula" placeholder="{{ field_labels.id }}" autocomplete="off" inputmode="numeric"></div>
                         <div class="gw-toolbar__grow"><label class="gw-label" for="searchNombre">Buscar por nombre</label><input class="gw-input" type="text" id="searchNombre" placeholder="Nombre o apellido" autocomplete="off"></div>
@@ -218,15 +221,15 @@
                 <div class="gw-workarea__bar">
                     <div class="gw-toolbar">
                         <div class="gw-toolbar__grow">
-                            {% if search_unified %}{% set busq_disabled = off %}{% include "_gw_buscador.html" %}{% else %}
+                            {% if search_unified %}{% set busq_disabled = off %}{% set busq_hero = true %}{% include "_gw_buscador.html" %}{% else %}
                             <label class="gw-label" for="searchCedula">Buscar por {{ field_labels.id|lower }}</label>
                             <input class="gw-input" type="text" id="searchCedula" placeholder="Escanea o escribe la cédula" autocomplete="off" inputmode="numeric" autofocus {% if off %}disabled{% endif %}>
                             {% endif %}
                         </div>
                         <div class="gw-toolbar__actions">
-                            <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary" aria-label="Escanear: código QR o cédula, con la cámara" {% if off %}disabled{% endif %}>
+                            <button type="button" id="scanQrBtn" class="gw-btn gw-btn--secondary gw-btn--xl" aria-label="Escanear: código QR o cédula, con la cámara" {% if off %}disabled{% endif %}>
                                 <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-qr"/></svg>Escanear</button>
-                            <button type="button" id="openRegisterModalBtn" class="gw-btn gw-btn--primary" {% if off %}disabled title="El evento no está en proceso"{% endif %}>
+                            <button type="button" id="openRegisterModalBtn" class="gw-btn gw-btn--primary gw-btn--xl" {% if off %}disabled title="El evento no está en proceso"{% endif %}>
                                 <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-user-plus"/></svg>Registrar nuevo</button>
                         </div>
                     </div>
@@ -236,6 +239,11 @@
                         <div class="gw-toolbar__grow"><label class="gw-label" for="searchEntidad">Buscar por {{ field_labels.entity|lower }}</label><input class="gw-input" type="text" id="searchEntidad" placeholder="{{ field_labels.entity }}" autocomplete="off"></div>
                     </div>
                     {% endif %}
+                    {# Veredicto de la última acción (acreditado / ya registrado / no está en la lista): lo llena static/js/registro-veredicto.js; oculto hasta que haya algo que decir. #}
+                    <div id="gwVerdict" class="gw-verdict" role="status" hidden>
+                        <svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use id="gwVerdictIcon" href="{{ url_for('static', path='img/icons.svg') }}#i-info"/></svg>
+                        <div class="gw-verdict__body"><p id="gwVerdictTitle" class="gw-verdict__title"></p><p id="gwVerdictText" class="gw-verdict__text"></p></div>
+                    </div>
                 </div>
                 <div class="gw-workarea__summary" id="gwDirSummary"><button type="button" id="clearFiltersBtn" class="gw-chip">Limpiar filtros</button></div>
                 <div class="gw-workarea__list gw-reg__list" data-gw-tour-step="3" data-gw-tour-title="3. Imprime la escarapela" data-gw-tour-text="En la misma fila pulsa «Imprimir». Con «Editar» corriges los datos de la persona.">
@@ -253,34 +261,7 @@
 
         <!-- Modal flotante "Registrar nuevo" (reemplaza la vieja pestaña "Registro Individual") —
              mismos campos de siempre, incluida la foto si el evento es biométrico. -->
-        <div id="registerModal" class="gw-registro__overlay" role="dialog" aria-modal="true" aria-label="Registro de nuevo personal">
-            <div class="gw-card gw-registro__modal">
-                <form id="regForm" class="golden-badge-builder">
-                    <fieldset class="gw-registro__fieldset" {% if event.status != "en_proceso" %}disabled{% endif %}>
-                    <!-- A4 (26-oct-2026): título, Cancelar y Guardar en un encabezado FIJO: visibles aunque el formulario sea largo (computador, tablet y celular). -->
-                    <div class="gw-modal-head gw-registro__modalhead">
-                        <h2 class="badge-form-title gw-registro__modaltitle">Registro de nuevo personal</h2>
-                        <button type="button" id="closeRegisterModalBtn" class="gw-btn gw-btn--secondary">Cancelar</button>
-                        <button type="submit" class="gw-btn gw-btn--primary">Guardar{{ " Perfil Biométrico" if event.facial_enabled else "" }}</button>
-                    </div>
-                    {% if event.status != "en_proceso" %}<p class="gw-alert gw-alert--err gw-text-sm" role="status">Deshabilitado: el evento no está en proceso.</p>{% endif %}
-
-                    <!-- B3 (26-oct-2026): la cédula se escanea (lector o QR) en el MISMO campo de cédula/ID de abajo; con la cédula NUEVA se marca la casilla y aparecen
-                         «Escanear cédula» (cámara directa: código de barras o foto del reverso, se lee la MRZ). Si la lectura trae nombres y apellidos, llena el formulario. -->
-                    <label class="gw-check"><input type="checkbox" id="regNewCedulaChk"> ¿Es cédula nueva?</label>
-                    <div id="regNewCedulaBox" hidden class="gw-card">
-                        <div class="gw-rowact">
-                            <button type="button" id="regScanMrzCameraBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-camera"/></svg>Escanear cédula</button>
-                        </div>
-                        <p class="gw-hint">Se abre la cámara: lee el código de barras del reverso o, si no lo lee, toma la foto del reverso de la cédula nueva (se leen la cédula, los nombres y los apellidos).</p>
-                    </div>
-
-                    <!-- Todos los campos (identidad + fijos + opcionales) en UNA lista ordenada según
-                         Parámetros del Evento (reunión 2026-09-21, ítems 3a/4): etiqueta propia del
-                         evento y orden arrastrable. La identidad (nombres/apellidos/cédula) conserva
-                         sus `name`/`id` de siempre — otros scripts (lector de cédula, OCR) los buscan. -->
-                    <div id="dynamicFieldsContainer">
-                        {% for cfg in field_configs %}
+{% macro reg_field(cfg) %}
                         <div class="gw-field badge-input-group" data-field-key="{{ cfg.key }}">
                             {% set fid = "manualIdField" if (cfg.locked and cfg.key == "id") else ("regBirth" if cfg.field_type == "date" else "regF_" ~ cfg.key) %}
                             <label class="gw-label"{% if cfg.field_type not in ("categories", "certificate", "digital_contact", "consent", "signature", "email") %} for="{{ fid }}"{% endif %}>{{ cfg.label }}{% if cfg.required or (cfg.locked and cfg.key != "last_name" and cfg.field_type not in ("categories", "certificate", "digital_contact", "date")) %} *{% endif %}</label>
@@ -310,10 +291,51 @@
                             <input type="{{ 'email' if cfg.key == 'email' else 'text' }}" name="{{ cfg.key }}" id="{{ fid }}" class="gw-input" {% if cfg.required %}required{% endif %}>
                             {% endif %}
                         </div>
-                        {% endfor %}
+{% endmacro %}
+        <div id="registerModal" class="gw-registro__overlay" role="dialog" aria-modal="true" aria-label="Registro de nuevo personal">
+            <div class="gw-card gw-registro__modal">
+                <form id="regForm" class="golden-badge-builder">
+                    <fieldset class="gw-registro__fieldset" {% if event.status != "en_proceso" %}disabled{% endif %}>
+                    <!-- A4 (26-oct-2026): título, Cancelar y Guardar en un encabezado FIJO: visibles aunque el formulario sea largo (computador, tablet y celular). -->
+                    <div class="gw-modal-head gw-registro__modalhead">
+                        <h2 class="badge-form-title gw-registro__modaltitle">Registro de nuevo personal</h2>
+                        <button type="button" id="closeRegisterModalBtn" class="gw-btn gw-btn--secondary">Cancelar</button>
+                        <button type="submit" class="gw-btn gw-btn--primary gw-btn--xl">Guardar{{ " Perfil Biométrico" if event.facial_enabled else "" }}</button>
+                    </div>
+                    {% if event.status != "en_proceso" %}<p class="gw-alert gw-alert--err gw-text-sm" role="status">Deshabilitado: el evento no está en proceso.</p>{% endif %}
+
+                    <!-- B3 (26-oct-2026): la cédula se escanea (lector o QR) en el MISMO campo de cédula/ID de abajo; con la cédula NUEVA se marca la casilla y aparecen
+                         «Escanear cédula» (cámara directa: código de barras o foto del reverso, se lee la MRZ). Si la lectura trae nombres y apellidos, llena el formulario. -->
+                    <label class="gw-check"><input type="checkbox" id="regNewCedulaChk"> ¿Es cédula nueva?</label>
+                    <div id="regNewCedulaBox" hidden class="gw-card">
+                        <div class="gw-rowact">
+                            <button type="button" id="regScanMrzCameraBtn" class="gw-btn gw-btn--secondary"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-camera"/></svg>Escanear cédula</button>
+                        </div>
+                        <p class="gw-hint">Se abre la cámara: lee el código de barras del reverso o, si no lo lee, toma la foto del reverso de la cédula nueva (se leen la cédula, los nombres y los apellidos).</p>
+                    </div>
+
+                    <!-- Todos los campos (identidad + fijos + opcionales) en UNA lista ordenada según
+                         Parámetros del Evento (reunión 2026-09-21, ítems 3a/4): etiqueta propia del
+                         evento y orden arrastrable. La identidad (nombres/apellidos/cédula) conserva
+                         sus `name`/`id` de siempre — otros scripts (lector de cédula, OCR) los buscan. -->
+                    {# Fase 1.7 (1A): campos MÍNIMOS arriba (identidad, obligatorios y los de control complejo: categorías, firma, consentimiento, correo, fecha de nacimiento) y los EXTRAS simples (texto, lista, sí/no) plegados en «Más datos (opcional)». Mismos name/id; el orden de Parámetros se conserva dentro de cada grupo. #}
+                    {% set reg_core_only = ("categories", "certificate", "digital_contact", "consent", "signature", "email", "date") %}
+                    <div id="dynamicFieldsContainer">
+                        {% for cfg in field_configs %}{% if cfg.locked or cfg.required or cfg.field_type in reg_core_only %}{{ reg_field(cfg) }}{% endif %}{% endfor %}
+                        {% set ns_extra = namespace(n=0) %}
+                        {% for cfg in field_configs %}{% if not (cfg.locked or cfg.required or cfg.field_type in reg_core_only) %}{% set ns_extra.n = ns_extra.n + 1 %}{% endif %}{% endfor %}
+                        {% if ns_extra.n %}<details class="gw-form-group" id="regExtras">
+                            <summary class="gw-form-group__summary">Más datos (opcional)</summary>
+                            <div class="gw-form-group__body">
+                            {% for cfg in field_configs %}{% if not (cfg.locked or cfg.required or cfg.field_type in reg_core_only) %}{{ reg_field(cfg) }}{% endif %}{% endfor %}
+                            </div>
+                        </details>{% endif %}
                     </div>
                     {% if person_form_json != "null" %}<script>(function () { var c = document.getElementById('dynamicFieldsContainer'); if (c && window.PersonForm && window.PERSON_FORM) { window.PersonForm.current = window.PERSON_FORM; window.regPersonForm = window.PersonForm.mount(c, window.PERSON_FORM); } })();</script>{% endif %}
                     {% if event.facial_enabled %}
+                    <details class="gw-form-group" id="regPhotoGroup">
+                        <summary class="gw-form-group__summary">Foto del rostro (opcional, solo con autorización)</summary>
+                        <div class="gw-form-group__body">
                     <div class="gw-field badge-input-group">
                         <label class="gw-label" for="regPhotoInput">Fotografía oficial <span class="gw-hint">(opcional: solo si la persona lo autoriza)</span></label>
                         <div class="gw-rowact">
@@ -325,6 +347,8 @@
                         <input type="checkbox" name="biometric_consent" id="regBioConsent" value="true">
                         <span><b>La persona autoriza de forma expresa</b> el uso de su fotografía y su rostro (dato biométrico sensible) para identificarla en este evento. Sin esta autorización no se guarda la foto: se registra solo por cédula. <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
                     </label>
+                        </div>
+                    </details>
                     {% endif %}
 
                     </fieldset>
@@ -361,6 +385,7 @@
 <script src="{{ url_for('static', path='js/consent-gate.js') }}"></script>
 <script src="{{ url_for('static', path='js/timing.js') }}"></script>
 {% if search_unified %}<script src="{{ url_for('static', path='js/search-core.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', path='js/registro-veredicto.js') }}"></script>
 <script src="{{ url_for('static', path='js/directory.js') }}"></script>
 <script src="{{ url_for('static', path='js/app.js') }}"></script>
 <script>
@@ -531,10 +556,18 @@
     (function () {
         const box = document.getElementById('gwOfflineAlert'); if (!box) return;
         let pollOk = true;
+        const conn = document.getElementById('gwConn'), connText = document.getElementById('gwConnText'), connIcon = document.getElementById('gwConnIcon');
+        const icons = (connIcon && connIcon.getAttribute('href') || '').split('#')[0];
         const update = () => {
             const GCi = window.GoldenContingency && window.GoldenContingency.instance;
             const off = navigator.onLine === false || !pollOk || !!(GCi && GCi.active && GCi.active());
             box.hidden = !off;
+            if (conn) {                                    // estado de conexión en palabras, con ícono y color (solo lo muestra; no toca la sincronización)
+                const saving = !!(GCi && GCi.active && GCi.active());
+                conn.classList.toggle('gw-conn--warn', off);
+                if (connText) connText.textContent = off ? (saving ? 'Sin conexión, guardando en este equipo' : 'Sin conexión') : 'En línea';
+                if (connIcon) connIcon.setAttribute('href', icons + (off ? '#i-wifi-off' : '#i-wifi'));
+            }
         };
         window.addEventListener('online', () => { pollOk = true; update(); });
         window.addEventListener('offline', update);

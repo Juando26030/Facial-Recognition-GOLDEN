@@ -24,7 +24,8 @@
     banner.className = 'gw-alert ' + ALERT[status.level];
     banner.innerHTML = icon(ICON[status.level]) + '<div><p class="gw-alert__title">' + LABEL[status.level] + '</p><p class="gw-alert__body">' +
       (bad.length ? bad.map(function (i) { return esc(i.title); }).join(' · ') : 'Todos los chequeos están en verde.') + '</p></div>';
-    document.getElementById('grid').innerHTML = status.items.map(function (i) {
+    var ORDER = { red: 0, yellow: 1, green: 2 };
+    document.getElementById('grid').innerHTML = status.items.slice().sort(function (a, b) { return ORDER[a.level] - ORDER[b.level]; }).map(function (i) {
       return '<article class="gw-sistema__card gw-sistema__card--' + i.level + '"><div class="gw-sistema__head"><h3 class="gw-sistema__title">' + esc(i.title) + '</h3>' + badge(i.level) + '</div>' +
         '<p class="gw-sistema__value">' + esc(i.value) + '</p>' +
         (i.reason ? '<p class="gw-sistema__reason">' + esc(i.reason) + '</p>' : '') +

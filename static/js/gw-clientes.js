@@ -51,11 +51,9 @@
           </span>
           <span class="gw-tenant__toggle">Ver eventos ${icon('chevron', 'gw-icon--sm')}</span>
         </button>
+        ${canCreate ? `<a href="/clientes/${esc(t.id)}/nuevo-evento" class="gw-btn gw-btn--primary gw-btn--xl p-cli__new">${icon('plus')} Nuevo evento</a>` : ''}
         <div class="gw-tenant__body" id="tenantBody${esc(t.id)}" data-tenant-body hidden>
-          <div class="gw-card-row__actions">
-            ${canCreate ? `<a href="/clientes/${esc(t.id)}/nuevo-evento" class="gw-btn gw-btn--primary gw-btn--sm">${icon('plus', 'gw-icon--sm')} Nuevo evento</a>` : ''}
-            ${isSuper ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-import-event data-tenant-id="${esc(t.id)}" data-tenant-name="${esc(t.name)}" title="Crear un evento nuevo de este cliente a partir de un paquete exportado de otro entorno">${icon('upload', 'gw-icon--sm')} Importar evento</button>` : ''}
-          </div>
+          ${isSuper ? `<div class="gw-card-row__actions"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-import-event data-tenant-id="${esc(t.id)}" data-tenant-name="${esc(t.name)}" title="Crear un evento nuevo de este cliente a partir de un paquete exportado de otro entorno">${icon('upload', 'gw-icon--sm')} Importar evento</button></div>` : ''}
           <div class="gw-field">
             <label class="gw-label" for="evSearch${esc(t.id)}">Buscar evento de este cliente/cuenta</label>
             <input type="search" class="gw-input" id="evSearch${esc(t.id)}" data-events-search placeholder="Buscar evento de este cliente/cuenta..." autocomplete="off">

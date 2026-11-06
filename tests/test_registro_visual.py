@@ -56,7 +56,7 @@ def test_registro_css_and_outbox_use_only_tokens_and_14px_text():
 
 def test_directory_view_has_one_primary_button_and_the_fixed_search_bar():
     view = _directory_view()
-    assert len(re.findall(r"gw-btn--primary", view)) == 1 and 'id="openRegisterModalBtn" class="gw-btn gw-btn--primary"' in view
+    assert len(re.findall(r"gw-btn--primary", view)) == 1 and 'id="openRegisterModalBtn" class="gw-btn gw-btn--primary gw-btn--xl"' in view
     assert "gw-btn--primary" not in BUSC, "el buscador (con su ayuda) no trae otro botón principal"
     assert view.index("gw-workarea__bar") < view.index('id="openRegisterModalBtn"') < view.index("gw-workarea__list"), "buscador y «Registrar nuevo» arriba, la lista debajo"
     assert "autofocus" in BUSC and 'id="searchCedula"' in BUSC
@@ -175,3 +175,44 @@ def test_search_has_a_trash_button_and_the_created_pill_is_blue():
 
 def test_register_new_always_opens_blank():
     assert "window.resetRegForm" in TPL and "registerModal.style.display !== 'flex'" in TPL
+
+
+# ------------------------------------------------------------------------------------------------------------------------ Fase 1.7, Ola 1A (remodelado de puerta)
+PUERTA_CSS = (ROOT / "static/css/p-registro-puerta.css").read_text(encoding="utf-8")
+VERDICT_JS = (ROOT / "static/js/registro-veredicto.js").read_text(encoding="utf-8")
+
+
+def test_puerta_css_is_loaded_after_registro_css_and_uses_only_tokens():
+    assert TPL.index("css/registro.css") < TPL.index("css/p-registro-puerta.css")
+    css = _no_comments(PUERTA_CSS)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", css), "p-registro-puerta.css: solo tokens --gw-*"
+    assert not re.search(r"font-size:\s*[\d.]+(px|rem|em)", css), "tamaños de texto solo con tokens --gw-fs-*"
+
+
+def test_one_hero_search_with_scan_next_to_it_and_the_unified_ids_intact():
+    view = _directory_view()
+    assert "{% set busq_hero = true %}" in TPL and "gw-search--hero" in BUSC and "gw-search__field" in BUSC and "#i-search" in BUSC
+    assert view.count('id="searchCedula"') + BUSC.count('id="searchCedula"') >= 1 and TPL.count("_gw_buscador.html") == 2
+    assert 'id="gwScanMenuBtn" class="gw-btn gw-btn--secondary gw-btn--xl"' in view and "Registrar nuevo" in view
+
+
+def test_connection_and_verdict_pieces_exist_and_the_offline_alert_stays():
+    assert 'id="gwConn" class="gw-conn"' in TPL and "En línea" in TPL and "Sin conexión, guardando" in TPL and "#i-wifi" in TPL
+    assert 'id="gwVerdict" class="gw-verdict"' in TPL and "js/registro-veredicto.js" in TPL
+    assert TPL.index("js/registro-veredicto.js") < TPL.index("js/directory.js")
+    assert 'id="gwOfflineAlert"' in TPL
+    assert "window.GWVerdict" in VERDICT_JS and "role" in VERDICT_JS
+
+
+def test_verdict_calls_cover_accredited_already_registered_and_not_found():
+    assert "verdict('ok', 'Acreditado(a)'" in DIR_JS and "verdict('warn', 'Ya estaba registrado(a)'" in DIR_JS and "verdict('err', 'No está en la lista'" in DIR_JS
+
+
+def test_register_modal_keeps_ids_and_folds_only_simple_optional_fields():
+    assert "{% macro reg_field(cfg) %}" in TPL and 'id="regExtras"' in TPL and "Más datos (opcional)" in TPL
+    assert "reg_core_only" in TPL and "gw-form-group" in TPL
+    assert 'id="regPhotoGroup"' in TPL and 'id="regPhotoInput"' in TPL and 'id="regBioConsent"' in TPL and 'id="regPhotoCameraBtn"' in TPL
+    ids = re.findall(r'\bid="([\w-]+)"', TPL)
+    for ident in ("gwWorkarea", "directorio"):
+        assert ids.count(ident) == 2, ident          # uno por rama (cliente / resto de roles): son excluyentes en el mismo render
+    assert TPL.index("{% if staff_role == \"cliente\" %}\n        <!-- PESTAÑA: ESTADÍSTICAS") < TPL.index("{% else %}\n\n        {% if event.facial_enabled %}")

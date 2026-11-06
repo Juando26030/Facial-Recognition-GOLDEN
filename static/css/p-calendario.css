@@ -1,0 +1,14 @@
+/* Calendario (Fase 1.7): controles grandes, filtros con aire y ventana de recordatorio como hoja en celular. Solo tokens --gw-*. */
+.cal-toolbar { gap: var(--gw-sp-4); }
+.cal-nav { gap: var(--gw-sp-3); }
+.cal-nav__label { font-size: var(--gw-fs-2xl); }
+.cal-views { gap: var(--gw-sp-2); }
+.cal-filters { gap: var(--gw-sp-4); }
+.cal-filters .gw-select { min-height: var(--gw-tap-lg); font-size: var(--gw-fs-lg); }
+.note-modal .gw-input, .note-modal .gw-textarea { font-size: var(--gw-fs-lg); }
+.note-modal .gw-modal__foot .gw-btn { flex: 1 1 auto; }
+@media (max-width: 40rem) {
+  #noteModalOverlay { align-items: flex-end; padding: 0; }
+  #noteModalOverlay .note-modal { min-height: 0; max-height: 92vh; border-radius: var(--gw-radius-lg) var(--gw-radius-lg) 0 0; }
+  .cal-prev, .cal-next { flex: 1 1 auto; }
+}

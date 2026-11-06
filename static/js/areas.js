@@ -36,12 +36,23 @@
       ? areas.map(a => `<option value="${a.id}">${esc(a.name)} (${a.inside} adentro${a.allow_reentry ? '' : ' · sin reingresos'})</option>`).join('')
       : '<option value="">Crea zonas en Parámetros del evento</option>';
     if (current) $('areaSelect').value = current;
+    renderZones(areas);
     await loadPresence();
+  }
+
+  // Zonas como botones grandes (hasta 6); el <select> sigue siendo la fuente de verdad y queda a la vista si hay más.
+  function renderZones(areas) {
+    const seg = $('zoneSeg');
+    const few = areas.length > 0 && areas.length <= 6;
+    seg.hidden = !few;
+    $('areaSelect').hidden = few;
+    if (!few) { seg.innerHTML = ''; return; }
+    seg.innerHTML = areas.map(a => `<button type="button" class="gw-segment__opt zone-btn" data-zone="${a.id}" aria-pressed="${String(a.id) === String(areaId())}">${esc(a.name)} · ${a.inside} adentro</button>`).join('');
   }
 
   function showState(text, isError) {
     const st = $('presState');
-    st.textContent = text;
+    st.innerHTML = `<span class="gw-state__icon">${icon(isError ? 'error' : 'inbox')}</span><p class="gw-state__title">${esc(text)}</p>`;
     st.hidden = false;
     st.classList.toggle('gw-state--error', !!isError);
     $('presWrap').hidden = true;
@@ -50,7 +61,7 @@
   async function loadPresence() {
     $('presState').hidden = true;
     if (!areaId()) {
-      $('presBody').innerHTML = ''; $('insideCount').textContent = '0';
+      $('presBody').innerHTML = ''; setCounts([]);
       showState('Aún no hay zonas. Créalas en Parámetros del evento para empezar.', false);
       return;
     }
@@ -59,36 +70,43 @@
     try { rows = await getJson(`/api/events/${window.EVENT_ID}/areas/${areaId()}/presence`); }
     catch (e) { $('presLoading').hidden = true; showState('No se pudo cargar quién está en la zona. Cambia de zona o recarga la página.', true); return; }
     $('presLoading').hidden = true;
-    $('insideCount').textContent = rows.filter(r => r.direction === 'in').length;
+    setCounts(rows);
     if (!rows.length) { showState('Sin movimientos todavía. Escanea la primera cédula o QR para empezar.', false); $('presBody').innerHTML = ''; return; }
     $('presWrap').hidden = false;
-    $('presBody').innerHTML = rows.map(r => `<tr class="${esc(r.direction)}"><td data-label="Cédula">${esc(r.id)}</td><td data-label="Persona">${esc(r.name)}</td><td data-label="Estado">${r.direction === 'in'
-      ? `<span class="gw-badge gw-badge--ok">${icon('check')} Entró</span>` : '<span class="gw-badge">Salió</span>'}</td><td data-label="Hora">${new Date(r.time + 'Z').toLocaleTimeString()}</td></tr>`).join('');
+    $('presBody').innerHTML = rows.map(r => `<article class="gw-person ${r.direction === 'in' ? 'gw-person--ok' : 'gw-person--info'} ${esc(r.direction)}"><div class="gw-person__photo" aria-hidden="true">${esc((String(r.name || '?').trim()[0] || '?').toUpperCase())}</div><div class="gw-person__body"><h3 class="gw-person__name">${esc(r.name)}</h3><p class="gw-person__meta">${esc(r.id)} · ${new Date(r.time + 'Z').toLocaleTimeString()}</p></div><div class="gw-person__status">${r.direction === 'in'
+      ? `<span class="gw-badge gw-badge--ok">${icon('check')} Entró</span>` : '<span class="gw-badge">Salió</span>'}</div></article>`).join('');
   }
 
-  // Aviso del último resultado (mismo lugar siempre). cls: ok | warn | err
-  function show(cls, html) {
+  function setCounts(rows) {
+    const inside = rows.filter(r => r.direction === 'in').length;
+    $('insideCount').textContent = inside;
+    $('outCount').textContent = rows.length - inside;
+    $('totalCount').textContent = rows.length;
+  }
+
+  // Veredicto del último resultado (mismo lugar siempre). cls: ok | warn | err
+  function show(cls, title, html) {
     const b = $('banner');
-    b.className = 'gw-alert gw-ai__banner gw-alert--' + cls;
+    b.className = 'gw-verdict gw-verdict--' + cls;
     b.setAttribute('role', cls === 'err' ? 'alert' : 'status');
-    b.innerHTML = `${icon(cls === 'ok' ? 'check' : (cls === 'err' ? 'error' : 'alert'))}<div>${html}</div>`;
+    b.innerHTML = `<svg class="gw-icon gw-verdict__icon" aria-hidden="true"><use href="${sprite()}#i-${cls === 'ok' ? 'check-lg' : (cls === 'err' ? 'error' : 'alert')}"/></svg><div class="gw-verdict__body"><p class="gw-verdict__title">${esc(title)}</p><p class="gw-verdict__text">${html}</p></div>`;
     b.hidden = false;
   }
 
   async function handle(result, retry) {
     const who = result.data ? `${esc(result.data.first_name)} ${esc(result.data.last_name)}` : '';
     if (result.result === 'OK') {
-      show('ok', `${result.direction === 'in' ? 'ENTRÓ' : 'SALIÓ'}: <strong>${who}</strong> — ${esc(result.area)} · ${new Date(result.time + 'Z').toLocaleTimeString()}`);
+      show('ok', result.direction === 'in' ? 'Entró' : 'Salió', `<strong>${who}</strong> — ${esc(result.area)} · ${new Date(result.time + 'Z').toLocaleTimeString()}`);
       await loadAreas(areaId());
     } else if (result.result === 'FOUND_PENDING') {
-      show('warn', `Encontrado(a): <strong>${who}</strong>. Se registrará <strong>${result.direction === 'in' ? 'ENTRADA' : 'SALIDA'}</strong> a ${esc(result.area)}. <button type="button" id="confirmBtn" class="gw-btn gw-btn--secondary gw-btn--sm">Acreditar</button>`);
+      show('warn', 'Falta confirmar', `<strong>${who}</strong>. Se registrará <strong>${result.direction === 'in' ? 'ENTRADA' : 'SALIDA'}</strong> a ${esc(result.area)}. <button type="button" id="confirmBtn" class="gw-btn gw-btn--primary gw-btn--xl">Acreditar</button>`);
       $('confirmBtn').addEventListener('click', (e) => busy(e.currentTarget, () => retry(true, result.direction)));
     } else if (result.result === 'ALREADY_ENTERED') {
-      show('err', `ALERTA: ${esc(result.details)}`);
+      show('err', 'Ya está adentro', esc(result.details));
     } else if (result.result === 'NOT_INSIDE') {
-      show('warn', esc(result.details));
+      show('warn', 'No está adentro', esc(result.details));
     } else {
-      show('warn', esc(result.details || 'No se encontró a la persona'));
+      show('err', 'No encontrado', esc(result.details || 'No se encontró a la persona'));
     }
   }
 
@@ -101,9 +119,9 @@
         body: JSON.stringify({ cedula, direction: forcedDirection || direction, confirm: !!confirm, method }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) { show('warn', esc(data.detail || 'No se pudo registrar')); return; }
+      if (!res.ok) { show('warn', 'No se pudo registrar', esc(data.detail || 'No se pudo registrar')); return; }
       await handle(data, (c, d) => register(cedula, c, d, method));
-    } catch (e) { show('err', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); }
+    } catch (e) { show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); }
   }
 
   function scanValue(raw) {
@@ -114,9 +132,17 @@
   }
 
   document.addEventListener('click', (e) => {
+    const zoneBtn = e.target.closest('.zone-btn[data-zone]');
+    if (zoneBtn) {
+      $('areaSelect').value = zoneBtn.dataset.zone;
+      document.querySelectorAll('.zone-btn').forEach(b => b.setAttribute('aria-pressed', b === zoneBtn ? 'true' : 'false'));
+      loadPresence();
+      return;
+    }
     const dirBtn = e.target.closest('.dir-btn[data-dir]');
     if (dirBtn) {
       direction = dirBtn.dataset.dir;
+      $('registerLabel').textContent = direction === 'in' ? 'Registrar entrada' : (direction === 'out' ? 'Registrar salida' : 'Registrar');
       document.querySelectorAll('.dir-btn[data-dir]').forEach(b => { b.classList.toggle('active', b === dirBtn); b.setAttribute('aria-pressed', b === dirBtn ? 'true' : 'false'); });
       return;
     }
@@ -158,9 +184,9 @@
         const fd = new FormData(); fd.append('file', blob, 'face.jpg'); fd.append('direction', forcedDirection || direction); fd.append('confirm', confirm ? 'true' : 'false');
         const res = await fetch(`/api/events/${window.EVENT_ID}/areas/${areaId()}/movement-face`, { method: 'POST', body: fd });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { show('warn', esc(data.detail || 'No se pudo registrar')); return; }
+        if (!res.ok) { show('warn', 'No se pudo registrar', esc(data.detail || 'No se pudo registrar')); return; }
         await handle(data, send);
-      } catch (e) { show('err', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); }
+      } catch (e) { show('err', 'Sin conexión', 'No se pudo registrar: sin conexión con el servidor. Inténtalo de nuevo.'); }
     };
     await send(false);
   } }));
