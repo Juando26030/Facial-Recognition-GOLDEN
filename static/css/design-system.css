@@ -76,6 +76,16 @@
   --gw-ring: 0 0 0 3px var(--gw-surface), 0 0 0 6px var(--gw-focus);   /* anillo de foco de dos capas: se ve sobre cualquier fondo */
   --gw-dur: 160ms;
   --gw-content-w: 1120px;
+  /* íconos con color propio por tipo (>= 3:1 sobre blanco) */
+  --gw-ic-blue: #1d4ed8;
+  --gw-ic-green: #15803d;
+  --gw-ic-red: #c62828;
+  --gw-ic-amber: #a85a00;
+  --gw-ic-violet: #6d28d9;
+  --gw-ic-teal: #0f766e;
+  --gw-ic-orange: #c2410c;
+  --gw-ic-pink: #be185d;
+  --gw-ic-gray: #4b5563;
 }
 
 :root[data-theme="dark"] {
@@ -108,7 +118,30 @@
   --gw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --gw-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
   --gw-shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.6);
+  /* íconos con color propio, versión clara para fondo oscuro */
+  --gw-ic-blue: #7db0ff;
+  --gw-ic-green: #5fd48a;
+  --gw-ic-red: #ff8a80;
+  --gw-ic-amber: #f5b84a;
+  --gw-ic-violet: #b79cff;
+  --gw-ic-teal: #4fd1c5;
+  --gw-ic-orange: #ff9d5c;
+  --gw-ic-pink: #ff7eb6;
+  --gw-ic-gray: #aab4c3;
 }
+/* el menú lateral es siempre azul noche: sus íconos usan los tonos claros */
+.golden-sidebar {
+  --gw-ic-blue: #7db0ff;
+  --gw-ic-green: #5fd48a;
+  --gw-ic-red: #ff8a80;
+  --gw-ic-amber: #f5b84a;
+  --gw-ic-violet: #b79cff;
+  --gw-ic-teal: #4fd1c5;
+  --gw-ic-orange: #ff9d5c;
+  --gw-ic-pink: #ff7eb6;
+  --gw-ic-gray: #aab4c3;
+}
+
 
 /* ============================================================ Base de página (solo con .gw-page) */
 .gw-page { margin: 0; background: var(--gw-bg); color: var(--gw-text); font-family: var(--gw-font); font-size: var(--gw-fs-md); line-height: var(--gw-lh-body); font-weight: var(--gw-fw-normal); -webkit-text-size-adjust: 100%; }
@@ -181,7 +214,7 @@
   background: var(--gw-surface); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-lg); box-shadow: var(--gw-shadow-sm);
   transition: transform var(--gw-dur), box-shadow var(--gw-dur), border-color var(--gw-dur); }
 .gw-tile:hover { transform: translateY(-2px); box-shadow: var(--gw-shadow-md); border-color: var(--gw-gold-1); }
-.gw-tile__icon { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: var(--gw-radius-md); background: var(--gw-gold-grad); color: var(--gw-on-gold); }
+.gw-tile__icon { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: var(--gw-radius-md); background: var(--gw-surface-2); border: 1px solid var(--gw-border); color: var(--gw-text); }
 .gw-tile__name { font-size: var(--gw-fs-lg); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
 .gw-tile__help { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gw-tile[aria-disabled="true"] { opacity: 0.6; pointer-events: none; }
@@ -634,3 +667,52 @@
   .gw-modal-backdrop--top { padding: var(--gw-sp-4); align-items: center; }   /* confirmar/preguntar: tarjeta centrada, no pantalla completa */
   .gw-modal--dialog { max-width: 440px; min-height: 0; max-height: calc(100vh - 2 * var(--gw-sp-4)); border-radius: var(--gw-radius-lg); }
 }
+
+/* ============================================================ Íconos con color propio (Juan David, 5-nov-2026): misma forma y trazo para todos, pero cada tipo lleva su color para ubicarlo de un vistazo
+   (estadísticas naranja, configuración gris, calendario rojo...). Va por la forma del ícono (:has sobre el <use>), sin tocar plantillas. El botón sigue llevando su texto: el color nunca es lo único. ============================================================ */
+.gw-icon { color: var(--gw-ic, currentColor); }
+.gw-icon:has(use[href$="#i-users"]),
+.gw-icon:has(use[href$="#i-help"]),
+.gw-icon:has(use[href$="#i-info"]),
+.gw-icon:has(use[href$="#i-building"]),
+.gw-icon:has(use[href$="#i-upload"]),
+.gw-icon:has(use[href$="#i-home"]),
+.gw-icon:has(use[href$="#i-edit"]),
+.gw-icon:has(use[href$="#i-mail"]) { --gw-ic: var(--gw-ic-blue); }
+.gw-icon:has(use[href$="#i-user-plus"]),
+.gw-icon:has(use[href$="#i-check"]),
+.gw-icon:has(use[href$="#i-plus"]),
+.gw-icon:has(use[href$="#i-download"]) { --gw-ic: var(--gw-ic-green); }
+.gw-icon:has(use[href$="#i-error"]),
+.gw-icon:has(use[href$="#i-calendar"]),
+.gw-icon:has(use[href$="#i-health"]),
+.gw-icon:has(use[href$="#i-trash"]) { --gw-ic: var(--gw-ic-red); }
+.gw-icon:has(use[href$="#i-badge"]),
+.gw-icon:has(use[href$="#i-alert"]),
+.gw-icon:has(use[href$="#i-sun"]),
+.gw-icon:has(use[href$="#i-lock"]) { --gw-ic: var(--gw-ic-amber); }
+.gw-icon:has(use[href$="#i-camera"]),
+.gw-icon:has(use[href$="#i-face"]),
+.gw-icon:has(use[href$="#i-moon"]),
+.gw-icon:has(use[href$="#i-image"]) { --gw-ic: var(--gw-ic-violet); }
+.gw-icon:has(use[href$="#i-form"]),
+.gw-icon:has(use[href$="#i-inbox"]),
+.gw-icon:has(use[href$="#i-link"]) { --gw-ic: var(--gw-ic-teal); }
+.gw-icon:has(use[href$="#i-chart"]),
+.gw-icon:has(use[href$="#i-wifi-off"]) { --gw-ic: var(--gw-ic-orange); }
+.gw-icon:has(use[href$="#i-roulette"]) { --gw-ic: var(--gw-ic-pink); }
+.gw-icon:has(use[href$="#i-search"]),
+.gw-icon:has(use[href$="#i-printer"]),
+.gw-icon:has(use[href$="#i-settings"]),
+.gw-icon:has(use[href$="#i-close"]),
+.gw-icon:has(use[href$="#i-eye"]),
+.gw-icon:has(use[href$="#i-eye-off"]),
+.gw-icon:has(use[href$="#i-more"]),
+.gw-icon:has(use[href$="#i-grip"]),
+.gw-icon:has(use[href$="#i-undo"]),
+.gw-icon:has(use[href$="#i-qr"]),
+.gw-icon:has(use[href$="#i-logout"]) { --gw-ic: var(--gw-ic-gray); }
+/* sobre fondos de color (dorado, rojo) o donde manda el contexto, el ícono hereda el color del texto */
+.gw-btn--primary .gw-icon, .gw-btn--danger .gw-icon, .gw-chip--err[aria-pressed="true"] .gw-icon, .gw-theme-toggle .gw-icon { color: inherit; }
+/* en las pantallas nuevas un atributo hidden siempre oculta, aunque la clase del elemento fije su display (.gw-btn, .gw-empty...) */
+.gw-page [hidden] { display: none !important; }
