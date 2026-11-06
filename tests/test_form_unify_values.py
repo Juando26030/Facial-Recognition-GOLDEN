@@ -2,11 +2,14 @@
 import json
 
 from app.models import FormSubmission
+from tests.conftest import login
 from tests.test_forms import _basic_fields, _create, _design, _event, _put, _status
 
 
 def _form(client, factory):
     ev = _event(client, factory)
+    factory.staff("admin", "adm1")
+    login(client, "adm1")
     f = _create(client, ev)
     fields = _basic_fields()[:3] + [{"id": "ciudad", "type": "text_short", "label": "Ciudad"}]
     rules = [{"label": "Bogotá", "match": "all", "limit": 10, "conds": [{"field": "ciudad", "op": "equals", "value": "Bogotá"}]},

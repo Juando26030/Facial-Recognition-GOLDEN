@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import bulk_jobs, formlib, formsvc, heavy, ops, optionvalues, publicurl, variant_table, warmup, wompi
@@ -845,6 +846,74 @@ def unify_values(event_id: int, form_id: int, payload: dict, db: Session = Depen
     return {"applied": do_apply and bool(batch), "changed": len(batch), "already_ok": sum(1 for _, raw, _f in rows if json.loads(raw or "{}").get(field_id) in known),
             "changes": [{"from": a, "to": b, "count": n} for (a, b), n in sorted(changes.items(), key=lambda x: -x[1])],
             "unresolved": [{"value": v, "count": n} for v, n in sorted(unresolved.items(), key=lambda x: -x[1])], "already_in_base": fed_changed}
+
+
+@router.post("/events/{event_id}/forms/{form_id}/align-to-base")
+def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Lleva un campo con cupos de las inscripciones al valor que la BASE DEL EVENTO tiene para esa persona (p. ej. la ciudad asignada). Sirve cuando alguien escribió otra ciudad
+    (un pueblo, o una ciudad que no tiene cupo) y el cupo la contó donde no era. Cuerpo: `{"field": id del campo (vinculado a un campo del evento), "apply": false, "detail": false}`.
+    Solo cambia inscripciones reales de personas que están en la base y cuyo valor en la base es uno de los valores de los cupos de ese campo: sin base, sin valor o con un valor sin
+    cupo no se toca. Las marcas de «Personas ya registradas» tampoco (su ciudad la dio quien cargó la lista). Sin `apply` solo informa; con `detail` lista cédula, valor actual y nuevo."""
+    from app import value_unify
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    design = formsvc.get_design(form)
+    field_id = str(payload.get("field") or "")
+    field = design["fields"].get(field_id) or {}
+    rules = formsvc.quota_rules(form)
+    canon = value_unify.canonical_values(rules, field_id)
+    if not canon or not field.get("key"):
+        raise HTTPException(status_code=400, detail="Ese campo no define cupos o no está vinculado a un campo de la base del evento")
+    src_event = formsvc.source_event_id(form)
+    if not src_event:
+        raise HTTPException(status_code=400, detail="Este formulario no toma sus datos de la base de un evento")
+    do_apply = payload.get("apply") is True
+    db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
+    rows = db.query(FormSubmission.id, FormSubmission.person_id, FormSubmission.data_json).filter(
+        FormSubmission.form_id == form.id, FormSubmission.is_test == False, FormSubmission.person_id != None,  # noqa: E712,E711
+        or_(FormSubmission.source == None, FormSubmission.source.notin_(formsvc.MARK_SOURCES))).all()  # noqa: E711
+    pids = sorted({r[1] for r in rows})
+    base_value, in_base = {}, set()
+    for i in range(0, len(pids), 1000):
+        part = pids[i:i + 1000]
+        attendees = {r[0] for r in db.query(EventAttendee.user_id).filter(EventAttendee.event_id == src_event, EventAttendee.user_id.in_(part))}
+        for uid, extras in db.query(User.id, User.extra_fields).filter(User.tenant_id == event.tenant_id, User.id.in_(attendees)):
+            in_base.add(uid)
+            try:
+                base_value[uid] = (json.loads(extras) if extras else {}).get(field["key"])
+            except (ValueError, TypeError):
+                base_value[uid] = None
+    batch, changes, detail, skipped = [], {}, [], {"not_in_base": 0, "base_empty": 0, "base_without_quota": 0}
+    already_ok = 0
+    for sid, pid, raw in rows:
+        if pid not in in_base:
+            skipped["not_in_base"] += 1
+            continue
+        want = value_unify.resolve(base_value.get(pid), canon, {})
+        if want is None:
+            skipped["base_empty" if not str(base_value.get(pid) or "").strip() else "base_without_quota"] += 1
+            continue
+        data = json.loads(raw or "{}")
+        old = data.get(field_id)
+        if old == want:
+            already_ok += 1
+            continue
+        old_label = (old or "").strip() if isinstance(old, str) else "(vacío)"
+        changes[(old_label, want)] = changes.get((old_label, want), 0) + 1
+        if payload.get("detail") is True:
+            detail.append({"id": pid, "from": old_label, "to": want})
+        data[field_id] = want
+        batch.append({"id": sid, "data_json": json.dumps(data), "quota_keys": formsvc.quota_keys_for(rules, data)})
+    if do_apply and batch:
+        for i in range(0, len(batch), 500):
+            db.bulk_update_mappings(FormSubmission, batch[i:i + 500])
+        formsvc.invalidate_held()
+    db.commit()
+    out = {"applied": do_apply and bool(batch), "changed": len(batch), "already_ok": already_ok, "skipped": skipped,
+           "changes": [{"from": a, "to": b, "count": n} for (a, b), n in sorted(changes.items(), key=lambda x: -x[1])]}
+    if detail:
+        out["detail"] = detail
+    return out
 
 
 @router.delete("/events/{event_id}/forms/{form_id}/submissions/{submission_id}")
