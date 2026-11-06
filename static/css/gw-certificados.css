@@ -1,0 +1,22 @@
+/* Certificados del evento (Fase 1.5): solo lo que design-system.css no trae. Únicamente tokens --gw-*. */
+
+/* Lienzo fuera de pantalla donde se dibuja cada certificado antes de convertirlo en PDF (debe existir en el DOM, no puede ir con display:none). */
+.gw-cert-stage { position: fixed; left: -20000px; top: 0; background: white; }
+
+.gw-cert { display: grid; gap: var(--gw-sp-5); }
+.gw-cert__dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--gw-sp-2) var(--gw-sp-4); margin: 0; }
+.gw-cert__dl dt { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
+.gw-cert__dl dd { margin: 0; font-weight: var(--gw-fw-bold); overflow-wrap: anywhere; }
+.gw-cert__count { font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); color: var(--gw-text); }
+.gw-cert__names { display: grid; gap: var(--gw-sp-2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); margin: 0; padding: 0; list-style: none; }
+.gw-cert__names li { padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); overflow-wrap: anywhere; }
+.gw-cert__link { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
+.gw-cert__link .gw-input { flex: 1 1 16rem; }
+.gw-cert__nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); margin-top: var(--gw-sp-5); }
+.gw-cert__nav .gw-btn--primary { margin-left: auto; }
+.gw-cert [hidden] { display: none; }
+@media (max-width: 520px) {
+  .gw-cert__nav { flex-direction: column-reverse; align-items: stretch; }
+  .gw-cert__nav .gw-btn--primary { margin-left: 0; }
+  .gw-cert__dl { grid-template-columns: 1fr; }
+}
