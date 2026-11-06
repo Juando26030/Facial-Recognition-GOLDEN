@@ -35,3 +35,40 @@
 @media (min-width: 641px) {
   #expList .gw-card-row__actions .gw-btn { flex: 0 0 auto; }      /* en escritorio «Eliminar» tiene su tamaño, no el ancho de toda la tarjeta */
 }
+
+/* Escritorio (>= 901 px): documentos y gastos son filas delgadas de una línea (columnas alineadas, acciones a la derecha). El celular conserva la tarjeta. */
+@media (min-width: 901px) {
+  #docList.gw-cards, #expList.gw-cards { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2); }
+  :is(#docList, #expList) .gw-card-row { display: grid; align-items: center; column-gap: var(--gw-sp-4); row-gap: 0; padding: var(--gw-sp-2) var(--gw-sp-4); box-shadow: none; }
+  :is(#docList, #expList) .gw-card-row__head { display: contents; }
+  :is(#docList, #expList) .gw-card-row > * { grid-row: 1; min-width: 0; }
+  :is(#docList, #expList) .gw-card-row__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; word-break: normal; font-size: var(--gw-fs-md); }
+  :is(#docList, #expList) .gw-card-row__head > .gw-badge { justify-self: start; white-space: nowrap; }
+  :is(#docList, #expList) .gw-card-row__meta, :is(#docList, #expList) .gw-card-row .gw-text-sm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+  :is(#docList, #expList) .gw-card-row__actions { margin-top: 0; flex-wrap: nowrap; justify-self: end; }
+  :is(#docList, #expList) .gw-card-row__actions .gw-btn { flex: none; white-space: nowrap; }
+  /* Documentos: nombre · tipo · archivo y tamaño · descripción · acciones */
+  #docList .gw-card-row { grid-template-columns: minmax(0, 1.6fr) 6rem minmax(0, 1.6fr) minmax(0, 1.4fr) auto; }
+  #docList .gw-card-row__title { grid-column: 1; }
+  #docList .gw-card-row__head > .gw-badge { grid-column: 2; }
+  #docList .gw-card-row__meta { grid-column: 3; }
+  #docList .gw-card-row .gw-text-sm { grid-column: 4; }
+  #docList .gw-card-row__actions { grid-column: 5; }
+  /* Gastos: categoría · evidencia · importe · fecha y responsable · descripción · miniatura · acciones */
+  #expList .gw-card-row { grid-template-columns: minmax(0, 1fr) 8.5rem 8.5rem minmax(0, 2.2fr) minmax(0, 1.2fr) 3rem auto; }
+  #expList .gw-card-row__title { grid-column: 1; }
+  #expList .gw-card-row__head > .gw-badge { grid-column: 2; }
+  #expList .gw-card-row__amount { grid-column: 3; font-size: var(--gw-fs-lg); white-space: nowrap; }
+  #expList .gw-card-row__meta { grid-column: 4; }
+  #expList .gw-card-row .gw-text-sm { grid-column: 5; }
+  #expList .gw-card-row > a { grid-column: 6; display: block; line-height: 0; }
+  #expList .gw-card-row__thumb { height: 2.25rem; width: 3rem; }
+  #expList .gw-card-row__actions { grid-column: 7; }
+}
+@media (min-width: 901px) {
+  /* Cifras en una sola franja baja (icono · cifra · rótulo en línea) en vez de dos cajas altas */
+  .gw-card > .gw-stats-row.gw-stats-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gw-sp-3); }
+  .gw-card > .gw-stats-row.gw-stats-row--2 > .gw-stat { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--gw-sp-3); padding: var(--gw-sp-2) var(--gw-sp-4); }
+  .gw-card > .gw-stats-row.gw-stats-row--2 .gw-stat__value { font-size: var(--gw-fs-2xl); }
+  .gw-docs-zip .gw-btn { margin-top: 0; margin-left: auto; }
+}
