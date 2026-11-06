@@ -227,3 +227,8 @@ table.gwe-fit.gwe-many td.gw-table-cards__actions { display: flex; flex-wrap: wr
 .gwe-file__btn { flex: 0 0 auto; }
 .gwe-file__name { flex: 1 1 8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gwe-file:hover .gwe-file__btn { background: var(--gw-surface-2); }
+
+/* Editores de texto con formato (static/js/rich-text.js): el peso normal del sistema es 600 (--gw-fw-normal, Agrandir «Regular») y el navegador toma
+   600 o más como NEGRILLA, así que el botón «N» veía todo el texto como ya en negrilla y la QUITABA (quedaba font-weight:normal). 599 se pinta con la
+   misma cara «Regular» (sin negrilla para el navegador) y deja que «N» ponga la negrilla de verdad. No usar 400: en Agrandir es la «Thin». */
+.gwe-wrap .rt-ed, .gwe-overlay .rt-ed { font-weight: 599; }
