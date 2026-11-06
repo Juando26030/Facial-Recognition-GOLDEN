@@ -379,7 +379,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
             <div id="areasConfig" class="gw-stack" {% if not event.areas_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
-              <div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody"></tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Zonas del evento</caption><thead><tr><th scope="col">Zona</th><th scope="col">Permitir reingresos</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="areasBody"></tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newAreaName">Nombre de la zona nueva</label><input class="gw-input" type="text" id="newAreaName" placeholder="Por ejemplo: VIP, Backstage, Comedor"></div>
                 <label class="gw-check"><input type="checkbox" id="newAreaReentry" checked> Permitir reingresos</label>
@@ -396,7 +396,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             </div>
             <div id="inventoryConfig" class="gw-stack" {% if not event.inventory_enabled %}hidden{% endif %}>
               <p class="gw-hint"><span class="gw-badge gw-badge--info">{{ ic('check') }}Al instante</span> Los cambios de esta tabla se guardan al momento.</p>
-              <div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody"></tbody></table></div>
+              <div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Ítems del inventario</caption><thead><tr><th scope="col">Ítem</th><th scope="col">Cantidad inicial</th><th scope="col">Varias unidades a la vez</th><th scope="col">Entregado / Disponible</th><th scope="col"><span class="gw-sr-only">Acciones</span></th></tr></thead><tbody id="itemsBody"></tbody></table></div>
               <div class="gw-actions" data-pnodirty>
                 <div class="gw-field gw-field--grow"><label class="gw-label" for="newItemName">Ítem nuevo</label><input class="gw-input" type="text" id="newItemName" placeholder="Por ejemplo: Empanadas, Gaseosas"></div>
                 <div class="gw-field"><label class="gw-label" for="newItemQty">Cantidad</label><input class="gw-input gw-input--short" type="number" id="newItemQty" min="0"></div>
@@ -497,7 +497,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <div class="gw-field"><label class="gw-label" for="prCedula">Cédula</label><input class="gw-input" type="text" id="prCedula"></div>
             </div>
             <div class="gw-actions"><button type="button" id="prCrear" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Radicar solicitud</button></div>
-            <div class="gw-table-wrap"><table id="prTabla" class="gw-table"></table></div>
+            <div class="gw-table-wrap"><table id="prTabla" class="gw-table gw-pm-stack"></table></div>
           </div>
           {% endif %}
         </section>
@@ -559,18 +559,19 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     (function () {
         const table = document.getElementById('prTabla'); if (!table) return;
         const call = (url, method, body) => fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
-        const cell = (tr, text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); return td; };
+        const HEADS = ['Radicado', 'Tipo', 'Titular', 'Límite', 'Estado', 'Reclamo en trámite', 'Acciones'];
+        const cell = (tr, text, cls) => { const td = document.createElement('td'); td.setAttribute('data-label', HEADS[tr.children.length] || ''); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); return td; };
         async function load() {
             const r = await call('/api/privacy-requests', 'GET'); table.replaceChildren();
             if (!r.ok) return;
-            const head = document.createElement('tr'); ['Radicado', 'Tipo', 'Titular', 'Límite', 'Estado', 'Reclamo en trámite', 'Acciones'].forEach((h) => { const th = document.createElement('th'); th.textContent = h; th.scope = 'col'; head.appendChild(th); }); table.appendChild(head);
+            const head = document.createElement('tr'); HEADS.forEach((h) => { const th = document.createElement('th'); th.textContent = h; th.scope = 'col'; head.appendChild(th); }); table.appendChild(head);
             r.data.forEach((q) => {
                 const tr = document.createElement('tr');
                 cell(tr, q.radicado); cell(tr, q.request_type); cell(tr, q.holder_name);
                 cell(tr, q.due_date + (q.overdue ? ' · VENCIDA' : ''), q.overdue ? 'gw-cell--err' : '');
                 cell(tr, q.status);
                 const flag = cell(tr, q.claim_flag ? 'SÍ' : (q.claim_flag_overdue ? 'falta activarla (venció el plazo)' : (q.claim_flag_due ? 'activar antes de ' + q.claim_flag_due : '—')), q.claim_flag ? 'gw-cell--strong' : (q.claim_flag_overdue ? 'gw-cell--err' : ''));
-                const act = document.createElement('td'); act.className = 'gw-cell--actions';
+                const act = document.createElement('td'); act.className = 'gw-cell--actions'; act.setAttribute('data-label', 'Acciones');
                 const btn = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.className = 'gw-btn gw-btn--secondary gw-btn--sm'; b.addEventListener('click', fn); act.appendChild(b); };
                 if (q.status === 'recibida' || q.status === 'en_tramite') {
                     if (q.request_type !== 'consulta') btn(q.claim_flag ? 'Quitar bandera' : 'Activar bandera', async () => { const x = await call(`/api/privacy-requests/${q.id}/claim-flag`, 'PUT', { active: !q.claim_flag }); if (!x.ok) showToast(x.data.detail || 'No se pudo', 'error'); load(); });
@@ -607,9 +608,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     async function loadAreas() {
         const areas = await api(`${base}/areas`);
         document.getElementById('areasBody').innerHTML = areas.length ? areas.map(a => `
-            <tr data-area="${a.id}"><td><input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}"></td>
-            <td><label class="gw-check"><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} aria-label="Permitir reingresos en ${esc(a.name)}"></label></td>
-            <td><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm area-del" aria-label="Eliminar la zona ${esc(a.name)}">${gwIcon('trash')} Eliminar</button></td></tr>`).join('')
+            <tr data-area="${a.id}"><td data-label="Zona"><input type="text" class="gw-input area-name" value="${esc(a.name)}" aria-label="Nombre de la zona ${esc(a.name)}"></td>
+            <td data-label="Permitir reingresos"><label class="gw-check"><input type="checkbox" class="area-reentry" ${a.allow_reentry ? 'checked' : ''} aria-label="Permitir reingresos en ${esc(a.name)}"></label></td>
+            <td class="gw-pm-act"><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm area-del" aria-label="Eliminar la zona ${esc(a.name)}">${gwIcon('trash')} Eliminar</button></td></tr>`).join('')
             : '<tr><td colspan="3">Todavía no hay zonas. Agrega la primera abajo.</td></tr>';
     }
     document.getElementById('areasBody').addEventListener('change', async (e) => {
@@ -633,11 +634,11 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     async function loadItems() {
         const items = await api(`${base}/inventory`);
         document.getElementById('itemsBody').innerHTML = items.length ? items.map(i => `
-            <tr data-item="${i.id}"><td><input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}"></td>
-            <td><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}"></td>
-            <td><label class="gw-check"><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} aria-label="Varias unidades a la vez de ${esc(i.name)}"></label></td>
-            <td>${i.delivered} / <strong>${i.available}</strong></td>
-            <td><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm item-del" aria-label="Eliminar el ítem ${esc(i.name)}">${gwIcon('trash')} Eliminar</button></td></tr>`).join('')
+            <tr data-item="${i.id}"><td data-label="Ítem"><input type="text" class="gw-input item-name" value="${esc(i.name)}" aria-label="Nombre del ítem ${esc(i.name)}"></td>
+            <td data-label="Cantidad inicial"><input type="number" class="gw-input gw-input--short item-qty" min="${i.delivered}" value="${i.initial_qty}" aria-label="Cantidad inicial de ${esc(i.name)}"></td>
+            <td data-label="Varias unidades a la vez"><label class="gw-check"><input type="checkbox" class="item-multi" ${i.allow_multiple ? 'checked' : ''} aria-label="Varias unidades a la vez de ${esc(i.name)}"></label></td>
+            <td data-label="Entregado / Disponible">${i.delivered} / <strong>${i.available}</strong></td>
+            <td class="gw-pm-act"><button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm item-del" aria-label="Eliminar el ítem ${esc(i.name)}">${gwIcon('trash')} Eliminar</button></td></tr>`).join('')
             : '<tr><td colspan="5">Todavía no hay ítems. Agrega el primero abajo.</td></tr>';
     }
     document.getElementById('itemsBody').addEventListener('change', async (e) => {
@@ -789,9 +790,9 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
             const rows = d.requests.map((q) => {
                 const b = BADGE[q.status] || ['', 'info'];
                 const chain = q.audit.map((a) => `${KIND[a.kind] || a.kind}${a.by ? ' (' + a.by + ')' : ''}${a.channel ? ' · ' + (CH[a.channel] || a.channel) : ''}`).join(' · ');
-                return `<tr><td>${esc(hhmm(q.requested_at))}</td><td>${esc(q.requested_by)}</td><td>${esc(q.person)}</td><td><span class="gw-badge${b[0] ? ' gw-badge--' + b[0] : ''}">${gwIcon(b[1])}${esc(STATUS[q.status] || q.status)}</span></td><td>${esc(chain)}</td></tr>`;
+                return `<tr><td data-label="Hora">${esc(hhmm(q.requested_at))}</td><td data-label="Pidió">${esc(q.requested_by)}</td><td data-label="Para">${esc(q.person)}</td><td data-label="Estado"><span class="gw-badge${b[0] ? ' gw-badge--' + b[0] : ''}">${gwIcon(b[1])}${esc(STATUS[q.status] || q.status)}</span></td><td data-label="Qué pasó">${esc(chain)}</td></tr>`;
             }).join('');
-            box.innerHTML = `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Solicitudes de permiso para reimprimir</caption><thead><tr><th scope="col">Hora</th><th scope="col">Pidió</th><th scope="col">Para</th><th scope="col">Estado</th><th scope="col">Qué pasó</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+            box.innerHTML = `<div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Solicitudes de permiso para reimprimir</caption><thead><tr><th scope="col">Hora</th><th scope="col">Pidió</th><th scope="col">Para</th><th scope="col">Estado</th><th scope="col">Qué pasó</th></tr></thead><tbody>${rows}</tbody></table></div>`;
         } catch (e) { box.textContent = 'No se pudo cargar el historial.'; }
     })();
     // Paso guiado de biometría: el resumen sale del servidor (lo que protege lo valida el servidor; esto solo guía).
@@ -1128,11 +1129,11 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         opts.push(`<option value="${u.printer_staff_id}" selected>En el equipo de ${esc(cur ? cur.name : '?')} (sin impresora ahora)</option>`);
       }
       const serving = u.serving ? `<br><span class="gw-hint">Imprime para ${u.serving} usuario(s)</span>` + (u.serving > data.warn_per_printer ? `<br><span class="gw-badge gw-badge--warn" data-sp-wait>${gwIcon('alert')}Más de ${data.warn_per_printer} equipos en esta impresora: puede haber espera de impresión.</span>` : '') : '';
-      return `<tr><td><b>${esc(u.name)}</b><br><span class="gw-hint">${esc(u.username)} · ${esc(u.role)}</span>${serving}</td>
-        <td>${deviceText(u.device)}</td>
-        <td><select class="gw-select" data-route="${u.staff_id}" aria-label="Dónde imprime ${esc(u.name)}" ${u.serving ? 'disabled title="Atiende a otros usuarios"' : ''}>${opts.join('')}</select></td></tr>`;
+      return `<tr><td data-label="Usuario"><b>${esc(u.name)}</b><br><span class="gw-hint">${esc(u.username)} · ${esc(u.role)}</span>${serving}</td>
+        <td data-label="Equipo">${deviceText(u.device)}</td>
+        <td data-label="Imprime"><select class="gw-select" data-route="${u.staff_id}" aria-label="Dónde imprime ${esc(u.name)}" ${u.serving ? 'disabled title="Atiende a otros usuarios"' : ''}>${opts.join('')}</select></td></tr>`;
     }).join('');
-    box.innerHTML = data.users.length ? `<div class="gw-table-wrap"><table class="gw-table"><caption class="gw-sr-only">Dónde imprime cada usuario</caption><thead><tr><th scope="col">Usuario</th><th scope="col">Equipo</th><th scope="col">Imprime</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    box.innerHTML = data.users.length ? `<div class="gw-table-wrap"><table class="gw-table gw-pm-stack"><caption class="gw-sr-only">Dónde imprime cada usuario</caption><thead><tr><th scope="col">Usuario</th><th scope="col">Equipo</th><th scope="col">Imprime</th></tr></thead><tbody>${rows}</tbody></table></div>`
       : '<p class="gw-msg">Aún no hay usuarios. Asigna digitadores al evento o abre el Registro en los equipos.</p>';
     timer = setTimeout(() => { if (window.GW && window.GW.idle) window.GW.onResume(() => load(), true); else load(); }, 5000);      // sin uso 60 s el sondeo se detiene y retoma al volver
   }
@@ -1185,8 +1186,13 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
       </div>
       <div class="gw-actions">
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-save="${u.staff_id}" hidden>Guardar</button>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-clear="${u.staff_id}">${gwIcon('undo')} Quitar configuración (usar lo de siempre)</button>
-        ${IS_ADMIN && u.print_station ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm" data-release="${u.staff_id}">Liberar cuenta (forzar el cambio de dispositivo)</button>` : ''}
+        <div class="gw-menu gw-menu--up">
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-pm-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(u.name)}">${gwIcon('more')} Más acciones</button>
+          <div class="gw-menu__panel" hidden role="group">
+            <button type="button" class="gw-menu__item" data-clear="${u.staff_id}">${gwIcon('undo')} Quitar configuración (usar lo de siempre)</button>
+            ${IS_ADMIN && u.print_station ? `<button type="button" class="gw-menu__item gw-menu__item--danger" data-release="${u.staff_id}">${gwIcon('lock')} Liberar cuenta (forzar el cambio de dispositivo)</button>` : ''}
+          </div>
+        </div>
       </div></div></details>`;
   }
   async function load() {
@@ -1230,7 +1236,12 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
     await reloadKeepingPending();
     if (errors.length) throw new Error(errors.join(' · '));
   } });
+  const closeMenus = (except) => box.querySelectorAll('.gw-menu__panel').forEach((p) => { if (p !== except && !p.hidden) { p.hidden = true; const t = p.parentNode.querySelector('[data-pm-menu]'); if (t) t.setAttribute('aria-expanded', 'false'); } });
+  document.addEventListener('click', (e) => { if (!(e.target.closest && e.target.closest('.gw-menu'))) closeMenus(); });
   box.addEventListener('click', async (e) => {
+    const kebab = e.target.closest('[data-pm-menu]');
+    if (kebab) { const panel = kebab.parentNode.querySelector('.gw-menu__panel'); closeMenus(panel); panel.hidden = !panel.hidden; kebab.setAttribute('aria-expanded', String(!panel.hidden)); return; }
+    if (e.target.closest('.gw-menu__item')) closeMenus();
     const save = e.target.closest('[data-save]'), clear = e.target.closest('[data-clear]'), rel = e.target.closest('[data-release]');
     if (save) {
       put(save.dataset.save, bodyOf(save.closest('details')), 'Puesto guardado. El equipo lo aplica al recargar el Registro.');

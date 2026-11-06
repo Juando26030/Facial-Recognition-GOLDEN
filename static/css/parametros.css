@@ -22,7 +22,9 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 :root[data-theme="dark"] .gw-parametros input[type="checkbox"], :root[data-theme="dark"] .gw-parametros input[type="range"] { accent-color: var(--gw-gold-2); }
 /* Tabla de campos: ocupa el ancho disponible (anchos por columna en gw-tablas.css); en pantallas angostas se desplaza dentro de su caja */
 .gw-table--fields { min-width: 0; }
-@media (max-width: 899px) { .gw-table--fields { min-width: 920px; table-layout: auto; } }
+.gw-table--fields { min-width: 1240px; table-layout: auto; }
+.gw-table--fields th:nth-child(2), .gw-table--fields td:nth-child(2) { min-width: 11rem; }
+.gw-table--fields th:nth-child(5), .gw-table--fields td:nth-child(5) { min-width: 14rem; }
 .gw-table--fields td { vertical-align: top; }
 .gw-table--fields .gw-textarea { min-height: 72px; margin-bottom: var(--gw-sp-2); }
 .gw-table--fields .gw-drag { width: 3rem; }
@@ -40,3 +42,40 @@ body.gw-parametros { background: var(--gw-bg); color: var(--gw-text); }
 .gw-pm-frame[hidden] { display: none; }
 #sharedPrintTable, #stationsTable, #reprintHistory { margin-top: var(--gw-sp-3); }
 @media (min-width: 900px) { .gw-parametros .gw-tablist { top: calc(80px + var(--gw-sp-4)); } }   /* debajo de la cabecera fija */
+
+/* ---- Botones, insignias y tablas: nada se sale ni se corta (auditoría de botones, 2026-11-06) ---- */
+/* Botones con texto largo: parten en líneas centradas dentro de su caja; el texto nunca se corta letra por letra */
+.gw-parametros .gw-btn { text-wrap: balance; max-width: 100%; text-align: center; overflow-wrap: normal; word-break: normal; }
+.gw-parametros .gw-btn .gw-icon { flex: none; }
+.gw-parametros .gw-table td .gw-btn { white-space: normal; }
+.gw-parametros .gw-badge { max-width: 100%; }
+/* Encabezado de cada puesto de impresión: nombre, cuenta e insignias en filas que ajustan, sin pisarse */
+.gw-parametros .gw-form-group__summary { flex-wrap: wrap; row-gap: var(--gw-sp-1); padding-top: var(--gw-sp-2); padding-bottom: var(--gw-sp-2); min-width: 0; }
+.gw-parametros .gw-form-group__summary::before { flex: none; }
+.gw-parametros .gw-form-group__summary .gw-hint { margin: 0; overflow-wrap: anywhere; }
+.gw-parametros .gw-form-group__summary .gw-badge { flex: none; white-space: nowrap; }
+/* Menú «Más acciones» de cada puesto */
+.gw-parametros .gw-actions .gw-menu { max-width: 100%; }
+.gw-parametros .gw-menu__panel { min-width: min(18rem, calc(100vw - 2 * var(--gw-sp-4))); max-width: calc(100vw - 2 * var(--gw-sp-4)); }
+.gw-parametros .gw-menu__item { text-align: left; white-space: normal; }
+.gw-parametros .gw-menu__item .gw-icon { flex: none; }
+/* Tabla de campos: columnas con ancho suficiente para sus controles y botón «Borrar campo» en una línea */
+.gw-table--fields th { overflow-wrap: normal; word-break: normal; hyphens: none; }
+.gw-table--fields th:nth-child(3), .gw-table--fields td:nth-child(3) { width: 7.5rem; }
+.gw-table--fields th:nth-child(4), .gw-table--fields td:nth-child(4) { width: 10rem; }
+.gw-table--fields th:nth-child(6), .gw-table--fields td:nth-child(6), .gw-table--fields th:nth-child(7), .gw-table--fields td:nth-child(7) { width: 8rem; }
+.gw-table--fields th:nth-child(8), .gw-table--fields td:nth-child(8) { width: 9rem; }
+.gw-parametros .gw-table--fields td .cfg-delete { white-space: nowrap; width: 100%; }
+/* Botones del editor de opciones de lista (los crea option-tools.js con estilos propios): altura táctil y tokens */
+.gw-parametros .cfg-options + div > div:first-child > button { display: inline-flex; align-items: center; justify-content: center; min-height: var(--gw-tap); padding: var(--gw-sp-1) var(--gw-sp-3) !important; font: inherit !important; font-size: var(--gw-fs-sm) !important; font-weight: var(--gw-fw-bold) !important; color: var(--gw-secondary-text); background: var(--gw-secondary-bg) !important; border: 2px solid var(--gw-border-strong) !important; border-radius: var(--gw-radius-md) !important; text-align: center; }
+/* Tablas que se vuelven tarjetas en celular: cada fila es una tarjeta y cada celda lleva su rótulo (data-label) */
+@media (max-width: 640px) {
+  .gw-pm-stack, .gw-pm-stack tbody, .gw-pm-stack tr, .gw-pm-stack td { display: block; width: 100%; }
+  .gw-pm-stack { min-width: 0; }
+  .gw-pm-stack thead, .gw-pm-stack tr:has(> th) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .gw-pm-stack tr { padding: var(--gw-sp-2) var(--gw-sp-3); border-bottom: 1px solid var(--gw-border-strong); }
+  .gw-pm-stack td { padding: var(--gw-sp-1) 0; border: 0; overflow-wrap: anywhere; word-break: normal; text-align: left; }
+  .gw-pm-stack td[data-label]::before { content: attr(data-label); display: block; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
+  .gw-pm-stack td.gw-pm-act, .gw-pm-stack td.gw-cell--actions { display: flex; flex-direction: column; align-items: stretch; }
+  .gw-pm-stack td.gw-pm-act .gw-btn, .gw-pm-stack td.gw-cell--actions .gw-btn { width: 100%; margin: 0 0 var(--gw-sp-1); }
+}
