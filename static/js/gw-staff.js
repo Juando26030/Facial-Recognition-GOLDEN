@@ -44,17 +44,22 @@
   function actionsHtml(s) {
     if (s.role === 'super_admin' || s.username === staffUsername) return '<p class="gw-hint">Sin acciones disponibles para esta cuenta.</p>';
     const otherRole = DUAL_ROLE_PAIR[s.role];
-    const btn = (action, label, ico, cls, extra) => `<button type="button" class="gw-btn ${cls || 'gw-btn--secondary'}" data-staff-action="${action}" data-id="${esc(s.id)}" data-username="${esc(s.username)}" ${extra || ''}>${ico ? icon(ico, 'gw-icon--sm') : ''} ${label}</button>`;
+    const attrs = (action, extra) => `data-staff-action="${action}" data-id="${esc(s.id)}" data-username="${esc(s.username)}" ${extra || ''}`;
+    const btn = (action, label, ico, cls, extra) => `<button type="button" class="gw-btn ${cls || 'gw-btn--secondary'}" ${attrs(action, extra)}>${ico ? icon(ico, 'gw-icon--sm') : ''}<span>${label}</span></button>`;
+    const item = (action, label, ico, extra, danger) => `<button type="button" class="gw-menu__item${danger ? ' gw-menu__item--danger' : ''}" role="menuitem" ${attrs(action, extra)}>${icon(ico, 'gw-icon--sm')}<span>${label}</span></button>`;
     const parts = [];
-    if (isAdminPlus && otherRole) {
-      parts.push(s.secondary_role
-        ? btn('secondary', `Quitar «${esc(roleLabel(otherRole))}»`, 'close', '', 'data-value=""')
-        : btn('secondary', `También ${esc(roleLabel(otherRole))}`, 'plus', '', `data-value="${esc(otherRole)}"`));
-    }
-    if (isAdminPlus && ['coordinador', 'comercial', 'admin'].includes(s.role)) parts.push(btn('role', 'Cambiar rol', 'user-plus', '', `data-current="${esc(s.role)}"`));
+    const more = [];
+    // A la vista lo de todos los días (restablecer contraseña, desactivar/reactivar); lo poco usado y lo irreversible va en el menú «Más acciones».
     if (DELETABLE_ROLES.includes(s.role)) parts.push(btn('reset', 'Restablecer contraseña', 'lock'));
     parts.push(s.is_active ? btn('deactivate', 'Desactivar', 'eye-off', 'gw-btn--danger-outline') : btn('activate', 'Reactivar', 'check'));
-    if (DELETABLE_ROLES.includes(s.role)) parts.push(btn('delete', 'Borrar permanente', 'trash', 'gw-btn--danger'));
+    if (isAdminPlus && otherRole) {
+      more.push(s.secondary_role
+        ? item('secondary', `Quitar «${esc(roleLabel(otherRole))}»`, 'close', 'data-value=""')
+        : item('secondary', `También ${esc(roleLabel(otherRole))}`, 'plus', `data-value="${esc(otherRole)}"`));
+    }
+    if (isAdminPlus && ['coordinador', 'comercial', 'admin'].includes(s.role)) more.push(item('role', 'Cambiar rol', 'user-plus', `data-current="${esc(s.role)}"`));
+    if (DELETABLE_ROLES.includes(s.role)) more.push(item('delete', 'Borrar permanente', 'trash', '', true));
+    if (more.length) parts.push(`<div class="gw-menu gw-staff__more"><button type="button" class="gw-btn gw-btn--secondary gw-menu__btn" data-staff-menu aria-haspopup="true" aria-expanded="false" aria-label="Más acciones de ${esc(s.username)}">${icon('more')}</button><div class="gw-menu__panel" role="menu" hidden>${more.join('')}</div></div>`);
     return parts.join('');
   }
 
@@ -72,7 +77,7 @@
           <span class="gw-badge ${s.is_active ? 'gw-badge--ok' : 'gw-badge--err'}">${icon(s.is_active ? 'check' : 'error')}${s.is_active ? 'Activo' : 'Inactivo'}</span>
         </div>
         <p class="gw-card-row__meta">${esc(s.full_name || 'Sin nombre')}</p>
-        <p class="gw-card-row__meta gw-staff__who">${s.email ? esc(s.email) : 'Sin correo'}
+        <p class="gw-card-row__meta gw-staff__mail"><span class="gw-staff__who">${s.email ? esc(s.email) : 'Sin correo'}</span>
           <button type="button" class="gw-btn gw-btn--ghost gw-btn--sm" data-staff-action="email" data-id="${esc(s.id)}" data-current="${esc(s.email || '')}" aria-label="Editar el correo de ${esc(s.username)}">${icon('edit', 'gw-icon--sm')}</button></p>
         <p><span class="gw-badge gw-badge--info">${esc(roles)}</span></p>
         <div class="gw-card-row__actions gw-staff__actions">${actionsHtml(s)}</div>
@@ -169,9 +174,31 @@
     if (first) first.focus({ preventScroll: true });
   });
 
+  // Menú «Más acciones»: se abre y cierra aquí (clic afuera, Escape o al elegir una acción).
+  function closeMenus(except) {
+    listEl.querySelectorAll('.gw-staff__more').forEach((m) => {
+      if (m === except) return;
+      const panel = m.querySelector('.gw-menu__panel'), tog = m.querySelector('[data-staff-menu]');
+      if (panel) panel.hidden = true;
+      if (tog) tog.setAttribute('aria-expanded', 'false');
+    });
+  }
+  document.addEventListener('click', (e) => { if (!e.target.closest('.gw-staff__more')) closeMenus(null); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(null); });
+
   listEl.addEventListener('click', (e) => {
+    const tog = e.target.closest('[data-staff-menu]');
+    if (tog) {
+      const wrap = tog.closest('.gw-staff__more'), panel = wrap.querySelector('.gw-menu__panel'), open = panel.hidden;
+      closeMenus(wrap);
+      panel.hidden = !open;
+      tog.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && panel.firstElementChild) panel.firstElementChild.focus();
+      return;
+    }
     const btn = e.target.closest('[data-staff-action]');
     if (!btn) return;
+    if (btn.closest('.gw-staff__more')) closeMenus(null);
     const action = btn.dataset.staffAction;
     if (action === 'reload') loadStaff();
     else if (action === 'email') editEmail(btn);
