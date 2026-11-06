@@ -1,0 +1,3 @@
+/* Documentos y Legalizaciones (Fase 1.5): solo lo que el sistema de diseño no trae. Únicamente tokens --gw-*. */
+.gw-btn[hidden] { display: none; }
+.gw-card-row__thumb { display: block; height: 4.5rem; width: auto; max-width: 100%; object-fit: cover; border: 1px solid var(--gw-border); border-radius: var(--gw-radius-sm); }
