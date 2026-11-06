@@ -154,3 +154,70 @@ a.gw-bulb:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2p
 
 /* Filtros con 4 campos (admin): dos columnas parejas en escritorio, sin un cuarto campo solo en otra fila ni textos recortados. */
 @media (min-width: 641px) { .ev-filters:has(.gw-field:nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------- Escritorio (≥ 901 px): cada evento es UNA fila delgada de una línea, con columnas alineadas (Fase 1.7, ancho). Bajo 901 px sigue la tarjeta de siempre. ---------- */
+.ev-cols { display: none; }
+.ev-card__tools { display: contents; }
+.ev-rep--dot, .ev-dt--short { display: none; }
+@media (min-width: 901px) {
+  .ev-dt--full { display: none; }
+  .ev-dt--short { display: inline; }
+  /* Hasta 1759 px: sin la insignia de estado (el selector de la derecha ya lo muestra) y el informe como punto con nombre accesible. */
+  .ev-wrap { --ev-cols: minmax(0, 2fr) minmax(0, 1fr) 8.5rem minmax(0, 1.2fr) 4rem max-content; }
+  .ev-cols__c5, .ev-card__state { display: none; }
+  .ev-cols__c6 { text-align: center; }
+  .ev-card__report { justify-content: center; }
+  .ev-rep--full { display: none; }
+  .ev-rep--dot { display: inline-flex; }
+  /* filtros en una sola línea */
+  .ev-filters { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: flex-end; gap: var(--gw-sp-3); padding: var(--gw-sp-3) var(--gw-sp-4); margin-bottom: var(--gw-sp-3); }
+  .ev-filters .gw-field { flex: 1 1 0; min-width: 0; }
+  .ev-filters .gw-field:first-child { flex: 2 1 0; }
+  .ev-filters .gw-input, .ev-filters .gw-select { min-height: var(--gw-tap); font-size: var(--gw-fs-md); text-overflow: ellipsis; }
+  .ev-filters .gw-label { font-size: var(--gw-fs-sm); }
+  /* encabezado de columnas */
+  .ev-cols { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; padding: 0 calc(var(--gw-sp-4) + 1px); margin-bottom: calc(-1 * var(--gw-sp-1)); font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); text-transform: uppercase; }
+  .ev-cols > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev-cols__c7 { text-align: right; }
+  /* la fila */
+  .ev-list { grid-template-columns: var(--ev-cols); column-gap: var(--gw-sp-3); row-gap: var(--gw-sp-2); }
+  .ev-list > :not(.ev-card):not(.ev-cols) { grid-column: 1 / -1; }
+  .ev-card { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: center; padding: var(--gw-sp-2) var(--gw-sp-4); min-height: calc(var(--gw-tap) + var(--gw-sp-4)); }
+  .ev-card__head, .ev-card__meta, .ev-card__bar, .ev-card__actions { display: contents; }
+  .ev-card__title { order: 1; display: flex; flex-wrap: nowrap; align-items: baseline; gap: var(--gw-sp-2); min-width: 0; margin: 0; font-size: var(--gw-fs-md); }
+  .ev-card__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev-card__code { flex: 0 0 auto; font-size: var(--gw-fs-sm); }
+  .ev-card__client { order: 2; } .ev-card__dates { order: 3; } .ev-card__people { order: 4; }
+  .ev-card__state { order: 5; justify-self: start; font-size: var(--gw-fs-sm); padding: 2px var(--gw-sp-3); white-space: nowrap; }
+  .ev-card__report { order: 6; }
+  .ev-card__super, .ev-card__pfx, .ev-card__row:not(.ev-card__report) > .gw-icon { display: none; }              /* el encabezado de columnas ya dice qué es cada dato */
+  .ev-card__row { align-items: center; min-width: 0; font-size: var(--gw-fs-sm); }
+  .ev-card__row > span:not(.ev-rep) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev-card__row--plain .gw-bulb { white-space: nowrap; }
+  /* a la derecha: Editar · ⋯ · estado · Ingresar, en una línea */
+  .ev-card__tools { order: 7; display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: var(--gw-sp-2); min-width: 0; }
+  .ev-card__tools .ev-card__edit { order: 1; flex: 0 0 auto; }
+  .ev-card__tools .ev-card__menu { order: 2; }
+  .ev-card__tools .ev-card__bar .gw-field { order: 3; display: block; flex: 0 0 8.5rem; margin: 0; }
+  .ev-card__tools .ev-card__enter { order: 4; margin-left: 0; flex: 0 0 auto; }
+  .ev-card__bar .gw-label { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .ev-card__bar .gw-select { min-height: var(--gw-tap); width: 100%; text-overflow: ellipsis; }
+  .ev-card__actions .gw-btn, .ev-card__actions .ev-card__enter { min-height: var(--gw-tap); }
+  .ev-card__enter.gw-btn--xl { padding: var(--gw-sp-2) var(--gw-sp-4); font-size: var(--gw-fs-md); }
+  .ev-card__actions .ev-card__edit, .ev-card__actions .ev-card__enter { padding-left: var(--gw-sp-4); padding-right: var(--gw-sp-4); }
+}
+/* 901-1759 px: botones solo con texto para que quepan las columnas de datos. */
+@media (min-width: 901px) and (max-width: 1759px) {
+  .ev-card__actions .ev-card__edit .gw-icon, .ev-card__actions .ev-card__enter .gw-icon { display: none; }
+  .ev-card__actions .ev-card__edit, .ev-card__actions .ev-card__enter { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+}
+/* ≥ 1760 px: también la insignia de estado y el informe con texto. */
+@media (min-width: 1760px) {
+  .ev-wrap { --ev-cols: minmax(0, 2fr) minmax(0, 1.2fr) 8.5rem minmax(0, 1.6fr) 7.5rem 11.5rem max-content; }
+  .ev-cols__c5, .ev-card__state { display: inline-flex; }
+  .ev-cols__c5 { display: block; }
+  .ev-cols__c6 { text-align: left; }
+  .ev-card__report { justify-content: flex-start; }
+  .ev-rep--full { display: inline-flex; }
+  .ev-rep--dot { display: none; }
+}
