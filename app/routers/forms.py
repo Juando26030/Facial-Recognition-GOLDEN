@@ -30,6 +30,7 @@ from app.timeutil import to_local
 
 router = APIRouter()
 STAFF = require_role("coordinador")
+ADMIN = require_role("admin")
 
 
 # ------------------------------------------------------------------ utilidades
@@ -797,6 +798,53 @@ def list_submissions(event_id: int, form_id: int, include_tests: bool = True, db
     return {"has_payment": bool(formlib.payment_field(design)), "columns": [{"id": i, "label": l, "type": t} for i, l, t in _column_defs(design)], "rows": [
         {"id": s.id, "created_at": to_local(s.created_at).strftime("%Y-%m-%d %H:%M:%S"), "is_test": s.is_test, "fed": s.fed, "source": s.source or "",
          "paid": paid[s.id].amount_cents // 100 if s.id in paid else None, "data": {k: _display(v) for k, v in json.loads(s.data_json).items()}} for s in rows]}
+
+
+@router.post("/events/{event_id}/forms/{form_id}/unify-values")
+def unify_values(event_id: int, form_id: int, payload: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
+    """Unifica un campo que define cupos en las inscripciones ya guardadas: «Bogota», «BOGOTÁ» y los alias que se indiquen pasan al valor escrito en la regla («Bogotá»). El reporte,
+    las respuestas y el conteo de cupos quedan con el mismo valor. Cuerpo: `{"field": id del campo, "aliases": {"Bogotá, D.C.": "Bogotá"}, "apply": false}`. Sin `apply` solo informa
+    (cuántas se corregirían y por cuál valor, sin nombres ni cédulas). Con `apply` corrige y recalcula las llaves de cupo, con el formulario bloqueado para que ningún envío se cruce.
+    Solo cambia el campo indicado y solo si coincide EXACTO (sin tildes/mayúsculas) con un valor de las reglas o con un alias dado; lo demás no se toca. Repetirlo no cambia nada."""
+    from app import value_unify
+    event = get_event_for_staff(event_id, db, staff)
+    form = _get_form(db, event, form_id)
+    design = formsvc.get_design(form)
+    field_id = str(payload.get("field") or "")
+    rules = formsvc.quota_rules(form)
+    canon = value_unify.canonical_values(rules, field_id)
+    if field_id not in design["fields"] or not canon:
+        raise HTTPException(status_code=400, detail="Ese campo no define cupos en este formulario")
+    try:
+        aliases = value_unify.alias_map(payload.get("aliases") or {}, canon)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    do_apply = payload.get("apply") is True
+    db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
+    rows = db.query(FormSubmission.id, FormSubmission.data_json, FormSubmission.fed).filter(FormSubmission.form_id == form.id, FormSubmission.is_test == False).all()  # noqa: E712
+    changes, unresolved, batch, fed_changed = {}, {}, [], 0
+    for sid, raw, fed in rows:
+        data = json.loads(raw or "{}")
+        old = data.get(field_id)
+        if not isinstance(old, str) or not old.strip():
+            continue
+        new = value_unify.resolve(old, canon, aliases)
+        if new is None:
+            unresolved[old.strip()] = unresolved.get(old.strip(), 0) + 1
+        elif new != old:
+            changes[(old, new)] = changes.get((old, new), 0) + 1
+            fed_changed += 1 if fed else 0
+            data[field_id] = new
+            batch.append({"id": sid, "data_json": json.dumps(data), "quota_keys": formsvc.quota_keys_for(rules, data)})
+    if do_apply and batch:
+        for i in range(0, len(batch), 500):
+            db.bulk_update_mappings(FormSubmission, batch[i:i + 500])
+        formsvc.invalidate_held()
+    db.commit()
+    known = set(canon.values())
+    return {"applied": do_apply and bool(batch), "changed": len(batch), "already_ok": sum(1 for _, raw, _f in rows if json.loads(raw or "{}").get(field_id) in known),
+            "changes": [{"from": a, "to": b, "count": n} for (a, b), n in sorted(changes.items(), key=lambda x: -x[1])],
+            "unresolved": [{"value": v, "count": n} for v, n in sorted(unresolved.items(), key=lambda x: -x[1])], "already_in_base": fed_changed}
 
 
 @router.delete("/events/{event_id}/forms/{form_id}/submissions/{submission_id}")
