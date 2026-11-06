@@ -394,6 +394,9 @@
 .golden-sidebar a.active { border-left-color: var(--gw-nav-accent); }
 .golden-sidebar a.active .gw-icon { color: var(--gw-nav-accent); }
 .golden-sidebar-toggle .gw-icon { width: 1.5rem; height: 1.5rem; }
+.gw-kiosk-nav { display: flex; align-items: center; gap: var(--gw-sp-3); }
+.gw-kiosk-nav__logout { margin: 0; }
+.golden-sidebar-toggle:focus-visible, .golden-sidebar a:focus-visible { outline: 3px solid var(--gw-nav-accent); outline-offset: -3px; }
 .golden-nav-user { color: #4a4a55; font-size: var(--gw-fs-sm); }
 
 /* Botón «Salir» y similares dentro del encabezado común de las pantallas del panel (claras, no pasan al tema oscuro todavía) */

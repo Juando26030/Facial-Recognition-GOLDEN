@@ -6,11 +6,11 @@
      Reemplaza los botones "Métodos"/"Panel" que existían antes — queda el atrás del navegador +
      estos links para volver a cualquier parte de la app. -->
 {% include "_env_badge.html" %}
-<button type="button" class="golden-sidebar-toggle" id="sidebarToggleBtn" aria-label="Abrir menú"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-menu"/></svg></button>
+<button type="button" class="golden-sidebar-toggle" id="sidebarToggleBtn" aria-label="Abrir menú" aria-controls="gwSidebar" aria-expanded="false"><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-menu"/></svg></button>
 <div class="golden-sidebar-backdrop" id="sidebarBackdrop"></div>
 {# Fase 1B: tarjeta de permisos de reimpresión para el coordinador del evento (y admin+); sondeo cada 10 s con GW.poll, ver static/js/reprint-inbox.js #}
 {% if staff_role is defined and staff_role and ("coordinador" in staff_role or "admin" in staff_role) %}<script src="{{ url_for('static', path='js/reprint-inbox.js') }}" defer></script>{% endif %}
-<aside class="golden-sidebar">
+<aside class="golden-sidebar" id="gwSidebar">
   <nav>
     <a href="/clientes"{% if sidebar_active == "clientes" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-building"/></svg> Clientes - Cuentas</a>
     <a href="/eventos"{% if sidebar_active == "eventos" %} class="active"{% endif %}><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-calendar"/></svg> Eventos</a>
@@ -28,7 +28,16 @@
 (function () {
   const toggle = document.getElementById('sidebarToggleBtn');
   const backdrop = document.getElementById('sidebarBackdrop');
-  if (toggle) toggle.addEventListener('click', () => document.body.classList.toggle('sidebar-open'));
-  if (backdrop) backdrop.addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+  const side = document.getElementById('gwSidebar');
+  // Abre/cierra el menú y avisa su estado a los lectores de pantalla; Esc lo cierra y devuelve el foco al botón.
+  function setOpen(open, back) {
+    document.body.classList.toggle('sidebar-open', open);
+    if (toggle) { toggle.setAttribute('aria-expanded', open ? 'true' : 'false'); toggle.setAttribute('aria-label', open ? 'Cerrar menú' : 'Abrir menú'); }
+    if (open && side) { const first = side.querySelector('a'); if (first) first.focus(); }
+    if (!open && back && toggle) toggle.focus();
+  }
+  if (toggle) toggle.addEventListener('click', () => setOpen(!document.body.classList.contains('sidebar-open')));
+  if (backdrop) backdrop.addEventListener('click', () => setOpen(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('sidebar-open')) setOpen(false, true); });
 })();
 </script>
