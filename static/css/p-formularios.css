@@ -38,3 +38,35 @@
   #importCard .gw-fields-row { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--gw-sp-4); }
   #importCard .gw-field { margin-bottom: 0; }
 }
+
+/* Escritorio (>= 901 px): cada formulario es UNA fila delgada (nombre · estado · enlace · cifras · acciones en una línea). El celular conserva la tarjeta. */
+@media (min-width: 901px) {
+  #body.gw-cards { grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-2); }
+  #body .gw-card-row { display: grid; grid-template-columns: minmax(0, 2.4fr) 6.5rem minmax(0, 1.1fr) minmax(11.5rem, 1.4fr) minmax(6.5rem, 0.5fr) auto; align-items: center; column-gap: var(--gw-sp-4); row-gap: 0; padding: var(--gw-sp-2) var(--gw-sp-4); box-shadow: none; }
+  #body .gw-card-row__head, #body .gw-card-row .gw-stats-row { display: contents; }
+  #body .gw-card-row__title { grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: var(--gw-fs-md); }
+  #body .gw-card-row__head > .gw-badge { grid-column: 2; justify-self: start; }
+  #body .gw-card-row__meta { grid-column: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+  #body .gw-card-row .gw-stat { flex-direction: row; align-items: baseline; flex-wrap: nowrap; gap: var(--gw-sp-2); min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; white-space: nowrap; overflow: hidden; }
+  #body .gw-card-row .gw-stats-row .gw-stat__value { font-size: var(--gw-fs-lg); flex: none; }
+  #body .gw-card-row .gw-stat__label { font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-normal); color: var(--gw-text-muted); flex: none; }
+  #body .gw-card-row .gw-stat__hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #body .gw-card-row__actions { grid-column: 6; flex-wrap: nowrap; align-items: center; }
+  #body .gw-card-row__actions > .gw-btn:not(.gw-forms-kebab__btn) { flex: none; white-space: nowrap; }
+  #body .gw-forms-kebab__btn { height: auto; }
+}
+@media (min-width: 901px) {
+  /* Crear: nombre, plantilla y botón en una sola fila (el nombre ya no ocupa todo el ancho) */
+  #newForm { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto; column-gap: var(--gw-sp-4); row-gap: var(--gw-sp-3); align-items: end; }
+  #newForm > .gw-card-row__title { grid-column: 1 / -1; }
+  #newForm > .gw-field { margin-bottom: 0; }
+  #newForm > .gw-form-group { align-self: end; }
+  #newForm > .gw-forms-main { align-self: end; }
+}
+@media (min-width: 901px) and (max-width: 1599px) {
+  /* Pantallas de 1280-1536 px: la nota de pruebas se oculta (queda en el título) y los botones se compactan para que el nombre se lea */
+  #body .gw-card-row { grid-template-columns: minmax(12rem, 2.4fr) 6.5rem minmax(5rem, 0.9fr) minmax(8.5rem, 1fr) minmax(5.5rem, 0.5fr) auto; column-gap: var(--gw-sp-3); }
+  #body .gw-card-row .gw-stat__hint { display: none; }
+  #body .gw-card-row__actions { gap: var(--gw-sp-1); }
+  #body .gw-card-row__actions > .gw-btn:not(.gw-forms-kebab__btn) { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+}

@@ -2,7 +2,7 @@
    Las clases .gwe-* son de esta pantalla. El bloque «vista previa congelada» (más abajo) deja la vista previa del formulario exactamente como se veía antes: no se toca. */
 
 /* ------------------------------------------------------------ marco */
-.gw-editor-form .gwe-wrap { max-width: min(100%, 87.5rem); display: flex; flex-direction: column; gap: var(--gw-sp-4); padding-top: var(--gw-sp-5); padding-bottom: var(--gw-sp-6); min-width: 0; }
+.gw-editor-form .gwe-wrap { max-width: min(100%, var(--gw-content-w)); display: flex; flex-direction: column; gap: var(--gw-sp-4); padding-top: var(--gw-sp-5); padding-bottom: var(--gw-sp-6); min-width: 0; }
 .gw-editor-form .gwe-wrap > .gw-page-head { margin: 0; }
 .gw-editor-form .gwe-wrap .gw-steps { margin-bottom: 0; }
 .gw-editor-form .gwe-back { transform: rotate(180deg); }
