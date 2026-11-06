@@ -172,7 +172,7 @@ def test_celular_la_lista_no_queda_sin_alto():
 
 def test_search_has_a_trash_button_and_the_created_pill_is_blue():
     """Pedido de Juan David (5-nov-2026): papelera junto a la caja única, y «Recién creado» (alta manual) en píldora sólida AZUL, distinta de «Recién registrado» (verde)."""
-    assert 'id="searchClearBtn"' in BUSC and 'aria-label="Borrar lo escrito"' in BUSC and "#i-trash" in BUSC and "gw-search__row" in BUSC
+    assert 'id="searchClearBtn"' in BUSC and 'aria-label="Vaciar búsqueda"' in BUSC and "#i-trash" in BUSC and "gw-search__row" in BUSC
     css = _no_comments(DS_CSS)
     assert ".gw-search__clear" in css and ".gw-recent-tag--new" in css and "var(--gw-info-line)" in css.split(".gw-recent-tag--new")[1].split("}")[0]
     assert "Recién creado" in DIR_JS and "Recién registrado" in DIR_JS and "gw-recent-tag--new" in DIR_JS
@@ -242,3 +242,34 @@ def test_list_is_not_redrawn_under_the_finger_so_the_touch_scroll_is_not_cancell
     css = pathlib.Path("static/css/p-registro-puerta.css").read_text(encoding="utf-8")
     assert "touch-action: manipulation" in css
     assert "preventDefault" not in "".join(l for l in js.splitlines() if "touchstart" in l or "touchmove" in l)
+
+
+# ------------------------------------------------------------------------------------------------------------------------ Fase 1.7, M8 (Registro 3: chips, buscador y papelera)
+def test_puerta_css_has_balanced_braces():
+    """El merge de M2+M4 dejó dos bloques sin cerrar y el CSS móvil dejó de aplicarse en el celular: las llaves tienen que cuadrar."""
+    css = _no_comments(PUERTA_CSS)
+    assert css.count("{") == css.count("}")
+
+
+def test_m8_registro_mobile_layout_is_documented_and_compact():
+    assert "Cálculo de alturas" in PUERTA_CSS and "viewport útil 410 x 730" in PUERTA_CSS
+    css = _no_comments(PUERTA_CSS)
+    for fragmento in ("min-height: 3rem", ".gw-summary__more", "flex-wrap: nowrap", "td.action-cell { flex-wrap: nowrap", "padding: 0 !important"):
+        assert fragmento in css, fragmento
+    assert "gwSummaryMore" in DIR_JS and "is-open" in DIR_JS and "aria-controls" in DIR_JS
+
+
+def test_m8_touch_mode_overrides_and_registered_pill_is_legible():
+    css = _no_comments(PUERTA_CSS)
+    assert "shared-print.js" in PUERTA_CSS and "!important" in css
+    assert re.search(r"tr\.row-registrado td\[data-field=status\] \{[^}]*color: var\(--gw-ok-text\) !important", css)
+
+
+def test_m8_clear_button_is_shared_and_keeps_the_scanner_path_free():
+    js = (ROOT / "static/js/gw-ui.js").read_text(encoding="utf-8")
+    assert "Vaciar búsqueda" in js and "data-gw-clear" in js and "MutationObserver" in js and "dispatchEvent(new Event('input'" in js
+    assert "onclick" not in js.split("Vaciar búsqueda (papelera")[1].split("Eventos (delegados)")[0]
+    assert "searchClearBtn" in BUSC and 'aria-label="Vaciar búsqueda"' in BUSC
+    assert "gw-search__clear--in" in DS_CSS and "gw-clearable" in DS_CSS and "gw-input--clearable" in DS_CSS
+    assert "Vaciar búsqueda" in STANDARDS and "gw-search__clear--in" in STANDARDS
+

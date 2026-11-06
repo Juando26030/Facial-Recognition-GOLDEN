@@ -71,7 +71,7 @@ Impresión de escarapelas (`docs/IMPRESION_PARAMETROS_INAMOVIBLES.md`: 62 × 99,
 Base ya construida (Fase 1A pieza 0, 3-nov). El rediseño de pantallas existentes es la **Fase 2** del plan maestro (`docs/29`); mientras tanto, toda pantalla que se toque en otras fases (1A, 1B, 3…) **ya sale con estos estándares** y no se reabre después.
 
 ### Buscador del registro y píldoras de la fila (5-nov-2026)
-- Papelera del buscador: `.gw-search__row` (caja + botón) y `.gw-search__clear` (icono `#i-trash`, nombre accesible «Borrar lo escrito»; aparece solo si hay texto).
+- Papelera del buscador: `.gw-search__row` (caja + botón) y `.gw-search__clear` (icono `#i-trash`, nombre accesible «Vaciar búsqueda»; aparece solo si hay texto).
 - Píldora sólida de la fila: `.gw-recent-tag` (verde, «Recién registrado»: se acreditó a alguien de la base) y `.gw-recent-tag--new` (azul, «Recién creado»: alta manual con «Registrar nuevo»).
 
 ## 9. Fase 1.5 · piezas compartidas (docs/ux/FASE_1_5_PLAN.md)
@@ -111,3 +111,9 @@ Para el digitador en tableta, celular o quiosco. Reglas: una acción principal p
 - Un nivel menos de espaciado en `.gw-container`, `.gw-stack(-lg)`, `.gw-card`, `.gw-card-row`, `.gw-cards`; franja azul del evento en una línea con «…»; botón ☰ de 40 px alineado con la cabecera de 56 px; el separador `.golden-content-spacer` no ocupa espacio.
 - El ícono del interruptor de tema (`.gw-theme-toggle .gw-icon`) tiene tamaño y trazo propios y no se encoge en cabeceras apretadas (Registro).
 - Escritorio sin cambios (todo va dentro de `@media (max-width: 640px)`).
+
+## 11. Fase 1.7 · M8 · chips, «Vaciar búsqueda» y Registro en celular
+- **Chips de pasos y «Guía» (<= 640 px, todas las pantallas):** los pasos 1·2·3 y el 4.º chip «Guía» son píldoras iguales (borde `--gw-border-strong`, fondo `--gw-surface`, radio `--gw-radius-pill`, 40 px de alto) en UNA fila. Insignia numérica de 1,25 rem, texto `--gw-fs-sm`; los títulos cortos caben en una línea y los largos pasan a dos SIN partir palabras (`overflow-wrap: normal`; nunca «Acredi/ta»). «Guía» = ícono de ayuda + la palabra en una línea; el `li.gw-steps__guide` lleva el borde y el botón de dentro va transparente.
+- **Vaciar búsqueda (`.gw-search__clear--in`):** TODO campo de búsqueda (input `type=search`, inputs dentro de `.gw-search` o con placeholder «Buscar…», «Filtrar…», «Escribe o escanea…», también los que genera el JS) lleva a la derecha una papelera (`#i-trash`, `aria-label` «Vaciar búsqueda») visible solo con texto. La instala `gw-ui.js` (delegada + `MutationObserver`, sin `onclick` en línea): vacía el campo, devuelve el foco y dispara `input` (y `search`) para que el filtro se refresque. El campo gana `.gw-input--clearable`; si no está en un `.gw-search__field`, se envuelve en `.gw-clearable`. Para excluir uno: `data-gw-no-clear`. El Registro conserva su papelera propia junto a la caja (`#searchClearBtn`, la maneja `directory.js`, mismo nombre accesible). No toca al lector de cédula: el lector escribe y envía Enter, el botón no está en ese camino.
+- **Registro en celular (410 px):** cabecera de una fila (título pequeño; «En línea» y engranaje como botones pequeños a la derecha; sin la etiqueta de la empresa), chips bajo la franja del evento, caja de 44 px, «Escanear» y «Registrar nuevo» como dos botones de 48 px mitad y mitad, contadores en UNA fila (origen y «Limpiar filtros» detrás del chip «Filtros», `#gwSummaryMore`), tarjeta de persona con las tres acciones en una fila. El cálculo de alturas está en el comentario de `static/css/p-registro-puerta.css`. El modo touch (`shared-print.js`) fuerza `font-size`/`padding` con `!important` en todo botón: por eso las reglas del Registro en celular también llevan `!important` donde hace falta.
+

@@ -41,7 +41,7 @@ body.gw-registro .gw-reg__list .golden-table tbody tr td:empty { display: none; 
 body.gw-registro .gw-reg__list .golden-table tbody td[data-field=first_name],
 body.gw-registro .gw-reg__list .golden-table tbody td[data-field=last_name] { order: 1; font-size: var(--gw-fs-xl); font-weight: var(--gw-fw-bold); line-height: var(--gw-lh-tight); }
 body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] { order: 2; margin-left: auto; padding: var(--gw-sp-1) var(--gw-sp-3); border-radius: var(--gw-radius-pill); background: var(--gw-surface-2); color: var(--gw-text); font-size: var(--gw-fs-md); font-weight: var(--gw-fw-bold); }
-body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado td[data-field=status] { background: var(--gw-ok-bg); color: var(--gw-ok-text); border: 2px solid var(--gw-ok-line); }
+body.gw-registro .gw-reg__list .golden-table tbody tr.row-registrado td[data-field=status] { background: var(--gw-ok-bg); color: var(--gw-ok-text) !important; border: 2px solid var(--gw-ok-line); }   /* el modo touch (shared-print.js) pone `color: #fff !important`: blanco sobre verde claro era ilegible */
 body.gw-registro .gw-reg__list .golden-table tbody td[data-field=entity] { order: 3; flex-basis: 100%; font-weight: var(--gw-fw-bold); color: var(--gw-text-muted); }
 body.gw-registro .gw-reg__list .golden-table tbody td[data-field=id],
 body.gw-registro .gw-reg__list .golden-table tbody td[data-field=opt_1] { order: 4; color: var(--gw-text-muted); white-space: nowrap; }
@@ -79,6 +79,7 @@ body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { 
 /* movimiento: ninguno si la persona lo pidió (el aviso de veredicto ya trae su animación corta de design-system.css) */
 @media (prefers-reduced-motion: reduce) {
   .gw-registro #gwVerdict { animation: none; }
+}
 
 /* Registro · pantalla de puerta (Fase 1.7, M2). Solo tokens --gw-* (docs/ux/ESTANDARES_VISUALES.md). Se carga DESPUÉS de design-system.css y registro.css.
 
@@ -112,12 +113,13 @@ body.gw-registro .gw-reg__list .golden-table tbody tr.directory-local-note td { 
   .gw-registro .gw-workarea__bar .gw-toolbar__actions .gw-btn { flex: 1 1 0; min-height: var(--gw-tap); padding: 0 var(--gw-sp-3); font-size: var(--gw-fs-sm); white-space: nowrap; }
   .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn--primary { flex: 1.4 1 0; }
   .gw-registro .gw-workarea__summary { padding: var(--gw-sp-1) var(--gw-sp-3); }
+}
 
 /* ================= M4 · Registro compacto: pasos en chips bajos (+ «Guía» como 4.º chip) y la primera persona a la vista en el celular ================= */
 /* Los 3 pasos son el componente .gw-steps de las demás pantallas, solo que más bajos y con el texto corto; el texto completo está en el «?» de cada chip. */
 .gw-registro .gw-steps--compact { grid-auto-columns: minmax(0, 1fr); margin: 0 0 var(--gw-sp-2); gap: var(--gw-sp-1); }
-.gw-registro .gw-steps--compact > li { min-height: 2.25rem; padding: 0 var(--gw-sp-2) 0 var(--gw-sp-1); gap: var(--gw-sp-1); }
-.gw-registro .gw-steps--compact .gw-steps__n { width: 1.375rem; height: 1.375rem; font-size: var(--gw-fs-sm); }
+.gw-registro .gw-steps--compact > li { min-height: 2.25rem; padding: 0 var(--gw-sp-1); gap: var(--gw-sp-1); }
+.gw-registro .gw-steps--compact .gw-steps__n { width: 1.25rem; height: 1.25rem; font-size: var(--gw-fs-sm); }
 .gw-registro .gw-steps--compact .gw-steps__text { font-size: var(--gw-fs-sm); -webkit-line-clamp: 1; line-clamp: 1; }
 .gw-registro .gw-steps--compact > li.gw-steps__guide { padding: 0; }
 .gw-registro .gw-steps__guidebtn { display: inline-flex; align-items: center; justify-content: center; gap: var(--gw-sp-1); width: 100%; min-height: 2.25rem; padding: 0 var(--gw-sp-2); background: transparent; color: var(--gw-text); border: 0; border-radius: var(--gw-radius-pill); font: inherit; cursor: pointer; }
@@ -175,3 +177,69 @@ body.gw-registro .gw-reg__list .golden-table tbody tr,
 body.gw-registro .gw-reg__list .golden-table tbody td,
 body.gw-registro .gw-reg__list .golden-table .gw-btn,
 body.gw-registro .gw-reg__list .golden-table .gw-menu__btn { touch-action: manipulation; }
+
+/* el chip «Filtros» solo existe en celular */
+.gw-registro .gw-summary__more { display: none; }
+
+/* ================= M8 · Registro en celular (410 px): cabecera en una fila, buscador bajo, DOS botones, contadores en una fila y la primera persona completa a la vista =================
+   Cálculo de alturas (viewport útil 410 x 730; todo en px con 1rem = 16 px; --gw-sp-1 = 4, --gw-sp-2 = 8, --gw-sp-3 = 12):
+     cabecera fija de la cuenta (.golden-header)                64   (la tapa; lo de abajo arranca debajo de ella)
+     franja del evento (.golden-event-strip, 1 línea)           28
+     fila título + «En línea» + engranaje                       36   (la etiqueta de la empresa se quita en celular)
+     fila de chips 1·2·3 + Guía                                 36 + 4 de margen = 40
+     buscador (caja 44 + 2 x 4 de relleno de la barra)          52
+     fila de 2 botones Escanear | Registrar nuevo (48)          48 + 4 de separación = 52
+     contadores en UNA fila (28 + 2 x 4 de relleno)             36
+     -----------------------------------------------------------
+     suma antes de la primera persona                          ~ 308   -> quedan ~ 422 px
+     tarjeta de la primera persona: relleno 2 x 8 = 16, nombre + estado (24), empresa + cédula (2 x 20 = 40), fila de acciones Acreditar | Imprimir | Editar (44) + 8 = 52  = 132
+   132 < 422: la primera persona entra completa con holgura (y la segunda se asoma). Sin scroll anidado: solo desplaza la página. */
+@media (max-width: 720px) {
+  /* (2) cabecera: título pequeño a la izquierda; «En línea» y engranaje a la derecha, en la misma fila, como botones pequeños */
+  .gw-registro .gw-registro__head { align-items: flex-start; min-height: 2.25rem; margin-bottom: var(--gw-sp-1); }
+  .gw-registro .gw-registro__title > span { display: none; }
+  .gw-registro .gw-registro__title h2 { font-size: var(--gw-fs-md); line-height: 2.25rem; margin: 0; white-space: nowrap; }
+  .gw-registro .gw-registro__headside { flex: none; align-items: flex-start; gap: var(--gw-sp-1); }
+  .gw-registro #gwConn { min-height: 2rem; padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); border-radius: var(--gw-radius-pill); white-space: nowrap; }
+  .gw-registro .gw-regcfg__btn { min-width: 2.25rem; min-height: 2.25rem; margin-top: calc(-1 * var(--gw-sp-1)); border-radius: var(--gw-radius-pill); }
+  /* (3) buscador: caja de 44 px, «Escanear» y «Registrar nuevo» como dos botones de 48 px, mitad y mitad */
+  .gw-registro .gw-workarea__bar { padding: var(--gw-sp-1) var(--gw-sp-2); gap: var(--gw-sp-1); }
+  .gw-registro .gw-workarea__bar .gw-search--hero .gw-input { min-height: var(--gw-tap); }
+  .gw-registro .gw-workarea__bar .gw-search--hero .gw-search__clear { min-width: var(--gw-tap); min-height: var(--gw-tap); padding: 0; }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions { flex-wrap: nowrap; gap: var(--gw-sp-2); }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn { flex: 1 1 0; min-width: 0; min-height: 3rem; padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-md); white-space: nowrap; }
+  .gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn--primary { flex: 1 1 0; }
+  /* contadores: UNA fila; origen y «Limpiar filtros» quedan detrás del chip «Filtros» (gw-ui/directory.js lo agrega) */
+  .gw-registro .gw-workarea__summary { flex-wrap: nowrap; gap: var(--gw-sp-1); padding: var(--gw-sp-1) var(--gw-sp-2); }
+  .gw-registro .gw-workarea__summary .gw-chip { flex: 0 1 auto; min-width: 0; min-height: 1.75rem; padding: 0 var(--gw-sp-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gw-registro .gw-workarea__summary:not(.is-open) .origin-filter,
+  .gw-registro .gw-workarea__summary:not(.is-open) #clearFiltersBtn { display: none; }
+  .gw-registro .gw-workarea__summary.is-open { flex-wrap: wrap; }
+  .gw-registro .gw-workarea__summary .gw-summary__more { display: inline-flex; flex: none; justify-content: center; width: 2rem; min-width: 2rem; margin-left: auto; padding: 0; font-size: 0; overflow: visible; }
+  .gw-registro .gw-workarea__summary .gw-summary__more::before { content: ""; width: 0.5rem; height: 0.5rem; margin-top: -0.25rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+  .gw-registro .gw-workarea__summary .gw-summary__more[aria-expanded="true"]::before { margin-top: 0.25rem; transform: rotate(225deg); }
+  .gw-registro .gw-workarea__summary .not-registered-counter { flex-shrink: 0; }
+  /* tarjeta de persona: acciones en UNA fila (Acreditar es la más ancha) */
+  body.gw-registro .gw-reg__list .golden-table tbody tr td.action-cell { flex-wrap: nowrap; gap: var(--gw-sp-1); margin-top: var(--gw-sp-1); }
+  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn { min-width: 0; gap: var(--gw-sp-1); padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); }
+  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl[title='Imprimir escarapela'] { font-size: var(--gw-fs-sm) !important; }
+  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl { flex: 1 1 auto; }
+  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn--xl.btn-accredit-row { flex: 1.4 1 auto; }
+  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn:not(.gw-btn--xl) { flex: 0 0 auto; }
+  body.gw-registro .gw-reg__list .golden-table tbody td[data-field=status] { padding: 0 var(--gw-sp-2); font-size: var(--gw-fs-sm); }
+}
+
+/* El modo touch (shared-print.js, el que casi siempre está activo en el celular) pone a TODO botón `font-size: 1.05rem !important` y `padding-left/right: 18px !important`, y a #searchCedula 60 px y 1.3rem:
+   eso agrandaba chips, engranaje y papelera y rompía las filas de una línea. Aquí se responde con más especificidad y también !important, solo en celular. */
+@media (max-width: 720px) {
+  body.gw-registro .gw-regcfg__btn,
+  body.gw-registro .gw-workarea__bar .gw-search__clear { padding: 0 !important; }
+  body.gw-registro .gw-workarea__summary .gw-chip { padding: 0 var(--gw-sp-2) !important; font-size: var(--gw-fs-sm) !important; min-height: 1.75rem; }
+  body.gw-registro .gw-workarea__summary .gw-summary__more { padding: 0 !important; font-size: 0 !important; }
+  body.gw-registro #searchCedula { min-height: var(--gw-tap); font-size: var(--gw-fs-md) !important; }
+  body.gw-registro .gw-workarea__bar .gw-toolbar__actions > .gw-btn { padding: 0 var(--gw-sp-2) !important; font-size: var(--gw-fs-md) !important; min-height: 3rem; }
+  body.gw-registro .gw-reg__list .golden-table tbody td.action-cell .gw-btn { padding: 0 var(--gw-sp-2) !important; font-size: var(--gw-fs-sm) !important; min-height: var(--gw-tap); }
+  body.gw-registro .gw-steps__guide > .gw-btn,
+  body.gw-registro .gw-steps__guidebtn { padding: 0 var(--gw-sp-2) !important; }
+}
+

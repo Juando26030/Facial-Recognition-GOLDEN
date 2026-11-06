@@ -379,3 +379,17 @@ def test_frozen_public_pages_do_not_load_the_door_pieces():
         if p.exists():
             text = p.read_text(encoding="utf-8")
             assert "design-system.css" not in text and not re.search(r"gw-(verdict|person|keypad|stat|segment)\b", text), name
+
+
+def test_m8_guide_chip_is_a_pill_like_the_step_chips_and_words_do_not_break():
+    movil = CSS.split("Pasos 1·2·3 + «Guía» = UNA fila de 4 chips")[1].split("Menú ☰ flotante")[0]
+    assert "li.gw-steps__guide" in movil and "var(--gw-radius-pill)" in movil and "var(--gw-border-strong)" in movil
+    assert "overflow-wrap: normal" in movil and "overflow-wrap: anywhere" not in movil
+    assert 'content: "Guía"' in movil
+
+
+def test_m8_clear_search_component_exists_and_uses_the_sprite_trash_icon():
+    assert ".gw-search__clear--in" in CSS and ".gw-clearable" in CSS and ".gw-input--clearable" in CSS
+    assert 'id="i-trash"' in SPRITE
+    assert "#i-trash" in JS and "Vaciar búsqueda" in JS and "data-gw-clear" in JS
+

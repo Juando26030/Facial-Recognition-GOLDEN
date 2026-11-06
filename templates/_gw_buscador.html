@@ -19,7 +19,7 @@
     <input class="gw-input" type="text" id="searchCedula" inputmode="text" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus
            placeholder="Escribe o escanea: cédula, nombre o empresa" {% if busq_disabled %}disabled{% endif %}>
     {% if busq_hero %}</div>{% endif %}
-    <button type="button" class="gw-btn gw-btn--secondary gw-search__clear" id="searchClearBtn" aria-label="Borrar lo escrito" title="Borrar lo escrito" hidden><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-trash"></use></svg></button>
+    <button type="button" class="gw-btn gw-btn--secondary gw-search__clear" id="searchClearBtn" aria-label="Vaciar búsqueda" title="Vaciar búsqueda" hidden><svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-trash"></use></svg></button>
   </div>
   <p class="gw-hint" id="gwSearchHint" aria-live="polite"></p>
 </div>
