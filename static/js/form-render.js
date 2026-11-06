@@ -423,7 +423,7 @@
     const quotaWarn = document.createElement('div');
     quotaWarn.setAttribute('role', 'alert');
     quotaWarn.className = 'fr-quota-warn';
-    quotaWarn.style.cssText = 'display:none; box-sizing:border-box; width:100%; margin:12px 0; padding:14px 16px; border-radius:12px; border:2px solid #a1261b; background:#fdecea; color:#7a160e; font-size:1.12rem; font-weight:700; line-height:1.4; white-space:pre-line; overflow-wrap:anywhere; gap:10px; align-items:flex-start;';
+    quotaWarn.style.cssText = 'display:none; box-sizing:border-box; width:100%; margin:12px 0; padding:14px 16px; border-radius:12px; border:2px solid #a1261b; background:#fdecea; color:#7a160e; font-size:1.12rem; font-weight:500; line-height:1.4; white-space:pre-line; overflow-wrap:anywhere; gap:10px; align-items:flex-start;';
     form.insertBefore(quotaWarn, btn);
     function paintQuotaWarn() {
       const r = fullQuota();
@@ -436,7 +436,9 @@
         ico.textContent = '\u26A0';
         const txt = document.createElement('span');
         txt.style.cssText = 'flex:1; min-width:0;';
-        txt.textContent = quotaFullMessage(r.message, r.label, r.closed || r.limit === 0);
+        const rawMsg = String(r.message == null ? '' : r.message).trim();
+        if (rawMsg && window.RichText && RichText.hasFormat(rawMsg)) txt.innerHTML = RichText.html(rawMsg.split('{cupo}').join(esc(r.label == null ? '' : r.label)), true).html;   // con formato (negrilla, color…)
+        else txt.textContent = quotaFullMessage(r.message, r.label, r.closed || r.limit === 0);
         quotaWarn.append(ico, txt);
       }
       return !!r;

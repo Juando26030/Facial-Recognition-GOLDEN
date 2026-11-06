@@ -1410,6 +1410,7 @@ function qValueHtml(c, ri, ci) {
   if (opts) return `<select data-qv="${ri}.${ci}"><option value=""></option>${opts.map((o) => `<option ${c.value === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   return `<input type="text" data-qv="${ri}.${ci}" value="${esc(Array.isArray(c.value) ? c.value.join(', ') : c.value)}" placeholder="${c.op === 'in' ? 'valores separados por coma' : 'valor'}">`;
 }
+let quotaMounts = [];
 function paintQuotas() {
   const rules = ((settings && settings.quotas) || {}).rules || [], st = Object.fromEntries((form.quota_status || []).map((x) => [x.id, x])), fields = qFields();
   $('qRules').innerHTML = rules.map((r, ri) => `<div class="gwe-b-1px-solid-border gwe-r-radius-md gwe-p-sp-2 gwe-mb-sp-2 gwe-d-grid gwe-gap-sp-2">
@@ -1421,9 +1422,9 @@ function paintQuotas() {
       <select data-qo="${ri}.${ci}">${QOPS.map(([v, l]) => `<option value="${v}" ${c.op === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${qValueHtml(c, ri, ci)}
       ${r.conds.length > 1 ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-js-end" data-qcd="${ri}.${ci}">Quitar condición</button>` : ''}</div>`).join('')}
     ${r.conds.length < 6 ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm gwe-js-start" data-qca="${ri}">+ Otra condición</button>` : ''}
-    <label class="gwe-d-grid gwe-gap-sp-1 gwe-fs-fs-sm">Mensaje cuando este cupo esté lleno<textarea rows="2" maxlength="300" data-qmsg="${ri}" placeholder="Ya se llenaron los cupos de {cupo}. Elige otra opción para poder inscribirte.">${esc(r.message || '')}</textarea>
+    <div class="gwe-d-grid gwe-gap-sp-1 gwe-fs-fs-sm"><span class="gw-label">Mensaje cuando este cupo esté lleno</span><div data-qmsgrt="${ri}" class="gw-no-theme"></div>
       <span class="hint">Puedes usar {cupo} para el nombre. Si lo dejas vacío se usa el texto por defecto.</span>
-      <span class="hint gwe-closed-help" data-qhelp="${ri}"${r.limit === 0 ? '' : ' hidden'}>0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></label></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
+      <span class="hint gwe-closed-help" data-qhelp="${ri}"${r.limit === 0 ? '' : ' hidden'}>0 = cerrado: nadie podrá elegir esta opción. Escribe abajo el mensaje que verá la persona. Si lo dejas vacío: «Por ahora no estamos recibiendo inscripciones de {cupo}. Elige otra opción.»</span></div></div>`).join('') || '<p class="hint">Todavía no hay cupos por variables.</p>';
   $('qQuickField').innerHTML = '<option value="">Campo de lista/opción única…</option>' + fields.filter((f) => ['select', 'radio'].includes(f.type)).map((f) => `<option value="${f.id}">${esc(f.label)}</option>`).join('');
   const R = () => settings.quotas.rules, ix = (v) => v.split('.').map(Number);
   const box = $('qRules');
@@ -1434,7 +1435,8 @@ function paintQuotas() {
     const closed = R()[i].limit === 0;
     box.querySelectorAll(`[data-qclosed="${i}"], [data-qhelp="${i}"]`).forEach((x) => { x.hidden = !(closed); });
   }));
-  box.querySelectorAll('[data-qmsg]').forEach((el) => el.addEventListener('input', () => { R()[+el.dataset.qmsg].message = el.value; }));
+  quotaMounts.forEach((m) => m.destroy()); quotaMounts = [];
+  box.querySelectorAll('[data-qmsgrt]').forEach((el) => { const i = +el.dataset.qmsgrt; quotaMounts.push(RichText.mount(el, { basic: true, value: R()[i].message || '', label: 'Mensaje cuando este cupo esté lleno', onChange: (v) => { R()[i].message = v; } })); });   // con formato: negrilla, cursiva, subrayado, color
   box.querySelectorAll('[data-qm]').forEach((el) => el.addEventListener('change', () => { R()[+el.dataset.qm].match = el.value; }));
   box.querySelectorAll('[data-qdel]').forEach((el) => el.addEventListener('click', () => { R().splice(+el.dataset.qdel, 1); paintQuotas(); }));
   box.querySelectorAll('[data-qca]').forEach((el) => el.addEventListener('click', () => { R()[+el.dataset.qca].conds.push({ field: fields[0].id, op: 'equals', value: '' }); paintQuotas(); }));
