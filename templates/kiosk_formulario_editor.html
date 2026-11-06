@@ -6,6 +6,8 @@
 {% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
   <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
   <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+{# Control de archivo propio: el <input type=file> queda oculto (mismos id/accept para el JS) y se ve un botón .gw-btn + el nombre, que se recorta con «…» sin desbordar la caja. #}
+{% macro archivo(id, accept, label='Seleccionar archivo') %}<label class="gwe-file"><input type="file" class="gwe-file__input" id="{{ id }}" accept="{{ accept }}"><span class="gw-btn gw-btn--secondary gw-btn--sm gwe-file__btn">{{ ic('upload', 'gw-icon--sm') }} {{ label }}</span><span class="gwe-file__name" data-gwe-file-name>Ningún archivo seleccionado</span></label>{% endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -132,17 +134,16 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
           <div class="gw-group__body">
             <div class="gw-group__item">
               <div class="gwe-bar">
-                <div class="gw-field gw-field--inline" data-instant><label class="gw-label" for="cfgStatus">Estado</label><select id="cfgStatus" class="gw-select"><option value="pruebas">Pruebas (solo con el enlace de pruebas)</option><option value="activo">Activo (abierto al público)</option><option value="cerrado">Cerrado (muestra la plantilla de cierre)</option><option value="finalizado">Finalizado (el enlace deja de existir)</option></select></div>
-                <div class="gw-field gw-field--inline" data-instant><label class="gw-label" for="cfgCap">Cupo de inscripciones (vacío = sin límite)</label><input type="number" class="gw-input" id="cfgCap" min="1"></div>
-                <button type="button" class="gw-btn gw-btn--secondary" id="cfgStatusSave">Aplicar estado y cupo</button>
+                <div class="gw-field gw-field--inline" data-own-pending><label class="gw-label" for="cfgStatus">Estado</label><select id="cfgStatus" class="gw-select"><option value="pruebas">Pruebas (solo con el enlace de pruebas)</option><option value="activo">Activo (abierto al público)</option><option value="cerrado">Cerrado (muestra la plantilla de cierre)</option><option value="finalizado">Finalizado (el enlace deja de existir)</option></select></div>
+                <div class="gw-field gw-field--inline" data-own-pending><label class="gw-label" for="cfgCap">Cupo de inscripciones (vacío = sin límite)</label><input type="number" class="gw-input" id="cfgCap" min="1"></div>
               </div>
               <p class="gw-hint" id="capInfo"></p>
-              <p class="gw-hint">«Aplicar» actúa al instante, sin esperar al botón de guardar.</p>
+              <p class="gw-hint">El estado, el cupo y el calendario se guardan con el botón «Guardar» de abajo, junto con el resto: el estado del formulario no cambia hasta que lo guardes, y la barra te dice qué está pendiente. Si el calendario está activo, el estado manual se ignora.</p>
             </div>
             <div class="gw-group__item">
-              <label class="gw-check" data-instant><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
-              <div id="schedBox" data-instant hidden><div id="schedRows"></div><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="addSched">{{ ic('plus', 'gw-icon--sm') }} Agregar tramo</button>
-                <p class="gw-hint">Fuera de cualquier tramo el formulario se comporta como «cerrado» (usa la plantilla de cierre). Con el calendario activo, el estado manual de arriba se ignora.</p><button type="button" class="gw-btn gw-btn--secondary" id="cfgSchedSave">Aplicar calendario</button></div>
+              <label class="gw-check" data-own-pending><input type="checkbox" id="cfgUseSched"> Programar el estado por fechas (calendario)</label>
+              <div id="schedBox" data-own-pending hidden><div id="schedRows"></div><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="addSched">{{ ic('plus', 'gw-icon--sm') }} Agregar tramo</button>
+                <p class="gw-hint">Fuera de cualquier tramo el formulario se comporta como «cerrado» (usa la plantilla de cierre). Con el calendario activo, el estado manual de arriba se ignora.</p></div>
             </div>
             <div class="gw-group__item" id="linksBox"></div>
           </div>
@@ -155,7 +156,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint">Cada cupo pone un máximo de inscripciones a quienes cumplan una o varias condiciones (por ejemplo «Categoría = VIP» y «País = Colombia»). Funciona aunque no pongas cupo total; si pones los dos, se aplican los dos. Una inscripción cuenta en TODOS los cupos que cumple.</p>
               <div id="qRules"></div>
               <div class="gwe-tools"><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qAdd">{{ ic('plus', 'gw-icon--sm') }} Agregar cupo</button>
-                <select id="qQuickField" class="gw-select gwe-select-auto" aria-label="Campo para crear un cupo por cada opción"></select><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qQuick">Un cupo por cada opción del campo</button></div>
+                <select id="qQuickField" class="gw-select gwe-select-auto" data-instant aria-label="Campo para crear un cupo por cada opción"></select><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="qQuick">Un cupo por cada opción del campo</button></div>
               <p class="gw-hint">Se guardan con el botón «Guardar configuración» de abajo.</p>
             </div>
           </div>
@@ -175,7 +176,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <p class="gw-hint">Los campos marcados como «se muestra pero no se edita» quedan bloqueados con los datos que ya tenemos de la persona.</p>
               <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="preMode">¿Cómo se identifica la persona?</label><select id="preMode" class="gw-select"><option value="none">No se pre-llena (formulario en blanco)</option><option value="cedula">Autoservicio: un solo enlace, pide la cédula primero</option><option value="invite">Un enlace personal por invitado (llega por correo)</option></select></div>
                 <div class="gw-field gw-field--inline" id="preSrcBox"><label class="gw-label" for="preSrc">¿De dónde salen los datos?</label><select id="preSrc" class="gw-select"><option value="event">La base de este evento</option><option value="upload">Una base subida aparte solo para este formulario</option></select></div>
-                <div class="gw-field gw-field--inline" id="preUpBox" hidden><label class="gw-label" for="preFile">Archivo (.xlsx / .csv, con columna de cédula)</label><input type="file" class="gw-input" id="preFile" accept=".xlsx,.csv"></div></div>
+                <div class="gw-field gw-field--inline" id="preUpBox" data-instant hidden><label class="gw-label" for="preFile">Archivo (.xlsx / .csv, con columna de cédula)</label>{{ archivo('preFile', '.xlsx,.csv') }}</div></div>
             </div>
           </div>
         </details>
@@ -193,17 +194,17 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
               <h3 class="gwe-h">Paso de identificación (cédula)</h3>
               <p class="gw-hint">Lo que ve la persona antes del formulario cuando se le pide el documento. Vacío = los textos de siempre («Identifícate», la explicación y «Continuar»).</p>
               <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="idTitle">Título</label><input type="text" class="gw-input" id="idTitle" maxlength="120" placeholder="Identifícate"></div><div class="gw-field gw-field--inline"><label class="gw-label" for="idButton">Texto del botón</label><input type="text" class="gw-input" id="idButton" maxlength="40" placeholder="Continuar"></div></div>
-              <div class="gwe-bar"><div class="gw-field gw-field--grow"><span class="gw-label">Texto</span><input type="hidden" id="idText"><div id="idTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="idImgFile">Imagen (opcional)</label><input type="file" class="gw-input" id="idImgFile" accept="image/*"><span class="gw-hint" id="idImgName"></span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="idImgX">Quitar</button></div></div>
+              <div class="gwe-bar"><div class="gw-field gw-field--grow"><span class="gw-label">Texto</span><input type="hidden" id="idText"><div id="idTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="idImgFile">Imagen (opcional)</label>{{ archivo('idImgFile', 'image/*') }}<span class="gw-hint" id="idImgName"></span> <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="idImgX">Quitar</button></div></div>
             </div>
             <div class="gw-group__item">
               <h3 class="gwe-h">Al terminar el registro</h3>
               <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="thMode">Qué pasa</label><select id="thMode" class="gw-select"><option value="template">Mostrar un mensaje de agradecimiento</option><option value="redirect">Llevar a otra dirección web</option></select></div>
                 <div class="gw-field gw-field--inline" id="thUrlBox" hidden><label class="gw-label" for="thUrl">Dirección (https://…)</label><input type="text" class="gw-input" id="thUrl"></div></div>
-              <div id="thTplBox" class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="thTitle">Título</label><input type="text" class="gw-input" id="thTitle"></div><div class="gw-field gw-field--grow"><span class="gw-label">Mensaje</span><input type="hidden" id="thText"><div id="thTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="thImgFile">Imagen (opcional)</label><input type="file" class="gw-input" id="thImgFile" accept="image/*"><span class="gw-hint" id="thImgName"></span></div></div>
+              <div id="thTplBox" class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="thTitle">Título</label><input type="text" class="gw-input" id="thTitle"></div><div class="gw-field gw-field--grow"><span class="gw-label">Mensaje</span><input type="hidden" id="thText"><div id="thTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="thImgFile">Imagen (opcional)</label>{{ archivo('thImgFile', 'image/*') }}<span class="gw-hint" id="thImgName"></span></div></div>
             </div>
             <div class="gw-group__item">
               <h3 class="gwe-h">Plantilla de «formulario cerrado» / cupo lleno</h3>
-              <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="clTitle">Título</label><input type="text" class="gw-input" id="clTitle"></div><div class="gw-field gw-field--grow"><span class="gw-label">Mensaje</span><input type="hidden" id="clText"><div id="clTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="clImgFile">Imagen (opcional)</label><input type="file" class="gw-input" id="clImgFile" accept="image/*"><span class="gw-hint" id="clImgName"></span></div></div>
+              <div class="gwe-bar"><div class="gw-field gw-field--inline"><label class="gw-label" for="clTitle">Título</label><input type="text" class="gw-input" id="clTitle"></div><div class="gw-field gw-field--grow"><span class="gw-label">Mensaje</span><input type="hidden" id="clText"><div id="clTextRt" class="gw-no-theme"></div></div><div class="gw-field gw-field--inline"><label class="gw-label" for="clImgFile">Imagen (opcional)</label>{{ archivo('clImgFile', 'image/*') }}<span class="gw-hint" id="clImgName"></span></div></div>
             </div>
           </div>
         </details>
@@ -232,7 +233,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
                 <legend class="gwe-h">Personas ya registradas</legend>
                 <p class="gw-hint">Sube la lista de quienes ya se inscribieron por otro medio (cédula, o el campo identificador de arriba; la columna «Registrado en formulario» es opcional: si existe, solo cuentan las filas con «sí»). Se puede recargar cuando quieras; vale solo para ESTE formulario.</p>
                 <div id="regCount" class="gw-hint gwe-strong"></div>
-                <div class="gw-field"><label class="gw-label" for="regFile">Lista (.xlsx / .csv)</label><input type="file" class="gw-input" id="regFile" accept=".xlsx,.csv"></div>
+                <div class="gw-field"><label class="gw-label" for="regFile">Lista (.xlsx / .csv)</label>{{ archivo('regFile', '.xlsx,.csv') }}</div>
                 <div class="gwe-bar">
                   <div class="gw-field gw-field--inline"><label class="gw-label" for="regMode">Al cargar</label><select id="regMode" class="gw-select"><option value="add">Agregar (no quita nada)</option><option value="replace">Reemplazar (deja solo las del archivo)</option></select></div>
                   <div class="gw-field gw-field--inline"><label class="gw-label" for="regEffect">Qué pasa con ellos</label><select id="regEffect" class="gw-select"><option value="block">Solo bloquear (no ocupan cupo)</option><option value="hold">Ocupar cupo y bloquear</option></select></div>
@@ -245,7 +246,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         </details>
 
         <details class="gw-group">
-          <summary class="gw-group__sum"><span class="gw-group__title">Reembolsos</span><span class="gw-group__hint">Plazo y nota que ve quien paga.</span></summary>
+          <summary class="gw-group__sum"><span class="gw-group__title">Reembolsos de este formulario</span><span class="gw-group__hint">Plazo y nota que ve quien paga.</span></summary>
           <div class="gw-group__body">
             <div class="gw-group__item">
               <div class="gw-field gw-field--inline"><label class="gw-label" for="rfDays">Plazo para pedir el reembolso (días después del pago; vacío = el general)</label><input type="number" class="gw-input gw-input--short" id="rfDays" min="1" max="365"></div>
@@ -258,9 +259,15 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
 
       <!-- ===================== RESPUESTAS ===================== -->
       <div class="pane" id="pane-answers" role="tabpanel" aria-labelledby="tab_answers" tabindex="0"><section class="gw-card">
-        <div class="gwe-bar"><label class="gw-check"><input type="checkbox" id="ansTests" checked> Mostrar las de prueba</label>
-          <a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtn" href="#">{{ ic('download', 'gw-icon--sm') }} Descargar reporte (Excel)</a><a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtnAll" href="#">{{ ic('download', 'gw-icon--sm') }} Con las de prueba</a><span class="gw-hint" id="ansInfo"></span></div>
-        <div class="gw-table-wrap"><table class="gw-table ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
+        <div class="gwe-bar gwe-ans-bar">
+          <div class="gwe-inline-help"><label class="gw-check"><input type="checkbox" id="ansTests" checked> Mostrar las de prueba (en esta tabla)</label>
+            {% call ayuda('ay_ans_tests', 'Mostrar las de prueba') %}Esta casilla solo cambia lo que ves en la tabla de abajo: con ella marcada se listan también las inscripciones de prueba (las que entraron por el enlace de pruebas, marcadas «(prueba)»); desmarcada, solo las reales. No cambia ningún archivo de Excel.{% endcall %}</div>
+          <div class="gwe-inline-help"><a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtn" href="#">{{ ic('download', 'gw-icon--sm') }} Descargar reporte (Excel)</a>
+            {% call ayuda('ay_ans_rep', 'Descargar reporte (Excel)') %}Baja el Excel SOLO con las inscripciones reales: no incluye las de prueba, sin importar lo que tengas marcado en la casilla.{% endcall %}</div>
+          <div class="gwe-inline-help"><a class="gw-btn gw-btn--secondary gw-btn--sm" id="repBtnAll" href="#">{{ ic('download', 'gw-icon--sm') }} Con las de prueba</a>
+            {% call ayuda('ay_ans_all', 'Con las de prueba') %}Baja el Excel con TODO: las inscripciones reales y también las de prueba. Es independiente de la casilla «Mostrar las de prueba»: esa solo cambia la tabla de abajo.{% endcall %}</div>
+          <span class="gw-hint" id="ansInfo"></span></div>
+        <div class="gw-table-wrap gwe-table-wrap"><table class="gw-table gw-table-cards gwe-fit ans"><thead id="ansHead"></thead><tbody id="ansBody"></tbody></table></div>
       </section></div>
 
       <!-- ===================== PAGOS ===================== -->
@@ -268,7 +275,7 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
         <h2 class="gwe-h">Pagos con Wompi</h2>
         <div id="payCfg" class="gw-hint"></div>
         <div class="gwe-bar"><label class="gw-check"><input type="checkbox" id="payTests"> Incluir pagos de prueba</label><div class="gw-field gw-field--inline"><label class="gw-label" for="payView">Ver montos</label><select id="payView" class="gw-select" title="La comisión es una ESTIMACIÓN según tu plan (2,65 % + $700 + IVA; QR 1 %). La cifra exacta está en Wompi → Reportes."><option value="gross">Ver montos brutos</option><option value="net">Ver netos de comisión Wompi (estimada)</option></select></div><span id="payTotal" class="gwe-strong"></span></div>
-        <div class="gw-table-wrap"><table class="gw-table ans"><thead><tr><th>Fecha</th><th>Referencia</th><th id="payAmtHead">Monto (COP)</th><th>Estado</th><th>Método</th><th>Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th><th>Reembolso</th></tr></thead><tbody id="payBody"></tbody></table></div>
+        <div class="gw-table-wrap gwe-table-wrap"><table class="gw-table gw-table-cards gwe-fit ans"><thead><tr><th class="gwe-col-date">Fecha</th><th>Referencia</th><th id="payAmtHead" class="gwe-col-amt">Monto (COP)</th><th class="gwe-col-state">Estado</th><th class="gwe-col-method">Método</th><th class="gwe-col-ced">Cédula</th><th>Transacción Wompi</th><th>Reglas y descuentos</th><th class="gwe-col-refund">Reembolso</th></tr></thead><tbody id="payBody"></tbody></table></div>
         <p class="gw-hint">La referencia (<code>GW-evento-formulario-inscripción-código</code>) identifica a qué evento pertenece cada pago: la separación por evento se hace aquí y en el reporte, no en el panel de Wompi. «Sin inscripción» = pago aprobado cuya inscripción ya no existe: revísalo a mano.</p>
       </section></div>
 
@@ -379,15 +386,29 @@ let form = null, design = null, settings = null, eventFields = [], selected = nu
 let namesCache = null;   // nombres de los elementos para las listas (ElementNames); se recalculan tras cualquier cambio
 const markDirty = () => { dirty = true; namesCache = null; paintSaveBar(); };
 const activeTabName = () => { const t = document.querySelector('#tabs [aria-selected="true"]'); return t ? t.dataset.tab : 'design'; };
-function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendiente y guarda lo de Diseño y Configuración
-  const bar = $('saveBar'), tab = activeTabName(), pend = dirty || cfgDirty;
+// Lo que la persona ve en Estado y enlaces (estado, cupo, calendario) NO se guarda solo: queda pendiente y se aplica con el botón de guardar (mismos endpoints PUT .../status de siempre).
+const capOf = () => ($('cfgCap').value === '' ? null : +$('cfgCap').value);
+const pendingStatusChange = () => !!form && $('cfgStatus').value !== form.manual_status;
+const pendingCapChange = () => !!form && capOf() !== (form.capacity == null ? null : form.capacity);
+const pendingSchedule = () => { if (!form) return false; const on = $('cfgUseSched').checked; return on !== !!form.use_schedule || (on && JSON.stringify(schedule) !== JSON.stringify(form.schedule || [])); };
+function pendingParts() {
+  const parts = [];
+  if (dirty) parts.push('el diseño');
+  if (cfgDirty) parts.push('la configuración');
+  if (pendingStatusChange()) parts.push(`el estado (pasará a «${STATUS_LABEL[$('cfgStatus').value] || $('cfgStatus').value}»)`);
+  if (pendingCapChange()) parts.push('el cupo');
+  if (pendingSchedule()) parts.push($('cfgUseSched').checked ? 'el calendario' : 'el calendario (se desactivará)');
+  return parts;
+}
+function paintSaveBar() {   // UNA barra de guardado (R1): dice qué está pendiente y guarda el diseño, la configuración, el estado, el cupo y el calendario
+  const bar = $('saveBar'), tab = activeTabName(), parts = pendingParts(), pend = parts.length > 0;
   if (!bar) return;
   bar.hidden = !(tab === 'design' || tab === 'config');
   bar.dataset.state = pend ? 'dirty' : 'idle';
-  $('saveStatus').textContent = !pend ? 'Sin cambios por guardar' : (dirty && cfgDirty ? 'Hay cambios sin guardar en el diseño y en la configuración' : dirty ? 'Hay cambios sin guardar en el diseño' : 'Hay cambios sin guardar en la configuración');
+  $('saveStatus').textContent = !pend ? 'Sin cambios por guardar' : `Hay cambios sin guardar en ${parts.length > 1 ? parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1] : parts[0]}`;
   $('saveBtn').textContent = tab === 'config' ? 'Guardar configuración' : 'Guardar diseño';
 }
-window.addEventListener('beforeunload', (e) => { if (dirty || cfgDirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', (e) => { if (pendingParts().length) { e.preventDefault(); e.returnValue = ''; } });
 
 // ---------------------------------------------------------------- utilidades del diseño
 function locate(id) { for (let r = 0; r < design.rows.length; r++) { const i = design.rows[r].items.indexOf(id); if (i >= 0) return [r, i]; } return null; }
@@ -416,6 +437,9 @@ function place(id, target) {   // target: {gap:i} | {row:i, pos:n}
 function usedKeys() { return new Set(Object.values(design.fields).map((f) => f.key).filter(Boolean)); }
 
 // ---------------------------------------------------------------- condiciones en árbol y variantes (P9)
+function fileCtl(attrs, accept) {   // control de archivo propio (.gwe-file en gw-editor-form.css): el <input type=file> conserva sus id/data-*; el nombre se recorta con «…» y nunca desborda la caja
+  return `<label class="gwe-file"><input type="file" class="gwe-file__input" ${attrs} accept="${accept}"><span class="gw-btn gw-btn--secondary gw-btn--sm gwe-file__btn">${typeof gwIcon === 'function' ? gwIcon('upload') : ''} Seleccionar archivo</span><span class="gwe-file__name" data-gwe-file-name>Ningún archivo seleccionado</span></label>`;
+}
 const OPS_ALL = [['equals', 'es igual a'], ['not_equals', 'es distinto de'], ['contains', 'contiene'], ['in', 'es alguno de'], ['filled', 'tiene respuesta']];
 const VARIANT_WARNING = 'No escribas aquí información confidencial: todo el contenido de las variantes es visible para quien abra el formulario, aunque no se le muestre.';
 const VPROPS = { content: 'Texto', src: 'Imagen', display_label: 'Nombre de presentación', help: 'Ayuda', placeholder: 'Texto de ejemplo' };
@@ -506,7 +530,7 @@ const isHide = (prop) => prop === 'content' || prop === 'src';
 const itemsOf = (f, prop) => ((f.variants || {})[prop] || { items: [] }).items;
 function valueEditorHtml(prop, key, val) {
   if (prop === 'placeholder') return `<input type="text" data-vtxt="${key}" maxlength="120" value="${esc(val)}">`;
-  if (prop === 'src') return `<div class="gwe-d-flex gwe-gap-sp-2 gwe-ai-center gwe-fwrap-wrap">${val ? `<img src="${esc(assetUrl(val))}" alt="" class="gwe-maxh-56px gwe-maxw-120px gwe-r-radius-sm">` : '<span class="hint">sin imagen</span>'}<input type="file" data-vimg="${key}" accept="image/*"> ${val ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="clearimg" data-vk="${key}">Quitar</button>` : ''}</div>`;
+  if (prop === 'src') return `<div class="gwe-d-flex gwe-gap-sp-2 gwe-ai-center gwe-fwrap-wrap">${val ? `<img src="${esc(assetUrl(val))}" alt="" class="gwe-maxh-56px gwe-maxw-120px gwe-r-radius-sm">` : '<span class="hint">sin imagen</span>'}${fileCtl(`data-vimg="${key}"`, 'image/*')} ${val ? `<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-vact="clearimg" data-vk="${key}">Quitar</button>` : ''}</div>`;
   return `<div data-vrt="${key}"></div>`;
 }
 const valueText = (prop, val) => (prop === 'src' ? (val ? val.split('/').pop() : '(sin imagen)') : (RichText.toPlain(val || '').replace(/\s+/g, ' ').trim() || '(vacío)'));
@@ -883,7 +907,7 @@ function renderProps() {
   if (isPay) html += fieldInput('pLabel', 'Título del pago', f.label) + dispRtHtml() + helpRtHtml() + payHtml(f);
   if (isComp) html += fieldInput('pLabel', 'Pregunta', f.label) + dispRtHtml() + helpRtHtml() + compHtml(f);
   if ((f.type === 'heading' || f.type === 'paragraph') && !(f.variants && f.variants.content)) html += '<div class="fld"><label>Texto</label><div id="pContentRt"></div></div>';
-  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label><input type="file" id="pImg" accept="image/*">${f.src ? `<img src="${esc(assetUrl(f.src))}" class="gwe-maxw-100 gwe-mt-sp-2 gwe-r-radius-sm">` : ''}</div>
+  if (f.type === 'image') html += `<div class="fld"><label>Imagen</label>${fileCtl('id="pImg"', 'image/*')}${f.src ? `<img src="${esc(assetUrl(f.src))}" class="gwe-maxw-100 gwe-mt-sp-2 gwe-r-radius-sm">` : ''}</div>
     <div class="fld"><label>Tamaño: <b id="pImgWv">${f.width || 100}</b> % del ancho</label><input type="range" id="pImgW" min="10" max="100" step="5" value="${f.width || 100}" class="gwe-w-100"><div class="hint">100 % = de lado a lado de la tarjeta. Una imagen horizontal (banner) se ve mejor al 100 %.</div></div>
     <div class="fld"><label for="pImgAlt">Texto alternativo (describe la imagen para personas que no la ven)</label><input type="text" id="pImgAlt" value="${esc(f.alt || '')}" placeholder="Ej. Banner del Congreso Cundi 2026"><div class="hint">Déjalo vacío solo si la imagen es decorativa.</div></div>`;
   if (CHOICE.includes(f.type)) html += `<div class="fld"><label>Opciones (una por línea)</label><textarea id="pOpts" rows="5">${esc((f.options || []).join('\n'))}</textarea></div>`;
@@ -1053,7 +1077,7 @@ function compHtml(f) {
       <input type="text" data-pf="${i}.label" value="${esc(p.label)}" placeholder="Ej. Nombre completo">
       <div class="gwe-d-flex gwe-gap-sp-1 gwe-mt-sp-1 gwe-ai-center"><select data-pf="${i}.type">${PERSON_TYPES.map(([v, l]) => `<option value="${v}" ${p.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <label class="gwe-fs-fs-sm gwe-d-flex gwe-gap-sp-1"><input type="checkbox" data-pf="${i}.required" ${p.required ? 'checked' : ''}> obligatorio</label>
-      ${f.person_fields.length > 1 ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-p-0-sp-2" data-pfdel="${i}">${gwIcon('close')}</button>` : ''}</div></div>`).join('')}
+      ${f.person_fields.length > 1 ? `<button type="button" class="gw-btn gw-btn--danger-outline gw-btn--sm gwe-p-0-sp-2" data-pfdel="${i}" aria-label="Quitar este dato">${gwIcon('close')}</button>` : ''}</div></div>`).join('')}
       ${(f.person_fields || []).length < 6 ? '<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="pfAdd">+ Agregar dato</button>' : ''}</div>
     <p class="hint">Al elegir N acompañantes, la persona ve N mini-formularios con estos datos. Si el pago cobra por acompañante, el total sube solo (tú + N). Los acompañantes quedan en las respuestas y el Excel, pero no se cargan a la base del evento.</p>`;
 }
@@ -1125,10 +1149,10 @@ function renderTheme() {
      <div class="fld"><label>Ancho del formulario</label><select id="tWidth">${WIDTHS.map(([v, l]) => `<option value="${v}" ${widthKind(t.width) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
        <input type="number" id="tWidthPx" min="480" max="1100" step="10" value="${typeof t.width === 'number' ? t.width : 800}" class="gwe-mt-sp-1" ${widthKind(t.width) === 'custom' ? '' : 'hidden'} aria-label="Ancho en píxeles (480 a 1100)">
        <div class="hint">En celulares y pantallas angostas siempre ocupa todo el ancho. Con 4 campos por fila conviene «Ancho» o más.</div></div>
-     <div class="fld"><label>Logo o banner</label><input type="file" id="tLogo" accept="image/*"> <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tLogoX">Quitar</button></div>
+     <div class="fld"><label>Logo o banner</label>${fileCtl('id="tLogo"', 'image/*')} <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tLogoX">Quitar</button></div>
      <div class="fld"><label>Tamaño del logo: <b id="tLogoWv">${t.logo_width ? t.logo_width + ' %' : 'automático'}</b></label><input type="range" id="tLogoW" min="0" max="100" step="5" value="${t.logo_width || 0}" class="gwe-w-100"><div class="hint">0 = automático (pequeño y centrado). Un banner horizontal: súbelo al 100 %.</div></div>
      <label class="gwe-d-flex gwe-gap-sp-2 gwe-fs-fs-sm gwe-mb-sp-3"><input type="checkbox" id="tLogoFull" ${t.logo_full ? 'checked' : ''}> Ocupar la tarjeta de lado a lado, sin márgenes (banner)</label>
-     <div class="fld"><label>Imagen de fondo</label><input type="file" id="tBg" accept="image/*"> <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tBgX">Quitar</button></div>`;
+     <div class="fld"><label>Imagen de fondo</label>${fileCtl('id="tBg"', 'image/*')} <button class="gw-btn gw-btn--secondary gw-btn--sm" id="tBgX">Quitar</button></div>`;
   const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
   on('tTitle', 'input', () => { t.title = $('tTitle').value; markDirty(); }); on('tSub', 'input', () => { t.subtitle = $('tSub').value; markDirty(); }); on('tBtn', 'input', () => { t.button_text = $('tBtn').value; markDirty(); });
   $('themeBox').querySelectorAll('[data-color]').forEach((c) => c.addEventListener('input', () => { t[c.dataset.color] = c.value; markDirty(); }));
@@ -1145,7 +1169,7 @@ function renderTheme() {
   on('tWidth', 'change', setWidth); on('tWidthPx', 'input', setWidth);
   on('tLogoW', 'input', () => { const v = +$('tLogoW').value; t.logo_width = v >= 10 ? v : 0; $('tLogoWv').textContent = t.logo_width ? t.logo_width + ' %' : 'automático'; markDirty(); });
   on('tLogoFull', 'change', () => { t.logo_full = $('tLogoFull').checked; markDirty(); });
-  on('tLogoX', 'click', () => { t.logo = ''; markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; markDirty(); });
+  on('tLogoX', 'click', () => { t.logo = ''; $('tLogo').value = ''; gweFileName($('tLogo')); markDirty(); }); on('tBgX', 'click', () => { t.bg_image = ''; $('tBg').value = ''; gweFileName($('tBg')); markDirty(); });
 }
 function renderAll() { renderPalette(); renderSheets(); renderCanvas(); renderProps(); $('payTab').hidden = !Object.values(design.fields).some((x) => x.type === 'payment'); }
 
@@ -1167,10 +1191,19 @@ async function saveDesign() {
   } catch (e) { showToast(e.message, 'error'); return false; }
 }
 const busy = (btn, fn) => (window.GW && GW.busy ? GW.busy(btn, fn) : Promise.resolve(fn()));
-async function saveAll() {   // un solo botón: el diseño (si es la pestaña Diseño o hay cambios) y la configuración (si es la pestaña Configuración o hay cambios)
+async function saveAll() {   // un solo botón: el diseño (si es la pestaña Diseño o hay cambios), la configuración (si es la pestaña Configuración o hay cambios) y, al final, el estado, el cupo y el calendario pendientes
   const onConfig = activeTabName() === 'config';
+  const stBody = (pendingStatusChange() || pendingCapChange()) ? { manual_status: $('cfgStatus').value, capacity: capOf() } : null;   // lo mismo que enviaba «Aplicar estado y cupo»
+  const scBody = pendingSchedule() ? ($('cfgUseSched').checked ? { schedule: schedule.map((x) => ({ ...x })), use_schedule: true } : { use_schedule: false }) : null;   // lo mismo que «Guardar calendario» / quitar la marca
   if (dirty || !onConfig) { if (!(await saveDesign())) return false; }
-  if (cfgDirty || onConfig) return saveConfig();
+  if (cfgDirty || onConfig) { if (!(await saveConfig({ keepStatus: !!(stBody || scBody) }))) return false; }   // el estado se activa al final: si el diseño o la configuración fallan, no cambia
+  let applied = false;
+  for (const [body, ok] of [[stBody, 'Estado y cupo guardados'], [scBody, scBody && scBody.use_schedule === false ? 'Calendario desactivado: vale el estado manual' : 'Calendario guardado']]) {
+    if (!body) continue;
+    try { form = await jput(`${api}/status`, body); applied = true; showToast(ok, 'success'); } catch (e) { showToast(e.message, 'error'); paintHeader(); paintSaveBar(); return false; }
+  }
+  if (applied) { settings = form.settings; paintHeader(); paintConfig(); }
+  paintSaveBar();
   return true;
 }
 $('saveBtn').addEventListener('click', () => busy($('saveBtn'), saveAll));
@@ -1274,6 +1307,14 @@ function paintHeader() {
   $('invTab').hidden = !(settings.prefill.mode === 'invite');
 }
 
+// ---------------------------------------------------------------- controles de archivo (.gwe-file): muestran el nombre elegido, recortado con «…» y con tooltip
+function gweFileName(input) {
+  const n = input && input.parentElement && input.parentElement.querySelector('[data-gwe-file-name]'); if (!n) return;
+  const f = input.files && input.files[0];
+  n.textContent = f ? f.name : 'Ningún archivo seleccionado'; n.title = f ? f.name : '';
+}
+document.addEventListener('change', (e) => { if (e.target.classList && e.target.classList.contains('gwe-file__input')) gweFileName(e.target); });
+
 // ---------------------------------------------------------------- pestañas
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-tab]'); if (!b) return;
@@ -1301,14 +1342,17 @@ function schedRowsHtml() {
 function bindSched() {
   $('schedRows').innerHTML = schedRowsHtml();
   $('schedRows').querySelectorAll('[data-si]').forEach((el) => el.addEventListener('input', () => { schedule[+el.dataset.si][el.dataset.k] = el.value; }));
-  $('schedRows').querySelectorAll('[data-sdel]').forEach((b) => b.addEventListener('click', () => { schedule.splice(+b.dataset.sdel, 1); bindSched(); }));
+  $('schedRows').querySelectorAll('[data-sdel]').forEach((b) => b.addEventListener('click', () => { schedule.splice(+b.dataset.sdel, 1); bindSched(); paintSaveBar(); }));
 }
-function paintConfig() {
-  const s = settings;
+function paintStatusControls() {   // estado, cupo y calendario tal como están guardados
   $('cfgStatus').value = form.manual_status; $('cfgCap').value = form.capacity == null ? '' : form.capacity;
   $('capInfo').textContent = form.capacity ? `${form.submissions} de ${form.capacity} inscripciones` : `${form.submissions} inscripciones`;
   $('cfgUseSched').checked = form.use_schedule; $('schedBox').hidden = !(form.use_schedule);
   schedule = (form.schedule || []).map((x) => ({ ...x })); bindSched();
+}
+function paintConfig(opts = {}) {   // repinta TODO desde lo guardado (queda sin pendientes); con keepStatus respeta el estado/cupo/calendario que la persona aún no ha guardado
+  const s = settings;
+  if (!opts.keepStatus) paintStatusControls();
   $('linksBox').innerHTML = `<div class="hint gwe-mb-sp-1">Enlace público (abre solo cuando el estado es Activo):</div><div class="bar"><input type="text" readonly value="${esc(form.public_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.public_url)}">Copiar</button></div>
     ${form.public_state === 'pruebas'
       ? `<div class="hint gwe-m-sp-2-0-sp-1">${gwIcon('info')} Enlace de pruebas — el ÚNICO que abre el formulario mientras está en «Pruebas». Lo que se envíe queda marcado como prueba y los pagos van al <b>sandbox de Wompi (no cobra dinero real)</b>:</div><div class="bar"><input type="text" readonly value="${esc(form.test_url)}" class="gwe-w-min-460px-100"><button class="gw-btn gw-btn--secondary gw-btn--sm" data-c="${esc(form.test_url)}">Copiar</button></div>`
@@ -1329,18 +1373,22 @@ function paintConfig() {
   $('rfDays').value = (s.refunds && s.refunds.days) || ''; $('rfNote').value = (s.refunds && s.refunds.note) || '';
   paintQuotas();
   $('sendBadgeWarn').hidden = form.digital_badge_enabled;
+  cfgDirty = false; paintSaveBar();
 }
 function paintRegCount() {
   const a = form.preregistered || 0, h = form.registered_hold || 0;
   $('regCount').textContent = (a + h) ? `+${a + h} ya registradas${h ? ` (${h} ocupan cupo)` : ' (no ocupan cupo)'}` : 'Aún no hay personas ya registradas en este formulario.';
 }
+const discardOk = async () => !(cfgDirty || pendingStatusChange() || pendingCapChange() || pendingSchedule()) || showConfirm('Hay cambios sin guardar en la configuración y se perderían al cargar esto (esta acción repinta lo guardado). Guárdalos antes con el botón de guardar, o continúa y se descartan. ¿Continuar?', { confirmLabel: 'Continuar y descartar' });
 $('regUp').addEventListener('click', async () => {
   const f = $('regFile').files[0]; if (!f) { showToast('Elige primero el archivo', 'error'); return; }
+  if (!(await discardOk())) return;
   if ($('regMode').value === 'replace' && !(await showConfirm('«Reemplazar» quita las marcas anteriores de este formulario y deja solo las del archivo. ¿Continuar?', { confirmLabel: 'Reemplazar' }))) return;
   const fd = new FormData(); fd.append('file', f); fd.append('mode', $('regMode').value); fd.append('effect', $('regEffect').value); fd.append('enable', $('regEnable').checked ? '1' : '0');
-  try { const d = await j(`${api}/registered`, { method: 'POST', body: fd }); showToast(d.message, 'success'); form = await j(api); settings = form.settings; paintConfig(); $('regFile').value = ''; } catch (e) { showToast(e.message, 'error'); }
+  try { const d = await j(`${api}/registered`, { method: 'POST', body: fd }); showToast(d.message, 'success'); form = await j(api); settings = form.settings; paintConfig(); $('regFile').value = ''; gweFileName($('regFile')); } catch (e) { showToast(e.message, 'error'); }
 });
 $('regClear').addEventListener('click', async () => {
+  if (!(await discardOk())) return;
   if (!(await showConfirm('Se quitarán TODAS las marcas de «ya registrado» de este formulario (las que ocupaban cupo lo liberan). Las inscripciones reales no se tocan. ¿Continuar?', { confirmLabel: 'Quitar todas' }))) return;
   try { const d = await j(`${api}/registered`, { method: 'DELETE' }); showToast(d.message, 'success'); form = await j(api); settings = form.settings; paintConfig(); } catch (e) { showToast(e.message, 'error'); }
 });
@@ -1406,14 +1454,8 @@ $('qQuick').addEventListener('click', () => {
   f.options.forEach((o) => { if (!settings.quotas.rules.some((r) => r.conds.length === 1 && r.conds[0].field === f.id && r.conds[0].value === o)) settings.quotas.rules.push({ label: o, message: '', match: 'all', limit: 50, conds: [{ field: f.id, op: 'equals', value: o }] }); });
   paintQuotas(); showToast('Se crearon los cupos: ajusta el máximo de cada uno', 'success');
 });
-$('cfgStatusSave').addEventListener('click', async () => {
-  try { form = await jput(`${api}/status`, { manual_status: $('cfgStatus').value, capacity: $('cfgCap').value === '' ? null : +$('cfgCap').value }); settings = form.settings; paintHeader(); paintConfig(); showToast('Estado y cupo aplicados', 'success'); } catch (e) { showToast(e.message, 'error'); }
-});
-$('cfgUseSched').addEventListener('change', () => { $('schedBox').hidden = !($('cfgUseSched').checked); if (!$('cfgUseSched').checked) jput(`${api}/status`, { use_schedule: false }).then((f) => { form = f; paintHeader(); showToast('Calendario desactivado: vale el estado manual', 'success'); }); });
-$('addSched').addEventListener('click', () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); schedule.push({ status: 'activo', from: d, to: d }); bindSched(); });
-$('cfgSchedSave').addEventListener('click', async () => {
-  try { form = await jput(`${api}/status`, { schedule, use_schedule: true }); settings = form.settings; paintHeader(); paintConfig(); showToast('Calendario guardado', 'success'); } catch (e) { showToast(e.message, 'error'); }
-});
+$('cfgUseSched').addEventListener('change', () => { $('schedBox').hidden = !($('cfgUseSched').checked); paintSaveBar(); });   // ya no actúa al instante: queda pendiente hasta guardar
+$('addSched').addEventListener('click', () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16); schedule.push({ status: 'activo', from: d, to: d }); bindSched(); paintSaveBar(); });
 $('secOn').addEventListener('change', () => { $('secBox').hidden = !($('secOn').checked); });
 $('secType').addEventListener('change', () => { $('secCodeBox').hidden = !($('secType').value === 'code'); });
 $('preMode').addEventListener('change', () => { $('preSrcBox').hidden = $('preMode').value === 'none'; });
@@ -1421,7 +1463,7 @@ $('preSrc').addEventListener('change', () => { $('preUpBox').hidden = !($('preSr
 $('thMode').addEventListener('change', () => { $('thUrlBox').hidden = !($('thMode').value === 'redirect'); $('thTplBox').hidden = $('thMode').value === 'redirect'; });
 const cfgUpload = (input, target, label) => input.addEventListener('change', async () => { const fd = new FormData(); fd.append('file', input.files[0]); try { const d = await j(`/api/events/${EV}/forms-upload-image`, { method: 'POST', body: fd }); target(d.storage_path); label.textContent = ' (imagen cargada — guarda la configuración)'; } catch (e) { showToast(e.message, 'error'); } });
 cfgUpload($('idImgFile'), (p) => { settings.identify = { ...(settings.identify || {}), image: p }; }, $('idImgName'));
-$('idImgX').addEventListener('click', () => { cfgDirty = true; paintSaveBar(); settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; });
+$('idImgX').addEventListener('click', () => { cfgDirty = true; paintSaveBar(); settings.identify = { ...(settings.identify || {}), image: '' }; $('idImgName').textContent = ''; $('idImgFile').value = ''; gweFileName($('idImgFile')); });
 cfgUpload($('thImgFile'), (p) => { settings.thanks.image = p; }, $('thImgName')); cfgUpload($('clImgFile'), (p) => { settings.closed_template.image = p; }, $('clImgName'));
 $('preFile').addEventListener('change', async () => {
   const fd = new FormData(); fd.append('file', $('preFile').files[0]);
@@ -1431,7 +1473,7 @@ $('preFile').addEventListener('change', async () => {
 const thRt = RichText.mount($('thTextRt'), { label: 'Mensaje de gracias', onChange: (v) => { $('thText').value = v; } });
 const idRt = RichText.mount($('idTextRt'), { label: 'Texto del paso de identificación', onChange: (v) => { $('idText').value = v; } });
 const clRt = RichText.mount($('clTextRt'), { label: 'Mensaje de formulario cerrado', onChange: (v) => { $('clText').value = v; } });
-async function saveConfig() {
+async function saveConfig(opts = {}) {
   const payload = {
     security: { enabled: $('secOn').checked, type: $('secType').value, code: $('secCode').value },
     prefill: { mode: $('preMode').value, source: $('preSrc').value },
@@ -1444,24 +1486,41 @@ async function saveConfig() {
     quotas: { rules: ((settings.quotas || {}).rules || []).filter((r) => Number.isFinite(r.limit) && r.limit >= 0) },
     refunds: { days: $('rfDays').value === '' ? null : +$('rfDays').value, note: $('rfNote').value },
   };
-  try { form = await jput(api, { settings: payload }); settings = form.settings; cfgDirty = false; paintHeader(); paintConfig(); paintSaveBar(); showToast('Configuración guardada', 'success'); return true; } catch (e) { showToast(e.message, 'error'); return false; }
+  try { form = await jput(api, { settings: payload }); settings = form.settings; cfgDirty = false; paintHeader(); paintConfig(opts); showToast('Configuración guardada', 'success'); return true; } catch (e) { showToast(e.message, 'error'); return false; }
 }
-// lo editado en Configuración queda pendiente hasta el botón de guardar; lo que actúa al instante lleva data-instant
-['input', 'change'].forEach((ev) => $('pane-config').addEventListener(ev, (e) => { if (e.target.closest && e.target.closest('[data-instant]')) return; cfgDirty = true; paintSaveBar(); }));
+// Lo editado en Configuración queda pendiente hasta el botón de guardar. [data-instant] = actúa al instante (subir lista, archivo de pre-llenado); [data-own-pending] = estado, cupo y calendario (su pendiente se calcula contra lo guardado)
+['input', 'change'].forEach((ev) => $('pane-config').addEventListener(ev, (e) => {
+  const el = e.target; if (!el.closest || el.closest('[data-instant]')) return;
+  if (!el.closest('[data-own-pending]')) cfgDirty = true;
+  paintSaveBar();
+}));
+$('pane-config').addEventListener('click', (e) => {   // los cupos se arman con clics (agregar, quitar, otra condición) y también quedan pendientes
+  if (e.target.closest && e.target.closest('#qAdd, #qQuick, [data-qdel], [data-qca], [data-qcd]')) { cfgDirty = true; paintSaveBar(); }
+});
 $('feedNow').addEventListener('click', async () => {
   try { const r = await jpost(`${api}/feed-now`); $('feedInfo').textContent = `${r.fed} inscripción(es) cargadas a la base` + (r.problems.length ? ` · ${r.problems.length} con problema: ${r.problems[0]}` : ''); showToast(`${r.fed} cargadas a la base del evento`, r.problems.length ? 'error' : 'success'); } catch (e) { showToast(e.message, 'error'); }
 });
 
 // ---------------------------------------------------------------- respuestas
+function fitTable(table) {   // las tablas se ajustan al ancho de la pantalla: cada celda lleva su rótulo (para las tarjetas apiladas) y las recortadas con «…» llevan un tooltip con el texto completo
+  const heads = Array.from(table.querySelectorAll('thead th')).map((h) => (h.classList.contains('gwe-col-act') ? '' : h.textContent.trim()));
+  table.querySelectorAll('tbody tr').forEach((tr) => Array.from(tr.children).forEach((td, i) => {
+    if (td.colSpan > 1) return;
+    if (heads[i]) td.dataset.label = heads[i];
+    if (!td.title && td.textContent.trim() && !td.querySelector('button')) td.title = td.textContent.trim();
+  }));
+}
 async function loadAnswers() {
   const withTests = $('ansTests').checked;
   const d = await j(`${api}/submissions?include_tests=${withTests}`);
   $('repBtn').href = `${api}/report`; $('repBtnAll').href = `${api}/report?include_tests=true`;
   $('ansInfo').textContent = `${d.rows.length} inscripción(es)`;
-  $('ansHead').innerHTML = `<tr><th>#</th><th>Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th>Pagado</th>' : ''}<th>Origen</th><th>En la base</th><th></th></tr>`;
+  $('ansHead').innerHTML = `<tr><th class="gwe-col-id">#</th><th class="gwe-col-date">Fecha</th>${d.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}${d.has_payment ? '<th class="gwe-col-amt">Pagado</th>' : ''}<th class="gwe-col-src">Origen</th><th class="gwe-col-fed">En la base</th><th class="gwe-col-act"><span class="gw-sr-only">Acciones</span></th></tr>`;
+  $('ansBody').closest('table').classList.toggle('gwe-many', d.columns.length > 7);   // con muchas columnas la tabla pasa a tarjetas (nada de desplazamiento lateral)
   $('ansBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${r.id}${r.is_test ? ' (prueba)' : ''}</td><td>${esc(r.created_at)}</td>${d.columns.map((c) => {
     const v = r.data[c.id]; return `<td title="${esc(v)}">${c.type === 'file' && v ? `<a href="${api}/files/${r.id}/${c.id}">${esc(v)}</a>` : esc(v)}</td>`; }).join('')}${d.has_payment ? `<td>${r.paid == null ? '—' : cop(r.paid)}</td>` : ''}<td>${esc(r.source) || 'Directo'}</td><td>${r.fed ? 'Sí' : 'No'}</td>
-    <td><button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" class="gwe-c-text-muted">Todavía no hay inscripciones.</td></tr>`;
+    <td class="gwe-cell-wrap gw-table-cards__actions"><button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-delsub="${r.id}">Eliminar</button></td></tr>`).join('') || `<tr><td colspan="${d.columns.length + 6}" class="gwe-c-text-muted">Todavía no hay inscripciones.</td></tr>`;
+  fitTable($('ansBody').closest('table'));
   document.querySelectorAll('[data-delsub]').forEach((b) => b.addEventListener('click', async () => { if (!(await showConfirm('¿Eliminar esta inscripción?', { confirmLabel: 'Eliminar' }))) return; await j(`${api}/submissions/${b.dataset.delsub}`, { method: 'DELETE' }); loadAnswers(); }));
 }
 $('ansTests').addEventListener('change', loadAnswers);
@@ -1479,7 +1538,8 @@ async function loadPayments() {
   $('payAmtHead').textContent = net ? 'Neto estimado (COP)' : 'Monto (COP)';
   $('payTotal').textContent = net ? `Ingresos netos de comisión (estimada): ${cop(d.net_after_fees_cop)} COP · comisión Wompi estimada ${cop(d.fees_cop)} COP` : `Ingresos aprobados: ${cop(d.total_cop)} COP (${d.approved} pago(s))`;
   $('payBody').innerHTML = d.rows.map((r) => `<tr class="${r.is_test ? 'test-row' : ''}"><td>${esc(r.created_at)}</td><td>${esc(r.reference)}${r.is_test ? ' (prueba)' : ''}</td><td title="Pagado ${cop(r.amount)} · comisión estimada ${cop(r.fee)} · neto estimado ${cop(r.net)}">${cop(net ? r.net : r.amount)}</td><td>${PAY_STATES[r.status] || r.status}${r.orphan ? ` <b title="Aprobado pero sin inscripción">${gwIcon('alert')} sin inscripción</b>` : ''}</td><td>${esc(r.method)}</td><td>${esc(r.person_id)}</td><td>${esc(r.transaction_id)}</td><td title="${esc(r.applied.map((a) => a.label + ' (' + a.effect + ')').join('; '))}">${esc(r.applied.map((a) => a.label).join(', '))}</td>
-    <td>${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : x.kind === 'api' ? 'reembolso API Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">${cop(r.refunded)}</span> ` : ''}${r.refunds.filter((x) => x.status === 'pending').map((x) => `en proceso <button class="gw-btn gw-btn--secondary gw-btn--sm" data-rf-check="${r.id}:${x.id}">Verificar</button> <button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-rf-discard="${r.id}:${x.id}">Descartar</button> `).join('')}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="gwe-c-text-muted">Todavía no hay pagos.</td></tr>';
+    <td class="gwe-cell-wrap gw-table-cards__actions">${r.refunded ? `<span title="${esc(r.refunds.map((x) => `${x.at} · ${cop(x.amount)} · ${x.kind === 'void' ? 'anulación Wompi' : x.kind === 'api' ? 'reembolso API Wompi' : 'manual'} · ${x.status} · ${x.reason}${x.note ? ' · ' + x.note : ''}`).join('\n'))}">${cop(r.refunded)}</span> ` : ''}${r.refunds.filter((x) => x.status === 'pending').map((x) => `en proceso <button class="gw-btn gw-btn--secondary gw-btn--sm" data-rf-check="${r.id}:${x.id}">Verificar</button> <button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-rf-discard="${r.id}:${x.id}">Descartar</button> `).join('')}${r.status === 'approved' && ['admin', 'super_admin'].includes(window.STAFF_ROLE) && !r.refunds.some((x) => x.status === 'pending') ? `<button class="gw-btn gw-btn--danger-outline gw-btn--sm" data-refund="${r.id}">Reembolsar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="gwe-c-text-muted">Todavía no hay pagos.</td></tr>';
+  fitTable($('payBody').closest('table'));
   window.__pays = Object.fromEntries(d.rows.map((r) => [r.id, r]));
   const resolve = (attr, action) => document.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener('click', async () => {
     const [pid, rid] = b.getAttribute(attr).split(':');
