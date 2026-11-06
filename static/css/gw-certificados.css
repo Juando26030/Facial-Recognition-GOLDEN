@@ -1,7 +1,7 @@
 /* Certificados del evento (Fase 1.5): solo lo que design-system.css no trae. Únicamente tokens --gw-*. */
 
 /* Lienzo fuera de pantalla donde se dibuja cada certificado antes de convertirlo en PDF (debe existir en el DOM, no puede ir con display:none). */
-.gw-cert-stage { position: fixed; left: -20000px; top: 0; background: white; }
+.gw-cert-stage { position: fixed !important; left: -20000px; top: 0; background: white; }   /* !important: badge-render.js le pone position:relative en línea y, dentro del contenedor, ensanchaba toda la página (1123 px) */
 
 .gw-cert { display: grid; gap: var(--gw-sp-5); }
 .gw-cert__dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--gw-sp-2) var(--gw-sp-4); margin: 0; }
