@@ -7,3 +7,15 @@
 .gw-card-row__amount { margin: 0; font-size: var(--gw-fs-2xl); font-weight: var(--gw-fw-bold); font-variant-numeric: tabular-nums; }
 .gw-docs-zip .gw-btn { margin-top: var(--gw-sp-1); }
 @media (max-width: 640px) { .gw-docs-main { width: 100%; } }
+
+/* Fase 1.7 (auditoría de botones): nombres de archivo largos no ensanchan la tarjeta, y la guía de 3 pasos se apila en el celular para que cada título se lea completo (ver .gw-steps de design-system.css). */
+#docList .gw-card-row { min-width: 0; }
+#docList .gw-card-row__meta, #docList .gw-card-row__title, #docList .gw-text-sm { overflow-wrap: anywhere; word-break: break-word; }
+@media (max-width: 640px) {
+  .gw-page .gw-docs-steps { flex-direction: column; align-items: stretch; gap: var(--gw-sp-2); }
+  .gw-page .gw-docs-steps > li { flex: none; min-height: var(--gw-tap); }
+  .gw-page .gw-docs-steps > li.gw-steps__guide > .gw-btn { min-height: var(--gw-tap); width: 100%; }
+  .gw-page .gw-docs-steps .gw-steps__text { -webkit-line-clamp: unset; display: block; }
+  .gw-page .gw-docs-steps .gw-popover { width: auto; left: 0; right: 0; }
+}
+.gw-docs-zip .gw-btn { width: 100%; padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); text-align: center; line-height: var(--gw-lh-tight); }
