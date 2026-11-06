@@ -44,7 +44,7 @@
   function actionsHtml(s) {
     if (s.role === 'super_admin' || s.username === staffUsername) return '<p class="gw-hint">Sin acciones disponibles para esta cuenta.</p>';
     const otherRole = DUAL_ROLE_PAIR[s.role];
-    const btn = (action, label, ico, cls, extra) => `<button type="button" class="gw-btn ${cls || 'gw-btn--secondary'} gw-btn--sm" data-staff-action="${action}" data-id="${esc(s.id)}" data-username="${esc(s.username)}" ${extra || ''}>${ico ? icon(ico, 'gw-icon--sm') : ''} ${label}</button>`;
+    const btn = (action, label, ico, cls, extra) => `<button type="button" class="gw-btn ${cls || 'gw-btn--secondary'}" data-staff-action="${action}" data-id="${esc(s.id)}" data-username="${esc(s.username)}" ${extra || ''}>${ico ? icon(ico, 'gw-icon--sm') : ''} ${label}</button>`;
     const parts = [];
     if (isAdminPlus && otherRole) {
       parts.push(s.secondary_role
@@ -92,6 +92,7 @@
 
   async function setSecondaryRole(btn) {
     const secondaryRole = btn.dataset.value || null;
+    if (!secondaryRole && !(await showConfirm(`¿Quitarle el segundo rol a "${esc(btn.dataset.username)}"? Perderá los permisos que ese rol le daba.`, { confirmLabel: 'Quitar rol' }))) return;
     await busy(btn, async () => {
       const res = await fetch(`/api/staff/${btn.dataset.id}/secondary-role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secondary_role: secondaryRole }) });
       if (res.ok) { loadStaff(); showToast(secondaryRole ? `Ahora también es ${roleLabel(secondaryRole)}` : 'Rol secundario quitado', 'success'); }
@@ -117,12 +118,17 @@
     ok.addEventListener('click', () => {
       const role = d.dlg.querySelector('#staffNewRole').value;
       if (role === current) { d.close(); return; }
-      busy(ok, async () => {
-        const res = await fetch(`/api/staff/${btn.dataset.id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
-        if (res.ok) { d.close(); loadStaff(); showToast('Rol actualizado', 'success'); } else showToast(await apiError(res, 'No se pudo cambiar el rol'), 'error');
-      });
+      d.close();
+      showConfirm(`¿Cambiar el rol de "${esc(username)}" de ${esc(roleLabel(current))} a ${esc(roleLabel(role))}? Perderá de inmediato los permisos propios de ${esc(roleLabel(current))}.`, { confirmLabel: 'Sí, cambiar rol' }).then((yes) => { if (yes) applyRole(btn, role); });
     });
     d.dlg.querySelector('#staffNewRole').focus();
+  }
+
+  function applyRole(btn, role) {
+      busy(btn, async () => {
+        const res = await fetch(`/api/staff/${btn.dataset.id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
+        if (res.ok) { loadStaff(); showToast('Rol actualizado', 'success'); } else showToast(await apiError(res, 'No se pudo cambiar el rol'), 'error');
+      });
   }
 
   async function resetPassword(btn) {
@@ -145,12 +151,23 @@
   }
 
   async function deleteStaff(btn) {
-    if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${escapeHtml(btn.dataset.username)}"? Esto no es desactivar: se elimina de la base de datos y no se puede deshacer.`, { confirmLabel: 'Borrar cuenta' }))) return;
+    if (!(await showConfirm(`¿Borrar PERMANENTEMENTE la cuenta de "${escapeHtml(btn.dataset.username)}"? Se perderán su acceso, su rol y su contraseña. Esto no es desactivar: se elimina de la base de datos y no se puede deshacer.`, { confirmLabel: 'Borrar cuenta' }))) return;
     await busy(btn, async () => {
       const res = await fetch(`/api/staff/${btn.dataset.id}`, { method: 'DELETE' });
       if (res.ok) { loadStaff(); showToast('Cuenta eliminada', 'success'); } else showToast(await apiError(res, 'No se pudo borrar'), 'error');
     });
   }
+
+  // Acción principal: «Crear usuario» abre el formulario y deja el cursor en el primer campo.
+  document.addEventListener('click', (e) => {
+    const go = e.target.closest('[data-open-group]');
+    const grp = go && document.getElementById(go.getAttribute('data-open-group'));
+    if (!grp) return;
+    grp.open = true;
+    grp.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const first = grp.querySelector('input:not([type="hidden"])');
+    if (first) first.focus({ preventScroll: true });
+  });
 
   listEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-staff-action]');
