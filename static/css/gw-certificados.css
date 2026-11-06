@@ -3,7 +3,7 @@
 /* Lienzo fuera de pantalla donde se dibuja cada certificado antes de convertirlo en PDF (debe existir en el DOM, no puede ir con display:none). */
 .gw-cert-stage { position: fixed !important; left: -20000px; top: 0; background: white; }   /* !important: badge-render.js le pone position:relative en línea y, dentro del contenedor, ensanchaba toda la página (1123 px) */
 
-.gw-cert { display: grid; gap: var(--gw-sp-5); }
+.gw-cert { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gw-sp-5); }   /* minmax(0,…): sin esto la columna crece al ancho del enlace y toda la página se desborda en celular */
 .gw-cert__dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--gw-sp-2) var(--gw-sp-4); margin: 0; }
 .gw-cert__dl dt { color: var(--gw-text-muted); font-size: var(--gw-fs-sm); }
 .gw-cert__dl dd { margin: 0; font-weight: var(--gw-fw-bold); overflow-wrap: anywhere; }
@@ -11,12 +11,22 @@
 .gw-cert__names { display: grid; gap: var(--gw-sp-2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); margin: 0; padding: 0; list-style: none; }
 .gw-cert__names li { padding: var(--gw-sp-2) var(--gw-sp-3); background: var(--gw-surface-2); border: 1px solid var(--gw-border); border-radius: var(--gw-radius-md); overflow-wrap: anywhere; }
 .gw-cert__link { display: flex; flex-wrap: wrap; gap: var(--gw-sp-2); align-items: center; }
-.gw-cert__link .gw-input { flex: 1 1 16rem; }
+.gw-cert__link .gw-input { flex: 1 1 16rem; min-width: 0; }
 .gw-cert__nav { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gw-sp-3); margin-top: var(--gw-sp-5); }
 .gw-cert__nav .gw-btn--primary { margin-left: auto; }
+.gw-cert__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gw-sp-2); }   /* título + «?» siempre en la misma fila (antes el «?» caía solo a otra línea en celular) */
+.gw-cert__head .gw-card__title { flex: 1 1 auto; min-width: 0; margin: 0; align-self: center; overflow-wrap: anywhere; }
+.gw-cert__head .gw-help { flex: none; }
 .gw-cert [hidden] { display: none; }
 @media (max-width: 520px) {
+  .gw-cert__link .gw-btn { flex: 1 1 auto; white-space: nowrap; }                   /* «Copiar enlace» y «Abrir» a partes iguales, sin quedar descuadrados bajo el campo */
   .gw-cert__nav { flex-direction: column-reverse; align-items: stretch; }
   .gw-cert__nav .gw-btn--primary { margin-left: 0; }
   .gw-cert__dl { grid-template-columns: 1fr; }
+}
+
+/* Guía de 3 pasos en celular: con 4 chips en fila, el título del paso quedaba cortado («Revi sa l…»). Aquí el número va arriba y el título centrado debajo, en 2 líneas. */
+@media (max-width: 480px) {
+  .gw-cert .gw-steps > li:not(.gw-steps__guide) { flex-direction: column; justify-content: center; gap: var(--gw-sp-1); padding: var(--gw-sp-2) var(--gw-sp-1); border-radius: var(--gw-radius-lg); text-align: center; }
+  .gw-cert .gw-steps > li:not(.gw-steps__guide) .gw-steps__text { flex: none; width: 100%; text-align: center; -webkit-line-clamp: 3; }
 }
