@@ -201,7 +201,8 @@ def quota_counts(db: Session, form: WebForm, rules: list, persist: bool = True) 
 def quota_status(db: Session, form: WebForm) -> list:
     rules = quota_rules(form)
     counts = quota_counts(db, form, rules)
-    return [{"id": r["id"], "used": counts[r["id"]], "left": max(0, r["limit"] - counts[r["id"]])} for r in rules]
+    now = now_local()
+    return [{"id": r["id"], "used": counts[r["id"]], "left": max(0, formlib.rule_limit_now(r, now) - counts[r["id"]]), "schedule": formlib.rule_schedule_info(r, now)} for r in rules]
 
 
 def quota_public(db: Session, form: WebForm) -> dict:
@@ -213,13 +214,15 @@ def quota_public(db: Session, form: WebForm) -> dict:
     counts = quota_counts(db, form, rules, persist=False)       # público: nunca escribe llaves (ver _quota_counts_in_memory)
     left: dict = {}
     full = []
+    now = now_local()
     for r in rules:
-        remaining = max(0, r["limit"] - counts[r["id"]])
+        lim = formlib.rule_limit_now(r, now)
+        remaining = max(0, lim - counts[r["id"]])
         if len(r["conds"]) == 1 and r["conds"][0]["op"] == "equals" and isinstance(r["conds"][0]["value"], str):
             c = r["conds"][0]
             left.setdefault(c["field"], {})[c["value"]] = min(remaining, left.get(c["field"], {}).get(c["value"], remaining))
         if remaining == 0:
-            full.append({"label": r["label"], "message": r.get("message", ""), "limit": r["limit"], "closed": r["limit"] == 0, "match": r["match"], "conds": r["conds"]})
+            full.append({"label": r["label"], "message": r.get("message", ""), "limit": lim, "closed": lim == 0, "match": r["match"], "conds": r["conds"]})
     return {"left": left, "full": full}
 
 
@@ -472,8 +475,9 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
     """Reintento, cupos por variable, cupo total y duplicado en UNA ida y vuelta (función `form_reserve_slot`, migración 0049). Deja la fila del
     formulario bloqueada hasta el commit de quien llama: el INSERT de la inscripción va después, en la misma transacción.
     Devuelve {"ok": True} o {"ok": False, "reason": "retry"|"quota"|"capacity"|"duplicate"|"not_found", "label"?}."""
+    now = now_local()          # calendario propio de cada cupo: uno cerrado por fecha se manda con máximo 0 (= «cerrado»)
     params = {"lock_timeout": f"{FORM_LOCK_TIMEOUT_MS}ms", "form_id": form.id, "person_id": person_id, "sid": sid, "is_test": is_test, "hold_from": utcnow() - PENDING_HOLD,
-              "matched": json.dumps([{"sig": rule_sig(r), "limit": r["limit"], "label": r["label"], "message": r.get("message", "")} for r in rules if quota_match(r, values)])}
+              "matched": json.dumps([{"sig": rule_sig(r), "limit": formlib.rule_limit_now(r, now), "label": r["label"], "message": r.get("message", "")} for r in rules if quota_match(r, values)])}
     res = db.execute(_RESERVE_SQL, params).scalar()
     if res.get("reason") == "rebuild":          # reglas recién editadas: la fila ya está bloqueada, se recalculan las llaves y se repite
         rebuild_quota_keys(db, form, rules)
@@ -481,7 +485,7 @@ def reserve_slot(db: Session, form: WebForm, person_id: Optional[str], sid: Opti
     if res.get("reason") == "quota":            # la función SQL devuelve solo el nombre: el mensaje de la regla se toma de las que cumple la persona
         hit = next((r for r in rules if r["label"] == res.get("label") and quota_match(r, values)), None)
         res["message"] = (hit or {}).get("message", "")
-        res["closed"] = bool(hit) and hit["limit"] == 0
+        res["closed"] = bool(hit) and formlib.rule_limit_now(hit, now) == 0
     return res
 
 

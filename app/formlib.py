@@ -798,7 +798,14 @@ def _sanitize_quota_rules(q_in) -> list:
             rid = secrets.token_hex(3)
         used.add(rid)
         label = _text(r.get("label"), 120) or f"Cupo {len(out) + 1}"
-        out.append({"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit, "message": richtext.clean_text(r.get("message"), QUOTA_MESSAGE_MAX, basic=True)})   # admite negrilla, cursiva, subrayado y color como los demás mensajes
+        try:
+            sched = parse_schedule([i for i in (r.get("schedule") or []) if isinstance(i, dict)][:20])      # calendario propio del cupo (mismos tramos que el del formulario)
+        except ValueError:
+            sched = []
+        item = {"id": rid, "label": label, "match": "any" if r.get("match") == "any" else "all", "conds": conds, "limit": limit, "message": richtext.clean_text(r.get("message"), QUOTA_MESSAGE_MAX, basic=True)}
+        if sched:
+            item["schedule"] = sched
+        out.append(item)   # admite negrilla, cursiva, subrayado y color como los demás mensajes
     return out
 
 
@@ -1093,3 +1100,31 @@ def effective_status(manual_status: str, use_schedule: bool, schedule: list, now
         if datetime.fromisoformat(item["from"]) <= now_local < datetime.fromisoformat(item["to"]):
             return item["status"]
     return "cerrado"
+
+
+# ------------------------------------------------------------------ calendario propio de un cupo
+def rule_open_now(rule: dict, now_local: datetime) -> bool:
+    """¿Está abierto este cupo por su calendario? Sin calendario propio sigue al formulario (abierto). Con calendario, FUERA de todo tramo «activo» está cerrado. El estado del
+    formulario general SIEMPRE prima: si el formulario está cerrado, nada de esto se consulta (no entra nadie)."""
+    sched = rule.get("schedule") or []
+    if not sched:
+        return True
+    return effective_status("cerrado", True, sched, now_local) == "activo"
+
+
+def rule_limit_now(rule: dict, now_local: datetime) -> int:
+    """Máximo vigente: el del cupo, o 0 («cerrado») si su calendario lo tiene cerrado ahora."""
+    return rule["limit"] if rule_open_now(rule, now_local) else 0
+
+
+def rule_schedule_info(rule: dict, now_local: datetime) -> Optional[dict]:
+    """{state: 'abierto'|'cerrado', closes: 'YYYY-MM-DDTHH:MM'|None, opens: ...|None} o None si el cupo no tiene calendario propio. `closes` = fin del tramo activo en curso;
+    `opens` = inicio del próximo tramo activo (si está cerrado y aún hay uno)."""
+    sched = [t for t in (rule.get("schedule") or []) if t.get("status") == "activo"]
+    if not rule.get("schedule"):
+        return None
+    for t in sched:
+        if datetime.fromisoformat(t["from"]) <= now_local < datetime.fromisoformat(t["to"]):
+            return {"state": "abierto", "closes": t["to"], "opens": None}
+    nxt = [t for t in sched if datetime.fromisoformat(t["from"]) > now_local]
+    return {"state": "cerrado", "closes": None, "opens": nxt[0]["from"] if nxt else None}
