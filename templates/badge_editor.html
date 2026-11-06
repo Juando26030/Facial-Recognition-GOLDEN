@@ -1,176 +1,53 @@
+{# Diseñador de escarapela y de certificado (Fase 1.5, Ola 2): SOLO el marco (encabezado, guía, barra de herramientas, paneles, ventana de plantillas y barra de guardado).
+   El lienzo y la composición de la etiqueta NO cambian (badge-render.js, badge-geometry.js, label-compose.js) ni ningún parámetro de impresión (docs/IMPRESION_PARAMETROS_INAMOVIBLES.md).
+   Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md); lo propio del diseñador está en static/css/gw-disenador.css. Los ids y data-* que usa el JS no cambiaron. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+{% set is_cert = (template_kind == 'certificate') %}
+{% set kind_name = 'Certificado' if is_cert else 'Escarapela' %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ event.name }} — {{ 'Certificado' if template_kind == 'certificate' else 'Escarapela' }} | GoldenWeb 2.0</title>
+    <title>{{ event.name }} — {{ kind_name }} | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {# NO se usa la cabeza común de la base (la del tema oscuro) a propósito: el tema oscuro nunca llega a lo que se imprime (tests/test_design_system.py: test_the_dark_theme_never_reaches_what_is_printed).
+       Se cargan las mismas piezas de la base SIN el script del tema oscuro: esta pantalla es siempre clara y no lleva interruptor de tema. #}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/agrandir.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='css/fonts-propias.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    <script src="{{ url_for('static', path='js/gw-busy.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/gw-ui.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-disenador.css') }}">
+    <style>
+        @media (min-width: 821px) and (min-height: 880px) { body.editor-page { overflow:hidden; } }          /* ventana alta: el cuerpo ocupa lo que queda y no hay scroll; en ventanas bajas la página se desplaza y la barra de guardado queda pegada abajo */
+    </style>
     <script src="{{ url_for('static', path='js/fonts-propias.js') }}"></script>
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     <script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', path='js/params-save.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/qrcode-generator-1.4.4.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/JsBarcode-3.12.3.all.min.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-render.js') }}"></script>
     <script src="{{ url_for('static', path='js/badge-geometry.js') }}"></script>
     <script src="{{ url_for('static', path='js/font-picker.js') }}"></script>
     <script src="{{ url_for('static', path='js/ql-usb.js') }}"></script>
-    <style>
-        .badge-toolbar {
-            background: white; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06);
-            padding: 1rem 1.2rem; margin-bottom: 1.2rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;
-        }
-        .toolbar-group { display:flex; flex-direction:column; gap:4px; }
-        .toolbar-group label { font-size:0.72rem; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:0.5px; }
-        .toolbar-group input, .toolbar-group select {
-            border:1px solid #ddd; border-radius:8px; padding:6px 10px; font-size:0.85rem; min-width:90px;
-        }
-        .toolbar-sep { width:1px; align-self:stretch; background:#eee; margin: 0 0.3rem; }
-        .toolbar-actions { display:flex; gap:8px; margin-left:auto; flex-wrap:wrap; }
-        .tb-btn {
-            border:none; border-radius:20px; padding:8px 16px; font-weight:700; font-size:0.8rem; cursor:pointer;
-        }
-        .tb-btn.primary { background: var(--golden-primary); color:#1a1200; }
-        .tb-btn.ghost { background:#f0f0f0; color: var(--golden-dark); }
-        .tb-btn.danger { background:#fbe9ea; color:#a12631; }
-
-        .add-elements-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1.2rem; }
-        .add-el-btn {
-            background:white; border:1px solid #ddd; border-radius:12px; padding:8px 14px; font-size:0.8rem;
-            cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:600; color: var(--golden-dark);
-        }
-        .add-el-btn:hover { border-color: var(--golden-primary); }
-
-        .badge-editor-body { display:flex; gap:1.5rem; align-items:flex-start; flex-wrap:wrap; }
-        .badge-canvas-wrapper {
-            flex: 1 1 auto; overflow:auto; background:#e9e9ee; border-radius:16px; padding:2rem;
-            display:flex; align-items:flex-start; justify-content:center; min-height: 400px; max-height: 70vh;
-            max-width: 100%;
-        }
-        .badge-canvas { box-shadow: 0 10px 40px rgba(0,0,0,0.25); flex-shrink:0; }
-        .badge-element { cursor: move; }
-        /* Manijas del elemento seleccionado: en una capa ENCIMA de todo (selOverlay). Solo se ven; qué manija se tocó lo decide BadgeGeometry.hitHandle (zona de 32 px). */
-        .sel-handle { position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px; background:#fff; border:2px solid var(--golden-primary); border-radius:3px; box-sizing:border-box; pointer-events:auto; touch-action:none; }
-        .sel-handle::after, .rotate-handle::after { content:''; position:absolute; inset:-10px; border-radius:50%; }      /* zona táctil de 32 px */
-
-        .badge-props-panel {
-            width:300px; flex-shrink:0; background:white; border-radius:16px; box-shadow: 0 6px 24px rgba(0,0,0,0.06);
-            padding:1.2rem; max-height:75vh; overflow-y:auto;
-        }
-        .badge-props-panel h4 { margin:0 0 1rem; color: var(--golden-dark); font-size:1rem; }
-        .props-empty { color:#666; font-size:0.85rem; text-align:center; margin-top:2rem; }
-        .prop-field { margin-bottom:0.9rem; }
-        .prop-field label { display:block; font-size:0.75rem; font-weight:700; color:#666; margin-bottom:4px; text-transform:uppercase; }
-        .prop-field input, .prop-field select, .prop-field textarea {
-            width:100%; border:1px solid #ddd; border-radius:8px; padding:7px 10px; font-size:0.85rem; box-sizing:border-box;
-        }
-        .prop-row { display:flex; gap:8px; }
-        .prop-row .prop-field { flex:1; }
-
-
-        /* ---------- Diseñador a pantalla completa (orden B, 23-oct-2026): tres zonas, sin scroll de página en 1366×768, 1280×720 y 1920×1080 ---------- */
-        .editor-mobile-tabs, .editor-nudge-bar, #mobileTopBar { display:none; }
-        .badge-canvas-zone { display:flex; flex-direction:column; min-width:0; min-height:0; }
-        .zoom-bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0 0 6px; font-size:0.78rem; color:#555; }
-        .zoom-bar button { border:1px solid #ccc; background:#fff; border-radius:8px; min-width:34px; height:30px; font-weight:700; cursor:pointer; color:var(--golden-dark); }
-        .zoom-bar button.on { background:var(--golden-dark); color:#fff; border-color:var(--golden-dark); }
-        #zoomLabel { min-width:96px; text-align:center; font-weight:700; }
-        #editorWarn { display:none; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; border-radius:10px; padding:6px 12px; font-size:0.82rem; margin:0 0 6px; line-height:1.4; }
-        #editorWarn.bad { background:#fdeeee; border-color:#e8b4b8; color:#a12631; }
-        #printInfo { font-size:0.76rem; color:#555; margin:0 0 6px; }
-        .badge-element { touch-action:none; }
-        .badge-element.oob { outline:2px solid #c0392b !important; }
-        .snap-guide { position:absolute; pointer-events:none; z-index:99998; background:#e8308a; }
-        .snap-guide.v { top:0; bottom:0; width:1px; }
-        .snap-guide.h { left:0; right:0; height:1px; }
-        .rotate-handle { position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%; background:#fff; border:2px solid var(--golden-primary); pointer-events:auto; touch-action:none; box-sizing:border-box; }
-        .rotate-badge { position:absolute; transform:translate(-50%, -50%); background:#0A0E2E; color:#fff; font-size:11px; font-weight:700; padding:2px 6px; border-radius:6px; white-space:nowrap; pointer-events:none; }
-        .align-row { display:flex; gap:4px; margin-bottom:0.9rem; }
-        .align-row button { flex:1; min-height:34px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; color:var(--golden-dark); padding:0 2px; }
-        .align-row button:hover { border-color:var(--golden-primary); }
-        .case-row { display:flex; gap:4px; }
-        .case-row button { flex:1; min-height:40px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.8rem; font-weight:700; color:var(--golden-dark); padding:0 2px; line-height:1.1; }
-        .case-row button.on { background:var(--golden-dark); color:#fff; border-color:var(--golden-dark); }
-        .case-all { width:100%; margin-top:6px; min-height:34px; border:1px dashed #bbb; background:#fafafa; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; color:var(--golden-dark); }
-        .quick-rot { display:flex; gap:4px; margin-top:4px; }
-        .quick-rot button { flex:1; min-height:30px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:0.78rem; font-weight:700; }
-        #orientNotice { display:none; background:#e8f3ff; border:1px solid #b6d8f7; color:#0c3b66; border-radius:10px; padding:6px 12px; font-size:0.82rem; margin:0 0 6px; line-height:1.4; align-items:center; gap:10px; flex-wrap:wrap; }
-        #orientNotice button { border:1px solid #0c3b66; background:#fff; color:#0c3b66; border-radius:8px; min-height:30px; padding:0 12px; font-weight:700; cursor:pointer; }
-        @media (min-width: 821px) {
-            body.editor-page { overflow:hidden; }
-            body.editor-page .golden-section-title { display:none; }
-            body.editor-page .golden-container { max-width:none !important; padding:0.3rem 0.8rem !important; }
-            body.editor-page .golden-event-strip { padding:0.3rem 1.2rem; font-size:0.82rem; }
-            body.editor-page .golden-main { padding:0; }
-            .badge-toolbar { padding:0.45rem 0.7rem; margin-bottom:0.4rem; gap:0.4rem 0.8rem; border-radius:12px; }
-            .toolbar-group { gap:2px; }
-            .toolbar-group label { font-size:0.62rem; }
-            .toolbar-group input, .toolbar-group select { padding:3px 7px; font-size:0.8rem; min-width:70px; }
-            .tb-btn { padding:6px 12px; font-size:0.76rem; }
-            .badge-editor-body { display:grid; grid-template-columns:150px minmax(0,1fr) 300px; gap:0.6rem; height:var(--editor-h, 520px); align-items:stretch; flex-wrap:nowrap; }
-            .add-elements-row { flex-direction:column; align-items:stretch; margin:0; overflow-y:auto; align-content:flex-start; flex-wrap:nowrap; }
-            .add-el-btn { padding:7px 10px; font-size:0.78rem; }
-            .badge-canvas-wrapper { flex:1 1 auto; min-height:0; max-height:none; padding:10px; align-items:center; justify-content:center; }
-            .badge-props-panel { width:auto; max-height:none; height:100%; overflow-y:auto; box-sizing:border-box; }
-            #kbHint { display:none; }
-        }
-        @media (max-width: 820px) {
-            body.editor-page { padding-bottom:128px; }
-            .badge-toolbar { padding:0.6rem; gap:0.5rem; }
-            .badge-toolbar .toolbar-actions { margin-left:0; width:100%; }
-            .editor-mobile-tabs { display:flex; gap:6px; margin:0 0 8px; }
-            .editor-mobile-tabs button { flex:1; min-height:44px; border:2px solid var(--golden-dark); background:#fff; color:var(--golden-dark); border-radius:12px; font-weight:700; font-size:0.95rem; }
-            .editor-mobile-tabs button.active { background:var(--golden-dark); color:#fff; }
-            #propsDot { color:#D4AF37; }
-            .badge-editor-body { display:block; }
-            .badge-editor-body[data-tab="canvas"] .badge-props-panel { display:none; }
-            .badge-editor-body[data-tab="props"] .badge-canvas-zone { display:none; }
-            .badge-editor-body[data-tab="props"] .add-elements-row { display:none; }
-            .badge-props-panel { width:auto; max-height:none; }
-            .badge-canvas-wrapper { max-height:none; padding:8px; border-radius:12px; overflow:auto; }
-            .add-elements-row { position:fixed; left:0; right:0; bottom:0; z-index:900; background:#fff; padding:6px 8px; margin:0; overflow-x:auto; flex-wrap:nowrap; box-shadow:0 -4px 16px rgba(0,0,0,0.14); gap:6px; }
-            .add-el-btn { white-space:nowrap; min-height:44px; flex:0 0 auto; }
-            .editor-nudge-bar.on { display:flex; position:fixed; left:0; right:0; bottom:62px; z-index:901; background:#0A0E2E; padding:6px 8px; gap:6px; justify-content:center; align-items:center; color:#fff; font-size:0.8rem; }
-            .editor-nudge-bar button { min-width:48px; min-height:44px; border:none; border-radius:10px; font-size:1.2rem; font-weight:700; background:#D4AF37; color:#1a1200; }
-            #kbHint { display:none; }
-            body.editor-page .golden-section-title { display:none; }
-            body.editor-page .golden-container { padding:0.5rem !important; }
-            body.editor-page .golden-event-strip { padding:0.25rem 0.6rem; font-size:0.72rem; }
-            body.editor-page .golden-event-strip-inner { display:flex; flex-wrap:wrap; gap:2px 12px; }
-            body.editor-page .badge-toolbar { display:none; }
-            body.editor-page.toolbar-open .badge-toolbar { display:flex; }
-            #mobileTopBar { display:flex; gap:6px; margin:0 0 6px; }
-            #mobileTopBar button { flex:1; min-height:44px; border:none; border-radius:12px; font-weight:700; font-size:0.85rem; background:#f0f0f0; color:var(--golden-dark); }
-            #mobileTopBar button.primary { background:var(--golden-primary); color:#1a1200; }
-        }
-
-        .badge-modal-overlay {
-            position:fixed; inset:0; background:rgba(10,14,46,0.5); z-index:9998; display:flex;
-            align-items:center; justify-content:center; padding:1rem;
-        }
-        .badge-modal-box {
-            background:white; border-radius:16px; padding:1.8rem; max-width:480px; width:100%;
-            max-height:80vh; overflow-y:auto;
-        }
-        .saved-tpl-row {
-            display:flex; justify-content:space-between; align-items:center; padding:0.7rem 0.4rem;
-            border-bottom:1px solid #f0f0f0;
-        }
-    </style>
 </head>
-<body class="has-sidebar editor-page">
+<body class="gw-page gw-shell gw-disenador has-sidebar editor-page">
 {% include "_sidebar.html" %}
 <header class="golden-header">
   <div class="golden-header-container">
     <a href="#" class="golden-logo">
       {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
     </a>
-    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -192,146 +69,181 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 </script>
 
 <main class="golden-main">
-  <div class="golden-container" style="max-width: 1400px; padding: 1.5rem;">
-    <div class="golden-section-title" style="margin-bottom:1rem;">
-      <span>{{ company_name|upper }}</span>
-      <h2>Diseñador de <span class="gradient-text">{{ 'Certificado' if template_kind == 'certificate' else 'Escarapela' }}</span></h2>
+  <div class="golden-container gw-disenador__wrap" id="paramsRoot" data-tabs-key="disenador" data-gw-tour="disenador" data-gw-tour-auto>
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-disenador__kicker">{{ company_name|upper }}</p>
+        <h1 class="gw-page-head__title">Diseñador de {{ kind_name }}</h1>
+        <p class="gw-page-head__sub">{{ 'Arma el certificado del evento: elementos, medidas y fondo.' if is_cert else 'Arma la escarapela del evento: elementos, medidas y fondo.' }} Lo que ves en el lienzo es lo que se imprime.</p>
+      </div>
+      <div class="gw-page-head__actions">
+        <details class="gw-group gw-disenador__guide">
+          <summary class="gw-group__sum"><span class="gw-group__title">Guía de 3 pasos</span></summary>
+          <div class="gw-group__body">
+            <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+              <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Elige los elementos</span>
+                {% call ayuda('ay_dis1', 'Elige los elementos') %}Agrega texto fijo, datos de la persona, logos, foto, QR o código de barras. Cada elemento queda en el lienzo y sus propiedades salen a la derecha.{% endcall %}</li>
+              <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Arrastra y ajusta</span>
+                {% call ayuda('ay_dis2', 'Arrastra y ajusta') %}Arrastra el elemento, usa las manijas para cambiar su tamaño o girarlo, o escribe las medidas exactas en el panel de propiedades. El imán lo pega al centro y a los bordes.{% endcall %}</li>
+              <li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">{{ 'Guarda y revisa' if is_cert else 'Guarda e imprime una prueba' }}</span>
+                {% call ayuda('ay_dis3', 'Guarda' ~ (' y revisa' if is_cert else ' e imprime una prueba')) %}El botón «Guardar cambios» de abajo guarda el diseño (también con Ctrl+S). {{ 'Con «Con datos de muestra» ves cómo queda el certificado de una persona.' if is_cert else 'Después imprime una escarapela de prueba desde el Registro para confirmar el tamaño en la cinta.' }}{% endcall %}</li>
+            </ol>
+          </div>
+        </details>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="disenador">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>
+      </div>
     </div>
 
-    {% if template_kind == 'certificate' %}
-    <div class="badge-toolbar" style="flex-direction:column; align-items:stretch;">
+
+    {% if is_cert %}
+    <div class="gw-disenador__link">
       <div id="publicLinkBox"></div>
     </div>
     <script src="{{ url_for('static', path='js/certificate-link.js') }}"></script>
     <script>document.addEventListener('DOMContentLoaded', () => CertificateLink.mount(document.getElementById('publicLinkBox'), window.EVENT_ID));</script>
     {% endif %}
-    <div class="badge-toolbar" id="categoryBar" style="display:none;">
+
+    <div class="gw-ed-toolbar" id="categoryBar" hidden>
       <!-- Categorías (ítem 14, reunión 2026-09-21): solo aparece si el evento tiene categorías. -->
-      <div class="toolbar-group">
-        <label>Escarapela por categoría</label>
-        <select id="badgeModeSelect">
+      <div class="gw-ed-field">
+        <label class="gw-label" for="badgeModeSelect">Escarapela por categoría</label>
+        <select class="gw-select" id="badgeModeSelect">
           <option value="all">Una plantilla para todas las categorías</option>
           <option value="per">Una plantilla distinta por categoría</option>
         </select>
       </div>
-      <div class="toolbar-group" id="categorySelectGroup" style="display:none;">
-        <label>Estás editando la de</label>
-        <select id="categorySelect"></select>
+      <div class="gw-ed-field" id="categorySelectGroup" hidden>
+        <label class="gw-label" for="categorySelect">Estás editando la de</label>
+        <select class="gw-select" id="categorySelect"></select>
       </div>
-      <p style="margin:0; font-size:0.75rem; color:#666; align-self:center; max-width:420px;">Con "una distinta por categoría", cada categoría parte como copia de la general; las que no tengan plantilla propia se imprimen con la general.</p>
-    </div>
-    <div class="badge-toolbar">
-      <div class="toolbar-group">
-        <label>Nombre de la plantilla</label>
-        <input type="text" id="tplName" style="min-width:180px;">
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <label>Ancho (mm)</label>
-        <input type="number" id="tplWidth" min="10" max="300" step="0.5" style="width:80px;">
-      </div>
-      <div class="toolbar-group">
-        <label>Alto (mm)</label>
-        <input type="number" id="tplHeight" min="10" max="300" step="0.5" style="width:80px;">
-      </div>
-      <div class="toolbar-group">
-        <label>Orientación</label>
-        <select id="tplOrientation">
-          <option value="vertical">Vertical (Brother QL-800)</option>
-          <option value="horizontal">Horizontal</option>
-        </select>
-      </div>
-      <div class="toolbar-group" id="fitTapeGroup">
-        <label>Cinta</label>
-        <button type="button" class="tb-btn ghost" id="fitTapeBtn" title="Deja la medida que va a lo ancho de la cinta igual a lo que la impresora imprime (sin encogerse al imprimir)">↔ Ajustar a la cinta</button>
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <label>Fondo</label>
-        <select id="bgType">
-          <option value="color">Color sólido</option>
-          <option value="image">Imagen</option>
-        </select>
-      </div>
-      <div class="toolbar-group" id="bgColorGroup">
-        <label>Color</label>
-        <input type="color" id="bgColor" style="width:60px; padding:2px;">
-      </div>
-      <div class="toolbar-group" id="bgImageGroup" style="display:none;">
-        <label>Imagen de fondo</label>
-        <input type="file" id="bgImageInput" accept="image/*">
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <label>Vista previa</label>
-        <button type="button" class="tb-btn ghost" id="previewToggleBtn">👁 Con datos de muestra</button>
-      </div>
-
-      <div class="toolbar-actions">
-        <button type="button" class="tb-btn ghost" id="importBtn">📥 Importar plantilla</button>
-        <button type="button" class="tb-btn ghost" id="saveAsBtn">💾 Guardar como plantilla</button>
-        <button type="button" class="tb-btn primary" id="saveBtn">Guardar cambios</button>
-      </div>
+      <p class="gw-ed-note">Con «una distinta por categoría», cada categoría parte como copia de la general; las que no tengan plantilla propia se imprimen con la general.</p>
     </div>
 
     <div id="mobileTopBar">
-      <button type="button" id="mtToolbar" aria-expanded="false">⚙️ Plantilla</button>
-      <button type="button" id="mtPreview">👁 Muestra</button>
-      <button type="button" id="mtSave" class="primary">Guardar</button>
-    </div>
-    <div id="editorWarn" role="status"></div>
-    <div id="orientNotice" role="status"><span id="orientNoticeText"></span><button type="button" id="orientUndo">Deshacer</button></div>
-    <div id="printInfo"></div>
-    <div class="editor-mobile-tabs" id="editorTabs">
-      <button type="button" class="active" data-tab="canvas">Lienzo</button>
-      <button type="button" data-tab="props">Propiedades <span id="propsDot" hidden>●</span></button>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="mtToolbar" aria-expanded="false">{{ ic('settings', 'gw-icon--sm') }} Plantilla</button>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="mtPreview">{{ ic('eye', 'gw-icon--sm') }} Muestra</button>
     </div>
 
-    <div class="badge-editor-body" id="editorBody" data-tab="canvas">
-      <div class="add-elements-row" id="toolsCol">
-<button type="button" class="add-el-btn" data-add="text_static">🔤 Texto fijo</button>
-      <button type="button" class="add-el-btn" data-add="text_variable">🏷️ Texto variable</button>
-      <button type="button" class="add-el-btn" data-add="image_static">🖼️ Imagen / logo</button>
-      <button type="button" class="add-el-btn" data-add="image_variable">🙂 Foto del asistente</button>
-      <button type="button" class="add-el-btn" data-add="qr">▦ Código QR</button>
-      <button type="button" class="add-el-btn" data-add="barcode">|||  Código de barras</button>
-          </div>
-      <div class="badge-canvas-zone">
-        <div class="zoom-bar" id="zoomBar">
-          <button type="button" id="zoomOut" aria-label="Alejar">−</button>
+    <div class="gw-ed-toolbar gw-ed-toolbar--main" role="group" aria-label="Plantilla: nombre, medidas, fondo y vista previa">
+      <div class="gw-ed-group">
+        <div class="gw-ed-field gw-ed-field--name">
+          <label class="gw-label" for="tplName">Nombre de la plantilla</label>
+          <input class="gw-input" type="text" id="tplName" autocomplete="off">
+        </div>
+        <div class="gw-ed-field gw-ed-field--num">
+          <label class="gw-label" for="tplWidth">Ancho (mm)</label>
+          <input class="gw-input" type="number" id="tplWidth" min="10" max="300" step="0.5" inputmode="decimal">
+        </div>
+        <div class="gw-ed-field gw-ed-field--num">
+          <label class="gw-label" for="tplHeight">Alto (mm)</label>
+          <input class="gw-input" type="number" id="tplHeight" min="10" max="300" step="0.5" inputmode="decimal">
+        </div>
+        <div class="gw-ed-field">
+          <label class="gw-label" for="tplOrientation">Orientación</label>
+          <select class="gw-select" id="tplOrientation">
+            <option value="vertical">Vertical (Brother QL-800)</option>
+            <option value="horizontal">Horizontal</option>
+          </select>
+        </div>
+        <div class="gw-ed-field" id="fitTapeGroup">
+          <span class="gw-label" id="fitTapeLabel">Cinta</span>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="fitTapeBtn" aria-describedby="fitTapeLabel" title="Deja la medida que va a lo ancho de la cinta igual a lo que la impresora imprime (sin encogerse al imprimir)">{{ ic('printer', 'gw-icon--sm') }} Ajustar a la cinta</button>
+        </div>
+      </div>
+      <div class="gw-ed-group">
+        <div class="gw-ed-field">
+          <label class="gw-label" for="bgType">Fondo</label>
+          <select class="gw-select" id="bgType">
+            <option value="color">Color sólido</option>
+            <option value="image">Imagen</option>
+          </select>
+        </div>
+        <div class="gw-ed-field gw-ed-field--color" id="bgColorGroup">
+          <label class="gw-label" for="bgColor">Color</label>
+          <input class="gw-input" type="color" id="bgColor">
+        </div>
+        <div class="gw-ed-field" id="bgImageGroup" hidden>
+          <label class="gw-label" for="bgImageInput">Imagen de fondo</label>
+          <input class="gw-input" type="file" id="bgImageInput" accept="image/*">
+        </div>
+      </div>
+      <div class="gw-ed-group">
+        <div class="gw-ed-field">
+          <span class="gw-label" id="previewLabel">Vista previa</span>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="previewToggleBtn" aria-pressed="false" aria-describedby="previewLabel">{{ ic('eye', 'gw-icon--sm') }} <span id="previewToggleText">Con datos de muestra</span></button>
+        </div>
+      </div>
+      <div class="gw-ed-actions">
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="importBtn" data-gw-open="importModal" aria-haspopup="dialog">{{ ic('download', 'gw-icon--sm') }} Importar plantilla</button>
+        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="saveAsBtn">{{ ic('upload', 'gw-icon--sm') }} Guardar como plantilla</button>
+      </div>
+    </div>
+
+    <div class="gw-ed-alert" id="editorWarn" role="status" hidden></div>
+    <div class="gw-ed-alert gw-ed-alert--info" id="orientNotice" role="status"><span id="orientNoticeText"></span><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="orientUndo">{{ ic('undo', 'gw-icon--sm') }} Deshacer</button></div>
+    <div class="gw-ed-info" id="printInfo"></div>
+    <div class="editor-mobile-tabs" id="editorTabs">
+      <button type="button" class="gw-btn gw-btn--secondary active" data-tab="canvas">Lienzo</button>
+      <button type="button" class="gw-btn gw-btn--secondary" data-tab="props">Propiedades <span id="propsDot" hidden aria-label="hay un elemento seleccionado">&#9679;</span></button>
+    </div>
+
+    <div class="gw-ed-body" id="editorBody" data-tab="canvas">
+      <div class="gw-ed-tools" id="toolsCol" role="group" aria-label="Agregar elementos" data-gw-tour-step="1" data-gw-tour-title="1. Elige los elementos" data-gw-tour-text="Agrega texto, datos de la persona, logos, foto, QR o código de barras. Cada uno aparece en el lienzo.">
+        <p class="gw-ed-tools__title">Agregar</p>
+        <button type="button" class="gw-ed-tool" data-add="text_static">{{ ic('form', 'gw-icon--sm') }} Texto fijo</button>
+        <button type="button" class="gw-ed-tool" data-add="text_variable">{{ ic('badge', 'gw-icon--sm') }} Texto variable</button>
+        <button type="button" class="gw-ed-tool" data-add="image_static">{{ ic('image', 'gw-icon--sm') }} Imagen / logo</button>
+        <button type="button" class="gw-ed-tool" data-add="image_variable">{{ ic('face', 'gw-icon--sm') }} Foto del asistente</button>
+        <button type="button" class="gw-ed-tool" data-add="qr">{{ ic('qr', 'gw-icon--sm') }} Código QR</button>
+        <button type="button" class="gw-ed-tool" data-add="barcode">{{ ic('chart', 'gw-icon--sm') }} Código de barras</button>
+      </div>
+      <div class="badge-canvas-zone" data-gw-tour-step="2" data-gw-tour-title="2. Arrastra y ajusta" data-gw-tour-text="Arrastra los elementos, cambia su tamaño con las manijas y ajusta las medidas exactas en el panel de la derecha.">
+        <div class="zoom-bar" id="zoomBar" role="group" aria-label="Zoom del lienzo">
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="zoomOut" aria-label="Alejar">&minus;</button>
           <span id="zoomLabel" aria-live="polite">Ajustar</span>
-          <button type="button" id="zoomIn" aria-label="Acercar">+</button>
-          <button type="button" id="zoomFit" class="on">Ajustar a pantalla</button>
-          <button type="button" id="zoomReal">Tamaño real</button>
-          <button type="button" id="magnetBtn" class="on" aria-pressed="true" title="Imán: el elemento se pega al centro y a los bordes (mantén Alt o Ctrl para soltarlo)">🧲 Imán</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="zoomIn" aria-label="Acercar">+</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm on" id="zoomFit">Ajustar a pantalla</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="zoomReal">Tamaño real</button>
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm on" id="magnetBtn" aria-pressed="true" title="Imán: el elemento se pega al centro y a los bordes (mantén Alt o Ctrl para soltarlo)">Imán</button>
           <span id="sizeInfo"></span>
         </div>
         <div class="badge-canvas-wrapper">
-          <div id="canvasHost" style="position:relative; flex-shrink:0;">
+          <div id="canvasHost" class="badge-canvas-host">
             <div id="badgeCanvas" class="badge-canvas"></div>
-            <div id="selOverlay" style="position:absolute; inset:0; pointer-events:none; overflow:visible;"></div>
+            <div id="selOverlay" class="badge-sel-overlay"></div>
           </div>
         </div>
       </div>
-      <div class="badge-props-panel" id="propsPanel">
+      <div class="badge-props-panel" id="propsPanel" aria-live="polite">
         <p class="props-empty">Selecciona un elemento del lienzo para editar sus propiedades, o agrega uno nuevo.</p>
       </div>
     </div>
-    <div class="editor-nudge-bar" id="nudgeBar" aria-label="Ajuste fino del elemento">
-      <button type="button" data-nudge="-1,0" aria-label="Izquierda">←</button><button type="button" data-nudge="0,-1" aria-label="Arriba">↑</button>
-      <button type="button" data-nudge="0,1" aria-label="Abajo">↓</button><button type="button" data-nudge="1,0" aria-label="Derecha">→</button>
+    <div class="editor-nudge-bar" id="nudgeBar" role="group" aria-label="Ajuste fino del elemento">
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-nudge="-1,0" aria-label="Izquierda">&larr;</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-nudge="0,-1" aria-label="Arriba">&uarr;</button>
+      <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-nudge="0,1" aria-label="Abajo">&darr;</button><button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-nudge="1,0" aria-label="Derecha">&rarr;</button>
       <span>1 mm</span>
+    </div>
+
+    {# Barra de guardado ÚNICA (R1): Guardar cambios + Ctrl/Cmd+S + aviso al salir con cambios. La maneja params-save.js (GWParams); el diseño se registra más abajo. #}
+    <div class="gw-savebar" id="paramsSaveBar" data-state="idle" data-icons="{{ url_for('static', path='img/icons.svg') }}" data-gw-tour-step="3" data-gw-tour-title="3. Guarda el diseño" data-gw-tour-text="Un solo botón guarda todo el diseño. También puedes pulsar Ctrl+S. Si hay cambios sin guardar, te avisa al salir.">
+      <div class="gw-savebar__status" id="paramsSaveStatus" role="status" aria-live="polite"></div>
+      <button type="button" class="gw-btn gw-btn--primary" id="paramsSaveBtn" disabled>Guardar cambios</button>
+      <ul class="gw-savebar__fail" id="paramsSaveFail" role="alert" hidden></ul>
     </div>
   </div>
 </main>
 
-<div id="importModal" class="badge-modal-overlay" style="display:none;">
-  <div class="badge-modal-box">
-    <h4 style="margin-top:0; color: var(--golden-dark);">Importar plantilla guardada</h4>
-    <p style="font-size:0.82rem; color:#666;">Copia el diseño de una plantilla de tu librería a este evento — no queda vinculada, puedes seguir editando aquí sin afectar la original.</p>
-    <div id="savedTplList"><p style="color:#666; font-size:0.85rem;">Cargando…</p></div>
-    <div style="text-align:right; margin-top:1rem;">
-      <button type="button" class="tb-btn ghost" id="importCancelBtn">Cerrar</button>
+<div id="importModal" class="gw-modal-backdrop">
+  <div class="gw-modal" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="gw-modal__head">
+      <h2 class="gw-modal__title" id="importTitle">Importar plantilla guardada</h2>
+    </div>
+    <div class="gw-modal__body">
+      <p class="gw-modal__text">Copia el diseño de una plantilla de tu librería a este evento. No queda vinculada: puedes seguir editando aquí sin afectar la original.</p>
+      <div id="savedTplList" aria-live="polite"><p class="gw-ed-state">Cargando…</p></div>
+    </div>
+    <div class="gw-modal__foot">
+      <button type="button" class="gw-btn gw-btn--secondary" id="importCancelBtn" data-gw-close>Cerrar</button>
     </div>
   </div>
 </div>
@@ -340,6 +252,9 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 (function () {
   // Ítem 5: el mismo editor sirve para el certificado (A4 horizontal, PDF) — lienzo más chico para que quepa.
   const KIND = window.TEMPLATE_KIND || 'badge';
+  const ICONS_URL = {{ url_for('static', path='img/icons.svg')|tojson }};
+  const hexColor = (n) => '#' + n.toString(16).padStart(6, '0');          // colores de DATOS de la plantilla (blanco y negro por defecto), no de la interfaz
+  const WHITE = hexColor(0xffffff), BLACK = hexColor(0);
   const PX_PER_MM = 96 / 25.4;                       // 1 mm CSS = 3,78 px: con escala 1 el lienzo se ve a TAMAÑO REAL
   let editorScale = KIND === 'certificate' ? 1.1 : 3;   // factor visual (zoom): «Ajustar a pantalla» lo calcula solo; el arrastre usa getBoundingClientRect, no depende de este número
   let zoomMode = 'fit';                              // 'fit' | 'manual'
@@ -412,21 +327,29 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   async function initCategoryBar() {
     const info = await (await fetch(`/api/events/${window.EVENT_ID}/categories`)).json();
     if (!info.categories.length) return;
-    document.getElementById('categoryBar').style.display = 'flex';
+    document.getElementById('categoryBar').hidden = false;
     const modeSel = document.getElementById('badgeModeSelect');
     const catSel = document.getElementById('categorySelect');
     catSel.innerHTML = '<option value="">Plantilla general (todas)</option>' + info.categories.map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('');
     modeSel.value = info.badge_per_category ? 'per' : 'all';
-    document.getElementById('categorySelectGroup').style.display = info.badge_per_category ? 'flex' : 'none';
+    document.getElementById('categorySelectGroup').hidden = !info.badge_per_category;
     modeSel.addEventListener('change', async () => {
       const per = modeSel.value === 'per';
       const res = await fetch(`/api/events/${window.EVENT_ID}/badge-mode`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ per_category: per }) });
       if (!res.ok) { showToast('No se pudo cambiar el modo', 'error'); modeSel.value = per ? 'all' : 'per'; return; }
-      document.getElementById('categorySelectGroup').style.display = per ? 'flex' : 'none';
+      document.getElementById('categorySelectGroup').hidden = !per;
       if (!per) { currentCategory = null; catSel.value = ''; await loadTemplate(); }
       showToast(per ? 'Ahora cada categoría puede tener su propia escarapela' : 'Todas las categorías usan la misma escarapela', 'success');
     });
-    catSel.addEventListener('change', async () => { currentCategory = catSel.value || null; selectedId = null; await loadTemplate(); });
+    let shownCategory = '';
+    catSel.addEventListener('change', async () => {
+      if (GWP && GWP.hasDirty()) {                              // cambiar de plantilla descartaría lo editado
+        const ok = await showConfirm('Hay cambios sin guardar en esta plantilla. Si cambias de categoría se pierden. ¿Continuar?', { variant: 'warning', confirmLabel: 'Sí, descartar' });
+        if (!ok) { catSel.value = shownCategory; return; }
+      }
+      shownCategory = catSel.value;
+      currentCategory = catSel.value || null; selectedId = null; await loadTemplate();
+    });
   }
 
   async function loadTemplate() {
@@ -436,6 +359,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     renderCanvas();
     renderPropsPanel();
     updateWarnings(false);
+    markSaved();
     BadgeRender.loadFonts(template).then(() => renderCanvas());          // cuando las fuentes elegidas estén cargadas, se vuelve a dibujar con la tipografía real
   }
 
@@ -446,18 +370,39 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     document.getElementById('tplOrientation').value = template.orientation || 'vertical';
     document.getElementById('bgType').value = template.background_type || 'color';
     if (template.background_type === 'color') {
-      document.getElementById('bgColor').value = template.background_value || '#ffffff';
+      document.getElementById('bgColor').value = template.background_value || WHITE;
     }
     toggleBgInputs();
   }
 
   function toggleBgInputs() {
     const isImage = document.getElementById('bgType').value === 'image';
-    document.getElementById('bgColorGroup').style.display = isImage ? 'none' : 'flex';
-    document.getElementById('bgImageGroup').style.display = isImage ? 'flex' : 'none';
+    document.getElementById('bgColorGroup').hidden = isImage;
+    document.getElementById('bgImageGroup').hidden = !isImage;
   }
 
-  async function saveTemplate() {
+  /* Guardado ÚNICO (R1): la barra de abajo (params-save.js, GWParams) llama a persistTemplate; lanza Error(mensaje) si falla y la barra lo muestra. Qué hay sin guardar se decide
+     comparando una «foto» del diseño con la del último guardado/carga (cualquier cambio pasa por renderCanvas o por los campos de la barra de herramientas). */
+  const GWP = window.GWParams || null;
+  const DESIGN_KEY = 'diseno';
+  const busy = (btn, work) => (window.GW && window.GW.busy ? window.GW.busy(btn, work) : work());          // rueda y sin doble clic
+  let savedSnap = '', checkQueued = false;
+  function designSnap() {
+    if (!template) return '';
+    const isColor = template.background_type === 'color';
+    return JSON.stringify([document.getElementById('tplName').value.trim(), template.width_mm, template.height_mm, template.orientation, template.background_type,
+      isColor ? document.getElementById('bgColor').value : template.background_value, template.elements]);
+  }
+  function markSaved() { savedSnap = designSnap(); if (GWP) GWP.markClean(DESIGN_KEY); }
+  function checkDirty() {
+    checkQueued = false;
+    if (!template || !GWP) return;
+    if (designSnap() !== savedSnap) GWP.markDirty(DESIGN_KEY); else GWP.markClean(DESIGN_KEY);
+  }
+  function scheduleDirtyCheck() { if (checkQueued) return; checkQueued = true; window.requestAnimationFrame(checkDirty); }
+  ['input', 'change'].forEach((ev) => document.addEventListener(ev, (e) => { if (e.target && e.target.closest && e.target.closest('#importModal')) return; setTimeout(scheduleDirtyCheck, 0); }));
+
+  async function persistTemplate() {
     template.name = document.getElementById('tplName').value.trim() || (KIND === 'certificate' ? 'Certificado' : 'Escarapela');
     template.width_mm = parseFloat(document.getElementById('tplWidth').value) || template.width_mm;
     template.height_mm = parseFloat(document.getElementById('tplHeight').value) || template.height_mm;
@@ -466,10 +411,9 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     if (template.background_type === 'color') {
       template.background_value = document.getElementById('bgColor').value;
     }
-    const saveBtn = document.getElementById('saveBtn');
-    setButtonLoading(saveBtn, true, 'Guardando...');
+    let res;
     try {
-      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template${catQs()}`, {
+      res = await fetch(`/api/events/${window.EVENT_ID}/badge-template${catQs()}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: template.name, width_mm: template.width_mm, height_mm: template.height_mm,
@@ -477,59 +421,76 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
           background_value: template.background_value, elements: template.elements,
         }),
       });
-      if (!res.ok) { showToast('No se pudo guardar la escarapela', 'error'); return; }
-      template = await res.json();
-      renderCanvas();
-      updateWarnings(false);
-      showToast(KIND === 'certificate' ? 'Certificado guardado' : 'Escarapela guardada', 'success');
-    } catch (e) { showToast('Error de red', 'error'); }
-    finally { setButtonLoading(saveBtn, false); }
+    } catch (e) { throw new Error('Error de red'); }
+    if (!res.ok) throw new Error(KIND === 'certificate' ? 'No se pudo guardar el certificado' : 'No se pudo guardar la escarapela');
+    template = await res.json();
+    syncToolbarFromTemplate();
+    markSaved();
+    renderCanvas();
+    updateWarnings(false);
   }
+  if (GWP) GWP.register({ key: DESIGN_KEY, label: KIND === 'certificate' ? 'Diseño del certificado' : 'Diseño de la escarapela', order: 1, save: persistTemplate });
 
   async function saveAsTemplate() {
     const name = await showPrompt('¿Cómo quieres llamar esta plantilla en tu librería?', { defaultValue: template.name || 'Mi plantilla', confirmLabel: 'Guardar' });
     if (!name) return;
-    await saveTemplate();
-    try {
-      const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/save-as${catQs()}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
-      });
-      if (res.ok) showToast('Guardada en tu librería de plantillas', 'success');
-      else showToast('No se pudo guardar en la librería', 'error');
-    } catch (e) { showToast('Error de red', 'error'); }
+    await busy(document.getElementById('saveAsBtn'), async () => {
+      if (GWP) {                                                       // primero se guarda el diseño por la misma barra (queda limpio y se muestra si falla)
+        const r = await GWP.saveKey(DESIGN_KEY);
+        if (r.failed.length) { showToast('No se guardó el diseño: ' + r.failed[0].error, 'error'); return; }
+      } else { try { await persistTemplate(); } catch (e) { showToast(e.message, 'error'); return; } }
+      try {
+        const res = await fetch(`/api/events/${window.EVENT_ID}/badge-template/save-as${catQs()}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+        });
+        if (res.ok) showToast('Guardada en tu librería de plantillas', 'success');
+        else showToast('No se pudo guardar en la librería', 'error');
+      } catch (e) { showToast('Error de red', 'error'); }
+    });
   }
 
-  async function openImportModal() {
-    document.getElementById('importModal').style.display = 'flex';
+  function stateLine(listEl, text, isErr) {
+    const p = document.createElement('p');
+    p.className = 'gw-ed-state' + (isErr ? ' gw-ed-state--err' : '');
+    p.textContent = text;
+    listEl.replaceChildren(p);
+  }
+  async function openImportModal() {                  // la ventana se abre sola (data-gw-open="importModal" en gw-ui.js); aquí se carga la lista
     const listEl = document.getElementById('savedTplList');
-    listEl.innerHTML = '<p style="color:#666; font-size:0.85rem;">Cargando…</p>';
+    stateLine(listEl, 'Cargando…');
     try {
       const res = await fetch(`/api/events/${window.EVENT_ID}/saved-badge-templates`);
       const list = await res.json();
       if (!list.length) {
-        listEl.innerHTML = '<p style="color:#666; font-size:0.85rem;">Todavía no hay ninguna plantilla guardada en la librería.</p>';
+        stateLine(listEl, 'Todavía no hay ninguna plantilla guardada en la librería. Usa «Guardar como plantilla» para crear la primera.');
         return;
       }
-      listEl.innerHTML = '';
+      listEl.replaceChildren();
       list.forEach(s => {
         const row = document.createElement('div');
         row.className = 'saved-tpl-row';
-        row.innerHTML = `<span>${s.name} <small style="color:#666;">(${s.width_mm}×${s.height_mm}mm, ${s.orientation})</small></span>`;
+        const label = document.createElement('span');
+        label.textContent = s.name + ' ';
+        const small = document.createElement('small');
+        small.textContent = `(${s.width_mm}×${s.height_mm} mm, ${s.orientation})`;
+        label.appendChild(small);
         const btnGroup = document.createElement('div');
+        btnGroup.className = 'saved-tpl-actions';
         const importB = document.createElement('button');
-        importB.className = 'tb-btn primary'; importB.style.padding = '4px 12px'; importB.style.fontSize = '0.75rem';
-        importB.innerText = 'Importar';
-        importB.addEventListener('click', () => importSavedTemplate(s.id));
+        importB.type = 'button'; importB.className = 'gw-btn gw-btn--secondary gw-btn--sm';
+        importB.textContent = 'Importar';
+        importB.addEventListener('click', () => busy(importB, () => importSavedTemplate(s.id)));
         const delB = document.createElement('button');
-        delB.className = 'tb-btn danger'; delB.style.padding = '4px 12px'; delB.style.fontSize = '0.75rem'; delB.style.marginLeft = '6px';
-        delB.innerText = 'Borrar';
-        delB.addEventListener('click', () => deleteSavedTemplate(s.id));
+        delB.type = 'button'; delB.className = 'gw-btn gw-btn--danger-outline gw-btn--sm';
+        delB.textContent = 'Borrar';
+        delB.setAttribute('aria-label', 'Borrar la plantilla ' + s.name);
+        delB.addEventListener('click', () => busy(delB, () => deleteSavedTemplate(s.id)));
         btnGroup.appendChild(importB); btnGroup.appendChild(delB);
-        row.appendChild(btnGroup);
+        row.appendChild(label); row.appendChild(btnGroup);
         listEl.appendChild(row);
       });
     } catch (e) {
-      listEl.innerHTML = '<p style="color:red; font-size:0.85rem;">Error de red</p>';
+      stateLine(listEl, 'No se pudo cargar la librería (error de red). Cierra la ventana y vuelve a intentarlo.', true);
     }
   }
 
@@ -544,7 +505,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       syncToolbarFromTemplate();
       renderCanvas();
       renderPropsPanel();
-      document.getElementById('importModal').style.display = 'none';
+      markSaved();                                            // la importación ya quedó guardada en el servidor
+      document.getElementById('importCancelBtn').click();     // cierra la ventana (data-gw-close)
       showToast('Plantilla importada', 'success');
     } catch (e) { showToast('Error de red', 'error'); }
   }
@@ -578,7 +540,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       const elId = div.dataset.elId;
       const el = template.elements.find(e => e.id === elId);
       if (!el) return;
-      div.style.outline = (elId === selectedId) ? '2px dashed #D4AF37' : '1px dashed rgba(0,0,0,0.08)';
+      div.classList.toggle('is-selected', elId === selectedId);          // el contorno (guía del editor) lo pone gw-disenador.css
       if (isOutside(el)) div.classList.add('oob');
       div.addEventListener('pointerdown', (e) => startDrag(e, el));
       div.addEventListener('click', (e) => { e.stopPropagation(); selectElement(elId); });
@@ -597,6 +559,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
       });
     });
     paintHandles();
+    scheduleDirtyCheck();
     guides.x.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide v'; g.style.left = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
     guides.y.forEach((pos) => { const g = document.createElement('div'); g.className = 'snap-guide h'; g.style.top = (pos * editorScale) + 'mm'; canvasEl.appendChild(g); });
   }
@@ -665,7 +628,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   function setEditorHeight() {                       // el cuerpo del diseñador ocupa lo que queda de la ventana: sin scroll de página en escritorio
     if (isMobile()) { bodyEl.style.removeProperty('--editor-h'); return; }
     const top = bodyEl.getBoundingClientRect().top + window.scrollY;
-    bodyEl.style.setProperty('--editor-h', Math.max(300, window.innerHeight - top - 10) + 'px');
+    const saveBar = document.getElementById('paramsSaveBar'), reserve = (saveBar ? saveBar.offsetHeight + 8 : 0) + 10;          // la barra de guardado queda siempre a la vista
+    bodyEl.style.setProperty('--editor-h', Math.max(300, window.innerHeight - top - reserve) + 'px');
   }
   function fitScale() {
     const cs = getComputedStyle(wrapperEl);
@@ -710,17 +674,18 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const outside = template.elements.filter(isOutside).length;
     const parts = [];
     let severe = outside > 0;
-    if (outside) parts.push(`⚠️ ${outside} elemento(s) quedaron fuera de la etiqueta (marcados en rojo): muévelos o cámbialos de tamaño.`);
+    if (outside) parts.push(`Atención: ${outside} elemento(s) quedaron fuera de la etiqueta (marcados en rojo): muévelos o cámbialos de tamaño.`);
     if (KIND === 'badge' && window.QLUsb) {
       let ls = null; try { ls = window.localStorage; } catch (e) { /* bloqueado */ }
       const prefs = QLUsb.resolvePrefs(ls, tapeSettings).prefs;
       const lay = QLUsb.layout(prefs, template.width_mm, template.height_mm);
       info.textContent = `Impresión QL-800: cinta ${prefs.tapeWidth} mm ${prefs.tapeType === 'diecut' ? 'troquelada' : 'continua'} (${lay.availMm.toFixed(1)} mm imprimibles) · ${prefs.rotation === 'auto' ? 'giro automático' : 'giro'} ${lay.rotation}° · la plantilla ocupa ${lay.acrossMm.toFixed(1)} mm a lo ancho de la cinta × ${lay.alongMm.toFixed(1)} mm a lo largo${prefs.tapeType === 'continuous' && prefs.crop ? ' (se recorta al contenido)' : ''}.`;
       if (lay.tooWide) {
-        parts.push(`⚠️ La plantilla (${lay.acrossMm.toFixed(1)} mm a lo ancho de la cinta) es más ancha que la cinta (${lay.availMm.toFixed(1)} mm imprimibles): al imprimir se encoge al ${Math.round(lay.scale * 100)} %. ` + (lay.scale < 0.9 ? 'Reduce el ancho, cambia la orientación o ajusta la cinta en Parámetros.' : 'Es un ajuste pequeño (los 62 mm de la cinta incluyen sus márgenes); para que salga exacta, usa hasta ' + lay.availMm.toFixed(1) + ' mm de ancho.'));
+        parts.push(`Atención: La plantilla (${lay.acrossMm.toFixed(1)} mm a lo ancho de la cinta) es más ancha que la cinta (${lay.availMm.toFixed(1)} mm imprimibles): al imprimir se encoge al ${Math.round(lay.scale * 100)} %. ` + (lay.scale < 0.9 ? 'Reduce el ancho, cambia la orientación o ajusta la cinta en Parámetros.' : 'Es un ajuste pequeño (los 62 mm de la cinta incluyen sus márgenes); para que salga exacta, usa hasta ' + lay.availMm.toFixed(1) + ' mm de ancho.'));
         if (lay.scale < 0.9) severe = true;
       }
     }
+    warn.hidden = !parts.length;
     warn.style.display = parts.length ? 'block' : 'none';
     warn.classList.toggle('bad', severe);
     warn.innerHTML = parts.join('<br>');
@@ -735,7 +700,6 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     setTimeout(() => { if (template) renderCanvas(); }, 50);
   });
   document.getElementById('mtPreview').addEventListener('click', () => document.getElementById('previewToggleBtn').click());
-  document.getElementById('mtSave').addEventListener('click', () => document.getElementById('saveBtn').click());
 
   // Pestañas del móvil y ajuste fino
   document.getElementById('editorTabs').addEventListener('click', (e) => {
@@ -762,7 +726,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   });
 
   function refocus(elId) { const d = canvasEl.querySelector('.badge-element[data-el-id="' + elId + '"]'); if (d) d.focus(); }
-  wrapperEl.insertAdjacentHTML('beforebegin', '<p id="kbHint" style="font-size:0.78rem; color:#555; margin:0 0 6px;">⌨️ Con el teclado: <b>Tab</b> para recorrer los elementos, <b>Enter</b> para seleccionar, <b>flechas</b> para moverlo (con <b>Mayús</b>, de 5 en 5 mm), <b>Supr</b> para borrarlo. También puedes escribir la posición exacta en el panel de propiedades.</p>');
+  wrapperEl.insertAdjacentHTML('beforebegin', '<p id="kbHint" class="gw-ed-hint">Con el teclado: <b>Tab</b> para recorrer los elementos, <b>Enter</b> para seleccionar, <b>flechas</b> para moverlo (con <b>Mayús</b>, de 5 en 5 mm), <b>Supr</b> para borrarlo. También puedes escribir la posición exacta en el panel de propiedades.</p>');
   let swallowClick = false;                          // soltar tras girar/redimensionar/arrastrar dispara un «click» en el lienzo: no debe soltar la selección
   canvasEl.addEventListener('click', () => { if (swallowClick) return; selectedId = null; renderCanvas(); renderPropsPanel(); });
 
@@ -867,9 +831,9 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     const base = { id: nextElId(), type, x: 5, y: 5, width: 30, height: 10, rotation: 0, z_index: (template.elements.length + 1) };
     let el;
     if (type === 'text_static') {
-      el = Object.assign(base, { content: 'Texto', font_family: 'Roboto', font_size: 12, font_color: '#000000', font_weight: 'normal', align: 'left', height: 8 });
+      el = Object.assign(base, { content: 'Texto', font_family: 'Roboto', font_size: 12, font_color: BLACK, font_weight: 'normal', align: 'left', height: 8 });
     } else if (type === 'text_variable') {
-      el = Object.assign(base, { variable: 'first_name', font_family: 'Roboto', font_size: 12, font_color: '#000000', font_weight: 'normal', align: 'left', height: 8 });
+      el = Object.assign(base, { variable: 'first_name', font_family: 'Roboto', font_size: 12, font_color: BLACK, font_weight: 'normal', align: 'left', height: 8 });
     } else if (type === 'image_static') {
       el = Object.assign(base, { storage_path: null, width: 25, height: 25 });
     } else if (type === 'image_variable') {
@@ -917,6 +881,14 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     return ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${k === selected ? 'selected' : ''}>${label}</option>`).join('');
   }
 
+  /* Grupos del panel (R3): <details> que recuerdan si estaban abiertos aunque el panel se vuelva a dibujar al editar. «Posición» y «Contenido» abiertos; lo avanzado, plegado. */
+  const GROUP_OPEN = { pos: true, content: true, look: true, order: false };
+  function propGroup(key, title, bodyHtml) {
+    return `<details class="gw-group" data-group="${key}"${GROUP_OPEN[key] ? ' open' : ''}><summary class="gw-group__sum"><span class="gw-group__title">${title}</span></summary><div class="gw-group__body">${bodyHtml}</div></details>`;
+  }
+  propsPanel.addEventListener('toggle', (e) => { const d = e.target; if (d && d.dataset && d.dataset.group) GROUP_OPEN[d.dataset.group] = d.open; }, true);          // «toggle» no burbujea: se escucha en captura
+  function gwIcon(name) { return `<svg class="gw-icon gw-icon--sm" aria-hidden="true"><use href="${ICONS_URL}#i-${name}"/></svg>`; }
+
   function renderPropsPanel() {
     const el = selectedElement();
     if (!el) {
@@ -926,66 +898,66 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
     let typeSpecificHtml = '';
     if (el.type === 'text_static') {
-      typeSpecificHtml = `
-        <div class="prop-field"><label>Texto</label><textarea id="p_content" rows="2">${el.content || ''}</textarea></div>
-        ${fontFieldsHtml(el)}`;
+      typeSpecificHtml = propGroup('content', 'Contenido', `
+        <div class="prop-field"><label for="p_content">Texto</label><textarea id="p_content" rows="2">${el.content || ''}</textarea></div>`) + propGroup('look', 'Aspecto del texto', fontFieldsHtml(el));
     } else if (el.type === 'text_variable') {
-      typeSpecificHtml = `
-        <div class="prop-field"><label>Variable</label><select id="p_variable">${variableOptionsHtml(el.variable)}</select></div>
-        ${fontFieldsHtml(el)}`;
+      typeSpecificHtml = propGroup('content', 'Contenido', `
+        <div class="prop-field"><label for="p_variable">Variable</label><select id="p_variable">${variableOptionsHtml(el.variable)}</select></div>`) + propGroup('look', 'Aspecto del texto', fontFieldsHtml(el));
     } else if (el.type === 'image_static') {
-      typeSpecificHtml = `
-        <div class="prop-field"><label>Imagen</label><input type="file" id="p_image" accept="image/*"></div>
-        ${el.storage_path ? `<img src="/api/badge-assets/${el.storage_path}" style="max-width:100%; border-radius:8px; margin-bottom:0.8rem;">` : '<p style="font-size:0.78rem; color:#666;">Sin imagen todavía</p>'}`;
+      typeSpecificHtml = propGroup('content', 'Imagen', `
+        <div class="prop-field"><label for="p_image">Imagen</label><input type="file" id="p_image" accept="image/*"></div>
+        ${el.storage_path ? `<img class="prop-preview" alt="Imagen del elemento" src="/api/badge-assets/${el.storage_path}">` : '<p class="prop-note">Sin imagen todavía</p>'}`);
     } else if (el.type === 'image_variable') {
       // 2026-09-16: aclarado a propósito, tras QA — este elemento NO tiene (ni debe tener) botón
       // de subir imagen: es la foto real de cada persona, se resuelve sola al momento de
-      // imprimir. Si buscabas subir un logo o una imagen fija, usa "🖼️ Imagen / logo" en su lugar.
-      typeSpecificHtml = `<p style="font-size:0.8rem; color:#666; line-height:1.4;">📌 Este elemento NO se sube a mano — se llena solo con la foto real de cada persona al momento de imprimir (requiere que el evento tenga reconocimiento facial activo). Si querías subir una imagen tuya (ej. un logo), usa "🖼️ Imagen / logo" en vez de este.</p>`;
+      // imprimir. Si buscabas subir un logo o una imagen fija, usa «Imagen / logo» en su lugar.
+      typeSpecificHtml = propGroup('content', 'Foto', `<p class="prop-note">Este elemento NO se sube a mano: se llena solo con la foto real de cada persona al momento de imprimir (requiere que el evento tenga reconocimiento facial activo). Si querías subir una imagen tuya (ej. un logo), usa «Imagen / logo» en vez de este.</p>`);
     } else if (el.type === 'qr') {
-      typeSpecificHtml = `
-        <div class="prop-field"><label>Variable(s) codificadas</label>
+      typeSpecificHtml = propGroup('content', 'Código QR', `
+        <div class="prop-field"><label for="p_qr_vars">Variable(s) codificadas</label>
           <select id="p_qr_vars" multiple size="4">${ALL_VARIABLES.map(([k, label]) => `<option value="${k}" ${(el.variables || []).includes(k) ? 'selected' : ''}>${label}</option>`).join('')}</select>
         </div>
-        <p style="font-size:0.72rem; color:#666;">Ctrl/Cmd + clic para elegir varias — se combinan separadas por "|".</p>`;
+        <p class="prop-note">Ctrl/Cmd + clic para elegir varias; se combinan separadas por "|".</p>`);
     } else if (el.type === 'barcode') {
-      typeSpecificHtml = `
-        <div class="prop-field"><label>Variable</label><select id="p_bvariable">${variableOptionsHtml(el.variable)}</select></div>
-        <div class="prop-field"><label>Formato</label>
+      typeSpecificHtml = propGroup('content', 'Código de barras', `
+        <div class="prop-field"><label for="p_bvariable">Variable</label><select id="p_bvariable">${variableOptionsHtml(el.variable)}</select></div>
+        <div class="prop-field"><label for="p_bformat">Formato</label>
           <select id="p_bformat">
             <option value="code128" ${el.format === 'code128' ? 'selected' : ''}>Code128</option>
             <option value="code39" ${el.format === 'code39' ? 'selected' : ''}>Code39</option>
           </select>
-        </div>`;
+        </div>`);
     }
 
     propsPanel.innerHTML = `
-      <h4>Propiedades</h4>
+      <h3 class="props-title">Propiedades</h3>
+      ${propGroup('pos', 'Posición y tamaño', `
       <div class="align-row" role="group" aria-label="Alinear respecto a la etiqueta">
-        <button type="button" data-align="left" title="Alinear a la izquierda" aria-label="Alinear a la izquierda">⇤</button>
-        <button type="button" data-align="center" title="Centrar horizontalmente" aria-label="Centrar horizontalmente">↔</button>
-        <button type="button" data-align="right" title="Alinear a la derecha" aria-label="Alinear a la derecha">⇥</button>
-        <button type="button" data-align="top" title="Alinear arriba" aria-label="Alinear arriba">⤒</button>
-        <button type="button" data-align="middle" title="Centrar verticalmente" aria-label="Centrar verticalmente">↕</button>
-        <button type="button" data-align="bottom" title="Alinear abajo" aria-label="Alinear abajo">⤓</button>
+        <button type="button" class="prop-btn" data-align="left" title="Alinear a la izquierda" aria-label="Alinear a la izquierda">⇤</button>
+        <button type="button" class="prop-btn" data-align="center" title="Centrar horizontalmente" aria-label="Centrar horizontalmente">↔</button>
+        <button type="button" class="prop-btn" data-align="right" title="Alinear a la derecha" aria-label="Alinear a la derecha">⇥</button>
+        <button type="button" class="prop-btn" data-align="top" title="Alinear arriba" aria-label="Alinear arriba">⤒</button>
+        <button type="button" class="prop-btn" data-align="middle" title="Centrar verticalmente" aria-label="Centrar verticalmente">↕</button>
+        <button type="button" class="prop-btn" data-align="bottom" title="Alinear abajo" aria-label="Alinear abajo">⤓</button>
       </div>
       <div class="prop-row">
-        <div class="prop-field"><label>X (mm)</label><input type="number" id="p_x" step="0.5" value="${(el.x).toFixed(1)}"></div>
-        <div class="prop-field"><label>Y (mm)</label><input type="number" id="p_y" step="0.5" value="${(el.y).toFixed(1)}"></div>
+        <div class="prop-field"><label for="p_x">X (mm)</label><input type="number" id="p_x" step="0.5" value="${(el.x).toFixed(1)}"></div>
+        <div class="prop-field"><label for="p_y">Y (mm)</label><input type="number" id="p_y" step="0.5" value="${(el.y).toFixed(1)}"></div>
       </div>
       <div class="prop-row">
-        <div class="prop-field"><label>Ancho (mm)</label><input type="number" id="p_w" step="0.5" value="${(el.width).toFixed(1)}"></div>
-        <div class="prop-field"><label>Alto (mm)</label><input type="number" id="p_h" step="0.5" value="${(el.height).toFixed(1)}"></div>
+        <div class="prop-field"><label for="p_w">Ancho (mm)</label><input type="number" id="p_w" step="0.5" value="${(el.width).toFixed(1)}"></div>
+        <div class="prop-field"><label for="p_h">Alto (mm)</label><input type="number" id="p_h" step="0.5" value="${(el.height).toFixed(1)}"></div>
       </div>
-      <div class="prop-field"><label>Rotación (grados)</label><input type="number" id="p_rot" step="1" value="${el.rotation || 0}">
-        <div class="quick-rot"><button type="button" id="p_rot_ccw" aria-label="Girar 90° a la izquierda">↺ 90°</button><button type="button" id="p_rot_zero" aria-label="Sin giro">0°</button><button type="button" id="p_rot_cw" aria-label="Girar 90° a la derecha">↻ 90°</button></div>
-      </div>
+      <div class="prop-field"><label for="p_rot">Rotación (grados)</label><input type="number" id="p_rot" step="1" value="${el.rotation || 0}">
+        <div class="quick-rot"><button type="button" class="prop-btn" id="p_rot_ccw" aria-label="Girar 90° a la izquierda">↺ 90°</button><button type="button" class="prop-btn" id="p_rot_zero" aria-label="Sin giro">0°</button><button type="button" class="prop-btn" id="p_rot_cw" aria-label="Girar 90° a la derecha">↻ 90°</button></div>
+      </div>`)}
       ${typeSpecificHtml}
-      <div style="display:flex; gap:6px; margin-top:1rem;">
-        <button type="button" class="tb-btn ghost" id="p_front" style="flex:1;">Al frente</button>
-        <button type="button" class="tb-btn ghost" id="p_back" style="flex:1;">Atrás</button>
-      </div>
-      <button type="button" class="tb-btn danger" id="p_delete" style="width:100%; margin-top:8px;">Eliminar elemento</button>
+      ${propGroup('order', 'Orden de capas', `
+      <div class="prop-actions">
+        <button type="button" class="prop-btn" id="p_front">Al frente</button>
+        <button type="button" class="prop-btn" id="p_back">Atrás</button>
+      </div>`)}
+      <button type="button" class="gw-btn gw-btn--danger-outline prop-danger" id="p_delete">${gwIcon('trash')} Eliminar elemento</button>
     `;
 
     document.getElementById('p_x').addEventListener('input', (e) => { el.x = parseFloat(e.target.value) || 0; renderCanvas(); });
@@ -1005,7 +977,10 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     });
     document.getElementById('p_front').addEventListener('click', bringToFront);
     document.getElementById('p_back').addEventListener('click', sendToBack);
-    document.getElementById('p_delete').addEventListener('click', deleteSelectedElement);
+    document.getElementById('p_delete').addEventListener('click', async () => {
+      const ok = await showConfirm('Se quitará este elemento de la etiqueta (puedes volver a agregarlo, pero se pierden sus ajustes). ¿Eliminar?', { confirmLabel: 'Eliminar' });
+      if (ok) deleteSelectedElement();
+    });
 
     if (el.type === 'text_static') {
       document.getElementById('p_content').addEventListener('input', (e) => { el.content = e.target.value; renderCanvas(); });
@@ -1020,8 +995,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
         const input = e.target;
         input.disabled = true;
         const status = document.createElement('span');
-        status.innerHTML = '<span class="golden-btn-spinner" style="border-color:rgba(0,0,0,0.15); border-top-color:#666;"></span>Subiendo...';
-        status.style.cssText = 'font-size:0.78rem; color:#666; margin-left:8px;';
+        status.className = 'prop-upload';
+        status.innerHTML = '<span class="gw-spinner" aria-hidden="true"></span>Subiendo...';
         input.insertAdjacentElement('afterend', status);
         const path = await uploadImage(file);
         status.remove();
@@ -1041,19 +1016,19 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   function fontFieldsHtml(el) {
     return `
-      <div class="prop-field"><label>Fuente</label><div id="p_font"></div></div>
+      <div class="prop-field"><label id="p_font_label">Fuente</label><div id="p_font" role="group" aria-labelledby="p_font_label"></div></div>
       <div class="prop-row">
-        <div class="prop-field"><label>Tamaño (pt)</label><input type="number" id="p_fsize" value="${el.font_size || 12}"></div>
-        <div class="prop-field"><label>Color</label><input type="color" id="p_fcolor" value="${el.font_color || '#000000'}"></div>
+        <div class="prop-field"><label for="p_fsize">Tamaño (pt)</label><input type="number" id="p_fsize" value="${el.font_size || 12}"></div>
+        <div class="prop-field"><label for="p_fcolor">Color</label><input type="color" id="p_fcolor" value="${el.font_color || BLACK}"></div>
       </div>
       <div class="prop-row">
-        <div class="prop-field"><label>Peso</label>
+        <div class="prop-field"><label for="p_fweight">Peso</label>
           <select id="p_fweight">
             <option value="normal" ${el.font_weight === 'normal' ? 'selected' : ''}>Normal</option>
             <option value="bold" ${el.font_weight === 'bold' ? 'selected' : ''}>Negrita</option>
           </select>
         </div>
-        <div class="prop-field"><label>Alinear</label>
+        <div class="prop-field"><label for="p_falign">Alinear</label>
           <select id="p_falign">
             <option value="left" ${el.align === 'left' ? 'selected' : ''}>Izquierda</option>
             <option value="center" ${el.align === 'center' ? 'selected' : ''}>Centro</option>
@@ -1061,11 +1036,11 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
           </select>
         </div>
       </div>
-      <div class="prop-field"><label>Mayúsculas / minúsculas</label>
+      <div class="prop-field"><label id="p_case_label">Mayúsculas / minúsculas</label>
         <div class="case-row" id="p_case" role="group" aria-label="Mayúsculas o minúsculas">
-          ${TEXT_CASE_OPTIONS.map(([v, label, title]) => `<button type="button" data-case="${v}" class="${(el.text_case || 'as_is') === v ? 'on' : ''}" title="${title}" aria-pressed="${(el.text_case || 'as_is') === v}">${label}</button>`).join('')}
+          ${TEXT_CASE_OPTIONS.map(([v, label, title]) => `<button type="button" data-case="${v}" class="prop-btn${(el.text_case || 'as_is') === v ? ' on' : ''}" title="${title}" aria-pressed="${(el.text_case || 'as_is') === v}">${label}</button>`).join('')}
         </div>
-        <button type="button" class="case-all" id="p_case_all">Aplicar a todos los textos</button>
+        <button type="button" class="prop-btn prop-btn--wide" id="p_case_all">Aplicar a todos los textos</button>
       </div>`;
   }
   /* Mayúsculas / minúsculas (25-oct-2026): solo cómo se MUESTRA; el dato de la base no cambia. Las plantillas viejas (sin el campo) son «Como está». */
@@ -1094,7 +1069,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   // ---------- Wiring general ----------
 
-  document.querySelectorAll('.add-el-btn').forEach(btn => {
+  document.querySelectorAll('.gw-ed-tool').forEach(btn => {
     btn.addEventListener('click', () => addElement(btn.dataset.add));
   });
 
@@ -1132,7 +1107,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     renderCanvas(); renderPropsPanel(); updateWarnings(true);
     const nf = out.doesNotFit.length;
     showOrientNotice(`Etiqueta ${toHorizontal ? 'horizontal' : 'vertical'} (${template.width_mm} × ${template.height_mm} mm): ` +
-      (out.restored ? 'se recuperó cómo estaba el diseño en esta orientación.' : 'los elementos se reacomodaron conservando sus proporciones.') + (nf ? ` ⚠️ ${nf} elemento(s) no caben en la nueva medida (marcados en rojo).` : ''), true);
+      (out.restored ? 'se recuperó cómo estaba el diseño en esta orientación.' : 'los elementos se reacomodaron conservando sus proporciones.') + (nf ? ` Atención: ${nf} elemento(s) no caben en la nueva medida (marcados en rojo).` : ''), true);
   });
   /* Lo que la cinta imprime a lo ancho (p. ej. 58,9 mm en la de 62): al cambiar la orientación o con «Ajustar a la cinta», la medida que va a lo ancho de la cinta queda así y no hay
      que encoger nada al imprimir. Solo escarapelas (el certificado no va a la cinta). */
@@ -1143,7 +1118,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     return Math.floor(QLUsb.printableMm(prefs.tapeWidth) * 10) / 10;
   }
   const measureText = (el, widthMm) => BadgeRender.textHeightMm(el, widthMm, sampleData());      // alto que necesita cada texto (mismo ajuste que se imprime)
-  document.getElementById('fitTapeGroup').style.display = KIND === 'badge' ? '' : 'none';
+  document.getElementById('fitTapeGroup').hidden = KIND !== 'badge';
   document.getElementById('fitTapeBtn').addEventListener('click', () => {
     const across = tapeAcrossMm();
     if (!across) return;
@@ -1154,7 +1129,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     template.width_mm = out.width_mm; template.height_mm = out.height_mm; template.elements = out.elements;
     document.getElementById('tplWidth').value = template.width_mm; document.getElementById('tplHeight').value = template.height_mm;
     renderCanvas(); renderPropsPanel(); updateWarnings(true);
-    showOrientNotice(`Ajustada a la cinta: ${template.width_mm} × ${template.height_mm} mm (${across} mm a lo ancho de la cinta, sin encogerse al imprimir).` + (out.doesNotFit.length ? ` ⚠️ ${out.doesNotFit.length} elemento(s) no caben (marcados en rojo).` : ''), true);
+    showOrientNotice(`Ajustada a la cinta: ${template.width_mm} × ${template.height_mm} mm (${across} mm a lo ancho de la cinta, sin encogerse al imprimir).` + (out.doesNotFit.length ? ` Atención: ${out.doesNotFit.length} elemento(s) no caben (marcados en rojo).` : ''), true);
   });
   document.getElementById('orientUndo').addEventListener('click', () => {
     if (!orientUndo) return;
@@ -1183,7 +1158,7 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
     toggleBgInputs();
     template.background_type = document.getElementById('bgType').value;
     if (template.background_type === 'color') {
-      template.background_value = document.getElementById('bgColor').value || '#ffffff';
+      template.background_value = document.getElementById('bgColor').value || WHITE;
     }
     renderCanvas();
   });
@@ -1202,7 +1177,8 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
 
   document.getElementById('previewToggleBtn').addEventListener('click', (e) => {
     previewMode = !previewMode;
-    e.target.innerText = previewMode ? '✏️ Volver a edición' : '👁 Con datos de muestra';
+    document.getElementById('previewToggleText').textContent = previewMode ? 'Volver a edición' : 'Con datos de muestra';
+    e.currentTarget.setAttribute('aria-pressed', previewMode ? 'true' : 'false');
     renderCanvas();
   });
 
@@ -1211,11 +1187,9 @@ window.OPTIONAL_VARIABLES = {{ optional_labels_json | safe }};
   magnetBtn.addEventListener('click', () => { magnetOn = !magnetOn; try { window.localStorage.setItem('badge_magnet', magnetOn ? '1' : '0'); } catch (e) { /* sin almacenamiento */ } paintMagnet(); });
   paintMagnet();
 
-  document.getElementById('saveBtn').addEventListener('click', saveTemplate);
   document.getElementById('saveAsBtn').addEventListener('click', saveAsTemplate);
   document.getElementById('importBtn').addEventListener('click', openImportModal);
-  document.getElementById('importCancelBtn').addEventListener('click', () => { document.getElementById('importModal').style.display = 'none'; });
-
+  
   if (KIND === 'badge') initCategoryBar();
   loadTemplate();
 })();
