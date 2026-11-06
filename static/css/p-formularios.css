@@ -31,3 +31,10 @@
   .gw-steps > li:not(.gw-steps__guide) { justify-content: center; padding: var(--gw-sp-1); }
   .gw-steps > li:not(.gw-steps__guide) .gw-steps__text { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 }
+
+/* Escritorio: la acción principal no se estira a todo el ancho y Importar queda junto al archivo, con separación */
+@media (min-width: 641px) {
+  .gw-forms-main { width: auto; align-self: flex-start; min-width: 16rem; }
+  #importCard .gw-fields-row { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--gw-sp-4); }
+  #importCard .gw-field { margin-bottom: 0; }
+}
