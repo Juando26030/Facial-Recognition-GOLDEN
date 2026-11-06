@@ -102,7 +102,7 @@
   function drawTimeline(spec, canvas) {
     if (chart) { chart.destroy(); chart = null; }
     if (!window.Chart || !canvas) return;
-    var text = css('--gw-text'), muted = css('--gw-text-muted'), grid = css('--gw-border'), gold = css('--gw-gold-1'), navy = css('--gw-link');
+    var text = css('--gw-text'), muted = css('--gw-text-muted'), grid = css('--gw-border'), gold = css('--gw-viz-2') || css('--gw-gold-1'), navy = css('--gw-viz-1') || css('--gw-link');
     chart = new window.Chart(canvas, {
       type: 'line',
       data: { labels: spec.labels, datasets: [
@@ -138,7 +138,7 @@
 
     if (d.capacity || d.quotas.length) {
       var sec = section('Cupos', 'Usados, porcentaje y cuántos faltan. Incluye a quien está pagando en este momento.');
-      if (d.capacity) { var one = el('div'); one.style.marginBottom = 'var(--gw-sp-4)'; one.appendChild(capacityCard(d.capacity)); sec.appendChild(one); }
+      if (d.capacity) { var one = el('div', 'fs-cap-one'); one.appendChild(capacityCard(d.capacity)); sec.appendChild(one); }
       if (d.quotas.length) {
         var grid = el('div', 'fs-quotas');
         d.quotas.forEach(function (q) { grid.appendChild(quotaCard(q)); });
@@ -158,7 +158,7 @@
     if (d.timeline) {
       var ts = section('Inscripciones en el tiempo');
       var card = el('div', 'gw-card'), box = el('div', 'fs-chart'), canvas = document.createElement('canvas');
-      canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Inscripciones en el tiempo, por periodo y acumuladas');
+      canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Inscripciones en el tiempo, por periodo y acumuladas. ' + d.timeline.labels.slice(-12).map(function (l, i, arr) { var k = d.timeline.labels.length - arr.length + i; return l + ': ' + d.timeline.datasets[0].data[k] + ' nuevas, ' + d.timeline.datasets[1].data[k] + ' acumuladas'; }).join('; '));
       box.appendChild(canvas); card.appendChild(box); ts.appendChild(card); body.appendChild(ts);
       drawTimeline(d.timeline, canvas);
     }

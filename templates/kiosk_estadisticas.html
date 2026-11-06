@@ -1,3 +1,13 @@
+{# Estadísticas del evento (Fase 1.5, 2026-11-05): cifras y gráficos con la paleta de datos accesible (--gw-viz-*), variable elegida en una franja, «Compartir» y exportar con el mismo estilo.
+   La misma plantilla sirve la vista de SOLO LECTURA (/ver/e/<token>: public_view, sin menús ni acciones) y la pestaña incrustada del cliente en Registro (?embed=1).
+   Solo tokens --gw-* y clases .gw-* (docs/ux/ESTANDARES_VISUALES.md). La lógica vive en static/js/stats-event.js; los ids y las rutas son los de siempre. #}
+{% macro ic(name, cls='') %}<svg class="gw-icon {{ cls }}" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-{{ name }}"/></svg>{% endmacro %}
+{% macro ayuda(id, titulo) %}<div class="gw-help"><button type="button" class="gw-help__btn" data-gw-help-btn aria-expanded="false" aria-controls="{{ id }}" aria-haspopup="dialog" aria-label="Ayuda: {{ titulo }}">{{ ic('help') }}</button>
+  <div class="gw-popover" id="{{ id }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}t" hidden><p class="gw-popover__title" id="{{ id }}t">{{ titulo }}</p><p class="gw-popover__text">{{ caller() }}</p>
+  <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-help-close>Entendido</button></div></div>{% endmacro %}
+{% set can_share = staff_role != "cliente" and not public_view %}
+{% set is_admin_plus = staff_role in ["admin", "super_admin"] %}
+{% set tour_on = not embed and not public_view %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,22 +15,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Estadísticas | GoldenWeb 2.0</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/design-system.css') }}">
+    {% include "_gw_head.html" %}
+    <link rel="stylesheet" href="{{ url_for('static', path='css/gw-estadisticas.css') }}">
     <script src="{{ url_for('static', path='js/toast.js') }}"></script>
     {% if not public_view %}<script src="{{ url_for('static', path='js/idle-session.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/biometric-purge.js') }}"></script>{% endif %}
     <script src="{{ url_for('static', path='js/theme.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', path='js/analytics-dashboard.js') }}"></script>
-    <style>
-        .stats-chart-card {
-            background:white; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,0.06);
-            padding:1.2rem; width:380px; max-width:100%;
-        }
-        .stats-chart-card canvas { max-height:260px; }
-    </style>
 </head>
-<body{% if embed %} style="padding-top:0;"{% elif staff_role not in ["digitador", "cliente"] %} class="has-sidebar"{% endif %}>
+<body class="gw-page gw-shell{% if embed %} gw-stats-embed{% elif staff_role not in ["digitador", "cliente"] %} has-sidebar{% endif %}">
+<a class="gw-skip" href="#gwStatsMain">Ir a las estadísticas</a>
 
 {% if not embed %}
 {% if staff_role not in ["digitador", "cliente"] %}{% include "_sidebar.html" %}{% endif %}
@@ -29,10 +34,11 @@
     <a href="#" class="golden-logo">
       {% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="Logo" {{ event_logo_attrs(event) }}>{% endif %}
     </a>
-    <nav class="golden-nav" style="display:flex; align-items:center; gap:12px;">
-      <span style="color:#666; font-size:0.85rem;">{{ staff_name }} ({{ staff_role }})</span>
-      <form action="/logout" method="post" style="margin:0;">
-        <button type="submit" style="background:none; border:1px solid #ccc; border-radius:20px; padding:6px 14px; cursor:pointer; font-size:0.8rem;">Salir</button>
+    <nav class="golden-nav" aria-label="Sesión">
+      {% include "_gw_theme_toggle.html" %}
+      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <form action="/logout" method="post">
+        <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>
     </nav>
   </div>
@@ -45,312 +51,101 @@
     <span><strong>Código:</strong> {{ event.event_code }}</span>
   </div>
 </div>
+{% elif public_view %}
+{# Vista de solo lectura por enlace: sin menú, sin sesión; solo el logo y el interruptor de tema. #}
+<header class="gw-stats-public-top">
+  <div class="gw-stats-public-top__inner">
+    <span class="gw-stats-public-top__brand">{% if event_logo_url(event) %}<img src="{{ event_logo_url(event) }}" alt="" {{ event_logo_attrs(event) }}>{% endif %}<span>{{ event.name }}</span></span>
+    {% include "_gw_theme_toggle.html" %}
+  </div>
+</header>
 {% endif %}
 <script>window.EVENT_ID = {{ event.id }}; window.STATS_BASE = {{ (stats_base or ("/api/events/" ~ event.id)) | tojson }};</script>
-{% if public_view %}<div class="gw-alert gw-alert--info" role="note" style="max-width:1100px; margin:1rem auto; padding:0.9rem 1.2rem;"><strong>{{ public_view.title }}</strong> · Vista de solo lectura. Este enlace vence el {{ public_view.until }}.</div>{% endif %}
 
-<main class="golden-main">
-  <section class="golden-section" style="background: linear-gradient(180deg, rgba(10, 14, 46, 0.02) 0%, rgba(10, 14, 46, 0.05) 100%); {% if embed %}padding: 1.5rem 0;{% endif %}">
-    <div class="golden-container">
-      {% if not embed %}
-      <div class="golden-section-title">
-        <span>{{ company_name|upper }}</span>
-        <h2>Estad<span class="gradient-text">ísticas</span></h2>
+<main class="golden-main" id="gwStatsMain">
+  <div class="gw-stats"{% if tour_on %} data-gw-tour="estadisticas" data-gw-tour-auto{% endif %}>
+    {% if public_view %}<div class="gw-alert gw-alert--info" role="note">{{ ic('info') }}<div><strong>{{ public_view.title }}</strong> · Vista de solo lectura. Este enlace vence el {{ public_view.until }}.</div></div>{% endif %}
+
+    {% if not embed %}
+    <div class="gw-page-head">
+      <div class="gw-page-head__text">
+        <p class="gw-eyebrow">{{ company_name|upper }}</p>
+        <h1 class="gw-page-head__title">Estadísticas</h1>
+        <p class="gw-page-head__sub">Cifras y gráficos del evento{% if not public_view %}, con el reporte completo para descargar{% endif %}.</p>
       </div>
-      {% endif %}
-
-      <div class="app-container">
-        {% if staff_role != "cliente" %}
-        {# 2026-09-17 (pedido explícito): cliente ve Estadísticas pero ya NO puede exportar la
-           base — el botón se oculta acá, y el backend (GET /api/report) ya rechaza a cliente
-           igual aunque se llame directo. #}
-        <div style="background: white; padding: 3rem; border-radius: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.08);">
-            <h3 style="color: var(--golden-dark); font-size: 1.5rem; margin-bottom: 15px;">Base de Datos Oficial</h3>
-            <p style="color: #666; margin-bottom: 30px;">Genera y descarga el reporte unificado en Excel con los campos corporativos estándar.</p>
-            <button id="exportBtn" class="golden-btn golden-btn-primary" style="background: #28a745; color: white; width: auto; padding: 1rem 3rem; margin: 0 auto;">
-                📥 Exportar Base de Datos (Excel)
-            </button>
-        </div>
-        {% endif %}
-
-        {% if staff_role in ["admin", "super_admin"] %}
-        <div style="background: white; padding: 1.2rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem; display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
-            <div style="flex:1; min-width:240px;"><b>🔒 Fotos y rostros del evento</b>
-                <div style="color:#666; font-size:0.82rem;">Se borran solas 7 días después de finalizado el evento. Aquí puedes borrarlas ya.</div>
-                <div id="purgeStatus" role="status" aria-live="polite" style="font-size:0.82rem; margin-top:4px;"></div></div>
-            <button type="button" id="purgePhotosBtn" style="padding:8px 14px; background:#fdecea; border:1px solid #e0a19b; border-radius:8px; cursor:pointer;">Borrar fotos del evento</button>
-        </div>
-        {% endif %}
-        {% if staff_role in ["admin", "super_admin"] %}
-        <div style="background: white; padding: 1.2rem 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;" id="timingReport">
-            <div style="font-weight:700;">⏱️ Tiempo por registro</div>
-            <div style="color:#666; font-size:0.82rem; margin-bottom:8px;">Mediana (p50) y percentil 90 (p90) de lo que tarda el digitador desde la primera tecla hasta enviar el registro. Solo agregados; sin datos de las personas.</div>
-            <div id="timingBody" role="status" aria-live="polite" style="font-size:0.85rem; color:#666;">Cargando…</div>
-        </div>
-        {% endif %}
-        {% if staff_role != "cliente" and not public_view %}<div id="statsShare" class="gw-card" data-event-id="{{ event.id }}" data-scope="event" style="margin-bottom:1.5rem;"></div>
-        <script src="{{ url_for('static', path='js/stats-share.js') }}" defer></script>{% endif %}
-        <div style="background:#f6f7fb; padding:1.5rem 1.6rem; border-radius:20px; margin-bottom:1.5rem;" id="analyticsRegistro"></div>
-
-        <div style="background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); margin-top:1.5rem;">
-            <div class="badge-form-title">Gráficos por variable</div>
-            <p style="text-align:center; color:#666; font-size:0.85rem; margin-top:-0.5rem; margin-bottom:1.2rem;">
-                Elige una variable de la base de este evento — el sistema detecta si es numérica o por categorías y ofrece los tipos de gráfico que aplican. Una variable a la vez (cruces de 2 variables llegan en una fase futura).
-            </p>
-            <div style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:1.2rem;">
-                <div class="badge-input-group" style="flex:1; min-width:220px; margin-bottom:0;">
-                    <label>Variable</label>
-                    <select id="statsVariableSelect"></select>
-                </div>
-                <button type="button" id="addStatsVarBtn" class="golden-btn golden-btn-primary" style="width:auto; padding:0.6rem 1.4rem;">➕ Agregar variable</button>
-            </div>
-            <p id="statsEmptyMsg" style="text-align:center; color:#666; font-size:0.85rem;">Agrega una variable para ver su gráfico.</p>
-            <div id="statsChartsContainer" style="display:flex; flex-wrap:wrap; gap:1.5rem;"></div>
-        </div>
+      <div class="gw-page-head__actions">
+        {% if tour_on %}<button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" data-gw-tour-restart="estadisticas">{{ ic('help', 'gw-icon--sm') }} Ver la guía</button>{% endif %}
+        {# 2026-09-17 (pedido explícito): cliente ve Estadísticas pero NO exporta la base: el botón no se dibuja y el backend (GET /api/report) lo rechaza igual. #}
+        {% if staff_role != "cliente" %}<button type="button" id="exportBtn" class="gw-btn gw-btn--primary">{{ ic('download', 'gw-icon--sm') }} Exportar base de datos (Excel)</button>{% endif %}
       </div>
     </div>
-  </section>
+
+    <ol class="gw-steps" aria-label="Cómo se usa esta pantalla">
+      <li><span class="gw-steps__n" aria-hidden="true">1</span><span class="gw-steps__text">Mira las cifras del registro</span>
+        {% call ayuda('ay_est1', 'Mira las cifras del registro') %}Arriba están los totales del evento y los gráficos de cómo van las personas. Se actualizan solos cada 30 segundos.{% endcall %}</li>
+      <li><span class="gw-steps__n" aria-hidden="true">2</span><span class="gw-steps__text">Elige una variable</span>
+        {% call ayuda('ay_est2', 'Elige una variable') %}Escoge un dato de la base del evento y agrégalo. El sistema detecta si es un número o una categoría y te ofrece los tipos de gráfico que aplican.{% endcall %}</li>
+      {% if can_share %}<li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Comparte el enlace</span>
+        {% call ayuda('ay_est3', 'Comparte el enlace') %}Crea un enlace de solo lectura que vence solo: quien lo abre ve estas estadísticas, sin personas ni descargas.{% endcall %}</li>
+      {% else %}<li><span class="gw-steps__n" aria-hidden="true">3</span><span class="gw-steps__text">Cambia el tipo de gráfico</span>
+        {% call ayuda('ay_est3', 'Cambia el tipo de gráfico') %}Cada gráfico tiene su selector arriba a la derecha: barras, circular o líneas, según el tipo de dato.{% endcall %}</li>{% endif %}
+    </ol>
+    {% endif %}
+
+    {% if staff_role != "cliente" %}
+    {# El avance de la exportación (el JS lo llena); queda oculto hasta que se pide el reporte. #}
+    <div id="exportProgress" class="gw-pbar gw-stats-export" role="status" aria-live="polite" hidden>
+      <div class="gw-pbar__head"><span data-msg></span></div>
+      <div class="gw-progress" role="progressbar" aria-label="Avance del reporte" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="gw-progress__bar" data-bar></div></div>
+    </div>
+    {% endif %}
+
+    {% if can_share %}
+    <section id="statsShare" class="gw-card" data-event-id="{{ event.id }}" data-scope="event" aria-label="Compartir estadísticas" data-gw-tour-step="3" data-gw-tour-title="3. Comparte el enlace" data-gw-tour-text="Crea un enlace de solo lectura que vence solo, para enseñar las cifras sin dar acceso al sistema."></section>
+    <script src="{{ url_for('static', path='js/stats-share.js') }}" defer></script>
+    {% endif %}
+
+    <section aria-labelledby="gwStatsRegTitle" data-gw-tour-step="1" data-gw-tour-title="1. Mira las cifras" data-gw-tour-text="Los totales del evento y cómo van las personas. Se actualiza solo.">
+      <h2 class="gw-sr-only" id="gwStatsRegTitle">Cifras del registro</h2>
+      <div id="analyticsRegistro" class="gw-card"></div>
+    </section>
+
+    <section class="gw-card" aria-labelledby="gwStatsVarTitle" data-gw-tour-step="2" data-gw-tour-title="2. Elige una variable" data-gw-tour-text="Agrega el dato que quieres ver; el sistema te ofrece los gráficos que aplican.">
+      <h2 class="gw-stats__section-title" id="gwStatsVarTitle">Gráficos por variable</h2>
+      <p class="gw-stats__section-sub">Elige una variable de la base de este evento. El sistema detecta si es numérica o por categorías y ofrece los tipos de gráfico que aplican. Una variable a la vez.</p>
+      <div class="gw-stats-filter">
+        <div class="gw-field">
+          <label class="gw-label" for="statsVariableSelect">Variable</label>
+          <select id="statsVariableSelect" class="gw-select"></select>
+        </div>
+        <button type="button" id="addStatsVarBtn" class="gw-btn gw-btn--secondary">{{ ic('plus', 'gw-icon--sm') }} Agregar variable</button>
+      </div>
+      <div class="gw-empty gw-stats-empty" id="statsEmptyMsg" role="status">Agrega una variable para ver su gráfico.</div>
+      <div id="statsChartsContainer" class="gw-chart-grid" data-icons="{{ url_for('static', path='img/icons.svg') }}"></div>
+    </section>
+
+    {% if is_admin_plus %}
+    <section class="gw-card" id="timingReport" aria-labelledby="gwStatsTimeTitle">
+      <h2 class="gw-stats__section-title" id="gwStatsTimeTitle">Tiempo por registro</h2>
+      <p class="gw-stats__section-sub">Mediana (p50) y percentil 90 (p90) de lo que tarda el digitador desde la primera tecla hasta enviar el registro. Solo agregados; sin datos de las personas.</p>
+      <div id="timingBody" class="gw-stats-timing" role="status" aria-live="polite">Cargando…</div>
+    </section>
+
+    <section class="gw-danger-zone" aria-labelledby="gwStatsPurgeTitle">
+      <h2 id="gwStatsPurgeTitle" class="gw-stats__section-title">Fotos y rostros del evento</h2>
+      <p class="gw-stats__section-sub">Se borran solas 7 días después de finalizado el evento. Aquí puedes borrarlas ya; el sistema te pide confirmar antes.</p>
+      <div class="gw-row">
+        <button type="button" id="purgePhotosBtn" class="gw-btn gw-btn--danger-outline">{{ ic('trash', 'gw-icon--sm') }} Borrar fotos del evento</button>
+        <div id="purgeStatus" class="gw-msg" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+    {% endif %}
+  </div>
 </main>
 
-{% if staff_role in ["admin", "super_admin"] %}
-<script>
-(function() {
-    /* Informe de tiempo por registro (Fase 1A, PR1): solo lectura, admin/super_admin. Todo se pinta con textContent (nada de HTML armado con datos). */
-    const body = document.getElementById('timingBody');
-    if (!body) return;
-    const sec = (ms) => (ms == null ? '—' : (ms / 1000).toFixed(1) + ' s');
-    const cell = (tag, text, left) => { const el = document.createElement(tag); el.textContent = text; el.style.cssText = 'padding:4px 10px; text-align:' + (left ? 'left' : 'right') + ';'; return el; };
-    const table = (title, head, rows) => {
-        const box = document.createElement('div'); box.style.cssText = 'margin-top:10px;';
-        const h = document.createElement('div'); h.textContent = title; h.style.cssText = 'font-weight:600; color:#333; margin-bottom:4px;'; box.appendChild(h);
-        const t = document.createElement('table'); t.style.cssText = 'border-collapse:collapse; font-size:0.85rem;';
-        const tr0 = document.createElement('tr'); head.forEach((x, i) => tr0.appendChild(cell('th', x, i === 0))); t.appendChild(tr0);
-        rows.forEach((r) => { const tr = document.createElement('tr'); r.forEach((x, i) => tr.appendChild(cell('td', String(x), i === 0))); t.appendChild(tr); });
-        box.appendChild(t); return box;
-    };
-    const line = (s) => [s.n, sec(s.p50_ms), sec(s.p90_ms), s.small_sample ? 'muestra pequeña' : ''];
-    fetch(`/api/events/${window.EVENT_ID}/timing-report`, { cache: 'no-store' }).then((r) => r.ok ? r.json() : Promise.reject(new Error('No se pudo cargar'))).then((d) => {
-        body.textContent = '';
-        if (!d.measured) { body.textContent = d.registrations ? 'Aún no hay registros medidos en este evento (los hechos antes de esta medición no cuentan).' : 'Aún no hay registros en este evento.'; return; }
-        const sum = document.createElement('div');
-        sum.textContent = `Medidos: ${d.measured} de ${d.registrations} registros (${d.coverage_pct}%). Mediana ${sec(d.overall.p50_ms)}, p90 ${sec(d.overall.p90_ms)}.`;
-        body.appendChild(sum);
-        body.appendChild(table('Por pantalla', ['Pantalla', 'Registros', 'p50', 'p90', ''], d.by_flow.map((f) => [f.ui_flow, ...line(f)])));
-        body.appendChild(table('Por digitador', ['Digitador', 'Registros', 'p50', 'p90', ''], d.by_staff.map((s) => [s.name, ...line(s)])));
-    }).catch(() => { body.textContent = 'No se pudo cargar el informe de tiempos.'; });
-})();
-</script>
-{% endif %}
 <script>
 AnalyticsDashboard.mount(document.getElementById('analyticsRegistro'), `${window.STATS_BASE}/analytics/registro`, { refreshSeconds: 30 });
-
-(function() {
-    const purgeBtn = document.getElementById('purgePhotosBtn');
-    if (purgeBtn) purgeBtn.addEventListener('click', async () => {
-        const say = document.getElementById('purgeStatus'), res = await purgeEventBiometrics(window.EVENT_ID);
-        if (!res) return;
-        say.style.color = res.ok ? '#1e7e34' : '#c0392b';
-        say.textContent = res.ok ? purgeEventMessage(res.data) : (res.data.detail || 'No se pudo borrar');
-    });
-})();
-
-(function() {
-    /* Exportar la base: el Excel se arma en segundo plano y se descarga YA armado (nunca una petición larga que Firebase corte a los 60 s). */
-    const exportBtn = document.getElementById('exportBtn');
-    if (exportBtn) exportBtn.addEventListener('click', async () => {
-        const label = exportBtn.textContent;
-        let box = document.getElementById('exportProgress');
-        if (!box) {
-            box = document.createElement('div');
-            box.id = 'exportProgress';
-            box.setAttribute('role', 'status');
-            box.setAttribute('aria-live', 'polite');
-            box.style.cssText = 'margin-top:10px; font-size:0.9rem; color:#333;';
-            box.innerHTML = '<div data-msg style="margin-bottom:4px;"></div><div style="background:#e6e6ee; border-radius:8px; height:12px; overflow:hidden; max-width:420px;"><div data-bar style="background:#D4AF37; height:100%; width:0%; transition:width .3s;"></div></div>';
-            exportBtn.parentNode.insertBefore(box, exportBtn.nextSibling);
-        }
-        const msg = box.querySelector('[data-msg]'), bar = box.querySelector('[data-bar]');
-        const show = (text, pct, bad) => { box.hidden = false; msg.textContent = text; msg.style.color = bad ? '#a12631' : '#333'; bar.style.width = `${pct}%`; };
-        exportBtn.disabled = true;
-        try {
-            show('Preparando el reporte…', 3);
-            let st = await (await fetch('/api/report/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: window.EVENT_ID }) })).json().then((d) => d, () => ({}));
-            for (let i = 0; i < 300 && st.job_id && (st.status === 'queued' || st.status === 'running'); i++) {      // hasta 5 min mirando el avance cada segundo
-                show(`${st.stage || 'Preparando el reporte'}… ${st.percent || 0}%`, st.percent || 3);
-                await new Promise((r) => setTimeout(r, 1000));
-                const r = await fetch(`/api/report/status/${st.job_id}`, { cache: 'no-store' });
-                st = r.ok ? await r.json() : { status: 'error', error: 'No se pudo consultar el avance del reporte.' };
-            }
-            if (st.ready) {
-                show('Listo. Descargando el Excel…', 100);
-                window.location.href = `/api/report/download/${st.job_id}`;
-                setTimeout(() => { box.hidden = true; }, 6000);
-            } else {
-                show(st.error || st.detail || 'No se pudo generar el reporte. Intenta de nuevo en un momento.', 0, true);
-                showToast(st.error || st.detail || 'No se pudo generar el reporte. Intenta de nuevo.', 'error');
-            }
-        } catch (e) {
-            show('No se pudo generar el reporte (sin conexión). Intenta de nuevo.', 0, true);
-        } finally {
-            exportBtn.disabled = false;
-            exportBtn.textContent = label;
-        }
-    });
-
-    /* Módulo de Estadísticas (Sprint 2.2 Fase D, 2026-09-16) — checklist de variables (en
-       realidad un <select>, "checklist" en el sentido de "ir agregando una por una") + un
-       gráfico por variable elegida. El backend (/api/events/{id}/stats/data) ya devuelve el
-       `type` detectado (numeric/categorical) según los valores reales, así que acá solo hace
-       falta ofrecer los tipos de gráfico válidos para ESE type y dibujar con Chart.js. */
-    const CHART_TYPES_BY_DATA_TYPE = {
-        categorical: [
-            { value: 'bar', label: 'Barras' },
-            { value: 'pie', label: 'Circular (pie)' },
-        ],
-        numeric: [
-            { value: 'bar', label: 'Histograma (barras)' },
-            { value: 'line', label: 'Líneas' },
-        ],
-    };
-    const CHART_PALETTE = ['#D4AF37', '#0A0E2E', '#28a745', '#dc3545', '#6f42c1', '#17a2b8', '#fd7e14', '#20c997', '#e83e8c', '#6c757d'];
-
-    const variableSelect = document.getElementById('statsVariableSelect');
-    const addBtn = document.getElementById('addStatsVarBtn');
-    const container = document.getElementById('statsChartsContainer');
-    const emptyMsg = document.getElementById('statsEmptyMsg');
-    const chartInstances = {};  // key -> Chart.js instance, para poder destruirla si se quita la tarjeta
-
-    function updateEmptyMsg() {
-        emptyMsg.style.display = container.children.length ? 'none' : 'block';
-    }
-
-    /* "histogram" (una de las 4 opciones que ofrece Parámetros del Evento al configurar, ver
-       kiosk_parametros.html) no es un tipo de Chart.js aparte — para datos numéricos, el propio
-       "Barras" YA es el histograma (ver CHART_TYPES_BY_DATA_TYPE.numeric). Si el tipo configurado
-       no aplica al tipo de dato real detectado (ej. se configuró "Circular" pero los datos
-       resultaron numéricos), cae al primero válido para ese tipo — nunca rompe el gráfico. */
-    function resolveChartType(requested, dataType) {
-        const valid = (CHART_TYPES_BY_DATA_TYPE[dataType] || CHART_TYPES_BY_DATA_TYPE.categorical).map(o => o.value);
-        const normalized = requested === 'histogram' ? 'bar' : requested;
-        return valid.includes(normalized) ? normalized : valid[0];
-    }
-
-    async function loadVariables() {
-        try {
-            const res = await fetch(`${window.STATS_BASE}/stats/variables`);
-            const list = await res.json();
-            variableSelect.innerHTML = list.map(v => `<option value="${v.key}">${v.label}</option>`).join('');
-            // Parámetros del Evento (2026-09-16): las variables marcadas "Generar estadística"
-            // aparecen solas acá, sin tener que pedirlas a mano — el selector/botón de arriba
-            // sigue funcionando igual para agregar cualquier otra.
-            list.filter(v => v.default_stat_enabled).forEach(v => addVariableChart(v.key, v.label, v.default_chart_type));
-        } catch (e) {
-            showToast('No se pudieron cargar las variables', 'error');
-        }
-    }
-
-    function buildChartConfig(chartType, dataType, buckets) {
-        const labels = buckets.map(b => b.label);
-        const data = buckets.map(b => b.count);
-        const colors = labels.map((_, i) => CHART_PALETTE[i % CHART_PALETTE.length]);
-        const common = {
-            data: {
-                labels,
-                datasets: [{
-                    data,
-                    // Cada categoría con su propio color (2026-09-16, pedido explícito — antes
-                    // las barras salían todas del mismo color) — solo el gráfico de líneas usa
-                    // un color único, que es lo normal para una sola serie continua.
-                    backgroundColor: chartType === 'line' ? '#D4AF37' : colors,
-                    borderColor: chartType === 'line' ? '#D4AF37' : '#ffffff',
-                    borderWidth: chartType === 'line' ? 2 : 1,
-                    fill: chartType === 'line' ? false : undefined,
-                    tension: chartType === 'line' ? 0.3 : undefined,
-                }],
-            },
-            options: {
-                responsive: true,
-                plugins: { legend: { display: chartType === 'pie' } },
-                scales: chartType === 'pie' ? {} : { y: { beginAtZero: true, ticks: { precision: 0 } } },
-            },
-        };
-        return { type: chartType, ...common };
-    }
-
-    async function addVariableChart(key, label, preferredChartType) {
-        if (document.getElementById(`stats-card-${key}`)) {
-            showToast('Esa variable ya está agregada', 'error');
-            return;
-        }
-        const card = document.createElement('div');
-        card.className = 'stats-chart-card';
-        card.id = `stats-card-${key}`;
-        card.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
-                <strong style="color:var(--golden-dark);">${label}</strong>
-                <div style="display:flex; gap:6px; align-items:center;">
-                    <select class="chart-type-select" style="font-size:0.78rem; border:1px solid #ccc; border-radius:6px; padding:3px 6px;"></select>
-                    <button type="button" class="remove-chart-btn" style="border:none; background:none; color:#dc3545; font-weight:700; cursor:pointer; font-size:1rem;">✕</button>
-                </div>
-            </div>
-            <p class="chart-loading" style="color:#666; font-size:0.85rem;">Cargando…</p>
-            <canvas style="display:none;"></canvas>
-        `;
-        container.appendChild(card);
-        updateEmptyMsg();
-
-        card.querySelector('.remove-chart-btn').addEventListener('click', () => {
-            if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
-            card.remove();
-            updateEmptyMsg();
-        });
-
-        try {
-            const res = await fetch(`${window.STATS_BASE}/stats/data?variable=${encodeURIComponent(key)}`);
-            const result = await res.json();
-            if (!res.ok) { throw new Error(result.detail || 'Error'); }
-
-            const typeSelect = card.querySelector('.chart-type-select');
-            const options = CHART_TYPES_BY_DATA_TYPE[result.type] || CHART_TYPES_BY_DATA_TYPE.categorical;
-            typeSelect.innerHTML = options.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-
-            const canvas = card.querySelector('canvas');
-            const loadingMsg = card.querySelector('.chart-loading');
-
-            if (!result.buckets.length) {
-                loadingMsg.innerText = 'Sin datos suficientes para graficar esta variable todavía.';
-                typeSelect.style.display = 'none';
-                return;
-            }
-
-            function render(chartType) {
-                if (chartInstances[key]) chartInstances[key].destroy();
-                chartInstances[key] = new Chart(canvas, buildChartConfig(chartType, result.type, result.buckets));
-            }
-
-            if (preferredChartType) {
-                typeSelect.value = resolveChartType(preferredChartType, result.type);
-            }
-
-            loadingMsg.style.display = 'none';
-            canvas.style.display = 'block';
-            render(typeSelect.value);
-            typeSelect.addEventListener('change', () => render(typeSelect.value));
-        } catch (e) {
-            card.querySelector('.chart-loading').innerText = 'No se pudo cargar esta variable.';
-        }
-    }
-
-    addBtn.addEventListener('click', () => {
-        const key = variableSelect.value;
-        const label = variableSelect.options[variableSelect.selectedIndex] ? variableSelect.options[variableSelect.selectedIndex].text : key;
-        if (!key) return;
-        addVariableChart(key, label);
-    });
-
-    loadVariables();
-    updateEmptyMsg();
-})();
 </script>
+<script src="{{ url_for('static', path='js/stats-event.js') }}" defer></script>
 </body>
 </html>
