@@ -10,3 +10,7 @@
 .gwp-fold__name { font-weight: var(--gw-fw-bold); margin-right: auto; min-width: 8em; overflow-wrap: anywhere; }
 .gwp-fold__meta { font-size: var(--gw-fs-sm); color: var(--gw-text-muted); }
 .gwp-fold__body { padding: var(--gw-sp-3) var(--gw-sp-4) var(--gw-sp-4); }
+.gwp-fold { min-width: 0; }
+.gwp-fold__body { min-width: 0; overflow-wrap: anywhere; }
+.gwp-fold__body > * { min-width: 0; max-width: 100%; }
+.gwp-fold__sum > .gw-badge { white-space: normal; }

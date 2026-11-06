@@ -94,10 +94,15 @@ window.GW_ICONS = {{ url_for('static', path='img/icons.svg')|tojson }}; window.g
       <div class="gwe-tools">
         <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="previewBtn">{{ ic('eye', 'gw-icon--sm') }} Previsualizar</button>
         <a class="gw-btn gw-btn--secondary gw-btn--sm" id="testBtn" target="_blank" rel="noopener" title="Abre el enlace real del formulario, respetando su estado actual">{{ ic('link', 'gw-icon--sm') }} Probar</a>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="tableBtn" title="Cargar variantes como una hoja de Excel">{{ ic('form', 'gw-icon--sm') }} Tabla de variantes</button>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="tplBtn">{{ ic('download', 'gw-icon--sm') }} Guardar como plantilla</button>
         <a class="gw-btn gw-btn--secondary gw-btn--sm" id="statsBtn" href="/kiosk/{{ event.id }}/formularios/{{ form_id }}/estadisticas" title="Cupos, inscritos y gráficas de este formulario">{{ ic('chart', 'gw-icon--sm') }} Estadísticas</a>
-        <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="clientBtn" title="Crea un usuario y una contraseña temporal para que tu cliente vea SOLO las estadísticas de este formulario">{{ ic('lock', 'gw-icon--sm') }} Acceso para cliente (solo estadísticas)</button>
+        <div class="gw-menu gwe-more" id="metaMore">
+          <button type="button" class="gw-btn gw-btn--secondary gw-btn--sm" id="metaMoreBtn" aria-haspopup="true" aria-expanded="false" aria-controls="metaMorePanel" title="Más acciones del formulario">{{ ic('more', 'gw-icon--sm') }} Más</button>
+          <div class="gw-menu__panel" id="metaMorePanel" role="group" aria-label="Más acciones del formulario" hidden>
+          <button type="button" class="gw-menu__item" id="tableBtn" title="Cargar variantes como una hoja de Excel">{{ ic('form', 'gw-icon--sm') }} Tabla de variantes</button>
+          <button type="button" class="gw-menu__item" id="tplBtn">{{ ic('download', 'gw-icon--sm') }} Guardar como plantilla</button>
+          <button type="button" class="gw-menu__item" id="clientBtn" title="Crea un usuario y una contraseña temporal para que tu cliente vea SOLO las estadísticas de este formulario">{{ ic('lock', 'gw-icon--sm') }} Acceso para cliente (solo estadísticas)</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1229,6 +1234,15 @@ document.addEventListener('keydown', (e) => {   // Ctrl o Cmd + S guarda, igual 
   if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (!$('saveBar').hidden) $('saveBtn').click(); }
 });
 $('palSync').addEventListener('click', syncWithParams);
+// Menú «Más» de la barra de acciones: se cierra al elegir una opción, al tocar fuera o con Escape (las acciones siguen enganchadas a sus mismos ids)
+(function moreMenu() {
+  const wrap = $('metaMore'), btn = $('metaMoreBtn'), panel = $('metaMorePanel');
+  const close = (focusBtn) => { panel.hidden = true; btn.setAttribute('aria-expanded', 'false'); if (focusBtn) btn.focus(); };
+  btn.addEventListener('click', () => { const open = panel.hidden; panel.hidden = !open; btn.setAttribute('aria-expanded', String(open)); if (open) { const first = panel.querySelector('button, a'); if (first) first.focus(); } });
+  panel.addEventListener('click', (e) => { if (e.target.closest('button, a')) close(false); });
+  document.addEventListener('click', (e) => { if (!panel.hidden && !wrap.contains(e.target)) close(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) close(true); });
+})();
 $('testBtn').addEventListener('click', async (e) => {
   if (form.public_state === 'pruebas') return;          // el enlace de pruebas es seguro
   e.preventDefault();

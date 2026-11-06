@@ -73,7 +73,7 @@
 .gwe-wrap .fld, .gwe-overlay .fld { margin-bottom: var(--gw-sp-3); }
 .gwe-wrap .bar { display: flex; flex-wrap: wrap; gap: var(--gw-sp-3); align-items: flex-end; }
 .gwe-wrap :is(input[type="text"], input[type="number"], input[type="search"], input[type="datetime-local"], input[type="date"], select, textarea):not(.gw-input):not(.gw-select):not(.gw-textarea),
-.gwe-overlay :is(input[type="text"], input[type="number"], select, textarea):not(.gw-input):not(.gw-select):not(.gw-textarea) { min-height: calc(var(--gw-tap) - var(--gw-sp-1)); padding: var(--gw-sp-1) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-sm); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); }
+.gwe-overlay :is(input[type="text"], input[type="number"], select, textarea):not(.gw-input):not(.gw-select):not(.gw-textarea) { min-height: var(--gw-tap); padding: var(--gw-sp-1) var(--gw-sp-3); font: inherit; font-size: var(--gw-fs-sm); color: var(--gw-text); background: var(--gw-surface); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-sm); }
 .gwe-wrap .props :is(input[type="text"], input[type="number"], input[type="search"], select, textarea) { width: 100%; }
 .gwe-wrap :is(input[type="text"], input[type="number"], input[type="search"], select, textarea):not(.gw-input):hover { border-color: var(--gw-text); }
 .gwe-wrap input[type="checkbox"], .gwe-wrap input[type="radio"], .gwe-overlay input[type="checkbox"], .gwe-overlay input[type="radio"] { width: 1.25rem; height: 1.25rem; accent-color: var(--gw-navy); }
@@ -235,3 +235,62 @@ table.gwe-fit.gwe-many td.gw-table-cards__actions { display: flex; flex-wrap: wr
 /* Agrandir solo tiene dos caras (Thin 100–500 y Regular 600–900): en el editor la negrilla (700) se pinta con la misma cara y no se notaba. Se refuerza con un contorno fino del mismo color. */
 .gwe-wrap .rt-ed :is(b, strong, [style*="font-weight:bold"], [style*="font-weight: bold"], [style*="font-weight:700"]), .gwe-overlay .rt-ed :is(b, strong, [style*="font-weight:bold"], [style*="font-weight: bold"], [style*="font-weight:700"]) { -webkit-text-stroke: 0.05em currentColor; }
 .gwe-wrap .rt-ed [style*="font-weight:normal"], .gwe-overlay .rt-ed [style*="font-weight:normal"] { -webkit-text-stroke: 0; }
+
+/* ------------------------------------------------------------ auditoría de botones y alineación (Fase 1.7-Q): controles del editor y de lo que genera su JS */
+/* Rejillas utilitarias (.gwe-d-grid): una sola columna que PUEDE encogerse; sin esto un campo ancho empujaba la tarjeta (cupos, condiciones) fuera de la pantalla. */
+.gwe-d-grid { grid-template-columns: minmax(0, 1fr); }
+.gwe-d-grid > *, .gwe-wrap .sched > * { min-width: 0; }
+.gwe-wrap .sched .fld { flex: 1 1 12rem; }
+.gwe-wrap .sched .gw-check { flex: 1 1 100%; align-items: flex-start; padding-block: var(--gw-sp-2); }
+.gwe-wrap .sched .gw-check input { flex: none; margin-top: var(--gw-sp-1); }
+.gwe-wrap .gw-check { overflow-wrap: anywhere; }
+.gwe-wrap .gw-check > input[type="checkbox"], .gwe-wrap .gw-check > input[type="radio"] { flex: none; }
+/* Selectores de dos o más líneas de texto largo (Configuración): ocupan el ancho que haya y el texto de la opción se lee completo. */
+.gwe-bar > .gw-field--inline { flex: 1 1 18rem; max-width: 30rem; min-width: 0; }
+.gwe-bar > .gw-field--inline > :is(.gw-select, .gw-input) { max-width: 100%; }
+/* Selectores y campos sueltos con ancho fijo: nunca más anchos que su tarjeta */
+.gwe-w-90px { max-width: 100%; }
+.gwe-maxw-300px { width: 100%; }
+/* Colores, deslizadores y resúmenes plegables: alto táctil */
+.gwe-wrap input[type="color"], .gwe-overlay input[type="color"] { min-height: var(--gw-tap); padding: var(--gw-sp-1); }
+.gwe-wrap input[type="range"], .gwe-overlay input[type="range"] { min-height: var(--gw-tap); }
+.gwe-wrap details > summary.gwe-cur-pointer { min-height: var(--gw-tap); padding-block: var(--gw-sp-3); box-sizing: border-box; }
+/* Barra de acciones del formulario: lo frecuente a la vista y lo demás en «Más» (.gw-menu del sistema) */
+.gwe-meta .gwe-tools { position: relative; }
+.gwe-more { position: static; }
+.gwe-more .gw-menu__panel { left: 0; right: auto; top: 100%; width: min(22rem, 100%); min-width: 0; }
+.gwe-more .gw-menu__item { height: auto; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.gwe-more .gw-menu__item .gw-icon { flex: none; }
+.gwe-more > .gw-btn[aria-expanded="true"] { background: var(--gw-surface-2); }
+/* Pestañas de hojas, botones de fila y de bloque: el texto no se parte por la mitad ni se sale */
+.gwe-wrap .gw-btn { max-width: 100%; }
+.gwe-wrap .gw-btn[role="tab"] { white-space: nowrap; }
+/* Tabla de variantes (static/js/variant-table-ui.js): sus botones «.small-btn» no tenían estilo alguno y salían como botones crudos del navegador */
+.gwe-overlay .small-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--gw-sp-2); min-height: var(--gw-tap); min-width: var(--gw-tap); max-width: 100%; margin: var(--gw-sp-1) var(--gw-sp-1) var(--gw-sp-1) 0; padding: var(--gw-sp-2) var(--gw-sp-4); font: inherit; font-size: var(--gw-fs-sm); font-weight: var(--gw-fw-bold); line-height: 1.2; text-align: center; color: var(--gw-secondary-text); background: var(--gw-secondary-bg); border: 2px solid var(--gw-border-strong); border-radius: var(--gw-radius-md); cursor: pointer; }
+.gwe-overlay .small-btn:hover:not(:disabled) { background: var(--gw-surface-2); }
+.gwe-overlay .small-btn:focus-visible { outline: 3px solid var(--gw-focus); outline-offset: 2px; }
+.gwe-overlay .small-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.gwe-overlay .small-btn.primary { color: var(--gw-on-gold); background: var(--gw-gold-grad); border-color: transparent; }
+.gwe-overlay .small-btn.danger { color: var(--gw-err-text); background: transparent; border-color: var(--gw-err-line); }
+.gwe-overlay .vt-col { align-items: center; }
+/* Herramientas de las listas de opciones (static/js/option-tools.js): «Ordenar A–Z», «Quitar repetidas»… y los botones de cada etiqueta */
+.gwe-wrap .gwe-mini-btn, .gwe-overlay .gwe-mini-btn { display: inline-flex; align-items: center; justify-content: center; text-align: center; line-height: 1.2; }
+.gwe-wrap .gwe-chip-btn, .gwe-overlay .gwe-chip-btn { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+@media (max-width: 48rem) {
+  .gwe-wrap .gwe-mini-btn, .gwe-overlay .gwe-mini-btn { min-height: var(--gw-tap); padding: 0 var(--gw-sp-3) !important; font-size: var(--gw-fs-sm) !important; }
+  .gwe-wrap .gwe-chip-btn, .gwe-overlay .gwe-chip-btn { min-width: var(--gw-tap); min-height: var(--gw-tap); }
+  /* Herramientas de la fila del lienzo: en celular no flotan sobre la tarjeta, van en su propia línea (aparecen al tocar la fila) */
+  .crow { flex-wrap: wrap; }
+  .crow .rowtools { position: static; order: -1; flex: 1 1 100%; justify-content: flex-end; align-items: center; box-shadow: none; border: 1px solid var(--gw-border); background: var(--gw-surface-2); }
+  .crow .rowtools select { min-height: var(--gw-tap); }
+  /* Barra de formato del texto enriquecido (static/js/rich-text.js, estilos propios en línea): botones con alto táctil y centrados */
+  .gwe-wrap .rt-bar, .gwe-overlay .rt-bar { gap: var(--gw-sp-1); align-items: center; }
+  .gwe-wrap .rt-bar button, .gwe-overlay .rt-bar button { display: inline-flex; align-items: center; justify-content: center; min-width: var(--gw-tap); min-height: var(--gw-tap); padding: 0 var(--gw-sp-2); line-height: 1; }
+  .gwe-wrap .rt-bar select, .gwe-overlay .rt-bar select { min-height: var(--gw-tap); max-width: 9rem; }
+  .gwe-wrap .rt-bar input[type="color"], .gwe-overlay .rt-bar input[type="color"] { min-width: var(--gw-tap); min-height: var(--gw-tap); }
+  /* Acciones que el JS agrupa en una fila (Quitar cupo, Quitar condición, Quitar tramo): el botón no se achica ni se sale */
+  .gwe-wrap .gwe-d-flex.gwe-fwrap-wrap { align-items: stretch; }
+  .gwe-wrap .gwe-d-flex.gwe-fwrap-wrap > .gw-btn { flex: 0 0 auto; }
+  .gwe-wrap .gwe-flex-1.gwe-minw-180px { min-width: 0; flex: 1 1 100%; }
+  .gwe-w-90px { width: auto; flex: 1 1 6rem; }
+}
