@@ -12,3 +12,72 @@
   #noteModalOverlay .note-modal { min-height: 0; max-height: 92vh; border-radius: var(--gw-radius-lg) var(--gw-radius-lg) 0 0; }
   .cal-prev, .cal-next { flex: 1 1 auto; }
 }
+
+/* ---------- Auditoría de botones y alineación (Fase 1.7-Q): cada control centrado, sin desbordes y táctil ---------- */
+/* Encabezado: en celular el botón grande no debe comerse el título; el título y el subtítulo pasan arriba y las acciones debajo, a todo el ancho */
+@media (max-width: 40rem) {
+  .gw-page .cal-shell .gw-page-head { flex-wrap: wrap; }
+  .gw-page .cal-shell .gw-page-head__text { flex: 1 1 100%; }
+  .gw-page .cal-shell .gw-page-head__actions { width: 100%; flex: 1 1 100%; }
+  .gw-page .cal-shell .gw-page-head__actions .gw-btn--xl { flex: 1 1 auto; }
+  .gw-page .cal-shell .gw-page-head__title, .gw-page .cal-shell .gw-page-head__sub { white-space: normal; overflow: visible; text-overflow: clip; }
+}
+.cal-toolbar .gw-btn, .cal-views .gw-btn { text-align: center; white-space: nowrap; }
+.cal-nav .gw-btn:not(.cal-prev):not(.cal-next) { flex: 0 0 auto; }
+.cal-prev, .cal-next { padding-left: var(--gw-sp-4); padding-right: var(--gw-sp-4); }
+@media (max-width: 40rem) {
+  .cal-nav { width: 100%; }
+  .cal-nav .gw-btn { padding-left: var(--gw-sp-3); padding-right: var(--gw-sp-3); }
+  .cal-views .gw-btn { padding-left: var(--gw-sp-2); padding-right: var(--gw-sp-2); }
+}
+/* Chips de evento: el punto del informe no pisa el borde del chip y el nombre se corta con puntos suspensivos controlados */
+.cal-chip { padding-right: var(--gw-sp-2); }
+.cal-chip:not(.cal-chip--big) .cal-chip__main { line-height: calc(var(--gw-tap) - 2 * var(--gw-sp-1)); }
+.cal-chip--big .cal-chip__main { display: block; overflow-wrap: anywhere; }
+.cal-chip .gw-bulb { margin-left: 0; }
+/* Recordatorios: en el mes y la semana el texto se limita a 2 líneas (sin partir letra por letra en celdas angostas); el día lo muestra completo */
+.cal-note__text { overflow-wrap: break-word; word-break: normal; }
+.cal-note__text > .gw-icon { flex: 0 0 auto; margin-top: 0.1em; }
+.cal-note__text { flex: 1 1 0; }
+.cal-note__text > span { min-width: 0; }
+.cal-cell .cal-note__text > .gw-icon { display: none; }
+.cal-cell .cal-note__text > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.cal-cell .cal-note__text > span em { display: none; }
+.cal-note__del { align-self: center; margin: calc(-1 * var(--gw-sp-1)) 0; }
+@media (min-width: 48.0625rem) {
+  .cal-note__del { min-width: 2rem; min-height: 2rem; align-self: flex-start; margin: 0; }
+  .cal-cell { padding: var(--gw-sp-2); }
+  .cal-cell__body { max-height: 12rem; }
+  .cal-cell--long .cal-cell__body { max-height: none; }
+}
+.cal-add { display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; }
+.cal-day .gw-btn { align-self: flex-start; }
+.cal-day .gw-empty { text-align: center; }
+/* Destinatarios elegidos: la insignia con su botón de quitar queda en una sola línea y alineada al centro */
+.note-chips .gw-chip { align-items: center; max-width: 100%; padding-right: var(--gw-sp-1); }
+.note-chips .gw-chip .gw-btn { flex: 0 0 auto; min-width: var(--gw-tap); min-height: var(--gw-tap); padding: 0; }
+.note-combo__item { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--gw-sp-2); overflow-wrap: anywhere; }
+.note-modal .gw-modal__head .gw-btn, .ee-modal .gw-modal__head .gw-btn { min-width: var(--gw-tap); min-height: var(--gw-tap); padding: 0; flex: 0 0 auto; }
+.note-modal .gw-modal__title, .ee-modal .gw-modal__title { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 40rem) {
+  .note-modal .gw-modal__foot { flex-direction: column-reverse; }
+  .note-modal .gw-modal__foot .gw-btn { width: 100%; }
+}
+/* «Editar evento» (ventana compartida) vista desde el Calendario: pie con botones a todo el ancho en celular, informe y librería de colores centrados */
+.ee-modal .gw-btn { text-align: center; }
+.ee-report__row .gw-btn { flex: 1 1 14rem; white-space: normal; }
+.ee-report__head .gw-btn { flex: 0 0 auto; }
+@media (max-width: 40rem) {
+  .ee-modal .gw-modal__foot { flex-direction: column; align-items: stretch; justify-content: flex-start; }
+  .ee-modal__status { flex: 0 0 auto; }
+  .ee-modal__status:empty { display: none; }
+  .ee-modal .gw-modal__foot > .gw-btn { width: 100%; }
+  .ee-modal__actions { width: 100%; flex-wrap: nowrap; }
+  .ee-modal__actions .gw-btn { flex: 1 1 0; min-width: 0; }
+  .ee-super { flex-wrap: wrap; }
+  .ee-super .gw-btn { flex: 1 1 100%; }
+}
+.ee-modal .cl-box, .ee-modal .cl-select { max-width: 100%; }
+.ee-modal .cl-select { min-height: var(--gw-tap) !important; font-size: var(--gw-fs-md) !important; border-radius: var(--gw-radius-md) !important; }
+.ee-modal .cl-save, .ee-modal .cl-del { min-height: var(--gw-tap); display: inline-flex; align-items: center; justify-content: center; font-size: var(--gw-fs-sm) !important; padding: 0 var(--gw-sp-4) !important; border-radius: var(--gw-radius-md) !important; background: var(--gw-secondary-bg) !important; color: var(--gw-text) !important; border-color: var(--gw-border-strong) !important; }
+.ee-modal div:has(> .cl-select) { gap: var(--gw-sp-2) !important; }
