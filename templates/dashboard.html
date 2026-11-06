@@ -26,7 +26,7 @@
       <a href="/configuracion" class="gw-btn gw-btn--ghost gw-btn--sm" aria-label="Configuración (Apariencia)" title="Configuración (Apariencia)">
         <svg class="gw-icon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-settings"/></svg>
       </a>
-      <span class="gw-shell__who">{{ staff_name }} ({{ staff_role }})</span>
+      <span class="gw-shell__who" title="{{ staff_name }} ({{ staff_role }})">{{ staff_name }} ({{ staff_role }})</span>
       <form action="/logout" method="post">
         <button type="submit" class="gw-btn gw-btn--secondary gw-btn--sm">Salir</button>
       </form>

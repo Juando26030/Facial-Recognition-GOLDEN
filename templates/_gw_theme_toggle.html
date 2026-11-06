@@ -1,5 +1,5 @@
 {# Interruptor de tema claro/oscuro (POR DISPOSITIVO; lo maneja static/js/gw-ui.js). Los íconos salen del sprite static/img/icons.svg. #}
-<button type="button" class="gw-theme-toggle" data-gw-theme-toggle aria-pressed="false">
+<button type="button" class="gw-theme-toggle" data-gw-theme-toggle aria-pressed="false" aria-label="Tema oscuro" title="Tema oscuro">
   <svg class="gw-icon gw-icon--sm gw-icon--moon" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-moon"/></svg>
   <svg class="gw-icon gw-icon--sm gw-icon--sun" aria-hidden="true"><use href="{{ url_for('static', path='img/icons.svg') }}#i-sun"/></svg>
   <span data-gw-theme-label>Tema oscuro</span>

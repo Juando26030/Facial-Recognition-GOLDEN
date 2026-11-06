@@ -37,7 +37,9 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-gw-theme-toggle]'), function (b) {
       b.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
       var label = b.querySelector('[data-gw-theme-label]');
-      if (label) label.textContent = theme === 'dark' ? 'Tema claro' : 'Tema oscuro';
+      var name = theme === 'dark' ? 'Tema claro' : 'Tema oscuro';
+      if (label) label.textContent = name;
+      b.setAttribute('aria-label', name); b.setAttribute('title', name);       // en celular el botón es solo ícono: el nombre accesible y el tooltip salen de aquí
     });
   }
   function toggleTheme() { var next = currentTheme() === 'dark' ? 'light' : 'dark'; applyTheme(next); store(false, KEY_THEME, next); }
