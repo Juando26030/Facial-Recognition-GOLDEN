@@ -1,0 +1,29 @@
+/* Inicio (dashboard.html) y contraseña (password.html). Solo tokens --gw-*; sobreescribe colores de password-ui.css con tokens. */
+.gw-empty .gw-icon { width: 2.5rem; height: 2.5rem; color: var(--gw-gold-text); }
+.gw-empty p { margin: 0; }
+
+.pw { min-height: 100vh; display: flex; flex-direction: column; }
+.pw__top { display: flex; justify-content: flex-end; padding: var(--gw-sp-3) var(--gw-sp-4); }
+.pw__main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gw-sp-4); padding: var(--gw-sp-4); }
+.pw__card { width: 100%; max-width: 420px; padding: var(--gw-sp-6) var(--gw-sp-5); border-top: 6px solid var(--gw-gold-1); }
+.pw__brand { display: flex; flex-direction: column; align-items: center; gap: var(--gw-sp-2); text-align: center; margin-bottom: var(--gw-sp-5); }
+.pw__logo { width: 96px; height: 96px; border-radius: 50%; background: var(--gw-surface); padding: 4px; }
+.pw__brand .gw-title span { color: var(--gw-gold-text); }
+.pw__title { margin-bottom: var(--gw-sp-3); }
+.pw__alert { margin-bottom: var(--gw-sp-4); }
+.pw__links { text-align: center; margin-top: var(--gw-sp-4); }
+.pw__links a { display: inline-flex; align-items: center; min-height: var(--gw-tap); font-weight: 700; }
+
+/* Requisitos y barra de fuerza (los crea static/js/password-policy.js) */
+.pw .gw-pw-eye { color: var(--gw-text-muted); border-radius: 0 var(--gw-radius-md) var(--gw-radius-md) 0; }
+.pw .gw-pw-eye:hover { color: var(--gw-text); }
+.pw .gw-pw-eye:focus-visible { outline-color: var(--gw-focus); }
+.pw .gw-pw-rule.is-ok { color: var(--gw-ok-text); }
+.pw .gw-pw-rule.is-bad { color: var(--gw-err-text); }
+.pw .gw-pw-rule.is-idle { color: var(--gw-text-muted); }
+.pw .gw-pw-meter__bar { background: var(--gw-border); }
+.pw .gw-pw-meter__bar.lvl-1::after { background: var(--gw-err-line); }
+.pw .gw-pw-meter__bar.lvl-2::after { background: var(--gw-warn-line); }
+.pw .gw-pw-meter__bar.lvl-3::after, .pw .gw-pw-meter__bar.lvl-4::after { background: var(--gw-ok-line); }
+.pw .gw-pw-rule { min-height: 1.5rem; }
+.pw .gw-btn[data-gw-submit]:disabled { opacity: .5; cursor: not-allowed; }
