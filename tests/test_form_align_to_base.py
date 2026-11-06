@@ -71,3 +71,41 @@ def test_align_needs_a_field_with_quotas_linked_to_the_base(client, factory, db)
     url = f"/api/events/{ev.id}/forms/{f['id']}/align-to-base"
     assert client.post(url, json={"field": "nombres"}).status_code == 400
     assert client.post(url, json={"field": "nope"}).status_code == 400
+
+
+def test_align_relabels_people_outside_the_base_and_frees_their_quota(client, factory, db):
+    ev, f = _form(client, factory, db)
+    _person(factory, db, ev, "1", "Cali")
+    _person(factory, db, ev, "6", "Cali", attend=False)
+    _add(db, ev, f, "1", "Bogotá")
+    _add(db, ev, f, "6", "Bogotá")          # no está en la base de este evento
+    _add(db, ev, f, "8", "Manizales")       # tampoco, y su ciudad no tenía cupo
+    _add(db, ev, f, "7", "Bogotá", "lista_cupo")   # marca: no se toca
+    db.commit()
+    url = f"/api/events/{ev.id}/forms/{f['id']}/align-to-base"
+    label = "Se registró sin estar en base"
+    r = client.post(url, json={"field": "ciudad", "not_in_base_label": label}).json()
+    assert r["changed"] == 3 and r["moved_to_base"] == 1 and r["marked_not_in_base"] == 2 and r["applied"] is False
+    assert {q["quota"]: q["change"] for q in r["quota_change"]} == {"Bogotá": -1, "Cali": 1}
+    assert client.post(url, json={"field": "ciudad", "not_in_base_label": label, "apply": True}).json()["changed"] == 3
+    db.expire_all()
+    rows = {s.person_id: json.loads(s.data_json)["ciudad"] for s in db.query(FormSubmission).filter(FormSubmission.form_id == f["id"]).all()}
+    assert rows == {"1": "Cali", "6": label, "8": label, "7": "Bogotá"}
+    assert _used(client, ev, f) == {"Bogotá": 1, "Cali": 1}
+    assert client.post(url, json={"field": "ciudad", "not_in_base_label": label, "apply": True}).json()["changed"] == 0
+
+
+def test_align_never_pushes_a_quota_over_its_limit(client, factory, db):
+    ev, f = _form(client, factory, db)          # Bogotá y Cali con límite 10
+    for i in range(1, 13):
+        pid = str(100 + i)
+        _person(factory, db, ev, pid, "Cali")
+        _add(db, ev, f, pid, "Bogotá")          # 12 personas de Cali inscritas como Bogotá: Cali recibiría 12 > 10
+    db.commit()
+    url = f"/api/events/{ev.id}/forms/{f['id']}/align-to-base"
+    r = client.post(url, json={"field": "ciudad"}).json()
+    assert r["would_exceed"] == [{"quota": "Cali", "limit": 10, "used": 0, "after": 12}]
+    resp = client.post(url, json={"field": "ciudad", "apply": True})
+    assert resp.status_code == 409 and "Cali" in resp.json()["detail"]
+    db.expire_all()
+    assert {json.loads(s.data_json)["ciudad"] for s in db.query(FormSubmission).filter(FormSubmission.form_id == f["id"]).all()} == {"Bogotá"}

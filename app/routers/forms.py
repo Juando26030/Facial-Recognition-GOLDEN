@@ -851,9 +851,11 @@ def unify_values(event_id: int, form_id: int, payload: dict, db: Session = Depen
 @router.post("/events/{event_id}/forms/{form_id}/align-to-base")
 def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depends(get_db), staff: StaffUser = Depends(ADMIN)):
     """Lleva un campo con cupos de las inscripciones al valor que la BASE DEL EVENTO tiene para esa persona (p. ej. la ciudad asignada). Sirve cuando alguien escribió otra ciudad
-    (un pueblo, o una ciudad que no tiene cupo) y el cupo la contó donde no era. Cuerpo: `{"field": id del campo (vinculado a un campo del evento), "apply": false, "detail": false}`.
-    Solo cambia inscripciones reales de personas que están en la base y cuyo valor en la base es uno de los valores de los cupos de ese campo: sin base, sin valor o con un valor sin
-    cupo no se toca. Las marcas de «Personas ya registradas» tampoco (su ciudad la dio quien cargó la lista). Sin `apply` solo informa; con `detail` lista cédula, valor actual y nuevo."""
+    (un pueblo, o una ciudad que no tiene cupo) y el cupo la contó donde no era. Cuerpo: `{"field": id del campo (vinculado a un campo del evento), "apply": false, "detail": false,
+    "not_in_base_label": "texto"}`. Cambia inscripciones reales de personas que están en la base y cuyo valor en la base es uno de los valores de los cupos de ese campo; sin valor o con
+    un valor sin cupo no se toca. Si se da `not_in_base_label`, las inscripciones de personas que NO están en la base quedan con ese texto (dejan de contar en cualquier cupo). Las marcas de
+    «Personas ya registradas» nunca se tocan (su ciudad la dio quien cargó la lista). **Nunca deja un cupo por encima de su límite**: si alguna corrección lo haría, no aplica nada y
+    lo informa (`would_exceed`, 409 al aplicar). Sin `apply` solo informa; con `detail` lista cédula, valor actual y nuevo."""
     from app import value_unify
     event = get_event_for_staff(event_id, db, staff)
     form = _get_form(db, event, form_id)
@@ -867,6 +869,7 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
     src_event = formsvc.source_event_id(form)
     if not src_event:
         raise HTTPException(status_code=400, detail="Este formulario no toma sus datos de la base de un evento")
+    label = " ".join(str(payload.get("not_in_base_label") or "").split())[:100]
     do_apply = payload.get("apply") is True
     db.query(WebForm.id).filter(WebForm.id == form.id).with_for_update().first()
     rows = db.query(FormSubmission.id, FormSubmission.person_id, FormSubmission.data_json).filter(
@@ -884,34 +887,51 @@ def align_to_base(event_id: int, form_id: int, payload: dict, db: Session = Depe
             except (ValueError, TypeError):
                 base_value[uid] = None
     batch, changes, detail, skipped = [], {}, [], {"not_in_base": 0, "base_empty": 0, "base_without_quota": 0}
-    already_ok = 0
+    already_ok, marked, delta = 0, 0, {r["id"]: 0 for r in rules}
+
+    def change(sid, pid, data, old, new):
+        nonlocal marked
+        old_label = (old or "").strip() if isinstance(old, str) and old.strip() else "(vacío)"
+        changes[(old_label, new)] = changes.get((old_label, new), 0) + 1
+        if payload.get("detail") is True:
+            detail.append({"id": pid, "from": old_label, "to": new})
+        new_data = {**data, field_id: new}
+        for r in rules:
+            delta[r["id"]] += int(formsvc.quota_match(r, new_data)) - int(formsvc.quota_match(r, data))
+        batch.append({"id": sid, "data_json": json.dumps(new_data), "quota_keys": formsvc.quota_keys_for(rules, new_data)})
+
     for sid, pid, raw in rows:
+        data = json.loads(raw or "{}")
+        old = data.get(field_id)
         if pid not in in_base:
             skipped["not_in_base"] += 1
+            if label and old != label:
+                marked += 1
+                change(sid, pid, data, old, label)
             continue
         want = value_unify.resolve(base_value.get(pid), canon, {})
         if want is None:
             skipped["base_empty" if not str(base_value.get(pid) or "").strip() else "base_without_quota"] += 1
             continue
-        data = json.loads(raw or "{}")
-        old = data.get(field_id)
         if old == want:
             already_ok += 1
             continue
-        old_label = (old or "").strip() if isinstance(old, str) else "(vacío)"
-        changes[(old_label, want)] = changes.get((old_label, want), 0) + 1
-        if payload.get("detail") is True:
-            detail.append({"id": pid, "from": old_label, "to": want})
-        data[field_id] = want
-        batch.append({"id": sid, "data_json": json.dumps(data), "quota_keys": formsvc.quota_keys_for(rules, data)})
+        change(sid, pid, data, old, want)
+    used = formsvc.quota_counts(db, form, rules)
+    would_exceed = [{"quota": r["label"], "limit": r["limit"], "used": used[r["id"]], "after": used[r["id"]] + delta[r["id"]]} for r in rules
+                    if delta[r["id"]] > 0 and used[r["id"]] + delta[r["id"]] > r["limit"]]
+    if do_apply and would_exceed:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="No se aplicó nada: " + "; ".join(f"«{w['quota']}» quedaría en {w['after']} de {w['limit']}" for w in would_exceed))
     if do_apply and batch:
         for i in range(0, len(batch), 500):
             db.bulk_update_mappings(FormSubmission, batch[i:i + 500])
         formsvc.invalidate_held()
     db.commit()
-    out = {"applied": do_apply and bool(batch), "changed": len(batch), "already_ok": already_ok, "skipped": skipped,
+    out = {"applied": do_apply and bool(batch), "changed": len(batch), "moved_to_base": len(batch) - marked, "marked_not_in_base": marked, "already_ok": already_ok, "skipped": skipped,
+           "would_exceed": would_exceed, "quota_change": [{"quota": r["label"], "change": delta[r["id"]]} for r in rules if delta[r["id"]]],
            "changes": [{"from": a, "to": b, "count": n} for (a, b), n in sorted(changes.items(), key=lambda x: -x[1])]}
-    if detail:
+    if payload.get("detail") is True:
         out["detail"] = detail
     return out
 
